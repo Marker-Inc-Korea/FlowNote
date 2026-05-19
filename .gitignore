@@ -1,0 +1,55 @@
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Node / web
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+
+# Android / Gradle
+.gradle/
+local.properties
+captures/
+*.apk
+*.aab
+
+# Java / Kotlin
+*.class
+
+# Windows / .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Python helper scripts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Temporary files
+tmp/
+temp/
