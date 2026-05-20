@@ -1,38 +1,63 @@
 # FlowNote
 
-FlowNote is planned as a multi-platform project for Windows, Android, and Web.
+FlowNote는 생산공장 현장에서 사용하는 기술문서, 도면, 매뉴얼, 작업지시서 등 다양한 업무 문서와 현장 지식을 함께 관리하는 독립형 서버이다.
 
-## Repository Structure
+FlowNote는 파일 저장, 문서 메타데이터, 버전 관리, 권한, 변경 이력, 현장 단말기 열람, 관리자 파일 변경 감지, 현장 코멘트, 보고서 생성 보조, AI 검색과 작업 조언을 제공하는 것을 목표로 한다.
+
+FlowNote의 1차 목표는 완벽한 DMS나 KMS를 처음부터 만드는 것이 아니다. 문서 버전, 현장 코멘트, 작업 문제점, 작업내역을 오래 운영하면서 서로 연결해 생산현장의 노하우와 보고서 데이터를 축적하고, 추후 AI가 검색과 조언, 의사결정 보조에 활용할 수 있는 현장 데이터 기반을 쌓는 것이다.
+
+현장 코멘트는 그 자체만으로 확정 데이터가 되지 않는다. 원천 코멘트는 생산 중 발생한 이력으로 보존하고, 관리자급 사용자의 검토와 분석을 거쳐 보고서 형태의 정제 문서로 연결한다. 원천 이력과 최종 보고서가 함께 존재해야 과거 상황을 추적하면서도 실제 의사결정에 사용할 수 있는 문서화된 근거를 확보할 수 있다.
+
+FlowNote는 MES나 ERP를 대체하는 시스템이 아니다. 초기 작업지시 구조는 관리자가 직접 입력하고 고객이 이미 사용하는 문서 정리 구조에 연결하는 방식으로 운영한다. 이미 MES나 ERP가 구축된 공장에서는 후속 단계에서 해당 시스템의 작업지시, 품목, 공정, 설비, 생산실적 같은 정형 데이터를 API로 받아들일 수 있게 하고, FlowNote는 문서와 현장 노하우, 관리자 보고서를 연결해 AI 활용 데이터를 보강한다.
+
+FlowNote의 배포 기준은 고객 데이터 주권이다. 생산 현장의 기술문서, 도면, 생산규격, 보고서는 클라우드 사용을 꺼리는 경우가 많으므로 고객이 데이터와 파일 저장 위치를 통제할 수 있어야 한다. 내부망 로컬 서버, 고객 사내망 서버, 인가된 외부 접근이 가능한 전용 서버, 고객이 승인한 전용 클라우드 등 실제 설치 방식은 고객 보안 정책과 운영 협의에 따라 결정한다.
+
+## 핵심 방향
+
+- HWP, Word, PowerPoint, Excel, PDF, DWG 등 현장 문서를 저장하고 버전 관리한다.
+- 동일 문서가 수정되면 기존 파일을 덮어쓰지 않고 새 버전으로 등록한다.
+- 새 버전 등록 시 변경 사유를 반드시 기록한다.
+- 현장 사용자 단말기는 현장 공개 상태의 문서를 열람하는 뷰어 전용 모드로 동작한다.
+- 문서 다운로드 차단과 뷰어 자동 닫힘은 실제 클라이언트 앱 단계에서 강화한다.
+- 관리자 단말기는 지정 파일 변경을 감지하고 새 버전 업로드를 보조한다.
+- Android는 Kotlin, Windows는 WPF를 기준으로 작성한다.
+- 웹 UI는 TypeScript + React + Vite를 기준으로 작성한다.
+- Android와 Windows 앱은 WebView 기반으로 웹 UI를 표시하고, 로컬 제어가 필요한 기능만 네이티브 브릿지로 처리한다.
+- Web UI는 개발과 유지보수의 기준 구현이며, 고객 생산공장 운영에서는 승인된 클라이언트 앱의 WebView 접근을 기본으로 한다.
+- 메타데이터 DB는 MySQL을 기본으로 한다.
+- 보안 요구와 데이터 주권을 고려해 고객 또는 현장별 독립 인스턴스를 기본으로 한다.
+- 문서 정리 구조는 프로그램이 강제하지 않고 고객이 결정하며, 트리나 현장 용어의 BOM 문서는 지원 가능한 예시로만 둔다.
+- 작업지시와 업무 구조는 초기에는 관리자가 직접 입력하고, 추후 MES/ERP 연동 시 자동 수신으로 확장한다.
+- 현장 코멘트, 작업 평가, 문제점은 현재 문서와 연결해서 관리한다.
+- 현장 코멘트는 관리자 분석과 보고서 문서로 정제되는 흐름을 가진다.
+- 문서와 현장 코멘트에는 설비, 품목, 공정, 오류 유형 같은 태그를 달아 문서 구조에 흡수되지 못한 관계를 보완한다.
+- 문서 수정자, 열람자, 코멘트 등록자, 실제 전달자 또는 작업자 정보를 남겨 추적성을 확보한다.
+- 업로드된 문서가 항상 최신 확정본이라고 가정하지 않고, 작업중, 검토중, 공개, 보관 같은 상태를 구분한다.
+- 현장의 소리를 무시하지 않고 기록으로 남겨, 누가 작업하더라도 과거 경험과 지식을 활용할 수 있게 한다.
+- 현장 입력은 신호등식 기록, 기본 정형 문구, 짧은 메모, 관리자 대리 입력으로 시작한다.
+- 문서, 현장 지식, 작업 맥락을 함께 축적하되 어느 한쪽 기능으로 제품 방향이 치우치지 않게 관리한다.
+- AI는 우선 등록 문서, 작업내역, 현장 코멘트를 검색하고 작업 전 주의 사항을 제안하는 기능에 집중한다.
+
+## 저장소 구조
 
 ```text
 FlowNote/
   apps/
-    windows/       Windows desktop app
-    android/       Android app
-    web/           Web app
-  packages/
-    shared/        Shared domain logic, types, constants, and utilities
-    ui/            Shared UI assets or design-system code when applicable
+    windows/       WPF + WebView2 기반 관리자/데스크톱 클라이언트
+    android/       Kotlin + WebView 기반 현장 단말기 클라이언트
+    web/           TypeScript + React + Vite 기반 웹 UI
   services/
-    api/           Optional backend/API service
-  assets/          Shared images, icons, fonts, and brand assets
-  docs/            Product notes, architecture, API docs, and decisions
-  scripts/         Build, release, and development automation scripts
-  .github/         GitHub workflows and repository templates
+    api/           FlowNote API 서버
+  packages/
+    shared/        공통 도메인 모델, API 계약, 검증 규칙
+    ui/            공통 UI 자원 또는 디자인 토큰
+  docs/            제품, 아키텍처, 데이터 모델, API, 결정 기록
+  assets/          공통 이미지, 아이콘, 문서 샘플 등 정적 자원
+  scripts/         개발, 빌드, 운영 보조 스크립트
 ```
 
-## Getting Started
+## 현재 상태
 
-Choose the implementation stack for each app before adding framework-specific files.
+현재 저장소는 구현 전 설계 문서 중심 상태이다. 확정된 기본 기술은 Android Kotlin, Windows WPF, Web TypeScript + React + Vite, Database MySQL이다.
 
-- Windows: WinUI, WPF, MAUI, Electron, Tauri, or another desktop stack
-- Android: Kotlin/Jetpack Compose, Java/XML, Flutter, React Native, or MAUI
-- Web: React, Next.js, Vue, Svelte, Angular, or another web stack
-- Backend: Add only if the apps need shared sync, accounts, storage, or APIs
-
-## Development Notes
-
-- Keep platform-specific code inside `apps/`.
-- Put reusable business logic in `packages/shared/`.
-- Keep documentation in `docs/`.
-- Add CI/CD workflows under `.github/workflows/` when the build stack is decided.
+문서부터 확인하려면 [docs/README.md](./docs/README.md)를 본다. 전체 도메인 관계는 [docs/system-map.md](./docs/system-map.md)에 정리한다.

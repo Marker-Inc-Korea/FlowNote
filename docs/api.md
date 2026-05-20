@@ -1,0 +1,435 @@
+# FlowNote API 초안
+
+## 1. 공통 원칙
+
+```text
+Base Path: /api/v1
+Content-Type: application/json
+File Upload: multipart/form-data
+```
+
+- 외부에는 안정적인 참조 ID를 노출한다.
+- 파일 업로드는 `multipart/form-data`를 사용한다.
+- 현장 단말기는 기본적으로 현장 공개 상태의 문서를 조회한다.
+- 새 문서 버전 등록 시 변경 사유는 필수이다.
+- 업로드된 문서가 항상 최신 확정본이라고 가정하지 않고, 작업중/검토중/공개/보관 상태를 구분한다.
+- 모든 사용자는 로그인 기반 인증을 거친다.
+- 현장 사용자는 문서 열람과 코멘트 등록만 가능하다.
+- 문서 파일 다운로드 차단과 문서 뷰어 자동 닫힘은 클라이언트 앱 단계에서 구현한다.
+- 현장 사용자 단말기는 파일 감시 API를 사용하지 않는다.
+- 관리자만 파일 감시와 업로드 보조 API를 사용할 수 있다.
+- Android와 Windows 앱은 WebView 기반 웹 UI와 네이티브 기능을 브릿지로 연결한다.
+- 브릿지 기능은 단말기 모드와 사용자 권한에 따라 제한한다.
+- 웹 UI는 TypeScript + React + Vite 기반 SPA로 작성한다.
+- 운영 환경에서는 일반 브라우저 직접 접근보다 승인된 클라이언트 앱의 WebView 접근을 기본으로 한다.
+- 현장 코멘트 입력은 신호등식 기록, 기본 정형 문구, 짧은 메모, 관리자 대리 입력을 우선 지원한다.
+- 현장 코멘트는 원천 이력이며, 관리자 검토/분석과 보고서 문서로 정제되는 흐름을 가진다.
+- 문서 수정자, 열람자, 코멘트 등록자, 실제 전달자 또는 작업자 정보를 추적한다.
+- 메타데이터 DB는 MySQL을 기본으로 한다.
+- 서비스는 고객 데이터 주권을 위해 고객 또는 현장 단위 독립 인스턴스를 기본으로 한다.
+- 내부망 전용 운영, 고객 사내망 운영, 인가된 외부 접근 운영, 고객 승인 전용 클라우드 운영은 고객 보안 정책에 따라 결정한다.
+- FlowNote는 MES/ERP를 대체하지 않고 외부 시스템 연동 대상으로 다룬다.
+- AI 검색과 조언은 접근 권한이 있는 데이터만 참조한다.
+
+## 2. 문서 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| POST | `/documents` | 문서와 최초 버전 등록 |
+| GET | `/documents` | 문서 목록 조회 |
+| GET | `/documents/{documentId}` | 문서 상세 조회 |
+| PATCH | `/documents/{documentId}` | 문서 메타데이터 수정 |
+| DELETE | `/documents/{documentId}` | 문서 삭제 상태 처리 |
+| GET | `/documents/{documentId}/download` | 관리자 다운로드 API 후보. 클라이언트 앱 단계 |
+| GET | `/documents/{documentId}/versions` | 버전 목록 조회 |
+| POST | `/documents/{documentId}/versions` | 새 버전 업로드 |
+| GET | `/documents/{documentId}/versions/{versionNo}/download` | 관리자 특정 버전 다운로드 API 후보. 클라이언트 앱 단계 |
+| GET | `/documents/{documentId}/history` | 문서 이력 조회 |
+| GET | `/documents/{documentId}/access-logs` | 접근 로그 조회 |
+
+문서 등록 요청 필드:
+
+```text
+multipart/form-data
+- file: binary
+- title: string
+- description: string
+- documentType: string
+- ownerId: string
+- categoryId: string
+- versionLabel: string
+- changeReason: string
+- tags: string[]
+- links: object[]
+```
+
+새 버전 업로드 요청 필드:
+
+```text
+multipart/form-data
+- file: binary
+- versionLabel: string
+- changeReason: string
+```
+
+## 3. 인증 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| POST | `/auth/login` | 로그인 |
+| POST | `/auth/logout` | 로그아웃 |
+| GET | `/auth/me` | 현재 사용자와 역할 조회 |
+
+로그인 응답은 사용자 역할과 단말기 모드에 따라 허용 기능을 포함한다.
+
+## 3.1 작업자/작업그룹 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/operators` | 작업자 또는 작업그룹 목록 조회 |
+| POST | `/operators` | 작업자 또는 작업그룹 등록 |
+| PATCH | `/operators/{operatorId}` | 작업자 또는 작업그룹 수정 |
+
+`OperatorProfile`은 로그인 계정과 동일하지 않을 수 있다. 실제 작업자 개인, 작업반, 조장, 관리자 대리 등록자, 외부 시스템 작업자 식별자를 표현한다.
+
+## 4. 현장 단말기 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| POST | `/terminal/devices` | 단말기 등록 또는 접속 정보 갱신 |
+| GET | `/terminal/documents/{documentId}` | 현장 단말기용 공개 문서 조회. 클라이언트 앱 단계 |
+| POST | `/terminal/documents/{documentId}/viewer-sessions` | 문서 뷰어 세션 생성. 클라이언트 앱 단계 |
+| POST | `/terminal/viewer-sessions/{viewerSessionId}/close` | 문서 뷰어 닫힘 기록. 클라이언트 앱 단계 |
+| GET | `/terminal/notifications` | 단말기 알림 목록 조회 |
+| POST | `/terminal/notifications/{notificationId}/read` | 알림 읽음 처리 |
+
+현장 단말기 등록 예시:
+
+```json
+{
+  "deviceId": "terminal-12",
+  "deviceName": "Line A Viewer",
+  "deviceMode": "viewer",
+  "locationCode": "line-a"
+}
+```
+
+문서 뷰어 세션 응답 예시:
+
+```json
+{
+  "viewerSessionId": "view_20260520_000001",
+  "documentId": "doc_20260520_000001",
+  "versionNo": 3,
+  "expiresAt": "2026-05-20T10:15:00Z",
+  "downloadAllowed": false
+}
+```
+
+## 5. 관리자 파일 감시 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| POST | `/admin/file-watchers` | 감시 파일 또는 폴더 등록 |
+| GET | `/admin/file-watchers` | 감시 항목 목록 조회 |
+| POST | `/admin/file-watchers/{watchedFileId}/changes` | 변경 감지 결과 등록 |
+| GET | `/admin/file-change-candidates` | 변경 후보 목록 조회 |
+| POST | `/admin/file-change-candidates/{candidateId}/upload-version` | 변경 후보로 새 버전 업로드 |
+
+변경 후보 업로드 요청 필드:
+
+```text
+multipart/form-data
+- file: binary
+- versionLabel: string
+- changeReason: string
+```
+
+## 6. 클라이언트 브릿지 API
+
+이 섹션의 API는 서버 REST API가 아니라 WebView 내부 웹 UI와 네이티브 앱 사이의 브릿지 계약이다. 실제 구현 시 Android Kotlin과 Windows WPF에서 동일한 메시지 형태를 맞춘다.
+
+| Bridge Action | 방향 | 설명 |
+| --- | --- | --- |
+| `device.getInfo` | Web -> Native | 단말기 ID, 모드, 앱 버전 조회 |
+| `fileWatch.register` | Web -> Native | 관리자 단말기 감시 파일 등록 |
+| `fileWatch.list` | Web -> Native | 로컬 감시 항목 조회 |
+| `fileWatch.getChanges` | Web -> Native | 변경 감지 결과 조회 |
+| `file.pick` | Web -> Native | 업로드할 로컬 파일 선택 |
+| `notification.show` | Web -> Native | OS 알림 표시 |
+| `viewer.openExternal` | Web -> Native | 필요 시 외부 뷰어 호출 |
+
+브릿지 원칙:
+
+- 현장 사용자 `viewer` 모드에서는 파일 감시 액션을 비활성화한다.
+- 브릿지는 문서 파일을 자동 동기화하지 않는다.
+- 관리자 파일 감시 결과는 서버의 관리자 파일 감시 API로 등록한다.
+- 브릿지 호출은 감사 로그 대상으로 고려한다.
+- 브릿지 호출 중 로컬 파일 접근, 파일 감시, 외부 뷰어 호출은 감사 로그 기록 대상이다.
+
+## 7. 권한, 태그, 연결 대상 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| PUT | `/documents/{documentId}/tags` | 문서 태그 변경 |
+| PUT | `/field-notes/{noteId}/tags` | 현장 코멘트 태그 변경 |
+| GET | `/tags` | 태그 사전 조회 |
+| POST | `/tags` | 태그 등록 |
+| PUT | `/documents/{documentId}/links` | 문서 연결 대상 변경 |
+| PUT | `/documents/{documentId}/permissions` | 문서 권한 변경 |
+| GET | `/documents/{documentId}/notification-targets` | 문서 알림 대상 조회 |
+
+태그는 설비, 품목, 공정, 오류 유형, 라인, 위치, 사용자 정의 유형을 지원한다. 태그는 고객 정의 문서 구조로 표현되지 못한 관계를 보완하기 위한 연결 수단이다.
+
+권한 예시:
+
+```json
+[
+  {
+    "subjectType": "role",
+    "subjectId": "field-user",
+    "permissions": ["view", "comment"]
+  },
+  {
+    "subjectType": "role",
+    "subjectId": "document-admin",
+    "permissions": ["view", "download", "comment", "write", "delete", "manage"]
+  }
+]
+```
+
+## 8. 문서 구조 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| POST | `/document-structures` | 고객 정의 문서 구조 생성 |
+| GET | `/document-structures` | 문서 구조 목록 조회 |
+| GET | `/document-structures/{structureId}` | 문서 구조 상세 조회 |
+| POST | `/document-structures/{structureId}/items` | 구조 항목 생성 |
+| PATCH | `/document-structures/{structureId}/items/{itemId}` | 구조 항목 수정 |
+| POST | `/document-structures/{structureId}/items/{itemId}/documents` | 구조 항목에 문서 연결 |
+| DELETE | `/document-structures/{structureId}/items/{itemId}/documents/{documentId}` | 구조 항목 문서 연결 해제 |
+
+문서 구조 생성 예시:
+
+```json
+{
+  "structureType": "work_order",
+  "title": "WO-20260520-001 작업 문서",
+  "sourceType": "manual",
+  "workOrderNo": "WO-20260520-001"
+}
+```
+
+문서 구조는 고객이 정한다. 트리형 구조는 가능한 표현 방식 중 하나이며 기본 강제 구조가 아니다. 현장에서 말하는 BOM 문서 구조도 MES BOM을 차용하는 것이 아니라 현장 문서 정리 용어의 예시로 본다.
+
+초기 작업지시서 구조는 관리자가 직접 입력하는 `manual` 구조를 기본으로 한다. MES/ERP 연동이 추가되면 `externalSystem`, `externalRefId`를 사용해 외부 원본과 매핑한다.
+
+## 9. 현장 코멘트 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| POST | `/field-notes` | 현장 코멘트 등록 |
+| GET | `/field-notes` | 현장 코멘트 목록 조회 |
+| GET | `/field-notes/{noteId}` | 현장 코멘트 상세 조회 |
+| PATCH | `/field-notes/{noteId}` | 관리자 검토와 정리 |
+| GET | `/documents/{documentId}/field-notes` | 문서별 코멘트 조회 |
+| GET | `/document-structures/{structureId}/items/{itemId}/field-notes` | 문서 구조 항목별 코멘트 조회 |
+
+직접 입력 예시:
+
+```json
+{
+  "documentId": "doc_20260520_000001",
+  "documentVersionNo": 3,
+  "structureItemId": "item_20260520_000010",
+  "noteType": "issue",
+  "inputMode": "free_text",
+  "rawContent": "도면의 체결 방향 설명이 현장 작업 순서와 다릅니다.",
+  "authorId": "user-001",
+  "operatorId": "op-line-a-team-1",
+  "deviceId": "terminal-12",
+  "locationCode": "line-a"
+}
+```
+
+신호등식 기록 예시:
+
+```json
+{
+  "documentId": "doc_20260520_000001",
+  "structureItemId": "item_20260520_000010",
+  "noteType": "work_evaluation",
+  "inputMode": "signal",
+  "signalLevel": "yellow",
+  "rawContent": "주의 필요",
+  "authorId": "user-001",
+  "operatorId": "op-line-a-team-1",
+  "deviceId": "terminal-12"
+}
+```
+
+관리자 대리 입력 예시:
+
+```json
+{
+  "documentId": "doc_20260520_000001",
+  "noteType": "issue",
+  "inputMode": "admin_proxy",
+  "rawContent": "작업자가 구두로 체결 순서 설명이 부족하다고 전달함",
+  "authorId": "admin-001",
+  "reportedBy": "user-001",
+  "operatorId": "op-line-a-team-1",
+  "locationCode": "line-a"
+}
+```
+
+관리자 검토/분석 예시:
+
+```json
+{
+  "status": "ANALYZED",
+  "normalizedContent": "체결 순서 설명이 실제 작업 흐름과 불일치함",
+  "analysisContent": "동일 공정에서 반복 등록된 문제로, 도면 설명과 작업 표준서의 순서 확인이 필요함",
+  "reviewedBy": "admin-001",
+  "analyzedBy": "admin-001"
+}
+```
+
+## 10. 정형 문구 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/comment-templates` | 정형 문구 목록 조회 |
+| POST | `/comment-templates` | 정형 문구 등록 |
+| PATCH | `/comment-templates/{templateId}` | 정형 문구 수정 |
+
+## 11. 보고서 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| POST | `/reports/drafts` | 보고서 초안 생성 |
+| POST | `/reports` | 보고서 저장 |
+| GET | `/reports/{reportId}` | 보고서 상세 조회 |
+| POST | `/reports/{reportId}/export/document` | 보고서를 문서로 저장 |
+
+보고서 초안 생성 요청 예시:
+
+```json
+{
+  "reportType": "issue",
+  "title": "Line A 체결 순서 문제 분석",
+  "workRecordId": "work_20260520_000001",
+  "sourceRefs": [
+    {
+      "sourceType": "field_note",
+      "sourceId": "note_20260520_000001"
+    },
+    {
+      "sourceType": "document_version",
+      "sourceId": "doc_20260520_000001",
+      "sourceVersionId": "ver_3"
+    }
+  ],
+  "useAiDraft": true
+}
+```
+
+보고서는 원천 코멘트와 작업내역을 정제한 관리자급 문서이다. 최종 승인된 보고서는 `Document`로 저장하고, 원천 데이터는 `ReportSource`로 추적한다.
+
+## 12. 작업내역 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| POST | `/work-records` | 작업내역 등록 |
+| GET | `/work-records/{workRecordId}` | 작업내역 상세 조회 |
+| POST | `/work-records/{workRecordId}/versions` | 작업내역 새 버전 등록 |
+| GET | `/work-records/{workRecordId}/versions` | 작업내역 버전 목록 조회 |
+| PUT | `/work-records/{workRecordId}/participants` | 작업자 또는 작업그룹 연결 |
+
+## 13. AI API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| POST | `/ai/search` | 문서, 코멘트, 보고서, 작업내역 자연어 검색 |
+| POST | `/ai/work-advice` | 작업 조언 생성 |
+| POST | `/ai/risk-preview` | 작업지시 문서 위험 요소 미리보기 |
+| POST | `/ai/index/rebuild` | 검색 인덱스 재생성 |
+
+작업 조언 응답은 가능한 경우 근거를 포함한다.
+
+```json
+{
+  "adviceId": "adv_20260520_000001",
+  "summary": "작업 전 체결 방향과 안전 점검 절차를 확인해야 합니다.",
+  "risks": [
+    "과거 작업에서 도면 설명과 실제 작업 순서가 다르다는 문제가 등록되었습니다."
+  ],
+  "precautions": [
+    "현장 공개 도면과 매뉴얼을 함께 확인하십시오."
+  ],
+  "sources": [
+    {
+      "type": "document_version",
+      "documentId": "doc_20260520_000001",
+      "versionNo": 3
+    }
+  ]
+}
+```
+
+## 14. 외부 시스템 연동 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/integrations/systems` | 외부 시스템 목록 조회 |
+| POST | `/integrations/systems` | 외부 시스템 등록 |
+| PATCH | `/integrations/systems/{systemId}` | 외부 시스템 설정 수정 |
+| POST | `/integrations/{systemId}/sync/work-orders` | 작업지시 데이터 수신/동기화. 후속 연동 단계 |
+| POST | `/integrations/{systemId}/sync/master-data` | 품목, 공정, 설비 등 기준정보 수신/동기화 |
+| POST | `/integrations/{systemId}/mappings` | 외부 원본과 FlowNote 엔티티 매핑 |
+| GET | `/integrations/{systemId}/mappings` | 매핑 목록 조회 |
+
+연동 예시:
+
+```json
+{
+  "externalSystem": "MES",
+  "externalEntityType": "work_order",
+  "externalEntityId": "WO-20260520-001",
+  "flowEntityType": "document_structure",
+  "flowEntityId": "structure_20260520_000001"
+}
+```
+
+기존 MES/ERP가 있는 현장은 후속 단계에서 현장별 API 어댑터를 통해 데이터를 받아들인다. 현재 단계의 작업지시는 관리자가 직접 입력하고, 외부 연동이 추가되면 같은 문서 구조와 작업내역 구조에 자동 수신 데이터를 매핑한다.
+
+## 15. 오류 코드
+
+| 코드 | 설명 |
+| --- | --- |
+| VALIDATION_ERROR | 요청 값 오류 |
+| DOCUMENT_NOT_FOUND | 문서 없음 |
+| DOCUMENT_STRUCTURE_NOT_FOUND | 문서 구조 없음 |
+| DOCUMENT_STRUCTURE_ITEM_NOT_FOUND | 문서 구조 항목 없음 |
+| FILE_TOO_LARGE | 파일 크기 제한 초과 |
+| FILE_TYPE_NOT_ALLOWED | 허용되지 않은 파일 형식 |
+| CHANGE_REASON_REQUIRED | 변경 사유 누락 |
+| PERMISSION_DENIED | 권한 없음 |
+| LOGIN_REQUIRED | 로그인이 필요함 |
+| DOWNLOAD_NOT_ALLOWED | 다운로드 권한 없음. 클라이언트 앱 단계 |
+| VIEWER_SESSION_EXPIRED | 뷰어 세션 만료. 클라이언트 앱 단계 |
+| FILE_WATCH_NOT_ALLOWED | 파일 감시 권한 없음 |
+| WATCHED_FILE_NOT_FOUND | 감시 파일 없음 |
+| FILE_CHANGE_CANDIDATE_NOT_FOUND | 파일 변경 후보 없음 |
+| FIELD_NOTE_NOT_FOUND | 현장 코멘트 없음 |
+| COMMENT_TEMPLATE_NOT_FOUND | 정형 문구 없음 |
+| REPORT_NOT_FOUND | 보고서 없음 |
+| REPORT_SOURCE_NOT_FOUND | 보고서 원천 연결 없음 |
+| WORK_RECORD_NOT_FOUND | 작업내역 없음 |
+| OPERATOR_NOT_FOUND | 작업자 또는 작업그룹 없음 |
+| EXTERNAL_SYSTEM_NOT_FOUND | 외부 시스템 없음 |
+| INTEGRATION_MAPPING_NOT_FOUND | 연동 매핑 없음 |
+| INTEGRATION_SYNC_FAILED | 외부 시스템 동기화 실패 |
+| AI_SEARCH_INDEX_NOT_READY | AI 검색 인덱스 준비 안 됨 |
+| BRIDGE_ACTION_NOT_ALLOWED | 허용되지 않은 브릿지 액션 |

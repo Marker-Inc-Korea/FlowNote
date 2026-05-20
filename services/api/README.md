@@ -1,11 +1,17 @@
 # API Service
 
-Place the backend/API service here if the project needs one.
+FlowNote API 서버 영역이다.
 
-Possible stacks:
+## 예상 책임
 
-- ASP.NET Core
-- Node.js / NestJS / Express
-- Spring Boot
-- Django / FastAPI
-- Go
+- 문서 등록, 조회, 다운로드
+- 문서 버전 관리와 변경 사유 기록
+- 현장 단말기용 최신 문서 제공
+- 관리자 파일 변경 감지 결과 수신
+- 권한, 이력, 접근 로그 관리
+- 현장 코멘트와 정형 문구 관리
+- 작업내역과 보고서 관리
+- AI 검색과 작업 조언 API 제공
+- MySQL 기반 메타데이터 저장
+
+API 초안은 [docs/api.md](../../docs/api.md)를 기준으로 한다.

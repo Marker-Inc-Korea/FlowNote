@@ -1,10 +1,12 @@
 # UI Package
 
-Use this package for shared visual resources or UI code.
+공통 UI 자원 후보를 보관하는 영역이다.
 
-Examples:
+## 예상 내용
 
-- Icons
-- Design tokens
-- Color palettes
-- Shared components, if the chosen app stacks can consume them
+- 문서 유형 아이콘
+- 파일 상태와 버전 상태 표시 규칙
+- 알림, 경고, 주의 사항 표시용 디자인 토큰
+- 현장 단말기와 관리자 콘솔에서 공유 가능한 UI 규칙
+
+실제 UI 패키지는 클라이언트 기술 스택이 확정된 뒤 구성한다.
