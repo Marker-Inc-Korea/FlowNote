@@ -1,11 +1,13 @@
 # Shared Package
 
-Use this package for code that can be reused by multiple apps.
+공통 도메인 모델과 API 계약 후보를 보관하는 영역이다.
 
-Examples:
+## 예상 내용
 
-- Domain models
-- Validation rules
-- Constants
-- API contracts
-- Utility functions
+- 문서, 파일, 버전, 권한 모델
+- 단말기, 파일 감시, 알림 모델
+- 현장 코멘트, 정형 문구, 보고서 모델
+- 작업내역, AI 검색, 작업 조언 모델
+- 공통 상태 값과 검증 규칙
+
+데이터 모델 초안은 [docs/data-model.md](../../docs/data-model.md)를 기준으로 한다.

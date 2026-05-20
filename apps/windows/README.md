@@ -1,13 +1,20 @@
 # Windows App
 
-Place the Windows desktop app project here.
+Windows 앱은 WPF 기반 관리자 단말기 또는 데스크톱 클라이언트이다. UI는 WebView2를 기본으로 사용한다.
 
-Possible stacks:
+## 예상 책임
 
-- WinUI 3
-- WPF
-- .NET MAUI
-- Electron
-- Tauri
+- 관리자 로그인
+- 문서 조회와 미리보기
+- 지정 파일 또는 폴더 감시
+- 변경 감지 파일을 새 버전 업로드 후보로 표시
+- 변경 사유와 버전명을 입력한 뒤 업로드 확정
 
-Keep Windows-only code, project files, and platform assets in this directory.
+현장 사용자용 뷰어 전용 단말기에는 파일 감시 기능을 넣지 않는다.
+
+## 기술 기준
+
+- UI 프레임워크: WPF
+- 웹 UI 표시: WebView2
+- 로컬 파일 감시: WPF 네이티브 기능
+- 웹 UI와 파일 감시 기능은 WebView2 bridge로 연동
