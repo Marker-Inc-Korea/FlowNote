@@ -48,6 +48,7 @@ Deployment
 FieldNote
   -> Document / DocumentVersion
   -> DocumentStructureItem
+  -> FieldNoteAttachment / FileObject
   -> OperatorProfile / UserAccount
   -> CommentTemplate
   -> Report
@@ -56,6 +57,7 @@ WorkRecord
   -> WorkRecordVersion
   -> WorkRecordParticipant
   -> WorkInstruction Document
+  -> WorkSequenceBoard / WorkSequenceItem
   -> AI Advice
 
 SearchIndexItem
@@ -85,6 +87,7 @@ ExternalSystem
 - [0015. 태그, 문서 상태, 클라이언트 보안 범위](./decisions/0015-tags-status-and-client-security-scope.md)
 - [0016. 현장 코멘트 분석, 보고서화, 작업자 추적](./decisions/0016-field-note-analysis-report-traceability.md)
 - [0017. 고객 데이터 주권 기반 배포](./decisions/0017-customer-data-sovereignty-deployment.md)
+- [0018. 현장 체감 우선 기능: 검색, 사진 기록, 작업순서판](./decisions/0018-field-first-search-sequence-and-photo-records.md)
 
 ## 작성 원칙
 
