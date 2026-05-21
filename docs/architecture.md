@@ -22,6 +22,8 @@ FlowNote는 MES/ERP의 대체 시스템이 아니다. 초기 작업지시와 업
 Web UI
   -> TypeScript + React + Vite
   -> Document Viewer
+  -> Explorer-style Search
+  -> Work Sequence Board / TV View
   -> Admin Console
   -> Field Comment
   -> AI Search / Advice
@@ -138,7 +140,7 @@ DocumentVersion / FieldNote / WorkRecordVersion
 
 ### 3.8 Notification Service
 
-- 문서 버전 상승 같은 이벤트를 알림으로 변환한다.
+- 문서 버전 상승, 현장 사진 기록 등록, 작업순서 변경 같은 이벤트를 알림으로 변환한다.
 - 초기에는 DB 기반 알림 목록 조회 방식으로 시작할 수 있다.
 - 이후 WebSocket, FCM, 내부 푸시 서버로 확장할 수 있다.
 
@@ -179,7 +181,23 @@ DocumentVersion / FieldNote / WorkRecordVersion
 - 작업자, 작업반, 조장, 관리자 대리 등록자 같은 작업 참여 주체를 연결한다.
 - 라인, 공정, 설비, 품목 같은 생산 맥락을 고객별 구조와 태그에 맞게 연결한다.
 
-### 3.14 AI Search / Advice Service
+### 3.14 Work Sequence Service
+
+- 사무실과 관리자급 사용자가 현장 처리 순서를 입력하고 조정한다.
+- 작업순서 항목은 작업내역, 문서 구조 항목, 외부 작업지시 참조와 연결할 수 있다.
+- 현장 TV 화면은 작업순서 항목을 라인, 공정, 설비, 작업반 기준으로 필터링해 표시한다.
+- 반장, 조장, 관리자 권한으로 순서 변경, 보류, 진행중, 완료 상태를 기록한다.
+- 순서 변경과 상태 변경은 이력과 알림 이벤트로 남긴다.
+- MES가 작업 우선순위를 충분히 제공하지 못하는 현장에서는 FlowNote가 사무실 판단을 현장 실행 화면으로 전달하는 계층이 된다.
+
+### 3.15 Basic Search Service
+
+- 파일명, 문서명, 태그, 문서 구조, 작업지시 기준의 탐색기형 검색을 제공한다.
+- 기본 검색은 AI 기능과 분리된 1차 체감 기능으로 둔다.
+- PDF나 Office 문서의 본문 추출 검색은 후속 인덱싱 단계에서 확장한다.
+- 검색 결과는 사용자가 열람 권한을 가진 문서, 사진 기록, 작업순서 항목만 표시한다.
+
+### 3.16 AI Search / Advice Service
 
 - 문서, 버전, 태그, 현장 코멘트, 보고서, 작업내역을 검색 인덱스에 반영한다.
 - MES/ERP에서 연동된 정형 데이터와 FlowNote의 현장지식 데이터를 함께 참조한다.
@@ -189,7 +207,7 @@ DocumentVersion / FieldNote / WorkRecordVersion
 - 권한이 없는 데이터는 검색과 조언에서 제외한다.
 - 과거 생산 데이터 기반 신규 작업 설계나 자동 의사결정은 초기 범위가 아니며, 충분한 운영 데이터가 쌓인 뒤 검토한다.
 
-### 3.15 Auth / Permission Service
+### 3.17 Auth / Permission Service
 
 - 회원 계정, 로그인 세션, 그룹, 역할 기반 권한을 관리한다.
 - 현장 작업자 또는 작업그룹은 로그인 계정과 1:1로 같지 않을 수 있으므로 작업 주체 정보를 별도로 관리할 수 있게 한다.
@@ -198,22 +216,23 @@ DocumentVersion / FieldNote / WorkRecordVersion
 - 관리자는 문서 수정, 삭제, 버전 업로드, 권한 관리, 파일 감시를 수행할 수 있다.
 - 문서 다운로드는 관리자급 권한에서만 허용한다.
 
-### 3.16 Viewer Session Service
+### 3.18 Viewer Session Service
 
 - 문서 뷰어 세션과 자동 닫힘은 클라이언트 앱 단계에서 구현한다.
 - 1차 Web/API에서는 실제 자동 닫힘 기능을 구현하지 않는다.
 - 클라이언트 앱 단계에서 자동 닫힘, 사용자 닫힘, 권한 실패를 접근 로그 또는 감사 로그로 남길 수 있다.
 
-### 3.17 Legacy Document Import / Parsing Service
+### 3.19 Legacy Document Import / Parsing Service
 
 - 기존 문서 대장, 작업지시서, 관리 파일의 파싱을 지원한다.
 - 고객이 이미 쓰던 정리 체계를 FlowNote 문서 구조와 태그로 전환하는 것을 돕는다.
 - 이 기능은 1차 구현 범위가 아니며, 개발 단계는 추후 결정한다.
 
-### 3.18 Audit / History Service
+### 3.20 Audit / History Service
 
 - 문서 변경 이력, 버전 추가, 상태 변경, 접근 로그를 기록한다.
 - 문서 수정자, 버전 등록자, 문서 열람자, 현장 코멘트 등록자, 실제 전달자 또는 작업자를 추적한다.
+- 사진 기록 등록자, 작업순서 변경자, 작업순서 상태 변경자도 추적한다.
 - 파일 감시 후보 처리와 AI 조언 요청도 필요 시 감사 대상으로 기록한다.
 - 외부 시스템 연동 수신/동기화 실패도 감사 또는 운영 로그 대상으로 둔다.
 - 로그인, 다운로드, 뷰어 자동 닫힘 같은 보안 이벤트도 기록 대상으로 둔다.
@@ -288,6 +307,18 @@ Web UI
   -> 근거 문서와 버전 표시
 ```
 
+### 4.6 작업순서 공유
+
+```text
+사무실 / 관리자
+  -> 작업순서판 선택
+  -> 작업 항목 추가 또는 순서 조정
+  -> WorkSequenceHistory 기록
+  -> Notification 생성
+  -> 현장 TV 화면 갱신
+  -> 반장 / 조장 / 작업자 확인
+```
+
 ## 5. 저장소와 인덱스
 
 ```text
@@ -308,6 +339,11 @@ Search Index
   -> Extracted text
   -> Source reference
   -> Permission scope
+
+Work Sequence
+  -> Board
+  -> Ordered items
+  -> Status history
 ```
 
 검색 인덱스는 원본 데이터가 아니다. 원본은 DB와 파일 저장소에 보관하고, 인덱스는 검색과 AI 조언을 위한 참조 데이터로만 사용한다.

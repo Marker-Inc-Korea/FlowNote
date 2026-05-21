@@ -22,7 +22,10 @@ File Upload: multipart/form-data
 - 브릿지 기능은 단말기 모드와 사용자 권한에 따라 제한한다.
 - 웹 UI는 TypeScript + React + Vite 기반 SPA로 작성한다.
 - 운영 환경에서는 일반 브라우저 직접 접근보다 승인된 클라이언트 앱의 WebView 접근을 기본으로 한다.
+- 현장 사용자는 탐색기형 기본 검색으로 파일명, 문서명, 태그, 문서 구조, 작업지시 기준의 문서를 찾을 수 있어야 한다.
 - 현장 코멘트 입력은 신호등식 기록, 기본 정형 문구, 짧은 메모, 관리자 대리 입력을 우선 지원한다.
+- 현장 코멘트와 작업일지성 기록은 사진 첨부를 지원한다.
+- 작업순서판은 관리자 입력과 현장 조정 이력을 기준으로 현장 TV 화면에 표시한다.
 - 현장 코멘트는 원천 이력이며, 관리자 검토/분석과 보고서 문서로 정제되는 흐름을 가진다.
 - 문서 수정자, 열람자, 코멘트 등록자, 실제 전달자 또는 작업자 정보를 추적한다.
 - 메타데이터 DB는 MySQL을 기본으로 한다.
@@ -46,6 +49,16 @@ File Upload: multipart/form-data
 | GET | `/documents/{documentId}/versions/{versionNo}/download` | 관리자 특정 버전 다운로드 API 후보. 클라이언트 앱 단계 |
 | GET | `/documents/{documentId}/history` | 문서 이력 조회 |
 | GET | `/documents/{documentId}/access-logs` | 접근 로그 조회 |
+
+기본 검색 API:
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/search/documents` | 파일명, 문서명, 태그, 구조, 작업지시 기준 문서 검색 |
+| GET | `/search/field-notes` | 현장 코멘트와 사진 기록 검색 |
+| GET | `/search/work-sequences` | 작업순서 항목 검색 |
+
+기본 검색은 AI 검색과 분리한다. 1차 MVP에서는 사용자가 권한을 가진 문서와 기록만 목록으로 제공하고, PDF/Office 본문 추출 검색은 후속 인덱싱 단계에서 확장한다.
 
 문서 등록 요청 필드:
 
@@ -102,6 +115,7 @@ multipart/form-data
 | POST | `/terminal/viewer-sessions/{viewerSessionId}/close` | 문서 뷰어 닫힘 기록. 클라이언트 앱 단계 |
 | GET | `/terminal/notifications` | 단말기 알림 목록 조회 |
 | POST | `/terminal/notifications/{notificationId}/read` | 알림 읽음 처리 |
+| GET | `/terminal/work-sequence-boards/{boardId}` | 현장 TV용 작업순서판 조회 |
 
 현장 단말기 등록 예시:
 
@@ -233,6 +247,7 @@ multipart/form-data
 | GET | `/field-notes` | 현장 코멘트 목록 조회 |
 | GET | `/field-notes/{noteId}` | 현장 코멘트 상세 조회 |
 | PATCH | `/field-notes/{noteId}` | 관리자 검토와 정리 |
+| POST | `/field-notes/{noteId}/attachments` | 현장 코멘트 사진 또는 첨부 등록 |
 | GET | `/documents/{documentId}/field-notes` | 문서별 코멘트 조회 |
 | GET | `/document-structures/{structureId}/items/{itemId}/field-notes` | 문서 구조 항목별 코멘트 조회 |
 
@@ -296,6 +311,16 @@ multipart/form-data
 }
 ```
 
+사진 첨부 등록 요청 필드:
+
+```text
+multipart/form-data
+- file: binary
+- attachmentType: photo
+- caption: string
+- capturedAt: string
+```
+
 ## 10. 정형 문구 API
 
 | Method | Path | 설명 |
@@ -347,7 +372,52 @@ multipart/form-data
 | GET | `/work-records/{workRecordId}/versions` | 작업내역 버전 목록 조회 |
 | PUT | `/work-records/{workRecordId}/participants` | 작업자 또는 작업그룹 연결 |
 
-## 13. AI API
+## 13. 작업순서판 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| POST | `/work-sequence-boards` | 작업순서판 생성 |
+| GET | `/work-sequence-boards` | 작업순서판 목록 조회 |
+| GET | `/work-sequence-boards/{boardId}` | 작업순서판 상세 조회 |
+| POST | `/work-sequence-boards/{boardId}/items` | 작업순서 항목 추가 |
+| PATCH | `/work-sequence-boards/{boardId}/items/{sequenceItemId}` | 작업순서 항목 수정 |
+| PUT | `/work-sequence-boards/{boardId}/items/order` | 작업순서 재정렬 |
+| POST | `/work-sequence-boards/{boardId}/items/{sequenceItemId}/status` | 작업순서 상태 변경 |
+| GET | `/work-sequence-boards/{boardId}/history` | 작업순서 변경 이력 조회 |
+
+작업순서 항목 추가 예시:
+
+```json
+{
+  "workRecordId": "work_20260520_000001",
+  "structureItemId": "item_20260520_000010",
+  "title": "A 제품 조립",
+  "sequenceNo": 10,
+  "priority": 1,
+  "status": "WAITING",
+  "assignedOperatorId": "op-line-a-lead"
+}
+```
+
+작업순서 재정렬 예시:
+
+```json
+{
+  "items": [
+    {
+      "sequenceItemId": "seq_20260520_000002",
+      "sequenceNo": 10
+    },
+    {
+      "sequenceItemId": "seq_20260520_000001",
+      "sequenceNo": 20
+    }
+  ],
+  "changeReason": "납기 우선순위 변경"
+}
+```
+
+## 14. AI API
 
 | Method | Path | 설명 |
 | --- | --- | --- |
@@ -378,7 +448,7 @@ multipart/form-data
 }
 ```
 
-## 14. 외부 시스템 연동 API
+## 15. 외부 시스템 연동 API
 
 | Method | Path | 설명 |
 | --- | --- | --- |
@@ -404,7 +474,7 @@ multipart/form-data
 
 기존 MES/ERP가 있는 현장은 후속 단계에서 현장별 API 어댑터를 통해 데이터를 받아들인다. 현재 단계의 작업지시는 관리자가 직접 입력하고, 외부 연동이 추가되면 같은 문서 구조와 작업내역 구조에 자동 수신 데이터를 매핑한다.
 
-## 15. 오류 코드
+## 16. 오류 코드
 
 | 코드 | 설명 |
 | --- | --- |
@@ -428,6 +498,8 @@ multipart/form-data
 | REPORT_SOURCE_NOT_FOUND | 보고서 원천 연결 없음 |
 | WORK_RECORD_NOT_FOUND | 작업내역 없음 |
 | OPERATOR_NOT_FOUND | 작업자 또는 작업그룹 없음 |
+| WORK_SEQUENCE_BOARD_NOT_FOUND | 작업순서판 없음 |
+| WORK_SEQUENCE_ITEM_NOT_FOUND | 작업순서 항목 없음 |
 | EXTERNAL_SYSTEM_NOT_FOUND | 외부 시스템 없음 |
 | INTEGRATION_MAPPING_NOT_FOUND | 연동 매핑 없음 |
 | INTEGRATION_SYNC_FAILED | 외부 시스템 동기화 실패 |

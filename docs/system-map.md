@@ -14,6 +14,8 @@ FlowNote는 생산현장 문서를 중심으로 문서 버전, 현장 단말기,
 
 FlowNote는 MES/ERP를 대체하지 않는다. 초기 작업지시는 MES 연동 데이터가 아니라 관리자가 직접 입력한 업무 구조로 관리한다. 문서 정리 구조는 프로그램이 강제하지 않고 고객이 결정한다. 기존 MES/ERP가 있으면 후속 단계에서 정형 생산 데이터를 연동하고, FlowNote는 문서, 현장 코멘트, 작업내역, 관리자 보고서를 연결해 AI 활용 데이터를 보강한다.
 
+현장 사용자가 처음 체감해야 하는 기능은 AI보다 탐색기형 검색, 현장 공개 문서 뷰어, 사진 기록, 작업순서판과 현장 TV 화면이다. FlowNote는 문서관리와 현장지식의 구조를 유지하면서도, 현장에서 바로 찾고 보고 움직일 수 있는 운영 화면을 초기 우선순위로 둔다.
+
 기본 기술 기준은 다음과 같다.
 
 | 영역 | 기준 |
@@ -48,6 +50,7 @@ DocumentStructure
 TerminalDevice
   -> viewer
       -> Published document view
+      -> Work sequence TV view
       -> ViewerSession timeout (client app phase)
       -> FieldNote create
       -> Download control (client app phase)
@@ -60,6 +63,8 @@ TerminalDevice
 FieldNote
   -> Document
   -> DocumentVersion
+  -> FieldNoteAttachment
+      -> FileObject
   -> OperatorProfile / UserAccount
   -> CommentTemplate
   -> ReportSource
@@ -71,12 +76,19 @@ WorkRecord
   -> WorkRecordDocument
       -> Document
       -> DocumentVersion
+  -> WorkSequenceItem
 
 SearchIndexItem
   -> DocumentVersion
   -> FieldNote
   -> Report
   -> WorkRecordVersion
+
+WorkSequenceBoard
+  -> WorkSequenceItem
+      -> WorkRecord
+      -> DocumentStructureItem
+      -> WorkSequenceHistory
 
 AiAdviceLog
   -> WorkRecord
@@ -134,6 +146,8 @@ OperatorProfile / UserAccount
 - 현장 코멘트 태그: 문제점이나 경험이 발생한 설비, 품목, 공정, 오류 유형을 표시
 
 같은 태그를 공유하는 문서와 현장 코멘트는 검색, 보고서, AI 조언에서 서로 연결될 수 있어야 한다.
+
+기본 검색은 AI와 별개로 제공한다. 파일명, 문서명, 태그, 문서 구조, 작업지시 기준으로 윈도우 탐색기처럼 목록을 좁히고 바로 열람하는 경험을 우선한다.
 
 ## 4.2 MES/ERP와의 관계
 
@@ -228,6 +242,14 @@ Web UI
 - `WorkRecord`: 작업 단위
 - `WorkRecordVersion`: 작업내역 개정 단위
 - `WorkRecordDocument`: 작업과 관련 문서 연결
+
+작업순서판은 작업내역 또는 문서 구조 항목을 현장에서 처리할 순서로 배치한다.
+
+- `WorkSequenceBoard`: 라인, 공정, 현장 구역별 작업순서판
+- `WorkSequenceItem`: 표시 순서, 상태, 담당 작업반 또는 조장 정보
+- `WorkSequenceHistory`: 순서 변경과 상태 변경 이력
+
+작업순서판은 MES의 작업지시 원본을 대체하지 않는다. MES가 순서를 판단하지 못하거나 현장 판단이 필요한 경우 사무실, 관리자, 반장, 조장이 조정한 실행 순서를 현장 TV 화면으로 공유한다.
 
 AI 검색과 조언은 원본 데이터를 대체하지 않는다. `SearchIndexItem`은 검색용 참조 데이터이고, `AiAdviceLog`는 AI 요청과 결과의 기록이다.
 
