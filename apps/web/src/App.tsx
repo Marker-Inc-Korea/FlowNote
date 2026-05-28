@@ -956,6 +956,354 @@ function getSpreadsheetCellName(columnIndex: number, rowIndex: number) {
   return `${getSpreadsheetColumnName(columnIndex + 1)}${rowIndex + 1}`;
 }
 
+function parseSpreadsheetCellName(cellName: string) {
+  const match = cellName.trim().toUpperCase().match(/^([A-Z]+)(\d+)$/);
+
+  if (!match) {
+    return null;
+  }
+
+  let columnNumber = 0;
+
+  for (const character of match[1]) {
+    columnNumber = columnNumber * 26 + character.charCodeAt(0) - 64;
+  }
+
+  const rowIndex = Number(match[2]) - 1;
+  const columnIndex = columnNumber - 1;
+
+  if (
+    rowIndex < 0 ||
+    rowIndex >= spreadsheetRowCount ||
+    columnIndex < 0 ||
+    columnIndex >= spreadsheetColumnLabels.length
+  ) {
+    return null;
+  }
+
+  return { columnIndex, rowIndex };
+}
+
+function parseSpreadsheetNumber(value: string) {
+  const normalizedValue = value.trim().replace(/,/g, "");
+
+  if (!normalizedValue) {
+    return 0;
+  }
+
+  const numberValue = Number(normalizedValue);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function formatSpreadsheetFormulaResult(value: number) {
+  if (!Number.isFinite(value)) {
+    return "#ERROR!";
+  }
+
+  return String(Number(value.toFixed(10)));
+}
+
+function tokenizeSpreadsheetArithmeticExpression(expression: string) {
+  const tokens: Array<number | string> = [];
+  let index = 0;
+
+  while (index < expression.length) {
+    const character = expression[index];
+
+    if (/\s/.test(character)) {
+      index += 1;
+      continue;
+    }
+
+    if ("+-*/()".includes(character)) {
+      tokens.push(character);
+      index += 1;
+      continue;
+    }
+
+    const numberMatch = expression.slice(index).match(/^\d+(?:\.\d+)?/);
+
+    if (numberMatch) {
+      tokens.push(Number(numberMatch[0]));
+      index += numberMatch[0].length;
+      continue;
+    }
+
+    throw new Error("Unsupported arithmetic token");
+  }
+
+  return tokens;
+}
+
+function evaluateSpreadsheetArithmeticExpression(expression: string) {
+  const tokens = tokenizeSpreadsheetArithmeticExpression(expression);
+  let index = 0;
+
+  function peekToken() {
+    return tokens[index];
+  }
+
+  function consumeToken() {
+    const token = tokens[index];
+    index += 1;
+    return token;
+  }
+
+  function parseFactor(): number {
+    const token = consumeToken();
+
+    if (typeof token === "number") {
+      return token;
+    }
+
+    if (token === "+") {
+      return parseFactor();
+    }
+
+    if (token === "-") {
+      return -parseFactor();
+    }
+
+    if (token === "(") {
+      const value = parseExpression();
+
+      if (consumeToken() !== ")") {
+        throw new Error("Missing closing parenthesis");
+      }
+
+      return value;
+    }
+
+    throw new Error("Unsupported arithmetic factor");
+  }
+
+  function parseTerm() {
+    let value = parseFactor();
+
+    while (peekToken() === "*" || peekToken() === "/") {
+      const operator = consumeToken();
+      const rightValue = parseFactor();
+
+      if (operator === "*") {
+        value *= rightValue;
+      } else {
+        value /= rightValue;
+      }
+    }
+
+    return value;
+  }
+
+  function parseExpression() {
+    let value = parseTerm();
+
+    while (peekToken() === "+" || peekToken() === "-") {
+      const operator = consumeToken();
+      const rightValue = parseTerm();
+
+      if (operator === "+") {
+        value += rightValue;
+      } else {
+        value -= rightValue;
+      }
+    }
+
+    return value;
+  }
+
+  const result = parseExpression();
+
+  if (index !== tokens.length) {
+    throw new Error("Unexpected arithmetic token");
+  }
+
+  return result;
+}
+
+function evaluateSpreadsheetCellValue(
+  cells: string[][],
+  rowIndex: number,
+  columnIndex: number,
+  visitingCells: Set<string>
+): string {
+  const rawValue = cells[rowIndex]?.[columnIndex] ?? "";
+  const trimmedValue = rawValue.trim();
+
+  if (!trimmedValue.startsWith("=")) {
+    return rawValue;
+  }
+
+  const cellName = getSpreadsheetCellName(columnIndex, rowIndex);
+
+  if (visitingCells.has(cellName)) {
+    return "#CYCLE!";
+  }
+
+  visitingCells.add(cellName);
+
+  try {
+    const result = evaluateSpreadsheetFormulaExpression(
+      cells,
+      trimmedValue.slice(1),
+      visitingCells
+    );
+
+    return formatSpreadsheetFormulaResult(result);
+  } catch {
+    return "#ERROR!";
+  } finally {
+    visitingCells.delete(cellName);
+  }
+}
+
+function getSpreadsheetReferenceNumber(
+  cells: string[][],
+  reference: string,
+  visitingCells: Set<string>
+) {
+  const cellPosition = parseSpreadsheetCellName(reference);
+
+  if (!cellPosition) {
+    throw new Error("Unknown cell reference");
+  }
+
+  const displayedValue = evaluateSpreadsheetCellValue(
+    cells,
+    cellPosition.rowIndex,
+    cellPosition.columnIndex,
+    visitingCells
+  );
+  const numberValue = parseSpreadsheetNumber(displayedValue);
+
+  if (numberValue === null) {
+    throw new Error("Referenced cell is not numeric");
+  }
+
+  return numberValue;
+}
+
+function getSpreadsheetRangeNumbers(
+  cells: string[][],
+  rangeReference: string,
+  visitingCells: Set<string>
+) {
+  const [startReference, endReference] = rangeReference.split(":");
+  const startCell = parseSpreadsheetCellName(startReference);
+  const endCell = parseSpreadsheetCellName(endReference);
+
+  if (!startCell || !endCell) {
+    throw new Error("Unknown cell range");
+  }
+
+  const minRowIndex = Math.min(startCell.rowIndex, endCell.rowIndex);
+  const maxRowIndex = Math.max(startCell.rowIndex, endCell.rowIndex);
+  const minColumnIndex = Math.min(startCell.columnIndex, endCell.columnIndex);
+  const maxColumnIndex = Math.max(startCell.columnIndex, endCell.columnIndex);
+  const numbers: number[] = [];
+
+  for (let rowIndex = minRowIndex; rowIndex <= maxRowIndex; rowIndex += 1) {
+    for (
+      let columnIndex = minColumnIndex;
+      columnIndex <= maxColumnIndex;
+      columnIndex += 1
+    ) {
+      const displayedValue = evaluateSpreadsheetCellValue(
+        cells,
+        rowIndex,
+        columnIndex,
+        visitingCells
+      );
+      const numberValue = parseSpreadsheetNumber(displayedValue);
+
+      if (numberValue !== null) {
+        numbers.push(numberValue);
+      }
+    }
+  }
+
+  return numbers;
+}
+
+function getSpreadsheetFormulaArgumentNumbers(
+  cells: string[][],
+  argumentText: string,
+  visitingCells: Set<string>
+) {
+  return argumentText
+    .split(",")
+    .flatMap((argument) => {
+      const trimmedArgument = argument.trim().toUpperCase();
+
+      if (!trimmedArgument) {
+        return [];
+      }
+
+      if (/^[A-Z]+\d+:[A-Z]+\d+$/.test(trimmedArgument)) {
+        return getSpreadsheetRangeNumbers(cells, trimmedArgument, visitingCells);
+      }
+
+      if (/^[A-Z]+\d+$/.test(trimmedArgument)) {
+        return [
+          getSpreadsheetReferenceNumber(cells, trimmedArgument, visitingCells)
+        ];
+      }
+
+      return [
+        evaluateSpreadsheetFormulaExpression(cells, trimmedArgument, visitingCells)
+      ];
+    });
+}
+
+function evaluateSpreadsheetFormulaExpression(
+  cells: string[][],
+  expression: string,
+  visitingCells: Set<string>
+): number {
+  let normalizedExpression = expression.trim().toUpperCase();
+  const functionPattern = /\b(SUM|AVERAGE|MIN|MAX|COUNT)\(([^()]*)\)/;
+  let functionMatch = normalizedExpression.match(functionPattern);
+
+  while (functionMatch) {
+    const [, functionName, argumentText] = functionMatch;
+    const numbers = getSpreadsheetFormulaArgumentNumbers(
+      cells,
+      argumentText,
+      visitingCells
+    );
+    let value = 0;
+
+    if (functionName === "SUM") {
+      value = numbers.reduce((sum, numberValue) => sum + numberValue, 0);
+    } else if (functionName === "AVERAGE") {
+      value =
+        numbers.length > 0
+          ? numbers.reduce((sum, numberValue) => sum + numberValue, 0) /
+            numbers.length
+          : 0;
+    } else if (functionName === "MIN") {
+      value = numbers.length > 0 ? Math.min(...numbers) : 0;
+    } else if (functionName === "MAX") {
+      value = numbers.length > 0 ? Math.max(...numbers) : 0;
+    } else if (functionName === "COUNT") {
+      value = numbers.length;
+    }
+
+    normalizedExpression = normalizedExpression.replace(
+      functionMatch[0],
+      String(value)
+    );
+    functionMatch = normalizedExpression.match(functionPattern);
+  }
+
+  const arithmeticExpression = normalizedExpression.replace(
+    /\b[A-Z]+\d+\b/g,
+    (reference) =>
+      String(getSpreadsheetReferenceNumber(cells, reference, visitingCells))
+  );
+
+  return evaluateSpreadsheetArithmeticExpression(arithmeticExpression);
+}
+
 function isProtectedDocumentFolder(folder: Pick<DocumentFolder, "folderId" | "name">) {
   return folder.folderId === "folder-my-pc-journal";
 }
@@ -979,8 +1327,23 @@ function SpreadsheetEditor({
   const [activeRibbonTab, setActiveRibbonTab] =
     useState<SpreadsheetRibbonTab>("home");
   const [activeCellName, setActiveCellName] = useState("A1");
+  const [editingCellName, setEditingCellName] = useState<string | null>(null);
   const [formulaValue, setFormulaValue] = useState("");
   const gridTemplateColumns = `3rem repeat(${spreadsheetColumnLabels.length}, 4.5rem)`;
+  const displayedCells = useMemo(
+    () =>
+      initialCells.map((row, rowIndex) =>
+        row.map((_, columnIndex) =>
+          evaluateSpreadsheetCellValue(
+            initialCells,
+            rowIndex,
+            columnIndex,
+            new Set()
+          )
+        )
+      ),
+    [initialCells]
+  );
 
   function commitFormulaValue() {
     if (disabled) {
@@ -998,6 +1361,10 @@ function SpreadsheetEditor({
 
   function getCellValue(rowIndex: number, columnIndex: number) {
     return initialCells[rowIndex]?.[columnIndex] ?? "";
+  }
+
+  function getCellDisplayValue(rowIndex: number, columnIndex: number) {
+    return displayedCells[rowIndex]?.[columnIndex] ?? "";
   }
 
   function cloneSpreadsheetCells() {
@@ -1023,7 +1390,9 @@ function SpreadsheetEditor({
   }
 
   function selectCell(rowIndex: number, columnIndex: number) {
-    setActiveCellName(getSpreadsheetCellName(columnIndex, rowIndex));
+    const cellName = getSpreadsheetCellName(columnIndex, rowIndex);
+    setActiveCellName(cellName);
+    setEditingCellName(cellName);
     setFormulaValue(getCellValue(rowIndex, columnIndex));
   }
 
@@ -1241,9 +1610,11 @@ function SpreadsheetEditor({
         <input
           aria-label="수식 입력줄"
           disabled={disabled}
+          onFocus={() => setEditingCellName(null)}
           onChange={(event) => setFormulaValue(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
+              event.preventDefault();
               commitFormulaValue();
             }
           }}
@@ -1268,23 +1639,36 @@ function SpreadsheetEditor({
               {spreadsheetColumnLabels.map((columnLabel, columnIndex) => {
                 const cellName = getSpreadsheetCellName(columnIndex, rowIndex);
                 const isActive = activeCellName === cellName;
+                const isEditing = editingCellName === cellName;
 
                 return (
                   <input
                     aria-label={cellName}
                     className={isActive ? "active" : ""}
                     key={cellName}
-                    onChange={(event) =>
-                      updateCell(rowIndex, columnIndex, event.target.value)
+                    onBlur={() =>
+                      setEditingCellName((currentCellName) =>
+                        currentCellName === cellName ? null : currentCellName
+                      )
                     }
+                    onChange={(event) => {
+                      setFormulaValue(event.target.value);
+                      updateCell(rowIndex, columnIndex, event.target.value);
+                    }}
                     onFocus={() => selectCell(rowIndex, columnIndex)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();
+                        setEditingCellName(null);
+                        event.currentTarget.blur();
                       }
                     }}
                     readOnly={disabled}
-                    value={getCellValue(rowIndex, columnIndex)}
+                    value={
+                      isEditing
+                        ? formulaValue
+                        : getCellDisplayValue(rowIndex, columnIndex)
+                    }
                   />
                 );
               })}
