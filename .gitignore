@@ -18,6 +18,9 @@ desktop.ini
 *.log
 logs/
 
+# FlowNote local uploads
+services/api/storage/documents/
+
 # Node / web
 node_modules/
 dist/
@@ -25,6 +28,7 @@ build/
 .next/
 out/
 coverage/
+*.tsbuildinfo
 
 # Android / Gradle
 .gradle/
