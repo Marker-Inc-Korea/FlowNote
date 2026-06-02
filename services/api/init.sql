@@ -485,6 +485,25 @@ CREATE TABLE IF NOT EXISTS work_sequence_history (
     ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS search_index_item (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  source_type ENUM('DOCUMENT', 'FIELD_JOURNAL', 'WORK_SEQUENCE') NOT NULL,
+  source_internal_id BIGINT UNSIGNED NOT NULL,
+  source_public_id VARCHAR(100) NOT NULL,
+  source_version VARCHAR(80) NULL,
+  title VARCHAR(240) NOT NULL,
+  content_text MEDIUMTEXT NOT NULL,
+  tag_text VARCHAR(1000) NULL,
+  permission_scope JSON NOT NULL,
+  source_updated_at DATETIME NULL,
+  indexed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_search_index_source (source_type, source_internal_id),
+  KEY ix_search_index_source_public (source_type, source_public_id),
+  KEY ix_search_index_updated (source_updated_at),
+  FULLTEXT KEY ft_search_index_text (title, content_text, tag_text)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT INTO role (role_id, role_name, description)
 VALUES
   ('super-admin', '최고관리자', '회원 등급과 시스템 설정을 관리'),
