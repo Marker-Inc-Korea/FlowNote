@@ -32,6 +32,7 @@ const allowedWorkSequenceStatuses = [
   "DONE",
   "CANCELED"
 ];
+const searchableSourceTypes = ["DOCUMENT", "FIELD_JOURNAL", "WORK_SEQUENCE"];
 const a4PortraitPage = {
   height: 842,
   width: 595
@@ -1673,6 +1674,286 @@ function normalizeNullableInteger(value, fieldLabel, minimum = 0) {
   }
 
   return { value: numberValue };
+}
+
+function normalizeSearchQuery(value) {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, 200) : null;
+}
+
+function normalizeSearchSourceType(value) {
+  const normalizedValue = typeof value === "string" ? value.trim().toUpperCase() : "";
+
+  return searchableSourceTypes.includes(normalizedValue) ? normalizedValue : null;
+}
+
+function normalizeSearchLimit(value) {
+  const numberValue = Number(value ?? 20);
+
+  if (!Number.isInteger(numberValue)) {
+    return 20;
+  }
+
+  return Math.min(Math.max(numberValue, 1), 50);
+}
+
+function escapeSqlLike(value) {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+function toSearchIndexResult(row) {
+  return {
+    sourceType: row.source_type,
+    sourceId: row.source_public_id,
+    sourceVersion: row.source_version,
+    title: row.title,
+    contentPreview: String(row.content_text ?? "").slice(0, 500),
+    tags: row.tag_text ? String(row.tag_text).split(/\s+/).filter(Boolean) : [],
+    permissionScope: parseJsonValue(row.permission_scope),
+    sourceUpdatedAt: row.source_updated_at,
+    indexedAt: row.indexed_at,
+    score: Number(row.score ?? 0)
+  };
+}
+
+async function ensureSearchIndexTable(connection = pool) {
+  await connection.execute(`
+    CREATE TABLE IF NOT EXISTS search_index_item (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      source_type ENUM('DOCUMENT', 'FIELD_JOURNAL', 'WORK_SEQUENCE') NOT NULL,
+      source_internal_id BIGINT UNSIGNED NOT NULL,
+      source_public_id VARCHAR(100) NOT NULL,
+      source_version VARCHAR(80) NULL,
+      title VARCHAR(240) NOT NULL,
+      content_text MEDIUMTEXT NOT NULL,
+      tag_text VARCHAR(1000) NULL,
+      permission_scope JSON NOT NULL,
+      source_updated_at DATETIME NULL,
+      indexed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_search_index_source (source_type, source_internal_id),
+      KEY ix_search_index_source_public (source_type, source_public_id),
+      KEY ix_search_index_updated (source_updated_at),
+      FULLTEXT KEY ft_search_index_text (title, content_text, tag_text)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+async function rebuildSearchIndex(connection = pool) {
+  await ensureSearchIndexTable(connection);
+  await connection.execute("DELETE FROM search_index_item");
+
+  const [documentResult] = await connection.execute(`
+    INSERT INTO search_index_item (
+      source_type,
+      source_internal_id,
+      source_public_id,
+      source_version,
+      title,
+      content_text,
+      tag_text,
+      permission_scope,
+      source_updated_at
+    )
+    SELECT
+      'DOCUMENT',
+      d.id,
+      d.document_id,
+      d.current_version,
+      d.file_name,
+      CONCAT_WS(
+        '\n',
+        d.file_name,
+        d.meta_text,
+        d.category_path,
+        d.current_version,
+        d.security_level,
+        d.summary,
+        folder.folder_name,
+        GROUP_CONCAT(DISTINCT tag.tag_name ORDER BY tag.tag_name SEPARATOR ' '),
+        GROUP_CONCAT(DISTINCT version.change_note ORDER BY version.published_at DESC SEPARATOR '\n')
+      ),
+      GROUP_CONCAT(DISTINCT tag.tag_name ORDER BY tag.tag_name SEPARATOR ' '),
+      JSON_OBJECT(
+        'source', 'document_file',
+        'documentId', d.document_id,
+        'folderId', folder.folder_id,
+        'securityLevel', d.security_level
+      ),
+      d.updated_at
+    FROM document_file d
+    JOIN document_folder folder ON folder.id = d.folder_id
+    LEFT JOIN document_file_tag file_tag ON file_tag.document_file_id = d.id
+    LEFT JOIN document_tag tag ON tag.id = file_tag.tag_id
+    LEFT JOIN document_file_version version ON version.document_file_id = d.id
+    GROUP BY d.id, folder.folder_id, folder.folder_name
+  `);
+
+  const [journalResult] = await connection.execute(`
+    INSERT INTO search_index_item (
+      source_type,
+      source_internal_id,
+      source_public_id,
+      source_version,
+      title,
+      content_text,
+      tag_text,
+      permission_scope,
+      source_updated_at
+    )
+    SELECT
+      'FIELD_JOURNAL',
+      journal.id,
+      journal.journal_id,
+      document.current_version,
+      document.file_name,
+      CONCAT_WS(
+        '\n',
+        document.file_name,
+        journal.memo,
+        journal.photo_file_name,
+        IF(journal.is_handover = 1, 'handover', NULL),
+        journal.handover_to,
+        journal.handover_status,
+        creator.display_name,
+        GROUP_CONCAT(DISTINCT reply.reply_text ORDER BY reply.created_at ASC SEPARATOR '\n'),
+        GROUP_CONCAT(DISTINCT tag.tag_name ORDER BY tag.tag_name SEPARATOR ' ')
+      ),
+      GROUP_CONCAT(DISTINCT tag.tag_name ORDER BY tag.tag_name SEPARATOR ' '),
+      JSON_OBJECT(
+        'source', 'field_journal_entry',
+        'journalId', journal.journal_id,
+        'documentId', document.document_id,
+        'securityLevel', document.security_level
+      ),
+      journal.created_at
+    FROM field_journal_entry journal
+    JOIN document_file document ON document.id = journal.document_file_id
+    LEFT JOIN user_account creator ON creator.id = journal.created_by
+    LEFT JOIN field_journal_reply reply ON reply.field_journal_entry_id = journal.id
+    LEFT JOIN document_file_tag file_tag ON file_tag.document_file_id = document.id
+    LEFT JOIN document_tag tag ON tag.id = file_tag.tag_id
+    GROUP BY journal.id, document.id, creator.id
+  `);
+
+  const [workSequenceResult] = await connection.execute(`
+    INSERT INTO search_index_item (
+      source_type,
+      source_internal_id,
+      source_public_id,
+      source_version,
+      title,
+      content_text,
+      tag_text,
+      permission_scope,
+      source_updated_at
+    )
+    SELECT
+      'WORK_SEQUENCE',
+      item.id,
+      item.sequence_item_id,
+      NULL,
+      item.title,
+      CONCAT_WS(
+        '\n',
+        board.board_name,
+        board.location_name,
+        item.title,
+        item.product_code,
+        item.assigned_team,
+        item.target_quantity,
+        item.linked_document_name,
+        linked_document.file_name,
+        item.status,
+        item.memo
+      ),
+      NULL,
+      JSON_OBJECT(
+        'source', 'work_sequence_item',
+        'sequenceItemId', item.sequence_item_id,
+        'boardId', board.board_id,
+        'linkedDocumentId', linked_document.document_id
+      ),
+      item.updated_at
+    FROM work_sequence_item item
+    JOIN work_sequence_board board ON board.id = item.board_id
+    LEFT JOIN document_file linked_document ON linked_document.id = item.linked_document_file_id
+    WHERE item.status <> 'CANCELED'
+  `);
+
+  return {
+    documents: Number(documentResult.affectedRows ?? 0),
+    fieldJournals: Number(journalResult.affectedRows ?? 0),
+    workSequences: Number(workSequenceResult.affectedRows ?? 0)
+  };
+}
+
+async function searchIndexItems({ query, sourceType, limit }, connection = pool) {
+  await ensureSearchIndexTable(connection);
+
+  if (!query) {
+    const [rows] = await connection.execute(
+      `
+        SELECT
+          source_type,
+          source_public_id,
+          source_version,
+          title,
+          content_text,
+          tag_text,
+          permission_scope,
+          source_updated_at,
+          indexed_at,
+          0 AS score
+        FROM search_index_item
+        WHERE (:sourceType IS NULL OR source_type = :sourceType)
+        ORDER BY source_updated_at DESC, indexed_at DESC
+        LIMIT :limit
+      `,
+      { limit, sourceType }
+    );
+
+    return rows.map(toSearchIndexResult);
+  }
+
+  const likeQuery = `%${escapeSqlLike(query)}%`;
+  const [rows] = await connection.execute(
+    `
+      SELECT
+        source_type,
+        source_public_id,
+        source_version,
+        title,
+        content_text,
+        tag_text,
+        permission_scope,
+        source_updated_at,
+        indexed_at,
+        (
+          MATCH(title, content_text, tag_text) AGAINST (:query IN NATURAL LANGUAGE MODE)
+          + CASE WHEN title LIKE :likeQuery ESCAPE '\\\\' THEN 20 ELSE 0 END
+          + CASE WHEN tag_text LIKE :likeQuery ESCAPE '\\\\' THEN 10 ELSE 0 END
+          + CASE WHEN content_text LIKE :likeQuery ESCAPE '\\\\' THEN 5 ELSE 0 END
+        ) AS score
+      FROM search_index_item
+      WHERE (:sourceType IS NULL OR source_type = :sourceType)
+        AND (
+          MATCH(title, content_text, tag_text) AGAINST (:query IN NATURAL LANGUAGE MODE)
+          OR title LIKE :likeQuery ESCAPE '\\\\'
+          OR content_text LIKE :likeQuery ESCAPE '\\\\'
+          OR tag_text LIKE :likeQuery ESCAPE '\\\\'
+        )
+      ORDER BY score DESC, source_updated_at DESC, indexed_at DESC
+      LIMIT :limit
+    `,
+    {
+      likeQuery,
+      limit,
+      query,
+      sourceType
+    }
+  );
+
+  return rows.map(toSearchIndexResult);
 }
 
 async function resolveLinkedDocument(connection, linkedDocumentId, linkedDocumentName) {
@@ -4654,6 +4935,65 @@ app.get("/api/v1/system-history", async (req, res, next) => {
 
     res.json({
       history
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/v1/ai/index/rebuild", async (req, res, next) => {
+  try {
+    const user = await requireSuperAdmin(req, res);
+
+    if (!user) {
+      return;
+    }
+
+    const connection = await pool.getConnection();
+
+    try {
+      await connection.beginTransaction();
+      const counts = await rebuildSearchIndex(connection);
+      await connection.commit();
+
+      res.json({
+        indexed: {
+          ...counts,
+          total: counts.documents + counts.fieldJournals + counts.workSequences
+        }
+      });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/v1/ai/search", async (req, res, next) => {
+  try {
+    const user = await requireLogin(req, res);
+
+    if (!user) {
+      return;
+    }
+
+    const query = normalizeSearchQuery(req.body?.query);
+    const sourceType = normalizeSearchSourceType(req.body?.sourceType);
+    const limit = normalizeSearchLimit(req.body?.limit);
+    const results = await searchIndexItems({
+      limit,
+      query,
+      sourceType
+    });
+
+    res.json({
+      query,
+      sourceType,
+      results
     });
   } catch (error) {
     next(error);
