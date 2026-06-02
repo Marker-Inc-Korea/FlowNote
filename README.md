@@ -1,5 +1,9 @@
 # FlowNote
 
+## Development Access
+
+- Shared development and test endpoints are recorded in [docs/development-access.md](./docs/development-access.md).
+
 FlowNote는 생산공장 현장에서 사용하는 기술문서, 도면, 매뉴얼, 작업지시서 등 다양한 업무 문서와 현장 지식을 함께 관리하는 독립형 서버이다.
 
 FlowNote는 파일 저장, 문서 메타데이터, 버전 관리, 권한, 변경 이력, 현장 단말기 열람, 관리자 파일 변경 감지, 현장 코멘트, 보고서 생성 보조, AI 검색과 작업 조언을 제공하는 것을 목표로 한다.
