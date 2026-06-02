@@ -6,6 +6,12 @@ This document records shared development and test access points for FlowNote.
 
 - Web: https://edge-nano-docs.it-sent.com/
 
+## Data Retention
+
+- Development and field testing are running in parallel in this environment.
+- Database records in this test environment may be reset or removed during development, migration, troubleshooting, or field-test preparation.
+- Do not treat test-environment data as permanent production records.
+
 ## Security Note
 
 - This repository is private, but real user accounts, passwords, tokens, API keys, and database connection details should not be committed.
