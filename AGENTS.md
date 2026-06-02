@@ -1,5 +1,12 @@
 # Agent Instructions
 
+## GitHub Push Policy
+
+- Do not push to GitHub unless the user explicitly asks for a push.
+- Changing files, running checks, staging, or creating a local commit does not imply permission to push.
+- If a change should be shared remotely, wait for a direct user instruction to push.
+- Before any push, confirm the target remote and branch if they are not already clear from the current task.
+
 ## Project
 
 FlowNote는 생산공장 현장의 문서와 현장 지식을 함께 관리하는 독립형 서버이다.
