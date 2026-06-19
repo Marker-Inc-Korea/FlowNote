@@ -18,8 +18,14 @@ desktop.ini
 *.log
 logs/
 
-# FlowNote local uploads
-services/api/storage/documents/
+# FlowNote local server data
+services/api/storage/*
+!services/api/storage/.gitkeep
+services/api/data/*
+!services/api/data/.gitkeep
+*.sqlite
+*.sqlite3
+*.db
 
 # Node / web
 node_modules/
@@ -53,6 +59,8 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.pytest_cache/
+.ruff_cache/
 
 # Temporary files
 tmp/

@@ -1,6 +1,6 @@
 # API Service
 
-FlowNote API 서버 영역이다.
+FlowNote Python FastAPI 서버 영역이다.
 
 ## 예상 책임
 
@@ -12,32 +12,54 @@ FlowNote API 서버 영역이다.
 - 현장 코멘트와 정형 문구 관리
 - 작업내역과 보고서 관리
 - AI 검색과 작업 조언 API 제공
-- MySQL 기반 메타데이터 저장
+- SQLite 우선 메타데이터 저장
+- 필요 시 PostgreSQL 전환
+- 서버 PC 로컬 `storage/` 폴더 기반 파일 저장
 
 API 초안은 [docs/api.md](../../docs/api.md)를 기준으로 한다.
 
 ## 로컬 개발
 
-로컬 테스트 DB는 `flowNote`를 사용한다.
+새 개발 방향의 백엔드는 Python을 기준으로 한다. 기존 Node.js 스캐폴딩과 `npm` 실행 방식은 새 구현 기준이 아니며, Python 전환 전 참고 이력으로만 본다.
 
-```bash
-mysql -u root -e "SOURCE /Users/truds/Projects/Project/FlowNote/services/api/init.sql"
-npm install
-npm run dev
-```
+로컬 테스트 DB는 SQLite 파일을 우선 사용한다.
 
-기본 접속 정보는 다음과 같다.
+Python 서버 스캐폴딩을 추가할 때 기준은 다음과 같다.
 
 ```text
-DB: flowNote
-User: flownote
-Password: 1234
-Socket: /tmp/mysql.sock
-API: http://127.0.0.1:5184
-Nginx: http://flownote.localhost:8080/api/v1
+Language: Python FastAPI
+API base path: /api/v1
+Metadata DB: SQLite first, PostgreSQL later if needed
+File storage: local storage folder on the server PC
+File upload: multipart/form-data
+Config: local .env, committed secrets 금지
 ```
 
-현재 구현된 API:
+## 디렉터리
+
+- `app/`: Python API 애플리케이션
+- `app/api/v1/`: `/api/v1` 라우트
+- `app/core/`: 설정과 공통 인프라
+- `data/`: 로컬 SQLite DB 생성 위치. 실제 DB 파일은 커밋하지 않음
+- `storage/`: 서버 로컬 파일 저장 위치. 실제 업로드 파일은 커밋하지 않음
+- `db/`: 기존 MySQL 스키마 참고 자료와 향후 마이그레이션 후보
+- `tests/`: Python API 테스트
+- `legacy-node/`: 이전 Node.js API 코드 보존 영역
+
+## 실행 후보
+
+의존성을 설치한 환경에서는 다음 형태로 로컬 FastAPI 서버를 실행한다.
+
+```bash
+uvicorn app.main:app --host 127.0.0.1 --port 5184 --reload
+```
+
+현재 Python 스캐폴딩에 포함된 API:
+
+- `GET /`
+- `GET /api/v1/health`
+
+이전 Node 구현에 있던 참고 API:
 
 - `GET /api/v1/health`
 - `POST /api/v1/auth/login`
@@ -53,11 +75,4 @@ Nginx: http://flownote.localhost:8080/api/v1
 - `PATCH /api/v1/work-sequence/items/order`
 - `PATCH /api/v1/work-sequence/items/{sequenceItemId}`
 
-초기 개발용 계정:
-
-- 최고관리자: `admin` / `1234`
-- MES 사용자: `mes` / `1234`
-- POP 사용자: `pop` / `1234`
-- 일반 사용자: `user` / `1234`
-
-이전 개발 계정 `field` / `1234`도 POP 사용자로 매핑된다.
+개발용 계정과 비밀번호는 실제 구현 시 로컬 시드 데이터 또는 개발 전용 설정으로만 관리한다. 실제 사용자 계정, 비밀번호, 토큰, API 키, DB 접속 정보는 커밋하지 않는다.

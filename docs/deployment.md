@@ -2,102 +2,73 @@
 
 ## 1. 배포 원칙
 
-FlowNote는 고객 데이터 주권을 배포의 핵심 기준으로 둔다.
+FlowNote는 초기 개발과 현장 테스트를 쉽게 하기 위해 사내 서버형 배포를 기본으로 한다.
 
-생산현장의 기술문서, 도면, 생산규격, 보고서는 외부 클라우드 사용을 꺼리는 경우가 많다. 따라서 FlowNote는 고객이 데이터 저장 위치, 파일 저장소, 인증, 네트워크 접근 정책을 통제할 수 있는 독립 인스턴스를 기본으로 한다.
+생산현장의 기술문서, 도면, 생산규격, 보고서는 외부 클라우드 사용을 꺼리는 경우가 많다. 따라서 1차 배포는 서버 PC 1대에 Python FastAPI 서버, SQLite DB, 로컬 `storage/` 폴더를 두고, 현장/관리자 PC에는 WPF 또는 Avalonia 클라이언트 설치파일을 배포하는 구조로 잡는다.
 
-여러 현장이 하나의 중앙 서비스를 공유하는 구조보다, 고객 또는 현장 단위로 데이터, 파일 저장소, 인증, 네트워크 정책을 분리한다. 다만 이것이 반드시 내부망 로컬 서버만 의미하지는 않는다. 실제 설치와 운영 방식은 고객 보안 정책, 네트워크 정책, 운영 인력, 예산, 외부 접근 필요성에 따라 협의해 결정한다.
-
-FlowNote는 기존 MES/ERP를 대체하지 않는다. 현장에 MES나 ERP가 있으면 해당 시스템과 연동하고, 없으면 필요한 최소 업무 데이터 수집 체계를 별도로 구성한다.
+FlowNote는 기존 MES/ERP를 대체하지 않는다. 현장에 MES나 ERP가 있으면 후속 단계에서 REST API 또는 현장별 어댑터로 연동한다.
 
 ## 2. 서버와 클라이언트
 
-단말기는 서버가 아니라 클라이언트이다.
-
 ```text
-Site Server
-  -> FlowNote API Server
-  -> MySQL
-  -> File Storage
-  -> Search Index
-  -> Integration Adapter
-  -> Web UI
+Server PC
+  -> Python FastAPI Server
+  -> SQLite DB file
+  -> Local storage/ folder
+  -> Search index
+  -> Integration adapter
 
-Client Terminals
-  -> Android Kotlin + WebView
-  -> Windows WPF + WebView2
+Client PCs
+  -> WPF or Avalonia client installer
+  -> REST API communication
 ```
 
-Web UI는 서버에 배포되지만, 고객 생산공장 운영 환경에서 일반 사용자가 브라우저로 직접 접속하는 구조를 기본값으로 두지 않는다. 현장 사용자는 승인된 클라이언트 앱의 WebView를 통해 접근하며, 공장 네트워크 정책에서는 일반 웹 접근을 차단할 수 있어야 한다.
+독립 Web UI는 서버 배포 구성에 포함하지 않는다. 고객 생산공장 운영 환경에서 일반 사용자가 브라우저로 직접 접속하는 구조를 기본값으로 두지 않는다.
 
-## 3. 서버 형태
+## 3. 기본 구성요소
 
-현장 규모와 고객 보안 정책에 따라 서버 형태를 선택할 수 있다.
+- Python FastAPI server
+- SQLite metadata DB
+- Local server storage folder
+- WPF or Avalonia native client
+- REST API
+- Notification outbox
+- Optional search index
+- Optional MES/ERP integration adapter
 
-| 형태 | 사용 상황 |
-| --- | --- |
-| 내부망 대용량 서버 | 문서 수, 사용자 수, AI 검색, 동시 접속이 많고 내부망 운영을 원하는 현장 |
-| 내부망 미니PC 서버 | 소규모 현장, 제한된 문서 수, 내부망 단독 사용 |
-| 고객 사내 서버 | 고객 IT 정책에 따라 사내 서버실 또는 사내 가상화 환경에서 운영 |
-| 전용 클라우드 또는 전용 호스팅 | 고객이 승인한 클라우드/호스팅에서 독립 인스턴스로 운영 |
-| 인가된 외부 접근 서버 | 외부 관리자 또는 협력사가 접근해야 하되 VPN, 방화벽, 인증 정책으로 통제하는 운영 |
+## 4. 확장 기준
 
-서버 형태가 달라도 논리 구성은 동일하다.
+초기에는 SQLite를 사용한다. 다음 조건이 생기면 PostgreSQL 전환을 검토한다.
 
-FlowNote는 특정 설치 위치를 강제하지 않는다. 중요한 기준은 고객이 데이터 주권을 유지하고, 인가된 사용자만 접근하며, 파일과 메타데이터가 고객이 승인한 범위 밖으로 임의 이전되지 않는 것이다.
+- 동시 사용자와 쓰기 요청이 SQLite 운영 한계를 넘는 경우
+- 여러 서버 프로세스 또는 다중 서버 구성이 필요한 경우
+- 고객 IT 정책상 중앙 DBMS 운영이 필요한 경우
+- 고급 백업, 복제, 권한 관리가 필요한 경우
 
-## 4. 기본 구성요소
-
-- FlowNote API Server
-- TypeScript + React + Vite Web UI
-- MySQL Metadata DB
-- File Storage
-- Search Index
-- Notification Outbox
-- Integration Adapter
-
-## 4.1 배포 결정 기준
-
-배포 방식은 다음 항목을 고객과 협의해 결정한다.
-
-- 문서와 파일의 외부 클라우드 저장 허용 여부
-- 내부망 전용 운영 여부
-- 외부 접근 필요 여부
-- VPN, 방화벽, IP 허용 목록, 인증 방식
-- 고객 IT 운영 인력과 백업 정책
-- 서버 하드웨어 또는 가상화 환경
-- AI 검색 사용 시 인덱스와 모델 실행 위치
-- MES/ERP 연동 위치와 네트워크 경로
-- 장애 대응, 백업, 복구 책임 범위
+파일 저장은 초기에는 서버 PC의 로컬 `storage/` 폴더를 사용한다. NAS 또는 오브젝트 스토리지는 후속 확장으로 둔다.
 
 ## 5. 운영 설정
 
-현장별로 다음 설정을 분리한다.
-
-- MySQL 연결 정보
-- 파일 저장소 경로
+- FastAPI 바인딩 주소와 포트
+- SQLite DB 파일 경로
+- 서버 로컬 storage 경로
 - 허용 확장자와 MIME 타입
 - 최대 업로드 크기
 - 인증 정책
 - 관리자 역할
-- 뷰어 자동 닫힘 시간. 클라이언트 앱 단계
-- 다운로드 허용 역할. 클라이언트 앱 단계
-- WebView 허용 도메인
+- 클라이언트 앱 허용 버전
 - 일반 브라우저 직접 접근 허용 여부
-- 브릿지 허용 액션
+- 앱 로컬 기능 허용 액션
 - AI 검색 사용 여부
 - 외부 시스템 연동 사용 여부
 - MES/ERP API 연결 정보
-- 외부 시스템 매핑 정책
-- 배포 형태: internal_server, customer_datacenter, dedicated_cloud, dedicated_hosting 등
-- 외부 접근 허용 정책
-- VPN 또는 접근 제어 정책
+- 백업 경로와 주기
 
 ## 6. 백업 대상
 
-- MySQL 데이터베이스
-- 파일 저장소
-- 검색 인덱스 재생성 설정
+- SQLite DB 파일
+- 서버 로컬 storage 폴더
 - 운영 설정 파일
+- 검색 인덱스 재생성 설정
 
 검색 인덱스는 원본이 아니므로 필요 시 재생성할 수 있게 설계한다.

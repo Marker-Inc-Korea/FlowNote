@@ -2,7 +2,7 @@
 
 ## 1. 전체 구조
 
-FlowNote는 문서와 현장지식 관리 서버를 중심으로 웹 UI, Android 단말기, Windows 단말기, 외부 시스템이 REST API로 연결되는 구조이다. Web UI는 TypeScript + React + Vite, Android는 Kotlin, Windows는 WPF를 기준으로 작성하고, Android와 Windows 앱은 WebView 기반으로 웹 UI를 표시한다.
+FlowNote는 Python FastAPI 기반 문서·현장지식 관리 서버를 중심으로 WPF 또는 Avalonia 네이티브 클라이언트, 외부 시스템이 REST API로 연결되는 구조이다. 독립 Web UI는 신규 개발 대상에서 제외한다.
 
 아키텍처의 핵심은 문서관리와 지식관리 중 한쪽으로 치우치지 않는 것이다. 문서 서비스는 최신본, 버전, 권한, 이력을 안정적으로 관리하고, 현장지식 서비스는 문서와 작업 맥락에 연결된 코멘트와 문제점을 축적한다. AI는 이 데이터를 검색하고 조언하기 위한 활용 계층으로 두며, 장기적으로 의사결정 보조까지 확장할 수 있게 한다.
 
@@ -19,36 +19,29 @@ FlowNote는 MES/ERP의 대체 시스템이 아니다. 초기 작업지시와 업
 > 이미지 파일 경로: `docs/images/flownote-product-concept-architecture.png`
 
 ```text
-Web UI
-  -> TypeScript + React + Vite
-  -> Document Viewer
+Native Client (WPF or Avalonia)
+  -> Field Document Viewer
   -> Explorer-style Search
-  -> Work Sequence Board / TV View
-  -> Admin Console
   -> Field Comment
-  -> AI Search / Advice
-
-Android App (Kotlin + WebView)
-  -> Web UI
-  -> Native Bridge
-
-Windows App (WPF + WebView2)
-  -> Web UI
-  -> Native Bridge
+  -> Work Sequence / TV View
+  -> Admin Console
   -> File Watch Support
+  -> Version Upload Assist
+  -> Work Sequence Management
+  -> AI Search / Advice
 
 External Systems
   -> FlowNote REST API
   -> MES / ERP Integration Adapter
 
-FlowNote API Server
-  -> MySQL Metadata DB
-  -> File Storage
+FlowNote Python FastAPI Server
+  -> SQLite Metadata DB
+  -> Local Storage Folder
   -> Search Index
   -> Notification Outbox
 ```
 
-웹 UI를 기본으로 하는 이유는 UI/UX 요구사항에 빠르게 대응하고, 생산공장 보안 환경에서 사용자 단말기에 문서 파일이 동기화되는 문제를 최소화하기 위해서이다. 실제 고객 공장 운영에서는 일반 브라우저 접속을 기본 사용 방식으로 두지 않고, Android와 Windows 클라이언트 앱의 WebView를 통해 화면을 제공한다. 네이티브 앱은 파일 감시, 로컬 제어, OS 연동처럼 웹만으로 처리하기 어려운 기능을 브릿지로 제공한다.
+WPF/Avalonia 클라이언트를 기본으로 하는 이유는 현장 테스트와 배포를 단순하게 만들기 위해서이다. 서버 PC 1대에 FastAPI 서버, SQLite DB, 로컬 storage 폴더를 두고, 현장 PC에는 클라이언트 설치파일을 배포한다. 일반 브라우저 접속은 기본 사용 방식으로 두지 않는다. 문서 미리보기 계층은 필요 시 앱 내부에 제한적으로 포함할 수 있지만, 공통 Web SPA를 개발하지 않는다.
 
 ## 2. 도메인 관계
 
@@ -120,10 +113,10 @@ DocumentVersion / FieldNote / WorkRecordVersion
 - 변경 사유, 등록자, 등록일, 파일 정보를 기록한다.
 - 최근 등록 버전과 현장 공개 버전 변경 후 이력과 알림 이벤트를 생성한다.
 
-### 3.6 File Storage Adapter
+### 3.6 Local Storage Adapter
 
-- 실제 파일 저장소를 추상화한다.
-- 로컬 스토리지, NAS, 오브젝트 스토리지 확장을 고려한다.
+- 서버 PC의 로컬 storage 폴더를 파일 저장소로 사용한다.
+- NAS, 오브젝트 스토리지 확장은 후속 선택지로 둔다.
 - 파일 크기, MIME 타입, 확장자, 해시값을 기록한다.
 - HWP, Word, PowerPoint, Excel, PDF, DWG 등 다양한 형식을 저장 대상으로 처리한다.
 
@@ -132,11 +125,9 @@ DocumentVersion / FieldNote / WorkRecordVersion
 - 단말기 모드를 관리한다.
 - `viewer` 모드는 현장 공개 문서 열람, 알림, 코멘트 등록을 제공한다.
 - `admin_support` 모드는 지정 파일 변경 감지와 업로드 후보 생성을 지원한다.
-- Android 앱은 Kotlin + WebView로 동작한다.
-- Windows 앱은 WPF + WebView2로 동작한다.
-- 웹 UI와 네이티브 기능은 브릿지 API로 통신한다.
-- 브릿지 기능은 권한과 단말기 모드에 따라 제한한다.
-- 운영 환경에서는 일반 브라우저 직접 접근보다 클라이언트 앱을 통한 WebView 접근을 기본으로 한다.
+- 클라이언트 앱은 WPF 또는 Avalonia로 동작한다.
+- 앱의 로컬 기능은 권한과 단말기 모드에 따라 제한한다.
+- 운영 환경에서는 일반 브라우저 직접 접근보다 승인된 설치형 클라이언트 앱 접근을 기본으로 한다.
 
 ### 3.8 Notification Service
 
@@ -219,7 +210,7 @@ DocumentVersion / FieldNote / WorkRecordVersion
 ### 3.18 Viewer Session Service
 
 - 문서 뷰어 세션과 자동 닫힘은 클라이언트 앱 단계에서 구현한다.
-- 1차 Web/API에서는 실제 자동 닫힘 기능을 구현하지 않는다.
+- 자동 닫힘 기능은 클라이언트 앱에서 구현하고 서버에는 세션과 감사 로그를 기록한다.
 - 클라이언트 앱 단계에서 자동 닫힘, 사용자 닫힘, 권한 실패를 접근 로그 또는 감사 로그로 남길 수 있다.
 
 ### 3.19 Legacy Document Import / Parsing Service
@@ -256,10 +247,10 @@ DocumentVersion / FieldNote / WorkRecordVersion
 ### 4.2 관리자 파일 감시
 
 ```text
-Windows WPF 앱
-  -> WebView2 관리자 UI
+WPF/Avalonia Client
+  -> 관리자 UI
   -> 감시 대상 파일 등록
-  -> Native Bridge 호출
+  -> 로컬 파일 감시 기능 호출
   -> 파일 상태 스냅샷 저장
   -> 수정 시간 / 크기 / 해시 비교
   -> 변경 후보 생성
@@ -269,18 +260,18 @@ Windows WPF 앱
 
 파일 감시는 변경 감지까지만 담당한다. 자동 개정은 하지 않는다.
 
-### 4.3 WebView 브릿지
+### 4.3 앱 로컬 기능 연동
 
 ```text
-Web UI
-  -> Bridge Request
-  -> Native App
+Client App UI
+  -> Local Action Request
+  -> Native App Function
   -> Local Control / File Watch / OS Notification
-  -> Bridge Response
-  -> Web UI State Update
+  -> API Server Audit / Result Sync
+  -> Client App State Update
 ```
 
-브릿지는 웹 UI가 직접 접근할 수 없는 로컬 기능만 노출한다. 문서 파일을 단말기에 동기화하는 용도로 사용하지 않는다.
+앱 로컬 기능은 서버가 직접 접근할 수 없는 단말기 기능만 수행한다. 문서 파일을 단말기에 자동 동기화하는 용도로 사용하지 않는다.
 
 ### 4.4 현장 코멘트
 
@@ -322,7 +313,7 @@ Web UI
 ## 5. 저장소와 인덱스
 
 ```text
-Metadata DB
+SQLite Metadata DB
   -> Document metadata
   -> Version metadata
   -> Permission
@@ -330,7 +321,7 @@ Metadata DB
   -> WorkRecord
   -> Notification
 
-File Storage
+Local Storage Folder
   -> Original files
   -> Version files
   -> Generated reports
@@ -346,45 +337,39 @@ Work Sequence
   -> Status history
 ```
 
-검색 인덱스는 원본 데이터가 아니다. 원본은 DB와 파일 저장소에 보관하고, 인덱스는 검색과 AI 조언을 위한 참조 데이터로만 사용한다.
+검색 인덱스는 원본 데이터가 아니다. 원본은 SQLite DB와 서버 로컬 storage 폴더에 보관하고, 인덱스는 검색과 AI 조언을 위한 참조 데이터로만 사용한다.
 
 ## 6. 배포 구조
 
-FlowNote는 고객 데이터 주권을 위해 고객 또는 생산현장 단위의 독립 인스턴스 구조를 기본으로 한다. 여러 고객이나 현장이 하나의 중앙 서비스를 공유하는 멀티테넌트 구조는 기본값으로 두지 않는다.
+FlowNote는 현장 테스트와 운영을 쉽게 하기 위해 사내 서버형 단일 사이트 구성을 기본으로 한다. 여러 고객이나 현장이 하나의 중앙 서비스를 공유하는 멀티테넌트 구조는 기본값으로 두지 않는다.
 
-단말기는 서버가 아니라 클라이언트이다. 서버는 고객이 승인한 위치에 구축한다. 내부망 로컬 서버, 고객 사내 서버, 대용량 서버, 미니PC 서버, 전용 클라우드, 전용 호스팅 등 실제 형태는 고객 보안 정책과 운영 협의에 따라 결정한다.
+서버는 고객 현장 또는 사내 서버 PC 1대에 구축한다. 클라이언트는 현장/관리자 PC에 설치파일로 배포한다. 외부 접근, 클라우드, 다중 서버 구성은 초기 기준이 아니라 후속 확장 선택지로 둔다.
 
 ```text
 Factory Site A
-  -> FlowNote API Server
-  -> MySQL
-  -> File Storage
+  -> Server PC
+  -> FlowNote FastAPI Server
+  -> SQLite
+  -> Local Storage Folder
   -> Search Index
-  -> Client Terminals
-
-Factory Site B
-  -> FlowNote API Server
-  -> MySQL
-  -> File Storage
-  -> Search Index
-  -> Client Terminals
+  -> Installed Native Clients
 ```
 
 독립 인스턴스 기준:
 
-- 현장별 데이터베이스 분리
-- 현장별 파일 저장소 분리
+- SQLite DB 파일
+- 서버 로컬 storage 폴더
 - 현장별 인증/권한 설정 분리
 - 현장별 네트워크 보안 정책 적용
 - 필요 시 외부 시스템 연동도 현장 단위로 구성
-- 현장 규모에 맞는 서버 하드웨어 선택
+- 현장 규모에 맞는 서버 PC 선택
 - 고객이 승인한 저장 위치와 접근 경로 사용
 - 외부 접근이 필요한 경우 VPN, 방화벽, IP 제한, 인증 정책으로 통제
 
 ## 7. 운영 설정
 
-- 파일 저장소 타입과 경로
-- MySQL 연결 정보
+- 서버 로컬 storage 경로
+- SQLite DB 파일 경로. 필요 시 PostgreSQL 연결 정보
 - 최대 업로드 크기
 - 허용 확장자와 MIME 타입
 - 뷰어 지원 확장자
@@ -399,6 +384,6 @@ Factory Site B
 - AI 검색 사용 여부
 - AI 인덱싱 대상 문서 유형
 - AI 답변 근거 표시 여부
-- WebView 허용 도메인
-- 브릿지 기능 허용 목록
-- 브릿지 호출 감사 로그 사용 여부
+- 앱 허용 버전과 단말기 등록 정책
+- 로컬 기능 허용 목록
+- 로컬 기능 호출 감사 로그 사용 여부
