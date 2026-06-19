@@ -18,19 +18,19 @@ File Upload: multipart/form-data
 - 문서 파일 다운로드 차단과 문서 뷰어 자동 닫힘은 클라이언트 앱 단계에서 구현한다.
 - 현장 사용자 단말기는 파일 감시 API를 사용하지 않는다.
 - 관리자만 파일 감시와 업로드 보조 API를 사용할 수 있다.
-- Android와 Windows 앱은 WebView 기반 웹 UI와 네이티브 기능을 브릿지로 연결한다.
-- 브릿지 기능은 단말기 모드와 사용자 권한에 따라 제한한다.
-- 웹 UI는 TypeScript + React + Vite 기반 SPA로 작성한다.
-- 운영 환경에서는 일반 브라우저 직접 접근보다 승인된 클라이언트 앱의 WebView 접근을 기본으로 한다.
+- WPF 또는 Avalonia 클라이언트 앱은 Python FastAPI 서버와 REST API로 통신한다.
+- 앱 로컬 기능은 단말기 모드와 사용자 권한에 따라 제한한다.
+- 독립 Web UI나 React/Vite 기반 SPA는 신규 개발하지 않는다.
+- 운영 환경에서는 일반 브라우저 직접 접근보다 승인된 설치형 네이티브 클라이언트 앱 접근을 기본으로 한다.
 - 현장 사용자는 탐색기형 기본 검색으로 파일명, 문서명, 태그, 문서 구조, 작업지시 기준의 문서를 찾을 수 있어야 한다.
 - 현장 코멘트 입력은 신호등식 기록, 기본 정형 문구, 짧은 메모, 관리자 대리 입력을 우선 지원한다.
 - 현장 코멘트와 작업일지성 기록은 사진 첨부를 지원한다.
 - 작업순서판은 관리자 입력과 현장 조정 이력을 기준으로 현장 TV 화면에 표시한다.
 - 현장 코멘트는 원천 이력이며, 관리자 검토/분석과 보고서 문서로 정제되는 흐름을 가진다.
 - 문서 수정자, 열람자, 코멘트 등록자, 실제 전달자 또는 작업자 정보를 추적한다.
-- 메타데이터 DB는 MySQL을 기본으로 한다.
-- 서비스는 고객 데이터 주권을 위해 고객 또는 현장 단위 독립 인스턴스를 기본으로 한다.
-- 내부망 전용 운영, 고객 사내망 운영, 인가된 외부 접근 운영, 고객 승인 전용 클라우드 운영은 고객 보안 정책에 따라 결정한다.
+- 메타데이터 DB는 SQLite를 우선 사용하고, 필요하면 PostgreSQL로 확장한다.
+- 파일은 서버 PC의 로컬 storage 폴더에 저장한다.
+- 서비스는 서버 PC 1대와 클라이언트 설치파일 배포를 기본으로 한다.
 - FlowNote는 MES/ERP를 대체하지 않고 외부 시스템 연동 대상으로 다룬다.
 - AI 검색과 조언은 접근 권한이 있는 데이터만 참조한다.
 
@@ -159,27 +159,27 @@ multipart/form-data
 - changeReason: string
 ```
 
-## 6. 클라이언트 브릿지 API
+## 6. 클라이언트 로컬 기능 계약
 
-이 섹션의 API는 서버 REST API가 아니라 WebView 내부 웹 UI와 네이티브 앱 사이의 브릿지 계약이다. 실제 구현 시 Android Kotlin과 Windows WPF에서 동일한 메시지 형태를 맞춘다.
+이 섹션은 서버 REST API가 아니라 WPF/Avalonia 클라이언트 내부의 로컬 기능 호출 계약이다. 실제 구현 시 앱 UI와 로컬 기능 모듈 사이의 메시지 형태를 맞춘다.
 
-| Bridge Action | 방향 | 설명 |
+| Local Action | 방향 | 설명 |
 | --- | --- | --- |
-| `device.getInfo` | Web -> Native | 단말기 ID, 모드, 앱 버전 조회 |
-| `fileWatch.register` | Web -> Native | 관리자 단말기 감시 파일 등록 |
-| `fileWatch.list` | Web -> Native | 로컬 감시 항목 조회 |
-| `fileWatch.getChanges` | Web -> Native | 변경 감지 결과 조회 |
-| `file.pick` | Web -> Native | 업로드할 로컬 파일 선택 |
-| `notification.show` | Web -> Native | OS 알림 표시 |
-| `viewer.openExternal` | Web -> Native | 필요 시 외부 뷰어 호출 |
+| `device.getInfo` | App UI -> Local | 단말기 ID, 모드, 앱 버전 조회 |
+| `fileWatch.register` | App UI -> Local | 관리자 단말기 감시 파일 등록 |
+| `fileWatch.list` | App UI -> Local | 로컬 감시 항목 조회 |
+| `fileWatch.getChanges` | App UI -> Local | 변경 감지 결과 조회 |
+| `file.pick` | App UI -> Local | 업로드할 로컬 파일 선택 |
+| `notification.show` | App UI -> Local | OS 알림 표시 |
+| `viewer.openExternal` | App UI -> Local | 필요 시 외부 뷰어 호출 |
 
-브릿지 원칙:
+로컬 기능 원칙:
 
 - 현장 사용자 `viewer` 모드에서는 파일 감시 액션을 비활성화한다.
-- 브릿지는 문서 파일을 자동 동기화하지 않는다.
+- 앱 로컬 기능은 문서 파일을 자동 동기화하지 않는다.
 - 관리자 파일 감시 결과는 서버의 관리자 파일 감시 API로 등록한다.
-- 브릿지 호출은 감사 로그 대상으로 고려한다.
-- 브릿지 호출 중 로컬 파일 접근, 파일 감시, 외부 뷰어 호출은 감사 로그 기록 대상이다.
+- 로컬 기능 호출은 감사 로그 대상으로 고려한다.
+- 로컬 파일 접근, 파일 감시, 외부 뷰어 호출은 감사 로그 기록 대상이다.
 
 ## 7. 권한, 태그, 연결 대상 API
 
@@ -504,4 +504,4 @@ multipart/form-data
 | INTEGRATION_MAPPING_NOT_FOUND | 연동 매핑 없음 |
 | INTEGRATION_SYNC_FAILED | 외부 시스템 동기화 실패 |
 | AI_SEARCH_INDEX_NOT_READY | AI 검색 인덱스 준비 안 됨 |
-| BRIDGE_ACTION_NOT_ALLOWED | 허용되지 않은 브릿지 액션 |
+| LOCAL_ACTION_NOT_ALLOWED | 허용되지 않은 앱 로컬 액션 |

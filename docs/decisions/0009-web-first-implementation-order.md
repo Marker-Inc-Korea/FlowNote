@@ -2,30 +2,14 @@
 
 ## 상태
 
-Accepted
+Superseded by [0019. Python 백엔드와 Android/Windows 앱 중심 전환](./0019-python-backend-native-app-direction.md)
 
-## 결정
+## 과거 결정 요약
 
-FlowNote는 Web UI와 API를 1차로 구현한다.
+이 문서는 과거에 Web UI를 1차 구현 대상으로 두고 Android/Windows 앱을 후속 단계로 두려던 결정을 기록한 ADR이다.
 
-구현 단계는 다음 순서를 따른다.
+## 대체 결정
 
-1. Web UI + API
-2. Android Kotlin + WebView
-3. Windows WPF + WebView2
-4. 현장 코멘트/보고서 고도화
-5. 검색/AI 조언
+새 구현 순서는 Python FastAPI 서버와 WPF/Avalonia 클라이언트를 기준으로 다시 잡는다. 독립 Web UI는 신규 개발하지 않는다.
 
-## 근거
-
-Android와 Windows 앱은 하이브리드 앱 구조이다. 따라서 Web UI와 API 기능이 먼저 만들어지면, Android와 Windows는 같은 웹 화면을 WebView로 표시하고 필요한 네이티브 기능만 브릿지로 붙일 수 있다.
-
-처음부터 Android와 Windows를 같이 만들면 API와 화면 요구사항이 안정되기 전에 중복 구현이 늘어난다.
-
-## 결과
-
-- 1차 MVP는 Web UI와 API 중심으로 정의한다.
-- Android 앱은 2차 구현 대상으로 둔다.
-- Windows 앱과 파일 감시는 3차 구현 대상으로 둔다.
-- 브릿지는 Web UI에서 필요한 로컬 기능이 확정된 뒤 구현한다.
-- Web UI는 WebView 환경을 고려해서 설계한다.
+1차 MVP는 Python FastAPI 서버, SQLite 메타데이터 저장, 서버 로컬 storage, 문서/버전/권한/현장 코멘트 API, WPF/Avalonia 클라이언트의 핵심 화면 흐름을 함께 검증하는 방향으로 정의한다.
