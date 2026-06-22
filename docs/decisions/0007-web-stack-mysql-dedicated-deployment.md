@@ -1,8 +1,8 @@
-# 0007. 웹 스택, MySQL, 고객 데이터 주권 기반 배포
+﻿# 0007. 웹 스택, MySQL, 고객 데이터 주권 기반 배포
 
 ## 상태
 
-Superseded by [0019. Python 백엔드와 Android/Windows 앱 중심 전환](./0019-python-backend-native-app-direction.md)
+Superseded by [0019. Python 백엔드와 Windows 앱 중심 전환](./0019-python-backend-native-app-direction.md)
 
 ## 과거 결정 요약
 
@@ -18,4 +18,4 @@ Superseded by [0019. Python 백엔드와 Android/Windows 앱 중심 전환](./00
 
 ## 대체 결정
 
-Web UI 스택 결정은 폐기한다. 백엔드는 Python FastAPI 서버로 전환하고, 프론트엔드는 WPF 또는 Avalonia 클라이언트로 구현한다.
+Web UI 스택 결정은 폐기한다. 백엔드는 Python FastAPI 서버로 전환하고, 프론트엔드는 Windows WPF 클라이언트로 구현한다.

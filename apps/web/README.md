@@ -1,12 +1,12 @@
-# Web App
+﻿# Web App
 
-이 디렉터리는 과거 Web UI 계획의 자리이다. 새 개발 방향에서는 독립 Web UI를 개발하지 않으며, 프론트엔드는 Android 앱 또는 Windows 앱으로 진행한다.
+이 디렉터리는 과거 Web UI 계획의 자리이다. 새 개발 방향에서는 독립 Web UI를 개발하지 않으며, 프론트엔드는 Windows 앱으로 진행한다.
 
 ## 현재 기준
 
 - 신규 React/Vite/TypeScript SPA를 추가하지 않는다.
-- 새 화면은 WPF 또는 Avalonia 클라이언트에서 구현한다.
-- 서버 기능은 Python 기반 API 서버로 제공한다.
+- 새 화면은 Windows WPF 클라이언트에서 구현한다.
+- 서버 기능은 Python FastAPI 서버로 제공한다.
 
 ## 보관 이유
 
