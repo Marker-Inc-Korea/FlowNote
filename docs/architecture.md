@@ -1,8 +1,8 @@
-# FlowNote 아키텍처
+﻿# FlowNote 아키텍처
 
 ## 1. 전체 구조
 
-FlowNote는 Python FastAPI 기반 문서·현장지식 관리 서버를 중심으로 WPF 또는 Avalonia 네이티브 클라이언트, 외부 시스템이 REST API로 연결되는 구조이다. 독립 Web UI는 신규 개발 대상에서 제외한다.
+FlowNote는 Python FastAPI 기반 문서·현장지식 관리 서버를 중심으로 Windows WPF 클라이언트, 외부 시스템이 REST API로 연결되는 구조이다. 독립 Web UI는 신규 개발 대상에서 제외한다.
 
 아키텍처의 핵심은 문서관리와 지식관리 중 한쪽으로 치우치지 않는 것이다. 문서 서비스는 최신본, 버전, 권한, 이력을 안정적으로 관리하고, 현장지식 서비스는 문서와 작업 맥락에 연결된 코멘트와 문제점을 축적한다. AI는 이 데이터를 검색하고 조언하기 위한 활용 계층으로 두며, 장기적으로 의사결정 보조까지 확장할 수 있게 한다.
 
@@ -19,7 +19,7 @@ FlowNote는 MES/ERP의 대체 시스템이 아니다. 초기 작업지시와 업
 > 이미지 파일 경로: `docs/images/flownote-product-concept-architecture.png`
 
 ```text
-Native Client (WPF or Avalonia)
+Native Client (Windows WPF)
   -> Field Document Viewer
   -> Explorer-style Search
   -> Field Comment
@@ -41,7 +41,7 @@ FlowNote Python FastAPI Server
   -> Notification Outbox
 ```
 
-WPF/Avalonia 클라이언트를 기본으로 하는 이유는 현장 테스트와 배포를 단순하게 만들기 위해서이다. 서버 PC 1대에 FastAPI 서버, SQLite DB, 로컬 storage 폴더를 두고, 현장 PC에는 클라이언트 설치파일을 배포한다. 일반 브라우저 접속은 기본 사용 방식으로 두지 않는다. 문서 미리보기 계층은 필요 시 앱 내부에 제한적으로 포함할 수 있지만, 공통 Web SPA를 개발하지 않는다.
+Windows WPF 클라이언트를 기본으로 하는 이유는 현장 테스트와 배포를 단순하게 만들기 위해서이다. 서버 PC 1대에 FastAPI 서버, SQLite DB, 로컬 storage 폴더를 두고, 현장 PC에는 클라이언트 설치파일을 배포한다. 일반 브라우저 접속은 기본 사용 방식으로 두지 않는다. 문서 미리보기 계층은 필요 시 앱 내부에 제한적으로 포함할 수 있지만, 공통 Web SPA를 개발하지 않는다.
 
 ## 2. 도메인 관계
 
@@ -125,7 +125,7 @@ DocumentVersion / FieldNote / WorkRecordVersion
 - 단말기 모드를 관리한다.
 - `viewer` 모드는 현장 공개 문서 열람, 알림, 코멘트 등록을 제공한다.
 - `admin_support` 모드는 지정 파일 변경 감지와 업로드 후보 생성을 지원한다.
-- 클라이언트 앱은 WPF 또는 Avalonia로 동작한다.
+- 클라이언트 앱은 Windows WPF로 동작한다.
 - 앱의 로컬 기능은 권한과 단말기 모드에 따라 제한한다.
 - 운영 환경에서는 일반 브라우저 직접 접근보다 승인된 설치형 클라이언트 앱 접근을 기본으로 한다.
 
@@ -247,7 +247,7 @@ DocumentVersion / FieldNote / WorkRecordVersion
 ### 4.2 관리자 파일 감시
 
 ```text
-WPF/Avalonia Client
+Windows WPF Client
   -> 관리자 UI
   -> 감시 대상 파일 등록
   -> 로컬 파일 감시 기능 호출

@@ -1,6 +1,6 @@
-# Shared Package
+﻿# Shared Package
 
-공통 도메인 모델과 API 계약 후보를 보관하는 영역이다. 실제 코드 패키지는 Python FastAPI 서버와 WPF/Avalonia 클라이언트 사이에서 공유 방식이 명확해진 뒤 추가한다.
+공통 도메인 모델과 API 계약 후보를 보관하는 영역이다. 실제 코드 패키지는 Python FastAPI 서버와 Windows WPF 클라이언트 사이에서 공유 방식이 명확해진 뒤 추가한다.
 
 ## 예상 내용
 

@@ -1,4 +1,4 @@
-# FlowNote Development Access
+﻿# FlowNote Development Access
 
 This document records shared development and test access points for FlowNote.
 
@@ -6,7 +6,7 @@ This document records shared development and test access points for FlowNote.
 
 - Legacy web test endpoint: https://edge-nano-docs.it-sent.com/
 
-This endpoint belongs to the older web-based direction. New development should not treat it as the target frontend. The new target is a Python FastAPI server accessed by a WPF or Avalonia native client.
+This endpoint belongs to the older web-based direction. New development should not treat it as the target frontend. The new target is a Python FastAPI server accessed by a Windows WPF native client.
 
 ## Data Retention
 

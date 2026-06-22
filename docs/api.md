@@ -1,4 +1,4 @@
-# FlowNote API 초안
+﻿# FlowNote API 초안
 
 ## 1. 공통 원칙
 
@@ -18,7 +18,7 @@ File Upload: multipart/form-data
 - 문서 파일 다운로드 차단과 문서 뷰어 자동 닫힘은 클라이언트 앱 단계에서 구현한다.
 - 현장 사용자 단말기는 파일 감시 API를 사용하지 않는다.
 - 관리자만 파일 감시와 업로드 보조 API를 사용할 수 있다.
-- WPF 또는 Avalonia 클라이언트 앱은 Python FastAPI 서버와 REST API로 통신한다.
+- Windows WPF 클라이언트 앱은 Python FastAPI 서버와 REST API로 통신한다.
 - 앱 로컬 기능은 단말기 모드와 사용자 권한에 따라 제한한다.
 - 독립 Web UI나 React/Vite 기반 SPA는 신규 개발하지 않는다.
 - 운영 환경에서는 일반 브라우저 직접 접근보다 승인된 설치형 네이티브 클라이언트 앱 접근을 기본으로 한다.
@@ -161,7 +161,7 @@ multipart/form-data
 
 ## 6. 클라이언트 로컬 기능 계약
 
-이 섹션은 서버 REST API가 아니라 WPF/Avalonia 클라이언트 내부의 로컬 기능 호출 계약이다. 실제 구현 시 앱 UI와 로컬 기능 모듈 사이의 메시지 형태를 맞춘다.
+이 섹션은 서버 REST API가 아니라 Windows WPF 클라이언트 내부의 로컬 기능 호출 계약이다. 실제 구현 시 앱 UI와 로컬 기능 모듈 사이의 메시지 형태를 맞춘다.
 
 | Local Action | 방향 | 설명 |
 | --- | --- | --- |

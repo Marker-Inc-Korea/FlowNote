@@ -1,4 +1,4 @@
-# FlowNote 문서
+﻿# FlowNote 문서
 
 이 폴더는 FlowNote의 제품 방향, 도메인 관계, 데이터 모델, API, 설계 결정을 관리한다.
 
@@ -35,7 +35,7 @@ TerminalDevice
   -> admin_support: 관리자 파일 변경 감지와 업로드 보조
 
 Client App
-  -> WPF 또는 Avalonia
+  -> Windows WPF
   -> Local App Function: 로컬 제어와 파일 감시
 
 Backend
@@ -92,8 +92,9 @@ ExternalSystem
 - [0016. 현장 코멘트 분석, 보고서화, 작업자 추적](./decisions/0016-field-note-analysis-report-traceability.md)
 - [0017. 고객 데이터 주권 기반 배포](./decisions/0017-customer-data-sovereignty-deployment.md)
 - [0018. 현장 체감 우선 기능: 검색, 사진 기록, 작업순서판](./decisions/0018-field-first-search-sequence-and-photo-records.md)
-- [0019. Python 백엔드와 Android/Windows 앱 중심 전환](./decisions/0019-python-backend-native-app-direction.md). 0020으로 대체됨
-- [0020. 사내 서버형 FastAPI와 WPF/Avalonia 클라이언트 전환](./decisions/0020-internal-server-fastapi-native-client.md)
+- [0019. Python 백엔드와 Windows 앱 중심 전환](./decisions/0019-python-backend-native-app-direction.md). 0020으로 대체됨
+- [0020. 사내 서버형 FastAPI와 Windows WPF 클라이언트 전환](./decisions/0020-internal-server-fastapi-native-client.md)
+- [0022. Windows 단일 클라이언트와 Python 백엔드 고정](./decisions/0022-windows-only-client-python-backend.md)
 
 ## 작성 원칙
 

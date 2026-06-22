@@ -1,4 +1,4 @@
-# FlowNote 상관관계 정리
+﻿# FlowNote 상관관계 정리
 
 ## 1. 전체 기준
 
@@ -10,7 +10,7 @@ FlowNote는 생산현장 문서를 중심으로 문서 버전, 현장 단말기,
 
 현재 단계에서 AI는 검색과 조언을 중심으로 둔다. 과거 생산 데이터로 새로운 작업을 설계하는 기능은 장기 가능성으로 남기며, 초기 구조에서는 현장의 소리와 문서 이력을 안정적으로 기록하는 것을 우선한다.
 
-개발은 Python FastAPI 서버와 WPF/Avalonia 클라이언트를 기준으로 진행한다. 고객 생산공장 운영에서는 일반 브라우저 직접 접근을 기본 사용 방식으로 두지 않는다. 현장 사용자는 승인된 설치형 클라이언트 앱을 통해 접근한다.
+개발은 Python FastAPI 서버와 Windows WPF 클라이언트를 기준으로 진행한다. 고객 생산공장 운영에서는 일반 브라우저 직접 접근을 기본 사용 방식으로 두지 않는다. 현장 사용자는 승인된 설치형 클라이언트 앱을 통해 접근한다.
 
 FlowNote는 MES/ERP를 대체하지 않는다. 초기 작업지시는 MES 연동 데이터가 아니라 관리자가 직접 입력한 업무 구조로 관리한다. 문서 정리 구조는 프로그램이 강제하지 않고 고객이 결정한다. 기존 MES/ERP가 있으면 후속 단계에서 정형 생산 데이터를 연동하고, FlowNote는 문서, 현장 코멘트, 작업내역, 관리자 보고서를 연결해 AI 활용 데이터를 보강한다.
 
@@ -21,7 +21,7 @@ FlowNote는 MES/ERP를 대체하지 않는다. 초기 작업지시는 MES 연동
 | 영역 | 기준 |
 | --- | --- |
 | Backend | Python FastAPI |
-| Client | WPF 또는 Avalonia |
+| Client | Windows WPF |
 | Metadata DB | SQLite 우선, 필요 시 PostgreSQL |
 | File Storage | 서버 PC 로컬 storage 폴더 |
 | 배포 | 서버 PC 1대 + 클라이언트 설치파일 |
@@ -187,7 +187,7 @@ UserAccount
 
 ## 7. 앱 프론트엔드와 로컬 기능
 
-WPF/Avalonia 클라이언트는 앱 UI를 제공하고 Python FastAPI 서버와 통신한다.
+Windows WPF 클라이언트는 앱 UI를 제공하고 Python FastAPI 서버와 통신한다.
 
 ```text
 Client App UI

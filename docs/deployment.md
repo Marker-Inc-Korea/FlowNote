@@ -1,10 +1,10 @@
-# FlowNote 배포 기준
+﻿# FlowNote 배포 기준
 
 ## 1. 배포 원칙
 
 FlowNote는 초기 개발과 현장 테스트를 쉽게 하기 위해 사내 서버형 배포를 기본으로 한다.
 
-생산현장의 기술문서, 도면, 생산규격, 보고서는 외부 클라우드 사용을 꺼리는 경우가 많다. 따라서 1차 배포는 서버 PC 1대에 Python FastAPI 서버, SQLite DB, 로컬 `storage/` 폴더를 두고, 현장/관리자 PC에는 WPF 또는 Avalonia 클라이언트 설치파일을 배포하는 구조로 잡는다.
+생산현장의 기술문서, 도면, 생산규격, 보고서는 외부 클라우드 사용을 꺼리는 경우가 많다. 따라서 1차 배포는 서버 PC 1대에 Python FastAPI 서버, SQLite DB, 로컬 `storage/` 폴더를 두고, 현장/관리자 PC에는 Windows WPF 클라이언트 설치파일을 배포하는 구조로 잡는다.
 
 FlowNote는 기존 MES/ERP를 대체하지 않는다. 현장에 MES나 ERP가 있으면 후속 단계에서 REST API 또는 현장별 어댑터로 연동한다.
 
@@ -19,7 +19,7 @@ Server PC
   -> Integration adapter
 
 Client PCs
-  -> WPF or Avalonia client installer
+  -> Windows WPF client installer
   -> REST API communication
 ```
 
@@ -30,7 +30,7 @@ Client PCs
 - Python FastAPI server
 - SQLite metadata DB
 - Local server storage folder
-- WPF or Avalonia native client
+- Windows WPF native client
 - REST API
 - Notification outbox
 - Optional search index
