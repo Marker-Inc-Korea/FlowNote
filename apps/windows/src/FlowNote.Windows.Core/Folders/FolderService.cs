@@ -4,6 +4,17 @@ namespace FlowNote.Windows.Core.Folders;
 
 public sealed class FolderService(FlowNoteLocalDatabase database)
 {
+    public DocumentFolder GetFolder(long folderId)
+    {
+        return ListFolders().Single(folder => folder.Id == folderId);
+    }
+
+    public DocumentFolder GetDefaultSystemFolder(string name)
+    {
+        var root = GetRootFolder();
+        return ListFolders().Single(folder => folder.ParentId == root.Id && folder.Name == name);
+    }
+
     public DocumentFolder CreateFolder(string name, long? parentId = null, bool isSystem = false)
     {
         var now = DateTime.UtcNow;
@@ -26,6 +37,12 @@ public sealed class FolderService(FlowNoteLocalDatabase database)
 
         var id = Convert.ToInt64(command.ExecuteScalar());
         return new DocumentFolder(id, folderId, parentId, name, path, isSystem, now);
+    }
+
+    public DocumentFolder GetOrCreateChildFolder(string name, long parentId, bool isSystem = false)
+    {
+        var existing = ListFolders().FirstOrDefault(folder => folder.ParentId == parentId && folder.Name == name);
+        return existing ?? CreateFolder(name, parentId, isSystem);
     }
 
     public IReadOnlyList<DocumentFolder> ListFolders()

@@ -7,4 +7,5 @@ public sealed record ExplorerDocument(
     string Status,
     string UpdatedBy,
     DateTime UpdatedAt,
-    string VersionLabel);
+    string VersionLabel,
+    string? LocalPath);

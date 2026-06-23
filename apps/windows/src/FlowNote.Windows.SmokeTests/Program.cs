@@ -1,4 +1,5 @@
 using FlowNote.Windows.Core.Storage;
+using FlowNote.Windows.Core.Explorer;
 using Microsoft.Data.Sqlite;
 
 var testDirectory = Path.Combine(Path.GetTempPath(), "flownote-windows-smoke-tests");
@@ -44,6 +45,49 @@ try
 
     var documents = services.Documents.ListDocuments(folder.Id);
     Require(documents.Any(item => item.DocumentId == document.DocumentId), "registered document should appear in folder document list");
+
+    var ruleDate = new DateTime(2026, 6, 23, 9, 10, 0);
+    var handoverFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.HandoverFolderName);
+    var handoverPlan = services.DocumentPlacement.PrepareDocumentRegistration(
+        handoverFolder.Id,
+        "shift-handover.txt",
+        ruleDate);
+    Require(handoverPlan.Folder.Name == "2026-06-23", "handover files should be placed in a date child folder");
+    Require(handoverPlan.Folder.ParentId == handoverFolder.Id, "handover date folder should be below the handover folder");
+
+    var photosFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.PhotosFolderName);
+    var photosPlan = services.DocumentPlacement.PrepareDocumentRegistration(
+        photosFolder.Id,
+        "line-photo.jpg",
+        ruleDate);
+    Require(photosPlan.Folder.Name == "2026-06-23", "photo files should be placed in a date child folder");
+    Require(photosPlan.Folder.ParentId == photosFolder.Id, "photo date folder should be below the photos folder");
+
+    var workOrderFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.WorkOrderFolderName);
+    var workOrderPlan = services.DocumentPlacement.PrepareDocumentRegistration(
+        workOrderFolder.Id,
+        "assembly-check-sheet.xlsx",
+        ruleDate);
+    Require(workOrderPlan.Folder.Id == workOrderFolder.Id, "work order files should remain in the work order folder");
+    Require(workOrderPlan.Title == "assembly-check-sheet", "work order title should be generated from the file name");
+
+    var sampleFile = Path.Combine(testDirectory, "sample-upload.txt");
+    File.WriteAllText(sampleFile, "FlowNote upload smoke test.");
+    var fileInfo = new FileInfo(sampleFile);
+    var uploadCandidate = new UploadCandidate(
+        fileInfo.Name,
+        fileInfo.FullName,
+        fileInfo.Extension,
+        fileInfo.Length,
+        DateTime.Now);
+    Require(uploadCandidate.FileName == "sample-upload.txt", "upload candidate should capture the file name");
+    Require(uploadCandidate.SizeBytes > 0, "upload candidate should capture file size");
+
+    var workspace = new ExplorerWorkspace();
+    workspace.AddDroppedFileToList(uploadCandidate, login.DisplayName ?? "Administrator");
+    Require(workspace.Documents.Count == 1, "dropped file should be added to the file list");
+    Require(workspace.Documents[0].UpdatedBy == login.DisplayName, "dropped file should capture the login display name");
+    Require(workspace.Documents[0].LocalPath == sampleFile, "dropped file should keep the local path for preview");
 
     var deleted = services.Folders.DeleteFolder(folder.Id);
     Require(!deleted, "folder containing a document should not be deleted");

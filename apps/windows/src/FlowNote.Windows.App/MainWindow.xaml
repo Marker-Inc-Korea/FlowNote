@@ -50,8 +50,6 @@
                 <ColumnDefinition Width="260" />
                 <ColumnDefinition Width="8" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="8" />
-                <ColumnDefinition Width="320" />
             </Grid.ColumnDefinitions>
 
             <Border Grid.Column="0"
@@ -67,6 +65,7 @@
                                FontWeight="SemiBold"
                                Foreground="{StaticResource PrimaryTextBrush}" />
                     <TreeView ItemsSource="{Binding Folders}"
+                              SelectedItemChanged="FolderTree_SelectedItemChanged"
                               Margin="8,0,8,12"
                               BorderThickness="0">
                         <TreeView.ItemTemplate>
@@ -81,9 +80,16 @@
                 </DockPanel>
             </Border>
 
-            <Grid Grid.Column="2">
+            <Grid Grid.Column="2"
+                  x:Name="FileListDropZone"
+                  AllowDrop="True"
+                  DragEnter="FileListDropZone_DragEnter"
+                  DragLeave="FileListDropZone_DragLeave"
+                  DragOver="FileListDropZone_DragOver"
+                  Drop="FileListDropZone_Drop">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="42" />
+                    <RowDefinition Height="40" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
@@ -99,7 +105,7 @@
                                  Text="Search by title, file name, or tag"
                                  VerticalContentAlignment="Center" />
                         <TextBlock DockPanel.Dock="Right"
-                                   Text="Explorer document list"
+                                   Text="Drop files onto this list to add upload candidates"
                                    Foreground="{StaticResource SecondaryTextBrush}"
                                    VerticalAlignment="Center" />
                     </DockPanel>
@@ -107,11 +113,32 @@
 
                 <Border Grid.Row="1"
                         Margin="0,8,0,0"
+                        Background="#F8FAFC"
+                        BorderBrush="{StaticResource PanelBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="12,0">
+                    <DockPanel>
+                        <TextBlock Text="File list"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource PrimaryTextBrush}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock DockPanel.Dock="Right"
+                                   Text="Double-click a row to open the file view"
+                                   Foreground="{StaticResource SecondaryTextBrush}"
+                                   VerticalAlignment="Center" />
+                    </DockPanel>
+                </Border>
+
+                <Border Grid.Row="2"
+                        Margin="0,8,0,0"
+                        x:Name="FileListPanel"
                         Background="{StaticResource PanelBackgroundBrush}"
                         BorderBrush="{StaticResource PanelBorderBrush}"
                         BorderThickness="1"
                         CornerRadius="6">
                     <DataGrid ItemsSource="{Binding Documents}"
+                              MouseDoubleClick="DocumentGrid_MouseDoubleClick"
                               AutoGenerateColumns="False"
                               CanUserAddRows="False"
                               CanUserDeleteRows="False"
@@ -121,41 +148,17 @@
                               BorderThickness="0"
                               RowHeight="38">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="*" />
-                            <DataGridTextColumn Header="File name" Binding="{Binding FileName}" Width="180" />
+                            <DataGridTextColumn Header="File name" Binding="{Binding FileName}" Width="*" />
+                            <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="180" />
                             <DataGridTextColumn Header="Type" Binding="{Binding DocumentType}" Width="90" />
-                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="90" />
-                            <DataGridTextColumn Header="Version" Binding="{Binding VersionLabel}" Width="80" />
-                            <DataGridTextColumn Header="Updated by" Binding="{Binding UpdatedBy}" Width="110" />
-                            <DataGridTextColumn Header="Updated at" Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="150" />
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="120" />
+                            <DataGridTextColumn Header="Version" Binding="{Binding VersionLabel}" Width="90" />
+                            <DataGridTextColumn Header="User" Binding="{Binding UpdatedBy}" Width="130" />
+                            <DataGridTextColumn Header="Version created" Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="160" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </Border>
             </Grid>
-
-            <Border Grid.Column="4"
-                    Background="{StaticResource PanelBackgroundBrush}"
-                    BorderBrush="{StaticResource PanelBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="6"
-                    Padding="16">
-                <StackPanel>
-                    <TextBlock Text="Document details"
-                               FontSize="16"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource PrimaryTextBrush}" />
-                    <TextBlock Margin="0,10,0,18"
-                               Text="Selected document status, version, change reason, and field publishing information will be shown here."
-                               TextWrapping="Wrap"
-                               Foreground="{StaticResource SecondaryTextBrush}" />
-                    <TextBlock Text="Current scope" FontWeight="SemiBold" />
-                    <TextBlock Margin="0,4,0,12" Text="Local SQLite login, folder management, and document registration basics." TextWrapping="Wrap" />
-                    <TextBlock Text="Authentication" FontWeight="SemiBold" />
-                    <TextBlock Margin="0,4,0,12" Text="The client opens only after a successful login." TextWrapping="Wrap" />
-                    <TextBlock Text="Next scope" FontWeight="SemiBold" />
-                    <TextBlock Margin="0,4,0,0" Text="Server API integration and real file upload are separate follow-up work." TextWrapping="Wrap" />
-                </StackPanel>
-            </Border>
         </Grid>
 
         <Border Grid.Row="2"
