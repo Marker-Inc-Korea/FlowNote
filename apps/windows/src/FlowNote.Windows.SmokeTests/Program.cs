@@ -31,6 +31,19 @@ try
         Require(!services.Folders.DeleteFolder(defaultFolder.Id), $"{defaultFolder.Name} should not be deletable");
     }
 
+    var documentsFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.DocumentsFolderName);
+    var documentCategoryFolders = services.Folders.ListFolders()
+        .Where(item => item.ParentId == documentsFolder.Id && FlowNoteLocalDatabase.DocumentCategoryFolderNames.Contains(item.Name))
+        .ToList();
+    Require(
+        documentCategoryFolders.Count == FlowNoteLocalDatabase.DocumentCategoryFolderNames.Count,
+        "document category folders should exist below the documents folder");
+    foreach (var categoryFolder in documentCategoryFolders)
+    {
+        Require(categoryFolder.IsSystem, $"{categoryFolder.Name} should be a system folder");
+        Require(!services.Folders.DeleteFolder(categoryFolder.Id), $"{categoryFolder.Name} should not be deletable");
+    }
+
     var folder = services.Folders.CreateFolder("Smoke Folder", root.Id);
     var folders = services.Folders.ListFolders();
     Require(folders.Any(item => item.Id == folder.Id), "created folder should appear in folder list");
@@ -45,6 +58,18 @@ try
 
     var documents = services.Documents.ListDocuments(folder.Id);
     Require(documents.Any(item => item.DocumentId == document.DocumentId), "registered document should appear in folder document list");
+
+    var commentedDocument = services.Documents.AddCommentVersion(
+        document.DocumentId,
+        "Smoke comment for version history.",
+        login.DisplayName ?? "Administrator");
+    Require(commentedDocument.VersionNo == 2, "comment should create the next document version");
+    Require(commentedDocument.LatestComment == "Smoke comment for version history.", "latest comment should be stored on the document");
+
+    var versions = services.Documents.ListVersions(document.DocumentId);
+    Require(versions.Count == 2, "document should have original version and comment version");
+    Require(versions[0].VersionNo == 2, "latest version should be first");
+    Require(versions[0].Comment == "Smoke comment for version history.", "version should store the comment");
 
     var ruleDate = new DateTime(2026, 6, 23, 9, 10, 0);
     var handoverFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.HandoverFolderName);
@@ -70,6 +95,20 @@ try
         ruleDate);
     Require(workOrderPlan.Folder.Id == workOrderFolder.Id, "work order files should remain in the work order folder");
     Require(workOrderPlan.Title == "assembly-check-sheet", "work order title should be generated from the file name");
+
+    var drawingPlan = services.DocumentPlacement.PrepareDocumentRegistration(
+        documentsFolder.Id,
+        "도면-프레스A-금형배치.pdf",
+        ruleDate);
+    Require(drawingPlan.Folder.Name == FlowNoteLocalDatabase.DrawingFolderName, "drawing files should be placed in the drawing folder");
+    Require(drawingPlan.Folder.ParentId == documentsFolder.Id, "drawing folder should be below the documents folder");
+
+    var safetyPlan = services.DocumentPlacement.PrepareDocumentRegistration(
+        documentsFolder.Id,
+        "문서-안전수칙-용접작업.txt",
+        ruleDate);
+    Require(safetyPlan.Folder.Name == FlowNoteLocalDatabase.SafetyFolderName, "safety files should be placed in the safety folder");
+    Require(safetyPlan.Folder.ParentId == documentsFolder.Id, "safety folder should be below the documents folder");
 
     var sampleFile = Path.Combine(testDirectory, "sample-upload.txt");
     File.WriteAllText(sampleFile, "FlowNote upload smoke test.");

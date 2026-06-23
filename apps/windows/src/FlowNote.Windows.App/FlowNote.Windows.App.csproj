@@ -10,4 +10,10 @@
   <ItemGroup>
     <ProjectReference Include="..\FlowNote.Windows.Core\FlowNote.Windows.Core.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Data\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

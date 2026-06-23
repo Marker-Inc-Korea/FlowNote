@@ -56,6 +56,7 @@ services/api/data/*
 /storage/
 /data/
 *.sqlite
+!apps/windows/src/FlowNote.Windows.App/Data/*.sqlite
 *.sqlite3
 *.db
 *.db-shm
@@ -140,7 +141,17 @@ field-data/
 *.pptx
 *.xls
 *.xlsx
+!apps/windows/src/FlowNote.Windows.App/Data/Files/Samples/*.xlsx
+!apps/windows/src/FlowNote.Windows.App/Data/Files/Samples/**/*.xlsx
 *.pdf
+!apps/windows/src/FlowNote.Windows.App/Data/Files/Samples/*.pdf
+!apps/windows/src/FlowNote.Windows.App/Data/Files/Samples/**/*.pdf
+!apps/windows/src/FlowNote.Windows.App/Data/Files/Samples/*.txt
+!apps/windows/src/FlowNote.Windows.App/Data/Files/Samples/**/*.txt
+!apps/windows/src/FlowNote.Windows.App/Data/Files/Samples/*.jpg
+!apps/windows/src/FlowNote.Windows.App/Data/Files/Samples/**/*.jpg
+!apps/windows/src/FlowNote.Windows.App/Data/Files/Samples/*.png
+!apps/windows/src/FlowNote.Windows.App/Data/Files/Samples/**/*.png
 *.dwg
 *.zip
 *.7z
