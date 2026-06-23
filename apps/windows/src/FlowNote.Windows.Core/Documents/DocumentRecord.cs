@@ -9,4 +9,8 @@ public sealed record DocumentRecord(
     string DocumentType,
     string Status,
     string CreatedBy,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    DateTime UpdatedAt,
+    string? LocalPath,
+    int VersionNo,
+    string? LatestComment);
