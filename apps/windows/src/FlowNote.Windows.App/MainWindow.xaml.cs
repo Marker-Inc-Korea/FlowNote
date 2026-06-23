@@ -8,6 +8,7 @@ using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
 using FlowNote.Windows.Core.Folders;
 using FlowNote.Windows.Core.Storage;
+using Microsoft.Win32;
 
 namespace FlowNote.Windows.App;
 
@@ -53,6 +54,24 @@ public partial class MainWindow : Window
         RefreshWorkspace($"문서를 등록했습니다. 위치: {plan.Folder.Path}", plan.Folder.Id);
     }
 
+    private void UploadFileButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "업로드할 파일 선택",
+            Multiselect = true,
+            Filter = "문서 파일|*.pdf;*.txt;*.xlsx;*.jpg;*.jpeg;*.png;*.bmp;*.gif|PDF 파일|*.pdf|모든 파일|*.*"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var folder = GetSelectedFolderOrDefault();
+        RegisterUploadedFiles(dialog.FileNames, folder, "파일 업로드");
+    }
+
     private void RefreshWorkspace(string status, long? selectedFolderId = null)
     {
         RefreshFolders();
@@ -67,10 +86,7 @@ public partial class MainWindow : Window
             workspace.Documents.Add(document);
         }
 
-        var folder = folderId is null ? null : services.Folders.GetFolder(folderId.Value);
-        DocumentListTitleTextBlock.Text = folder is null ? "문서 목록" : $"{folder.Name} 파일 목록";
-        DocumentListHintTextBlock.Text = $"표시 {workspace.Documents.Count}개";
-        workspace.StatusText = $"{status}  DB: {services.Database.DatabasePath}";
+        UpdateDocumentListHeader(folderId, status);
     }
 
     private void RefreshFolders()
@@ -153,22 +169,88 @@ public partial class MainWindow : Window
 
         var files = (string[])e.Data.GetData(DataFormats.FileDrop);
         var folder = GetSelectedFolderOrDefault();
+        RegisterUploadedFiles(files, folder, "Drag & Drop 업로드");
+        e.Handled = true;
+    }
+
+    private void RegisterUploadedFiles(IEnumerable<string> files, DocumentFolder selectedTargetFolder, string sourceLabel)
+    {
+        var addedCount = 0;
+        long? lastTargetFolderId = null;
+        var actorName = currentUser.DisplayName ?? currentUser.LoginId ?? "admin";
+
         foreach (var file in files.Where(File.Exists))
         {
             var fileInfo = new FileInfo(file);
-            var plan = services.DocumentPlacement.PrepareDocumentRegistration(folder.Id, fileInfo.Name, DateTime.Now);
-            workspace.AddDroppedFileToList(new UploadCandidate(
+            var createdAt = DateTime.Now;
+            var plan = services.DocumentPlacement.PrepareDocumentRegistration(selectedTargetFolder.Id, fileInfo.Name, createdAt);
+            var storedRelativePath = CopyFileToAppStorage(fileInfo, createdAt);
+            services.Documents.RegisterDocument(
+                plan.Folder.Id,
+                plan.Title,
                 fileInfo.Name,
-                fileInfo.FullName,
-                fileInfo.Extension,
-                fileInfo.Length,
-                DateTime.Now),
-                currentUser.DisplayName ?? currentUser.LoginId ?? "admin",
-                plan.Title);
+                ResolveDocumentType(fileInfo.Extension),
+                actorName,
+                storedRelativePath);
+
+            addedCount++;
+            lastTargetFolderId = plan.Folder.Id;
         }
 
-        RefreshFolders();
-        e.Handled = true;
+        RefreshWorkspace(
+            $"{sourceLabel}: {addedCount}개 파일을 DB에 저장했습니다.",
+            lastTargetFolderId ?? selectedTargetFolder.Id);
+    }
+
+    private static string CopyFileToAppStorage(FileInfo sourceFile, DateTime createdAt)
+    {
+        var uploadRoot = Path.Combine(AppContext.BaseDirectory, "Data", "Files", "Uploads", createdAt.ToString("yyyy-MM-dd"));
+        Directory.CreateDirectory(uploadRoot);
+
+        var targetPath = GetUniqueTargetPath(uploadRoot, sourceFile.Name);
+        File.Copy(sourceFile.FullName, targetPath);
+        return Path.GetRelativePath(AppContext.BaseDirectory, targetPath);
+    }
+
+    private static string GetUniqueTargetPath(string directory, string fileName)
+    {
+        var candidate = Path.Combine(directory, fileName);
+        if (!File.Exists(candidate))
+        {
+            return candidate;
+        }
+
+        var name = Path.GetFileNameWithoutExtension(fileName);
+        var extension = Path.GetExtension(fileName);
+        var index = 1;
+        do
+        {
+            candidate = Path.Combine(directory, $"{name}-{index:00}{extension}");
+            index++;
+        }
+        while (File.Exists(candidate));
+
+        return candidate;
+    }
+
+    private static string ResolveDocumentType(string extension)
+    {
+        return extension.ToLowerInvariant() switch
+        {
+            ".pdf" => "PDF",
+            ".txt" => "Text",
+            ".xlsx" => "Spreadsheet",
+            ".jpg" or ".jpeg" or ".png" or ".bmp" or ".gif" => "Image",
+            _ => string.IsNullOrWhiteSpace(extension) ? "File" : extension.TrimStart('.').ToUpperInvariant()
+        };
+    }
+
+    private void UpdateDocumentListHeader(long? folderId, string status)
+    {
+        var folder = folderId is null ? null : services.Folders.GetFolder(folderId.Value);
+        DocumentListTitleTextBlock.Text = folder is null ? "문서 목록" : $"{folder.Name} 파일 목록";
+        DocumentListHintTextBlock.Text = $"표시 {workspace.Documents.Count}개";
+        workspace.StatusText = $"{status}  DB: {services.Database.DatabasePath}";
     }
 
     private static bool HasFileDrop(DragEventArgs e)
