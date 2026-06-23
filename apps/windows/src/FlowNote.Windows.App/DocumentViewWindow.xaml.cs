@@ -1,3 +1,4 @@
+using System.Data;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
@@ -50,10 +51,18 @@ public partial class DocumentViewWindow : Window
         var resolvedPath = ResolveLocalPath(document.LocalPath);
         PdfPreview.Visibility = Visibility.Collapsed;
         PdfPreview.Source = null;
+        SpreadsheetPreview.Visibility = Visibility.Collapsed;
+        SpreadsheetPreview.ItemsSource = null;
 
         if (IsPdf(resolvedPath))
         {
             ShowPdfPreview(document, resolvedPath!);
+            return;
+        }
+
+        if (IsSpreadsheet(resolvedPath))
+        {
+            ShowSpreadsheetPreview(document, resolvedPath!);
             return;
         }
 
@@ -121,6 +130,13 @@ public partial class DocumentViewWindow : Window
             Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsSpreadsheet(string? path)
+    {
+        return !string.IsNullOrWhiteSpace(path) &&
+            File.Exists(path) &&
+            Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase);
+    }
+
     private void ShowPdfPreview(ExplorerDocument document, string resolvedPath)
     {
         try
@@ -128,6 +144,8 @@ public partial class DocumentViewWindow : Window
             ImagePreview.Visibility = Visibility.Collapsed;
             ImagePreview.Source = null;
             ContentTextBox.Visibility = Visibility.Collapsed;
+            SpreadsheetPreview.Visibility = Visibility.Collapsed;
+            SpreadsheetPreview.ItemsSource = null;
             PdfPreview.Visibility = Visibility.Visible;
             PdfPreview.Source = new Uri(resolvedPath, UriKind.Absolute);
         }
@@ -136,6 +154,32 @@ public partial class DocumentViewWindow : Window
             PdfPreview.Visibility = Visibility.Collapsed;
             ContentTextBox.Visibility = Visibility.Visible;
             ContentTextBox.Text = PreviewPdf(document, resolvedPath);
+        }
+    }
+
+    private void ShowSpreadsheetPreview(ExplorerDocument document, string resolvedPath)
+    {
+        try
+        {
+            var table = LoadSpreadsheetTable(resolvedPath);
+            if (table.Rows.Count == 0)
+            {
+                ContentTextBox.Visibility = Visibility.Visible;
+                ContentTextBox.Text = BuildMetadataPreview(document, "엑셀 첫 번째 시트에 표시할 데이터가 없습니다.");
+                return;
+            }
+
+            ContentTextBox.Visibility = Visibility.Collapsed;
+            ImagePreview.Visibility = Visibility.Collapsed;
+            ImagePreview.Source = null;
+            SpreadsheetPreview.Visibility = Visibility.Visible;
+            SpreadsheetPreview.ItemsSource = table.DefaultView;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or System.Xml.XmlException)
+        {
+            SpreadsheetPreview.Visibility = Visibility.Collapsed;
+            ContentTextBox.Visibility = Visibility.Visible;
+            ContentTextBox.Text = BuildMetadataPreview(document, $"엑셀 미리보기를 생성할 수 없습니다.\n\n{ex.Message}");
         }
     }
 
@@ -148,11 +192,6 @@ public partial class DocumentViewWindow : Window
 
         var fileInfo = new FileInfo(resolvedPath);
         var extension = Path.GetExtension(resolvedPath).ToLowerInvariant();
-        if (extension == ".xlsx")
-        {
-            return PreviewXlsx(document, resolvedPath);
-        }
-
         if (extension == ".pdf")
         {
             return PreviewPdf(document, resolvedPath);
@@ -193,39 +232,84 @@ public partial class DocumentViewWindow : Window
         return builder.ToString();
     }
 
-    private static string PreviewXlsx(ExplorerDocument document, string path)
+    private static DataTable LoadSpreadsheetTable(string path)
     {
-        try
+        using var archive = ZipFile.OpenRead(path);
+        var sheetEntry = archive.GetEntry("xl/worksheets/sheet1.xml");
+        if (sheetEntry is null)
         {
-            using var archive = ZipFile.OpenRead(path);
-            var sheetEntry = archive.GetEntry("xl/worksheets/sheet1.xml");
-            if (sheetEntry is null)
+            throw new InvalidDataException("엑셀 첫 번째 시트를 찾을 수 없습니다.");
+        }
+
+        var sharedStrings = LoadSharedStrings(archive);
+        using var stream = sheetEntry.Open();
+        var xml = XDocument.Load(stream);
+        XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        var rowValues = xml.Descendants(ns + "row")
+            .Take(100)
+            .Select(row => ReadSpreadsheetRow(row, sharedStrings))
+            .Where(row => row.Any(value => !string.IsNullOrWhiteSpace(value)))
+            .ToList();
+
+        var columnCount = Math.Max(1, rowValues.Count == 0 ? 0 : rowValues.Max(row => row.Count));
+        var table = new DataTable();
+        for (var column = 1; column <= columnCount; column++)
+        {
+            table.Columns.Add(ColumnName(column));
+        }
+
+        foreach (var row in rowValues)
+        {
+            var dataRow = table.NewRow();
+            for (var index = 0; index < Math.Min(row.Count, columnCount); index++)
             {
-                return BuildMetadataPreview(document, "엑셀 첫 번째 시트를 찾을 수 없습니다.");
+                dataRow[index] = row[index];
             }
 
-            using var stream = sheetEntry.Open();
-            var xml = XDocument.Load(stream);
-            XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-            var rows = xml.Descendants(ns + "row")
-                .Take(30)
-                .Select(row => string.Join(" | ", row.Elements(ns + "c")
-                    .Select(ReadCellText)
-                    .Where(value => !string.IsNullOrWhiteSpace(value))))
-                .Where(line => !string.IsNullOrWhiteSpace(line))
-                .ToList();
+            table.Rows.Add(dataRow);
+        }
 
-            return rows.Count == 0
-                ? BuildMetadataPreview(document, "엑셀 시트에 표시할 텍스트가 없습니다.")
-                : string.Join(Environment.NewLine, rows);
-        }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or System.Xml.XmlException)
-        {
-            return BuildMetadataPreview(document, $"엑셀 미리보기를 생성할 수 없습니다.\n\n{ex.Message}");
-        }
+        return table;
     }
 
-    private static string ReadCellText(XElement cell)
+    private static IReadOnlyList<string> LoadSharedStrings(ZipArchive archive)
+    {
+        var sharedStringEntry = archive.GetEntry("xl/sharedStrings.xml");
+        if (sharedStringEntry is null)
+        {
+            return [];
+        }
+
+        using var stream = sharedStringEntry.Open();
+        var xml = XDocument.Load(stream);
+        XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        return xml.Descendants(ns + "si")
+            .Select(item => string.Concat(item.Descendants(ns + "t").Select(text => text.Value)))
+            .ToList();
+    }
+
+    private static List<string> ReadSpreadsheetRow(XElement row, IReadOnlyList<string> sharedStrings)
+    {
+        XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        var values = new List<string>();
+        var nextColumn = 1;
+        foreach (var cell in row.Elements(ns + "c"))
+        {
+            var reference = cell.Attribute("r")?.Value;
+            var columnIndex = string.IsNullOrWhiteSpace(reference) ? nextColumn : ColumnIndexFromCellReference(reference);
+            while (values.Count < columnIndex - 1)
+            {
+                values.Add(string.Empty);
+            }
+
+            values.Add(ReadCellText(cell, sharedStrings));
+            nextColumn = columnIndex + 1;
+        }
+
+        return values;
+    }
+
+    private static string ReadCellText(XElement cell, IReadOnlyList<string> sharedStrings)
     {
         XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
         var inlineText = cell.Descendants(ns + "t").FirstOrDefault()?.Value;
@@ -234,7 +318,39 @@ public partial class DocumentViewWindow : Window
             return inlineText;
         }
 
-        return cell.Element(ns + "v")?.Value ?? string.Empty;
+        var value = cell.Element(ns + "v")?.Value ?? string.Empty;
+        var dataType = cell.Attribute("t")?.Value;
+        if (dataType == "s" && int.TryParse(value, out var sharedStringIndex) && sharedStringIndex < sharedStrings.Count)
+        {
+            return sharedStrings[sharedStringIndex];
+        }
+
+        return value;
+    }
+
+    private static int ColumnIndexFromCellReference(string reference)
+    {
+        var columnLetters = new string(reference.TakeWhile(char.IsLetter).ToArray()).ToUpperInvariant();
+        var index = 0;
+        foreach (var letter in columnLetters)
+        {
+            index = (index * 26) + letter - 'A' + 1;
+        }
+
+        return Math.Max(index, 1);
+    }
+
+    private static string ColumnName(int index)
+    {
+        var name = string.Empty;
+        while (index > 0)
+        {
+            index--;
+            name = (char)('A' + index % 26) + name;
+            index /= 26;
+        }
+
+        return name;
     }
 
     private static string PreviewPdf(ExplorerDocument document, string path)
