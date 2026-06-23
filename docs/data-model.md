@@ -2,6 +2,22 @@
 
 ## 0. 데이터베이스 기준
 
+### 0.0 현재 코드 기준 로컬 SQLite 모델
+
+현재 실제 코드에서 사용하는 SQLite 모델은 Windows WPF 앱의 로컬 프로토타입 모델이다. DB 파일은 개발 실행 기준 `apps/windows/src/FlowNote.Windows.App/Data/flownote.local.sqlite`를 우선 사용하고, 배포 실행처럼 소스 프로젝트를 찾을 수 없는 경우 앱 실행 폴더의 `Data/flownote.local.sqlite`를 사용한다.
+
+현재 구현 테이블은 다음과 같다.
+
+| 테이블 | 현재 역할 |
+| --- | --- |
+| `user_accounts` | 로그인 계정. 기본 `admin / 1234`와 테스트 계정 `jobhead / 반장 / 1234`를 저장 |
+| `document_folders` | 루트, 기본 폴더, 문서 분류 폴더, 날짜 하위 폴더를 저장 |
+| `documents` | 문서 메타데이터, 로컬 파일 상대 경로, 상태, 최신 버전, 최신 코멘트를 저장 |
+| `document_versions` | 원본 등록 버전과 코멘트 저장으로 증가한 버전을 저장 |
+| `notifications` | 새 코멘트 버전 생성 시 직전 버전 작성자 대상 알림을 저장 |
+
+현재 앱은 문서 등록 시 상태를 `WORKING`으로 저장한다. `IN_REVIEW`, `PUBLISHED`, `ARCHIVED` 같은 상태 전환, 역할 테이블, 권한 테이블, 접근 로그, 태그, 현장 코멘트 별도 모델, 작업내역, 보고서, AI 로그, 서버 저장소용 `FileObject`는 아직 코드에 구현되어 있지 않다. 아래 데이터 모델은 제품 목표와 서버 확장 초안이며 현재 코드 구현 완료를 뜻하지 않는다.
+
 FlowNote의 메타데이터 DB는 SQLite를 우선 사용한다. 현장 규모나 동시성이 커지면 PostgreSQL로 확장한다.
 
 파일 바이너리는 DB에 직접 저장하지 않고 서버 PC의 로컬 `storage/` 폴더에 저장한다. SQLite에는 문서 메타데이터, 파일 참조 정보, 버전, 권한, 이력, 단말기, 현장 코멘트, 작업내역, AI 조언 로그를 저장한다.
