@@ -3,11 +3,10 @@
 ## GitHub Push Policy
 
 - This repository may be public. Never commit secrets, credentials, real customer files, production data, personal local paths, machine-specific launch/service files, or generated build/deployment artifacts.
-- Do not push to GitHub unless the user explicitly asks for a push.
-- Changing files, running checks, staging, or creating a local commit does not imply permission to push.
-- If a change should be shared remotely, wait for a direct user instruction to push.
+- Do not push to GitHub unless the user explicitly asks for a push or asks to commit.
+- Changing files, running checks, or staging does not imply permission to push.
+- A user instruction to commit, including Korean phrases like `커밋하세요`, `커밋해줘`, or `일단 커밋하세요`, means stage the current relevant changes, create a local commit, and push it to the clear current target branch.
 - Before any push, confirm the target remote and branch if they are not already clear from the current task.
-- If the user says `일단 커밋하세요.`, treat it as an explicit instruction to stage the current relevant changes, create a local commit, and push it to the clear current target branch. If the target remote or branch is not clear, confirm it before pushing.
 
 ## Project
 
