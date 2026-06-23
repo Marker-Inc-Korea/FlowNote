@@ -5,4 +5,7 @@ public sealed record ExplorerFolder(
     string Name,
     string Path,
     bool IsSystem,
-    IReadOnlyList<ExplorerFolder> Children);
+    IReadOnlyList<ExplorerFolder> Children)
+{
+    public string IconGlyph => "\uE8B7";
+}

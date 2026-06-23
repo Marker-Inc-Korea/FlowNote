@@ -51,12 +51,7 @@ FlowNote/
     windows/       Windows WPF 기반 현장/관리자 클라이언트
   services/
     api/           Python FastAPI 기반 FlowNote API 서버
-  packages/
-    shared/        공통 도메인 모델, API 계약, 검증 규칙
-    ui/            공통 UI 자원 또는 디자인 토큰
   docs/            제품, 아키텍처, 데이터 모델, API, 결정 기록
-  assets/          공통 이미지, 아이콘, 문서 샘플 등 정적 자원
-  scripts/         개발, 빌드, 운영 보조 스크립트
 ```
 
 ## 현재 상태

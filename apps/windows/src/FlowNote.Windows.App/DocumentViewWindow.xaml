@@ -1,13 +1,13 @@
 <Window x:Class="FlowNote.Windows.App.DocumentViewWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="File view"
+        Title="파일 보기"
         Width="760"
         Height="560"
         MinWidth="520"
         MinHeight="360"
         Background="{StaticResource WindowBackgroundBrush}">
-    <Grid Margin="16">
+    <Grid Margin="14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="10" />
@@ -17,7 +17,7 @@
         <Border Background="{StaticResource PanelBackgroundBrush}"
                 BorderBrush="{StaticResource PanelBorderBrush}"
                 BorderThickness="1"
-                CornerRadius="6"
+                CornerRadius="4"
                 Padding="14">
             <StackPanel>
                 <TextBlock x:Name="TitleTextBlock"
@@ -34,7 +34,7 @@
                 Background="{StaticResource PanelBackgroundBrush}"
                 BorderBrush="{StaticResource PanelBorderBrush}"
                 BorderThickness="1"
-                CornerRadius="6">
+                CornerRadius="4">
             <TextBox x:Name="ContentTextBox"
                      IsReadOnly="True"
                      AcceptsReturn="True"
@@ -43,6 +43,8 @@
                      VerticalScrollBarVisibility="Auto"
                      HorizontalScrollBarVisibility="Auto"
                      BorderThickness="0"
+                     FontFamily="Consolas"
+                     FontSize="13"
                      Margin="12" />
         </Border>
     </Grid>
