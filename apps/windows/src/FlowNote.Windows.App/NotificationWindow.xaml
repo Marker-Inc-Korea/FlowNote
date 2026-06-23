@@ -1,0 +1,74 @@
+<Window x:Class="FlowNote.Windows.App.NotificationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="알림함"
+        Width="720"
+        Height="520"
+        MinWidth="620"
+        MinHeight="420"
+        Background="{StaticResource WindowBackgroundBrush}">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="10" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="44" />
+        </Grid.RowDefinitions>
+
+        <Border Background="{StaticResource PanelBackgroundBrush}"
+                BorderBrush="{StaticResource PanelBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="14">
+            <StackPanel>
+                <TextBlock Text="알림함"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource PrimaryTextBrush}" />
+                <TextBlock x:Name="SummaryTextBlock"
+                           Margin="0,6,0,0"
+                           Foreground="{StaticResource SecondaryTextBrush}" />
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="2"
+                Background="{StaticResource PanelBackgroundBrush}"
+                BorderBrush="{StaticResource PanelBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="4">
+            <DataGrid x:Name="NotificationGrid"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      IsReadOnly="True"
+                      HeadersVisibility="Column"
+                      GridLinesVisibility="Horizontal"
+                      BorderThickness="0"
+                      RowHeight="42"
+                      ColumnHeaderHeight="34">
+                <DataGrid.Columns>
+                    <DataGridCheckBoxColumn Header="읽음" Binding="{Binding IsRead}" Width="58" />
+                    <DataGridTextColumn Header="시간" Binding="{Binding CreatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="138" />
+                    <DataGridTextColumn Header="문서" Binding="{Binding DocumentTitle}" Width="170" />
+                    <DataGridTextColumn Header="작성자" Binding="{Binding ActorName}" Width="96" />
+                    <DataGridTextColumn Header="내용" Binding="{Binding Message}" Width="*" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom">
+            <Button Width="116"
+                    Height="34"
+                    Margin="0,0,8,0"
+                    Content="모두 읽음"
+                    Click="MarkAllReadButton_Click" />
+            <Button Width="84"
+                    Height="34"
+                    Content="닫기"
+                    Click="CloseButton_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

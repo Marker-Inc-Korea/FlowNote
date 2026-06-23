@@ -71,6 +71,33 @@ try
     Require(versions[0].VersionNo == 2, "latest version should be first");
     Require(versions[0].Comment == "Smoke comment for version history.", "version should store the comment");
 
+    var notificationDocument = services.Documents.RegisterDocument(
+        folder.Id,
+        "Notification Document",
+        "notification-document.txt",
+        "Text",
+        "작성자1");
+    services.Documents.AddCommentVersion(
+        notificationDocument.DocumentId,
+        "v2 comment should notify original author.",
+        "작성자2");
+    services.Documents.AddCommentVersion(
+        notificationDocument.DocumentId,
+        "v3 comment should notify previous version author.",
+        "작성자3");
+    var originalAuthorNotifications = services.Notifications.ListNotifications("작성자1");
+    Require(originalAuthorNotifications.Count == 1, "v2 comment should notify the original document author once");
+    Require(originalAuthorNotifications[0].ActorName == "작성자2", "v2 notification actor should be the v2 author");
+    Require(originalAuthorNotifications[0].Message.Contains("v2", StringComparison.Ordinal), "v2 notification should mention version 2");
+
+    var previousVersionAuthorNotifications = services.Notifications.ListNotifications("작성자2");
+    Require(previousVersionAuthorNotifications.Count == 1, "v3 comment should notify the previous version author");
+    Require(previousVersionAuthorNotifications[0].ActorName == "작성자3", "v3 notification actor should be the v3 author");
+    Require(previousVersionAuthorNotifications[0].Message.Contains("v3", StringComparison.Ordinal), "v3 notification should mention version 3");
+    Require(services.Notifications.CountUnread("작성자2") == 1, "previous version author should have one unread notification");
+    services.Notifications.MarkAllAsRead("작성자2");
+    Require(services.Notifications.CountUnread("작성자2") == 0, "mark all as read should clear unread notifications");
+
     var ruleDate = new DateTime(2026, 6, 23, 9, 10, 0);
     var handoverFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.HandoverFolderName);
     var handoverPlan = services.DocumentPlacement.PrepareDocumentRegistration(
