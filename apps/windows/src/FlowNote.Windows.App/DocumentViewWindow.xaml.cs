@@ -7,6 +7,7 @@ using System.Windows.Media.Imaging;
 using System.Xml.Linq;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
+using FlowNote.Windows.Core.Storage;
 using UglyToad.PdfPig;
 
 namespace FlowNote.Windows.App;
@@ -78,7 +79,28 @@ public partial class DocumentViewWindow : Window
             return null;
         }
 
-        return Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path);
+        if (Path.IsPathRooted(path))
+        {
+            return path;
+        }
+
+        var runtimePath = Path.Combine(AppContext.BaseDirectory, path);
+        if (File.Exists(runtimePath))
+        {
+            return runtimePath;
+        }
+
+        var developmentAppDirectory = FlowNoteLocalDatabase.TryFindDevelopmentAppDirectory(AppContext.BaseDirectory);
+        if (!string.IsNullOrWhiteSpace(developmentAppDirectory))
+        {
+            var developmentPath = Path.Combine(developmentAppDirectory, path);
+            if (File.Exists(developmentPath))
+            {
+                return developmentPath;
+            }
+        }
+
+        return runtimePath;
     }
 
     private static bool IsImage(string? path)

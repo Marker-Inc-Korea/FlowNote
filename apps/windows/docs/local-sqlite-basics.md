@@ -8,7 +8,7 @@ Windows WPF 클라이언트가 서버 연동 전에도 로그인, 폴더 관리,
 
 ## 기본 설정
 
-- DB 경로: 앱 빌드 출력 폴더의 `Data\flownote.local.sqlite`
+- DB 경로: 개발 실행 시 `apps/windows/src/FlowNote.Windows.App/Data/flownote.local.sqlite`, 배포 실행 시 앱 실행 폴더의 `Data\flownote.local.sqlite`
 - 소스 시드 DB: `apps/windows/src/FlowNote.Windows.App/Data/flownote.local.sqlite`
 - 기본 로그인 ID: `admin`
 - 기본 비밀번호: `1234`
@@ -50,7 +50,8 @@ Windows WPF 클라이언트가 서버 연동 전에도 로그인, 폴더 관리,
 - 문서 등록 버튼은 기본 폴더 `문서`를 기준으로 샘플 문서 메타데이터를 등록하고, 실제 저장 위치는 분류 규칙에 따라 `문서` 하위 폴더로 정한다.
 - 파일 보기 창에서 코멘트를 저장하면 `document_versions`에 새 버전을 추가하고 `documents.version_no`를 올린다.
 - 화면에서는 버전 이력을 별도 목록으로 분리하지 않고 문서 본문 아래 누적 코멘트 영역에 코멘트를 이어서 표시한다.
-- 파일 업로드 버튼과 Drag & Drop은 선택한 파일을 앱 실행 폴더의 `Data\Files\Uploads\yyyy-MM-dd\` 아래로 복사하고 SQLite에 문서와 원본 버전 `v1`을 즉시 저장한다.
+- 파일 업로드 버튼과 Drag & Drop은 선택한 파일을 `Data\Files\Uploads\yyyy-MM-dd\` 아래로 복사하고 SQLite에 문서와 원본 버전 `v1`을 즉시 저장한다.
+- 업로드 원본 파일은 공개 저장소에 올리지 않지만, SQLite DB의 문서 메타데이터와 상대 경로 기록은 커밋 대상이다.
 - PDF 업로드 파일은 저장된 로컬 경로를 기준으로 WebView2 PDF 뷰어에서 원본 레이아웃을 표시한다.
 - 사진 문서는 이미지 미리보기 아래에 누적 코멘트와 새 코멘트 입력 영역을 표시한다.
 - `인수인계` 폴더에 파일을 등록하면 `yyyy-MM-dd` 날짜 하위 폴더를 만들고 그 아래에 배치한다.
