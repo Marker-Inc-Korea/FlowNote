@@ -2,6 +2,15 @@
 
 FlowNote Python FastAPI 서버 영역이다.
 
+## 현재 구현 상태
+
+현재 서버 코드는 FastAPI 앱 골격과 기본 상태 확인 엔드포인트만 포함한다.
+
+- `GET /`
+- `GET /api/v1/health`
+
+아래 예상 책임은 제품 목표와 향후 구현 범위이다. 현재 Windows WPF 앱은 이 서버 API와 통신하지 않고 로컬 SQLite 프로토타입으로 동작한다.
+
 ## 예상 책임
 
 - 문서 등록, 조회, 다운로드
@@ -11,7 +20,7 @@ FlowNote Python FastAPI 서버 영역이다.
 - 권한, 이력, 접근 로그 관리
 - 현장 코멘트와 정형 문구 관리
 - 작업내역과 보고서 관리
-- AI 검색과 작업 조언 API 제공
+- 축적 데이터 기반 AI 검색과 작업 조언 API 후속 제공
 - SQLite 우선 메타데이터 저장
 - 필요 시 PostgreSQL 전환
 - 서버 PC 로컬 `storage/` 폴더 기반 파일 저장
