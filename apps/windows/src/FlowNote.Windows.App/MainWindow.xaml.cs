@@ -27,6 +27,7 @@ public partial class MainWindow : Window
         SignedInUserTextBlock.Text = $"{currentUser.DisplayName} ({currentUser.Role})";
         DataContext = workspace;
         RefreshWorkspace("로컬 작업 공간을 열었습니다.", services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.DocumentsFolderName).Id);
+        RefreshNotificationButton();
     }
 
     private void NewFolderButton_Click(object sender, RoutedEventArgs e)
@@ -52,6 +53,16 @@ public partial class MainWindow : Window
             currentUser.DisplayName ?? currentUser.LoginId ?? "admin");
 
         RefreshWorkspace($"문서를 등록했습니다. 위치: {plan.Folder.Path}", plan.Folder.Id);
+    }
+
+    private void NotificationButton_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new NotificationWindow(services.Notifications, GetCurrentActorName())
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+        RefreshNotificationButton();
     }
 
     private void UploadFileButton_Click(object sender, RoutedEventArgs e)
@@ -279,6 +290,7 @@ public partial class MainWindow : Window
         if (viewWindow.CommentSaved && selectedFolder is not null)
         {
             RefreshDocuments(selectedFolder.Id, $"코멘트를 저장했습니다. 위치: {selectedFolder.Path}");
+            RefreshNotificationButton();
         }
     }
 
@@ -317,6 +329,17 @@ public partial class MainWindow : Window
         }
 
         return services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.DocumentsFolderName);
+    }
+
+    private string GetCurrentActorName()
+    {
+        return currentUser.DisplayName ?? currentUser.LoginId ?? "admin";
+    }
+
+    private void RefreshNotificationButton()
+    {
+        var unreadCount = services.Notifications.CountUnread(GetCurrentActorName());
+        NotificationButton.Content = unreadCount == 0 ? "알림함" : $"알림함 ({unreadCount})";
     }
 
     private static T? FindVisualParent<T>(DependencyObject? child)
