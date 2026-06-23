@@ -22,9 +22,9 @@ public partial class MainWindow : Window
         InitializeComponent();
         this.services = services;
         this.currentUser = currentUser;
-        SignedInUserTextBlock.Text = $"Signed in: {currentUser.DisplayName} ({currentUser.Role})";
+        SignedInUserTextBlock.Text = $"{currentUser.DisplayName} ({currentUser.Role})";
         DataContext = workspace;
-        RefreshWorkspace("Signed in. Local SQLite workspace loaded.");
+        RefreshWorkspace("로컬 작업 공간을 열었습니다.");
     }
 
     private void NewFolderButton_Click(object sender, RoutedEventArgs e)
@@ -32,8 +32,8 @@ public partial class MainWindow : Window
         var parent = selectedFolder is null
             ? services.Folders.GetRootFolder()
             : services.Folders.GetFolder(selectedFolder.Id);
-        services.Folders.CreateFolder($"Folder {DateTime.Now:HHmmss}", parent.Id);
-        RefreshWorkspace("Folder created.");
+        services.Folders.CreateFolder($"새 폴더 {DateTime.Now:HHmmss}", parent.Id);
+        RefreshWorkspace("폴더를 생성했습니다.");
     }
 
     private void RegisterDocumentButton_Click(object sender, RoutedEventArgs e)
@@ -49,7 +49,7 @@ public partial class MainWindow : Window
             "Text",
             currentUser.DisplayName ?? currentUser.LoginId ?? "admin");
 
-        RefreshWorkspace($"Document registered in {plan.Folder.Path}.");
+        RefreshWorkspace($"문서를 등록했습니다. 위치: {plan.Folder.Path}");
     }
 
     private void RefreshWorkspace(string status)
@@ -62,7 +62,7 @@ public partial class MainWindow : Window
             workspace.Documents.Add(document);
         }
 
-        workspace.StatusText = $"{status} DB: {services.Database.DatabasePath}";
+        workspace.StatusText = $"{status}  DB: {services.Database.DatabasePath}";
     }
 
     private void RefreshFolders()

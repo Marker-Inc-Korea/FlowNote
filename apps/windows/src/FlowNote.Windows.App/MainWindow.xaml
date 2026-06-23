@@ -9,46 +9,52 @@
         Background="{StaticResource WindowBackgroundBrush}">
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="56" />
+            <RowDefinition Height="64" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="30" />
+            <RowDefinition Height="32" />
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0"
                 Background="{StaticResource PanelBackgroundBrush}"
                 BorderBrush="{StaticResource PanelBorderBrush}"
                 BorderThickness="0,0,0,1">
-            <DockPanel Margin="20,0">
-                <TextBlock DockPanel.Dock="Left"
-                           Text="FlowNote"
-                           FontSize="20"
-                           FontWeight="SemiBold"
-                           Foreground="{StaticResource PrimaryTextBrush}"
-                           VerticalAlignment="Center" />
+            <DockPanel Margin="18,0">
+                <StackPanel DockPanel.Dock="Left"
+                            VerticalAlignment="Center">
+                    <TextBlock Text="FlowNote"
+                               FontSize="21"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource PrimaryTextBrush}" />
+                    <TextBlock Text="현장 문서와 작업 지식 관리"
+                               Margin="0,2,0,0"
+                               FontSize="12"
+                               Foreground="{StaticResource SecondaryTextBrush}" />
+                </StackPanel>
                 <StackPanel DockPanel.Dock="Right"
                             Orientation="Horizontal"
                             VerticalAlignment="Center">
                     <TextBlock x:Name="SignedInUserTextBlock"
-                               Margin="0,0,16,0"
+                               Margin="0,0,18,0"
+                               FontSize="13"
                                Foreground="{StaticResource SecondaryTextBrush}"
                                VerticalAlignment="Center" />
-                    <Button Width="96"
-                            Height="32"
+                    <Button Width="92"
+                            Height="34"
                             Margin="0,0,8,0"
-                            Content="New folder"
+                            Content="새 폴더"
                             Click="NewFolderButton_Click" />
-                    <Button Width="120"
-                            Height="32"
-                            Content="Register doc"
+                    <Button Width="104"
+                            Height="34"
+                            Content="문서 등록"
                             Click="RegisterDocumentButton_Click" />
                 </StackPanel>
             </DockPanel>
         </Border>
 
-        <Grid Grid.Row="1" Margin="16">
+        <Grid Grid.Row="1" Margin="14">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260" />
-                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="282" />
+                <ColumnDefinition Width="12" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
@@ -56,24 +62,52 @@
                     Background="{StaticResource PanelBackgroundBrush}"
                     BorderBrush="{StaticResource PanelBorderBrush}"
                     BorderThickness="1"
-                    CornerRadius="6">
+                    CornerRadius="4">
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Top"
-                               Margin="16,14,16,8"
-                               Text="Folders"
-                               FontSize="15"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource PrimaryTextBrush}" />
+                    <Border DockPanel.Dock="Top"
+                            Height="48"
+                            Padding="14,0"
+                            Background="{StaticResource PanelMutedBrush}"
+                            BorderBrush="{StaticResource PanelBorderBrush}"
+                            BorderThickness="0,0,0,1">
+                        <DockPanel>
+                            <TextBlock Text="폴더"
+                                       FontSize="15"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource PrimaryTextBrush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock DockPanel.Dock="Right"
+                                       Text="문서 구조"
+                                       FontSize="12"
+                                       Foreground="{StaticResource SecondaryTextBrush}"
+                                       VerticalAlignment="Center" />
+                        </DockPanel>
+                    </Border>
                     <TreeView ItemsSource="{Binding Folders}"
                               SelectedItemChanged="FolderTree_SelectedItemChanged"
-                              Margin="8,0,8,12"
-                              BorderThickness="0">
+                              Margin="10,8,8,10"
+                              BorderThickness="0"
+                              Background="{StaticResource PanelBackgroundBrush}"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto">
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                <StackPanel Orientation="Horizontal" Margin="2,4">
-                                    <TextBlock Text="Folder" Margin="0,0,8,0" Foreground="{StaticResource SecondaryTextBrush}" />
-                                    <TextBlock Text="{Binding Name}" />
-                                </StackPanel>
+                                <Grid Height="24" VerticalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="22" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding IconGlyph}"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="15"
+                                               Foreground="#D79B22"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Name}"
+                                               Grid.Column="1"
+                                               Foreground="{StaticResource PrimaryTextBrush}"
+                                               VerticalAlignment="Center" />
+                                </Grid>
                             </HierarchicalDataTemplate>
                         </TreeView.ItemTemplate>
                     </TreeView>
@@ -88,8 +122,8 @@
                   DragOver="FileListDropZone_DragOver"
                   Drop="FileListDropZone_Drop">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="42" />
-                    <RowDefinition Height="40" />
+                    <RowDefinition Height="48" />
+                    <RowDefinition Height="44" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
@@ -97,15 +131,20 @@
                         Background="{StaticResource PanelBackgroundBrush}"
                         BorderBrush="{StaticResource PanelBorderBrush}"
                         BorderThickness="1"
-                        CornerRadius="6"
-                        Padding="12,0">
+                        CornerRadius="4"
+                        Padding="14,0">
                     <DockPanel>
+                        <TextBlock Text="검색"
+                                   Margin="0,0,10,0"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource PrimaryTextBrush}"
+                                   VerticalAlignment="Center" />
                         <TextBox Width="360"
-                                 Height="28"
-                                 Text="Search by title, file name, or tag"
+                                 Height="30"
                                  VerticalContentAlignment="Center" />
                         <TextBlock DockPanel.Dock="Right"
-                                   Text="Drop files onto this list to add upload candidates"
+                                   Text="파일 목록"
+                                   FontWeight="SemiBold"
                                    Foreground="{StaticResource SecondaryTextBrush}"
                                    VerticalAlignment="Center" />
                     </DockPanel>
@@ -113,18 +152,19 @@
 
                 <Border Grid.Row="1"
                         Margin="0,8,0,0"
-                        Background="#F8FAFC"
+                        Background="{StaticResource PanelMutedBrush}"
                         BorderBrush="{StaticResource PanelBorderBrush}"
                         BorderThickness="1"
-                        CornerRadius="6"
-                        Padding="12,0">
+                        CornerRadius="4"
+                        Padding="14,0">
                     <DockPanel>
-                        <TextBlock Text="File list"
+                        <TextBlock Text="문서 목록"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource PrimaryTextBrush}"
                                    VerticalAlignment="Center" />
                         <TextBlock DockPanel.Dock="Right"
-                                   Text="Double-click a row to open the file view"
+                                   Text="파일명, 제목, 상태, 버전, 사용자, 생성시간"
+                                   FontSize="12"
                                    Foreground="{StaticResource SecondaryTextBrush}"
                                    VerticalAlignment="Center" />
                     </DockPanel>
@@ -136,7 +176,7 @@
                         Background="{StaticResource PanelBackgroundBrush}"
                         BorderBrush="{StaticResource PanelBorderBrush}"
                         BorderThickness="1"
-                        CornerRadius="6">
+                        CornerRadius="4">
                     <DataGrid ItemsSource="{Binding Documents}"
                               MouseDoubleClick="DocumentGrid_MouseDoubleClick"
                               AutoGenerateColumns="False"
@@ -146,15 +186,16 @@
                               HeadersVisibility="Column"
                               GridLinesVisibility="Horizontal"
                               BorderThickness="0"
-                              RowHeight="38">
+                              RowHeight="39"
+                              ColumnHeaderHeight="34">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="File name" Binding="{Binding FileName}" Width="*" />
-                            <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="180" />
-                            <DataGridTextColumn Header="Type" Binding="{Binding DocumentType}" Width="90" />
-                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="120" />
-                            <DataGridTextColumn Header="Version" Binding="{Binding VersionLabel}" Width="90" />
-                            <DataGridTextColumn Header="User" Binding="{Binding UpdatedBy}" Width="130" />
-                            <DataGridTextColumn Header="Version created" Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="160" />
+                            <DataGridTextColumn Header="파일명" Binding="{Binding FileName}" Width="*" />
+                            <DataGridTextColumn Header="제목" Binding="{Binding Title}" Width="180" />
+                            <DataGridTextColumn Header="유형" Binding="{Binding DocumentType}" Width="80" />
+                            <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="110" />
+                            <DataGridTextColumn Header="버전" Binding="{Binding VersionLabel}" Width="76" />
+                            <DataGridTextColumn Header="사용자" Binding="{Binding UpdatedBy}" Width="130" />
+                            <DataGridTextColumn Header="생성시간" Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="152" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </Border>
@@ -167,6 +208,7 @@
                 BorderThickness="0,1,0,0">
             <TextBlock Margin="16,0"
                        Text="{Binding StatusText}"
+                       FontSize="12"
                        Foreground="{StaticResource SecondaryTextBrush}"
                        VerticalAlignment="Center" />
         </Border>

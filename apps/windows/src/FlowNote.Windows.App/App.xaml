@@ -3,11 +3,64 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="LoginWindow.xaml">
     <Application.Resources>
-        <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F3F5F8" />
+        <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F4F6F9" />
         <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="PanelBorderBrush" Color="#D9DEE8" />
-        <SolidColorBrush x:Key="PrimaryTextBrush" Color="#20242B" />
-        <SolidColorBrush x:Key="SecondaryTextBrush" Color="#5F6B7A" />
+        <SolidColorBrush x:Key="PanelMutedBrush" Color="#F8FAFC" />
+        <SolidColorBrush x:Key="PanelBorderBrush" Color="#D7DDE7" />
+        <SolidColorBrush x:Key="PrimaryTextBrush" Color="#1F2933" />
+        <SolidColorBrush x:Key="SecondaryTextBrush" Color="#647181" />
         <SolidColorBrush x:Key="AccentBrush" Color="#2563EB" />
+        <SolidColorBrush x:Key="AccentSoftBrush" Color="#E8F0FE" />
+
+        <Style TargetType="{x:Type TextBlock}">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+        </Style>
+
+        <Style TargetType="{x:Type Button}">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}" />
+        </Style>
+
+        <Style TargetType="{x:Type TextBox}">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style TargetType="{x:Type DataGrid}">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Background" Value="{StaticResource PanelBackgroundBrush}" />
+            <Setter Property="AlternatingRowBackground" Value="#FAFBFD" />
+            <Setter Property="HorizontalGridLinesBrush" Value="#EEF1F5" />
+            <Setter Property="VerticalGridLinesBrush" Value="#EEF1F5" />
+        </Style>
+
+        <Style TargetType="{x:Type DataGridColumnHeader}">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
+            <Setter Property="Background" Value="#F8FAFC" />
+            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,1,1" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Height" Value="34" />
+        </Style>
+
+        <Style TargetType="{x:Type TreeViewItem}">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="IsExpanded" Value="True" />
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="Padding" Value="2,1" />
+        </Style>
     </Application.Resources>
 </Application>

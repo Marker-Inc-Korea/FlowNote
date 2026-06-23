@@ -12,7 +12,7 @@ public partial class DocumentViewWindow : Window
     public DocumentViewWindow(ExplorerDocument document)
     {
         InitializeComponent();
-        Title = $"File view - {document.FileName}";
+        Title = $"파일 보기 - {document.FileName}";
         TitleTextBlock.Text = document.FileName;
         MetaTextBlock.Text = $"{document.Status} | {document.VersionLabel} | {document.UpdatedBy} | {document.UpdatedAt:yyyy-MM-dd HH:mm}";
         ContentTextBox.Text = LoadPreviewText(document);
@@ -22,13 +22,13 @@ public partial class DocumentViewWindow : Window
     {
         if (string.IsNullOrWhiteSpace(document.LocalPath) || !File.Exists(document.LocalPath))
         {
-            return "This file is registered as metadata only. File content is not available in the local client yet.";
+            return "이 문서는 메타데이터만 등록되어 있습니다. 현재 로컬 클라이언트에서 파일 본문을 열 수 없습니다.";
         }
 
         var fileInfo = new FileInfo(document.LocalPath);
         if (fileInfo.Length > MaxPreviewBytes)
         {
-            return $"The file is {fileInfo.Length:N0} bytes. Preview is limited to small text files in the current client.";
+            return $"파일 크기: {fileInfo.Length:N0} bytes\n현재 클라이언트 미리보기는 작은 텍스트 파일만 지원합니다.";
         }
 
         try
@@ -38,7 +38,7 @@ public partial class DocumentViewWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DecoderFallbackException)
         {
-            return $"Unable to preview this file in the current client.\n\n{ex.Message}";
+            return $"현재 클라이언트에서 이 파일을 미리 볼 수 없습니다.\n\n{ex.Message}";
         }
     }
 }

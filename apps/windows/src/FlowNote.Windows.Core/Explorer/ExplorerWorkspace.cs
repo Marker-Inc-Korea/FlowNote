@@ -5,7 +5,7 @@ namespace FlowNote.Windows.Core.Explorer;
 
 public sealed class ExplorerWorkspace : INotifyPropertyChanged
 {
-    private string statusText = "Login required.";
+    private string statusText = "로그인이 필요합니다.";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -33,7 +33,7 @@ public sealed class ExplorerWorkspace : INotifyPropertyChanged
     public void AddUploadCandidate(UploadCandidate candidate)
     {
         UploadCandidates.Add(candidate);
-        StatusText = $"{UploadCandidates.Count} file(s) ready for upload.";
+        StatusText = $"업로드 후보 {UploadCandidates.Count}개";
     }
 
     public void AddDroppedFileToList(UploadCandidate candidate, string actorName)
@@ -48,7 +48,7 @@ public sealed class ExplorerWorkspace : INotifyPropertyChanged
             string.IsNullOrWhiteSpace(title) ? candidate.FileName : title,
             candidate.FileName,
             string.IsNullOrWhiteSpace(candidate.Extension) ? "File" : candidate.Extension.TrimStart('.').ToUpperInvariant(),
-            "Upload candidate",
+            "업로드 후보",
             actorName,
             candidate.AddedAt,
             "draft",
