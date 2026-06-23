@@ -6,11 +6,4 @@
 ./start-local-service.sh api
 ```
 
-Legacy helpers are kept only for reference:
-
-```bash
-./start-local-service.sh legacy-node-api
-./start-local-service.sh legacy-web
-```
-
-The legacy commands use the preserved code under `services/api/legacy-node` and `apps/web/legacy-react-vite`.
+Machine-specific launch agent or service files should stay local and are ignored by Git.

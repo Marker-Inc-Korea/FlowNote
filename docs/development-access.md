@@ -4,9 +4,7 @@ This document records shared development and test access points for FlowNote.
 
 ## Test Environment
 
-- Legacy web test endpoint: https://edge-nano-docs.it-sent.com/
-
-This endpoint belongs to the older web-based direction. New development should not treat it as the target frontend. The new target is a Python FastAPI server accessed by a Windows WPF native client.
+- 새 개발 대상은 Python FastAPI 서버와 Windows WPF 네이티브 클라이언트이다.
 
 ## Data Retention
 
@@ -16,6 +14,6 @@ This endpoint belongs to the older web-based direction. New development should n
 
 ## Security Note
 
-- This repository is private, but real user accounts, passwords, tokens, API keys, and database connection details should not be committed.
+- This repository may be public. Real user accounts, passwords, tokens, API keys, and database connection details must not be committed.
 - Keep secrets in local `.env` files, deployment settings, or the approved secret manager for the environment.
 - Commit only non-secret access information that helps collaborators find the correct development or test endpoint.
