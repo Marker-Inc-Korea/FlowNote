@@ -20,7 +20,7 @@ API 초안은 [docs/api.md](../../docs/api.md)를 기준으로 한다.
 
 ## 로컬 개발
 
-새 개발 방향의 백엔드는 Python을 기준으로 한다. 기존 Node.js 스캐폴딩과 `npm` 실행 방식은 새 구현 기준이 아니며, Python 전환 전 참고 이력으로만 본다.
+새 개발 방향의 백엔드는 Python을 기준으로 한다.
 
 로컬 테스트 DB는 SQLite 파일을 우선 사용한다.
 
@@ -42,9 +42,8 @@ Config: local .env, committed secrets 금지
 - `app/core/`: 설정과 공통 인프라
 - `data/`: 로컬 SQLite DB 생성 위치. 실제 DB 파일은 커밋하지 않음
 - `storage/`: 서버 로컬 파일 저장 위치. 실제 업로드 파일은 커밋하지 않음
-- `db/`: 기존 MySQL 스키마 참고 자료와 향후 마이그레이션 후보
+- `db/`: 향후 SQLite 마이그레이션 또는 스키마 메모 위치
 - `tests/`: Python API 테스트
-- `legacy-node/`: 이전 Node.js API 코드 보존 영역
 
 ## 실행 후보
 
@@ -58,21 +57,5 @@ uvicorn app.main:app --host 127.0.0.1 --port 5184 --reload
 
 - `GET /`
 - `GET /api/v1/health`
-
-이전 Node 구현에 있던 참고 API:
-
-- `GET /api/v1/health`
-- `POST /api/v1/auth/login`
-- `GET /api/v1/auth/me`
-- `POST /api/v1/auth/logout`
-- `GET /api/v1/document-explorer`
-- `POST /api/v1/document-folders`
-- `GET /api/v1/system-history`
-- `GET /api/v1/users`
-- `PATCH /api/v1/users/{userId}/role`
-- `GET /api/v1/work-sequence/items`
-- `POST /api/v1/work-sequence/items`
-- `PATCH /api/v1/work-sequence/items/order`
-- `PATCH /api/v1/work-sequence/items/{sequenceItemId}`
 
 개발용 계정과 비밀번호는 실제 구현 시 로컬 시드 데이터 또는 개발 전용 설정으로만 관리한다. 실제 사용자 계정, 비밀번호, 토큰, API 키, DB 접속 정보는 커밋하지 않는다.

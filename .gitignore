@@ -13,19 +13,64 @@ desktop.ini
 .env
 .env.*
 !.env.example
+*.env.local
+*.env.*.local
+
+# Secrets and credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.csr
+*.jks
+*.keystore
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+*.ppk
+*.token
+*.secret
+secrets/
+secret/
+credentials/
+private/
+*.credentials
+*.secrets.json
+appsettings.*.json
+!appsettings.example.json
 
 # Logs
 *.log
 logs/
+*.trace
+*.dmp
 
 # FlowNote local server data
 services/api/storage/*
 !services/api/storage/.gitkeep
 services/api/data/*
 !services/api/data/.gitkeep
+/storage/
+/data/
 *.sqlite
 *.sqlite3
 *.db
+*.db-shm
+*.db-wal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Local development machine configuration
+LocalDev/launchagents/
+*.local.json
+*.local.yaml
+*.local.yml
+*.local.toml
 
 # Node / web
 node_modules/
@@ -53,6 +98,18 @@ obj/
 *.suo
 *.userosscache
 *.sln.docstates
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.nupkg
+*.snupkg
+publish/
+*.msi
+*.msix
+*.appx
+*.appxbundle
+*.wixpdb
 
 # Python helper scripts
 __pycache__/
@@ -61,7 +118,31 @@ __pycache__/
 venv/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
 # Temporary files
 tmp/
 temp/
+*.tmp
+*.bak
+*.orig
+
+# Private/customer files
+private-docs/
+customer-files/
+customer-data/
+field-data/
+*.hwp
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.xls
+*.xlsx
+*.pdf
+*.dwg
+*.zip
+*.7z
+*.rar

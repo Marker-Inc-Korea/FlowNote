@@ -2,7 +2,7 @@
 
 ## 1. 전체 구조
 
-FlowNote는 Python FastAPI 기반 문서·현장지식 관리 서버를 중심으로 Windows WPF 클라이언트, 외부 시스템이 REST API로 연결되는 구조이다. 독립 Web UI는 신규 개발 대상에서 제외한다.
+FlowNote는 Python FastAPI 기반 문서·현장지식 관리 서버를 중심으로 Windows WPF 클라이언트, 외부 시스템이 REST API로 연결되는 구조이다.
 
 아키텍처의 핵심은 문서관리와 지식관리 중 한쪽으로 치우치지 않는 것이다. 문서 서비스는 최신본, 버전, 권한, 이력을 안정적으로 관리하고, 현장지식 서비스는 문서와 작업 맥락에 연결된 코멘트와 문제점을 축적한다. AI는 이 데이터를 검색하고 조언하기 위한 활용 계층으로 두며, 장기적으로 의사결정 보조까지 확장할 수 있게 한다.
 
@@ -213,7 +213,7 @@ DocumentVersion / FieldNote / WorkRecordVersion
 - 자동 닫힘 기능은 클라이언트 앱에서 구현하고 서버에는 세션과 감사 로그를 기록한다.
 - 클라이언트 앱 단계에서 자동 닫힘, 사용자 닫힘, 권한 실패를 접근 로그 또는 감사 로그로 남길 수 있다.
 
-### 3.19 Legacy Document Import / Parsing Service
+### 3.19 Existing Document Import / Parsing Service
 
 - 기존 문서 대장, 작업지시서, 관리 파일의 파싱을 지원한다.
 - 고객이 이미 쓰던 정리 체계를 FlowNote 문서 구조와 태그로 전환하는 것을 돕는다.

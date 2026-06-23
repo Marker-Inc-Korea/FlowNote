@@ -26,7 +26,6 @@ FlowNote의 배포 기준은 사내 서버형 운영이다. 생산 현장의 기
 - 관리자 단말기는 지정 파일 변경을 감지하고 새 버전 업로드를 보조한다.
 - 백엔드는 Python FastAPI 서버로 작성한다.
 - 클라이언트는 Windows WPF 기반 네이티브 앱을 기준으로 작성한다.
-- 독립 Web UI는 개발하지 않는다.
 - 프론트엔드는 설치형 네이티브 클라이언트 앱으로 구현하고, 로컬 제어가 필요한 기능은 앱의 네이티브 기능으로 처리한다.
 - 고객 생산공장 운영에서는 일반 브라우저 직접 접근이 아니라 승인된 클라이언트 설치앱 접근을 기본으로 한다.
 - 메타데이터 DB는 SQLite를 우선 사용하고, 필요하면 PostgreSQL로 확장한다.
@@ -50,21 +49,18 @@ FlowNote의 배포 기준은 사내 서버형 운영이다. 생산 현장의 기
 FlowNote/
   apps/
     windows/       Windows WPF 기반 현장/관리자 클라이언트
-    web/           신규 개발 대상이 아닌 과거 웹 UI 보존 영역
   services/
     api/           Python FastAPI 기반 FlowNote API 서버
-      legacy-node/ 기존 Node API 보존 영역
   packages/
     shared/        공통 도메인 모델, API 계약, 검증 규칙
     ui/            공통 UI 자원 또는 디자인 토큰
   docs/            제품, 아키텍처, 데이터 모델, API, 결정 기록
   assets/          공통 이미지, 아이콘, 문서 샘플 등 정적 자원
   scripts/         개발, 빌드, 운영 보조 스크립트
-  server/          기존 서버 코드 보존 영역
 ```
 
 ## 현재 상태
 
-현재 저장소는 오래된 설계와 초기 구현 흔적을 새 방향에 맞춰 정리하는 단계이다. 확정된 기본 기술은 Python FastAPI, Windows WPF 클라이언트, SQLite 우선 DB, 서버 로컬 storage이며, 독립 Web UI는 신규 개발 대상에서 제외한다.
+현재 저장소는 Python FastAPI 서버와 Windows WPF 클라이언트 기준으로 정리되어 있다. 확정된 기본 기술은 Python FastAPI, Windows WPF 클라이언트, SQLite 우선 DB, 서버 로컬 storage이다.
 
 문서부터 확인하려면 [docs/README.md](./docs/README.md)를 본다. 전체 도메인 관계는 [docs/system-map.md](./docs/system-map.md)에 정리한다.
