@@ -57,6 +57,7 @@ services/api/data/*
 /data/
 *.sqlite
 !apps/windows/src/FlowNote.Windows.App/Data/*.sqlite
+apps/windows/src/FlowNote.Windows.App/Data/Files/Uploads/
 *.sqlite3
 *.db
 *.db-shm

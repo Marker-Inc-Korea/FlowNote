@@ -7,6 +7,7 @@ using System.Windows.Media.Imaging;
 using System.Xml.Linq;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
+using UglyToad.PdfPig;
 
 namespace FlowNote.Windows.App;
 
@@ -46,9 +47,19 @@ public partial class DocumentViewWindow : Window
     private void LoadPreview(ExplorerDocument document)
     {
         var resolvedPath = ResolveLocalPath(document.LocalPath);
+        PdfPreview.Visibility = Visibility.Collapsed;
+        PdfPreview.Source = null;
+
+        if (IsPdf(resolvedPath))
+        {
+            ShowPdfPreview(document, resolvedPath!);
+            return;
+        }
+
         if (IsImage(resolvedPath))
         {
             ContentTextBox.Text = BuildMetadataPreview(document, "사진 문서입니다. 아래 이미지와 누적 코멘트를 함께 확인할 수 있습니다.");
+            ContentTextBox.Visibility = Visibility.Visible;
             ImagePreview.Visibility = Visibility.Visible;
             ImagePreview.Source = new BitmapImage(new Uri(resolvedPath!, UriKind.Absolute));
             return;
@@ -79,6 +90,31 @@ public partial class DocumentViewWindow : Window
 
         var extension = Path.GetExtension(path).ToLowerInvariant();
         return extension is ".jpg" or ".jpeg" or ".png" or ".bmp" or ".gif";
+    }
+
+    private static bool IsPdf(string? path)
+    {
+        return !string.IsNullOrWhiteSpace(path) &&
+            File.Exists(path) &&
+            Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ShowPdfPreview(ExplorerDocument document, string resolvedPath)
+    {
+        try
+        {
+            ImagePreview.Visibility = Visibility.Collapsed;
+            ImagePreview.Source = null;
+            ContentTextBox.Visibility = Visibility.Collapsed;
+            PdfPreview.Visibility = Visibility.Visible;
+            PdfPreview.Source = new Uri(resolvedPath, UriKind.Absolute);
+        }
+        catch (Exception ex) when (ex is UriFormatException or InvalidOperationException)
+        {
+            PdfPreview.Visibility = Visibility.Collapsed;
+            ContentTextBox.Visibility = Visibility.Visible;
+            ContentTextBox.Text = PreviewPdf(document, resolvedPath);
+        }
     }
 
     private static string LoadPreviewText(ExplorerDocument document, string? resolvedPath)
@@ -183,8 +219,49 @@ public partial class DocumentViewWindow : Window
     {
         try
         {
-            var text = File.ReadAllText(path, Encoding.UTF8);
-            var matches = Regex.Matches(text, @"\((?<text>(?:\\.|[^\\)])*)\)")
+            using var pdf = PdfDocument.Open(path);
+            var pageTexts = pdf.GetPages()
+                .Take(30)
+                .Select(page => page.Text)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .ToList();
+
+            if (pageTexts.Count > 0)
+            {
+                var parsedText = string.Join(Environment.NewLine + Environment.NewLine, pageTexts);
+                return LooksCorruptedPdfText(parsedText) ? PreviewSimplePdfText(document, path) : parsedText;
+            }
+
+            return PreviewSimplePdfText(document, path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or UglyToad.PdfPig.Core.PdfDocumentFormatException)
+        {
+            return BuildMetadataPreview(document, $"PDF 미리보기를 생성할 수 없습니다.\n\n{ex.Message}");
+        }
+    }
+
+    private static bool LooksCorruptedPdfText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var suspiciousCharacters = text.Count(character =>
+            character == '\uFFFD' ||
+            character is >= '\u0080' and <= '\u00FF' ||
+            char.GetUnicodeCategory(character) == System.Globalization.UnicodeCategory.Control &&
+            character is not '\r' and not '\n' and not '\t');
+
+        return suspiciousCharacters > Math.Max(4, text.Length / 8);
+    }
+
+    private static string PreviewSimplePdfText(ExplorerDocument document, string path)
+    {
+        try
+        {
+            var rawText = File.ReadAllText(path, Encoding.UTF8);
+            var matches = Regex.Matches(rawText, @"\((?<text>(?:\\.|[^\\)])*)\)")
                 .Select(match => match.Groups["text"].Value
                     .Replace("\\(", "(", StringComparison.Ordinal)
                     .Replace("\\)", ")", StringComparison.Ordinal)
@@ -207,7 +284,7 @@ public partial class DocumentViewWindow : Window
     {
         if (documentService is null || string.IsNullOrWhiteSpace(document.DocumentId))
         {
-            CombinedCommentTextBox.Text = "DB에 저장되지 않은 업로드 후보입니다.";
+            CombinedCommentTextBox.Text = "DB에 저장되지 않은 로컬 파일입니다.";
             return;
         }
 
