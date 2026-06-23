@@ -112,6 +112,21 @@ try
 
     var sampleFile = Path.Combine(testDirectory, "sample-upload.txt");
     File.WriteAllText(sampleFile, "FlowNote upload smoke test.");
+    var uploadedDocument = services.Documents.RegisterDocument(
+        documentsFolder.Id,
+        "sample-upload",
+        "sample-upload.txt",
+        "Text",
+        login.DisplayName ?? "Administrator",
+        sampleFile);
+    Require(uploadedDocument.LocalPath == sampleFile, "uploaded document should store the local file path");
+    Require(
+        services.Documents.ListDocuments(documentsFolder.Id).Any(item => item.DocumentId == uploadedDocument.DocumentId && item.LocalPath == sampleFile),
+        "uploaded document should be saved in the database document list");
+    Require(
+        services.Documents.ListVersions(uploadedDocument.DocumentId).Any(item => item.VersionNo == 1 && item.LocalPath == sampleFile),
+        "uploaded document original version should store the local file path");
+
     var fileInfo = new FileInfo(sampleFile);
     var uploadCandidate = new UploadCandidate(
         fileInfo.Name,
