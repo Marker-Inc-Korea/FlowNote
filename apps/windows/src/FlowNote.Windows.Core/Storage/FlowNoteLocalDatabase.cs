@@ -145,6 +145,18 @@ public sealed class FlowNoteLocalDatabase
                 created_by TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                notification_id TEXT NOT NULL UNIQUE,
+                recipient_name TEXT NOT NULL,
+                actor_name TEXT NOT NULL,
+                document_id TEXT NOT NULL,
+                document_title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
             """;
         command.ExecuteNonQuery();
         EnsureColumn(connection, "documents", "updated_at", "TEXT NULL");

@@ -38,6 +38,12 @@
                                FontSize="13"
                                Foreground="{StaticResource SecondaryTextBrush}"
                                VerticalAlignment="Center" />
+                    <Button x:Name="NotificationButton"
+                            Width="104"
+                            Height="34"
+                            Margin="0,0,8,0"
+                            Content="알림함"
+                            Click="NotificationButton_Click" />
                     <Button Width="92"
                             Height="34"
                             Margin="0,0,8,0"

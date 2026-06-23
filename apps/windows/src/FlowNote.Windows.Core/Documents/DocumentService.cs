@@ -128,8 +128,11 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
         var originalCreatedBy = reader.GetString(6);
         var createdAt = DateTime.Parse(reader.GetString(7));
         var localPath = reader.IsDBNull(9) ? null : reader.GetString(9);
-        var nextVersion = reader.GetInt32(10) + 1;
+        var currentVersion = reader.GetInt32(10);
+        var nextVersion = currentVersion + 1;
         reader.Close();
+
+        var previousVersionAuthor = FindVersionAuthor(connection, documentId, currentVersion) ?? originalCreatedBy;
 
         var now = DateTime.UtcNow;
         using var insertVersion = connection.CreateCommand();
@@ -160,7 +163,56 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
         update.Parameters.AddWithValue("$document_id", documentId);
         update.ExecuteNonQuery();
 
+        AddCommentNotification(
+            connection,
+            previousVersionAuthor,
+            createdBy,
+            documentId,
+            title,
+            nextVersion,
+            comment.Trim(),
+            now);
+
         return new DocumentRecord(id, documentId, folderId, title, fileName, documentType, status, originalCreatedBy, createdAt, now, localPath, nextVersion, comment.Trim());
+    }
+
+    private static string? FindVersionAuthor(Microsoft.Data.Sqlite.SqliteConnection connection, string documentId, int versionNo)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT created_by
+            FROM document_versions
+            WHERE document_id = $document_id AND version_no = $version_no
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$document_id", documentId);
+        command.Parameters.AddWithValue("$version_no", versionNo);
+        return command.ExecuteScalar() as string;
+    }
+
+    private static void AddCommentNotification(
+        Microsoft.Data.Sqlite.SqliteConnection connection,
+        string recipientName,
+        string actorName,
+        string documentId,
+        string documentTitle,
+        int versionNo,
+        string comment,
+        DateTime createdAt)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO notifications (notification_id, recipient_name, actor_name, document_id, document_title, message, is_read, created_at)
+            VALUES ($notification_id, $recipient_name, $actor_name, $document_id, $document_title, $message, 0, $created_at);
+            """;
+        command.Parameters.AddWithValue("$notification_id", $"notification-{Guid.NewGuid():N}");
+        command.Parameters.AddWithValue("$recipient_name", recipientName);
+        command.Parameters.AddWithValue("$actor_name", actorName);
+        command.Parameters.AddWithValue("$document_id", documentId);
+        command.Parameters.AddWithValue("$document_title", documentTitle);
+        command.Parameters.AddWithValue("$message", $"{actorName}님이 '{documentTitle}' 문서에 v{versionNo} 코멘트를 남겼습니다: {comment}");
+        command.Parameters.AddWithValue("$created_at", createdAt.ToString("O"));
+        command.ExecuteNonQuery();
     }
 
     public IReadOnlyList<DocumentVersionRecord> ListVersions(string documentId)
