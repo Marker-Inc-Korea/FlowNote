@@ -202,14 +202,16 @@ public partial class MainWindow : Window
             lastTargetFolderId ?? selectedTargetFolder.Id);
     }
 
-    private static string CopyFileToAppStorage(FileInfo sourceFile, DateTime createdAt)
+    private string CopyFileToAppStorage(FileInfo sourceFile, DateTime createdAt)
     {
-        var uploadRoot = Path.Combine(AppContext.BaseDirectory, "Data", "Files", "Uploads", createdAt.ToString("yyyy-MM-dd"));
+        var dataDirectory = Path.GetDirectoryName(services.Database.DatabasePath)!;
+        var appContentRoot = Directory.GetParent(dataDirectory)?.FullName ?? AppContext.BaseDirectory;
+        var uploadRoot = Path.Combine(dataDirectory, "Files", "Uploads", createdAt.ToString("yyyy-MM-dd"));
         Directory.CreateDirectory(uploadRoot);
 
         var targetPath = GetUniqueTargetPath(uploadRoot, sourceFile.Name);
         File.Copy(sourceFile.FullName, targetPath);
-        return Path.GetRelativePath(AppContext.BaseDirectory, targetPath);
+        return Path.GetRelativePath(appContentRoot, targetPath);
     }
 
     private static string GetUniqueTargetPath(string directory, string fileName)

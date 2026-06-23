@@ -7,6 +7,8 @@
 - Changing files, running checks, or staging does not imply permission to push.
 - A user instruction to commit, including Korean phrases like `커밋하세요`, `커밋해줘`, or `일단 커밋하세요`, means stage the current relevant changes, create a local commit, and push it to the clear current target branch.
 - Before any push, confirm the target remote and branch if they are not already clear from the current task.
+- 커밋을 할때 시간 정보는 필요하지 않습니다. 
+- 커밋을 하고 나면은 그대로 push로 진행을 하고 권한이 필요할때는 임시적으로 권한을 상승해서 Push를 진행하면 됩니다. 
 
 ## Project
 

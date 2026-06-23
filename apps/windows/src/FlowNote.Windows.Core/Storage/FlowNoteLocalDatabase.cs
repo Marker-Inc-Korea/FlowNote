@@ -51,10 +51,34 @@ public sealed class FlowNoteLocalDatabase
     {
         get
         {
+            var developmentAppDirectory = TryFindDevelopmentAppDirectory(AppContext.BaseDirectory);
+            if (!string.IsNullOrWhiteSpace(developmentAppDirectory))
+            {
+                var developmentDataDirectory = Path.Combine(developmentAppDirectory, "Data");
+                Directory.CreateDirectory(developmentDataDirectory);
+                return Path.Combine(developmentDataDirectory, "flownote.local.sqlite");
+            }
+
             var directory = Path.Combine(AppContext.BaseDirectory, "Data");
             Directory.CreateDirectory(directory);
             return Path.Combine(directory, "flownote.local.sqlite");
         }
+    }
+
+    public static string? TryFindDevelopmentAppDirectory(string startDirectory)
+    {
+        var directory = new DirectoryInfo(startDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "FlowNote.Windows.App.csproj")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
     }
 
     public SqliteConnection OpenConnection()
