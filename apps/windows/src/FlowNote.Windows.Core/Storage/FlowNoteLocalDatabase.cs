@@ -7,13 +7,17 @@ namespace FlowNote.Windows.Core.Storage;
 public sealed class FlowNoteLocalDatabase
 {
     public const string RootFolderId = "folder-root";
+    public const string DocumentsFolderName = "문서";
+    public const string HandoverFolderName = "인수인계";
+    public const string WorkOrderFolderName = "작업순서";
+    public const string PhotosFolderName = "사진";
 
     public static readonly IReadOnlyList<string> DefaultSystemFolderNames =
     [
-        "문서",
-        "인수인계",
-        "작업순서",
-        "사진"
+        DocumentsFolderName,
+        HandoverFolderName,
+        WorkOrderFolderName,
+        PhotosFolderName
     ];
 
     private static bool sqliteInitialized;

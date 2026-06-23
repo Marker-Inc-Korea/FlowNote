@@ -13,6 +13,7 @@ public sealed class FlowNoteLocalServices
         Auth = new AuthService(Database);
         Folders = new FolderService(Database);
         Documents = new DocumentService(Database);
+        DocumentPlacement = new DocumentPlacementService(Folders);
     }
 
     public FlowNoteLocalDatabase Database { get; }
@@ -22,4 +23,6 @@ public sealed class FlowNoteLocalServices
     public FolderService Folders { get; }
 
     public DocumentService Documents { get; }
+
+    public DocumentPlacementService DocumentPlacement { get; }
 }
