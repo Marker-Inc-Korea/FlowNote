@@ -58,7 +58,7 @@
         <Style TargetType="{x:Type TreeViewItem}">
             <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="13" />
-            <Setter Property="IsExpanded" Value="True" />
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
             <Setter Property="MinHeight" Value="24" />
             <Setter Property="Padding" Value="2,1" />
         </Style>

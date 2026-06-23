@@ -85,6 +85,7 @@
                     </Border>
                     <TreeView ItemsSource="{Binding Folders}"
                               SelectedItemChanged="FolderTree_SelectedItemChanged"
+                              PreviewMouseDoubleClick="FolderTree_PreviewMouseDoubleClick"
                               Margin="10,8,8,10"
                               BorderThickness="0"
                               Background="{StaticResource PanelBackgroundBrush}"
@@ -158,11 +159,13 @@
                         CornerRadius="4"
                         Padding="14,0">
                     <DockPanel>
-                        <TextBlock Text="문서 목록"
+                        <TextBlock x:Name="DocumentListTitleTextBlock"
+                                   Text="문서 목록"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource PrimaryTextBrush}"
                                    VerticalAlignment="Center" />
-                        <TextBlock DockPanel.Dock="Right"
+                        <TextBlock x:Name="DocumentListHintTextBlock"
+                                   DockPanel.Dock="Right"
                                    Text="파일명, 제목, 상태, 버전, 사용자, 생성시간"
                                    FontSize="12"
                                    Foreground="{StaticResource SecondaryTextBrush}"

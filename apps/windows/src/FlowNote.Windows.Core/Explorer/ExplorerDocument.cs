@@ -1,6 +1,7 @@
 namespace FlowNote.Windows.Core.Explorer;
 
 public sealed record ExplorerDocument(
+    string DocumentId,
     string Title,
     string FileName,
     string DocumentType,
@@ -8,4 +9,5 @@ public sealed record ExplorerDocument(
     string UpdatedBy,
     DateTime UpdatedAt,
     string VersionLabel,
-    string? LocalPath);
+    string? LocalPath,
+    string? LatestComment);

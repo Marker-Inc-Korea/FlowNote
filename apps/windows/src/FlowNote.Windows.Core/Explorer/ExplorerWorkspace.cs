@@ -45,6 +45,7 @@ public sealed class ExplorerWorkspace : INotifyPropertyChanged
     {
         AddUploadCandidate(candidate);
         Documents.Insert(0, new ExplorerDocument(
+            string.Empty,
             string.IsNullOrWhiteSpace(title) ? candidate.FileName : title,
             candidate.FileName,
             string.IsNullOrWhiteSpace(candidate.Extension) ? "File" : candidate.Extension.TrimStart('.').ToUpperInvariant(),
@@ -52,6 +53,7 @@ public sealed class ExplorerWorkspace : INotifyPropertyChanged
             actorName,
             candidate.AddedAt,
             "draft",
-            candidate.FullPath));
+            candidate.FullPath,
+            null));
     }
 }

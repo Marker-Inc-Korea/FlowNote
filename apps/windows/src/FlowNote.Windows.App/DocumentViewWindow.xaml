@@ -3,15 +3,17 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="파일 보기"
         Width="760"
-        Height="560"
-        MinWidth="520"
-        MinHeight="360"
+        Height="680"
+        MinWidth="640"
+        MinHeight="560"
         Background="{StaticResource WindowBackgroundBrush}">
     <Grid Margin="14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="10" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="10" />
+            <RowDefinition Height="128" />
         </Grid.RowDefinitions>
 
         <Border Background="{StaticResource PanelBackgroundBrush}"
@@ -35,17 +37,77 @@
                 BorderBrush="{StaticResource PanelBorderBrush}"
                 BorderThickness="1"
                 CornerRadius="4">
-            <TextBox x:Name="ContentTextBox"
-                     IsReadOnly="True"
-                     AcceptsReturn="True"
-                     AcceptsTab="True"
-                     TextWrapping="Wrap"
-                     VerticalScrollBarVisibility="Auto"
-                     HorizontalScrollBarVisibility="Auto"
-                     BorderThickness="0"
-                     FontFamily="Consolas"
-                     FontSize="13"
-                     Margin="12" />
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Auto">
+                <StackPanel Margin="12">
+                    <TextBlock Text="문서 내용"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource PrimaryTextBrush}" />
+                    <TextBox x:Name="ContentTextBox"
+                             Margin="0,8,0,14"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             AcceptsTab="True"
+                             TextWrapping="Wrap"
+                             BorderThickness="0"
+                             FontFamily="Consolas"
+                             FontSize="13" />
+                    <Image x:Name="ImagePreview"
+                           Visibility="Collapsed"
+                           Stretch="Uniform"
+                           MaxHeight="320"
+                           Margin="0,8,0,14" />
+
+                    <Border BorderBrush="{StaticResource PanelBorderBrush}"
+                            BorderThickness="0,1,0,0"
+                            Padding="0,12,0,0">
+                        <StackPanel>
+                            <TextBlock Text="누적 코멘트"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource PrimaryTextBrush}" />
+                            <TextBox x:Name="CombinedCommentTextBox"
+                                     Margin="0,8,0,0"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     BorderThickness="0"
+                                     FontFamily="Consolas"
+                                     FontSize="13" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <Border Grid.Row="4"
+                Background="{StaticResource PanelBackgroundBrush}"
+                BorderBrush="{StaticResource PanelBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="14">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="40" />
+                </Grid.RowDefinitions>
+                <TextBlock Text="새 코멘트"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource PrimaryTextBrush}" />
+                <TextBox x:Name="CommentTextBox"
+                         Grid.Row="1"
+                         Margin="0,8,0,8"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto" />
+                <Button x:Name="SaveCommentButton"
+                        Grid.Row="2"
+                        Width="120"
+                        Height="34"
+                        HorizontalAlignment="Right"
+                        Content="코멘트 저장"
+                        Click="SaveCommentButton_Click" />
+            </Grid>
         </Border>
     </Grid>
 </Window>
