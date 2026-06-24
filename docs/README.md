@@ -2,7 +2,7 @@
 
 이 폴더는 FlowNote의 제품 방향, 도메인 관계, 데이터 모델, API, 설계 결정을 관리한다.
 
-현재 코드 기준으로 실제 구현된 범위는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI 헬스체크 골격이다. 각 문서의 서버 API, 보고서, AI, MES/ERP, 배포 운영 항목은 제품 목표 또는 초안일 수 있으므로 현재 구현 완료 기능과 구분해서 읽는다.
+현재 코드 기준으로 실제 구현된 범위는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite 초기 스키마/헬스체크 골격이다. 각 문서의 문서 API, 인증, 보고서, AI, MES/ERP, 배포 운영 항목은 제품 목표 또는 초안일 수 있으므로 현재 구현 완료 기능과 구분해서 읽는다.
 
 ## 읽는 순서
 
@@ -16,6 +16,7 @@
 8. [배포 기준](./deployment.md)
 9. [설계 결정 요약](./decisions.md)
 10. [2026-06-24 문서 인코딩과 구현 상태 점검](./daily/2026-06-24-encoding-and-status.md)
+11. [2026-06-24 FastAPI SQLite MVP 초기 구조 작업 결과](./daily/2026-06-24-api-sqlite-mvp.md)
 
 ## 핵심 관계 요약
 
