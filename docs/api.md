@@ -2,15 +2,20 @@
 
 ## 0. 현재 구현 API
 
-현재 `services/api/` 코드에서 실제 구현된 FastAPI 엔드포인트는 아래 3개이다.
+현재 `services/api/` 코드에서 실제 구현된 FastAPI 엔드포인트는 아래와 같다.
 
 | Method | Path | 현재 응답 |
 | --- | --- | --- |
 | GET | `/` | 서비스명과 실행 환경 |
 | GET | `/api/v1/health` | `{ "status": "ok" }` |
 | GET | `/api/v1/health/db` | DB 연결 확인 결과 `{ "status": "ok", "database": "ok" }` |
+| POST | `/api/v1/documents` | 문서 메타데이터, 최초 버전, 변경 사유, 로컬 저장 파일 참조 등록 |
+| GET | `/api/v1/documents` | 문서 목록과 최신 버전 요약 조회 |
+| GET | `/api/v1/documents/{documentId}` | 문서 상세와 최신 버전/파일 참조 조회 |
+| GET | `/api/v1/documents/{documentId}/versions` | 문서 버전 목록 조회 |
+| POST | `/api/v1/documents/{documentId}/versions` | 새 파일 버전과 변경 사유 등록 |
 
-이하 문서 API, 인증 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. 현재 Windows WPF 앱은 이 API들과 통신하지 않고 로컬 SQLite 프로토타입으로 동작한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
+문서 등록과 버전 등록 API는 현재 인증/권한 API 없이 SQLite와 서버 로컬 `storage/` 저장소 기준으로 동작한다. 이하 인증 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. 현재 Windows WPF 앱은 이 API들과 통신하지 않고 로컬 SQLite 프로토타입으로 동작한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
 ## 1. 공통 원칙
 
@@ -87,6 +92,8 @@ multipart/form-data
 - links: object[]
 ```
 
+현재 구현된 `POST /api/v1/documents`는 `file`, `title`, `documentType`, `changeReason`을 필수로 받고, `description`, `ownerId`, `categoryId`, `versionLabel`, `status`, `createdBy`를 선택으로 받는다. `tags`와 `links`는 아직 저장하지 않는다. 파일은 `storage/documents/{document_id}/v{version_no}/` 아래에 저장하고, SQLite `file_objects`에는 `storage_key`, 원본 파일명, 확장자, MIME, 파일 계열, 크기, SHA-256 해시를 기록한다.
+
 새 버전 업로드 요청 필드:
 
 ```text
@@ -95,6 +102,8 @@ multipart/form-data
 - versionLabel: string
 - changeReason: string
 ```
+
+현재 구현된 `POST /api/v1/documents/{documentId}/versions`는 `file`과 `changeReason`을 필수로 받는다. 새 버전 등록 시 기존 최신 버전의 `is_latest`를 `false`로 바꾸고 `version_status`를 `SUPERSEDED`로 표시한 뒤, 새 버전을 `is_latest=true`, `version_status=WORKING`으로 저장한다.
 
 ## 3. 인증 API
 

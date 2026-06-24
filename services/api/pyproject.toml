@@ -7,6 +7,7 @@ dependencies = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.32",
   "pydantic-settings>=2.6",
+  "python-multipart>=0.0.20",
   "sqlalchemy>=2.0",
   "alembic>=1.14"
 ]
@@ -15,6 +16,8 @@ dependencies = [
 dev = [
   "pytest>=8.3",
   "httpx2>=0.28",
+  "pillow>=11.0",
+  "reportlab>=4.2",
   "ruff>=0.8"
 ]
 

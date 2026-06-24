@@ -20,9 +20,9 @@
 
 ### 0.0.1 FastAPI 서버 SQLite 초기 모델
 
-2026-06-24 기준 FastAPI 서버에는 SQLite 연결과 MVP 초기 테이블 생성 기준이 추가되었다. 서버 DB는 `services/api/app/db/models.py`의 SQLAlchemy 모델을 기준으로 하고, 앱 시작 시 `schema_migrations`에 `0001_initial_mvp_schema`를 기록한다.
+2026-06-24 기준 FastAPI 서버에는 SQLite 연결과 MVP 초기 테이블 생성 기준이 추가되었다. 서버 DB는 `services/api/app/db/models.py`의 SQLAlchemy 모델을 기준으로 하고, 앱 시작 시 `schema_migrations`에 `0001_initial_mvp_schema`를 기록한다. 문서 등록 API는 `documents`, `document_versions`, `file_objects`를 함께 사용해 문서 메타데이터, 파일 저장 참조, 버전 번호, 변경 사유를 로컬에 저장한다.
 
-기본 개발 DB 경로는 `services/api/data/flownote.sqlite3`, 테스트 DB 경로는 `services/api/data/flownote.test.sqlite3`이다. 테스트 DB와 검증 기록은 로컬 산출물로 보존하되 커밋 대상은 아니다.
+기본 개발 DB 경로는 `services/api/data/flownote.sqlite3`, 테스트 DB 경로는 `services/api/data/flownote.test.sqlite3`이다. 테스트 DB와 검증 기록은 로컬 산출물로 보존하되 커밋 대상은 아니다. 문서 등록 통합 테스트 샘플과 로그는 `services/api/data/test-artifacts/document-registration-2026-06-24/` 아래에 보존하고, 업로드 저장 파일은 `services/api/storage/document-registration-tests/` 아래에 보존한다.
 
 현재 서버 초기 스키마 테이블은 다음과 같다.
 
@@ -43,7 +43,7 @@
 
 FlowNote의 메타데이터 DB는 SQLite를 우선 사용한다. 현장 규모나 동시성이 커지면 PostgreSQL로 확장한다.
 
-파일 바이너리는 DB에 직접 저장하지 않고 서버 PC의 로컬 `storage/` 폴더에 저장한다. SQLite에는 문서 메타데이터, 파일 참조 정보, 버전, 권한, 이력, 단말기, 현장 코멘트, 작업내역, AI 조언 로그를 저장한다.
+파일 바이너리는 DB에 직접 저장하지 않고 서버 PC의 로컬 `storage/` 폴더에 저장한다. 현재 문서 업로드 저장 키는 `documents/{document_id}/v{version_no}/{uuid}_{safe_filename}` 형식을 사용한다. SQLite에는 문서 메타데이터, 파일 참조 정보, 버전, 변경 사유, 권한, 이력, 단말기, 현장 코멘트, 작업내역, AI 조언 로그를 저장한다.
 
 FlowNote는 MES/ERP를 대체하지 않는다. 외부 시스템이 있는 경우 원본 업무 데이터는 해당 시스템에 두고, FlowNote는 외부 참조 ID와 매핑 정보를 저장해 문서, 현장 코멘트, 작업내역, 보고서와 연결한다.
 

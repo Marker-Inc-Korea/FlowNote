@@ -1,5 +1,6 @@
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from fastapi import Request
 
 
 class Settings(BaseSettings):
@@ -19,3 +20,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def get_settings(request: Request) -> Settings:
+    return request.app.state.settings
