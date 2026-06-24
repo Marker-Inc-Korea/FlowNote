@@ -16,7 +16,30 @@
 | `document_versions` | 원본 등록 버전과 코멘트 저장으로 증가한 버전을 저장 |
 | `notifications` | 새 코멘트 버전 생성 시 직전 버전 작성자 대상 알림을 저장 |
 
-현재 앱은 문서 등록 시 상태를 `WORKING`으로 저장한다. `IN_REVIEW`, `PUBLISHED`, `ARCHIVED` 같은 상태 전환, 역할 테이블, 권한 테이블, 접근 로그, 태그, 현장 코멘트 별도 모델, 작업내역, 보고서, AI 로그, 서버 저장소용 `FileObject`는 아직 코드에 구현되어 있지 않다. 아래 데이터 모델은 제품 목표와 서버 확장 초안이며 현재 코드 구현 완료를 뜻하지 않는다.
+현재 앱은 문서 등록 시 상태를 `WORKING`으로 저장한다. `IN_REVIEW`, `PUBLISHED`, `ARCHIVED` 같은 상태 전환, 역할 테이블, 권한 테이블, 접근 로그, 태그, 현장 코멘트 별도 모델, 작업내역, 보고서, AI 로그, 서버 저장소용 `FileObject`는 아직 WPF 로컬 앱 코드에 구현되어 있지 않다. 아래 데이터 모델은 제품 목표와 서버 확장 초안이며 현재 코드 구현 완료를 뜻하지 않는다.
+
+### 0.0.1 FastAPI 서버 SQLite 초기 모델
+
+2026-06-24 기준 FastAPI 서버에는 SQLite 연결과 MVP 초기 테이블 생성 기준이 추가되었다. 서버 DB는 `services/api/app/db/models.py`의 SQLAlchemy 모델을 기준으로 하고, 앱 시작 시 `schema_migrations`에 `0001_initial_mvp_schema`를 기록한다.
+
+기본 개발 DB 경로는 `services/api/data/flownote.sqlite3`, 테스트 DB 경로는 `services/api/data/flownote.test.sqlite3`이다. 테스트 DB와 검증 기록은 로컬 산출물로 보존하되 커밋 대상은 아니다.
+
+현재 서버 초기 스키마 테이블은 다음과 같다.
+
+| 테이블 | 현재 역할 |
+| --- | --- |
+| `schema_migrations` | 서버 DB 스키마 적용 버전 기록 |
+| `user_accounts`, `roles`, `user_roles` | 로그인 계정과 역할 연결의 초기 기준 |
+| `operator_profiles` | 실제 작업자, 작업그룹, 대리 등록 주체 추적 |
+| `file_objects` | 서버 로컬 `storage/` 파일 참조 |
+| `documents`, `document_versions` | 문서 메타데이터, 버전, 변경 사유, 공개/최신 구분 |
+| `tag_definitions`, `document_tags` | 설비, 품목, 공정, 오류 유형 등 태그 연결 |
+| `terminal_devices` | 현장/관리자 단말기 등록 기준 |
+| `field_notes`, `field_note_attachments` | 현장 코멘트 원천 이력과 사진/첨부 연결 |
+| `comment_templates` | 신호등식/정형 문구 입력 보조 |
+| `work_records`, `work_record_versions` | 작업내역과 버전의 초기 기준 |
+| `reports`, `report_sources` | 관리자 보고서와 원천 데이터 추적 |
+| `document_access_logs` | 문서 열람, 다운로드 차단, 뷰어 닫힘 등 감사 로그 기반 |
 
 FlowNote의 메타데이터 DB는 SQLite를 우선 사용한다. 현장 규모나 동시성이 커지면 PostgreSQL로 확장한다.
 
