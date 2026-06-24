@@ -6,9 +6,9 @@ FlowNote는 파일 저장, 문서 메타데이터, 버전 관리, 권한, 변경
 
 ## 현재 코드 기준 구현 상태
 
-현재 실제 동작하는 구현은 `apps/windows/`의 Windows WPF 로컬 SQLite 프로토타입이다. 로그인은 기본 계정 `admin / 1234`를 자동 생성하며, 탐색기형 폴더 트리, 기본 폴더와 문서 하위 분류 폴더, 파일 업로드 버튼과 Drag & Drop, SQLite 문서 등록, 파일 목록, TXT/PDF/XLSX/이미지 미리보기, 누적 코멘트 기반 버전 증가, 직전 버전 작성자 대상 알림함을 구현했다. 테스트 계정 `jobhead / 반장 / 1234`와 샘플 파일, 테스트 SQLite DB, 테스트 로그는 보존 대상이다.
+현재 실제 동작하는 클라이언트 구현은 `apps/windows/`의 Windows WPF 로컬 SQLite 프로토타입이다. 로그인은 기본 계정 `admin / 1234`를 자동 생성하며, 탐색기형 폴더 트리, 기본 폴더와 문서 하위 분류 폴더, 파일 업로드 버튼과 Drag & Drop, SQLite 문서 등록, 파일 목록, TXT/PDF/XLSX/이미지 미리보기, 현장 코멘트 FieldNote 원천 이력 저장, 알림함을 구현했다. 테스트 계정 `jobhead / 반장 / 1234`와 샘플 파일, 테스트 SQLite DB, 테스트 로그는 보존 대상이다.
 
-`services/api/`의 FastAPI 서버는 현재 골격 단계이다. 실제 구현된 API는 `GET /`와 `GET /api/v1/health`뿐이며, 문서 등록, 인증, 권한, 서버 저장소, 작업순서판, 보고서, AI API는 아직 구현된 서버 기능이 아니다. 아래 제품 방향은 목표와 설계 기준이며, 미래 기능은 현재 코드와의 구현 비교 대상에서 제외한다.
+`services/api/`의 FastAPI 서버는 SQLite MVP 초기 단계이다. 현재 구현된 API는 상태 확인, 문서/최초 버전 등록, 문서 목록/상세/버전 목록 조회, 새 문서 버전 등록, FieldNote 등록/조회/검토 갱신이다. 문서 파일은 서버 로컬 `storage/` 아래에 저장하고 SQLite에는 문서, 버전, 파일 참조, SHA-256, 크기, MIME, 파일 계열, 변경 사유를 기록한다. 다만 인증, 권한, 다운로드 제어, 서버-WPF 자동 동기화, 작업순서판, 보고서, AI API는 아직 구현 완료 기능이 아니다. 아래 제품 방향은 목표와 설계 기준이며, 미래 기능은 현재 코드와의 구현 비교 대상에서 제외한다.
 
 FlowNote의 1차 목표는 완벽한 DMS나 KMS를 처음부터 만드는 것이 아니다. 문서 버전, 현장 코멘트, 작업 문제점, 작업내역을 오래 운영하면서 서로 연결해 생산현장의 노하우와 보고서 데이터를 축적하고, 추후 AI가 검색과 조언, 의사결정 보조에 활용할 수 있는 현장 데이터 기반을 쌓는 것이다.
 
@@ -63,6 +63,6 @@ FlowNote/
 
 ## 현재 상태
 
-현재 저장소는 Python FastAPI 서버와 Windows WPF 클라이언트 기준으로 정리되어 있다. 다만 현재 코드 구현은 Windows WPF 로컬 SQLite 프로토타입이 앞서 있으며, FastAPI 서버는 헬스체크 수준의 골격만 있다. 확정된 기본 기술 방향은 Python FastAPI, Windows WPF 클라이언트, SQLite 우선 DB, 서버 로컬 storage이다.
+현재 저장소는 Python FastAPI 서버와 Windows WPF 클라이언트 기준으로 정리되어 있다. 현재 코드 구현은 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite 문서/FieldNote MVP API가 병행되어 있으며, WPF 기본 흐름은 아직 로컬 SQLite를 우선 사용한다. 확정된 기본 기술 방향은 Python FastAPI, Windows WPF 클라이언트, SQLite 우선 DB, 서버 로컬 storage이다.
 
-문서부터 확인하려면 [docs/README.md](./docs/README.md)를 본다. 전체 도메인 관계는 [docs/system-map.md](./docs/system-map.md)에 정리한다.
+문서부터 확인하려면 [docs/README.md](./docs/README.md)를 본다. 현재까지 작업 종합 정리는 [docs/daily/2026-06-24-current-work-summary.md](./docs/daily/2026-06-24-current-work-summary.md)에 있고, 전체 도메인 관계는 [docs/system-map.md](./docs/system-map.md)에 정리한다.

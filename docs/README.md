@@ -2,7 +2,7 @@
 
 이 폴더는 FlowNote의 제품 방향, 도메인 관계, 데이터 모델, API, 설계 결정을 관리한다.
 
-현재 코드 기준으로 실제 구현된 범위는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite 초기 스키마/헬스체크 골격이다. 각 문서의 문서 API, 인증, 보고서, AI, MES/ERP, 배포 운영 항목은 제품 목표 또는 초안일 수 있으므로 현재 구현 완료 기능과 구분해서 읽는다.
+현재 코드 기준으로 실제 구현된 범위는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite 문서/FieldNote MVP API이다. 인증, 권한, 다운로드 제어, 파일 감시, 보고서, AI, MES/ERP, 배포 운영 항목은 제품 목표 또는 초안일 수 있으므로 현재 구현 완료 기능과 구분해서 읽는다.
 
 ## 읽는 순서
 
@@ -15,8 +15,19 @@
 7. [보안 정책](./security.md)
 8. [배포 기준](./deployment.md)
 9. [설계 결정 요약](./decisions.md)
-10. [2026-06-24 문서 인코딩과 구현 상태 점검](./daily/2026-06-24-encoding-and-status.md)
-11. [2026-06-24 FastAPI SQLite MVP 초기 구조 작업 결과](./daily/2026-06-24-api-sqlite-mvp.md)
+10. [2026-06-24 현재 작업 종합 정리](./daily/2026-06-24-current-work-summary.md)
+
+## 날짜별 작업 기록
+
+- [2026-06-23 작업 기록](./daily/2026-06-23.md)
+- [2026-06-23 작업 결과 요약](./daily/2026-06-23-work-result.md)
+- [2026-06-24 문서 인코딩과 구현 상태 점검](./daily/2026-06-24-encoding-and-status.md)
+- [2026-06-24 FastAPI SQLite MVP 초기 구조 작업 결과](./daily/2026-06-24-api-sqlite-mvp.md)
+- [2026-06-24 문서 등록 로컬 저장 작업 결과](./daily/2026-06-24-document-registration-local-storage.md)
+- [2026-06-24 로컬 문서 저장 빌드/테스트 결과](./daily/2026-06-24-local-document-storage-build-test-result.md)
+- [2026-06-24 문서 서버 API와 Windows 테스트 결과](./daily/2026-06-24-document-server-api-and-windows-test.md)
+- [2026-06-24 FieldNote 분리 설계 및 검증 결과](./daily/2026-06-24-field-note-separation-build-test-result.md)
+- [2026-06-24 현재 작업 종합 정리](./daily/2026-06-24-current-work-summary.md)
 
 ## 핵심 관계 요약
 
