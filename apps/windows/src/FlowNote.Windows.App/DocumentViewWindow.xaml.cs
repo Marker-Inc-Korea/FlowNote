@@ -8,6 +8,7 @@ using System.Windows.Media.Imaging;
 using System.Xml.Linq;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
+using FlowNote.Windows.Core.FieldNotes;
 using FlowNote.Windows.Core.Storage;
 using UglyToad.PdfPig;
 
@@ -16,7 +17,7 @@ namespace FlowNote.Windows.App;
 public partial class DocumentViewWindow : Window
 {
     private const long MaxPreviewBytes = 128 * 1024;
-    private readonly DocumentService? documentService;
+    private readonly FieldNoteService? fieldNoteService;
     private readonly string actorName;
     private ExplorerDocument document;
 
@@ -25,13 +26,13 @@ public partial class DocumentViewWindow : Window
     {
     }
 
-    public DocumentViewWindow(DocumentService? documentService, ExplorerDocument document, string actorName)
+    public DocumentViewWindow(FieldNoteService? fieldNoteService, ExplorerDocument document, string actorName)
     {
         InitializeComponent();
-        this.documentService = documentService;
+        this.fieldNoteService = fieldNoteService;
         this.document = document;
         this.actorName = actorName;
-        SaveCommentButton.IsEnabled = documentService is not null && !string.IsNullOrWhiteSpace(document.DocumentId);
+        SaveCommentButton.IsEnabled = fieldNoteService is not null && !string.IsNullOrWhiteSpace(document.DocumentId);
         RefreshHeader();
         LoadPreview(document);
         RefreshCombinedComments();
@@ -420,27 +421,25 @@ public partial class DocumentViewWindow : Window
 
     private void RefreshCombinedComments()
     {
-        if (documentService is null || string.IsNullOrWhiteSpace(document.DocumentId))
+        if (fieldNoteService is null || string.IsNullOrWhiteSpace(document.DocumentId))
         {
             CombinedCommentTextBox.Text = "DB에 저장되지 않은 로컬 파일입니다.";
             return;
         }
 
-        var versions = documentService.ListVersions(document.DocumentId)
-            .Where(version => !string.IsNullOrWhiteSpace(version.Comment))
-            .OrderByDescending(version => version.VersionNo)
-            .ToList();
-        if (versions.Count == 0)
+        var notes = fieldNoteService.ListDocumentNotes(document.DocumentId).ToList();
+        if (notes.Count == 0)
         {
             CombinedCommentTextBox.Text = "아직 등록된 코멘트가 없습니다.";
             return;
         }
 
         var builder = new StringBuilder();
-        foreach (var version in versions)
+        foreach (var note in notes)
         {
-            builder.AppendLine($"[{version.CreatedAt:yyyy-MM-dd HH:mm}] {version.CreatedBy} / v{version.VersionNo}");
-            builder.AppendLine(version.Comment);
+            var versionLabel = note.DocumentVersionNo is null ? "문서" : $"v{note.DocumentVersionNo}";
+            builder.AppendLine($"[{note.CreatedAt:yyyy-MM-dd HH:mm}] {note.AuthorName} / {versionLabel} / {note.InputMode}");
+            builder.AppendLine(note.RawContent);
             builder.AppendLine();
         }
 
@@ -449,7 +448,7 @@ public partial class DocumentViewWindow : Window
 
     private void SaveCommentButton_Click(object sender, RoutedEventArgs e)
     {
-        if (documentService is null || string.IsNullOrWhiteSpace(document.DocumentId))
+        if (fieldNoteService is null || string.IsNullOrWhiteSpace(document.DocumentId))
         {
             MessageBox.Show("저장된 문서만 코멘트를 남길 수 있습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
@@ -462,18 +461,17 @@ public partial class DocumentViewWindow : Window
             return;
         }
 
-        var updated = documentService.AddCommentVersion(document.DocumentId, comment, actorName);
+        var savedNote = fieldNoteService.AddDocumentNote(document.DocumentId, comment, actorName);
         document = document with
         {
-            UpdatedAt = updated.UpdatedAt,
-            VersionLabel = $"v{updated.VersionNo}",
-            LatestComment = updated.LatestComment
+            UpdatedAt = savedNote.CreatedAt,
+            LatestComment = savedNote.RawContent
         };
         CommentSaved = true;
         CommentTextBox.Clear();
         RefreshHeader();
         RefreshCombinedComments();
         LoadPreview(document);
-        MessageBox.Show("코멘트를 문서 아래에 추가하고 버전을 올렸습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show("현장 코멘트를 문서 아래에 저장했습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 }

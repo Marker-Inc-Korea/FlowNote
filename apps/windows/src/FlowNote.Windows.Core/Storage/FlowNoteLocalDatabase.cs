@@ -146,6 +146,31 @@ public sealed class FlowNoteLocalDatabase
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS field_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id TEXT NOT NULL UNIQUE,
+                document_id TEXT NULL REFERENCES documents(document_id) ON DELETE CASCADE,
+                document_version_no INTEGER NULL,
+                note_type TEXT NOT NULL,
+                input_mode TEXT NOT NULL,
+                signal_level TEXT NULL,
+                raw_content TEXT NOT NULL,
+                normalized_content TEXT NULL,
+                analysis_content TEXT NULL,
+                author_name TEXT NOT NULL,
+                reported_by TEXT NULL,
+                operator_name TEXT NULL,
+                entry_source TEXT NOT NULL,
+                device_id TEXT NULL,
+                location_code TEXT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                synced_at TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_field_notes_document_created
+                ON field_notes (document_id, created_at);
+
             CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 notification_id TEXT NOT NULL UNIQUE,
@@ -164,6 +189,7 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "documents", "version_no", "INTEGER NOT NULL DEFAULT 1");
         EnsureColumn(connection, "documents", "latest_comment", "TEXT NULL");
         EnsureDocumentUpdatedAt(connection);
+        BackfillFieldNotesFromCommentVersions(connection);
 
         SeedAdminUser(connection);
         var rootFolderId = SeedRootFolder(connection);
@@ -210,6 +236,48 @@ public sealed class FlowNoteLocalDatabase
             UPDATE documents
             SET updated_at = created_at
             WHERE updated_at IS NULL OR updated_at = '';
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    private static void BackfillFieldNotesFromCommentVersions(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO field_notes (
+                note_id,
+                document_id,
+                document_version_no,
+                note_type,
+                input_mode,
+                raw_content,
+                author_name,
+                entry_source,
+                status,
+                created_at
+            )
+            SELECT
+                'note-legacy-' || lower(hex(randomblob(16))),
+                document_id,
+                version_no,
+                'issue',
+                'free_text',
+                trim(comment),
+                created_by,
+                'field_user',
+                'NEW',
+                created_at
+            FROM document_versions AS version
+            WHERE comment IS NOT NULL
+              AND trim(comment) <> ''
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM field_notes AS note
+                  WHERE note.document_id = version.document_id
+                    AND note.document_version_no = version.version_no
+                    AND note.raw_content = trim(version.comment)
+                    AND note.created_at = version.created_at
+              );
             """;
         command.ExecuteNonQuery();
     }

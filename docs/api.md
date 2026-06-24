@@ -14,8 +14,13 @@
 | GET | `/api/v1/documents/{documentId}` | 문서 상세와 최신 버전/파일 참조 조회 |
 | GET | `/api/v1/documents/{documentId}/versions` | 문서 버전 목록 조회 |
 | POST | `/api/v1/documents/{documentId}/versions` | 새 파일 버전과 변경 사유 등록 |
+| POST | `/api/v1/field-notes` | 현장 코멘트 원천 이력 등록 |
+| GET | `/api/v1/field-notes` | 현장 코멘트 목록 조회. `documentId`, `status`, `limit` 필터 지원 |
+| GET | `/api/v1/field-notes/{noteId}` | 현장 코멘트 상세 조회 |
+| PATCH | `/api/v1/field-notes/{noteId}` | 관리자 검토, 정리 문구, 분석 내용 갱신 |
+| GET | `/api/v1/documents/{documentId}/field-notes` | 문서별 현장 코멘트 조회 |
 
-문서 등록과 버전 등록 API는 현재 인증/권한 API 없이 SQLite와 서버 로컬 `storage/` 저장소 기준으로 동작한다. 이하 인증 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. 현재 Windows WPF 앱은 이 API들과 통신하지 않고 로컬 SQLite 프로토타입으로 동작한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
+문서 등록/버전 등록 API와 현장 코멘트 최소 API는 현재 인증/권한 API 없이 SQLite와 서버 로컬 `storage/` 저장소 기준으로 동작한다. 이하 인증 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. 현재 Windows WPF 앱은 서버 현장 코멘트 API와 직접 동기화하지 않고 로컬 SQLite 오프라인 저장을 우선 사용한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
 ## 1. 공통 원칙
 
@@ -260,6 +265,8 @@ multipart/form-data
 초기 작업지시서 구조는 관리자가 직접 입력하는 `manual` 구조를 기본으로 한다. MES/ERP 연동이 추가되면 `externalSystem`, `externalRefId`를 사용해 외부 원본과 매핑한다.
 
 ## 9. 현장 코멘트 API
+
+2026-06-24 기준 현재 구현된 최소 범위는 JSON 기반 등록, 목록, 상세, 관리자 검토 갱신, 문서별 조회이다. 사진/첨부 업로드와 문서 구조 항목별 조회는 아래 계약만 남겨둔 후속 구현 범위이다.
 
 | Method | Path | 설명 |
 | --- | --- | --- |
