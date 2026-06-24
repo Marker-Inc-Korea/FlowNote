@@ -84,3 +84,10 @@
 - 로그인과 역할 기반 권한을 적용한다.
 - 다운로드 차단과 뷰어 자동 닫힘은 Windows WPF 클라이언트와 서버 감사 로그를 함께 사용해 구현한다.
 - FlowNote는 감시 도구가 아니며 개인 위치 추적이나 개인 메신저 수집을 하지 않는다.
+## 2026-06-24. FastAPI 문서 파일 로컬 저장 기준
+
+- 문서 파일 바이너리는 SQLite에 직접 넣지 않고 서버 PC의 로컬 `storage/` 폴더에 저장한다.
+- SQLite에는 `FileObject`, `Document`, `DocumentVersion`을 사용해 저장 키, 원본 파일명, 확장자, MIME, 파일 계열, 크기, SHA-256 해시, 버전 번호, 변경 사유를 기록한다.
+- 저장 키는 `documents/{document_id}/v{version_no}/{uuid}_{safe_filename}` 형식으로 둔다. 같은 원본 파일명이 반복 업로드되어도 버전별 파일을 덮어쓰지 않는다.
+- 새 버전 등록 시 기존 최신 버전은 `is_latest=false`, `version_status=SUPERSEDED`로 바꾸고 새 버전을 최신 작업 버전으로 둔다.
+- 테스트 SQLite DB, 테스트 로그, 샘플 PDF/Excel/이미지, 업로드 저장 파일은 검증 기록이므로 사용자가 명시적으로 삭제를 지시하기 전까지 보존한다.
