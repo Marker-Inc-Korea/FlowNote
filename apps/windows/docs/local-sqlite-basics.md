@@ -25,16 +25,18 @@ Windows WPF 클라이언트가 서버 연동 전에도 로그인, 폴더 관리,
 - `user_accounts`: 로그인 계정
 - `document_folders`: 문서 폴더
 - `documents`: 문서 등록 기본 정보
-- `document_versions`: 원본 등록과 코멘트 저장에 따른 버전 이력
-- `notifications`: 문서 코멘트와 버전 증가에 따른 사용자 알림
+- `document_versions`: 원본 등록과 문서 파일/과거 코멘트 버전 이력
+- `field_notes`: 문서 파일 버전과 분리된 현장 코멘트 원천 이력
+- `notifications`: FieldNote 또는 과거 코멘트 버전 경로에 따른 사용자 알림
 
 ## 서비스 위치
 
 - `FlowNoteLocalDatabase`: SQLite 파일 생성, 스키마 생성, 기본 데이터 시드
-- `FlowNoteLocalServices`: Auth, Folders, Documents 서비스 묶음
+- `FlowNoteLocalServices`: Auth, Folders, Documents, FieldNotes, Notifications 서비스 묶음
 - `AuthService`: 로그인 검증
 - `FolderService`: 폴더 생성, 목록, 삭제
 - `DocumentService`: 문서 등록, 목록
+- `FieldNoteService`: 현장 코멘트 원천 이력 저장과 문서별 조회
 - `NotificationService`: 알림 목록, 읽지 않은 알림 수, 모두 읽음 처리
 - `DocumentPlacementService`: 기본 폴더별 문서 배치와 제목 생성 규칙
 
@@ -50,10 +52,12 @@ Windows WPF 클라이언트가 서버 연동 전에도 로그인, 폴더 관리,
 - 기존 로컬 DB에 같은 이름의 기본 폴더가 있으면 초기화 과정에서 시스템 폴더로 보정한다.
 - 새 폴더 버튼은 루트 아래에 폴더를 만든다.
 - 문서 등록 버튼은 기본 폴더 `문서`를 기준으로 샘플 문서 메타데이터를 등록하고, 실제 저장 위치는 분류 규칙에 따라 `문서` 하위 폴더로 정한다.
-- 파일 보기 창에서 코멘트를 저장하면 `document_versions`에 새 버전을 추가하고 `documents.version_no`를 올린다.
-- 화면에서는 버전 이력을 별도 목록으로 분리하지 않고 문서 본문 아래 누적 코멘트 영역에 코멘트를 이어서 표시한다.
-- 코멘트 저장으로 새 버전이 생기면 `notifications`에 알림을 남긴다.
-- 알림 수신자는 최초 작성자가 아니라 직전 버전 작성자이다. 예를 들어 v3 코멘트는 v2 작성자에게 알림을 보낸다.
+- 파일 보기 창에서 새 코멘트를 저장하면 `field_notes`에 원천 이력으로 저장하고 `documents.version_no`는 올리지 않는다.
+- `field_notes`에는 문서 ID, 당시 문서 버전 번호, 입력 방식, 원문, 작성자, 상태, 동기화 후보 시간을 저장한다.
+- 화면에서는 문서 본문 아래에 FieldNote 목록을 누적 코멘트처럼 표시한다.
+- 새 FieldNote가 저장되면 `documents.latest_comment`와 `documents.updated_at`를 갱신하고 문서 작성자에게 알림을 남긴다.
+- 기존 DB의 `document_versions.comment` 데이터는 앱 초기화 시 `field_notes`로 백필한다.
+- 과거 호환용 `DocumentService.AddCommentVersion` 경로를 사용하면 `document_versions`에 새 버전을 추가하고 `documents.version_no`를 올린다. 이때 알림 수신자는 최초 작성자가 아니라 직전 버전 작성자이다. 예를 들어 v3 코멘트는 v2 작성자에게 알림을 보낸다.
 - 파일 업로드 버튼과 Drag & Drop은 선택한 파일을 `Data\Files\Uploads\yyyy-MM-dd\` 아래로 복사하고 SQLite에 문서와 원본 버전 `v1`을 즉시 저장한다.
 - 업로드 원본 파일은 공개 저장소에 올리지 않지만, SQLite DB의 문서 메타데이터와 상대 경로 기록은 커밋 대상이다.
 - PDF 업로드 파일은 저장된 로컬 경로를 기준으로 WebView2 PDF 뷰어에서 원본 레이아웃을 표시한다.
@@ -81,9 +85,11 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Win
 - 기본 폴더 삭제 차단
 - 폴더 생성 후 목록 조회
 - 문서 등록 후 목록 조회
-- 문서 코멘트 저장 후 버전 증가
-- 문서 버전 이력 조회
-- 코멘트 저장 시 직전 버전 작성자 알림 생성
+- FieldNote 저장 후 문서 버전 미증가
+- FieldNote 목록 조회
+- FieldNote 저장 시 최신 코멘트 요약 갱신
+- 과거 호환용 코멘트 버전 증가와 문서 버전 이력 조회
+- 과거 호환용 코멘트 저장 시 직전 버전 작성자 알림 생성
 - 알림 목록 조회와 모두 읽음 처리
 - `문서` 파일 등록 시 분류 폴더 자동 배치
 - `인수인계` 파일 등록 시 날짜 하위 폴더 생성
