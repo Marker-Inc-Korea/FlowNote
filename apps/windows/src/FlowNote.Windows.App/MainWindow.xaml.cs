@@ -281,7 +281,7 @@ public partial class MainWindow : Window
         var viewWindow = string.IsNullOrWhiteSpace(document.DocumentId)
             ? new DocumentViewWindow(document)
             : new DocumentViewWindow(
-                services.Documents,
+                services.FieldNotes,
                 document,
                 currentUser.DisplayName ?? currentUser.LoginId ?? "admin");
         viewWindow.Owner = this;

@@ -91,3 +91,12 @@
 - 저장 키는 `documents/{document_id}/v{version_no}/{uuid}_{safe_filename}` 형식으로 둔다. 같은 원본 파일명이 반복 업로드되어도 버전별 파일을 덮어쓰지 않는다.
 - 새 버전 등록 시 기존 최신 버전은 `is_latest=false`, `version_status=SUPERSEDED`로 바꾸고 새 버전을 최신 작업 버전으로 둔다.
 - 테스트 SQLite DB, 테스트 로그, 샘플 PDF/Excel/이미지, 업로드 저장 파일은 검증 기록이므로 사용자가 명시적으로 삭제를 지시하기 전까지 보존한다.
+
+## 2026-06-24. FieldNote 최소 분리 기준
+
+- 현장 코멘트는 문서 파일 개정이 아니므로 신규 WPF 코멘트 저장은 `document_versions`가 아니라 로컬 SQLite `field_notes`에 저장한다.
+- WPF 오프라인 입력은 문서 ID, 현재 문서 버전 번호, 입력 방식, 원문, 작성자, 등록 시각, 동기화 상태 후보를 남기는 최소 FieldNote 원천 이력으로 시작한다.
+- 기존 로컬 DB에 `document_versions.comment`로 누적된 코멘트는 앱 초기화 시 `field_notes`로 백필하여 과거 테스트 DB와 샘플 데이터를 삭제하지 않고 이어간다.
+- `document_versions`는 문서 파일 등록/개정 이력으로 유지하고, 현장 코멘트는 `field_notes`에서 문서와 문서 버전 번호를 참조한다.
+- FastAPI는 WPF 동기화의 서버 대상이 될 수 있도록 `POST /api/v1/field-notes`, 목록/상세/문서별 조회, 관리자 검토 갱신 API를 최소 구현한다.
+- 사진 첨부, 태그 연결, 작업내역 연결, 충돌 처리, 동기화 큐는 후속 구현 범위로 남긴다.

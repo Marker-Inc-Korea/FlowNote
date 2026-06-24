@@ -60,6 +60,24 @@ try
     var documents = services.Documents.ListDocuments(folder.Id);
     Require(documents.Any(item => item.DocumentId == document.DocumentId), "registered document should appear in folder document list");
 
+    var fieldNote = services.FieldNotes.AddDocumentNote(
+        document.DocumentId,
+        "Smoke field note stored separately from document versions.",
+        login.DisplayName ?? "Administrator");
+    Require(!string.IsNullOrWhiteSpace(fieldNote.NoteId), "field note should receive an id");
+    Require(fieldNote.DocumentVersionNo == 1, "field note should keep the current document version number");
+    var fieldNotes = services.FieldNotes.ListDocumentNotes(document.DocumentId);
+    Require(fieldNotes.Count == 1, "document should list the saved field note");
+    Require(fieldNotes[0].RawContent == "Smoke field note stored separately from document versions.", "field note should preserve raw content");
+    Require(
+        services.Documents.ListVersions(document.DocumentId).Count == 1,
+        "field note should not create a new document version");
+    Require(
+        services.Documents.ListDocuments(folder.Id).Any(item =>
+            item.DocumentId == document.DocumentId &&
+            item.LatestComment == "Smoke field note stored separately from document versions."),
+        "field note should update the document latest comment summary");
+
     var commentedDocument = services.Documents.AddCommentVersion(
         document.DocumentId,
         "Smoke comment for version history.",
