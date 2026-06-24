@@ -11,6 +11,7 @@ Windows WPF App
       -> document_folders
       -> documents
       -> document_versions
+      -> field_notes
       -> notifications
 
 Windows WPF App
@@ -20,9 +21,11 @@ Windows WPF App
 FastAPI Server
   -> GET /
   -> GET /api/v1/health
+  -> documents / document_versions / file_objects
+  -> field_notes
 ```
 
-현재 코드에는 FastAPI 문서/인증/권한 API 연동, 서버 `storage/` 저장소, `FieldNote`, `WorkRecord`, `Report`, `SearchIndexItem`, `AiAdviceLog`, MES/ERP 연동 모델이 아직 구현되어 있지 않다. 아래 상관관계는 제품 목표와 서버 확장 기준이며, 미래 기능은 현재 코드와의 구현 비교 대상이 아니다.
+현재 코드에는 FastAPI 문서 등록/버전 등록 API, 서버 `storage/` 저장소, 서버 `FieldNote` 최소 등록/조회 API, WPF 로컬 `field_notes` 오프라인 저장 흐름이 구현되어 있다. 인증/권한 API 연동, WPF와 서버 FieldNote 동기화, `WorkRecord`, `Report`, `SearchIndexItem`, `AiAdviceLog`, MES/ERP 연동 모델은 아직 구현되어 있지 않다. 아래 상관관계는 제품 목표와 서버 확장 기준이며, 미래 기능은 현재 코드와의 구현 비교 대상이 아니다.
 
 ## 1. 전체 기준
 

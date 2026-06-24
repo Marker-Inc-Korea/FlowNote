@@ -1,5 +1,6 @@
 using FlowNote.Windows.Core.Auth;
 using FlowNote.Windows.Core.Documents;
+using FlowNote.Windows.Core.FieldNotes;
 using FlowNote.Windows.Core.Folders;
 using FlowNote.Windows.Core.Notifications;
 
@@ -14,6 +15,7 @@ public sealed class FlowNoteLocalServices
         Auth = new AuthService(Database);
         Folders = new FolderService(Database);
         Documents = new DocumentService(Database);
+        FieldNotes = new FieldNoteService(Database);
         Notifications = new NotificationService(Database);
         DocumentPlacement = new DocumentPlacementService(Folders);
     }
@@ -25,6 +27,8 @@ public sealed class FlowNoteLocalServices
     public FolderService Folders { get; }
 
     public DocumentService Documents { get; }
+
+    public FieldNoteService FieldNotes { get; }
 
     public NotificationService Notifications { get; }
 
