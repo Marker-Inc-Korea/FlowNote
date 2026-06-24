@@ -1,5 +1,6 @@
 using FlowNote.Windows.Core.Storage;
 using FlowNote.Windows.Core.Explorer;
+using FlowNote.Windows.Core.ServerApi;
 using Microsoft.Data.Sqlite;
 
 var testDirectory = Path.Combine(Path.GetTempPath(), "flownote-windows-smoke-tests");
@@ -169,6 +170,37 @@ try
     Require(workspace.Documents.Count == 1, "dropped file should be added to the file list");
     Require(workspace.Documents[0].UpdatedBy == login.DisplayName, "dropped file should capture the login display name");
     Require(workspace.Documents[0].LocalPath == sampleFile, "dropped file should keep the local path for preview");
+
+    var apiBaseUrl = Environment.GetEnvironmentVariable("FLOWNOTE_API_BASE_URL");
+    if (!string.IsNullOrWhiteSpace(apiBaseUrl))
+    {
+        using var httpClient = new HttpClient
+        {
+            BaseAddress = new Uri(apiBaseUrl.EndsWith('/') ? apiBaseUrl : $"{apiBaseUrl}/"),
+            Timeout = TimeSpan.FromSeconds(20)
+        };
+        var serverDocuments = new FlowNoteServerDocumentClient(httpClient);
+        var serverDocument = await serverDocuments.RegisterDocumentAsync(
+            sampleFile,
+            "Windows smoke upload",
+            "client_smoke_test",
+            "Windows smoke test registered this file through FastAPI.",
+            description: "Registered by FlowNote.Windows.SmokeTests.");
+        Require(!string.IsNullOrWhiteSpace(serverDocument.DocumentId), "server document should receive an id");
+        var latestServerVersion = serverDocument.LatestVersion;
+        Require(latestServerVersion is not null, "server document should include its latest version");
+        Require(latestServerVersion!.VersionNo == 1, "server document should receive version 1");
+        Require(latestServerVersion.File.SizeBytes == new FileInfo(sampleFile).Length, "server file size should match the uploaded file");
+
+        var serverList = await serverDocuments.ListDocumentsAsync();
+        Require(
+            serverList.Any(item => item.DocumentId == serverDocument.DocumentId),
+            "server document list should include the uploaded smoke document");
+
+        var serverVersions = await serverDocuments.ListVersionsAsync(serverDocument.DocumentId);
+        Require(serverVersions.Count == 1, "server document should have one version after initial upload");
+        Require(serverVersions[0].ChangeReason.Contains("FastAPI", StringComparison.Ordinal), "server version should preserve the change reason");
+    }
 
     var deleted = services.Folders.DeleteFolder(folder.Id);
     Require(!deleted, "folder containing a document should not be deleted");
