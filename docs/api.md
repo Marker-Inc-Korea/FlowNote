@@ -2,12 +2,13 @@
 
 ## 0. 현재 구현 API
 
-현재 `services/api/` 코드에서 실제 구현된 FastAPI 엔드포인트는 아래 2개뿐이다.
+현재 `services/api/` 코드에서 실제 구현된 FastAPI 엔드포인트는 아래 3개이다.
 
 | Method | Path | 현재 응답 |
 | --- | --- | --- |
 | GET | `/` | 서비스명과 실행 환경 |
 | GET | `/api/v1/health` | `{ "status": "ok" }` |
+| GET | `/api/v1/health/db` | DB 연결 확인 결과 `{ "status": "ok", "database": "ok" }` |
 
 이하 문서 API, 인증 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. 현재 Windows WPF 앱은 이 API들과 통신하지 않고 로컬 SQLite 프로토타입으로 동작한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
