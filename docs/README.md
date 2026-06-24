@@ -15,6 +15,7 @@
 7. [보안 정책](./security.md)
 8. [배포 기준](./deployment.md)
 9. [설계 결정 요약](./decisions.md)
+10. [2026-06-24 문서 인코딩과 구현 상태 점검](./daily/2026-06-24-encoding-and-status.md)
 
 ## 핵심 관계 요약
 
@@ -36,7 +37,7 @@ TerminalDevice
 
 Client App
   -> Windows WPF
-  -> Local App Function: 로컬 제어와 파일 감시
+  -> Local App Function: 로컬 파일 선택/미리보기, 후속 파일 감시
 
 Backend
   -> Python FastAPI Server
