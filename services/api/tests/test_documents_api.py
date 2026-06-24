@@ -285,3 +285,56 @@ def test_document_version_change_reason_is_required() -> None:
             )
 
     assert response.status_code == 422
+
+
+def test_document_registration_allows_missing_user_before_auth_is_available() -> None:
+    pdf_path, _, _, _ = prepare_factory_sample_files()
+
+    with create_test_client() as client:
+        with pdf_path.open("rb") as file:
+            response = client.post(
+                "/api/v1/documents",
+                data={
+                    "title": "Auth-free early document registration",
+                    "documentType": "work_instruction",
+                    "changeReason": "Registering before server auth is implemented.",
+                },
+                files={"file": (pdf_path.name, file, "application/pdf")},
+            )
+
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert created["owner_id"] is None
+    assert created["latest_version"]["created_by"] is None
+    assert created["latest_version"]["file"]["size_bytes"] == pdf_path.stat().st_size
+
+
+def test_document_registration_rejects_unknown_user_reference() -> None:
+    pdf_path, _, _, _ = prepare_factory_sample_files()
+    stored_files_before = {
+        path.relative_to(TEST_STORAGE_ROOT)
+        for path in TEST_STORAGE_ROOT.rglob("*")
+        if path.is_file()
+    }
+
+    with create_test_client() as client:
+        with pdf_path.open("rb") as file:
+            response = client.post(
+                "/api/v1/documents",
+                data={
+                    "title": "Unknown owner upload",
+                    "documentType": "work_instruction",
+                    "ownerId": "user-does-not-exist",
+                    "changeReason": "This should fail before storing the file.",
+                },
+                files={"file": (pdf_path.name, file, "application/pdf")},
+            )
+
+    stored_files_after = {
+        path.relative_to(TEST_STORAGE_ROOT)
+        for path in TEST_STORAGE_ROOT.rglob("*")
+        if path.is_file()
+    }
+    assert response.status_code == 422
+    assert response.json()["detail"] == "ownerId must reference an existing user_id."
+    assert stored_files_after == stored_files_before

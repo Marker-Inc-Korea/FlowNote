@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import desc, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.storage import resolve_storage_root, store_upload_file
-from app.db.models import Document, DocumentVersion, FileObject
+from app.db.models import Document, DocumentVersion, FileObject, UserAccount
 from app.db.session import get_db_session
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -80,6 +82,35 @@ def _validate_change_reason(change_reason: str) -> str:
             detail="changeReason is required.",
         )
     return cleaned
+
+
+def _clean_optional(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _validate_user_id(session: Session, user_id: str | None, field_name: str) -> str | None:
+    if user_id is None:
+        return None
+    exists = session.scalar(select(UserAccount.id).where(UserAccount.user_id == user_id))
+    if exists is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{field_name} must reference an existing user_id.",
+        )
+    return user_id
+
+
+def _delete_stored_file(storage_root: Path, storage_key: str) -> None:
+    target_path = (storage_root / Path(storage_key)).resolve()
+    try:
+        target_path.relative_to(storage_root)
+    except ValueError:
+        return
+    if target_path.exists() and target_path.is_file():
+        target_path.unlink()
 
 
 def _file_response(file_object: FileObject) -> FileObjectResponse:
@@ -188,9 +219,12 @@ async def create_document(
     session: Annotated[Session, Depends(get_db_session)] = None,
 ) -> DocumentResponse:
     change_reason = _validate_change_reason(change_reason)
+    owner_id = _validate_user_id(session, _clean_optional(owner_id), "ownerId")
+    created_by = _validate_user_id(session, _clean_optional(created_by), "createdBy")
     document_id = _new_public_id("doc")
     version_id = _new_public_id("ver")
     version_no = 1
+    storage_root = resolve_storage_root(app_settings.storage_root)
 
     file_object = await _save_file_object(
         file,
@@ -204,10 +238,10 @@ async def create_document(
     document = Document(
         document_id=document_id,
         title=title.strip(),
-        description=description.strip() if description else None,
+        description=_clean_optional(description),
         document_type=document_type.strip(),
-        owner_id=owner_id.strip() if owner_id else None,
-        category_id=category_id.strip() if category_id else None,
+        owner_id=owner_id,
+        category_id=_clean_optional(category_id),
         status=document_status,
         latest_version_id=version_id,
         published_version_id=version_id if document_status == "PUBLISHED" else None,
@@ -223,11 +257,19 @@ async def create_document(
         is_latest=True,
         is_published=document_status == "PUBLISHED",
         published_at=datetime.utcnow() if document_status == "PUBLISHED" else None,
-        created_by=created_by.strip() if created_by else owner_id,
+        created_by=created_by or owner_id,
     )
     session.add(document)
     session.add(version)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        _delete_stored_file(storage_root, file_object.storage_key)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Document could not be saved because of a database constraint.",
+        ) from exc
     session.refresh(document)
     return _document_response(session, document)
 
@@ -304,6 +346,7 @@ async def create_document_version(
     session: Annotated[Session, Depends(get_db_session)] = None,
 ) -> DocumentVersionResponse:
     change_reason = _validate_change_reason(change_reason)
+    created_by = _validate_user_id(session, _clean_optional(created_by), "createdBy")
     document = session.scalar(
         select(Document).where(Document.document_id == document_id, Document.deleted_at.is_(None))
     )
@@ -318,6 +361,7 @@ async def create_document_version(
     )
     version_no = (latest_version_no or 0) + 1
     version_id = _new_public_id("ver")
+    storage_root = resolve_storage_root(app_settings.storage_root)
     file_object = await _save_file_object(
         file,
         app_settings=app_settings,
@@ -342,10 +386,18 @@ async def create_document_version(
         version_status="WORKING",
         is_latest=True,
         is_published=False,
-        created_by=created_by.strip() if created_by else document.owner_id,
+        created_by=created_by or document.owner_id,
     )
     document.latest_version_id = version_id
     session.add(version)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        _delete_stored_file(storage_root, file_object.storage_key)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Document version could not be saved because of a database constraint.",
+        ) from exc
     session.refresh(version)
     return _version_response(version, file_object)
