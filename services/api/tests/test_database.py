@@ -2,10 +2,11 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect, select
+from sqlalchemy import func, inspect, select
 
 from app.core.config import Settings
-from app.db.init_db import INITIAL_SCHEMA_VERSION
+from app.db.init_db import DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME
+from app.db.init_db import INITIAL_SCHEMA_VERSION, hash_password_for_dev
 from app.db.models import Document, DocumentVersion, FieldNote, FileObject, Role
 from app.db.models import SchemaMigration, UserAccount, UserRole
 from app.main import create_app
@@ -66,6 +67,32 @@ def test_app_startup_creates_mvp_schema() -> None:
             )
             assert migration is not None
 
+            admin_account = session.scalar(
+                select(UserAccount).where(UserAccount.username == DEFAULT_ADMIN_USERNAME)
+            )
+            assert admin_account is not None
+            assert admin_account.user_id == "user-admin"
+            assert admin_account.display_name == "FlowNote Admin"
+            assert admin_account.role == "admin"
+            assert admin_account.password_hash == hash_password_for_dev(DEFAULT_ADMIN_PASSWORD)
+            assert admin_account.is_active is True
+
+
+def test_app_startup_seeds_default_admin_account_once() -> None:
+    for _ in range(2):
+        with create_test_client() as client:
+            response = client.get("/api/v1/health/db")
+            assert response.status_code == 200
+
+    with create_test_client() as client:
+        with client.app.state.database.session() as session:
+            admin_count = session.scalar(
+                select(func.count()).select_from(UserAccount).where(
+                    UserAccount.username == DEFAULT_ADMIN_USERNAME
+                )
+            )
+            assert admin_count == 1
+
 
 def test_mvp_schema_accepts_document_version_and_field_note() -> None:
     suffix = uuid4().hex
@@ -80,9 +107,12 @@ def test_mvp_schema_accepts_document_version_and_field_note() -> None:
             session.add(
                 UserAccount(
                     user_id=user_id,
+                    username=f"login-test-{suffix}",
                     login_id=f"login-test-{suffix}",
                     display_name="Test User",
+                    role="viewer",
                     password_hash="test-only-password-hash",
+                    is_active=True,
                 )
             )
             session.add(Role(role_id=role_id, role_name="Test Role"))
