@@ -59,9 +59,12 @@ def ensure_test_user(client: TestClient) -> None:
             session.add(
                 UserAccount(
                     user_id="user-test-admin",
+                    username="test-admin",
                     login_id="test-admin",
                     display_name="Test Document Admin",
+                    role="admin",
                     password_hash="test-only-password-hash",
+                    is_active=True,
                 )
             )
             session.commit()
