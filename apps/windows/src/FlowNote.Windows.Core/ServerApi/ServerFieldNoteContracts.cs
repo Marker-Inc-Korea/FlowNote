@@ -1,0 +1,167 @@
+using System.Text.Json.Serialization;
+using FlowNote.Windows.Core.FieldNotes;
+
+namespace FlowNote.Windows.Core.ServerApi;
+
+public sealed record ServerFieldNoteCreateRequest
+{
+    [JsonPropertyName("documentId")]
+    public string? DocumentId { get; init; }
+
+    [JsonPropertyName("documentVersionId")]
+    public string? DocumentVersionId { get; init; }
+
+    [JsonPropertyName("structureItemId")]
+    public string? StructureItemId { get; init; }
+
+    [JsonPropertyName("workRecordId")]
+    public string? WorkRecordId { get; init; }
+
+    [JsonPropertyName("noteType")]
+    public string NoteType { get; init; } = "issue";
+
+    [JsonPropertyName("inputMode")]
+    public string InputMode { get; init; } = "free_text";
+
+    [JsonPropertyName("signalLevel")]
+    public string? SignalLevel { get; init; }
+
+    [JsonPropertyName("templateId")]
+    public string? TemplateId { get; init; }
+
+    [JsonPropertyName("rawContent")]
+    public string RawContent { get; init; } = string.Empty;
+
+    [JsonPropertyName("authorId")]
+    public string? AuthorId { get; init; }
+
+    [JsonPropertyName("reportedBy")]
+    public string? ReportedBy { get; init; }
+
+    [JsonPropertyName("operatorId")]
+    public string? OperatorId { get; init; }
+
+    [JsonPropertyName("entrySource")]
+    public string EntrySource { get; init; } = "field_user";
+
+    [JsonPropertyName("deviceId")]
+    public string? DeviceId { get; init; }
+
+    [JsonPropertyName("locationCode")]
+    public string? LocationCode { get; init; }
+
+    [JsonPropertyName("category")]
+    public string? Category { get; init; }
+
+    [JsonPropertyName("priority")]
+    public int? Priority { get; init; }
+
+    public static ServerFieldNoteCreateRequest FromLocal(
+        FieldNoteRecord fieldNote,
+        string? documentId = null,
+        string? documentVersionId = null)
+    {
+        return new ServerFieldNoteCreateRequest
+        {
+            DocumentId = Clean(documentId) ?? Clean(fieldNote.DocumentId),
+            DocumentVersionId = Clean(documentVersionId),
+            NoteType = fieldNote.NoteType,
+            InputMode = fieldNote.InputMode,
+            SignalLevel = Clean(fieldNote.SignalLevel),
+            RawContent = fieldNote.RawContent,
+            ReportedBy = Clean(fieldNote.ReportedBy) ?? Clean(fieldNote.AuthorName),
+            EntrySource = fieldNote.EntrySource,
+            DeviceId = Clean(fieldNote.DeviceId),
+            LocationCode = Clean(fieldNote.LocationCode)
+        };
+    }
+
+    private static string? Clean(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+}
+
+public sealed record ServerFieldNoteResponse
+{
+    [JsonPropertyName("note_id")]
+    public string NoteId { get; init; } = string.Empty;
+
+    [JsonPropertyName("document_id")]
+    public string? DocumentId { get; init; }
+
+    [JsonPropertyName("document_version_id")]
+    public string? DocumentVersionId { get; init; }
+
+    [JsonPropertyName("structure_item_id")]
+    public string? StructureItemId { get; init; }
+
+    [JsonPropertyName("work_record_id")]
+    public string? WorkRecordId { get; init; }
+
+    [JsonPropertyName("note_type")]
+    public string NoteType { get; init; } = string.Empty;
+
+    [JsonPropertyName("input_mode")]
+    public string InputMode { get; init; } = string.Empty;
+
+    [JsonPropertyName("signal_level")]
+    public string? SignalLevel { get; init; }
+
+    [JsonPropertyName("template_id")]
+    public string? TemplateId { get; init; }
+
+    [JsonPropertyName("raw_content")]
+    public string RawContent { get; init; } = string.Empty;
+
+    [JsonPropertyName("normalized_content")]
+    public string? NormalizedContent { get; init; }
+
+    [JsonPropertyName("analysis_content")]
+    public string? AnalysisContent { get; init; }
+
+    [JsonPropertyName("author_id")]
+    public string? AuthorId { get; init; }
+
+    [JsonPropertyName("reported_by")]
+    public string? ReportedBy { get; init; }
+
+    [JsonPropertyName("operator_id")]
+    public string? OperatorId { get; init; }
+
+    [JsonPropertyName("entry_source")]
+    public string EntrySource { get; init; } = string.Empty;
+
+    [JsonPropertyName("device_id")]
+    public string? DeviceId { get; init; }
+
+    [JsonPropertyName("location_code")]
+    public string? LocationCode { get; init; }
+
+    [JsonPropertyName("category")]
+    public string? Category { get; init; }
+
+    [JsonPropertyName("priority")]
+    public int? Priority { get; init; }
+
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("reviewed_by")]
+    public string? ReviewedBy { get; init; }
+
+    [JsonPropertyName("analyzed_by")]
+    public string? AnalyzedBy { get; init; }
+
+    [JsonPropertyName("created_at")]
+    public DateTime CreatedAt { get; init; }
+
+    [JsonPropertyName("updated_at")]
+    public DateTime UpdatedAt { get; init; }
+
+    [JsonPropertyName("reviewed_at")]
+    public DateTime? ReviewedAt { get; init; }
+
+    [JsonPropertyName("analyzed_at")]
+    public DateTime? AnalyzedAt { get; init; }
+}

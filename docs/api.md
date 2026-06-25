@@ -21,7 +21,7 @@
 | PATCH | `/api/v1/field-notes/{noteId}` | 관리자 검토, 정리 문구, 분석 내용 갱신 |
 | GET | `/api/v1/documents/{documentId}/field-notes` | 문서별 현장 코멘트 조회 |
 
-문서 등록/버전 등록 API와 현장 코멘트 최소 API는 아직 요청 인증/권한 검사 없이 SQLite와 서버 로컬 `storage/` 저장소 기준으로 동작한다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부만 확인하고 아직 JWT를 발급하지 않는 MVP 단계이다. 이하 로그아웃/현재 사용자 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. 현재 Windows WPF 앱은 서버 현장 코멘트 API와 직접 동기화하지 않고 로컬 SQLite 오프라인 저장을 우선 사용한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
+문서 등록/버전 등록 API와 현장 코멘트 최소 API는 아직 요청 인증/권한 검사 없이 SQLite와 서버 로컬 `storage/` 저장소 기준으로 동작한다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부만 확인하고 아직 JWT를 발급하지 않는 MVP 단계이다. 이하 로그아웃/현재 사용자 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 로컬 SQLite FieldNote 저장을 기본 경로로 유지하되, `FlowNoteServerDocumentClient`를 통해 서버 문서 등록/목록/버전 조회와 서버 현장 코멘트 등록 계약을 호출할 수 있다. 현재 스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 설정된 경우 문서 업로드 후 최신 문서 버전에 연결된 현장 코멘트 등록까지 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
 ## 1. 공통 원칙
 
@@ -291,7 +291,7 @@ multipart/form-data
 
 ## 9. 현장 코멘트 API
 
-2026-06-24 기준 현재 구현된 최소 범위는 JSON 기반 등록, 목록, 상세, 관리자 검토 갱신, 문서별 조회이다. 사진/첨부 업로드와 문서 구조 항목별 조회는 아래 계약만 남겨둔 후속 구현 범위이다.
+2026-06-25 기준 현재 구현된 최소 범위는 JSON 기반 등록, 목록, 상세, 관리자 검토 갱신, 문서별 조회이다. Windows WPF 클라이언트에는 로컬 `FieldNoteRecord`를 서버 등록 요청으로 변환하는 `ServerFieldNoteCreateRequest`와 서버 응답용 `ServerFieldNoteResponse` 계약이 추가되었다. 사진/첨부 업로드와 문서 구조 항목별 조회는 아래 계약만 남겨둔 후속 구현 범위이다.
 
 | Method | Path | 설명 |
 | --- | --- | --- |
@@ -308,7 +308,7 @@ multipart/form-data
 ```json
 {
   "documentId": "doc_20260520_000001",
-  "documentVersionNo": 3,
+  "documentVersionId": "ver_20260520_000003",
   "structureItemId": "item_20260520_000010",
   "noteType": "issue",
   "inputMode": "free_text",
@@ -317,6 +317,42 @@ multipart/form-data
   "operatorId": "op-line-a-team-1",
   "deviceId": "terminal-12",
   "locationCode": "line-a"
+}
+```
+
+현재 구현된 `POST /api/v1/field-notes` 요청 본문은 camelCase 필드를 받는다. `documentId`, `structureItemId`, `workRecordId` 중 하나 이상은 필요하다. `documentVersionId`가 들어오면 서버의 기존 `document_versions.version_id`를 참조해야 하며, `documentId`와 함께 보낸 경우 같은 문서의 버전이어야 한다. 서버는 저장 시 `rawContent` 앞뒤 공백을 제거하고, 신규 코멘트 상태를 `NEW`로 시작한다.
+
+서버 응답은 Python API 모델 기준 snake_case 필드이다. Windows 클라이언트의 `ServerFieldNoteResponse`는 이 응답을 `note_id`, `document_id`, `document_version_id`, `raw_content`, `status`, `created_at`, `updated_at` 등으로 역직렬화한다.
+
+```json
+{
+  "note_id": "note_20260520_000001",
+  "document_id": "doc_20260520_000001",
+  "document_version_id": "ver_20260520_000003",
+  "structure_item_id": "item_20260520_000010",
+  "work_record_id": null,
+  "note_type": "issue",
+  "input_mode": "free_text",
+  "signal_level": null,
+  "template_id": null,
+  "raw_content": "도면의 체결 방향 설명이 현장 작업 순서와 다릅니다.",
+  "normalized_content": null,
+  "analysis_content": null,
+  "author_id": "user-001",
+  "reported_by": null,
+  "operator_id": "op-line-a-team-1",
+  "entry_source": "field_user",
+  "device_id": "terminal-12",
+  "location_code": "line-a",
+  "category": null,
+  "priority": null,
+  "status": "NEW",
+  "reviewed_by": null,
+  "analyzed_by": null,
+  "created_at": "2026-05-20T10:00:00",
+  "updated_at": "2026-05-20T10:00:00",
+  "reviewed_at": null,
+  "analyzed_at": null
 }
 ```
 

@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using FlowNote.Windows.Core.FieldNotes;
 
 namespace FlowNote.Windows.Core.ServerApi;
 
@@ -58,6 +59,24 @@ public sealed class FlowNoteServerDocumentClient
         using var response = await httpClient.GetAsync($"api/v1/documents/{documentId}/versions", cancellationToken);
         var versions = await ReadJsonResponse<List<ServerDocumentVersionResponse>>(response, cancellationToken);
         return versions;
+    }
+
+    public async Task<ServerFieldNoteResponse> RegisterFieldNoteAsync(
+        FieldNoteRecord fieldNote,
+        string? documentId = null,
+        string? documentVersionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var request = ServerFieldNoteCreateRequest.FromLocal(fieldNote, documentId, documentVersionId);
+        return await RegisterFieldNoteAsync(request, cancellationToken);
+    }
+
+    public async Task<ServerFieldNoteResponse> RegisterFieldNoteAsync(
+        ServerFieldNoteCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync("api/v1/field-notes", request, cancellationToken);
+        return await ReadJsonResponse<ServerFieldNoteResponse>(response, cancellationToken);
     }
 
     private static void AddString(MultipartFormDataContent form, string name, string? value)

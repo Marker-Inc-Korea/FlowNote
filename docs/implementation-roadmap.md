@@ -2,7 +2,7 @@
 
 ## 0. 현재 코드 위치
 
-현재 코드는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite MVP API로 나뉜다. WPF 앱은 로그인, 탐색기형 폴더 트리, 로컬 파일 업로드/Drag & Drop, SQLite 문서 등록, 파일 보기, 누적 코멘트, 알림함까지 구현되어 있다. FastAPI 서버는 `GET /`, 헬스체크, MVP 로그인, 문서 등록/버전 등록, 서버 로컬 `storage/` 저장, 현장 코멘트 최소 API가 구현되어 있다.
+현재 코드는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite MVP API로 나뉜다. WPF 앱은 로그인, 탐색기형 폴더 트리, 로컬 파일 업로드/Drag & Drop, SQLite 문서 등록, 파일 보기, 누적 코멘트, 알림함까지 구현되어 있다. FastAPI 서버는 `GET /`, 헬스체크, MVP 로그인, 문서 등록/버전 등록, 서버 로컬 `storage/` 저장, 현장 코멘트 최소 API가 구현되어 있다. WPF 서버 API 클라이언트는 `FLOWNOTE_API_BASE_URL`이 설정된 스모크 테스트에서 서버 문서 등록/목록/버전 조회와 문서 버전에 연결된 서버 FieldNote 등록까지 검증한다.
 
 따라서 이 로드맵의 요청 인증/권한 검사, 역할 기반 서버 권한, 작업순서판, 보고서, AI, MES/ERP 항목은 앞으로 구현할 목표이다. 미래에 만들 기능은 현재 코드와 비교해 구현 누락으로 판단하지 않는다.
 

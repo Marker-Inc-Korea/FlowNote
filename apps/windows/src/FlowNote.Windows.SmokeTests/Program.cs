@@ -218,6 +218,20 @@ try
         var serverVersions = await serverDocuments.ListVersionsAsync(serverDocument.DocumentId);
         Require(serverVersions.Count == 1, "server document should have one version after initial upload");
         Require(serverVersions[0].ChangeReason.Contains("FastAPI", StringComparison.Ordinal), "server version should preserve the change reason");
+
+        var serverFieldNote = await serverDocuments.RegisterFieldNoteAsync(
+            fieldNote,
+            documentId: serverDocument.DocumentId,
+            documentVersionId: latestServerVersion.VersionId);
+        Require(!string.IsNullOrWhiteSpace(serverFieldNote.NoteId), "server field note should receive an id");
+        Require(serverFieldNote.DocumentId == serverDocument.DocumentId, "server field note should reference the uploaded document");
+        Require(
+            serverFieldNote.DocumentVersionId == latestServerVersion.VersionId,
+            "server field note should reference the uploaded document version");
+        Require(
+            serverFieldNote.RawContent == "Smoke field note stored separately from document versions.",
+            "server field note should preserve raw content");
+        Require(serverFieldNote.Status == "NEW", "server field note should start in NEW status");
     }
 
     var deleted = services.Folders.DeleteFolder(folder.Id);
