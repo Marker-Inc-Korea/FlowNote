@@ -9,6 +9,7 @@
 | GET | `/` | 서비스명과 실행 환경 |
 | GET | `/api/v1/health` | `{ "status": "ok" }` |
 | GET | `/api/v1/health/db` | DB 연결 확인 결과 `{ "status": "ok", "database": "ok" }` |
+| POST | `/api/v1/auth/login` | username/password 검증 후 MVP 사용자 정보 반환 |
 | POST | `/api/v1/documents` | 문서 메타데이터, 최초 버전, 변경 사유, 로컬 저장 파일 참조 등록 |
 | GET | `/api/v1/documents` | 문서 목록과 최신 버전 요약 조회 |
 | GET | `/api/v1/documents/{documentId}` | 문서 상세와 최신 버전/파일 참조 조회 |
@@ -20,7 +21,7 @@
 | PATCH | `/api/v1/field-notes/{noteId}` | 관리자 검토, 정리 문구, 분석 내용 갱신 |
 | GET | `/api/v1/documents/{documentId}/field-notes` | 문서별 현장 코멘트 조회 |
 
-문서 등록/버전 등록 API와 현장 코멘트 최소 API는 현재 인증/권한 API 없이 SQLite와 서버 로컬 `storage/` 저장소 기준으로 동작한다. 이하 인증 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. 현재 Windows WPF 앱은 서버 현장 코멘트 API와 직접 동기화하지 않고 로컬 SQLite 오프라인 저장을 우선 사용한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
+문서 등록/버전 등록 API와 현장 코멘트 최소 API는 아직 요청 인증/권한 검사 없이 SQLite와 서버 로컬 `storage/` 저장소 기준으로 동작한다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부만 확인하고 아직 JWT를 발급하지 않는 MVP 단계이다. 이하 로그아웃/현재 사용자 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. 현재 Windows WPF 앱은 서버 현장 코멘트 API와 직접 동기화하지 않고 로컬 SQLite 오프라인 저장을 우선 사용한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
 ## 1. 공통 원칙
 
@@ -118,7 +119,31 @@ multipart/form-data
 | POST | `/auth/logout` | 로그아웃 |
 | GET | `/auth/me` | 현재 사용자와 역할 조회 |
 
-로그인 응답은 사용자 역할과 단말기 모드에 따라 허용 기능을 포함한다.
+현재 구현된 `POST /api/v1/auth/login`은 JSON 본문으로 `username`, `password`를 받는다. `username`은 앞뒤 공백을 제거한 뒤 조회한다. 계정 존재, `is_active=true`, `status=ACTIVE`, 비밀번호 일치 여부만 검증하며 JWT는 아직 발급하지 않는다.
+
+요청 예시:
+
+```json
+{
+  "username": "admin",
+  "password": "1234"
+}
+```
+
+성공 응답은 `user_id`, `username`, `role`, `display_name`으로 제한한다.
+
+```json
+{
+  "user_id": "user-admin",
+  "username": "admin",
+  "role": "admin",
+  "display_name": "FlowNote Admin"
+}
+```
+
+잘못된 비밀번호와 없는 계정은 `401`을 반환한다. 비밀번호는 맞지만 `is_active=false`이거나 `status`가 `ACTIVE`가 아니면 `403`을 반환한다.
+
+향후 로그인 응답은 사용자 역할과 단말기 모드에 따라 허용 기능을 포함한다.
 
 ## 3.1 작업자/작업그룹 API
 
