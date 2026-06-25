@@ -23,6 +23,8 @@
 
 2026-06-24 기준 FastAPI 서버에는 SQLite 연결과 MVP 초기 테이블 생성 기준이 추가되었다. 서버 DB는 `services/api/app/db/models.py`의 SQLAlchemy 모델을 기준으로 하고, 앱 시작 시 `schema_migrations`에 `0001_initial_mvp_schema`를 기록한다. 문서 등록 API는 `documents`, `document_versions`, `file_objects`를 함께 사용해 문서 메타데이터, 파일 저장 참조, 버전 번호, 변경 사유를 로컬에 저장한다.
 
+2026-06-25 기준 서버 로그인 API는 `user_accounts`의 `username`, `password_hash`, `role`, `is_active`, `status`를 사용한다. 서버 DB 초기화 시 개발용 기본 관리자 계정 `admin / 1234`가 없으면 생성한다. 이 기본 계정은 로컬 개발과 MVP 검증용 기준이며, 운영 배포에서는 별도 초기 비밀번호 정책으로 교체해야 한다.
+
 기본 개발 DB 경로는 `services/api/data/flownote.sqlite3`, 테스트 DB 경로는 `services/api/data/flownote.test.sqlite3`이다. 테스트 DB와 검증 기록은 로컬 산출물로 보존하되 커밋 대상은 아니다. 문서 등록 통합 테스트 샘플과 로그는 `services/api/data/test-artifacts/document-registration-2026-06-24/` 아래에 보존하고, 업로드 저장 파일은 `services/api/storage/document-registration-tests/` 아래에 보존한다.
 
 현재 서버 초기 스키마 테이블은 다음과 같다.
@@ -56,9 +58,12 @@ FlowNote는 MES/ERP를 대체하지 않는다. 외부 시스템이 있는 경우
 | --- | --- |
 | id | 내부 식별자 |
 | user_id | 외부 참조용 사용자 ID |
+| username | 로그인 API에서 조회하는 사용자명. 서버 MVP에서는 고유값 |
 | login_id | 로그인 ID |
 | display_name | 표시명 |
+| role | 서버 MVP 로그인 응답에 포함하는 단일 역할. 현재 코드 값은 admin, manager, viewer |
 | password_hash | 비밀번호 해시 |
+| is_active | 로그인 허용 여부 |
 | status | ACTIVE, LOCKED, DISABLED |
 | created_at | 생성일 |
 | updated_at | 수정일 |

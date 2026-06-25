@@ -2,7 +2,7 @@
 
 ## 0. 현재 코드 기준 배포 상태
 
-현재 실행 가능한 구현은 개발용 Windows WPF 앱과 로컬 SQLite DB이다. WPF 앱은 빌드 출력 폴더 또는 소스 앱 데이터 폴더의 `Data/flownote.local.sqlite`를 사용한다. FastAPI 서버는 헬스체크 수준의 개발 골격이며, 서버 PC 배포, 서버 `storage/` 저장소, 클라이언트 설치파일 배포, 검색 인덱스, 외부 연동 어댑터는 아직 구현된 배포 기능이 아니다.
+현재 실행 가능한 구현은 개발용 Windows WPF 앱과 로컬 SQLite DB, FastAPI SQLite MVP API이다. WPF 앱은 빌드 출력 폴더 또는 소스 앱 데이터 폴더의 `Data/flownote.local.sqlite`를 사용한다. FastAPI 서버는 개발용 SQLite DB, MVP 로그인, 문서 등록/버전 등록, 서버 로컬 `storage/` 저장, 현장 코멘트 최소 API를 제공한다. 서버 PC 운영 배포, 클라이언트 설치파일 배포, 검색 인덱스, 외부 연동 어댑터는 아직 구현된 배포 기능이 아니다.
 
 ## 1. 배포 원칙
 
