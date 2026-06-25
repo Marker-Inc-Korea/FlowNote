@@ -2,7 +2,7 @@
 
 이 폴더는 FlowNote의 제품 방향, 도메인 관계, 데이터 모델, API, 설계 결정을 관리한다.
 
-현재 코드 기준으로 실제 구현된 범위는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite 문서/FieldNote MVP API이다. 인증, 권한, 다운로드 제어, 파일 감시, 보고서, AI, MES/ERP, 배포 운영 항목은 제품 목표 또는 초안일 수 있으므로 현재 구현 완료 기능과 구분해서 읽는다.
+현재 코드 기준으로 실제 구현된 범위는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite 로그인/문서/FieldNote MVP API이다. 요청 인증/권한 검사, 다운로드 제어, 파일 감시, 보고서, AI, MES/ERP, 배포 운영 항목은 제품 목표 또는 초안일 수 있으므로 현재 구현 완료 기능과 구분해서 읽는다.
 
 ## 읽는 순서
 
