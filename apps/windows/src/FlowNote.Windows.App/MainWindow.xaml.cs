@@ -87,7 +87,7 @@ public partial class MainWindow : Window
         window.ShowDialog();
     }
 
-    private void UploadFileButton_Click(object sender, RoutedEventArgs e)
+    private async void UploadFileButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFileDialog
         {
@@ -102,7 +102,7 @@ public partial class MainWindow : Window
         }
 
         var folder = GetSelectedFolderOrDefault();
-        RegisterUploadedFiles(dialog.FileNames, folder, "파일 업로드");
+        await RegisterUploadedFilesAsync(dialog.FileNames, folder, "파일 업로드");
     }
 
     private void RefreshWorkspace(string status, long? selectedFolderId = null)
@@ -194,7 +194,7 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void FileListDropZone_Drop(object sender, DragEventArgs e)
+    private async void FileListDropZone_Drop(object sender, DragEventArgs e)
     {
         FileListPanel.Background = (Brush)FindResource("PanelBackgroundBrush");
         if (!HasFileDrop(e))
@@ -204,13 +204,15 @@ public partial class MainWindow : Window
 
         var files = (string[])e.Data.GetData(DataFormats.FileDrop);
         var folder = GetSelectedFolderOrDefault();
-        RegisterUploadedFiles(files, folder, "Drag & Drop 업로드");
         e.Handled = true;
+        await RegisterUploadedFilesAsync(files, folder, "Drag & Drop 업로드");
     }
 
-    private void RegisterUploadedFiles(IEnumerable<string> files, DocumentFolder selectedTargetFolder, string sourceLabel)
+    private async Task RegisterUploadedFilesAsync(IEnumerable<string> files, DocumentFolder selectedTargetFolder, string sourceLabel)
     {
         var addedCount = 0;
+        var serverRegisteredCount = 0;
+        var serverSyncFailures = new List<string>();
         long? lastTargetFolderId = null;
         var actorName = currentUser.DisplayName ?? currentUser.LoginId ?? "admin";
 
@@ -220,34 +222,94 @@ public partial class MainWindow : Window
             var createdAt = DateTime.Now;
             var plan = services.DocumentPlacement.PrepareDocumentRegistration(selectedTargetFolder.Id, fileInfo.Name, createdAt, actorName);
             var storedRelativePath = CopyFileToAppStorage(fileInfo, createdAt);
-            services.Documents.RegisterDocument(
+            var documentType = ResolveDocumentType(fileInfo.Extension);
+            var tags = BuildRegistrationTags(plan.Folder, fileInfo.Name, documentType);
+            var document = services.Documents.RegisterDocument(
                 plan.Folder.Id,
                 plan.Title,
                 fileInfo.Name,
-                ResolveDocumentType(fileInfo.Extension),
+                documentType,
                 actorName,
                 storedRelativePath,
-                BuildRegistrationTags(plan.Folder, fileInfo.Name, ResolveDocumentType(fileInfo.Extension)));
+                tags);
 
             addedCount++;
             lastTargetFolderId = plan.Folder.Id;
+
+            if (serverDocumentClient is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                await serverDocumentClient.RegisterDocumentAsync(
+                    GetAppContentPath(storedRelativePath),
+                    document.Title,
+                    document.DocumentType,
+                    FlowNoteServerDocumentClient.DefaultWpfLocalUploadChangeReason,
+                    createdBy: actorName,
+                    tags: document.TagList);
+                serverRegisteredCount++;
+            }
+            catch (Exception exception)
+            {
+                serverSyncFailures.Add(SummarizeServerSyncFailure(exception));
+            }
+        }
+
+        var status = $"{sourceLabel}: {addedCount}개 파일을 DB에 저장했습니다.";
+        if (serverDocumentClient is not null)
+        {
+            status = serverSyncFailures.Count == 0
+                ? $"{status} 서버 {serverRegisteredCount}개 등록 완료."
+                : $"{status} 서버 등록 실패: {serverSyncFailures[0]}";
         }
 
         RefreshWorkspace(
-            $"{sourceLabel}: {addedCount}개 파일을 DB에 저장했습니다.",
+            status,
             lastTargetFolderId ?? selectedTargetFolder.Id);
     }
 
     private string CopyFileToAppStorage(FileInfo sourceFile, DateTime createdAt)
     {
         var dataDirectory = Path.GetDirectoryName(services.Database.DatabasePath)!;
-        var appContentRoot = Directory.GetParent(dataDirectory)?.FullName ?? AppContext.BaseDirectory;
         var uploadRoot = Path.Combine(dataDirectory, "Files", "Uploads", createdAt.ToString("yyyy-MM-dd"));
         Directory.CreateDirectory(uploadRoot);
 
         var targetPath = GetUniqueTargetPath(uploadRoot, sourceFile.Name);
         File.Copy(sourceFile.FullName, targetPath);
-        return Path.GetRelativePath(appContentRoot, targetPath);
+        return Path.GetRelativePath(GetAppContentRoot(), targetPath);
+    }
+
+    private string GetAppContentRoot()
+    {
+        var dataDirectory = Path.GetDirectoryName(services.Database.DatabasePath)!;
+        return Directory.GetParent(dataDirectory)?.FullName ?? AppContext.BaseDirectory;
+    }
+
+    private string GetAppContentPath(string storedRelativePath)
+    {
+        return Path.GetFullPath(Path.Combine(GetAppContentRoot(), storedRelativePath));
+    }
+
+    private static string SummarizeServerSyncFailure(Exception exception)
+    {
+        var message = exception switch
+        {
+            TaskCanceledException => "서버 응답 시간 초과",
+            HttpRequestException => "서버 연결 실패",
+            _ => exception.Message
+        };
+
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            message = exception.GetType().Name;
+        }
+
+        message = message.Replace(Environment.NewLine, " ");
+        const int maxLength = 120;
+        return message.Length <= maxLength ? message : $"{message[..maxLength]}...";
     }
 
     private static string GetUniqueTargetPath(string directory, string fileName)
