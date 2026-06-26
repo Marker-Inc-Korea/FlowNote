@@ -4,7 +4,7 @@ FlowNote Python FastAPI 서버 영역이다.
 
 ## 현재 구현 상태
 
-현재 서버는 SQLite MVP 초기 구현 단계이다. 제품 전체 범위 중 문서 등록, 문서 버전 등록, 서버 로컬 파일 저장, FieldNote 원천 이력 API의 최소 흐름을 검증한다.
+현재 서버는 SQLite MVP 초기 구현 단계이다. 제품 전체 범위 중 MVP 로그인, 문서 등록, 문서 버전 등록, 문서 태그, 서버 로컬 파일 저장, FieldNote 원천 이력, 문서 접근 로그 API의 최소 흐름을 검증한다.
 
 구현된 API:
 
@@ -13,11 +13,16 @@ FlowNote Python FastAPI 서버 영역이다.
 | GET | `/` | 서비스명과 실행 환경 |
 | GET | `/api/v1/health` | 앱 상태 확인 |
 | GET | `/api/v1/health/db` | DB 연결 확인 |
+| POST | `/api/v1/auth/login` | MVP 사용자명/비밀번호 검증 |
 | POST | `/api/v1/documents` | 문서와 최초 버전 등록 |
 | GET | `/api/v1/documents` | 문서 목록 조회 |
 | GET | `/api/v1/documents/{documentId}` | 문서 상세 조회 |
 | GET | `/api/v1/documents/{documentId}/versions` | 문서 버전 목록 조회 |
 | POST | `/api/v1/documents/{documentId}/versions` | 새 문서 버전 등록 |
+| POST | `/api/v1/documents/{documentId}/access-logs` | 문서 접근 로그 등록 |
+| GET | `/api/v1/documents/{documentId}/access-logs` | 문서 접근 로그 조회 |
+| GET | `/api/v1/tags` | 태그 목록 조회 |
+| POST | `/api/v1/tags` | 태그 생성 |
 | POST | `/api/v1/field-notes` | 현장 코멘트 원천 이력 등록 |
 | GET | `/api/v1/field-notes` | 현장 코멘트 목록 조회 |
 | GET | `/api/v1/field-notes/{noteId}` | 현장 코멘트 상세 조회 |
@@ -26,12 +31,12 @@ FlowNote Python FastAPI 서버 영역이다.
 
 문서 등록 API는 `multipart/form-data`로 파일과 메타데이터를 받고, 파일을 서버 로컬 `storage/documents/{document_id}/v{version_no}/` 아래에 저장한다. SQLite에는 `documents`, `document_versions`, `file_objects`를 통해 문서 상태, 버전 번호, 변경 사유, 원본 파일명, 저장 키, 확장자, MIME, 파일 계열, 크기, SHA-256 해시를 기록한다.
 
-FieldNote API는 문서 파일 개정 이력과 현장 코멘트 이력을 분리하기 위한 최소 구현이다. 문서 또는 문서 버전을 참조하는 원천 코멘트를 저장하고, 관리자 검토/분석 내용과 상태를 갱신할 수 있다.
+FieldNote API는 문서 파일 개정 이력과 현장 코멘트 이력을 분리하기 위한 최소 구현이다. 문서 또는 문서 버전을 참조하는 원천 코멘트를 저장하고, 관리자 검토/분석 내용과 상태를 갱신할 수 있다. 문서 접근 로그 API는 WPF 뷰어 열람/닫힘 이벤트를 서버에 남기기 위한 계약이며, 현재는 인증/권한 검사와 분리된 MVP 저장 흐름이다.
 
 현재 구현되지 않은 범위:
 
-- 로그인/세션/권한 API
-- 다운로드 차단과 문서 열람 감사 로그의 실제 적용
+- JWT 또는 세션 발급과 요청별 권한 검사
+- 다운로드 차단의 실제 적용
 - WPF 로컬 FieldNote와 서버 FieldNote API 자동 동기화
 - 파일 감시 결과 수신
 - 보고서 생성, 작업순서판, AI 검색/조언 API
@@ -87,7 +92,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-최근 검증 결과는 [docs/daily/2026-06-24-current-work-summary.md](../../docs/daily/2026-06-24-current-work-summary.md)와 개별 작업 기록을 기준으로 한다.
+최근 검증 결과는 [docs/daily/2026-06-26-current-work-summary.md](../../docs/daily/2026-06-26-current-work-summary.md)와 개별 작업 기록을 기준으로 한다.
 
 ## 보존 대상
 
