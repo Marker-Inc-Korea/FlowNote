@@ -86,6 +86,31 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerFieldNoteResponse>(response, cancellationToken);
     }
 
+    public async Task<ServerDocumentAccessLogResponse> RegisterAccessLogAsync(
+        string documentId,
+        ServerDocumentAccessLogCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/v1/documents/{documentId}/access-logs",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerDocumentAccessLogResponse>(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ServerDocumentAccessLogResponse>> ListAccessLogsAsync(
+        string documentId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/documents/{documentId}/access-logs",
+            cancellationToken);
+        var logs = await ReadJsonResponse<List<ServerDocumentAccessLogResponse>>(
+            response,
+            cancellationToken);
+        return logs;
+    }
+
     private static void AddString(MultipartFormDataContent form, string name, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))
