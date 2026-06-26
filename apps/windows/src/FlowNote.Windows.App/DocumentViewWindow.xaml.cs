@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Xml.Linq;
+using FlowNote.Windows.Core.Audit;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
 using FlowNote.Windows.Core.FieldNotes;
@@ -21,16 +22,19 @@ public partial class DocumentViewWindow : Window
     private const long MaxPreviewBytes = 128 * 1024;
     private readonly FieldNoteService? fieldNoteService;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
+    private readonly DocumentViewLogService? documentViewLogService;
     private readonly string actorName;
     private ExplorerDocument document;
+    private long? documentViewLogId;
+    private bool documentViewLogClosed;
 
     public DocumentViewWindow(ExplorerDocument document)
-        : this(null, document, string.Empty)
+        : this(null, null, null, document, string.Empty)
     {
     }
 
     public DocumentViewWindow(FieldNoteService? fieldNoteService, ExplorerDocument document, string actorName)
-        : this(fieldNoteService, null, document, actorName)
+        : this(fieldNoteService, null, null, document, actorName)
     {
     }
 
@@ -39,19 +43,61 @@ public partial class DocumentViewWindow : Window
         FlowNoteServerDocumentClient? serverDocumentClient,
         ExplorerDocument document,
         string actorName)
+        : this(fieldNoteService, serverDocumentClient, null, document, actorName)
+    {
+    }
+
+    public DocumentViewWindow(
+        FieldNoteService? fieldNoteService,
+        FlowNoteServerDocumentClient? serverDocumentClient,
+        DocumentViewLogService? documentViewLogService,
+        ExplorerDocument document,
+        string actorName)
     {
         InitializeComponent();
         this.fieldNoteService = fieldNoteService;
         this.serverDocumentClient = serverDocumentClient;
+        this.documentViewLogService = documentViewLogService;
         this.document = document;
         this.actorName = actorName;
         SaveCommentButton.IsEnabled = fieldNoteService is not null && !string.IsNullOrWhiteSpace(document.DocumentId);
+        StartDocumentViewLog();
         RefreshHeader();
         LoadPreview(document);
         RefreshCombinedComments();
     }
 
     public bool CommentSaved { get; private set; }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        CloseDocumentViewLog("window_closed");
+        base.OnClosed(e);
+    }
+
+    private void StartDocumentViewLog()
+    {
+        if (documentViewLogService is null || string.IsNullOrWhiteSpace(document.DocumentId))
+        {
+            return;
+        }
+
+        documentViewLogId = documentViewLogService.StartDocumentView(
+            document.DocumentId,
+            document.VersionNo,
+            actorName);
+    }
+
+    private void CloseDocumentViewLog(string closeReason)
+    {
+        if (documentViewLogClosed || documentViewLogId is null || documentViewLogService is null)
+        {
+            return;
+        }
+
+        documentViewLogService.CloseDocumentView(documentViewLogId.Value, closeReason);
+        documentViewLogClosed = true;
+    }
 
     private void RefreshHeader()
     {

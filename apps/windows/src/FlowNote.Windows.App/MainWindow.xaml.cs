@@ -151,7 +151,8 @@ public partial class MainWindow : Window
             record.UpdatedAt,
             $"v{record.VersionNo}",
             record.LocalPath,
-            record.LatestComment);
+            record.LatestComment,
+            record.VersionNo);
     }
 
     private void FileListDropZone_DragEnter(object sender, DragEventArgs e)
@@ -294,6 +295,7 @@ public partial class MainWindow : Window
             : new DocumentViewWindow(
                 services.FieldNotes,
                 serverDocumentClient,
+                services.DocumentViewLogs,
                 document,
                 currentUser.DisplayName ?? currentUser.LoginId ?? "admin");
         viewWindow.Owner = this;
