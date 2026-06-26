@@ -56,6 +56,7 @@ Windows WPF 클라이언트가 서버 연동 전에도 로그인, 폴더 관리,
 - `field_notes`에는 문서 ID, 당시 문서 버전 번호, 입력 방식, 원문, 작성자, 상태, 동기화 후보 시간을 저장한다.
 - 화면에서는 문서 본문 아래에 FieldNote 목록을 누적 코멘트처럼 표시한다.
 - 새 FieldNote가 저장되면 `documents.latest_comment`와 `documents.updated_at`를 갱신하고 문서 작성자에게 알림을 남긴다.
+- `DocumentViewWindow`는 로컬 FieldNote 저장 직후에만 서버 등록을 후보로 시도한다. `FLOWNOTE_API_BASE_URL`이 없으면 서버 전송을 건너뛰고, 전송 실패도 로컬 저장 성공을 되돌리지 않는다. 현재 단계에서는 자동 재시도 큐를 만들지 않고 화면 상태 문구만 남긴다.
 - 기존 DB의 `document_versions.comment` 데이터는 앱 초기화 시 `field_notes`로 백필한다.
 - 과거 호환용 `DocumentService.AddCommentVersion` 경로를 사용하면 `document_versions`에 새 버전을 추가하고 `documents.version_no`를 올린다. 이때 알림 수신자는 최초 작성자가 아니라 직전 버전 작성자이다. 예를 들어 v3 코멘트는 v2 작성자에게 알림을 보낸다.
 - 파일 업로드 버튼과 Drag & Drop은 선택한 파일을 `Data\Files\Uploads\yyyy-MM-dd\` 아래로 복사하고 SQLite에 문서와 원본 버전 `v1`을 즉시 저장한다.
