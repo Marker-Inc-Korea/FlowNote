@@ -54,6 +54,7 @@ public sealed class ExplorerWorkspace : INotifyPropertyChanged
             candidate.AddedAt,
             "draft",
             candidate.FullPath,
-            null));
+            null,
+            string.Empty));
     }
 }

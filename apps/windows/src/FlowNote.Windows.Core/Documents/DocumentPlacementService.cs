@@ -8,11 +8,12 @@ public sealed class DocumentPlacementService(FolderService folders)
     public DocumentRegistrationPlan PrepareDocumentRegistration(
         long selectedFolderId,
         string fileName,
-        DateTime createdAt)
+        DateTime createdAt,
+        string? actorName = null)
     {
         var selectedFolder = folders.GetFolder(selectedFolderId);
         var title = CreateTitle(selectedFolder, fileName);
-        var targetFolder = ResolveTargetFolder(selectedFolder, fileName, title, createdAt);
+        var targetFolder = ResolveTargetFolder(selectedFolder, fileName, title, createdAt, actorName);
         return new DocumentRegistrationPlan(targetFolder, title);
     }
 
@@ -20,17 +21,18 @@ public sealed class DocumentPlacementService(FolderService folders)
         DocumentFolder selectedFolder,
         string fileName,
         string title,
-        DateTime createdAt)
+        DateTime createdAt,
+        string? actorName)
     {
         if (selectedFolder.Name is FlowNoteLocalDatabase.HandoverFolderName or FlowNoteLocalDatabase.PhotosFolderName)
         {
-            return folders.GetOrCreateChildFolder(createdAt.ToString("yyyy-MM-dd"), selectedFolder.Id);
+            return folders.GetOrCreateChildFolder(createdAt.ToString("yyyy-MM-dd"), selectedFolder.Id, actorName: actorName);
         }
 
         if (selectedFolder.Name == FlowNoteLocalDatabase.DocumentsFolderName && selectedFolder.Path == $"/{FlowNoteLocalDatabase.DocumentsFolderName}")
         {
             var categoryName = FlowNoteLocalDatabase.ResolveDocumentCategoryName(title, fileName, string.Empty);
-            return folders.GetOrCreateChildFolder(categoryName, selectedFolder.Id, isSystem: true);
+            return folders.GetOrCreateChildFolder(categoryName, selectedFolder.Id, isSystem: true, actorName: actorName);
         }
 
         return selectedFolder;

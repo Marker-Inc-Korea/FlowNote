@@ -1,4 +1,5 @@
 using FlowNote.Windows.Core.Storage;
+using FlowNote.Windows.Core.History;
 
 namespace FlowNote.Windows.Core.Folders;
 
@@ -15,7 +16,7 @@ public sealed class FolderService(FlowNoteLocalDatabase database)
         return ListFolders().Single(folder => folder.ParentId == root.Id && folder.Name == name);
     }
 
-    public DocumentFolder CreateFolder(string name, long? parentId = null, bool isSystem = false)
+    public DocumentFolder CreateFolder(string name, long? parentId = null, bool isSystem = false, string? actorName = null)
     {
         var now = DateTime.UtcNow;
         var path = BuildPath(parentId, name);
@@ -36,13 +37,22 @@ public sealed class FolderService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$created_at", now.ToString("O"));
 
         var id = Convert.ToInt64(command.ExecuteScalar());
+        HistoryService.Record(
+            connection,
+            "folder.created",
+            actorName,
+            "folder",
+            folderId,
+            name,
+            $"폴더 생성: {path}",
+            now);
         return new DocumentFolder(id, folderId, parentId, name, path, isSystem, now);
     }
 
-    public DocumentFolder GetOrCreateChildFolder(string name, long parentId, bool isSystem = false)
+    public DocumentFolder GetOrCreateChildFolder(string name, long parentId, bool isSystem = false, string? actorName = null)
     {
         var existing = ListFolders().FirstOrDefault(folder => folder.ParentId == parentId && folder.Name == name);
-        return existing ?? CreateFolder(name, parentId, isSystem);
+        return existing ?? CreateFolder(name, parentId, isSystem, actorName);
     }
 
     public IReadOnlyList<DocumentFolder> ListFolders()

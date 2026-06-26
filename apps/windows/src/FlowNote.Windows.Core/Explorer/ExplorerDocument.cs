@@ -11,4 +11,5 @@ public sealed record ExplorerDocument(
     string VersionLabel,
     string? LocalPath,
     string? LatestComment,
+    string TagText = "",
     int VersionNo = 1);

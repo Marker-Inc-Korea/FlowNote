@@ -46,7 +46,7 @@ public partial class MainWindow : Window
         var parent = selectedFolder is null
             ? services.Folders.GetRootFolder()
             : services.Folders.GetFolder(selectedFolder.Id);
-        var folder = services.Folders.CreateFolder($"새 폴더 {DateTime.Now:HHmmss}", parent.Id);
+        var folder = services.Folders.CreateFolder($"새 폴더 {DateTime.Now:HHmmss}", parent.Id, actorName: GetCurrentActorName());
         RefreshWorkspace("폴더를 생성했습니다.", folder.Id);
     }
 
@@ -54,14 +54,16 @@ public partial class MainWindow : Window
     {
         var folder = GetSelectedFolderOrDefault();
         var fileName = $"sample-{DateTime.Now:HHmmss}.txt";
-        var plan = services.DocumentPlacement.PrepareDocumentRegistration(folder.Id, fileName, DateTime.Now);
+        var actorName = GetCurrentActorName();
+        var plan = services.DocumentPlacement.PrepareDocumentRegistration(folder.Id, fileName, DateTime.Now, actorName);
 
         services.Documents.RegisterDocument(
             plan.Folder.Id,
             plan.Title,
             fileName,
             "Text",
-            currentUser.DisplayName ?? currentUser.LoginId ?? "admin");
+            actorName,
+            tags: BuildRegistrationTags(plan.Folder, fileName, "Text"));
 
         RefreshWorkspace($"문서를 등록했습니다. 위치: {plan.Folder.Path}", plan.Folder.Id);
     }
@@ -74,6 +76,15 @@ public partial class MainWindow : Window
         };
         window.ShowDialog();
         RefreshNotificationButton();
+    }
+
+    private void HistoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new HistoryWindow(services.History)
+        {
+            Owner = this
+        };
+        window.ShowDialog();
     }
 
     private void UploadFileButton_Click(object sender, RoutedEventArgs e)
@@ -152,6 +163,7 @@ public partial class MainWindow : Window
             $"v{record.VersionNo}",
             record.LocalPath,
             record.LatestComment,
+            record.TagText,
             record.VersionNo);
     }
 
@@ -206,7 +218,7 @@ public partial class MainWindow : Window
         {
             var fileInfo = new FileInfo(file);
             var createdAt = DateTime.Now;
-            var plan = services.DocumentPlacement.PrepareDocumentRegistration(selectedTargetFolder.Id, fileInfo.Name, createdAt);
+            var plan = services.DocumentPlacement.PrepareDocumentRegistration(selectedTargetFolder.Id, fileInfo.Name, createdAt, actorName);
             var storedRelativePath = CopyFileToAppStorage(fileInfo, createdAt);
             services.Documents.RegisterDocument(
                 plan.Folder.Id,
@@ -214,7 +226,8 @@ public partial class MainWindow : Window
                 fileInfo.Name,
                 ResolveDocumentType(fileInfo.Extension),
                 actorName,
-                storedRelativePath);
+                storedRelativePath,
+                BuildRegistrationTags(plan.Folder, fileInfo.Name, ResolveDocumentType(fileInfo.Extension)));
 
             addedCount++;
             lastTargetFolderId = plan.Folder.Id;
@@ -268,6 +281,46 @@ public partial class MainWindow : Window
             ".jpg" or ".jpeg" or ".png" or ".bmp" or ".gif" => "Image",
             _ => string.IsNullOrWhiteSpace(extension) ? "File" : extension.TrimStart('.').ToUpperInvariant()
         };
+    }
+
+    private IReadOnlyList<string> BuildRegistrationTags(
+        DocumentFolder folder,
+        string fileName,
+        string documentType)
+    {
+        var tags = new List<string>();
+        AddTag(tags, folder.Name);
+        AddTag(tags, documentType);
+
+        var extension = Path.GetExtension(fileName).TrimStart('.');
+        if (!string.IsNullOrWhiteSpace(extension))
+        {
+            AddTag(tags, extension.ToUpperInvariant());
+        }
+
+        foreach (var manualTag in TagInputTextBox.Text.Split(
+            ',',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            AddTag(tags, manualTag);
+        }
+
+        return tags;
+    }
+
+    private static void AddTag(List<string> tags, string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag))
+        {
+            return;
+        }
+
+        if (tags.Any(existing => string.Equals(existing, tag.Trim(), StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        tags.Add(tag.Trim());
     }
 
     private void UpdateDocumentListHeader(long? folderId, string status)
