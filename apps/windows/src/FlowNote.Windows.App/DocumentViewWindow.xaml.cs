@@ -1,6 +1,7 @@
 using System.Data;
 using System.IO;
 using System.IO.Compression;
+using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -9,6 +10,7 @@ using System.Xml.Linq;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
 using FlowNote.Windows.Core.FieldNotes;
+using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
 using UglyToad.PdfPig;
 
@@ -18,6 +20,7 @@ public partial class DocumentViewWindow : Window
 {
     private const long MaxPreviewBytes = 128 * 1024;
     private readonly FieldNoteService? fieldNoteService;
+    private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly string actorName;
     private ExplorerDocument document;
 
@@ -27,9 +30,19 @@ public partial class DocumentViewWindow : Window
     }
 
     public DocumentViewWindow(FieldNoteService? fieldNoteService, ExplorerDocument document, string actorName)
+        : this(fieldNoteService, null, document, actorName)
+    {
+    }
+
+    public DocumentViewWindow(
+        FieldNoteService? fieldNoteService,
+        FlowNoteServerDocumentClient? serverDocumentClient,
+        ExplorerDocument document,
+        string actorName)
     {
         InitializeComponent();
         this.fieldNoteService = fieldNoteService;
+        this.serverDocumentClient = serverDocumentClient;
         this.document = document;
         this.actorName = actorName;
         SaveCommentButton.IsEnabled = fieldNoteService is not null && !string.IsNullOrWhiteSpace(document.DocumentId);
@@ -446,7 +459,25 @@ public partial class DocumentViewWindow : Window
         CombinedCommentTextBox.Text = builder.ToString().TrimEnd();
     }
 
-    private void SaveCommentButton_Click(object sender, RoutedEventArgs e)
+    private async Task<string> TrySendFieldNoteToServerAsync(FieldNoteRecord savedNote)
+    {
+        if (serverDocumentClient is null)
+        {
+            return "Server URL is not configured. The field note remains saved locally.";
+        }
+
+        try
+        {
+            await serverDocumentClient.RegisterFieldNoteAsync(savedNote);
+            return "Server field note send completed.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
+        {
+            return $"Server field note send failed. Local save is kept. {ex.Message}";
+        }
+    }
+
+    private async void SaveCommentButton_Click(object sender, RoutedEventArgs e)
     {
         if (fieldNoteService is null || string.IsNullOrWhiteSpace(document.DocumentId))
         {
@@ -462,6 +493,7 @@ public partial class DocumentViewWindow : Window
         }
 
         var savedNote = fieldNoteService.AddDocumentNote(document.DocumentId, comment, actorName);
+        var serverStatus = await TrySendFieldNoteToServerAsync(savedNote);
         document = document with
         {
             UpdatedAt = savedNote.CreatedAt,
@@ -470,6 +502,7 @@ public partial class DocumentViewWindow : Window
         CommentSaved = true;
         CommentTextBox.Clear();
         RefreshHeader();
+        MetaTextBlock.Text = $"{MetaTextBlock.Text} | {serverStatus}";
         RefreshCombinedComments();
         LoadPreview(document);
         MessageBox.Show("현장 코멘트를 문서 아래에 저장했습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);

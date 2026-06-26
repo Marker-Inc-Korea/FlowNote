@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Controls;
@@ -7,6 +8,7 @@ using FlowNote.Windows.Core.Auth;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
 using FlowNote.Windows.Core.Folders;
+using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
 using Microsoft.Win32;
 
@@ -16,6 +18,8 @@ public partial class MainWindow : Window
 {
     private readonly FlowNoteLocalServices services;
     private readonly LoginResult currentUser;
+    private readonly HttpClient? serverHttpClient;
+    private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly ExplorerWorkspace workspace = new();
     private ExplorerFolder? selectedFolder;
 
@@ -24,10 +28,17 @@ public partial class MainWindow : Window
         InitializeComponent();
         this.services = services;
         this.currentUser = currentUser;
+        (serverDocumentClient, serverHttpClient) = CreateServerDocumentClient();
         SignedInUserTextBlock.Text = $"{currentUser.DisplayName} ({currentUser.Role})";
         DataContext = workspace;
         RefreshWorkspace("로컬 작업 공간을 열었습니다.", services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.DocumentsFolderName).Id);
         RefreshNotificationButton();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        serverHttpClient?.Dispose();
+        base.OnClosed(e);
     }
 
     private void NewFolderButton_Click(object sender, RoutedEventArgs e)
@@ -282,6 +293,7 @@ public partial class MainWindow : Window
             ? new DocumentViewWindow(document)
             : new DocumentViewWindow(
                 services.FieldNotes,
+                serverDocumentClient,
                 document,
                 currentUser.DisplayName ?? currentUser.LoginId ?? "admin");
         viewWindow.Owner = this;
@@ -329,6 +341,29 @@ public partial class MainWindow : Window
         }
 
         return services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.DocumentsFolderName);
+    }
+
+    private static (FlowNoteServerDocumentClient? Client, HttpClient? HttpClient) CreateServerDocumentClient()
+    {
+        var apiBaseUrl = Environment.GetEnvironmentVariable("FLOWNOTE_API_BASE_URL");
+        if (string.IsNullOrWhiteSpace(apiBaseUrl))
+        {
+            return (null, null);
+        }
+
+        var normalizedBaseUrl = apiBaseUrl.EndsWith('/') ? apiBaseUrl : $"{apiBaseUrl}/";
+        if (!Uri.TryCreate(normalizedBaseUrl, UriKind.Absolute, out var baseAddress))
+        {
+            return (null, null);
+        }
+
+        var httpClient = new HttpClient
+        {
+            BaseAddress = baseAddress,
+            Timeout = TimeSpan.FromSeconds(10)
+        };
+
+        return (new FlowNoteServerDocumentClient(httpClient), httpClient);
     }
 
     private string GetCurrentActorName()
