@@ -1,4 +1,6 @@
 using FlowNote.Windows.Core.Storage;
+using FlowNote.Windows.Core.Tags;
+using FlowNote.Windows.Core.History;
 
 namespace FlowNote.Windows.Core.Documents;
 
@@ -10,7 +12,8 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
         string fileName,
         string documentType,
         string createdBy,
-        string? localPath = null)
+        string? localPath = null,
+        IEnumerable<string>? tags = null)
     {
         var now = DateTime.UtcNow;
         var documentId = $"doc-{Guid.NewGuid():N}";
@@ -46,7 +49,33 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
         version.Parameters.AddWithValue("$created_at", now.ToString("O"));
         version.ExecuteNonQuery();
 
-        return new DocumentRecord(id, documentId, folderId, title, fileName, documentType, "WORKING", createdBy, now, now, localPath, 1, null);
+        var cleanedTags = TagService.CleanTags(tags);
+        TagService.ReplaceDocumentTags(connection, documentId, cleanedTags);
+        HistoryService.Record(
+            connection,
+            "document.registered",
+            createdBy,
+            "document",
+            documentId,
+            title,
+            $"문서 등록: {title} ({fileName})",
+            now);
+
+        return new DocumentRecord(
+            id,
+            documentId,
+            folderId,
+            title,
+            fileName,
+            documentType,
+            "WORKING",
+            createdBy,
+            now,
+            now,
+            localPath,
+            1,
+            null,
+            cleanedTags);
     }
 
     public IReadOnlyList<DocumentRecord> ListDocuments(long? folderId = null)
@@ -77,9 +106,10 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
         var records = new List<DocumentRecord>();
         while (reader.Read())
         {
+            var documentId = reader.GetString(1);
             records.Add(new DocumentRecord(
                 reader.GetInt64(0),
-                reader.GetString(1),
+                documentId,
                 reader.GetInt64(2),
                 reader.GetString(3),
                 reader.GetString(4),
@@ -90,7 +120,8 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
                 DateTime.Parse(reader.GetString(9)),
                 reader.IsDBNull(10) ? null : reader.GetString(10),
                 reader.GetInt32(11),
-                reader.IsDBNull(12) ? null : reader.GetString(12)));
+                reader.IsDBNull(12) ? null : reader.GetString(12),
+                TagService.ListDocumentTags(connection, documentId)));
         }
 
         return records;
@@ -172,8 +203,31 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
             nextVersion,
             comment.Trim(),
             now);
+        HistoryService.Record(
+            connection,
+            "document.version_added",
+            createdBy,
+            "document",
+            documentId,
+            title,
+            $"문서 버전 증가: {title} v{nextVersion}",
+            now);
 
-        return new DocumentRecord(id, documentId, folderId, title, fileName, documentType, status, originalCreatedBy, createdAt, now, localPath, nextVersion, comment.Trim());
+        return new DocumentRecord(
+            id,
+            documentId,
+            folderId,
+            title,
+            fileName,
+            documentType,
+            status,
+            originalCreatedBy,
+            createdAt,
+            now,
+            localPath,
+            nextVersion,
+            comment.Trim(),
+            TagService.ListDocumentTags(connection, documentId));
     }
 
     private static string? FindVersionAuthor(Microsoft.Data.Sqlite.SqliteConnection connection, string documentId, int versionNo)

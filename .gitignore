@@ -56,9 +56,16 @@ services/api/data/*
 /storage/
 /data/
 *.sqlite
-apps/windows/src/FlowNote.Windows.App/Data/*.sqlite
+!services/api/data/*.sqlite
+!services/api/data/**/*.sqlite
+!apps/windows/src/FlowNote.Windows.App/Data/*.sqlite
+!apps/windows/src/FlowNote.Windows.App/Data/**/*.sqlite
 apps/windows/src/FlowNote.Windows.App/Data/*sample-registration.md
-apps/windows/src/FlowNote.Windows.App/Data/Files/
+apps/windows/src/FlowNote.Windows.App/Data/*test*.md
+apps/windows/src/FlowNote.Windows.App/Data/*smoke*.md
+apps/windows/src/FlowNote.Windows.App/Data/Files/**
+!apps/windows/src/FlowNote.Windows.App/Data/Files/*.sqlite
+!apps/windows/src/FlowNote.Windows.App/Data/Files/**/*.sqlite
 apps/windows/src/FlowNote.Windows.App/Data/Files/Uploads/
 *.sqlite3
 *.db
@@ -130,6 +137,10 @@ htmlcov/
 # Temporary files
 tmp/
 temp/
+smoke-output/
+smoke-results/
+test-output/
+test-results/
 *.tmp
 *.bak
 *.orig

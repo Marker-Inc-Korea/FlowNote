@@ -98,7 +98,7 @@ multipart/form-data
 - links: object[]
 ```
 
-현재 구현된 `POST /api/v1/documents`는 `file`, `title`, `documentType`, `changeReason`을 필수로 받고, `description`, `ownerId`, `categoryId`, `versionLabel`, `status`, `createdBy`를 선택으로 받는다. `tags`와 `links`는 아직 저장하지 않는다. 파일은 `storage/documents/{document_id}/v{version_no}/` 아래에 저장하고, SQLite `file_objects`에는 `storage_key`, 원본 파일명, 확장자, MIME, 파일 계열, 크기, SHA-256 해시를 기록한다.
+현재 구현된 `POST /api/v1/documents`는 `file`, `title`, `documentType`, `changeReason`을 필수로 받고, `description`, `ownerId`, `categoryId`, `versionLabel`, `status`, `createdBy`, `tags`를 선택으로 받는다. `tags`는 multipart form의 반복 필드 또는 쉼표 구분 문자열로 받을 수 있으며 서버는 `tag_definitions`와 `document_tags`에 저장하고 문서 목록/상세 응답에 `tags: string[]`로 반환한다. `links`는 아직 저장하지 않는다. 파일은 `storage/documents/{document_id}/v{version_no}/` 아래에 저장하고, SQLite `file_objects`에는 `storage_key`, 원본 파일명, 확장자, MIME, 파일 계열, 크기, SHA-256 해시를 기록한다.
 
 새 버전 업로드 요청 필드:
 

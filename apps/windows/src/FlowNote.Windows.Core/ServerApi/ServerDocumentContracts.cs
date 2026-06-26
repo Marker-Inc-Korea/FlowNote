@@ -100,6 +100,9 @@ public sealed record ServerDocumentResponse
     [JsonPropertyName("updated_at")]
     public DateTime UpdatedAt { get; init; }
 
+    [JsonPropertyName("tags")]
+    public IReadOnlyList<string> Tags { get; init; } = [];
+
     [JsonPropertyName("latest_version")]
     public ServerDocumentVersionResponse? LatestVersion { get; init; }
 }
@@ -126,6 +129,9 @@ public sealed record ServerDocumentListItem
 
     [JsonPropertyName("latest_filename")]
     public string? LatestFilename { get; init; }
+
+    [JsonPropertyName("tags")]
+    public IReadOnlyList<string> Tags { get; init; } = [];
 
     [JsonPropertyName("updated_at")]
     public DateTime UpdatedAt { get; init; }

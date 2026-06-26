@@ -13,4 +13,10 @@ public sealed record DocumentRecord(
     DateTime UpdatedAt,
     string? LocalPath,
     int VersionNo,
-    string? LatestComment);
+    string? LatestComment,
+    IReadOnlyList<string>? Tags = null)
+{
+    public IReadOnlyList<string> TagList { get; } = Tags ?? [];
+
+    public string TagText => TagList.Count == 0 ? string.Empty : string.Join(", ", TagList);
+}

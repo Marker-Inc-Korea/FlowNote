@@ -1,5 +1,6 @@
 using FlowNote.Windows.Core.Storage;
 using Microsoft.Data.Sqlite;
+using FlowNote.Windows.Core.History;
 
 namespace FlowNote.Windows.Core.FieldNotes;
 
@@ -33,19 +34,21 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
         using var connection = database.OpenConnection();
         using var lookup = connection.CreateCommand();
         lookup.CommandText = """
-            SELECT version_no
+            SELECT version_no, title
             FROM documents
             WHERE document_id = $document_id
             LIMIT 1;
             """;
         lookup.Parameters.AddWithValue("$document_id", documentId);
-        var versionValue = lookup.ExecuteScalar();
-        if (versionValue is null)
+        using var documentReader = lookup.ExecuteReader();
+        if (!documentReader.Read())
         {
             throw new InvalidOperationException($"Document not found: {documentId}");
         }
 
-        var documentVersionNo = Convert.ToInt32(versionValue);
+        var documentVersionNo = documentReader.GetInt32(0);
+        var documentTitle = documentReader.GetString(1);
+        documentReader.Close();
         var noteId = $"note-{Guid.NewGuid():N}";
 
         using var insert = connection.CreateCommand();
@@ -115,6 +118,15 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
         updateDocument.ExecuteNonQuery();
 
         AddFieldNoteNotification(connection, documentId, authorName, content, now);
+        HistoryService.Record(
+            connection,
+            "field_note.created",
+            authorName,
+            "document",
+            documentId,
+            documentTitle,
+            $"현장 코멘트 등록: {documentTitle}",
+            now);
 
         return new FieldNoteRecord(
             id,

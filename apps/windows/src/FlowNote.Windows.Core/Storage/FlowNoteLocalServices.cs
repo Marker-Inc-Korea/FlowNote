@@ -3,7 +3,9 @@ using FlowNote.Windows.Core.Audit;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.FieldNotes;
 using FlowNote.Windows.Core.Folders;
+using FlowNote.Windows.Core.History;
 using FlowNote.Windows.Core.Notifications;
+using FlowNote.Windows.Core.Tags;
 
 namespace FlowNote.Windows.Core.Storage;
 
@@ -18,7 +20,9 @@ public sealed class FlowNoteLocalServices
         Documents = new DocumentService(Database);
         DocumentViewLogs = new DocumentViewLogService(Database);
         FieldNotes = new FieldNoteService(Database);
+        History = new HistoryService(Database);
         Notifications = new NotificationService(Database);
+        Tags = new TagService(Database);
         DocumentPlacement = new DocumentPlacementService(Folders);
     }
 
@@ -34,7 +38,11 @@ public sealed class FlowNoteLocalServices
 
     public FieldNoteService FieldNotes { get; }
 
+    public HistoryService History { get; }
+
     public NotificationService Notifications { get; }
+
+    public TagService Tags { get; }
 
     public DocumentPlacementService DocumentPlacement { get; }
 }
