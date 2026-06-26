@@ -1,4 +1,5 @@
 using FlowNote.Windows.Core.Storage;
+using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
 using FlowNote.Windows.Core.ServerApi;
 using System;
@@ -15,10 +16,14 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Data.Sqlite;
 
-var testDirectory = Path.Combine(Path.GetTempPath(), "flownote-windows-smoke-tests");
+var testDirectory = Path.Combine(Path.GetTempPath(), "flownote-program-test-files");
 Directory.CreateDirectory(testDirectory);
 
-var databasePath = Path.Combine(testDirectory, $"flownote-{Guid.NewGuid():N}.sqlite");
+var databasePath = GetSharedSmokeDatabasePath(testDirectory);
+Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
+var runStartedAt = DateTime.Now;
+var runStamp = runStartedAt.ToString("HHmmssfff");
+var runId = runStartedAt.ToString("yyyyMMddHHmmssfff");
 
 try
 {
@@ -26,6 +31,7 @@ try
 
     var login = services.Auth.Login("admin", "1234");
     Require(login.Success, "admin / 1234 login should succeed");
+    var smokeActorName = login.DisplayName ?? "Administrator";
 
     var wrongLogin = services.Auth.Login("admin", "wrong");
     Require(!wrongLogin.Success, "wrong password should fail");
@@ -103,31 +109,35 @@ try
         Require(categoryFolder.IsSystem, $"{categoryFolder.Name} should be a system folder");
         Require(!services.Folders.DeleteFolder(categoryFolder.Id), $"{categoryFolder.Name} should not be deletable");
     }
-
-    var folder = services.Folders.CreateFolder("Smoke Folder", root.Id);
-    var folders = services.Folders.ListFolders();
-    Require(folders.Any(item => item.Id == folder.Id), "created folder should appear in folder list");
+    var currentDocumentFolder = documentCategoryFolders.Single(item => item.Name == FlowNoteLocalDatabase.GeneralDocumentFolderName);
 
     var document = services.Documents.RegisterDocument(
-        folder.Id,
-        "Smoke Document",
-        "smoke-document.txt",
+        currentDocumentFolder.Id,
+        "Program Test Document",
+        "program-test-document.txt",
         "Text",
-        login.DisplayName ?? "Administrator");
+        smokeActorName,
+        tags: ["line-a", "program-test", "work-standard"]);
     Require(document.Id > 0, "registered document should receive an id");
+    Require(
+        document.TagList.SequenceEqual(["line-a", "program-test", "work-standard"]),
+        "registered document should keep its tags");
 
-    var documents = services.Documents.ListDocuments(folder.Id);
+    var documents = services.Documents.ListDocuments(currentDocumentFolder.Id);
     Require(documents.Any(item => item.DocumentId == document.DocumentId), "registered document should appear in folder document list");
+    Require(
+        documents.Any(item => item.DocumentId == document.DocumentId && item.TagText == "line-a, program-test, work-standard"),
+        "document list should include document tags");
 
     var viewLogId = services.DocumentViewLogs.StartDocumentView(
         document.DocumentId,
         document.VersionNo,
-        login.DisplayName ?? "Administrator");
+        smokeActorName);
     var openedViewLog = services.DocumentViewLogs.GetLog(viewLogId);
     Require(openedViewLog is not null, "document view log should be created when viewing starts");
     Require(openedViewLog!.DocumentId == document.DocumentId, "document view log should keep the document id");
     Require(openedViewLog.VersionNo == document.VersionNo, "document view log should keep the document version number");
-    Require(openedViewLog.UserName == (login.DisplayName ?? "Administrator"), "document view log should keep the user name");
+    Require(openedViewLog.UserName == smokeActorName, "document view log should keep the user name");
     Require(openedViewLog.ClosedAt is null, "document view log should start without a closed time");
 
     services.DocumentViewLogs.CloseDocumentView(viewLogId, "window_closed");
@@ -147,112 +157,253 @@ try
 
     var fieldNote = services.FieldNotes.AddDocumentNote(
         document.DocumentId,
-        "Smoke field note stored separately from document versions.",
-        login.DisplayName ?? "Administrator");
+        "Program test field note stored separately from document versions.",
+        smokeActorName);
     Require(!string.IsNullOrWhiteSpace(fieldNote.NoteId), "field note should receive an id");
     Require(fieldNote.DocumentVersionNo == 1, "field note should keep the current document version number");
     var fieldNotes = services.FieldNotes.ListDocumentNotes(document.DocumentId);
     Require(fieldNotes.Count == 1, "document should list the saved field note");
-    Require(fieldNotes[0].RawContent == "Smoke field note stored separately from document versions.", "field note should preserve raw content");
+    Require(fieldNotes[0].RawContent == "Program test field note stored separately from document versions.", "field note should preserve raw content");
     Require(
         services.Documents.ListVersions(document.DocumentId).Count == 1,
         "field note should not create a new document version");
     Require(
-        services.Documents.ListDocuments(folder.Id).Any(item =>
+        services.Documents.ListDocuments(currentDocumentFolder.Id).Any(item =>
             item.DocumentId == document.DocumentId &&
-            item.LatestComment == "Smoke field note stored separately from document versions."),
+            item.LatestComment == "Program test field note stored separately from document versions."),
         "field note should update the document latest comment summary");
 
     var commentedDocument = services.Documents.AddCommentVersion(
         document.DocumentId,
-        "Smoke comment for version history.",
-        login.DisplayName ?? "Administrator");
+        "Program test comment for version history.",
+        smokeActorName);
     Require(commentedDocument.VersionNo == 2, "comment should create the next document version");
-    Require(commentedDocument.LatestComment == "Smoke comment for version history.", "latest comment should be stored on the document");
+    Require(commentedDocument.LatestComment == "Program test comment for version history.", "latest comment should be stored on the document");
 
     var versions = services.Documents.ListVersions(document.DocumentId);
     Require(versions.Count == 2, "document should have original version and comment version");
     Require(versions[0].VersionNo == 2, "latest version should be first");
-    Require(versions[0].Comment == "Smoke comment for version history.", "version should store the comment");
+    Require(versions[0].Comment == "Program test comment for version history.", "version should store the comment");
 
+    var earlyHistory = services.History.ListHistory();
+    Require(
+        earlyHistory.Any(item =>
+            item.EventType == "document.registered" &&
+            item.ActorName == smokeActorName &&
+            item.TargetId == document.DocumentId),
+        "history should record who registered a document");
+    Require(
+        earlyHistory.Any(item =>
+            item.EventType == "document.view_started" &&
+            item.ActorName == smokeActorName &&
+            item.TargetId == document.DocumentId),
+        "history should record who opened a document");
+    Require(
+        earlyHistory.Any(item =>
+            item.EventType == "document.view_closed" &&
+            item.ActorName == smokeActorName),
+        "history should record who closed a document view");
+    Require(
+        earlyHistory.Any(item =>
+            item.EventType == "field_note.created" &&
+            item.ActorName == smokeActorName &&
+            item.TargetId == document.DocumentId),
+        "history should record who added a field note");
+    Require(
+        earlyHistory.Any(item =>
+            item.EventType == "document.version_added" &&
+            item.ActorName == smokeActorName &&
+            item.TargetId == document.DocumentId),
+        "history should record who added a document version");
+
+    var notificationAuthor1 = $"작성자1-{runId}";
+    var notificationAuthor2 = $"작성자2-{runId}";
+    var notificationAuthor3 = $"작성자3-{runId}";
     var notificationDocument = services.Documents.RegisterDocument(
-        folder.Id,
-        "Notification Document",
-        "notification-document.txt",
+        currentDocumentFolder.Id,
+        $"Notification Document {runStamp}",
+        $"notification-document-{runStamp}.txt",
         "Text",
-        "작성자1");
+        notificationAuthor1);
     services.Documents.AddCommentVersion(
         notificationDocument.DocumentId,
         "v2 comment should notify original author.",
-        "작성자2");
+        notificationAuthor2);
     services.Documents.AddCommentVersion(
         notificationDocument.DocumentId,
         "v3 comment should notify previous version author.",
-        "작성자3");
-    var originalAuthorNotifications = services.Notifications.ListNotifications("작성자1");
-    Require(originalAuthorNotifications.Count == 1, "v2 comment should notify the original document author once");
-    Require(originalAuthorNotifications[0].ActorName == "작성자2", "v2 notification actor should be the v2 author");
-    Require(originalAuthorNotifications[0].Message.Contains("v2", StringComparison.Ordinal), "v2 notification should mention version 2");
+        notificationAuthor3);
+    var originalAuthorNotifications = services.Notifications.ListNotifications(notificationAuthor1);
+    Require(
+        originalAuthorNotifications.Any(item =>
+            item.DocumentId == notificationDocument.DocumentId &&
+            item.ActorName == notificationAuthor2 &&
+            item.Message.Contains("v2", StringComparison.Ordinal)),
+        "v2 comment should create a notification for the original document author");
 
-    var previousVersionAuthorNotifications = services.Notifications.ListNotifications("작성자2");
-    Require(previousVersionAuthorNotifications.Count == 1, "v3 comment should notify the previous version author");
-    Require(previousVersionAuthorNotifications[0].ActorName == "작성자3", "v3 notification actor should be the v3 author");
-    Require(previousVersionAuthorNotifications[0].Message.Contains("v3", StringComparison.Ordinal), "v3 notification should mention version 3");
-    Require(services.Notifications.CountUnread("작성자2") == 1, "previous version author should have one unread notification");
-    services.Notifications.MarkAllAsRead("작성자2");
-    Require(services.Notifications.CountUnread("작성자2") == 0, "mark all as read should clear unread notifications");
+    var previousVersionAuthorNotifications = services.Notifications.ListNotifications(notificationAuthor2);
+    Require(
+        previousVersionAuthorNotifications.Any(item =>
+            item.DocumentId == notificationDocument.DocumentId &&
+            item.ActorName == notificationAuthor3 &&
+            item.Message.Contains("v3", StringComparison.Ordinal)),
+        "v3 comment should create a notification for the previous version author");
+    using (var notificationConnection = services.Database.OpenConnection())
+    {
+        Require(
+            ScalarLong(
+                notificationConnection,
+                """
+                SELECT COUNT(*)
+                FROM notifications
+                WHERE document_id = $document_id
+                  AND recipient_name = $recipient_name
+                  AND actor_name = $actor_name;
+                """,
+                ("$document_id", notificationDocument.DocumentId),
+                ("$recipient_name", notificationAuthor1),
+                ("$actor_name", notificationAuthor2)) == 1,
+            "v2 notify event should create one notification row for this document and recipient");
+        Require(
+            ScalarLong(
+                notificationConnection,
+                """
+                SELECT COUNT(*)
+                FROM notifications
+                WHERE document_id = $document_id
+                  AND recipient_name = $recipient_name
+                  AND actor_name = $actor_name;
+                """,
+                ("$document_id", notificationDocument.DocumentId),
+                ("$recipient_name", notificationAuthor2),
+                ("$actor_name", notificationAuthor3)) == 1,
+            "v3 notify event should create one notification row for this document and recipient");
+    }
+    services.Notifications.MarkAllAsRead(notificationAuthor2);
+    Require(services.Notifications.CountUnread(notificationAuthor2) == 0, "mark all as read should clear unread notifications");
 
-    var ruleDate = new DateTime(2026, 6, 23, 9, 10, 0);
     var handoverFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.HandoverFolderName);
-    var handoverPlan = services.DocumentPlacement.PrepareDocumentRegistration(
-        handoverFolder.Id,
-        "shift-handover.txt",
-        ruleDate);
-    Require(handoverPlan.Folder.Name == "2026-06-23", "handover files should be placed in a date child folder");
-    Require(handoverPlan.Folder.ParentId == handoverFolder.Id, "handover date folder should be below the handover folder");
-
     var photosFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.PhotosFolderName);
-    var photosPlan = services.DocumentPlacement.PrepareDocumentRegistration(
+
+    var today = DateTime.Today.AddHours(9);
+    var todayText = today.ToString("yyyyMMdd");
+    var todayFolderName = today.ToString("yyyy-MM-dd");
+
+    var todayHandoverFile = Path.Combine(testDirectory, $"인수인계당일주간조{todayText}{runStamp}.txt");
+    File.WriteAllText(todayHandoverFile, $"당일 인수인계 테스트 {todayText}");
+    var todayHandoverPlan = services.DocumentPlacement.PrepareDocumentRegistration(
+        handoverFolder.Id,
+        Path.GetFileName(todayHandoverFile),
+        today,
+        smokeActorName);
+    Require(todayHandoverPlan.Folder.Name == todayFolderName, "today handover test must use today's date folder");
+    var todayHandoverDocument = services.Documents.RegisterDocument(
+        todayHandoverPlan.Folder.Id,
+        todayHandoverPlan.Title,
+        Path.GetFileName(todayHandoverFile),
+        "Text",
+        smokeActorName,
+        todayHandoverFile,
+        tags: ["handover", todayFolderName]);
+    Require(
+        services.Documents.ListDocuments(todayHandoverPlan.Folder.Id).Any(item =>
+            item.DocumentId == todayHandoverDocument.DocumentId &&
+            item.LocalPath == todayHandoverFile),
+        "today handover document must be registered and listed");
+
+    var todayPhotoFile = Path.Combine(testDirectory, $"사진당일라인A{todayText}{runStamp}.jpg");
+    File.WriteAllBytes(todayPhotoFile, [0xFF, 0xD8, 0xFF, 0xD9]);
+    var todayPhotoPlan = services.DocumentPlacement.PrepareDocumentRegistration(
         photosFolder.Id,
-        "line-photo.jpg",
-        ruleDate);
-    Require(photosPlan.Folder.Name == "2026-06-23", "photo files should be placed in a date child folder");
-    Require(photosPlan.Folder.ParentId == photosFolder.Id, "photo date folder should be below the photos folder");
+        Path.GetFileName(todayPhotoFile),
+        today,
+        smokeActorName);
+    Require(todayPhotoPlan.Folder.Name == todayFolderName, "today photo test must use today's date folder");
+    var todayPhotoDocument = services.Documents.RegisterDocument(
+        todayPhotoPlan.Folder.Id,
+        todayPhotoPlan.Title,
+        Path.GetFileName(todayPhotoFile),
+        "Image",
+        smokeActorName,
+        todayPhotoFile,
+        tags: ["photo", "line-a", todayFolderName]);
+    Require(
+        services.Documents.ListDocuments(todayPhotoPlan.Folder.Id).Any(item =>
+            item.DocumentId == todayPhotoDocument.DocumentId &&
+            item.LocalPath == todayPhotoFile),
+        "today photo document must be registered and listed");
+    Console.WriteLine(
+        $"Today document test: folder={todayFolderName}, handover={todayHandoverFile}, photo={todayPhotoFile}");
+
+    var existingPastDateDocuments = ListExistingPastDateDocuments(
+        services,
+        handoverFolder.Id,
+        photosFolder.Id,
+        DateTime.Today);
+    Require(
+        existingPastDateDocuments.Count > 0,
+        "random past date version test requires at least one existing past dated document in handover or photo folders");
+    var randomPastDocument = existingPastDateDocuments[Random.Shared.Next(existingPastDateDocuments.Count)];
+    var randomPastOriginalVersion = randomPastDocument.Document.VersionNo;
+    var randomPastComment = $"random past existing date version up test {randomPastDocument.FolderName} {runId}";
+    var randomPastVersion = services.Documents.AddCommentVersion(
+        randomPastDocument.Document.DocumentId,
+        randomPastComment,
+        smokeActorName);
+    Require(
+        randomPastVersion.VersionNo == randomPastOriginalVersion + 1,
+        "random past date document must support version up without creating a new past date document");
+    Require(
+        services.Documents.ListVersions(randomPastDocument.Document.DocumentId).Any(item =>
+            item.VersionNo == randomPastVersion.VersionNo &&
+            item.Comment == randomPastComment),
+        "random past existing date version up must be recorded in document versions");
+    Require(
+        services.History.ListHistory().Any(item =>
+            item.EventType == "document.version_added" &&
+            item.ActorName == smokeActorName &&
+            item.TargetId == randomPastDocument.Document.DocumentId),
+        "random past date version up history must keep the actor name");
+    Console.WriteLine(
+        $"Random past existing date version test: folder={randomPastDocument.FolderName}, type={randomPastDocument.FlowType}, document={randomPastDocument.Document.FileName}, version=v{randomPastVersion.VersionNo}");
 
     var workOrderFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.WorkOrderFolderName);
     var workOrderPlan = services.DocumentPlacement.PrepareDocumentRegistration(
         workOrderFolder.Id,
         "assembly-check-sheet.xlsx",
-        ruleDate);
+        today,
+        smokeActorName);
     Require(workOrderPlan.Folder.Id == workOrderFolder.Id, "work order files should remain in the work order folder");
     Require(workOrderPlan.Title == "assembly-check-sheet", "work order title should be generated from the file name");
 
     var drawingPlan = services.DocumentPlacement.PrepareDocumentRegistration(
         documentsFolder.Id,
         "도면-프레스A-금형배치.pdf",
-        ruleDate);
+        today,
+        smokeActorName);
     Require(drawingPlan.Folder.Name == FlowNoteLocalDatabase.DrawingFolderName, "drawing files should be placed in the drawing folder");
     Require(drawingPlan.Folder.ParentId == documentsFolder.Id, "drawing folder should be below the documents folder");
 
     var safetyPlan = services.DocumentPlacement.PrepareDocumentRegistration(
         documentsFolder.Id,
         "문서-안전수칙-용접작업.txt",
-        ruleDate);
+        today,
+        smokeActorName);
     Require(safetyPlan.Folder.Name == FlowNoteLocalDatabase.SafetyFolderName, "safety files should be placed in the safety folder");
     Require(safetyPlan.Folder.ParentId == documentsFolder.Id, "safety folder should be below the documents folder");
 
     var sampleFile = Path.Combine(testDirectory, "sample-upload.txt");
-    File.WriteAllText(sampleFile, "FlowNote upload smoke test.");
+    File.WriteAllText(sampleFile, "FlowNote upload program test.");
     var uploadedDocument = services.Documents.RegisterDocument(
-        documentsFolder.Id,
+        currentDocumentFolder.Id,
         "sample-upload",
         "sample-upload.txt",
         "Text",
-        login.DisplayName ?? "Administrator",
+        smokeActorName,
         sampleFile);
     Require(uploadedDocument.LocalPath == sampleFile, "uploaded document should store the local file path");
     Require(
-        services.Documents.ListDocuments(documentsFolder.Id).Any(item => item.DocumentId == uploadedDocument.DocumentId && item.LocalPath == sampleFile),
+        services.Documents.ListDocuments(currentDocumentFolder.Id).Any(item => item.DocumentId == uploadedDocument.DocumentId && item.LocalPath == sampleFile),
         "uploaded document should be saved in the database document list");
     Require(
         services.Documents.ListVersions(uploadedDocument.DocumentId).Any(item => item.VersionNo == 1 && item.LocalPath == sampleFile),
@@ -269,9 +420,9 @@ try
     Require(uploadCandidate.SizeBytes > 0, "upload candidate should capture file size");
 
     var workspace = new ExplorerWorkspace();
-    workspace.AddDroppedFileToList(uploadCandidate, login.DisplayName ?? "Administrator");
+    workspace.AddDroppedFileToList(uploadCandidate, smokeActorName);
     Require(workspace.Documents.Count == 1, "dropped file should be added to the file list");
-    Require(workspace.Documents[0].UpdatedBy == login.DisplayName, "dropped file should capture the login display name");
+    Require(workspace.Documents[0].UpdatedBy == smokeActorName, "dropped file should capture the login display name");
     Require(workspace.Documents[0].LocalPath == sampleFile, "dropped file should keep the local path for preview");
 
     var foremanLogin = services.Auth.Login("foreman-a", "1234");
@@ -354,8 +505,10 @@ try
             "Windows smoke upload",
             "client_smoke_test",
             "Windows smoke test registered this file through FastAPI.",
-            description: "Registered by FlowNote.Windows.SmokeTests.");
+            description: "Registered by FlowNote.Windows.SmokeTests.",
+            tags: ["windows-smoke", "line-a"]);
         Require(!string.IsNullOrWhiteSpace(serverDocument.DocumentId), "server document should receive an id");
+        Require(serverDocument.Tags.SequenceEqual(["line-a", "windows-smoke"]), "server document should preserve tags");
         var latestServerVersion = serverDocument.LatestVersion;
         Require(latestServerVersion is not null, "server document should include its latest version");
         Require(latestServerVersion!.VersionNo == 1, "server document should receive version 1");
@@ -365,6 +518,9 @@ try
         Require(
             serverList.Any(item => item.DocumentId == serverDocument.DocumentId),
             "server document list should include the uploaded smoke document");
+        Require(
+            serverList.Any(item => item.DocumentId == serverDocument.DocumentId && item.Tags.SequenceEqual(["line-a", "windows-smoke"])),
+            "server document list should include document tags");
 
         var serverVersions = await serverDocuments.ListVersionsAsync(serverDocument.DocumentId);
         Require(serverVersions.Count == 1, "server document should have one version after initial upload");
@@ -380,13 +536,13 @@ try
             serverFieldNote.DocumentVersionId == latestServerVersion.VersionId,
             "server field note should reference the uploaded document version");
         Require(
-            serverFieldNote.RawContent == "Smoke field note stored separately from document versions.",
+            serverFieldNote.RawContent == "Program test field note stored separately from document versions.",
             "server field note should preserve raw content");
         Require(serverFieldNote.Status == "NEW", "server field note should start in NEW status");
     }
 
-    var deleted = services.Folders.DeleteFolder(folder.Id);
-    Require(!deleted, "folder containing a document should not be deleted");
+    var deleted = services.Folders.DeleteFolder(currentDocumentFolder.Id);
+    Require(!deleted, "current system document folder should not be deleted");
 
     Console.WriteLine("FlowNote Windows smoke tests passed.");
     Console.WriteLine($"Smoke test SQLite DB kept at: {databasePath}");
@@ -415,6 +571,93 @@ static long ScalarLong(SqliteConnection connection, string sql, params (string N
     }
 
     return Convert.ToInt64(command.ExecuteScalar());
+}
+
+static string GetSharedSmokeDatabasePath(string fallbackDirectory)
+{
+    foreach (var startPath in new[] { Environment.CurrentDirectory, AppContext.BaseDirectory })
+    {
+        var directory = new DirectoryInfo(startPath);
+        while (directory is not null)
+        {
+            var appProjectPath = Path.Combine(
+                directory.FullName,
+                "apps",
+                "windows",
+                "src",
+                "FlowNote.Windows.App",
+                "FlowNote.Windows.App.csproj");
+            if (File.Exists(appProjectPath))
+            {
+                var appDataDirectory = Path.Combine(
+                    directory.FullName,
+                    "apps",
+                    "windows",
+                    "src",
+                    "FlowNote.Windows.App",
+                    "Data");
+                Directory.CreateDirectory(appDataDirectory);
+                return Path.Combine(appDataDirectory, "flownote.local.sqlite");
+            }
+
+            var siblingAppProjectPath = Path.Combine(
+                directory.FullName,
+                "..",
+                "FlowNote.Windows.App",
+                "FlowNote.Windows.App.csproj");
+            if (File.Exists(siblingAppProjectPath))
+            {
+                var appDataDirectory = Path.GetFullPath(Path.Combine(
+                    directory.FullName,
+                    "..",
+                    "FlowNote.Windows.App",
+                    "Data"));
+                Directory.CreateDirectory(appDataDirectory);
+                return Path.Combine(appDataDirectory, "flownote.local.sqlite");
+            }
+
+            directory = directory.Parent;
+        }
+    }
+
+    return Path.Combine(fallbackDirectory, "flownote.shared.sqlite");
+}
+
+static IReadOnlyList<(string FlowType, string FolderName, DocumentRecord Document)> ListExistingPastDateDocuments(
+    FlowNoteLocalServices services,
+    long handoverFolderId,
+    long photosFolderId,
+    DateTime today)
+{
+    var folders = services.Folders.ListFolders();
+    var candidates = new List<(string FlowType, string FolderName, DocumentRecord Document)>();
+    foreach (var parent in new[] { (FolderId: handoverFolderId, FlowType: "handover"), (FolderId: photosFolderId, FlowType: "photo") })
+    {
+        foreach (var folder in folders.Where(item => item.ParentId == parent.FolderId))
+        {
+            if (!DateTime.TryParseExact(
+                    folder.Name,
+                    "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var folderDate))
+            {
+                continue;
+            }
+
+            if (folderDate.Date >= today.Date)
+            {
+                continue;
+            }
+
+            foreach (var document in services.Documents.ListDocuments(folder.Id))
+            {
+                candidates.Add((parent.FlowType, folder.Name, document));
+            }
+        }
+    }
+
+    return candidates;
 }
 
 static void CreateKoreanPdfOnStaThread(string pdfPath)

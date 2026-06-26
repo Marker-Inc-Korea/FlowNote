@@ -6,14 +6,15 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel
-from sqlalchemy import desc, select
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.storage import resolve_storage_root, store_upload_file
-from app.db.models import Document, DocumentVersion, FileObject, UserAccount
+from app.db.models import Document, DocumentTag, DocumentVersion, FileObject
+from app.db.models import TagDefinition, UserAccount
 from app.db.session import get_db_session
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -56,6 +57,7 @@ class DocumentResponse(BaseModel):
     published_version_id: str | None
     created_at: datetime
     updated_at: datetime
+    tags: list[str] = Field(default_factory=list)
     latest_version: DocumentVersionResponse | None = None
 
 
@@ -67,6 +69,7 @@ class DocumentListItem(BaseModel):
     latest_version_id: str | None
     latest_version_no: int | None = None
     latest_filename: str | None = None
+    tags: list[str] = Field(default_factory=list)
     updated_at: datetime
 
 
@@ -89,6 +92,69 @@ def _clean_optional(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def _normalize_tag_code(value: str) -> str:
+    return "-".join(value.strip().lower().split())
+
+
+def _clean_tags(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+
+    tags: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for item in value.split(","):
+            cleaned = item.strip()
+            if not cleaned:
+                continue
+            key = _normalize_tag_code(cleaned)
+            if key in seen:
+                continue
+            seen.add(key)
+            tags.append(cleaned)
+    return tags
+
+
+def _tag_response(session: Session, document_id: str) -> list[str]:
+    rows = session.execute(
+        select(TagDefinition.name)
+        .join(DocumentTag, DocumentTag.tag_id == TagDefinition.tag_id)
+        .where(DocumentTag.document_id == document_id, TagDefinition.is_active.is_(True))
+        .order_by(TagDefinition.name)
+    ).all()
+    return [row[0] for row in rows]
+
+
+def _ensure_tag(session: Session, name: str, *, tag_type: str = "custom") -> TagDefinition:
+    code = _normalize_tag_code(name)
+    existing = session.scalar(
+        select(TagDefinition).where(TagDefinition.tag_type == tag_type, TagDefinition.code == code)
+    )
+    if existing is not None:
+        if existing.name != name:
+            existing.name = name
+        if not existing.is_active:
+            existing.is_active = True
+        return existing
+
+    tag = TagDefinition(
+        tag_id=_new_public_id("tag"),
+        tag_type=tag_type,
+        code=code,
+        name=name,
+    )
+    session.add(tag)
+    session.flush()
+    return tag
+
+
+def _replace_document_tags(session: Session, document_id: str, tags: list[str]) -> None:
+    session.execute(delete(DocumentTag).where(DocumentTag.document_id == document_id))
+    for name in tags:
+        tag = _ensure_tag(session, name)
+        session.add(DocumentTag(document_id=document_id, tag_id=tag.tag_id))
 
 
 def _validate_user_id(session: Session, user_id: str | None, field_name: str) -> str | None:
@@ -159,6 +225,7 @@ def _latest_version_for_document(
 def _document_response(session: Session, document: Document) -> DocumentResponse:
     latest = _latest_version_for_document(session, document.document_id)
     latest_response = _version_response(*latest) if latest is not None else None
+    tags = _tag_response(session, document.document_id)
     return DocumentResponse(
         document_id=document.document_id,
         title=document.title,
@@ -171,6 +238,7 @@ def _document_response(session: Session, document: Document) -> DocumentResponse
         published_version_id=document.published_version_id,
         created_at=document.created_at,
         updated_at=document.updated_at,
+        tags=tags,
         latest_version=latest_response,
     )
 
@@ -214,11 +282,13 @@ async def create_document(
         str,
         Form(alias="status", pattern="^(WORKING|IN_REVIEW|PUBLISHED|ARCHIVED)$"),
     ] = "WORKING",
+    tags: Annotated[list[str] | None, Form()] = None,
     created_by: Annotated[str | None, Form(alias="createdBy")] = None,
     app_settings: Annotated[Settings, Depends(get_settings)] = None,
     session: Annotated[Session, Depends(get_db_session)] = None,
 ) -> DocumentResponse:
     change_reason = _validate_change_reason(change_reason)
+    cleaned_tags = _clean_tags(tags)
     owner_id = _validate_user_id(session, _clean_optional(owner_id), "ownerId")
     created_by = _validate_user_id(session, _clean_optional(created_by), "createdBy")
     document_id = _new_public_id("doc")
@@ -261,6 +331,7 @@ async def create_document(
     )
     session.add(document)
     session.add(version)
+    _replace_document_tags(session, document_id, cleaned_tags)
     try:
         session.commit()
     except IntegrityError as exc:
@@ -285,19 +356,22 @@ def list_documents(
         .where(Document.deleted_at.is_(None))
         .order_by(desc(Document.updated_at), desc(Document.id))
     ).all()
-    return [
-        DocumentListItem(
-            document_id=document.document_id,
-            title=document.title,
-            document_type=document.document_type,
-            status=document.status,
-            latest_version_id=document.latest_version_id,
-            latest_version_no=version.version_no,
-            latest_filename=file_object.original_filename,
-            updated_at=document.updated_at,
+    items: list[DocumentListItem] = []
+    for document, version, file_object in rows:
+        items.append(
+            DocumentListItem(
+                document_id=document.document_id,
+                title=document.title,
+                document_type=document.document_type,
+                status=document.status,
+                latest_version_id=document.latest_version_id,
+                latest_version_no=version.version_no,
+                latest_filename=file_object.original_filename,
+                tags=_tag_response(session, document.document_id),
+                updated_at=document.updated_at,
+            )
         )
-        for document, version, file_object in rows
-    ]
+    return items
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
@@ -310,6 +384,24 @@ def get_document(
     )
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    return _document_response(session, document)
+
+
+@router.put("/{document_id}/tags", response_model=DocumentResponse)
+def replace_document_tags(
+    document_id: str,
+    tags: list[str],
+    session: Annotated[Session, Depends(get_db_session)],
+) -> DocumentResponse:
+    document = session.scalar(
+        select(Document).where(Document.document_id == document_id, Document.deleted_at.is_(None))
+    )
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+
+    _replace_document_tags(session, document_id, _clean_tags(tags))
+    session.commit()
+    session.refresh(document)
     return _document_response(session, document)
 
 

@@ -1,4 +1,5 @@
 using FlowNote.Windows.Core.Storage;
+using FlowNote.Windows.Core.History;
 
 namespace FlowNote.Windows.Core.Notifications;
 
@@ -58,6 +59,18 @@ public sealed class NotificationService(FlowNoteLocalDatabase database)
             WHERE recipient_name = $recipient_name AND is_read = 0;
             """;
         command.Parameters.AddWithValue("$recipient_name", recipientName);
-        command.ExecuteNonQuery();
+        var changed = command.ExecuteNonQuery();
+        if (changed > 0)
+        {
+            HistoryService.Record(
+                connection,
+                "notification.read_all",
+                recipientName,
+                "notification",
+                null,
+                recipientName,
+                $"알림 모두 읽음: {recipientName} ({changed}건)",
+                DateTime.UtcNow);
+        }
     }
 }

@@ -233,6 +233,50 @@ public sealed class FlowNoteLocalDatabase
             CREATE INDEX IF NOT EXISTS ix_document_view_logs_document_started
                 ON document_view_logs (document_id, view_started_at);
 
+            CREATE TABLE IF NOT EXISTS activity_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                history_id TEXT NOT NULL UNIQUE,
+                event_type TEXT NOT NULL,
+                actor_name TEXT NOT NULL,
+                target_type TEXT NOT NULL,
+                target_id TEXT NULL,
+                target_title TEXT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_activity_history_created
+                ON activity_history (created_at, id);
+
+            CREATE INDEX IF NOT EXISTS ix_activity_history_target
+                ON activity_history (target_type, target_id);
+
+            CREATE TABLE IF NOT EXISTS tag_definitions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tag_id TEXT NOT NULL UNIQUE,
+                tag_type TEXT NOT NULL,
+                code TEXT NOT NULL,
+                name TEXT NOT NULL,
+                parent_tag_id TEXT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                UNIQUE(tag_type, code)
+            );
+
+            CREATE TABLE IF NOT EXISTS document_tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id TEXT NOT NULL REFERENCES documents(document_id) ON DELETE CASCADE,
+                tag_id TEXT NOT NULL REFERENCES tag_definitions(tag_id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                UNIQUE(document_id, tag_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_document_tags_document
+                ON document_tags (document_id);
+
+            CREATE INDEX IF NOT EXISTS ix_document_tags_tag
+                ON document_tags (tag_id);
+
             CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 notification_id TEXT NOT NULL UNIQUE,

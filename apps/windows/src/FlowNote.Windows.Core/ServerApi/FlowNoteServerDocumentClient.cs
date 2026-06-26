@@ -23,6 +23,7 @@ public sealed class FlowNoteServerDocumentClient
         string? categoryId = null,
         string? versionLabel = null,
         string? createdBy = null,
+        IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default)
     {
         using var form = new MultipartFormDataContent();
@@ -34,6 +35,10 @@ public sealed class FlowNoteServerDocumentClient
         AddString(form, "categoryId", categoryId);
         AddString(form, "versionLabel", versionLabel);
         AddString(form, "createdBy", createdBy);
+        foreach (var tag in tags ?? [])
+        {
+            AddString(form, "tags", tag);
+        }
 
         await using var stream = File.OpenRead(filePath);
         using var fileContent = new StreamContent(stream);

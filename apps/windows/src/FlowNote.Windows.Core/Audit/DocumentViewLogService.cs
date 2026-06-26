@@ -1,4 +1,5 @@
 using FlowNote.Windows.Core.Storage;
+using FlowNote.Windows.Core.History;
 
 namespace FlowNote.Windows.Core.Audit;
 
@@ -31,7 +32,17 @@ public sealed class DocumentViewLogService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$user_name", normalizedUserName);
         command.Parameters.AddWithValue("$view_started_at", now.ToString("O"));
 
-        return Convert.ToInt64(command.ExecuteScalar());
+        var id = Convert.ToInt64(command.ExecuteScalar());
+        HistoryService.Record(
+            connection,
+            "document.view_started",
+            normalizedUserName,
+            "document",
+            documentId,
+            null,
+            $"문서 열람 시작: v{versionNo}",
+            now);
+        return id;
     }
 
     public void CloseDocumentView(long id, string closeReason)
@@ -40,6 +51,7 @@ public sealed class DocumentViewLogService(FlowNoteLocalDatabase database)
         var now = DateTime.UtcNow;
 
         using var connection = database.OpenConnection();
+        var userName = FindViewUserName(connection, id) ?? "unknown";
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE document_view_logs
@@ -52,6 +64,16 @@ public sealed class DocumentViewLogService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$close_reason", normalizedReason);
         command.Parameters.AddWithValue("$id", id);
         command.ExecuteNonQuery();
+
+        HistoryService.Record(
+            connection,
+            "document.view_closed",
+            userName,
+            "document_view_log",
+            id.ToString(),
+            null,
+            $"문서 열람 종료: {normalizedReason}",
+            now);
     }
 
     public DocumentViewLogRecord? GetLog(long id)
@@ -80,5 +102,18 @@ public sealed class DocumentViewLogService(FlowNoteLocalDatabase database)
             DateTime.Parse(reader.GetString(4)),
             reader.IsDBNull(5) ? null : DateTime.Parse(reader.GetString(5)),
             reader.IsDBNull(6) ? null : reader.GetString(6));
+    }
+
+    private static string? FindViewUserName(Microsoft.Data.Sqlite.SqliteConnection connection, long id)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT user_name
+            FROM document_view_logs
+            WHERE id = $id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        return command.ExecuteScalar() as string;
     }
 }

@@ -17,9 +17,11 @@
 | `document_versions` | 원본 등록 버전과 파일 개정 버전을 저장. 기존 코멘트 버전은 호환용으로 남아 있으나 신규 WPF 코멘트 저장 기본 경로는 아님 |
 | `field_notes` | WPF 오프라인 현장 코멘트 최소 원천 이력. 문서 ID, 현재 문서 버전 번호, 입력 방식, 원문, 작성자, 동기화 상태 후보를 저장 |
 | `document_view_logs` | WPF 로컬 문서 열람 감사 로그. 문서 ID, 버전 번호, 사용자명, 열람 시작 시각, 닫힘 시각, 닫힘 사유를 저장 |
+| `activity_history` | WPF 로컬 전체 이력. 사용자별 알림과 별개로 누가 어떤 문서/폴더/알림/열람 작업을 수행했는지 최신순 조회용으로 저장 |
+| `tag_definitions`, `document_tags` | WPF 로컬 문서 태그 사전과 문서-태그 연결. 문서 등록 시 입력 태그와 자동 태그를 저장 |
 | `notifications` | 새 현장 코멘트 또는 기존 코멘트 버전 생성 시 문서 작성자/관련 작성자 대상 알림을 저장 |
 
-현재 앱은 문서 등록 시 상태를 `WORKING`으로 저장한다. WPF 문서 보기 화면에서 새로 남기는 코멘트는 `field_notes`에 저장하고, `document_versions`는 문서 파일 개정 이력으로 유지한다. 기존 DB에 `document_versions.comment`로 누적된 코멘트는 앱 초기화 시 `field_notes`로 백필한다. 문서 보기 창은 열릴 때 `document_view_logs`에 열람 시작을 저장하고 닫힐 때 닫힘 시각과 사유를 갱신한다. WPF 서버 API 클라이언트는 로컬 FieldNote를 서버 `field_notes` 등록 요청으로 변환할 수 있지만, 로컬 DB의 `document_version_no`는 서버 등록 시 직접 전송하지 않고 서버의 `document_versions.version_id`가 확인된 경우 `documentVersionId`로 전달한다. 문서 보기 창은 로컬 FieldNote 저장 직후에만 서버 등록을 후보로 시도하고, 서버 URL이 없거나 전송이 실패해도 로컬 저장을 성공으로 유지한다. 현재 WPF 로컬 앱은 열람 로그 서버 동기화, `synced_at` 기반 자동 재시도 큐나 서버 note ID 매핑을 아직 구현하지 않는다. `IN_REVIEW`, `PUBLISHED`, `ARCHIVED` 같은 상태 전환, 역할 테이블, 권한 테이블, 서버 접근 로그, 태그, 작업내역, 보고서, AI 로그, 서버 저장소용 `FileObject`는 아직 WPF 로컬 앱 코드에 구현되어 있지 않다. 아래 데이터 모델은 제품 목표와 서버 확장 초안이며 현재 코드 구현 완료를 뜻하지 않는다.
+현재 앱은 문서 등록 시 상태를 `WORKING`으로 저장한다. 문서 등록/파일 업로드 시 태그 입력값과 기본 태그를 `tag_definitions`, `document_tags`에 저장하고 목록에서 표시한다. WPF 문서 보기 화면에서 새로 남기는 코멘트는 `field_notes`에 저장하고, `document_versions`는 문서 파일 개정 이력으로 유지한다. 기존 DB에 `document_versions.comment`로 누적된 코멘트는 앱 초기화 시 `field_notes`로 백필한다. 문서 보기 창은 열릴 때 `document_view_logs`에 열람 시작을 저장하고 닫힐 때 닫힘 시각과 사유를 갱신한다. 폴더 생성, 문서 등록, 문서 버전 증가, 현장 코멘트 등록, 문서 열람 시작/종료, 알림 읽음 처리 같은 로컬 변경/감사 이벤트는 `activity_history`에 수행자와 함께 저장하고 상단 `이력` 메뉴에서 사용자 필터 없이 조회한다. WPF 서버 API 클라이언트는 로컬 FieldNote를 서버 `field_notes` 등록 요청으로 변환할 수 있지만, 로컬 DB의 `document_version_no`는 서버 등록 시 직접 전송하지 않고 서버의 `document_versions.version_id`가 확인된 경우 `documentVersionId`로 전달한다. 문서 보기 창은 로컬 FieldNote 저장 직후에만 서버 등록을 후보로 시도하고, 서버 URL이 없거나 전송이 실패해도 로컬 저장을 성공으로 유지한다. 현재 WPF 로컬 앱은 열람 로그 서버 동기화, `synced_at` 기반 자동 재시도 큐나 서버 note ID 매핑을 아직 구현하지 않는다. `IN_REVIEW`, `PUBLISHED`, `ARCHIVED` 같은 상태 전환, 역할 테이블, 권한 테이블, 서버 접근 로그, 작업내역, 보고서, AI 로그, 서버 저장소용 `FileObject`는 아직 WPF 로컬 앱 코드에 구현되어 있지 않다. 아래 데이터 모델은 제품 목표와 서버 확장 초안이며 현재 코드 구현 완료를 뜻하지 않는다.
 
 WPF 로컬 DB 초기화는 개발/스모크 테스트용으로 다음 그룹과 계정을 보장한다. 모든 계정의 비밀번호는 `1234`이며, 현재 단계에서는 역할별 화면/기능 권한을 아직 분리하지 않고 로그인 사용자, 그룹, 역할값을 확인하는 용도로 사용한다. 차장, 부장, 관리자 계정은 작업조가 아니라 `group-admin` 관리자 그룹에 둔다.
 
@@ -55,7 +57,7 @@ WPF 로컬 DB 초기화는 개발/스모크 테스트용으로 다음 그룹과 
 | `group-line-c` | `user-member-c2` | `member-c2` | `조원 C-2` | `team-member` | `user-foreman-c` |
 | `group-line-c` | `user-member-c3` | `member-c3` | `조원 C-3` | `team-member` | `user-foreman-c` |
 
-프로그램 테스트 기준에서는 문서 등록을 여러 ID로 확인하되, 문서 등록 가능 그룹은 조장 이상으로 둔다. 코멘트 등록은 ID 제한을 두지 않는다. 프로그램 테스트용 문서 파일은 사용자가 직접 화면에서 확인하는 언어가 맞아야 하므로 파일명과 표시 문구를 한글, 숫자, 영문만으로 구성하고 `???` 같은 깨진 문자가 포함된 파일은 테스트 기준에서 제외한다. 이 제한은 프로그램 테스트용 문서 파일에만 적용하며, 일반 문서 파일이나 MD 문서 작성 기준에는 적용하지 않는다. 서버 URL인 `FLOWNOTE_API_BASE_URL`이 없으면 로컬 SQLite 기준으로 검증하고, 서버 URL이 설정된 경우에만 FastAPI 연동 검증을 추가한다.
+프로그램 테스트 기준에서는 문서 등록을 여러 ID로 확인하되, 문서 등록 가능 그룹은 조장 이상으로 둔다. 코멘트 등록은 ID 제한을 두지 않는다. 프로그램 테스트용 문서 파일은 사용자가 직접 화면에서 확인하는 언어가 맞아야 하므로 파일명과 표시 문구를 한글, 숫자, 영문만으로 구성하고 `???` 같은 깨진 문자가 포함된 파일은 테스트 기준에서 제외한다. 이 제한은 프로그램 테스트용 문서 파일에만 적용하며, 일반 문서 파일이나 MD 문서 작성 기준에는 적용하지 않는다. 서버 URL인 `FLOWNOTE_API_BASE_URL`이 없으면 로컬 SQLite 기준으로 검증하고, 서버 URL이 설정된 경우에만 FastAPI 연동 검증을 추가한다. 스모크 테스트를 포함한 프로그램 테스트는 앱 로컬 공통 SQLite인 `apps/windows/src/FlowNote.Windows.App/Data/flownote.local.sqlite`를 계속 사용하고, 매 실행 기록을 누적 보존한다. 스모크 테스트는 사용자가 명시적으로 요청하지 않은 스모크/테스트 전용 업무 폴더를 앱 문서 구조에 만들지 않고, 현재 기본 폴더 체계와 그 규칙에서 파생된 분류/날짜 폴더 기준으로 진행한다. 알림 테스트는 누적된 전체 알림 개수를 제한하지 않고, 특정 notify 이벤트가 해당 문서와 수신자 기준으로 1건 생성되는지만 검증한다. 스모크 테스트는 항상 오늘 날짜의 `사진`과 `인수인계` 문서 등록을 포함하고, 날짜 폴더 생성, 문서 등록, 목록 조회를 확인한다. 과거 날짜 테스트는 이미 존재하는 `사진` 또는 `인수인계` 날짜 폴더와 그 안의 기존 문서를 랜덤하게 선택해 버전 증가만 검증하며, 과거 날짜 폴더나 과거 날짜 문서를 새로 만들지 않는다.
 
 ### 0.0.1 FastAPI 서버 SQLite 초기 모델
 
@@ -63,7 +65,7 @@ WPF 로컬 DB 초기화는 개발/스모크 테스트용으로 다음 그룹과 
 
 2026-06-25 기준 서버 로그인 API는 `user_accounts`의 `username`, `password_hash`, `role`, `is_active`, `status`를 사용한다. 서버 DB 초기화 시 개발용 기본 관리자 계정 `admin / 1234`가 없으면 생성한다. 이 기본 계정은 로컬 개발과 MVP 검증용 기준이며, 운영 배포에서는 별도 초기 비밀번호 정책으로 교체해야 한다. 같은 기준일에 Windows WPF 서버 API 클라이언트는 서버 문서 등록/목록/버전 조회뿐 아니라 문서 버전에 연결된 서버 FieldNote 등록 응답까지 받을 수 있다.
 
-기본 개발 DB 경로는 `services/api/data/flownote.sqlite3`, 테스트 DB 경로는 `services/api/data/flownote.test.sqlite3`이다. 테스트 DB와 검증 기록은 로컬 산출물로 보존하되 커밋 대상은 아니다. 문서 등록 통합 테스트 샘플과 로그는 `services/api/data/test-artifacts/document-registration-2026-06-24/` 아래에 보존하고, 업로드 저장 파일은 `services/api/storage/document-registration-tests/` 아래에 보존한다.
+기본 개발 DB 경로는 `services/api/data/flownote.sqlite3`, 테스트 DB 경로는 `services/api/data/flownote.test.sqlite3`이다. Windows 앱과 Windows 스모크 테스트는 앱 로컬 공통 DB인 `apps/windows/src/FlowNote.Windows.App/Data/flownote.local.sqlite`를 함께 사용한다. 테스트 DB와 검증 기록은 누적 테스트 기록이므로 삭제하지 않고 보존한다. SQLite DB는 후속 테스트와 기능 추가의 근거 데이터로 사용할 수 있으므로 Git 추적 및 커밋 대상에 포함될 수 있다. 문서 등록 통합 테스트 샘플과 로그는 `services/api/data/test-artifacts/document-registration-2026-06-24/` 아래에 보존하고, 업로드 저장 파일은 `services/api/storage/document-registration-tests/` 아래에 보존한다.
 
 현재 서버 초기 스키마 테이블은 다음과 같다.
 

@@ -16,7 +16,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from sqlalchemy import select
 
 from app.core.config import Settings
-from app.db.models import Document, DocumentVersion, FileObject, UserAccount
+from app.db.models import Document, DocumentTag, DocumentVersion, FileObject, TagDefinition, UserAccount
 from app.main import create_app
 
 
@@ -153,6 +153,7 @@ def post_document(client: TestClient, file_path: Path, *, title: str, document_t
                 "versionLabel": "v1",
                 "changeReason": "Initial field document registration test.",
                 "createdBy": "user-test-admin",
+                "tags": ["line-a", "press-a", "mold-change"],
             },
             files={"file": (file_path.name, file, "application/octet-stream")},
         )
@@ -205,6 +206,7 @@ def test_register_factory_files_and_document_versions_are_preserved() -> None:
         assert detail["latest_version"]["change_reason"] == (
             "Guard sensor confirmation step added after field review."
         )
+        assert detail["tags"] == ["line-a", "mold-change", "press-a"]
 
         versions_response = client.get(f"/api/v1/documents/{pdf_doc['document_id']}/versions")
         assert versions_response.status_code == 200
@@ -213,6 +215,18 @@ def test_register_factory_files_and_document_versions_are_preserved() -> None:
         assert versions[0]["is_latest"] is True
         assert versions[1]["is_latest"] is False
         assert versions[1]["version_status"] == "SUPERSEDED"
+
+        tag_update_response = client.put(
+            f"/api/v1/documents/{pdf_doc['document_id']}/tags",
+            json=["line-a", "guard-sensor", "press-a"],
+        )
+        assert tag_update_response.status_code == 200, tag_update_response.text
+        assert tag_update_response.json()["tags"] == ["guard-sensor", "line-a", "press-a"]
+
+        tags_response = client.get("/api/v1/tags")
+        assert tags_response.status_code == 200
+        tag_names = {tag["name"] for tag in tags_response.json()}
+        assert {"line-a", "press-a", "guard-sensor"} <= tag_names
 
         with client.app.state.database.session() as session:
             saved_documents = session.scalars(
@@ -231,6 +245,15 @@ def test_register_factory_files_and_document_versions_are_preserved() -> None:
             assert len(saved_versions) == 2
             stored_files = session.scalars(select(FileObject)).all()
             storage_keys = {file_object.storage_key for file_object in stored_files}
+            saved_tag_names = {
+                tag.name
+                for tag in session.scalars(select(TagDefinition)).all()
+            }
+            saved_document_tags = session.scalars(
+                select(DocumentTag).where(DocumentTag.document_id == pdf_doc["document_id"])
+            ).all()
+            assert {"line-a", "press-a", "guard-sensor"} <= saved_tag_names
+            assert len(saved_document_tags) == 3
 
         for uploaded in [pdf_doc["latest_version"], excel_doc["latest_version"], image_doc["latest_version"]]:
             storage_key = uploaded["file"]["storage_key"]
