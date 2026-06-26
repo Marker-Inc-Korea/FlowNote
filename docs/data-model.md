@@ -17,7 +17,7 @@
 | `field_notes` | WPF 오프라인 현장 코멘트 최소 원천 이력. 문서 ID, 현재 문서 버전 번호, 입력 방식, 원문, 작성자, 동기화 상태 후보를 저장 |
 | `notifications` | 새 현장 코멘트 또는 기존 코멘트 버전 생성 시 문서 작성자/관련 작성자 대상 알림을 저장 |
 
-현재 앱은 문서 등록 시 상태를 `WORKING`으로 저장한다. WPF 문서 보기 화면에서 새로 남기는 코멘트는 `field_notes`에 저장하고, `document_versions`는 문서 파일 개정 이력으로 유지한다. 기존 DB에 `document_versions.comment`로 누적된 코멘트는 앱 초기화 시 `field_notes`로 백필한다. WPF 서버 API 클라이언트는 로컬 FieldNote를 서버 `field_notes` 등록 요청으로 변환할 수 있지만, 로컬 DB의 `document_version_no`는 서버 등록 시 직접 전송하지 않고 서버의 `document_versions.version_id`가 확인된 경우 `documentVersionId`로 전달한다. `IN_REVIEW`, `PUBLISHED`, `ARCHIVED` 같은 상태 전환, 역할 테이블, 권한 테이블, 접근 로그, 태그, 작업내역, 보고서, AI 로그, 서버 저장소용 `FileObject`는 아직 WPF 로컬 앱 코드에 구현되어 있지 않다. 아래 데이터 모델은 제품 목표와 서버 확장 초안이며 현재 코드 구현 완료를 뜻하지 않는다.
+현재 앱은 문서 등록 시 상태를 `WORKING`으로 저장한다. WPF 문서 보기 화면에서 새로 남기는 코멘트는 `field_notes`에 저장하고, `document_versions`는 문서 파일 개정 이력으로 유지한다. 기존 DB에 `document_versions.comment`로 누적된 코멘트는 앱 초기화 시 `field_notes`로 백필한다. WPF 서버 API 클라이언트는 로컬 FieldNote를 서버 `field_notes` 등록 요청으로 변환할 수 있지만, 로컬 DB의 `document_version_no`는 서버 등록 시 직접 전송하지 않고 서버의 `document_versions.version_id`가 확인된 경우 `documentVersionId`로 전달한다. 문서 보기 창은 로컬 FieldNote 저장 직후에만 서버 등록을 후보로 시도하고, 서버 URL이 없거나 전송이 실패해도 로컬 저장을 성공으로 유지한다. 현재 WPF 로컬 앱은 `synced_at` 기반 자동 재시도 큐나 서버 note ID 매핑을 아직 구현하지 않는다. `IN_REVIEW`, `PUBLISHED`, `ARCHIVED` 같은 상태 전환, 역할 테이블, 권한 테이블, 접근 로그, 태그, 작업내역, 보고서, AI 로그, 서버 저장소용 `FileObject`는 아직 WPF 로컬 앱 코드에 구현되어 있지 않다. 아래 데이터 모델은 제품 목표와 서버 확장 초안이며 현재 코드 구현 완료를 뜻하지 않는다.
 
 ### 0.0.1 FastAPI 서버 SQLite 초기 모델
 
