@@ -15,7 +15,7 @@
 7. [보안 정책](./security.md)
 8. [배포 기준](./deployment.md)
 9. [설계 결정 요약](./decisions.md)
-10. [2026-06-24 현재 작업 종합 정리](./daily/2026-06-24-current-work-summary.md)
+10. [2026-06-26 현재 작업 종합 정리](./daily/2026-06-26-current-work-summary.md)
 
 ## 날짜별 작업 기록
 
@@ -29,6 +29,7 @@
 - [2026-06-24 FieldNote 분리 설계 및 검증 결과](./daily/2026-06-24-field-note-separation-build-test-result.md)
 - [2026-06-24 현재 작업 종합 정리](./daily/2026-06-24-current-work-summary.md)
 - [2026-06-26 Windows smoke 서버 검증 블록](./daily/2026-06-26-windows-smoke-server-blocks.md)
+- [2026-06-26 현재 작업 종합 정리](./daily/2026-06-26-current-work-summary.md)
 
 ## 핵심 관계 요약
 
