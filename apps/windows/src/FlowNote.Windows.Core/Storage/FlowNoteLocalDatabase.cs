@@ -38,6 +38,43 @@ public sealed class FlowNoteLocalDatabase
         GeneralDocumentFolderName
     ];
 
+    public static readonly IReadOnlyList<DefaultGroupSeed> DefaultGroupSeeds =
+    [
+        new("group-admin", "admin", "관리자 그룹", "admin", null),
+        new("group-line-a", "line-a", "반장 A 작업조", "work_team", "user-foreman-a"),
+        new("group-line-b", "line-b", "반장 B 작업조", "work_team", "user-foreman-b"),
+        new("group-line-c", "line-c", "반장 C 작업조", "work_team", "user-foreman-c")
+    ];
+
+    public static readonly IReadOnlyList<DefaultUserSeed> DefaultUserSeeds =
+    [
+        new("user-admin", "admin", "Administrator", "system-admin", "group-admin", null),
+        new("user-deputy", "deputy", "차장", "assistant-manager", "group-admin", null),
+        new("user-depthead", "depthead", "부장", "department-manager", "group-admin", null),
+        new("user-manager", "manager", "관리자", "document-admin", "group-admin", null),
+
+        new("user-foreman-a", "foreman-a", "반장 A", "line-foreman", "group-line-a", null),
+        new("user-lead-a1", "lead-a1", "조장 A-1", "team-lead", "group-line-a", "user-foreman-a"),
+        new("user-member-a1", "member-a1", "조원 A-1", "team-member", "group-line-a", "user-foreman-a"),
+        new("user-member-a2", "member-a2", "조원 A-2", "team-member", "group-line-a", "user-foreman-a"),
+        new("user-member-a3", "member-a3", "조원 A-3", "team-member", "group-line-a", "user-foreman-a"),
+        new("user-member-a4", "member-a4", "조원 A-4", "team-member", "group-line-a", "user-foreman-a"),
+
+        new("user-foreman-b", "foreman-b", "반장 B", "line-foreman", "group-line-b", null),
+        new("user-lead-b1", "lead-b1", "조장 B-1", "team-lead", "group-line-b", "user-foreman-b"),
+        new("user-lead-b2", "lead-b2", "조장 B-2", "team-lead", "group-line-b", "user-foreman-b"),
+        new("user-member-b1", "member-b1", "조원 B-1", "team-member", "group-line-b", "user-foreman-b"),
+        new("user-member-b2", "member-b2", "조원 B-2", "team-member", "group-line-b", "user-foreman-b"),
+        new("user-member-b3", "member-b3", "조원 B-3", "team-member", "group-line-b", "user-foreman-b"),
+        new("user-member-b4", "member-b4", "조원 B-4", "team-member", "group-line-b", "user-foreman-b"),
+
+        new("user-foreman-c", "foreman-c", "반장 C", "line-foreman", "group-line-c", null),
+        new("user-lead-c1", "lead-c1", "조장 C-1", "team-lead", "group-line-c", "user-foreman-c"),
+        new("user-member-c1", "member-c1", "조원 C-1", "team-member", "group-line-c", "user-foreman-c"),
+        new("user-member-c2", "member-c2", "조원 C-2", "team-member", "group-line-c", "user-foreman-c"),
+        new("user-member-c3", "member-c3", "조원 C-3", "team-member", "group-line-c", "user-foreman-c")
+    ];
+
     private static bool sqliteInitialized;
 
     public FlowNoteLocalDatabase(string databasePath)
@@ -105,7 +142,19 @@ public sealed class FlowNoteLocalDatabase
                 display_name TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL,
+                group_id TEXT NULL,
+                supervisor_user_id TEXT NULL,
                 status TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS user_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id TEXT NOT NULL UNIQUE,
+                group_code TEXT NOT NULL UNIQUE,
+                group_name TEXT NOT NULL,
+                group_type TEXT NOT NULL,
+                leader_user_id TEXT NULL,
                 created_at TEXT NOT NULL
             );
 
@@ -171,6 +220,19 @@ public sealed class FlowNoteLocalDatabase
             CREATE INDEX IF NOT EXISTS ix_field_notes_document_created
                 ON field_notes (document_id, created_at);
 
+            CREATE TABLE IF NOT EXISTS document_view_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id TEXT NOT NULL,
+                version_no INTEGER NOT NULL,
+                user_name TEXT NOT NULL,
+                view_started_at TEXT NOT NULL,
+                closed_at TEXT NULL,
+                close_reason TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_document_view_logs_document_started
+                ON document_view_logs (document_id, view_started_at);
+
             CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 notification_id TEXT NOT NULL UNIQUE,
@@ -184,6 +246,8 @@ public sealed class FlowNoteLocalDatabase
             );
             """;
         command.ExecuteNonQuery();
+        EnsureColumn(connection, "user_accounts", "group_id", "TEXT NULL");
+        EnsureColumn(connection, "user_accounts", "supervisor_user_id", "TEXT NULL");
         EnsureColumn(connection, "documents", "updated_at", "TEXT NULL");
         EnsureColumn(connection, "documents", "local_path", "TEXT NULL");
         EnsureColumn(connection, "documents", "version_no", "INTEGER NOT NULL DEFAULT 1");
@@ -191,7 +255,8 @@ public sealed class FlowNoteLocalDatabase
         EnsureDocumentUpdatedAt(connection);
         BackfillFieldNotesFromCommentVersions(connection);
 
-        SeedAdminUser(connection);
+        SeedDefaultGroups(connection);
+        SeedDefaultUsers(connection);
         var rootFolderId = SeedRootFolder(connection);
         SeedDefaultSystemFolders(connection, rootFolderId);
         var documentsFolderId = EnsureDefaultSystemFolder(connection, rootFolderId, DocumentsFolderName);
@@ -282,18 +347,102 @@ public sealed class FlowNoteLocalDatabase
         command.ExecuteNonQuery();
     }
 
-    private static void SeedAdminUser(SqliteConnection connection)
+    private static void SeedDefaultUsers(SqliteConnection connection)
     {
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO user_accounts (user_id, login_id, display_name, password_hash, role, status, created_at)
-            SELECT $user_id, 'admin', 'Administrator', $password_hash, 'system-admin', 'ACTIVE', $created_at
-            WHERE NOT EXISTS (SELECT 1 FROM user_accounts WHERE login_id = 'admin');
-            """;
-        command.Parameters.AddWithValue("$user_id", $"user-{Guid.NewGuid():N}");
-        command.Parameters.AddWithValue("$password_hash", PasswordHasher.Hash("1234"));
-        command.Parameters.AddWithValue("$created_at", DateTime.UtcNow.ToString("O"));
-        command.ExecuteNonQuery();
+        foreach (var user in DefaultUserSeeds)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE user_accounts
+                SET user_id = $user_id,
+                    display_name = $display_name,
+                    password_hash = $password_hash,
+                    role = $role,
+                    group_id = $group_id,
+                    supervisor_user_id = $supervisor_user_id,
+                    status = 'ACTIVE'
+                WHERE login_id = $login_id
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM user_accounts
+                      WHERE user_id = $user_id
+                        AND login_id <> $login_id
+                  );
+
+                INSERT INTO user_accounts (
+                    user_id,
+                    login_id,
+                    display_name,
+                    password_hash,
+                    role,
+                    group_id,
+                    supervisor_user_id,
+                    status,
+                    created_at
+                )
+                SELECT
+                    $user_id,
+                    $login_id,
+                    $display_name,
+                    $password_hash,
+                    $role,
+                    $group_id,
+                    $supervisor_user_id,
+                    'ACTIVE',
+                    $created_at
+                WHERE NOT EXISTS (SELECT 1 FROM user_accounts WHERE login_id = $login_id)
+                  AND NOT EXISTS (SELECT 1 FROM user_accounts WHERE user_id = $user_id);
+                """;
+            command.Parameters.AddWithValue("$user_id", user.UserId);
+            command.Parameters.AddWithValue("$login_id", user.LoginId);
+            command.Parameters.AddWithValue("$display_name", user.DisplayName);
+            command.Parameters.AddWithValue("$password_hash", PasswordHasher.Hash("1234"));
+            command.Parameters.AddWithValue("$role", user.Role);
+            command.Parameters.AddWithValue("$group_id", user.GroupId);
+            command.Parameters.AddWithValue("$supervisor_user_id", (object?)user.SupervisorUserId ?? DBNull.Value);
+            command.Parameters.AddWithValue("$created_at", DateTime.UtcNow.ToString("O"));
+            command.ExecuteNonQuery();
+        }
+    }
+
+    private static void SeedDefaultGroups(SqliteConnection connection)
+    {
+        foreach (var group in DefaultGroupSeeds)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE user_groups
+                SET group_code = $group_code,
+                    group_name = $group_name,
+                    group_type = $group_type,
+                    leader_user_id = $leader_user_id
+                WHERE group_id = $group_id;
+
+                INSERT INTO user_groups (
+                    group_id,
+                    group_code,
+                    group_name,
+                    group_type,
+                    leader_user_id,
+                    created_at
+                )
+                SELECT
+                    $group_id,
+                    $group_code,
+                    $group_name,
+                    $group_type,
+                    $leader_user_id,
+                    $created_at
+                WHERE NOT EXISTS (SELECT 1 FROM user_groups WHERE group_id = $group_id);
+                """;
+            command.Parameters.AddWithValue("$group_id", group.GroupId);
+            command.Parameters.AddWithValue("$group_code", group.GroupCode);
+            command.Parameters.AddWithValue("$group_name", group.GroupName);
+            command.Parameters.AddWithValue("$group_type", group.GroupType);
+            command.Parameters.AddWithValue("$leader_user_id", (object?)group.LeaderUserId ?? DBNull.Value);
+            command.Parameters.AddWithValue("$created_at", DateTime.UtcNow.ToString("O"));
+            command.ExecuteNonQuery();
+        }
     }
 
     private static long SeedRootFolder(SqliteConnection connection)
@@ -501,4 +650,19 @@ public sealed class FlowNoteLocalDatabase
     {
         return values.Any(value => text.Contains(value, StringComparison.OrdinalIgnoreCase));
     }
+
+    public sealed record DefaultGroupSeed(
+        string GroupId,
+        string GroupCode,
+        string GroupName,
+        string GroupType,
+        string? LeaderUserId);
+
+    public sealed record DefaultUserSeed(
+        string UserId,
+        string LoginId,
+        string DisplayName,
+        string Role,
+        string GroupId,
+        string? SupervisorUserId);
 }

@@ -10,4 +10,5 @@ public sealed record ExplorerDocument(
     DateTime UpdatedAt,
     string VersionLabel,
     string? LocalPath,
-    string? LatestComment);
+    string? LatestComment,
+    int VersionNo = 1);
