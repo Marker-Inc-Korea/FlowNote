@@ -400,23 +400,11 @@ public partial class MainWindow : Window
 
     private static (FlowNoteServerDocumentClient? Client, HttpClient? HttpClient) CreateServerDocumentClient()
     {
-        var apiBaseUrl = Environment.GetEnvironmentVariable("FLOWNOTE_API_BASE_URL");
-        if (string.IsNullOrWhiteSpace(apiBaseUrl))
+        var httpClient = FlowNoteServerApiEnvironment.CreateHttpClientFromEnvironment();
+        if (httpClient is null)
         {
             return (null, null);
         }
-
-        var normalizedBaseUrl = apiBaseUrl.EndsWith('/') ? apiBaseUrl : $"{apiBaseUrl}/";
-        if (!Uri.TryCreate(normalizedBaseUrl, UriKind.Absolute, out var baseAddress))
-        {
-            return (null, null);
-        }
-
-        var httpClient = new HttpClient
-        {
-            BaseAddress = baseAddress,
-            Timeout = TimeSpan.FromSeconds(10)
-        };
 
         return (new FlowNoteServerDocumentClient(httpClient), httpClient);
     }

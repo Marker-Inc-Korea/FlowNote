@@ -21,7 +21,7 @@
 | PATCH | `/api/v1/field-notes/{noteId}` | 관리자 검토, 정리 문구, 분석 내용 갱신 |
 | GET | `/api/v1/documents/{documentId}/field-notes` | 문서별 현장 코멘트 조회 |
 
-문서 등록/버전 등록 API와 현장 코멘트 최소 API는 아직 요청 인증/권한 검사 없이 SQLite와 서버 로컬 `storage/` 저장소 기준으로 동작한다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부만 확인하고 아직 JWT를 발급하지 않는 MVP 단계이다. 이하 로그아웃/현재 사용자 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 로컬 SQLite FieldNote 저장을 기본 경로로 유지하되, `FlowNoteServerDocumentClient`를 통해 서버 문서 등록/목록/버전 조회와 서버 현장 코멘트 등록 계약을 호출할 수 있다. 문서 보기 창은 로컬 FieldNote 저장 직후에만 서버 현장 코멘트 등록을 후보로 시도하며, 이 시도는 `FLOWNOTE_API_BASE_URL`이 설정된 경우에만 발생한다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 자동 재시도 큐는 아직 만들지 않는다. 현재 스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 설정된 경우 문서 업로드 후 최신 문서 버전에 연결된 현장 코멘트 등록까지 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
+문서 등록/버전 등록 API와 현장 코멘트 최소 API는 아직 요청 인증/권한 검사 없이 SQLite와 서버 로컬 `storage/` 저장소 기준으로 동작한다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부만 확인하고 아직 JWT를 발급하지 않는 MVP 단계이다. 이하 로그아웃/현재 사용자 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`을 로그인 결과에 보관한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로컬 SQLite FieldNote 저장을 기본 경로로 유지하되, `FlowNoteServerDocumentClient`를 통해 서버 문서 등록/목록/버전 조회와 서버 현장 코멘트 등록 계약을 호출할 수 있다. 문서 보기 창은 로컬 FieldNote 저장 직후에만 서버 현장 코멘트 등록을 후보로 시도하며, 이 시도는 `FLOWNOTE_API_BASE_URL`이 설정된 경우에만 발생한다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 자동 재시도 큐는 아직 만들지 않는다. 현재 스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 설정된 경우 문서 업로드 후 최신 문서 버전에 연결된 현장 코멘트 등록까지 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
 ## 1. 공통 원칙
 
