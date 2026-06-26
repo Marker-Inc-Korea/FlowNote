@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using System.Xml.Linq;
 using FlowNote.Windows.Core.Audit;
 using FlowNote.Windows.Core.Documents;
@@ -20,13 +21,16 @@ namespace FlowNote.Windows.App;
 public partial class DocumentViewWindow : Window
 {
     private const long MaxPreviewBytes = 128 * 1024;
+    private const int AutoCloseDelaySeconds = 30;
     private readonly FieldNoteService? fieldNoteService;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly DocumentViewLogService? documentViewLogService;
+    private readonly DispatcherTimer autoCloseTimer;
     private readonly string actorName;
     private ExplorerDocument document;
     private long? documentViewLogId;
     private bool documentViewLogClosed;
+    private string documentViewCloseReason = "window_closed";
 
     public DocumentViewWindow(ExplorerDocument document)
         : this(null, null, null, document, string.Empty)
@@ -60,6 +64,12 @@ public partial class DocumentViewWindow : Window
         this.documentViewLogService = documentViewLogService;
         this.document = document;
         this.actorName = actorName;
+        autoCloseTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(AutoCloseDelaySeconds)
+        };
+        Loaded += DocumentViewWindow_Loaded;
+        autoCloseTimer.Tick += AutoCloseTimer_Tick;
         SaveCommentButton.IsEnabled = fieldNoteService is not null && !string.IsNullOrWhiteSpace(document.DocumentId);
         StartDocumentViewLog();
         RefreshHeader();
@@ -71,8 +81,24 @@ public partial class DocumentViewWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
-        CloseDocumentViewLog("window_closed");
+        Loaded -= DocumentViewWindow_Loaded;
+        autoCloseTimer.Stop();
+        autoCloseTimer.Tick -= AutoCloseTimer_Tick;
+        CloseDocumentViewLog(documentViewCloseReason);
         base.OnClosed(e);
+    }
+
+    private void DocumentViewWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        autoCloseTimer.Stop();
+        autoCloseTimer.Start();
+    }
+
+    private void AutoCloseTimer_Tick(object? sender, EventArgs e)
+    {
+        autoCloseTimer.Stop();
+        documentViewCloseReason = "auto_closed";
+        Close();
     }
 
     private void StartDocumentViewLog()
