@@ -15,13 +15,15 @@
 | GET | `/api/v1/documents/{documentId}` | 문서 상세와 최신 버전/파일 참조 조회 |
 | GET | `/api/v1/documents/{documentId}/versions` | 문서 버전 목록 조회 |
 | POST | `/api/v1/documents/{documentId}/versions` | 새 파일 버전과 변경 사유 등록 |
+| POST | `/api/v1/documents/{documentId}/access-logs` | 문서 열람/닫힘 등 접근 로그 등록 |
+| GET | `/api/v1/documents/{documentId}/access-logs` | 문서 접근 로그 조회 |
 | POST | `/api/v1/field-notes` | 현장 코멘트 원천 이력 등록 |
 | GET | `/api/v1/field-notes` | 현장 코멘트 목록 조회. `documentId`, `status`, `limit` 필터 지원 |
 | GET | `/api/v1/field-notes/{noteId}` | 현장 코멘트 상세 조회 |
 | PATCH | `/api/v1/field-notes/{noteId}` | 관리자 검토, 정리 문구, 분석 내용 갱신 |
 | GET | `/api/v1/documents/{documentId}/field-notes` | 문서별 현장 코멘트 조회 |
 
-문서 등록/버전 등록 API와 현장 코멘트 최소 API는 아직 요청 인증/권한 검사 없이 SQLite와 서버 로컬 `storage/` 저장소 기준으로 동작한다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부만 확인하고 아직 JWT를 발급하지 않는 MVP 단계이다. 이하 로그아웃/현재 사용자 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`을 로그인 결과에 보관한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로컬 SQLite 문서/FieldNote 저장을 기본 경로로 유지하되, 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공한 뒤 `FLOWNOTE_API_BASE_URL`이 설정되어 있으면 같은 파일을 `POST /api/v1/documents`로 서버에 등록한다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후에만 서버 현장 코멘트 등록을 후보로 시도하며, 이 시도도 `FLOWNOTE_API_BASE_URL`이 설정된 경우에만 발생한다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 자동 재시도 큐는 아직 만들지 않는다. 현재 스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 설정된 경우 문서 업로드 후 최신 문서 버전에 연결된 현장 코멘트 등록까지 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
+문서 등록/버전 등록 API, 현장 코멘트 최소 API, 문서 접근 로그 API는 아직 요청 인증/권한 검사 없이 SQLite와 서버 로컬 `storage/` 저장소 기준으로 동작한다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부만 확인하고 아직 JWT를 발급하지 않는 MVP 단계이다. 이하 로그아웃/현재 사용자 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`을 로그인 결과에 보관한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로컬 SQLite 문서/FieldNote 저장을 기본 경로로 유지하되, 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공한 뒤 `FLOWNOTE_API_BASE_URL`이 설정되어 있으면 같은 파일을 `POST /api/v1/documents`로 서버에 등록한다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후에만 서버 현장 코멘트 등록을 후보로 시도하며, 이 시도도 `FLOWNOTE_API_BASE_URL`이 설정된 경우에만 발생한다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 자동 재시도 큐는 아직 만들지 않는다. 현재 스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, 문서 업로드, 최신 문서 버전에 연결된 서버 FieldNote 등록, 문서 접근 로그 등록/조회를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
 ## 1. 공통 원칙
 
@@ -70,6 +72,7 @@ File Upload: multipart/form-data
 | POST | `/documents/{documentId}/versions` | 새 버전 업로드 |
 | GET | `/documents/{documentId}/versions/{versionNo}/download` | 관리자 특정 버전 다운로드 API 후보. 클라이언트 앱 단계 |
 | GET | `/documents/{documentId}/history` | 문서 이력 조회 |
+| POST | `/documents/{documentId}/access-logs` | 문서 접근 로그 등록 |
 | GET | `/documents/{documentId}/access-logs` | 접근 로그 조회 |
 
 기본 검색 API:
@@ -110,6 +113,19 @@ multipart/form-data
 ```
 
 현재 구현된 `POST /api/v1/documents/{documentId}/versions`는 `file`과 `changeReason`을 필수로 받는다. 새 버전 등록 시 기존 최신 버전의 `is_latest`를 `false`로 바꾸고 `version_status`를 `SUPERSEDED`로 표시한 뒤, 새 버전을 `is_latest=true`, `version_status=WORKING`으로 저장한다.
+
+문서 접근 로그 요청 예시:
+
+```json
+{
+  "documentVersionId": "ver_20260520_000003",
+  "action": "view_started",
+  "actorId": "user-admin",
+  "userAgent": "FlowNote.Windows.SmokeTests"
+}
+```
+
+현재 구현된 `POST /api/v1/documents/{documentId}/access-logs`는 `action`으로 `view_started`, `view_closed`, `download_blocked`, `auto_closed`를 허용한다. `documentVersionId`가 있으면 해당 문서의 기존 버전이어야 하고, `actorId`가 있으면 기존 `user_accounts.user_id`여야 한다. `deviceId`는 등록된 단말기 ID가 있을 때만 보내야 하며, 미등록 단말기 ID를 임의로 보내지 않는다. 응답과 조회 API는 `document_access_logs` 저장값을 snake_case로 반환한다.
 
 ## 3. 인증 API
 

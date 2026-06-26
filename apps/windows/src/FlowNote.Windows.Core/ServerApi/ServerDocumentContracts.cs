@@ -136,3 +136,54 @@ public sealed record ServerDocumentListItem
     [JsonPropertyName("updated_at")]
     public DateTime UpdatedAt { get; init; }
 }
+
+public sealed record ServerDocumentAccessLogCreateRequest
+{
+    [JsonPropertyName("documentVersionId")]
+    public string? DocumentVersionId { get; init; }
+
+    [JsonPropertyName("action")]
+    public string Action { get; init; } = string.Empty;
+
+    [JsonPropertyName("actorId")]
+    public string? ActorId { get; init; }
+
+    [JsonPropertyName("deviceId")]
+    public string? DeviceId { get; init; }
+
+    [JsonPropertyName("clientIp")]
+    public string? ClientIp { get; init; }
+
+    [JsonPropertyName("userAgent")]
+    public string? UserAgent { get; init; }
+}
+
+public sealed record ServerDocumentAccessLogResponse
+{
+    [JsonPropertyName("log_id")]
+    public int LogId { get; init; }
+
+    [JsonPropertyName("document_id")]
+    public string DocumentId { get; init; } = string.Empty;
+
+    [JsonPropertyName("document_version_id")]
+    public string? DocumentVersionId { get; init; }
+
+    [JsonPropertyName("action")]
+    public string Action { get; init; } = string.Empty;
+
+    [JsonPropertyName("actor_id")]
+    public string? ActorId { get; init; }
+
+    [JsonPropertyName("device_id")]
+    public string? DeviceId { get; init; }
+
+    [JsonPropertyName("client_ip")]
+    public string? ClientIp { get; init; }
+
+    [JsonPropertyName("user_agent")]
+    public string? UserAgent { get; init; }
+
+    [JsonPropertyName("created_at")]
+    public DateTime CreatedAt { get; init; }
+}

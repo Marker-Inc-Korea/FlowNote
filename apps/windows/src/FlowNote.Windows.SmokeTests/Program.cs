@@ -501,21 +501,35 @@ try
         services.Notifications.ListNotifications("반장 A").Count >= 2,
         "Korean PDF field notes should notify the foreman document creator");
 
-    var apiBaseUrl = Environment.GetEnvironmentVariable("FLOWNOTE_API_BASE_URL");
-    if (!string.IsNullOrWhiteSpace(apiBaseUrl))
+    using var serverHttpClient = FlowNoteServerApiEnvironment.CreateHttpClientFromEnvironment(TimeSpan.FromSeconds(20));
+    if (serverHttpClient is null)
     {
-        using var httpClient = new HttpClient
+        Console.WriteLine("FLOWNOTE_API_BASE_URL is not set or invalid; server integration smoke blocks skipped.");
+    }
+    else
+    {
+        var serverAuth = new FlowNoteServerAuthClient(serverHttpClient);
+        var serverDocuments = new FlowNoteServerDocumentClient(serverHttpClient);
+
+        ServerLoginResponse serverLogin;
         {
-            BaseAddress = new Uri(apiBaseUrl.EndsWith('/') ? apiBaseUrl : $"{apiBaseUrl}/"),
-            Timeout = TimeSpan.FromSeconds(20)
-        };
-        var serverDocuments = new FlowNoteServerDocumentClient(httpClient);
+            serverLogin = await serverAuth.TryLoginAsync("admin", "1234")
+                ?? throw new InvalidOperationException("server login API should accept seeded admin / 1234");
+            Require(serverLogin.Username == "admin", "server login API should return the admin username");
+            Require(serverLogin.UserId == "user-admin", "server login API should return the seeded admin user id");
+            Require(serverLogin.Role == "admin", "server login API should return the admin role");
+
+            var rejectedLogin = await serverAuth.TryLoginAsync("admin", "wrong-password");
+            Require(rejectedLogin is null, "server login API should reject a wrong password");
+        }
+
         var serverDocument = await serverDocuments.RegisterDocumentAsync(
             sampleFile,
             "Windows smoke upload",
             "client_smoke_test",
             "Windows smoke test registered this file through FastAPI.",
             description: "Registered by FlowNote.Windows.SmokeTests.",
+            createdBy: serverLogin.UserId,
             tags: ["windows-smoke", "line-a"]);
         Require(!string.IsNullOrWhiteSpace(serverDocument.DocumentId), "server document should receive an id");
         Require(serverDocument.Tags.SequenceEqual(["line-a", "windows-smoke"]), "server document should preserve tags");
@@ -536,19 +550,58 @@ try
         Require(serverVersions.Count == 1, "server document should have one version after initial upload");
         Require(serverVersions[0].ChangeReason.Contains("FastAPI", StringComparison.Ordinal), "server version should preserve the change reason");
 
-        var serverFieldNote = await serverDocuments.RegisterFieldNoteAsync(
-            fieldNote,
-            documentId: serverDocument.DocumentId,
-            documentVersionId: latestServerVersion.VersionId);
-        Require(!string.IsNullOrWhiteSpace(serverFieldNote.NoteId), "server field note should receive an id");
-        Require(serverFieldNote.DocumentId == serverDocument.DocumentId, "server field note should reference the uploaded document");
-        Require(
-            serverFieldNote.DocumentVersionId == latestServerVersion.VersionId,
-            "server field note should reference the uploaded document version");
-        Require(
-            serverFieldNote.RawContent == "Program test field note stored separately from document versions.",
-            "server field note should preserve raw content");
-        Require(serverFieldNote.Status == "NEW", "server field note should start in NEW status");
+        {
+            var serverFieldNote = await serverDocuments.RegisterFieldNoteAsync(
+                fieldNote,
+                documentId: serverDocument.DocumentId,
+                documentVersionId: latestServerVersion.VersionId);
+            Require(!string.IsNullOrWhiteSpace(serverFieldNote.NoteId), "server field note should receive an id");
+            Require(serverFieldNote.DocumentId == serverDocument.DocumentId, "server field note should reference the uploaded document");
+            Require(
+                serverFieldNote.DocumentVersionId == latestServerVersion.VersionId,
+                "server field note should reference the uploaded document version");
+            Require(
+                serverFieldNote.RawContent == "Program test field note stored separately from document versions.",
+                "server field note should preserve raw content");
+            Require(serverFieldNote.Status == "NEW", "server field note should start in NEW status");
+        }
+
+        {
+            var startedAccessLog = await serverDocuments.RegisterAccessLogAsync(
+                serverDocument.DocumentId,
+                new ServerDocumentAccessLogCreateRequest
+                {
+                    DocumentVersionId = latestServerVersion.VersionId,
+                    Action = "view_started",
+                    ActorId = serverLogin.UserId,
+                    UserAgent = "FlowNote.Windows.SmokeTests"
+                });
+            Require(startedAccessLog.LogId > 0, "server document view start log should receive an id");
+            Require(startedAccessLog.DocumentId == serverDocument.DocumentId, "server document view start log should keep the document id");
+            Require(startedAccessLog.DocumentVersionId == latestServerVersion.VersionId, "server document view start log should keep the version id");
+            Require(startedAccessLog.Action == "view_started", "server document view start log should keep the action");
+            Require(startedAccessLog.ActorId == serverLogin.UserId, "server document view start log should keep the actor id");
+
+            var closedAccessLog = await serverDocuments.RegisterAccessLogAsync(
+                serverDocument.DocumentId,
+                new ServerDocumentAccessLogCreateRequest
+                {
+                    DocumentVersionId = latestServerVersion.VersionId,
+                    Action = "view_closed",
+                    ActorId = serverLogin.UserId,
+                    UserAgent = "FlowNote.Windows.SmokeTests"
+                });
+            Require(closedAccessLog.LogId > 0, "server document view close log should receive an id");
+            Require(closedAccessLog.Action == "view_closed", "server document view close log should keep the action");
+
+            var serverAccessLogs = await serverDocuments.ListAccessLogsAsync(serverDocument.DocumentId);
+            Require(
+                serverAccessLogs.Any(item => item.LogId == startedAccessLog.LogId),
+                "server document access log list should include the view start log");
+            Require(
+                serverAccessLogs.Any(item => item.LogId == closedAccessLog.LogId),
+                "server document access log list should include the view close log");
+        }
     }
 
     var deleted = services.Folders.DeleteFolder(currentDocumentFolder.Id);
