@@ -145,14 +145,24 @@ try
     Require(closedViewLog is not null, "document view log should remain readable after close");
     Require(closedViewLog!.ClosedAt is not null, "document view log should record the closed time");
     Require(closedViewLog.CloseReason == "window_closed", "document view log should record the close reason");
+
+    var autoClosedViewLogId = services.DocumentViewLogs.StartDocumentView(
+        document.DocumentId,
+        document.VersionNo,
+        smokeActorName);
+    services.DocumentViewLogs.CloseDocumentView(autoClosedViewLogId, "auto_closed");
+    var autoClosedViewLog = services.DocumentViewLogs.GetLog(autoClosedViewLogId);
+    Require(autoClosedViewLog is not null, "auto-closed document view log should remain readable");
+    Require(autoClosedViewLog!.ClosedAt is not null, "auto-closed document view log should record the closed time");
+    Require(autoClosedViewLog.CloseReason == "auto_closed", "document view log should record the auto-close reason");
     using (var viewLogConnection = services.Database.OpenConnection())
     {
         Require(
             ScalarLong(
                 viewLogConnection,
                 "SELECT COUNT(*) FROM document_view_logs WHERE document_id = $document_id;",
-                ("$document_id", document.DocumentId)) == 1,
-            "document view should create one log row for one open/close cycle");
+                ("$document_id", document.DocumentId)) == 2,
+            "document view should create one log row for each open/close cycle");
     }
 
     var fieldNote = services.FieldNotes.AddDocumentNote(
