@@ -6,6 +6,8 @@ namespace FlowNote.Windows.Core.ServerApi;
 
 public sealed class FlowNoteServerDocumentClient
 {
+    public const string DefaultWpfLocalUploadChangeReason = "WPF local upload sync";
+
     private readonly HttpClient httpClient;
 
     public FlowNoteServerDocumentClient(HttpClient httpClient)
