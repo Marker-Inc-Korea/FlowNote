@@ -49,6 +49,17 @@
                             Margin="0,0,8,0"
                             Content="이력"
                             Click="HistoryButton_Click" />
+                    <Button x:Name="WorkSequenceAdminButton"
+                            Width="104"
+                            Height="34"
+                            Margin="0,0,8,0"
+                            Content="Work Board"
+                            Click="WorkSequenceAdminButton_Click" />
+                    <Button Width="80"
+                            Height="34"
+                            Margin="0,0,8,0"
+                            Content="TV"
+                            Click="WorkSequenceTvButton_Click" />
                     <Button Width="92"
                             Height="34"
                             Margin="0,0,8,0"

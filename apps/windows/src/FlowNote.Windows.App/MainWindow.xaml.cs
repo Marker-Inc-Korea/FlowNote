@@ -167,6 +167,36 @@ public partial class MainWindow : Window
         window.ShowDialog();
     }
 
+    private void WorkSequenceAdminButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureDocumentRegistrationAllowed())
+        {
+            return;
+        }
+
+        var window = new WorkSequenceAdminWindow(services.WorkSequences, GetCurrentActorName())
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+    }
+
+    private void WorkSequenceTvButton_Click(object sender, RoutedEventArgs e)
+    {
+        var board = services.WorkSequences.ListBoards().FirstOrDefault();
+        if (board is null)
+        {
+            workspace.StatusText = "Create a work sequence board before opening TV view.";
+            return;
+        }
+
+        var window = new WorkSequenceTvWindow(services.WorkSequences, board.BoardId)
+        {
+            Owner = this
+        };
+        window.Show();
+    }
+
     private async void UploadFileButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureDocumentRegistrationAllowed())
@@ -482,6 +512,7 @@ public partial class MainWindow : Window
         const string noDocumentWritePermission = "문서 등록은 관리자/반장/조장 이상만 가능합니다. 조원은 현장 코멘트 등록을 사용합니다.";
         RegisterDocumentButton.IsEnabled = canRegisterDocuments;
         UploadFileButton.IsEnabled = canRegisterDocuments;
+        WorkSequenceAdminButton.IsEnabled = canRegisterDocuments;
         ApplyDocumentStatusButton.IsEnabled = canRegisterDocuments;
         PublishDocumentButton.IsEnabled = canRegisterDocuments;
         DocumentStatusComboBox.IsEnabled = canRegisterDocuments;
@@ -491,6 +522,7 @@ public partial class MainWindow : Window
         {
             RegisterDocumentButton.ToolTip = noDocumentWritePermission;
             UploadFileButton.ToolTip = noDocumentWritePermission;
+            WorkSequenceAdminButton.ToolTip = noDocumentWritePermission;
             ApplyDocumentStatusButton.ToolTip = noDocumentWritePermission;
             PublishDocumentButton.ToolTip = noDocumentWritePermission;
             DocumentStatusComboBox.ToolTip = noDocumentWritePermission;

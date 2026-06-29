@@ -199,6 +199,67 @@ public sealed class FlowNoteServerDocumentClient
         return logs;
     }
 
+    public async Task<ServerWorkSequenceBoardResponse> CreateWorkSequenceBoardAsync(
+        ServerWorkSequenceBoardCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            "api/v1/work-sequence-boards",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerWorkSequenceBoardResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerWorkSequenceBoardResponse> AddWorkSequenceItemAsync(
+        string boardId,
+        ServerWorkSequenceItemCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/v1/work-sequence-boards/{boardId}/items",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerWorkSequenceBoardResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerWorkSequenceBoardResponse> ReorderWorkSequenceItemsAsync(
+        string boardId,
+        ServerWorkSequenceReorderRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PutAsJsonAsync(
+            $"api/v1/work-sequence-boards/{boardId}/items/order",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerWorkSequenceBoardResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerWorkSequenceBoardResponse> UpdateWorkSequenceItemStatusAsync(
+        string boardId,
+        string itemId,
+        ServerWorkSequenceStatusUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PatchAsJsonAsync(
+            $"api/v1/work-sequence-boards/{boardId}/items/{itemId}/status",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerWorkSequenceBoardResponse>(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ServerWorkSequenceHistoryResponse>> ListWorkSequenceHistoryAsync(
+        string boardId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/work-sequence-boards/{boardId}/history",
+            cancellationToken);
+        var history = await ReadJsonResponse<List<ServerWorkSequenceHistoryResponse>>(
+            response,
+            cancellationToken);
+        return history;
+    }
+
     private static void AddString(MultipartFormDataContent form, string name, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))

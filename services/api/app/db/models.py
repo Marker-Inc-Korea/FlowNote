@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer
 from sqlalchemy import String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -362,6 +362,95 @@ class WorkRecordVersion(Base):
     action_note: Mapped[str | None] = mapped_column(Text)
     change_reason: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class WorkSequenceBoard(TimestampMixin, Base):
+    __tablename__ = "work_sequence_boards"
+    __table_args__ = (
+        CheckConstraint("status IN ('ACTIVE', 'ARCHIVED')", name="ck_work_sequence_board_status"),
+        Index("ix_work_sequence_boards_date_status", "board_date", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    board_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    line_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    board_date: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    created_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+
+
+class WorkSequenceItem(TimestampMixin, Base):
+    __tablename__ = "work_sequence_items"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('WAITING', 'IN_PROGRESS', 'HOLD', 'COMPLETED')",
+            name="ck_work_sequence_item_status",
+        ),
+        UniqueConstraint("board_id", "sort_order", name="uq_work_sequence_items_board_sort"),
+        Index("ix_work_sequence_items_board_order", "board_id", "sort_order"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    board_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("work_sequence_boards.board_id"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    work_order_no: Mapped[str | None] = mapped_column(String(120), index=True)
+    document_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("documents.document_id"))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="WAITING")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    assigned_to: Mapped[str | None] = mapped_column(String(100))
+    created_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+
+
+class WorkSequenceChangeHistory(Base):
+    __tablename__ = "work_sequence_change_history"
+    __table_args__ = (
+        Index("ix_work_sequence_history_board_created", "board_id", "created_at"),
+        Index("ix_work_sequence_history_item_created", "item_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    change_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    board_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("work_sequence_boards.board_id"), nullable=False, index=True
+    )
+    item_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("work_sequence_items.item_id"))
+    change_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    before_value: Mapped[str | None] = mapped_column(Text)
+    after_value: Mapped[str | None] = mapped_column(Text)
+    change_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class WorkSequenceNotificationCandidate(Base):
+    __tablename__ = "work_sequence_notification_candidates"
+    __table_args__ = (
+        CheckConstraint("status IN ('CANDIDATE', 'SENT', 'DISMISSED')", name="ck_work_sequence_notify_status"),
+        Index("ix_work_sequence_notify_board_created", "board_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    candidate_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    board_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("work_sequence_boards.board_id"), nullable=False, index=True
+    )
+    item_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("work_sequence_items.item_id"))
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    recipient_hint: Mapped[str | None] = mapped_column(String(120))
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="CANDIDATE")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
