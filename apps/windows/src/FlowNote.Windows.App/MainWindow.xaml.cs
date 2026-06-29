@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private readonly LoginResult currentUser;
     private readonly HttpClient? serverHttpClient;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
+    private readonly bool canRegisterDocuments;
     private readonly ExplorerWorkspace workspace = new();
     private ExplorerFolder? selectedFolder;
 
@@ -29,9 +30,11 @@ public partial class MainWindow : Window
         InitializeComponent();
         this.services = services;
         this.currentUser = currentUser;
+        canRegisterDocuments = RolePermissionPolicy.CanRegisterDocuments(currentUser.Role);
         (serverDocumentClient, serverHttpClient) = CreateServerDocumentClient(currentUser);
         SignedInUserTextBlock.Text = $"{currentUser.DisplayName} ({currentUser.Role})";
         DataContext = workspace;
+        ApplyRolePermissions();
         RefreshWorkspace("로컬 작업 공간을 열었습니다.", services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.DocumentsFolderName).Id);
         RefreshNotificationButton();
     }
@@ -53,6 +56,11 @@ public partial class MainWindow : Window
 
     private void RegisterDocumentButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureDocumentRegistrationAllowed())
+        {
+            return;
+        }
+
         var folder = GetSelectedFolderOrDefault();
         var fileName = $"sample-{DateTime.Now:HHmmss}.txt";
         var actorName = GetCurrentActorName();
@@ -90,6 +98,11 @@ public partial class MainWindow : Window
 
     private async void UploadFileButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureDocumentRegistrationAllowed())
+        {
+            return;
+        }
+
         var dialog = new OpenFileDialog
         {
             Title = "업로드할 파일 선택",
@@ -170,7 +183,7 @@ public partial class MainWindow : Window
 
     private void FileListDropZone_DragEnter(object sender, DragEventArgs e)
     {
-        if (HasFileDrop(e))
+        if (canRegisterDocuments && HasFileDrop(e))
         {
             FileListPanel.Background = new SolidColorBrush(Color.FromRgb(232, 246, 240));
             e.Effects = DragDropEffects.Copy;
@@ -191,13 +204,19 @@ public partial class MainWindow : Window
 
     private void FileListDropZone_DragOver(object sender, DragEventArgs e)
     {
-        e.Effects = HasFileDrop(e) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effects = canRegisterDocuments && HasFileDrop(e) ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
     private async void FileListDropZone_Drop(object sender, DragEventArgs e)
     {
         FileListPanel.Background = (Brush)FindResource("PanelBackgroundBrush");
+        if (!EnsureDocumentRegistrationAllowed())
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (!HasFileDrop(e))
         {
             return;
@@ -211,6 +230,11 @@ public partial class MainWindow : Window
 
     private async Task RegisterUploadedFilesAsync(IEnumerable<string> files, DocumentFolder selectedTargetFolder, string sourceLabel)
     {
+        if (!EnsureDocumentRegistrationAllowed())
+        {
+            return;
+        }
+
         var addedCount = 0;
         var serverRegisteredCount = 0;
         var serverSyncFailures = new List<string>();
@@ -384,8 +408,38 @@ public partial class MainWindow : Window
     {
         var folder = folderId is null ? null : services.Folders.GetFolder(folderId.Value);
         DocumentListTitleTextBlock.Text = folder is null ? "문서 목록" : $"{folder.Name} 파일 목록";
-        DocumentListHintTextBlock.Text = $"표시 {workspace.Documents.Count}개";
-        workspace.StatusText = $"{status}  DB: {services.Database.DatabasePath}";
+        DocumentListHintTextBlock.Text = canRegisterDocuments
+            ? $"표시 {workspace.Documents.Count}개"
+            : $"표시 {workspace.Documents.Count}개 · 문서 등록 권한 없음";
+        workspace.StatusText = canRegisterDocuments
+            ? $"{status}  DB: {services.Database.DatabasePath}"
+            : $"{status}  문서 등록은 관리자/반장/조장 이상만 가능합니다.  DB: {services.Database.DatabasePath}";
+    }
+
+    private void ApplyRolePermissions()
+    {
+        const string noDocumentWritePermission = "문서 등록은 관리자/반장/조장 이상만 가능합니다. 조원은 현장 코멘트 등록을 사용합니다.";
+        RegisterDocumentButton.IsEnabled = canRegisterDocuments;
+        UploadFileButton.IsEnabled = canRegisterDocuments;
+        FileListDropZone.AllowDrop = canRegisterDocuments;
+
+        if (!canRegisterDocuments)
+        {
+            RegisterDocumentButton.ToolTip = noDocumentWritePermission;
+            UploadFileButton.ToolTip = noDocumentWritePermission;
+            FileListDropZone.ToolTip = noDocumentWritePermission;
+        }
+    }
+
+    private bool EnsureDocumentRegistrationAllowed()
+    {
+        if (canRegisterDocuments)
+        {
+            return true;
+        }
+
+        workspace.StatusText = "문서 등록 권한이 없습니다. 현장 코멘트 등록만 사용할 수 있습니다.";
+        return false;
     }
 
     private static bool HasFileDrop(DragEventArgs e)

@@ -29,6 +29,10 @@ The server currently implements:
 | GET | `/api/v1/documents/{documentId}/field-notes` | FieldNotes for a document |
 
 Document, FieldNote, and document access log APIs require `Authorization: Bearer {access_token}`. Missing, invalid, or expired credentials return `401`.
+Document registration, document version registration, document tag changes, and tag creation
+require a document-write role such as `admin`, `document-admin`, `line-foreman`, or
+`team-lead`. `team-member` and `viewer` accounts can create FieldNotes but receive `403` for
+document write flows. Document access log reads are limited to `admin` and `system-admin`.
 
 MVP tokens are HMAC-signed access tokens with an expiration time. Configure the signing secret and lifetime with:
 

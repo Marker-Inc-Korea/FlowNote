@@ -24,7 +24,7 @@
 | PATCH | `/api/v1/field-notes/{noteId}` | 관리자 검토, 정리 문구, 분석 내용 갱신 |
 | GET | `/api/v1/documents/{documentId}/field-notes` | 문서별 현장 코멘트 조회 |
 
-문서 등록/버전 등록 API, 현장 코멘트 최소 API, 문서 접근 로그 API는 Bearer access token이 없거나 유효하지 않으면 `401`을 반환한다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부를 확인하고 MVP용 HMAC 서명 access token과 만료 시각을 발급한다. 이 토큰은 운영용 권한 체계가 아니라 서버 요청의 사용자 신뢰 경계를 세우기 위한 MVP 인증 방식이다. 이하 로그아웃, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`을 로그인 결과에 보관한다. 이후 서버 문서/FieldNote/접근 로그 요청에는 `Authorization: Bearer {access_token}` 헤더를 붙인다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로컬 SQLite 문서/FieldNote 저장을 기본 경로로 유지하되, 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공한 뒤 인증된 서버 클라이언트가 있으면 같은 파일을 `POST /api/v1/documents`로 서버에 등록한다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후에만 서버 현장 코멘트 등록을 후보로 시도하며, 이 시도도 인증된 서버 클라이언트가 있는 경우에만 발생한다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 자동 재시도 큐는 아직 만들지 않는다. 현재 스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, Bearer 인증 헤더가 붙은 `/auth/me`, 문서 업로드, 최신 문서 버전에 연결된 서버 FieldNote 등록, 문서 접근 로그 등록/조회를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
+문서 등록/버전 등록 API, 현장 코멘트 최소 API, 문서 접근 로그 API는 Bearer access token이 없거나 유효하지 않으면 `401`을 반환한다. 문서 등록, 새 버전 등록, 문서 태그 변경, 태그 등록은 관리자 그룹, 반장(`line-foreman`), 조장(`team-lead`) 이상 role만 허용하며 조원(`team-member`)이나 현장 조회자(`viewer`)는 `403`을 받는다. FieldNote 등록은 조원 계정도 허용한다. 접근 로그 조회는 관리자 성격의 API로 보아 `admin`, `system-admin` role만 허용하고, 접근 로그 등록은 현장 클라이언트가 열람 기록을 남길 수 있도록 인증 사용자에게 열어 둔다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부를 확인하고 MVP용 HMAC 서명 access token과 만료 시각을 발급한다. 이하 로그아웃, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`을 로그인 결과에 보관한다. 이후 서버 문서/FieldNote/접근 로그 요청에는 `Authorization: Bearer {access_token}` 헤더를 붙인다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로그인 role이 문서 등록 권한을 가지는 경우에만 문서 등록/파일 업로드 버튼과 파일 드롭을 사용 가능 상태로 둔다. 로컬 SQLite 문서/FieldNote 저장을 기본 경로로 유지하되, 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공한 뒤 인증된 서버 클라이언트가 있으면 같은 파일을 `POST /api/v1/documents`로 서버에 등록한다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후에만 서버 현장 코멘트 등록을 후보로 시도하며, 이 시도도 인증된 서버 클라이언트가 있는 경우에만 발생한다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 자동 재시도 큐는 아직 만들지 않는다. 현재 스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, Bearer 인증 헤더가 붙은 `/auth/me`, 문서 업로드, 최신 문서 버전에 연결된 서버 FieldNote 등록, 문서 접근 로그 등록/조회를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
 ## 1. 공통 원칙
 
@@ -103,6 +103,7 @@ multipart/form-data
 ```
 
 현재 구현된 `POST /api/v1/documents`는 `file`, `title`, `documentType`, `changeReason`을 필수로 받고, `description`, `ownerId`, `categoryId`, `versionLabel`, `status`, `createdBy`, `tags`를 선택으로 받는다. `tags`는 multipart form의 반복 필드 또는 쉼표 구분 문자열로 받을 수 있으며 서버는 `tag_definitions`와 `document_tags`에 저장하고 문서 목록/상세 응답에 `tags: string[]`로 반환한다. `links`는 아직 저장하지 않는다. 파일은 `storage/documents/{document_id}/v{version_no}/` 아래에 저장하고, SQLite `file_objects`에는 `storage_key`, 원본 파일명, 확장자, MIME, 파일 계열, 크기, SHA-256 해시를 기록한다.
+권한이 없는 role로 호출하면 파일 저장 전에 `403`을 반환한다.
 
 새 버전 업로드 요청 필드:
 
@@ -114,6 +115,7 @@ multipart/form-data
 ```
 
 현재 구현된 `POST /api/v1/documents/{documentId}/versions`는 `file`과 `changeReason`을 필수로 받는다. 새 버전 등록 시 기존 최신 버전의 `is_latest`를 `false`로 바꾸고 `version_status`를 `SUPERSEDED`로 표시한 뒤, 새 버전을 `is_latest=true`, `version_status=WORKING`으로 저장한다.
+권한이 없는 role로 호출하면 새 파일 버전 저장 전에 `403`을 반환한다.
 
 문서 접근 로그 요청 예시:
 

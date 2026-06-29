@@ -18,6 +18,31 @@ from app.db.models import UserAccount
 from app.db.session import get_db_session
 
 TOKEN_TYPE = "Bearer"
+ROLE_ADMIN = "admin"
+ROLE_MANAGER = "manager"
+ROLE_VIEWER = "viewer"
+ROLE_SYSTEM_ADMIN = "system-admin"
+ROLE_DOCUMENT_ADMIN = "document-admin"
+ROLE_ASSISTANT_MANAGER = "assistant-manager"
+ROLE_DEPARTMENT_MANAGER = "department-manager"
+ROLE_LINE_FOREMAN = "line-foreman"
+ROLE_TEAM_LEAD = "team-lead"
+ROLE_TEAM_MEMBER = "team-member"
+
+DOCUMENT_WRITE_ROLES = frozenset(
+    {
+        ROLE_ADMIN,
+        ROLE_MANAGER,
+        ROLE_SYSTEM_ADMIN,
+        ROLE_DOCUMENT_ADMIN,
+        ROLE_ASSISTANT_MANAGER,
+        ROLE_DEPARTMENT_MANAGER,
+        ROLE_LINE_FOREMAN,
+        ROLE_TEAM_LEAD,
+    }
+)
+FIELD_NOTE_CREATE_ROLES = DOCUMENT_WRITE_ROLES | frozenset({ROLE_VIEWER, ROLE_TEAM_MEMBER})
+ACCESS_LOG_READ_ROLES = frozenset({ROLE_ADMIN, ROLE_SYSTEM_ADMIN})
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -119,4 +144,32 @@ def get_current_user(
     )
 
 
+def require_roles(*allowed_roles: str):
+    allowed = frozenset(allowed_roles)
+
+    def dependency(
+        current_user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    ) -> AuthenticatedUser:
+        if current_user.role not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Current user role is not allowed to perform this action.",
+            )
+        return current_user
+
+    return dependency
+
+
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
+DocumentWriteUser = Annotated[
+    AuthenticatedUser,
+    Depends(require_roles(*DOCUMENT_WRITE_ROLES)),
+]
+FieldNoteCreateUser = Annotated[
+    AuthenticatedUser,
+    Depends(require_roles(*FIELD_NOTE_CREATE_ROLES)),
+]
+AccessLogReadUser = Annotated[
+    AuthenticatedUser,
+    Depends(require_roles(*ACCESS_LOG_READ_ROLES)),
+]

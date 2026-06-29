@@ -1,4 +1,5 @@
 using FlowNote.Windows.Core.Storage;
+using FlowNote.Windows.Core.Auth;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
 using FlowNote.Windows.Core.ServerApi;
@@ -442,6 +443,15 @@ try
     Require(foremanLogin.Success, "foreman-a / 1234 login should succeed for document registration");
     Require(leadLogin.Success, "lead-a1 / 1234 login should succeed for field note registration");
     Require(memberLogin.Success, "member-a1 / 1234 login should succeed for field note registration");
+    Require(
+        RolePermissionPolicy.CanRegisterDocuments(foremanLogin.Role),
+        "foreman role should be allowed to use document registration UI");
+    Require(
+        RolePermissionPolicy.CanRegisterDocuments(leadLogin.Role),
+        "team lead role should be allowed to use document registration UI");
+    Require(
+        !RolePermissionPolicy.CanRegisterDocuments(memberLogin.Role),
+        "team member role should not be allowed to use document registration UI");
 
     var koreanPdfPath = Path.Combine(testDirectory, "flownote-korean-functional-test.pdf");
     CreateKoreanPdfOnStaThread(koreanPdfPath);
