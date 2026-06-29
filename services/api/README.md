@@ -16,8 +16,14 @@ The server currently implements:
 | POST | `/api/v1/documents` | Document and initial version registration |
 | GET | `/api/v1/documents` | Document list |
 | GET | `/api/v1/documents/{documentId}` | Document detail |
+| PATCH | `/api/v1/documents/{documentId}/status` | Document status transition |
+| GET | `/api/v1/documents/published` | Published document list |
+| GET | `/api/v1/documents/{documentId}/published` | Published document version |
 | GET | `/api/v1/documents/{documentId}/versions` | Document version list |
 | POST | `/api/v1/documents/{documentId}/versions` | New document version registration |
+| PATCH | `/api/v1/documents/{documentId}/versions/{versionId}/status` | Document version status transition |
+| POST | `/api/v1/documents/{documentId}/versions/{versionId}/publish` | Publish a specific document version |
+| PUT | `/api/v1/documents/{documentId}/tags` | Replace document tags |
 | POST | `/api/v1/documents/{documentId}/access-logs` | Document access log registration |
 | GET | `/api/v1/documents/{documentId}/access-logs` | Document access log list |
 | GET | `/api/v1/tags` | Tag list |
@@ -29,6 +35,13 @@ The server currently implements:
 | POST | `/api/v1/field-notes/{noteId}/attachments` | FieldNote photo/file attachment registration |
 | GET | `/api/v1/field-notes/{noteId}/attachments` | FieldNote attachment list |
 | GET | `/api/v1/documents/{documentId}/field-notes` | FieldNotes for a document |
+| POST | `/api/v1/work-sequence-boards` | Work sequence board creation |
+| GET | `/api/v1/work-sequence-boards` | Work sequence board list |
+| GET | `/api/v1/work-sequence-boards/{boardId}` | Work sequence board detail |
+| POST | `/api/v1/work-sequence-boards/{boardId}/items` | Add work sequence item |
+| PUT | `/api/v1/work-sequence-boards/{boardId}/items/order` | Reorder all board items |
+| PATCH | `/api/v1/work-sequence-boards/{boardId}/items/{itemId}/status` | Change item status |
+| GET | `/api/v1/work-sequence-boards/{boardId}/history` | Work sequence change history |
 
 Document, FieldNote, and document access log APIs require `Authorization: Bearer {access_token}`. Missing, invalid, or expired credentials return `401`.
 Document registration, document version registration, document tag changes, and tag creation
