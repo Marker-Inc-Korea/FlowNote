@@ -15,8 +15,8 @@ Windows WPF App
       -> notifications
 
 Windows WPF App
-  -> Data/Files/Uploads/yyyy-MM-dd
-  -> Data/Files/Samples
+  -> data/local/flownote.local.sqlite
+  -> data/local/Files/Uploads/yyyy-MM-dd
 
 FastAPI Server
   -> GET /
@@ -26,7 +26,7 @@ FastAPI Server
   -> field_notes
 ```
 
-현재 코드에는 FastAPI MVP 로그인 API, WPF 로그인 화면의 서버 로그인 우선 호출과 로컬 SQLite 폴백, 문서 등록/버전 등록 API, 서버 `storage/` 저장소, 서버 `FieldNote` 최소 등록/조회 API, WPF 로컬 `field_notes` 오프라인 저장 흐름이 구현되어 있다. 로그인 API는 사용자명/비밀번호로 계정 활성 상태를 확인하고 MVP 사용자 정보를 반환하지만, JWT 발급, 요청 인증 미들웨어, 역할 기반 서버 권한 적용은 아직 구현되어 있지 않다. WPF와 서버 FieldNote 자동 재시도/완전 동기화, `WorkRecord`, `Report`, `SearchIndexItem`, `AiAdviceLog`, MES/ERP 연동 모델도 아직 구현되어 있지 않다. 아래 상관관계는 제품 목표와 서버 확장 기준이며, 미래 기능은 현재 코드와의 구현 비교 대상이 아니다.
+현재 코드에는 FastAPI MVP 로그인 API, `/auth/me`, WPF 로그인 화면의 서버 로그인 우선 호출과 로컬 SQLite 폴백, 로그인 성공 후 Bearer 인증 헤더 적용, 문서 등록/버전 등록 API, 서버 `storage/` 저장소, 서버 `FieldNote` 최소 등록/조회 API, 서버 문서 접근 로그 API, WPF 로컬 `field_notes` 오프라인 저장 흐름이 구현되어 있다. 로그인 API는 사용자명/비밀번호로 계정 활성 상태를 확인하고 MVP 사용자 정보, access token, 만료 시각을 반환한다. 문서, FieldNote, 문서 접근 로그 API는 인증 헤더가 없거나 유효하지 않으면 `401`을 반환한다. 역할 기반 서버 권한 적용, 운영용 토큰 갱신/폐기, WPF와 서버 FieldNote 자동 재시도/완전 동기화, `WorkRecord`, `Report`, `SearchIndexItem`, `AiAdviceLog`, MES/ERP 연동 모델은 아직 구현되어 있지 않다. 아래 상관관계는 제품 목표와 서버 확장 기준이며, 미래 기능은 현재 코드와의 구현 비교 대상이 아니다.
 
 ## 1. 전체 기준
 

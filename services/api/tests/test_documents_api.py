@@ -50,6 +50,15 @@ def create_test_client() -> TestClient:
     return TestClient(create_app(app_settings))
 
 
+def auth_headers(client: TestClient) -> dict[str, str]:
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "1234"},
+    )
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
 def ensure_test_user(client: TestClient) -> None:
     with client.app.state.database.session() as session:
         existing = session.scalar(
@@ -144,6 +153,7 @@ def post_document(client: TestClient, file_path: Path, *, title: str, document_t
     with file_path.open("rb") as file:
         response = client.post(
             "/api/v1/documents",
+            headers=auth_headers(client),
             data={
                 "title": title,
                 "description": "Factory floor sample registration test",
@@ -189,6 +199,7 @@ def test_register_factory_files_and_document_versions_are_preserved() -> None:
         with pdf_v2_path.open("rb") as file:
             version_response = client.post(
                 f"/api/v1/documents/{pdf_doc['document_id']}/versions",
+                headers=auth_headers(client),
                 data={
                     "versionLabel": "v2",
                     "changeReason": "Guard sensor confirmation step added after field review.",
@@ -199,7 +210,10 @@ def test_register_factory_files_and_document_versions_are_preserved() -> None:
         assert version_response.status_code == 201, version_response.text
         second_version = version_response.json()
 
-        detail_response = client.get(f"/api/v1/documents/{pdf_doc['document_id']}")
+        detail_response = client.get(
+            f"/api/v1/documents/{pdf_doc['document_id']}",
+            headers=auth_headers(client),
+        )
         assert detail_response.status_code == 200
         detail = detail_response.json()
         assert detail["latest_version"]["version_no"] == 2
@@ -208,7 +222,10 @@ def test_register_factory_files_and_document_versions_are_preserved() -> None:
         )
         assert detail["tags"] == ["line-a", "mold-change", "press-a"]
 
-        versions_response = client.get(f"/api/v1/documents/{pdf_doc['document_id']}/versions")
+        versions_response = client.get(
+            f"/api/v1/documents/{pdf_doc['document_id']}/versions",
+            headers=auth_headers(client),
+        )
         assert versions_response.status_code == 200
         versions = versions_response.json()
         assert [version["version_no"] for version in versions] == [2, 1]
@@ -218,6 +235,7 @@ def test_register_factory_files_and_document_versions_are_preserved() -> None:
 
         tag_update_response = client.put(
             f"/api/v1/documents/{pdf_doc['document_id']}/tags",
+            headers=auth_headers(client),
             json=["line-a", "guard-sensor", "press-a"],
         )
         assert tag_update_response.status_code == 200, tag_update_response.text
@@ -306,6 +324,7 @@ def test_document_version_change_reason_is_required() -> None:
         with pdf_path.open("rb") as file:
             response = client.post(
                 f"/api/v1/documents/{created['document_id']}/versions",
+                headers=auth_headers(client),
                 data={"versionLabel": "v2", "changeReason": "   "},
                 files={"file": (pdf_path.name, file, "application/pdf")},
             )
@@ -313,7 +332,7 @@ def test_document_version_change_reason_is_required() -> None:
     assert response.status_code == 422
 
 
-def test_document_registration_allows_missing_user_before_auth_is_available() -> None:
+def test_document_registration_requires_authentication() -> None:
     pdf_path, _, _, _ = prepare_factory_sample_files()
 
     with create_test_client() as client:
@@ -321,9 +340,28 @@ def test_document_registration_allows_missing_user_before_auth_is_available() ->
             response = client.post(
                 "/api/v1/documents",
                 data={
-                    "title": "Auth-free early document registration",
+                    "title": "Unauthenticated document registration",
                     "documentType": "work_instruction",
-                    "changeReason": "Registering before server auth is implemented.",
+                    "changeReason": "This should be rejected without an auth token.",
+                },
+                files={"file": (pdf_path.name, file, "application/pdf")},
+            )
+
+    assert response.status_code == 401
+
+
+def test_document_registration_allows_missing_user_reference_after_authentication() -> None:
+    pdf_path, _, _, _ = prepare_factory_sample_files()
+
+    with create_test_client() as client:
+        with pdf_path.open("rb") as file:
+            response = client.post(
+                "/api/v1/documents",
+                headers=auth_headers(client),
+                data={
+                    "title": "Authenticated document registration without explicit user reference",
+                    "documentType": "work_instruction",
+                    "changeReason": "Registering with authentication but no owner or createdBy.",
                 },
                 files={"file": (pdf_path.name, file, "application/pdf")},
             )
@@ -347,6 +385,7 @@ def test_document_registration_rejects_unknown_user_reference() -> None:
         with pdf_path.open("rb") as file:
             response = client.post(
                 "/api/v1/documents",
+                headers=auth_headers(client),
                 data={
                     "title": "Unknown owner upload",
                     "documentType": "work_instruction",

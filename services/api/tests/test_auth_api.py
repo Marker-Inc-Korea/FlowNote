@@ -53,7 +53,7 @@ def create_login_user(
     return account
 
 
-def test_login_returns_mvp_user_payload() -> None:
+def test_login_returns_mvp_user_payload_with_access_token() -> None:
     with create_test_client() as client:
         account = create_login_user(client)
 
@@ -63,12 +63,44 @@ def test_login_returns_mvp_user_payload() -> None:
         )
 
     assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["user_id"] == account.user_id
+    assert payload["username"] == account.username
+    assert payload["role"] == "viewer"
+    assert payload["display_name"] == "Login Test User"
+    assert payload["token_type"] == "Bearer"
+    assert payload["access_token"]
+    assert payload["expires_at"]
+
+
+def test_me_returns_current_user_for_bearer_token() -> None:
+    with create_test_client() as client:
+        account = create_login_user(client)
+        login_response = client.post(
+            "/api/v1/auth/login",
+            json={"username": account.username, "password": "correct-password"},
+        )
+        token = login_response.json()["access_token"]
+
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200, response.text
     assert response.json() == {
         "user_id": account.user_id,
         "username": account.username,
         "role": "viewer",
         "display_name": "Login Test User",
     }
+
+
+def test_me_rejects_missing_token() -> None:
+    with create_test_client() as client:
+        response = client.get("/api/v1/auth/me")
+
+    assert response.status_code == 401
 
 
 def test_login_rejects_wrong_password() -> None:

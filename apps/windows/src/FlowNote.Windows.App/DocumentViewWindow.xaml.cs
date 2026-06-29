@@ -179,6 +179,12 @@ public partial class DocumentViewWindow : Window
             return path;
         }
 
+        var localDataPath = FlowNoteLocalDatabase.ResolveLocalContentPath(path);
+        if (File.Exists(localDataPath))
+        {
+            return localDataPath;
+        }
+
         var runtimePath = Path.Combine(AppContext.BaseDirectory, path);
         if (File.Exists(runtimePath))
         {

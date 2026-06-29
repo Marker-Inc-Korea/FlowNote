@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     database_echo: bool = False
     storage_root: str = "./storage"
     session_cookie_name: str = "flownote_session"
+    access_token_secret: str = "flownote-local-dev-token-secret-change-before-operation"
+    access_token_expires_minutes: int = 480
 
 
 settings = Settings()

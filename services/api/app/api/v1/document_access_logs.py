@@ -9,10 +9,15 @@ from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.auth import get_current_user
 from app.db.models import Document, DocumentAccessLog, DocumentVersion, UserAccount
 from app.db.session import get_db_session
 
-router = APIRouter(prefix="/documents", tags=["document-access-logs"])
+router = APIRouter(
+    prefix="/documents",
+    tags=["document-access-logs"],
+    dependencies=[Depends(get_current_user)],
+)
 
 ACTIONS = {"view_started", "view_closed", "download_blocked", "auto_closed"}
 

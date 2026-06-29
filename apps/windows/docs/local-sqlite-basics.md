@@ -8,8 +8,8 @@ Windows WPF 클라이언트가 서버 연동 전에도 로그인, 폴더 관리,
 
 ## 기본 설정
 
-- DB 경로: 개발 실행 시 `apps/windows/src/FlowNote.Windows.App/Data/flownote.local.sqlite`, 배포 실행 시 앱 실행 폴더의 `Data\flownote.local.sqlite`
-- 소스 시드 DB: `apps/windows/src/FlowNote.Windows.App/Data/flownote.local.sqlite`
+- DB 경로: 개발 실행 시 저장소 루트의 `data/local/flownote.local.sqlite`, 배포 실행 시 앱 실행 폴더의 `Data\flownote.local.sqlite`
+- DB 위치 override: `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`
 - 기본 로그인 ID: `admin`
 - 기본 비밀번호: `1234`
 - 기본 역할: `system-admin`
@@ -59,7 +59,7 @@ Windows WPF 클라이언트가 서버 연동 전에도 로그인, 폴더 관리,
 - `DocumentViewWindow`는 로컬 FieldNote 저장 직후에만 서버 등록을 후보로 시도한다. `FLOWNOTE_API_BASE_URL`이 없으면 서버 전송을 건너뛰고, 전송 실패도 로컬 저장 성공을 되돌리지 않는다. 현재 단계에서는 자동 재시도 큐를 만들지 않고 화면 상태 문구만 남긴다.
 - 기존 DB의 `document_versions.comment` 데이터는 앱 초기화 시 `field_notes`로 백필한다.
 - 과거 호환용 `DocumentService.AddCommentVersion` 경로를 사용하면 `document_versions`에 새 버전을 추가하고 `documents.version_no`를 올린다. 이때 알림 수신자는 최초 작성자가 아니라 직전 버전 작성자이다. 예를 들어 v3 코멘트는 v2 작성자에게 알림을 보낸다.
-- 파일 업로드 버튼과 Drag & Drop은 선택한 파일을 `Data\Files\Uploads\yyyy-MM-dd\` 아래로 복사하고 SQLite에 문서와 원본 버전 `v1`을 즉시 저장한다.
+- 파일 업로드 버튼과 Drag & Drop은 선택한 파일을 공통 로컬 데이터 폴더의 `Files\Uploads\yyyy-MM-dd\` 아래로 복사하고 SQLite에 문서와 원본 버전 `v1`을 즉시 저장한다.
 - 업로드 원본 파일은 공개 저장소에 올리지 않지만, SQLite DB의 문서 메타데이터와 상대 경로 기록은 커밋 대상이다.
 - PDF 업로드 파일은 저장된 로컬 경로를 기준으로 WebView2 PDF 뷰어에서 원본 레이아웃을 표시한다.
 - Excel 업로드 파일은 저장된 로컬 경로를 기준으로 첫 번째 시트를 행/열 그리드로 표시한다.

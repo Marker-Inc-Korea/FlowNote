@@ -25,4 +25,16 @@ public sealed class FlowNoteServerAuthClient
 
         return await response.Content.ReadFromJsonAsync<ServerLoginResponse>(cancellationToken);
     }
+
+    public async Task<ServerCurrentUserResponse?> TryGetCurrentUserAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync("api/v1/auth/me", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadFromJsonAsync<ServerCurrentUserResponse>(cancellationToken);
+    }
 }
