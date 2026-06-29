@@ -23,6 +23,10 @@ class StoredFile:
     hash_sha256: str
 
 
+class UploadTooLargeError(ValueError):
+    pass
+
+
 def file_family_from_extension(extension: str, mime_type: str | None = None) -> str:
     normalized = extension.lower().lstrip(".")
     if normalized == "pdf":
@@ -69,10 +73,26 @@ async def store_upload_file(
     storage_root: Path,
     document_id: str,
     version_no: int,
+    max_size_bytes: int | None = None,
+) -> StoredFile:
+    return await store_upload_file_at(
+        upload,
+        storage_root=storage_root,
+        path_parts=("documents", document_id, f"v{version_no}"),
+        max_size_bytes=max_size_bytes,
+    )
+
+
+async def store_upload_file_at(
+    upload: UploadFile,
+    *,
+    storage_root: Path,
+    path_parts: tuple[str, ...],
+    max_size_bytes: int | None = None,
 ) -> StoredFile:
     original_filename = upload.filename or "upload.bin"
     stored_name = f"{uuid4().hex}_{safe_filename(original_filename)}"
-    storage_key = relative_storage_key("documents", document_id, f"v{version_no}", stored_name)
+    storage_key = relative_storage_key(*path_parts, stored_name)
     target_path = storage_root / Path(storage_key)
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -81,6 +101,11 @@ async def store_upload_file(
     with target_path.open("wb") as target:
         while chunk := await upload.read(1024 * 1024):
             size_bytes += len(chunk)
+            if max_size_bytes is not None and size_bytes > max_size_bytes:
+                await upload.close()
+                target.close()
+                target_path.unlink(missing_ok=True)
+                raise UploadTooLargeError("Uploaded file exceeds the configured size limit.")
             digest.update(chunk)
             target.write(chunk)
     await upload.close()
@@ -95,4 +120,3 @@ async def store_upload_file(
         size_bytes=size_bytes,
         hash_sha256=digest.hexdigest(),
     )
-

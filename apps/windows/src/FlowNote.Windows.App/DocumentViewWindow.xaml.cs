@@ -15,6 +15,7 @@ using FlowNote.Windows.Core.FieldNotes;
 using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
 using FlowNote.Windows.Core.Sync;
+using Microsoft.Win32;
 using UglyToad.PdfPig;
 
 namespace FlowNote.Windows.App;
@@ -28,6 +29,7 @@ public partial class DocumentViewWindow : Window
     private readonly ServerSyncService? serverSyncService;
     private readonly DocumentViewLogService? documentViewLogService;
     private readonly DispatcherTimer autoCloseTimer;
+    private readonly List<string> selectedAttachmentPaths = [];
     private readonly string actorName;
     private ExplorerDocument document;
     private long? documentViewLogId;
@@ -85,10 +87,13 @@ public partial class DocumentViewWindow : Window
         Loaded += DocumentViewWindow_Loaded;
         autoCloseTimer.Tick += AutoCloseTimer_Tick;
         SaveCommentButton.IsEnabled = fieldNoteService is not null && !string.IsNullOrWhiteSpace(document.DocumentId);
+        SelectAttachmentButton.IsEnabled = SaveCommentButton.IsEnabled;
+        ClearAttachmentButton.IsEnabled = false;
         StartDocumentViewLog();
         RefreshHeader();
         LoadPreview(document);
         RefreshCombinedComments();
+        RefreshAttachmentSummary();
     }
 
     public bool CommentSaved { get; private set; }
@@ -562,8 +567,14 @@ public partial class DocumentViewWindow : Window
         foreach (var note in notes)
         {
             var versionLabel = note.DocumentVersionNo is null ? "문서" : $"v{note.DocumentVersionNo}";
-            builder.AppendLine($"[{note.CreatedAt:yyyy-MM-dd HH:mm}] {note.AuthorName} / {versionLabel} / {note.InputMode}");
+            var attachments = fieldNoteService.ListAttachments(note.NoteId);
+            var attachmentText = attachments.Count == 0 ? string.Empty : $" / attachments:{attachments.Count}";
+            builder.AppendLine($"[{note.CreatedAt:yyyy-MM-dd HH:mm}] {note.AuthorName} / {versionLabel} / {note.InputMode}{attachmentText}");
             builder.AppendLine(note.RawContent);
+            foreach (var attachment in attachments)
+            {
+                builder.AppendLine($"- {attachment.OriginalFileName} ({attachment.SizeBytes:N0} bytes)");
+            }
             builder.AppendLine();
         }
 
@@ -585,6 +596,59 @@ public partial class DocumentViewWindow : Window
             : $"Server field note send queued. Local save is kept. {result.Message}";
     }
 
+    private async Task<string> TrySendAttachmentToServerAsync(FieldNoteAttachmentRecord attachment)
+    {
+        if (serverSyncService is null)
+        {
+            return "Server sync service is not configured. The field note attachment remains saved locally.";
+        }
+
+        var result = await serverSyncService.QueueAndTrySyncFieldNoteAttachmentAsync(
+            attachment,
+            serverDocumentClient);
+        return result.Success
+            ? "Server field note attachment send completed."
+            : $"Server field note attachment send queued. Local save is kept. {result.Message}";
+    }
+
+    private void SelectAttachmentButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Multiselect = true,
+            Filter = "Supported attachments|*.jpg;*.jpeg;*.png;*.gif;*.bmp;*.webp;*.pdf;*.txt;*.md|Images|*.jpg;*.jpeg;*.png;*.gif;*.bmp;*.webp|PDF files|*.pdf|Text files|*.txt;*.md|All files|*.*"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        foreach (var fileName in dialog.FileNames.Where(File.Exists))
+        {
+            if (!selectedAttachmentPaths.Contains(fileName, StringComparer.OrdinalIgnoreCase))
+            {
+                selectedAttachmentPaths.Add(fileName);
+            }
+        }
+
+        RefreshAttachmentSummary();
+    }
+
+    private void ClearAttachmentButton_Click(object sender, RoutedEventArgs e)
+    {
+        selectedAttachmentPaths.Clear();
+        RefreshAttachmentSummary();
+    }
+
+    private void RefreshAttachmentSummary()
+    {
+        ClearAttachmentButton.IsEnabled = selectedAttachmentPaths.Count > 0;
+        AttachmentSummaryTextBlock.Text = selectedAttachmentPaths.Count == 0
+            ? "No attachments"
+            : $"{selectedAttachmentPaths.Count} attachment(s): {string.Join(", ", selectedAttachmentPaths.Select(Path.GetFileName))}";
+    }
+
     private async void SaveCommentButton_Click(object sender, RoutedEventArgs e)
     {
         if (fieldNoteService is null || string.IsNullOrWhiteSpace(document.DocumentId))
@@ -602,6 +666,16 @@ public partial class DocumentViewWindow : Window
 
         var savedNote = fieldNoteService.AddDocumentNote(document.DocumentId, comment, actorName);
         var serverStatus = await TrySendFieldNoteToServerAsync(savedNote);
+        var attachmentStatuses = new List<string>();
+        foreach (var attachmentPath in selectedAttachmentPaths.ToList())
+        {
+            var attachment = fieldNoteService.AddAttachment(
+                savedNote.NoteId,
+                attachmentPath,
+                actorName);
+            attachmentStatuses.Add(await TrySendAttachmentToServerAsync(attachment));
+        }
+
         document = document with
         {
             UpdatedAt = savedNote.CreatedAt,
@@ -609,8 +683,13 @@ public partial class DocumentViewWindow : Window
         };
         CommentSaved = true;
         CommentTextBox.Clear();
+        selectedAttachmentPaths.Clear();
+        RefreshAttachmentSummary();
         RefreshHeader();
-        MetaTextBlock.Text = $"{MetaTextBlock.Text} | {serverStatus}";
+        var attachmentStatus = attachmentStatuses.Count == 0
+            ? string.Empty
+            : $" | attachments={attachmentStatuses.Count}";
+        MetaTextBlock.Text = $"{MetaTextBlock.Text} | {serverStatus}{attachmentStatus}";
         RefreshCombinedComments();
         LoadPreview(document);
         MessageBox.Show("현장 코멘트를 문서 아래에 저장했습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
