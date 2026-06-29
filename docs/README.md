@@ -2,7 +2,7 @@
 
 이 폴더는 FlowNote의 제품 방향, 도메인 관계, 데이터 모델, API, 설계 결정을 관리한다.
 
-현재 코드 기준으로 실제 구현된 범위는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite 로그인/문서/FieldNote/문서 접근 로그 MVP API이다. FastAPI 문서/FieldNote/문서 접근 로그 API에는 Bearer access token 인증이 적용되어 있다. 역할 기반 권한 검사, 다운로드 제어, 파일 감시, 보고서, AI, MES/ERP, 배포 운영 항목은 제품 목표 또는 초안일 수 있으므로 현재 구현 완료 기능과 구분해서 읽는다.
+현재 코드 기준으로 실제 구현된 범위는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite 로그인/문서/FieldNote/FieldNote 첨부/문서 접근 로그/작업순서판 MVP API이다. FastAPI 문서, 태그, FieldNote, 문서 접근 로그, 작업순서판 API에는 Bearer access token 인증이 적용되어 있고, 문서 쓰기와 접근 로그 조회에는 role 기반 권한 검사가 적용되어 있다. 다운로드 제어, 운영용 파일 감시, 보고서, AI, MES/ERP, 배포 운영 항목은 제품 목표 또는 초안일 수 있으므로 현재 구현 완료 기능과 구분해서 읽는다.
 
 ## 읽는 순서
 
@@ -18,6 +18,8 @@
 10. [2026-06-26 현재 작업 종합 정리](./daily/2026-06-26-current-work-summary.md)
 
 ## 날짜별 작업 기록
+
+아래 문서는 당시 작업과 검증을 남긴 기록이다. 최신 구현 기준은 이 폴더의 핵심 문서와 루트 [README](../README.md)를 우선한다.
 
 - [2026-06-23 작업 기록](./daily/2026-06-23.md)
 - [2026-06-23 작업 결과 요약](./daily/2026-06-23-work-result.md)
@@ -72,11 +74,14 @@ FieldNote
   -> CommentTemplate
   -> Report
 
+WorkSequenceBoard
+  -> WorkSequenceItem
+  -> WorkSequenceChangeHistory
+  -> WorkSequenceNotificationCandidate
+
 WorkRecord
   -> WorkRecordVersion
-  -> WorkRecordParticipant
   -> WorkInstruction Document
-  -> WorkSequenceBoard / WorkSequenceItem
   -> AI Advice
 
 SearchIndexItem

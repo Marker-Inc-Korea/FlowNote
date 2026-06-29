@@ -21,8 +21,11 @@
 | POST | `/api/v1/documents/{documentId}/versions` | 새 파일 버전과 변경 사유 등록 |
 | PATCH | `/api/v1/documents/{documentId}/versions/{versionId}/status` | 문서 버전 상태 전환 |
 | POST | `/api/v1/documents/{documentId}/versions/{versionId}/publish` | 특정 버전을 현장 공개 버전으로 지정 |
+| PUT | `/api/v1/documents/{documentId}/tags` | 문서 태그 전체 교체 |
 | POST | `/api/v1/documents/{documentId}/access-logs` | 문서 열람/닫힘 등 접근 로그 등록 |
 | GET | `/api/v1/documents/{documentId}/access-logs` | 문서 접근 로그 조회 |
+| GET | `/api/v1/tags` | 태그 사전 조회 |
+| POST | `/api/v1/tags` | 태그 등록 |
 | POST | `/api/v1/field-notes` | 현장 코멘트 원천 이력 등록 |
 | GET | `/api/v1/field-notes` | 현장 코멘트 목록 조회. `documentId`, `status`, `limit` 필터 지원 |
 | GET | `/api/v1/field-notes/{noteId}` | 현장 코멘트 상세 조회 |
@@ -564,7 +567,7 @@ multipart/form-data
 | GET | `/work-sequence-boards` | 작업순서판 목록 조회 |
 | GET | `/work-sequence-boards/{boardId}` | 작업순서판 상세 조회 |
 | POST | `/work-sequence-boards/{boardId}/items` | 작업순서 항목 추가 |
-| PATCH | `/work-sequence-boards/{boardId}/items/{sequenceItemId}` | 작업순서 항목 수정 |
+| PATCH | `/work-sequence-boards/{boardId}/items/{sequenceItemId}` | 작업순서 항목 메타데이터 수정. 후속 후보 |
 | PUT | `/work-sequence-boards/{boardId}/items/order` | 작업순서 재정렬 |
 | PATCH | `/work-sequence-boards/{boardId}/items/{itemId}/status` | 작업순서 상태 변경 |
 | GET | `/work-sequence-boards/{boardId}/history` | 작업순서 변경 이력 조회 |

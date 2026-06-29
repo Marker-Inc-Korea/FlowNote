@@ -57,6 +57,8 @@ FlowNote의 배포 보안 원칙은 사내 서버형 운영이다. 문서와 파
 | 문서 버전 등록 `POST /api/v1/documents/{documentId}/versions` | 관리자 그룹, `line-foreman`, `team-lead` 이상 | `403` |
 | 문서 태그 변경 `PUT /api/v1/documents/{documentId}/tags` 및 태그 등록 `POST /api/v1/tags` | 관리자 그룹, `line-foreman`, `team-lead` 이상 | `403` |
 | FieldNote 등록 `POST /api/v1/field-notes` | 인증된 관리자/반장/조장/조원 계정 | `401` 또는 미지원 role `403` |
+| FieldNote 첨부 등록 `POST /api/v1/field-notes/{noteId}/attachments` | 인증 사용자. 현재 구현은 별도 role 제한 없이 인증을 요구 | `401` |
+| 작업순서판 생성/항목 추가/정렬/상태 변경 | 관리자 그룹, `line-foreman`, `team-lead` 이상 | `403` |
 | 접근 로그 조회 `GET /api/v1/documents/{documentId}/access-logs` | `admin`, `system-admin` | `403` |
 
 ## 3. 문서 열람 보안
