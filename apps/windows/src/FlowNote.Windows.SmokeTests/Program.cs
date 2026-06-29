@@ -459,11 +459,31 @@ try
         uploadedDocument.DocumentId,
         $"Offline queued field note before server reconnect {runId}.",
         smokeActorName);
+    var fieldNoteAttachmentFile = Path.Combine(testDirectory, $"field-note-attachment-{runId}.txt");
+    File.WriteAllText(fieldNoteAttachmentFile, $"FieldNote attachment smoke test {runId}.");
+    var offlineQueuedFieldNoteAttachment = services.FieldNotes.AddAttachment(
+        offlineQueuedFieldNote.NoteId,
+        fieldNoteAttachmentFile,
+        smokeActorName,
+        "Smoke test FieldNote attachment");
+    Require(
+        services.FieldNotes.ListAttachments(offlineQueuedFieldNote.NoteId).Any(item =>
+            item.AttachmentId == offlineQueuedFieldNoteAttachment.AttachmentId &&
+            item.OriginalFileName == Path.GetFileName(fieldNoteAttachmentFile) &&
+            item.SizeBytes == new FileInfo(fieldNoteAttachmentFile).Length),
+        "field note attachment should be saved locally with file metadata");
     var offlineFieldNoteSyncResult = await services.ServerSync.QueueAndTrySyncFieldNoteAsync(offlineQueuedFieldNote, null);
     Require(!offlineFieldNoteSyncResult.Success, "missing server URL should keep field note sync queued locally");
     Require(
         services.ServerSync.CountQueuedForEntity("field_note", offlineQueuedFieldNote.NoteId, "FAILED") == 1,
         "missing server URL should create a failed field note sync queue row");
+    var offlineFieldNoteAttachmentSyncResult = await services.ServerSync.QueueAndTrySyncFieldNoteAttachmentAsync(
+        offlineQueuedFieldNoteAttachment,
+        null);
+    Require(!offlineFieldNoteAttachmentSyncResult.Success, "missing server URL should keep field note attachment sync queued locally");
+    Require(
+        services.ServerSync.CountQueuedForEntity("field_note_attachment", offlineQueuedFieldNoteAttachment.AttachmentId, "FAILED") == 1,
+        "missing server URL should create a failed field note attachment sync queue row");
 
     var offlineAccessLogId = services.DocumentViewLogs.StartDocumentView(
         uploadedDocument.DocumentId,
@@ -654,6 +674,17 @@ try
                     ("$note_id", offlineQueuedFieldNote.NoteId)) is { Length: > 0 },
                 "queued field note retry should store the server note id");
             Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT server_attachment_id
+                    FROM field_note_attachments
+                    WHERE attachment_id = $attachment_id
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId)) is { Length: > 0 },
+                "queued field note attachment retry should store the server attachment id");
+            Require(
                 ScalarLong(
                     syncConnection,
                     """
@@ -672,13 +703,14 @@ try
                     """
                     SELECT COUNT(*)
                     FROM server_sync_queue
-                    WHERE entity_id IN ($document_id, $note_id, $log_id)
+                    WHERE entity_id IN ($document_id, $note_id, $attachment_id, $log_id)
                       AND status = 'SYNCED';
                     """,
                     ("$document_id", uploadedDocument.DocumentId),
                     ("$note_id", offlineQueuedFieldNote.NoteId),
-                    ("$log_id", offlineAccessLogId.ToString())) == 4,
-                "queued retry should mark document, field note, and access log queue rows as synced");
+                    ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
+                    ("$log_id", offlineAccessLogId.ToString())) == 5,
+                "queued retry should mark document, field note attachment, field note, and access log queue rows as synced");
 
             var duplicateQueueCountBefore = ScalarLong(
                 syncConnection,
@@ -739,6 +771,26 @@ try
                 serverFieldNote.RawContent == "Program test field note stored separately from document versions.",
                 "server field note should preserve raw content");
             Require(serverFieldNote.Status == "NEW", "server field note should start in NEW status");
+            var serverFieldNoteAttachment = await serverDocuments.RegisterFieldNoteAttachmentAsync(
+                serverFieldNote.NoteId,
+                fieldNoteAttachmentFile,
+                caption: "Windows smoke FieldNote attachment",
+                createdBy: serverLogin.UserId);
+            Require(!string.IsNullOrWhiteSpace(serverFieldNoteAttachment.AttachmentId), "server field note attachment should receive an id");
+            Require(serverFieldNoteAttachment.NoteId == serverFieldNote.NoteId, "server field note attachment should reference the note");
+            Require(
+                serverFieldNoteAttachment.File.OriginalFilename == Path.GetFileName(fieldNoteAttachmentFile),
+                "server field note attachment should preserve the original filename");
+            Require(
+                serverFieldNoteAttachment.File.SizeBytes == new FileInfo(fieldNoteAttachmentFile).Length,
+                "server field note attachment should preserve the file size");
+            Require(
+                !string.IsNullOrWhiteSpace(serverFieldNoteAttachment.File.HashSha256),
+                "server field note attachment should store a file hash");
+            var serverFieldNoteAttachments = await serverDocuments.ListFieldNoteAttachmentsAsync(serverFieldNote.NoteId);
+            Require(
+                serverFieldNoteAttachments.Any(item => item.AttachmentId == serverFieldNoteAttachment.AttachmentId),
+                "server field note attachment list should include the uploaded attachment");
         }
 
         {

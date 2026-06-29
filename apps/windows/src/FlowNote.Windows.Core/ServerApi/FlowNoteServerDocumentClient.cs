@@ -134,6 +134,46 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerFieldNoteResponse>(response, cancellationToken);
     }
 
+    public async Task<ServerFieldNoteAttachmentResponse> RegisterFieldNoteAttachmentAsync(
+        string noteId,
+        string filePath,
+        string? attachmentType = null,
+        string? caption = null,
+        DateTime? capturedAt = null,
+        string? createdBy = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var form = new MultipartFormDataContent();
+        AddString(form, "attachmentType", attachmentType);
+        AddString(form, "caption", caption);
+        AddString(form, "capturedAt", capturedAt?.ToString("O"));
+        AddString(form, "createdBy", createdBy);
+
+        await using var stream = File.OpenRead(filePath);
+        using var fileContent = new StreamContent(stream);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        form.Add(fileContent, "file", Path.GetFileName(filePath));
+
+        using var response = await httpClient.PostAsync(
+            $"api/v1/field-notes/{noteId}/attachments",
+            form,
+            cancellationToken);
+        return await ReadJsonResponse<ServerFieldNoteAttachmentResponse>(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ServerFieldNoteAttachmentResponse>> ListFieldNoteAttachmentsAsync(
+        string noteId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/field-notes/{noteId}/attachments",
+            cancellationToken);
+        var attachments = await ReadJsonResponse<List<ServerFieldNoteAttachmentResponse>>(
+            response,
+            cancellationToken);
+        return attachments;
+    }
+
     public async Task<ServerDocumentAccessLogResponse> RegisterAccessLogAsync(
         string documentId,
         ServerDocumentAccessLogCreateRequest request,
