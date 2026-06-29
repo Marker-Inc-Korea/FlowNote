@@ -1,24 +1,28 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel, Field
-from sqlalchemy import delete, desc, select
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import case, delete, desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.auth import DocumentWriteUser, get_current_user
 from app.core.config import Settings, get_settings
 from app.core.storage import resolve_storage_root, store_upload_file
-from app.db.models import Document, DocumentTag, DocumentVersion, FileObject
+from app.db.models import ActivityHistory, Document, DocumentTag, DocumentVersion, FileObject
 from app.db.models import TagDefinition, UserAccount
 from app.db.session import get_db_session
 
 router = APIRouter(prefix="/documents", tags=["documents"], dependencies=[Depends(get_current_user)])
+
+DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "PUBLISHED", "ARCHIVED"}
+CREATABLE_DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "ARCHIVED"}
+VERSION_STATUSES = {"WORKING", "IN_REVIEW", "APPROVED", "PUBLISHED", "ARCHIVED"}
 
 
 class FileObjectResponse(BaseModel):
@@ -60,6 +64,7 @@ class DocumentResponse(BaseModel):
     updated_at: datetime
     tags: list[str] = Field(default_factory=list)
     latest_version: DocumentVersionResponse | None = None
+    published_version: DocumentVersionResponse | None = None
 
 
 class DocumentListItem(BaseModel):
@@ -70,8 +75,31 @@ class DocumentListItem(BaseModel):
     latest_version_id: str | None
     latest_version_no: int | None = None
     latest_filename: str | None = None
+    published_version_id: str | None = None
+    published_version_no: int | None = None
+    published_filename: str | None = None
     tags: list[str] = Field(default_factory=list)
     updated_at: datetime
+
+
+class DocumentStatusUpdateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    status: str = Field(min_length=1)
+    change_reason: str | None = Field(default=None, alias="changeReason")
+
+
+class DocumentVersionStatusUpdateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    status: str = Field(min_length=1)
+    change_reason: str | None = Field(default=None, alias="changeReason")
+
+
+class DocumentVersionPublishRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    change_reason: str | None = Field(default=None, alias="changeReason")
 
 
 def _new_public_id(prefix: str) -> str:
@@ -84,6 +112,23 @@ def _validate_change_reason(change_reason: str) -> str:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="changeReason is required.",
+        )
+    return cleaned
+
+
+def _clean_change_reason(change_reason: str | None) -> str | None:
+    if change_reason is None:
+        return None
+    cleaned = change_reason.strip()
+    return cleaned or None
+
+
+def _validate_status(value: str, allowed: set[str], field_name: str = "status") -> str:
+    cleaned = value.strip().upper()
+    if cleaned not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{field_name} has an unsupported value.",
         )
     return cleaned
 
@@ -170,6 +215,35 @@ def _validate_user_id(session: Session, user_id: str | None, field_name: str) ->
     return user_id
 
 
+def _record_activity(
+    session: Session,
+    *,
+    event_type: str,
+    actor_id: str | None,
+    target_type: str,
+    target_id: str | None,
+    target_title: str | None,
+    message: str,
+    before_value: str | None = None,
+    after_value: str | None = None,
+    change_reason: str | None = None,
+) -> None:
+    session.add(
+        ActivityHistory(
+            history_id=_new_public_id("hist"),
+            event_type=event_type,
+            actor_id=actor_id,
+            target_type=target_type,
+            target_id=target_id,
+            target_title=target_title,
+            message=message,
+            before_value=before_value,
+            after_value=after_value,
+            change_reason=change_reason,
+        )
+    )
+
+
 def _delete_stored_file(storage_root: Path, storage_key: str) -> None:
     target_path = (storage_root / Path(storage_key)).resolve()
     try:
@@ -223,9 +297,29 @@ def _latest_version_for_document(
     return row[0], row[1]
 
 
+def _published_version_for_document(
+    session: Session,
+    document_id: str,
+) -> tuple[DocumentVersion, FileObject] | None:
+    row = session.execute(
+        select(DocumentVersion, FileObject)
+        .join(FileObject, DocumentVersion.file_object_id == FileObject.id)
+        .where(
+            DocumentVersion.document_id == document_id,
+            DocumentVersion.is_published.is_(True),
+            DocumentVersion.version_status == "PUBLISHED",
+        )
+    ).first()
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
 def _document_response(session: Session, document: Document) -> DocumentResponse:
     latest = _latest_version_for_document(session, document.document_id)
     latest_response = _version_response(*latest) if latest is not None else None
+    published = _published_version_for_document(session, document.document_id)
+    published_response = _version_response(*published) if published is not None else None
     tags = _tag_response(session, document.document_id)
     return DocumentResponse(
         document_id=document.document_id,
@@ -241,6 +335,7 @@ def _document_response(session: Session, document: Document) -> DocumentResponse
         updated_at=document.updated_at,
         tags=tags,
         latest_version=latest_response,
+        published_version=published_response,
     )
 
 
@@ -282,7 +377,7 @@ async def create_document(
     version_label: Annotated[str | None, Form(alias="versionLabel")] = None,
     document_status: Annotated[
         str,
-        Form(alias="status", pattern="^(WORKING|IN_REVIEW|PUBLISHED|ARCHIVED)$"),
+        Form(alias="status", pattern="^(WORKING|IN_REVIEW|ARCHIVED)$"),
     ] = "WORKING",
     tags: Annotated[list[str] | None, Form()] = None,
     created_by: Annotated[str | None, Form(alias="createdBy")] = None,
@@ -290,6 +385,11 @@ async def create_document(
     session: Annotated[Session, Depends(get_db_session)] = None,
 ) -> DocumentResponse:
     change_reason = _validate_change_reason(change_reason)
+    document_status = _validate_status(
+        document_status,
+        CREATABLE_DOCUMENT_STATUSES,
+        "status",
+    )
     cleaned_tags = _clean_tags(tags)
     owner_id = _validate_user_id(session, _clean_optional(owner_id), "ownerId")
     created_by = _validate_user_id(session, _clean_optional(created_by), "createdBy")
@@ -316,7 +416,7 @@ async def create_document(
         category_id=_clean_optional(category_id),
         status=document_status,
         latest_version_id=version_id,
-        published_version_id=version_id if document_status == "PUBLISHED" else None,
+        published_version_id=None,
     )
     version = DocumentVersion(
         version_id=version_id,
@@ -325,10 +425,10 @@ async def create_document(
         version_no=version_no,
         version_label=version_label.strip() if version_label else "v1",
         change_reason=change_reason,
-        version_status="PUBLISHED" if document_status == "PUBLISHED" else "WORKING",
+        version_status="WORKING",
         is_latest=True,
-        is_published=document_status == "PUBLISHED",
-        published_at=datetime.utcnow() if document_status == "PUBLISHED" else None,
+        is_published=False,
+        published_at=None,
         created_by=created_by or owner_id,
     )
     session.add(document)
@@ -360,6 +460,9 @@ def list_documents(
     ).all()
     items: list[DocumentListItem] = []
     for document, version, file_object in rows:
+        published = _published_version_for_document(session, document.document_id)
+        published_version = published[0] if published is not None else None
+        published_file = published[1] if published is not None else None
         items.append(
             DocumentListItem(
                 document_id=document.document_id,
@@ -369,6 +472,46 @@ def list_documents(
                 latest_version_id=document.latest_version_id,
                 latest_version_no=version.version_no,
                 latest_filename=file_object.original_filename,
+                published_version_id=document.published_version_id,
+                published_version_no=published_version.version_no if published_version else None,
+                published_filename=published_file.original_filename if published_file else None,
+                tags=_tag_response(session, document.document_id),
+                updated_at=document.updated_at,
+            )
+        )
+    return items
+
+
+@router.get("/published", response_model=list[DocumentListItem])
+def list_published_documents(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> list[DocumentListItem]:
+    rows = session.execute(
+        select(Document, DocumentVersion, FileObject)
+        .join(DocumentVersion, Document.published_version_id == DocumentVersion.version_id)
+        .join(FileObject, DocumentVersion.file_object_id == FileObject.id)
+        .where(
+            Document.deleted_at.is_(None),
+            Document.status == "PUBLISHED",
+            DocumentVersion.is_published.is_(True),
+            DocumentVersion.version_status == "PUBLISHED",
+        )
+        .order_by(desc(Document.updated_at), desc(Document.id))
+    ).all()
+    items: list[DocumentListItem] = []
+    for document, version, file_object in rows:
+        items.append(
+            DocumentListItem(
+                document_id=document.document_id,
+                title=document.title,
+                document_type=document.document_type,
+                status=document.status,
+                latest_version_id=document.latest_version_id,
+                latest_version_no=None,
+                latest_filename=None,
+                published_version_id=document.published_version_id,
+                published_version_no=version.version_no,
+                published_filename=file_object.original_filename,
                 tags=_tag_response(session, document.document_id),
                 updated_at=document.updated_at,
             )
@@ -387,6 +530,26 @@ def get_document(
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
     return _document_response(session, document)
+
+
+@router.get("/{document_id}/published", response_model=DocumentVersionResponse)
+def get_published_document_version(
+    document_id: str,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> DocumentVersionResponse:
+    document = session.scalar(
+        select(Document).where(Document.document_id == document_id, Document.deleted_at.is_(None))
+    )
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+
+    published = _published_version_for_document(session, document_id)
+    if document.status != "PUBLISHED" or published is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Published document version not found.",
+        )
+    return _version_response(*published)
 
 
 @router.put("/{document_id}/tags", response_model=DocumentResponse)
@@ -408,12 +571,53 @@ def replace_document_tags(
     return _document_response(session, document)
 
 
+@router.patch("/{document_id}/status", response_model=DocumentResponse)
+def update_document_status(
+    document_id: str,
+    payload: DocumentStatusUpdateRequest,
+    current_user: DocumentWriteUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> DocumentResponse:
+    target_status = _validate_status(payload.status, DOCUMENT_STATUSES)
+    document = session.scalar(
+        select(Document).where(Document.document_id == document_id, Document.deleted_at.is_(None))
+    )
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+
+    before = document.status
+    if before != target_status:
+        if target_status == "PUBLISHED" and document.published_version_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Document cannot be set to PUBLISHED without a published version.",
+            )
+        document.status = target_status
+        _record_activity(
+            session,
+            event_type="document.status_changed",
+            actor_id=current_user.user_id,
+            target_type="document",
+            target_id=document.document_id,
+            target_title=document.title,
+            message=f"Document status changed from {before} to {target_status}.",
+            before_value=before,
+            after_value=target_status,
+            change_reason=_clean_change_reason(payload.change_reason),
+        )
+    session.commit()
+    session.refresh(document)
+    return _document_response(session, document)
+
+
 @router.get("/{document_id}/versions", response_model=list[DocumentVersionResponse])
 def list_document_versions(
     document_id: str,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> list[DocumentVersionResponse]:
-    document_exists = session.scalar(select(Document.id).where(Document.document_id == document_id))
+    document_exists = session.scalar(
+        select(Document.id).where(Document.document_id == document_id, Document.deleted_at.is_(None))
+    )
     if document_exists is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
 
@@ -424,6 +628,137 @@ def list_document_versions(
         .order_by(desc(DocumentVersion.version_no))
     ).all()
     return [_version_response(version, file_object) for version, file_object in rows]
+
+
+@router.patch("/{document_id}/versions/{version_id}/status", response_model=DocumentVersionResponse)
+def update_document_version_status(
+    document_id: str,
+    version_id: str,
+    payload: DocumentVersionStatusUpdateRequest,
+    current_user: DocumentWriteUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> DocumentVersionResponse:
+    target_status = _validate_status(payload.status, VERSION_STATUSES)
+    row = session.execute(
+        select(Document, DocumentVersion, FileObject)
+        .join(DocumentVersion, Document.document_id == DocumentVersion.document_id)
+        .join(FileObject, DocumentVersion.file_object_id == FileObject.id)
+        .where(
+            Document.document_id == document_id,
+            Document.deleted_at.is_(None),
+            DocumentVersion.version_id == version_id,
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document version not found.")
+
+    document, version, file_object = row
+    if target_status == "PUBLISHED":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Use the publish endpoint to publish a document version.",
+        )
+
+    before = version.version_status
+    if version.is_published and target_status != "PUBLISHED":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Published versions must be changed through the publish endpoint.",
+        )
+    if before != target_status:
+        version.version_status = target_status
+        _record_activity(
+            session,
+            event_type="document.version_status_changed",
+            actor_id=current_user.user_id,
+            target_type="document_version",
+            target_id=version.version_id,
+            target_title=document.title,
+            message=(
+                f"Document version v{version.version_no} status changed "
+                f"from {before} to {target_status}."
+            ),
+            before_value=before,
+            after_value=target_status,
+            change_reason=_clean_change_reason(payload.change_reason),
+        )
+    session.commit()
+    session.refresh(version)
+    return _version_response(version, file_object)
+
+
+@router.post("/{document_id}/versions/{version_id}/publish", response_model=DocumentResponse)
+def publish_document_version(
+    document_id: str,
+    version_id: str,
+    payload: DocumentVersionPublishRequest,
+    current_user: DocumentWriteUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> DocumentResponse:
+    row = session.execute(
+        select(Document, DocumentVersion)
+        .join(DocumentVersion, Document.document_id == DocumentVersion.document_id)
+        .where(
+            Document.document_id == document_id,
+            Document.deleted_at.is_(None),
+            DocumentVersion.version_id == version_id,
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document version not found.")
+
+    document, version = row
+    previous_document_status = document.status
+    previous_published_version_id = document.published_version_id
+    now = datetime.now(timezone.utc)
+
+    session.query(DocumentVersion).filter(
+        DocumentVersion.document_id == document_id,
+        DocumentVersion.is_published.is_(True),
+    ).update(
+        {
+            "is_published": False,
+            "published_at": None,
+            "version_status": "SUPERSEDED",
+        },
+        synchronize_session=False,
+    )
+
+    version.is_published = True
+    version.version_status = "PUBLISHED"
+    version.published_at = now
+    document.published_version_id = version.version_id
+    document.status = "PUBLISHED"
+
+    _record_activity(
+        session,
+        event_type="document.version_published",
+        actor_id=current_user.user_id,
+        target_type="document_version",
+        target_id=version.version_id,
+        target_title=document.title,
+        message=f"Document version v{version.version_no} was published.",
+        before_value=previous_published_version_id,
+        after_value=version.version_id,
+        change_reason=_clean_change_reason(payload.change_reason),
+    )
+    if previous_document_status != "PUBLISHED":
+        _record_activity(
+            session,
+            event_type="document.status_changed",
+            actor_id=current_user.user_id,
+            target_type="document",
+            target_id=document.document_id,
+            target_title=document.title,
+            message=f"Document status changed from {previous_document_status} to PUBLISHED.",
+            before_value=previous_document_status,
+            after_value="PUBLISHED",
+            change_reason=_clean_change_reason(payload.change_reason),
+        )
+
+    session.commit()
+    session.refresh(document)
+    return _document_response(session, document)
 
 
 @router.post(
@@ -470,7 +805,16 @@ async def create_document_version(
     session.query(DocumentVersion).filter(
         DocumentVersion.document_id == document_id,
         DocumentVersion.is_latest.is_(True),
-    ).update({"is_latest": False, "version_status": "SUPERSEDED"})
+    ).update(
+        {
+            "is_latest": False,
+            "version_status": case(
+                (DocumentVersion.is_published.is_(True), "PUBLISHED"),
+                else_="SUPERSEDED",
+            ),
+        },
+        synchronize_session=False,
+    )
 
     version = DocumentVersion(
         version_id=version_id,

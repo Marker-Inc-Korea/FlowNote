@@ -60,6 +60,27 @@
                             Margin="0,0,8,0"
                             Content="문서 등록"
                             Click="RegisterDocumentButton_Click" />
+                    <ComboBox x:Name="DocumentStatusComboBox"
+                              Width="116"
+                              Height="34"
+                              Margin="0,0,8,0"
+                              SelectedIndex="0">
+                        <ComboBoxItem Content="WORKING" />
+                        <ComboBoxItem Content="IN_REVIEW" />
+                        <ComboBoxItem Content="ARCHIVED" />
+                    </ComboBox>
+                    <Button x:Name="ApplyDocumentStatusButton"
+                            Width="92"
+                            Height="34"
+                            Margin="0,0,8,0"
+                            Content="Status"
+                            Click="ApplyDocumentStatusButton_Click" />
+                    <Button x:Name="PublishDocumentButton"
+                            Width="92"
+                            Height="34"
+                            Margin="0,0,8,0"
+                            Content="Publish"
+                            Click="PublishDocumentButton_Click" />
                     <Button x:Name="UploadFileButton"
                             Width="104"
                             Height="34"
@@ -208,7 +229,8 @@
                         BorderBrush="{StaticResource PanelBorderBrush}"
                         BorderThickness="1"
                         CornerRadius="4">
-                    <DataGrid ItemsSource="{Binding Documents}"
+                    <DataGrid x:Name="DocumentGrid"
+                              ItemsSource="{Binding Documents}"
                               MouseDoubleClick="DocumentGrid_MouseDoubleClick"
                               AutoGenerateColumns="False"
                               CanUserAddRows="False"
@@ -225,6 +247,7 @@
                             <DataGridTextColumn Header="유형" Binding="{Binding DocumentType}" Width="80" />
                             <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="110" />
                             <DataGridTextColumn Header="버전" Binding="{Binding VersionLabel}" Width="76" />
+                            <DataGridTextColumn Header="공개" Binding="{Binding PublishedVersionLabel}" Width="76" />
                             <DataGridTextColumn Header="사용자" Binding="{Binding UpdatedBy}" Width="130" />
                             <DataGridTextColumn Header="생성시간" Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="152" />
                         </DataGrid.Columns>

@@ -12,4 +12,8 @@ public sealed record ExplorerDocument(
     string? LocalPath,
     string? LatestComment,
     string TagText = "",
-    int VersionNo = 1);
+    int VersionNo = 1,
+    int? PublishedVersionNo = null)
+{
+    public string PublishedVersionLabel => PublishedVersionNo is null ? string.Empty : $"v{PublishedVersionNo}";
+}

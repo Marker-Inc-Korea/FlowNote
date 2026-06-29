@@ -196,6 +196,28 @@ try
     Require(versions.Count == 2, "document should have original version and comment version");
     Require(versions[0].VersionNo == 2, "latest version should be first");
     Require(versions[0].Comment == "Program test comment for version history.", "version should store the comment");
+    Require(versions[0].VersionStatus == "WORKING", "new local document version should start as WORKING");
+    Require(!versions[0].IsPublished, "new local document version should not be published automatically");
+    Require(commentedDocument.PublishedVersionNo is null, "new local document version should not set the published version");
+
+    var publishedLocalDocument = services.Documents.PublishVersion(
+        document.DocumentId,
+        commentedDocument.VersionNo,
+        smokeActorName);
+    Require(publishedLocalDocument.Status == "PUBLISHED", "publishing a local version should set the document status to PUBLISHED");
+    Require(
+        publishedLocalDocument.PublishedVersionNo == commentedDocument.VersionNo,
+        "publishing a local version should set the published version number");
+    var publishedLocalVersions = services.Documents.ListVersions(document.DocumentId);
+    Require(
+        publishedLocalVersions.Any(item => item.VersionNo == commentedDocument.VersionNo && item.IsPublished && item.VersionStatus == "PUBLISHED"),
+        "local version list should distinguish the published version");
+    Require(
+        services.Documents.ListDocuments(currentDocumentFolder.Id).Any(item =>
+            item.DocumentId == document.DocumentId &&
+            item.VersionNo == commentedDocument.VersionNo &&
+            item.PublishedVersionNo == commentedDocument.VersionNo),
+        "local document list should show both latest and published versions");
 
     var earlyHistory = services.History.ListHistory();
     Require(
@@ -227,6 +249,12 @@ try
             item.ActorName == smokeActorName &&
             item.TargetId == document.DocumentId),
         "history should record who added a document version");
+    Require(
+        earlyHistory.Any(item =>
+            item.EventType == "document.version_published" &&
+            item.ActorName == smokeActorName &&
+            item.TargetId == document.DocumentId),
+        "history should record who published a document version");
 
     var notificationAuthor1 = $"작성자1-{runId}";
     var notificationAuthor2 = $"작성자2-{runId}";
@@ -748,6 +776,43 @@ try
             Require(
                 serverAccessLogs.Any(item => item.LogId == closedAccessLog.LogId),
                 "server document access log list should include the view close log");
+        }
+
+        {
+            var secondServerVersion = await serverDocuments.RegisterVersionAsync(
+                serverDocument.DocumentId,
+                sampleFile,
+                "Windows smoke test registered a working v2 before publish.",
+                versionLabel: "v2",
+                createdBy: serverLogin.UserId);
+            Require(secondServerVersion.VersionNo == 2, "server document v2 should receive version number 2");
+            Require(secondServerVersion.VersionStatus == "WORKING", "server document v2 should start as WORKING");
+            Require(!secondServerVersion.IsPublished, "server document v2 should not publish automatically");
+
+            var publishedServerDocument = await serverDocuments.PublishVersionAsync(
+                serverDocument.DocumentId,
+                secondServerVersion.VersionId,
+                "Windows smoke test publishes v2 after review.");
+            Require(publishedServerDocument.Status == "PUBLISHED", "server publish should set document status to PUBLISHED");
+            Require(
+                publishedServerDocument.LatestVersion?.VersionId == secondServerVersion.VersionId,
+                "server publish should keep v2 as latest");
+            Require(
+                publishedServerDocument.PublishedVersion?.VersionId == secondServerVersion.VersionId,
+                "server publish should set v2 as the published version");
+
+            var publishedServerVersion = await serverDocuments.GetPublishedVersionAsync(serverDocument.DocumentId);
+            Require(
+                publishedServerVersion.VersionId == secondServerVersion.VersionId,
+                "server public document lookup should return the published v2");
+
+            var refreshedServerList = await serverDocuments.ListDocumentsAsync();
+            Require(
+                refreshedServerList.Any(item =>
+                    item.DocumentId == serverDocument.DocumentId &&
+                    item.LatestVersionNo == 2 &&
+                    item.PublishedVersionNo == 2),
+                "server document list should distinguish latest and published version numbers after publish");
         }
     }
 

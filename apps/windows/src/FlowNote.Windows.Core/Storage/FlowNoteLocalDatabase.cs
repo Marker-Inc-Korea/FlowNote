@@ -283,6 +283,7 @@ public sealed class FlowNoteLocalDatabase
                 updated_at TEXT NOT NULL,
                 local_path TEXT NULL,
                 version_no INTEGER NOT NULL DEFAULT 1,
+                published_version_no INTEGER NULL,
                 latest_comment TEXT NULL
             );
 
@@ -293,6 +294,10 @@ public sealed class FlowNoteLocalDatabase
                 file_name TEXT NOT NULL,
                 local_path TEXT NULL,
                 comment TEXT NULL,
+                version_status TEXT NOT NULL DEFAULT 'WORKING',
+                is_latest INTEGER NOT NULL DEFAULT 0,
+                is_published INTEGER NOT NULL DEFAULT 0,
+                published_at TEXT NULL,
                 created_by TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
@@ -434,10 +439,15 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "documents", "updated_at", "TEXT NULL");
         EnsureColumn(connection, "documents", "local_path", "TEXT NULL");
         EnsureColumn(connection, "documents", "version_no", "INTEGER NOT NULL DEFAULT 1");
+        EnsureColumn(connection, "documents", "published_version_no", "INTEGER NULL");
         EnsureColumn(connection, "documents", "latest_comment", "TEXT NULL");
         EnsureColumn(connection, "documents", "server_document_id", "TEXT NULL");
         EnsureColumn(connection, "documents", "server_version_id", "TEXT NULL");
         EnsureColumn(connection, "documents", "synced_at", "TEXT NULL");
+        EnsureColumn(connection, "document_versions", "version_status", "TEXT NOT NULL DEFAULT 'WORKING'");
+        EnsureColumn(connection, "document_versions", "is_latest", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "document_versions", "is_published", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "document_versions", "published_at", "TEXT NULL");
         EnsureColumn(connection, "document_versions", "server_version_id", "TEXT NULL");
         EnsureColumn(connection, "document_versions", "synced_at", "TEXT NULL");
         EnsureColumn(connection, "field_notes", "server_note_id", "TEXT NULL");
@@ -446,6 +456,7 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "document_view_logs", "server_close_log_id", "INTEGER NULL");
         EnsureColumn(connection, "document_view_logs", "synced_at", "TEXT NULL");
         EnsureDocumentUpdatedAt(connection);
+        EnsureDocumentVersionState(connection);
         BackfillFieldNotesFromCommentVersions(connection);
 
         SeedDefaultGroups(connection);
@@ -496,6 +507,39 @@ public sealed class FlowNoteLocalDatabase
             WHERE updated_at IS NULL OR updated_at = '';
             """;
         command.ExecuteNonQuery();
+    }
+
+    private static void EnsureDocumentVersionState(SqliteConnection connection)
+    {
+        using var latest = connection.CreateCommand();
+        latest.CommandText = """
+            UPDATE document_versions
+            SET is_latest = CASE
+                    WHEN version_no = (
+                        SELECT MAX(inner_version.version_no)
+                        FROM document_versions AS inner_version
+                        WHERE inner_version.document_id = document_versions.document_id
+                    ) THEN 1
+                    ELSE 0
+                END
+            WHERE is_latest IS NULL OR is_latest = 0;
+            """;
+        latest.ExecuteNonQuery();
+
+        using var status = connection.CreateCommand();
+        status.CommandText = """
+            UPDATE document_versions
+            SET version_status = CASE
+                    WHEN is_published = 1 THEN 'PUBLISHED'
+                    WHEN is_latest = 1 THEN COALESCE(NULLIF(version_status, ''), 'WORKING')
+                    ELSE CASE
+                        WHEN version_status = 'PUBLISHED' THEN 'PUBLISHED'
+                        ELSE 'SUPERSEDED'
+                    END
+                END
+            WHERE version_status IS NULL OR version_status = '' OR is_latest = 0;
+            """;
+        status.ExecuteNonQuery();
     }
 
     private static void BackfillFieldNotesFromCommentVersions(SqliteConnection connection)

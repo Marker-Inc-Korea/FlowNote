@@ -105,6 +105,9 @@ public sealed record ServerDocumentResponse
 
     [JsonPropertyName("latest_version")]
     public ServerDocumentVersionResponse? LatestVersion { get; init; }
+
+    [JsonPropertyName("published_version")]
+    public ServerDocumentVersionResponse? PublishedVersion { get; init; }
 }
 
 public sealed record ServerDocumentListItem
@@ -130,11 +133,26 @@ public sealed record ServerDocumentListItem
     [JsonPropertyName("latest_filename")]
     public string? LatestFilename { get; init; }
 
+    [JsonPropertyName("published_version_id")]
+    public string? PublishedVersionId { get; init; }
+
+    [JsonPropertyName("published_version_no")]
+    public int? PublishedVersionNo { get; init; }
+
+    [JsonPropertyName("published_filename")]
+    public string? PublishedFilename { get; init; }
+
     [JsonPropertyName("tags")]
     public IReadOnlyList<string> Tags { get; init; } = [];
 
     [JsonPropertyName("updated_at")]
     public DateTime UpdatedAt { get; init; }
+}
+
+public sealed record ServerDocumentVersionPublishRequest
+{
+    [JsonPropertyName("changeReason")]
+    public string? ChangeReason { get; init; }
 }
 
 public sealed record ServerDocumentAccessLogCreateRequest

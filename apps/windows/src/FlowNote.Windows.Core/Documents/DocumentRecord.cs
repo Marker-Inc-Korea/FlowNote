@@ -14,9 +14,12 @@ public sealed record DocumentRecord(
     string? LocalPath,
     int VersionNo,
     string? LatestComment,
-    IReadOnlyList<string>? Tags = null)
+    IReadOnlyList<string>? Tags = null,
+    int? PublishedVersionNo = null)
 {
     public IReadOnlyList<string> TagList { get; } = Tags ?? [];
 
     public string TagText => TagList.Count == 0 ? string.Empty : string.Join(", ", TagList);
+
+    public string PublishedVersionLabel => PublishedVersionNo is null ? string.Empty : $"v{PublishedVersionNo}";
 }

@@ -68,6 +68,54 @@ public sealed class FlowNoteServerDocumentClient
         return versions;
     }
 
+    public async Task<ServerDocumentVersionResponse> RegisterVersionAsync(
+        string documentId,
+        string filePath,
+        string changeReason,
+        string? versionLabel = null,
+        string? createdBy = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var form = new MultipartFormDataContent();
+        AddString(form, "changeReason", changeReason);
+        AddString(form, "versionLabel", versionLabel);
+        AddString(form, "createdBy", createdBy);
+
+        await using var stream = File.OpenRead(filePath);
+        using var fileContent = new StreamContent(stream);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        form.Add(fileContent, "file", Path.GetFileName(filePath));
+
+        using var response = await httpClient.PostAsync(
+            $"api/v1/documents/{documentId}/versions",
+            form,
+            cancellationToken);
+        return await ReadJsonResponse<ServerDocumentVersionResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerDocumentResponse> PublishVersionAsync(
+        string documentId,
+        string versionId,
+        string? changeReason = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/v1/documents/{documentId}/versions/{versionId}/publish",
+            new ServerDocumentVersionPublishRequest { ChangeReason = changeReason },
+            cancellationToken);
+        return await ReadJsonResponse<ServerDocumentResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerDocumentVersionResponse> GetPublishedVersionAsync(
+        string documentId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/documents/{documentId}/published",
+            cancellationToken);
+        return await ReadJsonResponse<ServerDocumentVersionResponse>(response, cancellationToken);
+    }
+
     public async Task<ServerFieldNoteResponse> RegisterFieldNoteAsync(
         FieldNoteRecord fieldNote,
         string? documentId = null,
