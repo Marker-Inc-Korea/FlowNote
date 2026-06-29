@@ -9,6 +9,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Windows;
@@ -19,7 +20,7 @@ using Microsoft.Data.Sqlite;
 var testDirectory = Path.Combine(Path.GetTempPath(), "flownote-program-test-files");
 Directory.CreateDirectory(testDirectory);
 
-var databasePath = GetSharedSmokeDatabasePath(testDirectory);
+var databasePath = FlowNoteLocalDatabase.DefaultDatabasePath;
 Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
 var runStartedAt = DateTime.Now;
 var runStamp = runStartedAt.ToString("HHmmssfff");
@@ -518,10 +519,20 @@ try
             Require(serverLogin.Username == "admin", "server login API should return the admin username");
             Require(serverLogin.UserId == "user-admin", "server login API should return the seeded admin user id");
             Require(serverLogin.Role == "admin", "server login API should return the admin role");
+            Require(!string.IsNullOrWhiteSpace(serverLogin.AccessToken), "server login API should return an access token");
+            Require(
+                serverLogin.ExpiresAt > DateTimeOffset.UtcNow,
+                "server login API should return a future token expiration time");
 
             var rejectedLogin = await serverAuth.TryLoginAsync("admin", "wrong-password");
             Require(rejectedLogin is null, "server login API should reject a wrong password");
         }
+
+        serverHttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", serverLogin.AccessToken);
+        var currentServerUser = await serverAuth.TryGetCurrentUserAsync()
+            ?? throw new InvalidOperationException("server /auth/me should accept the login bearer token");
+        Require(currentServerUser.UserId == serverLogin.UserId, "server /auth/me should return the authenticated user id");
+        Require(currentServerUser.Username == serverLogin.Username, "server /auth/me should return the authenticated username");
 
         var serverDocument = await serverDocuments.RegisterDocumentAsync(
             sampleFile,
@@ -634,56 +645,6 @@ static long ScalarLong(SqliteConnection connection, string sql, params (string N
     }
 
     return Convert.ToInt64(command.ExecuteScalar());
-}
-
-static string GetSharedSmokeDatabasePath(string fallbackDirectory)
-{
-    foreach (var startPath in new[] { Environment.CurrentDirectory, AppContext.BaseDirectory })
-    {
-        var directory = new DirectoryInfo(startPath);
-        while (directory is not null)
-        {
-            var appProjectPath = Path.Combine(
-                directory.FullName,
-                "apps",
-                "windows",
-                "src",
-                "FlowNote.Windows.App",
-                "FlowNote.Windows.App.csproj");
-            if (File.Exists(appProjectPath))
-            {
-                var appDataDirectory = Path.Combine(
-                    directory.FullName,
-                    "apps",
-                    "windows",
-                    "src",
-                    "FlowNote.Windows.App",
-                    "Data");
-                Directory.CreateDirectory(appDataDirectory);
-                return Path.Combine(appDataDirectory, "flownote.local.sqlite");
-            }
-
-            var siblingAppProjectPath = Path.Combine(
-                directory.FullName,
-                "..",
-                "FlowNote.Windows.App",
-                "FlowNote.Windows.App.csproj");
-            if (File.Exists(siblingAppProjectPath))
-            {
-                var appDataDirectory = Path.GetFullPath(Path.Combine(
-                    directory.FullName,
-                    "..",
-                    "FlowNote.Windows.App",
-                    "Data"));
-                Directory.CreateDirectory(appDataDirectory);
-                return Path.Combine(appDataDirectory, "flownote.local.sqlite");
-            }
-
-            directory = directory.Parent;
-        }
-    }
-
-    return Path.Combine(fallbackDirectory, "flownote.shared.sqlite");
 }
 
 static IReadOnlyList<(string FlowType, string FolderName, DocumentRecord Document)> ListExistingPastDateDocuments(

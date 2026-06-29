@@ -26,10 +26,20 @@ def create_test_client() -> TestClient:
     return TestClient(create_app(app_settings))
 
 
+def auth_headers(client: TestClient) -> dict[str, str]:
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "1234"},
+    )
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
 def create_document(client: TestClient) -> dict:
     suffix = uuid4().hex[:8]
     response = client.post(
         "/api/v1/documents",
+        headers=auth_headers(client),
         data={
             "title": f"Field note target {suffix}",
             "documentType": "work_instruction",
@@ -44,10 +54,12 @@ def create_document(client: TestClient) -> dict:
 def test_create_list_and_review_field_note() -> None:
     with create_test_client() as client:
         document = create_document(client)
+        headers = auth_headers(client)
         content = f"Field note API raw content {uuid4().hex}"
 
         response = client.post(
             "/api/v1/field-notes",
+            headers=headers,
             json={
                 "documentId": document["document_id"],
                 "documentVersionId": document["latest_version"]["version_id"],
@@ -67,13 +79,15 @@ def test_create_list_and_review_field_note() -> None:
         assert created["status"] == "NEW"
 
         document_notes_response = client.get(
-            f"/api/v1/documents/{document['document_id']}/field-notes"
+            f"/api/v1/documents/{document['document_id']}/field-notes",
+            headers=headers,
         )
         assert document_notes_response.status_code == 200
         assert any(note["note_id"] == created["note_id"] for note in document_notes_response.json())
 
         filtered_response = client.get(
             "/api/v1/field-notes",
+            headers=headers,
             params={"documentId": document["document_id"], "status": "NEW"},
         )
         assert filtered_response.status_code == 200
@@ -81,6 +95,7 @@ def test_create_list_and_review_field_note() -> None:
 
         review_response = client.patch(
             f"/api/v1/field-notes/{created['note_id']}",
+            headers=headers,
             json={
                 "status": "ANALYZED",
                 "normalizedContent": "Field issue normalized for manager review.",
@@ -100,6 +115,7 @@ def test_field_note_requires_a_target() -> None:
     with create_test_client() as client:
         response = client.post(
             "/api/v1/field-notes",
+            headers=auth_headers(client),
             json={
                 "noteType": "issue",
                 "inputMode": "free_text",
@@ -113,10 +129,26 @@ def test_field_note_requires_a_target() -> None:
     )
 
 
+def test_field_note_requires_authentication() -> None:
+    with create_test_client() as client:
+        response = client.post(
+            "/api/v1/field-notes",
+            json={
+                "documentId": "doc-does-not-exist",
+                "noteType": "issue",
+                "inputMode": "free_text",
+                "rawContent": "This unauthenticated note should be rejected.",
+            },
+        )
+
+    assert response.status_code == 401
+
+
 def test_field_note_rejects_unknown_document() -> None:
     with create_test_client() as client:
         response = client.post(
             "/api/v1/field-notes",
+            headers=auth_headers(client),
             json={
                 "documentId": "doc-does-not-exist",
                 "noteType": "issue",

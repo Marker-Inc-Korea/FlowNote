@@ -6,6 +6,10 @@ namespace FlowNote.Windows.Core.Storage;
 
 public sealed class FlowNoteLocalDatabase
 {
+    public const string LocalDatabaseFileName = "flownote.local.sqlite";
+    public const string LocalDataDirectoryEnvironmentVariable = "FLOWNOTE_LOCAL_DATA_DIR";
+    public const string LocalDatabasePathEnvironmentVariable = "FLOWNOTE_LOCAL_DATABASE_PATH";
+
     public const string RootFolderId = "folder-root";
     public const string DocumentsFolderName = "문서";
     public const string HandoverFolderName = "인수인계";
@@ -84,21 +88,119 @@ public sealed class FlowNoteLocalDatabase
 
     public string DatabasePath { get; }
 
+    public static string DefaultDataDirectory
+    {
+        get
+        {
+            var configuredDataDirectory = Environment.GetEnvironmentVariable(LocalDataDirectoryEnvironmentVariable);
+            if (!string.IsNullOrWhiteSpace(configuredDataDirectory))
+            {
+                var configuredDirectory = Path.GetFullPath(configuredDataDirectory);
+                Directory.CreateDirectory(configuredDirectory);
+                return configuredDirectory;
+            }
+
+            var configuredDatabasePath = Environment.GetEnvironmentVariable(LocalDatabasePathEnvironmentVariable);
+            if (!string.IsNullOrWhiteSpace(configuredDatabasePath))
+            {
+                var databaseDirectory = Path.GetDirectoryName(Path.GetFullPath(configuredDatabasePath));
+                if (!string.IsNullOrWhiteSpace(databaseDirectory))
+                {
+                    Directory.CreateDirectory(databaseDirectory);
+                    return databaseDirectory;
+                }
+            }
+
+            var repositoryRoot = TryFindRepositoryRoot(Environment.CurrentDirectory)
+                ?? TryFindRepositoryRoot(AppContext.BaseDirectory);
+            if (!string.IsNullOrWhiteSpace(repositoryRoot))
+            {
+                var sharedDataDirectory = Path.Combine(repositoryRoot, "data", "local");
+                Directory.CreateDirectory(sharedDataDirectory);
+                return sharedDataDirectory;
+            }
+
+            var runtimeDataDirectory = Path.Combine(AppContext.BaseDirectory, "Data");
+            Directory.CreateDirectory(runtimeDataDirectory);
+            return runtimeDataDirectory;
+        }
+    }
+
     public static string DefaultDatabasePath
     {
         get
         {
-            var developmentAppDirectory = TryFindDevelopmentAppDirectory(AppContext.BaseDirectory);
-            if (!string.IsNullOrWhiteSpace(developmentAppDirectory))
+            var configuredDatabasePath = Environment.GetEnvironmentVariable(LocalDatabasePathEnvironmentVariable);
+            if (!string.IsNullOrWhiteSpace(configuredDatabasePath))
             {
-                var developmentDataDirectory = Path.Combine(developmentAppDirectory, "Data");
-                Directory.CreateDirectory(developmentDataDirectory);
-                return Path.Combine(developmentDataDirectory, "flownote.local.sqlite");
+                var databasePath = Path.GetFullPath(configuredDatabasePath);
+                Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
+                return databasePath;
             }
 
-            var directory = Path.Combine(AppContext.BaseDirectory, "Data");
-            Directory.CreateDirectory(directory);
-            return Path.Combine(directory, "flownote.local.sqlite");
+            return Path.Combine(DefaultDataDirectory, LocalDatabaseFileName);
+        }
+    }
+
+    public static string ResolveLocalContentPath(string storedPath)
+    {
+        if (Path.IsPathRooted(storedPath))
+        {
+            return storedPath;
+        }
+
+        foreach (var root in EnumerateLocalContentRoots())
+        {
+            var candidate = Path.GetFullPath(Path.Combine(root, storedPath));
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return Path.GetFullPath(Path.Combine(DefaultDataDirectory, storedPath));
+    }
+
+    public static string? TryFindRepositoryRoot(string startDirectory)
+    {
+        var directory = new DirectoryInfo(startDirectory);
+        while (directory is not null)
+        {
+            var appProjectPath = Path.Combine(
+                directory.FullName,
+                "apps",
+                "windows",
+                "src",
+                "FlowNote.Windows.App",
+                "FlowNote.Windows.App.csproj");
+            if (File.Exists(Path.Combine(directory.FullName, "AGENTS.md")) && File.Exists(appProjectPath))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> EnumerateLocalContentRoots()
+    {
+        yield return DefaultDataDirectory;
+        yield return AppContext.BaseDirectory;
+
+        var developmentAppDirectory = TryFindDevelopmentAppDirectory(AppContext.BaseDirectory);
+        if (!string.IsNullOrWhiteSpace(developmentAppDirectory))
+        {
+            yield return developmentAppDirectory;
+        }
+
+        var repositoryRoot = TryFindRepositoryRoot(Environment.CurrentDirectory)
+            ?? TryFindRepositoryRoot(AppContext.BaseDirectory);
+        if (!string.IsNullOrWhiteSpace(repositoryRoot))
+        {
+            yield return Path.Combine(repositoryRoot, "data", "local");
+            yield return repositoryRoot;
         }
     }
 
