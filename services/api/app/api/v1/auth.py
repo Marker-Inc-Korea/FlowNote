@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from hmac import compare_digest
 from typing import Annotated
 
@@ -8,6 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.auth import CurrentUser, create_access_token
+from app.core.config import Settings, get_settings
 from app.db.init_db import hash_password_for_dev
 from app.db.models import UserAccount
 from app.db.session import get_db_session
@@ -25,6 +28,16 @@ class LoginResponse(BaseModel):
     username: str
     role: str
     display_name: str
+    access_token: str
+    token_type: str = "Bearer"
+    expires_at: datetime
+
+
+class CurrentUserResponse(BaseModel):
+    user_id: str
+    username: str
+    role: str
+    display_name: str
 
 
 def _password_matches(password: str, stored_password_hash: str) -> bool:
@@ -35,6 +48,7 @@ def _password_matches(password: str, stored_password_hash: str) -> bool:
 def login(
     request: LoginRequest,
     session: Annotated[Session, Depends(get_db_session)],
+    app_settings: Annotated[Settings, Depends(get_settings)],
 ) -> LoginResponse:
     username = request.username.strip()
     account = session.scalar(select(UserAccount).where(UserAccount.username == username))
@@ -49,9 +63,22 @@ def login(
             detail="User account is not active.",
         )
 
+    access_token, expires_at = create_access_token(account, app_settings)
     return LoginResponse(
         user_id=account.user_id,
         username=account.username,
         role=account.role,
         display_name=account.display_name,
+        access_token=access_token,
+        expires_at=expires_at,
+    )
+
+
+@router.get("/me", response_model=CurrentUserResponse)
+def read_current_user(current_user: CurrentUser) -> CurrentUserResponse:
+    return CurrentUserResponse(
+        user_id=current_user.user_id,
+        username=current_user.username,
+        role=current_user.role,
+        display_name=current_user.display_name,
     )

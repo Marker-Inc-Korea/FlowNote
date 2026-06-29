@@ -21,6 +21,15 @@ public sealed record ServerLoginResponse
     [JsonPropertyName("display_name")]
     public string DisplayName { get; init; } = string.Empty;
 
+    [JsonPropertyName("access_token")]
+    public string AccessToken { get; init; } = string.Empty;
+
+    [JsonPropertyName("token_type")]
+    public string TokenType { get; init; } = string.Empty;
+
+    [JsonPropertyName("expires_at")]
+    public DateTimeOffset ExpiresAt { get; init; }
+
     public LoginResult ToLoginResult()
     {
         return new LoginResult(
@@ -29,6 +38,23 @@ public sealed record ServerLoginResponse
             Username,
             DisplayName,
             Role,
-            null);
+            null,
+            AccessToken,
+            ExpiresAt);
     }
+}
+
+public sealed record ServerCurrentUserResponse
+{
+    [JsonPropertyName("user_id")]
+    public string UserId { get; init; } = string.Empty;
+
+    [JsonPropertyName("username")]
+    public string Username { get; init; } = string.Empty;
+
+    [JsonPropertyName("role")]
+    public string Role { get; init; } = string.Empty;
+
+    [JsonPropertyName("display_name")]
+    public string DisplayName { get; init; } = string.Empty;
 }

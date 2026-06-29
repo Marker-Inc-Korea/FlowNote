@@ -1,5 +1,6 @@
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Controls;
@@ -28,7 +29,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         this.services = services;
         this.currentUser = currentUser;
-        (serverDocumentClient, serverHttpClient) = CreateServerDocumentClient();
+        (serverDocumentClient, serverHttpClient) = CreateServerDocumentClient(currentUser);
         SignedInUserTextBlock.Text = $"{currentUser.DisplayName} ({currentUser.Role})";
         DataContext = workspace;
         RefreshWorkspace("로컬 작업 공간을 열었습니다.", services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.DocumentsFolderName).Id);
@@ -279,18 +280,12 @@ public partial class MainWindow : Window
 
         var targetPath = GetUniqueTargetPath(uploadRoot, sourceFile.Name);
         File.Copy(sourceFile.FullName, targetPath);
-        return Path.GetRelativePath(GetAppContentRoot(), targetPath);
+        return Path.GetRelativePath(dataDirectory, targetPath);
     }
 
-    private string GetAppContentRoot()
+    private static string GetAppContentPath(string storedRelativePath)
     {
-        var dataDirectory = Path.GetDirectoryName(services.Database.DatabasePath)!;
-        return Directory.GetParent(dataDirectory)?.FullName ?? AppContext.BaseDirectory;
-    }
-
-    private string GetAppContentPath(string storedRelativePath)
-    {
-        return Path.GetFullPath(Path.Combine(GetAppContentRoot(), storedRelativePath));
+        return FlowNoteLocalDatabase.ResolveLocalContentPath(storedRelativePath);
     }
 
     private static string SummarizeServerSyncFailure(Exception exception)
@@ -460,14 +455,16 @@ public partial class MainWindow : Window
         return services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.DocumentsFolderName);
     }
 
-    private static (FlowNoteServerDocumentClient? Client, HttpClient? HttpClient) CreateServerDocumentClient()
+    private static (FlowNoteServerDocumentClient? Client, HttpClient? HttpClient) CreateServerDocumentClient(LoginResult currentUser)
     {
         var httpClient = FlowNoteServerApiEnvironment.CreateHttpClientFromEnvironment();
-        if (httpClient is null)
+        if (httpClient is null || string.IsNullOrWhiteSpace(currentUser.AccessToken))
         {
+            httpClient?.Dispose();
             return (null, null);
         }
 
+        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", currentUser.AccessToken);
         return (new FlowNoteServerDocumentClient(httpClient), httpClient);
     }
 

@@ -22,14 +22,16 @@
 - Windows 앱 빌드와 콘솔형 스모크 테스트
 - FastAPI 헬스체크와 DB 헬스체크
 - FastAPI 개발용 기본 관리자 계정 생성
-- FastAPI MVP 로그인 API: 사용자명/비밀번호 검증과 사용자 정보 반환
+- FastAPI MVP 로그인 API: 사용자명/비밀번호 검증, 사용자 정보 반환, Bearer access token과 만료 시각 반환
+- FastAPI `/api/v1/auth/me` 현재 사용자 확인 API
+- FastAPI 문서/FieldNote/문서 접근 로그 API의 Bearer access token 인증. 인증 정보가 없거나 유효하지 않으면 `401` 반환
 - `FLOWNOTE_API_BASE_URL` 설정 시 Windows WPF 로그인 화면의 FastAPI 로그인 API 우선 호출과 로컬 SQLite 로그인 폴백
 - FastAPI 문서 등록/목록/상세/버전 API와 서버 로컬 `storage/` 파일 저장
 - FastAPI 현장 코멘트 최소 등록/조회/관리자 갱신 API
 - FastAPI 문서 접근 로그 등록/조회 API
-- `FLOWNOTE_API_BASE_URL` 설정 시 Windows 스모크 테스트의 서버 로그인 API, 서버 FieldNote 등록, 서버 문서 접근 로그 등록/조회 검증
+- `FLOWNOTE_API_BASE_URL` 설정 시 Windows 스모크 테스트의 서버 로그인 API, 인증 헤더가 붙은 `/auth/me`, 서버 FieldNote 등록, 서버 문서 접근 로그 등록/조회 검증
 
-현재 구현되지 않은 범위는 JWT 또는 세션 발급, 요청 인증/권한 검사, 역할 기반 서버 권한, 로컬 열람 로그의 운영용 서버 자동 동기화와 권한 연계, 운영 설정 기반 뷰어 자동 닫힘 값 관리, 문서 상태 전환, 현장 코멘트 첨부, WPF와 서버 API의 자동 재시도/완전 동기화, 작업내역/작업순서판의 실제 운영 모델, 보고서, AI 검색/조언, MES/ERP 연동, 다운로드 차단이다. 아래 MVP 범위는 제품 목표와 다음 구현 기준이며 현재 코드 구현 완료 목록이 아니다.
+현재 구현되지 않은 범위는 운영용 토큰 갱신/폐기, 역할 기반 서버 권한, 로컬 열람 로그의 운영용 서버 자동 동기화와 권한 연계, 운영 설정 기반 뷰어 자동 닫힘 값 관리, 문서 상태 전환, 현장 코멘트 첨부, WPF와 서버 API의 자동 재시도/완전 동기화, 작업내역/작업순서판의 실제 운영 모델, 보고서, AI 검색/조언, MES/ERP 연동, 다운로드 차단이다. 아래 MVP 범위는 제품 목표와 다음 구현 기준이며 현재 코드 구현 완료 목록이 아니다.
 
 현재 프로그램 테스트와 관련 작업 기준은 다음과 같다.
 

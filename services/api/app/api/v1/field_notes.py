@@ -10,11 +10,16 @@ from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.auth import get_current_user
 from app.db.models import Document, DocumentVersion, FieldNote
 from app.db.session import get_db_session
 
-router = APIRouter(prefix="/field-notes", tags=["field-notes"])
-document_field_notes_router = APIRouter(prefix="/documents", tags=["field-notes"])
+router = APIRouter(prefix="/field-notes", tags=["field-notes"], dependencies=[Depends(get_current_user)])
+document_field_notes_router = APIRouter(
+    prefix="/documents",
+    tags=["field-notes"],
+    dependencies=[Depends(get_current_user)],
+)
 
 NOTE_TYPES = {"experience", "work_evaluation", "issue"}
 INPUT_MODES = {"signal", "free_text", "template", "template_with_text", "admin_proxy", "mes_integration"}

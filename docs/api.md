@@ -9,7 +9,8 @@
 | GET | `/` | 서비스명과 실행 환경 |
 | GET | `/api/v1/health` | `{ "status": "ok" }` |
 | GET | `/api/v1/health/db` | DB 연결 확인 결과 `{ "status": "ok", "database": "ok" }` |
-| POST | `/api/v1/auth/login` | username/password 검증 후 MVP 사용자 정보 반환 |
+| POST | `/api/v1/auth/login` | username/password 검증 후 MVP 사용자 정보와 Bearer access token 반환 |
+| GET | `/api/v1/auth/me` | Bearer access token 기준 현재 사용자 확인 |
 | POST | `/api/v1/documents` | 문서 메타데이터, 최초 버전, 변경 사유, 로컬 저장 파일 참조 등록 |
 | GET | `/api/v1/documents` | 문서 목록과 최신 버전 요약 조회 |
 | GET | `/api/v1/documents/{documentId}` | 문서 상세와 최신 버전/파일 참조 조회 |
@@ -23,7 +24,7 @@
 | PATCH | `/api/v1/field-notes/{noteId}` | 관리자 검토, 정리 문구, 분석 내용 갱신 |
 | GET | `/api/v1/documents/{documentId}/field-notes` | 문서별 현장 코멘트 조회 |
 
-문서 등록/버전 등록 API, 현장 코멘트 최소 API, 문서 접근 로그 API는 아직 요청 인증/권한 검사 없이 SQLite와 서버 로컬 `storage/` 저장소 기준으로 동작한다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부만 확인하고 아직 JWT를 발급하지 않는 MVP 단계이다. 이하 로그아웃/현재 사용자 API, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`을 로그인 결과에 보관한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로컬 SQLite 문서/FieldNote 저장을 기본 경로로 유지하되, 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공한 뒤 `FLOWNOTE_API_BASE_URL`이 설정되어 있으면 같은 파일을 `POST /api/v1/documents`로 서버에 등록한다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후에만 서버 현장 코멘트 등록을 후보로 시도하며, 이 시도도 `FLOWNOTE_API_BASE_URL`이 설정된 경우에만 발생한다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 자동 재시도 큐는 아직 만들지 않는다. 현재 스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, 문서 업로드, 최신 문서 버전에 연결된 서버 FieldNote 등록, 문서 접근 로그 등록/조회를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
+문서 등록/버전 등록 API, 현장 코멘트 최소 API, 문서 접근 로그 API는 Bearer access token이 없거나 유효하지 않으면 `401`을 반환한다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부를 확인하고 MVP용 HMAC 서명 access token과 만료 시각을 발급한다. 이 토큰은 운영용 권한 체계가 아니라 서버 요청의 사용자 신뢰 경계를 세우기 위한 MVP 인증 방식이다. 이하 로그아웃, 현장 단말기 API, 관리자 파일 감시 API, 현장 코멘트 첨부 API, 보고서 API, 작업순서판 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`을 로그인 결과에 보관한다. 이후 서버 문서/FieldNote/접근 로그 요청에는 `Authorization: Bearer {access_token}` 헤더를 붙인다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로컬 SQLite 문서/FieldNote 저장을 기본 경로로 유지하되, 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공한 뒤 인증된 서버 클라이언트가 있으면 같은 파일을 `POST /api/v1/documents`로 서버에 등록한다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후에만 서버 현장 코멘트 등록을 후보로 시도하며, 이 시도도 인증된 서버 클라이언트가 있는 경우에만 발생한다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 자동 재시도 큐는 아직 만들지 않는다. 현재 스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, Bearer 인증 헤더가 붙은 `/auth/me`, 문서 업로드, 최신 문서 버전에 연결된 서버 FieldNote 등록, 문서 접근 로그 등록/조회를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
 ## 1. 공통 원칙
 
@@ -135,7 +136,7 @@ multipart/form-data
 | POST | `/auth/logout` | 로그아웃 |
 | GET | `/auth/me` | 현재 사용자와 역할 조회 |
 
-현재 구현된 `POST /api/v1/auth/login`은 JSON 본문으로 `username`, `password`를 받는다. `username`은 앞뒤 공백을 제거한 뒤 조회한다. 계정 존재, `is_active=true`, `status=ACTIVE`, 비밀번호 일치 여부만 검증하며 JWT는 아직 발급하지 않는다.
+현재 구현된 `POST /api/v1/auth/login`은 JSON 본문으로 `username`, `password`를 받는다. `username`은 앞뒤 공백을 제거한 뒤 조회한다. 계정 존재, `is_active=true`, `status=ACTIVE`, 비밀번호 일치 여부를 검증한 뒤 MVP용 Bearer access token과 만료 시각을 반환한다.
 
 요청 예시:
 
@@ -146,20 +147,25 @@ multipart/form-data
 }
 ```
 
-성공 응답은 `user_id`, `username`, `role`, `display_name`으로 제한한다.
+성공 응답은 사용자 식별 정보와 access token 정보를 포함한다.
 
 ```json
 {
   "user_id": "user-admin",
   "username": "admin",
   "role": "admin",
-  "display_name": "FlowNote Admin"
+  "display_name": "FlowNote Admin",
+  "access_token": "mvp-token",
+  "token_type": "Bearer",
+  "expires_at": "2026-06-29T18:00:00Z"
 }
 ```
 
 잘못된 비밀번호와 없는 계정은 `401`을 반환한다. 비밀번호는 맞지만 `is_active=false`이거나 `status`가 `ACTIVE`가 아니면 `403`을 반환한다.
 
-향후 로그인 응답은 사용자 역할과 단말기 모드에 따라 허용 기능을 포함한다.
+`GET /api/v1/auth/me`는 `Authorization: Bearer {access_token}` 헤더가 필요하며, 유효한 토큰이면 `user_id`, `username`, `role`, `display_name`을 반환한다. 현재 만료 정책은 `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES` 설정값을 사용하며 기본값은 480분이다. MVP 토큰 서명 비밀값은 `FLOWNOTE_ACCESS_TOKEN_SECRET`으로 교체할 수 있고, 기본값은 개발용이므로 운영 전 반드시 현장별 비밀값으로 바꾼다.
+
+향후 로그인 응답은 사용자 역할과 단말기 모드에 따라 허용 기능을 포함한다. 운영 전에는 개발용 기본 비밀번호 `admin / 1234`와 동일한 테스트 계정 비밀번호 정책을 폐기하고, 초기 비밀번호 강제 변경, 관리자 계정 별도 발급, 잠금/재설정 정책을 추가해야 한다.
 
 ## 3.1 작업자/작업그룹 API
 

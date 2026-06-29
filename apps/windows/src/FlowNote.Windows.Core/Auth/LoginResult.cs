@@ -6,7 +6,9 @@ public sealed record LoginResult(
     string? LoginId,
     string? DisplayName,
     string? Role,
-    string? FailureReason)
+    string? FailureReason,
+    string? AccessToken = null,
+    DateTimeOffset? AccessTokenExpiresAt = null)
 {
     public static LoginResult Failed(string reason)
     {

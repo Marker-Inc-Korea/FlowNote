@@ -11,13 +11,14 @@ from sqlalchemy import delete, desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.auth import get_current_user
 from app.core.config import Settings, get_settings
 from app.core.storage import resolve_storage_root, store_upload_file
 from app.db.models import Document, DocumentTag, DocumentVersion, FileObject
 from app.db.models import TagDefinition, UserAccount
 from app.db.session import get_db_session
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter(prefix="/documents", tags=["documents"], dependencies=[Depends(get_current_user)])
 
 
 class FileObjectResponse(BaseModel):

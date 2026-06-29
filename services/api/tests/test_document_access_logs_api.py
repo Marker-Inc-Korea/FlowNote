@@ -29,6 +29,15 @@ def create_test_client() -> TestClient:
     return TestClient(create_app(app_settings))
 
 
+def auth_headers(client: TestClient) -> dict[str, str]:
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "1234"},
+    )
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
 def create_user(client: TestClient) -> UserAccount:
     suffix = uuid4().hex
     account = UserAccount(
@@ -52,6 +61,7 @@ def create_document(client: TestClient) -> dict:
     suffix = uuid4().hex[:8]
     response = client.post(
         "/api/v1/documents",
+        headers=auth_headers(client),
         data={
             "title": f"Access log target {suffix}",
             "documentType": "work_instruction",
@@ -67,10 +77,12 @@ def test_create_and_list_document_access_logs() -> None:
     with create_test_client() as client:
         account = create_user(client)
         document = create_document(client)
+        headers = auth_headers(client)
         version_id = document["latest_version"]["version_id"]
 
         started_response = client.post(
             f"/api/v1/documents/{document['document_id']}/access-logs",
+            headers=headers,
             json={
                 "documentVersionId": version_id,
                 "action": "view_started",
@@ -88,6 +100,7 @@ def test_create_and_list_document_access_logs() -> None:
 
         closed_response = client.post(
             f"/api/v1/documents/{document['document_id']}/access-logs",
+            headers=headers,
             json={
                 "documentVersionId": version_id,
                 "action": "view_closed",
@@ -98,7 +111,10 @@ def test_create_and_list_document_access_logs() -> None:
         closed = closed_response.json()
         assert closed["action"] == "view_closed"
 
-        list_response = client.get(f"/api/v1/documents/{document['document_id']}/access-logs")
+        list_response = client.get(
+            f"/api/v1/documents/{document['document_id']}/access-logs",
+            headers=headers,
+        )
         assert list_response.status_code == 200
         logs = list_response.json()
         assert {log["log_id"] for log in logs} >= {started["log_id"], closed["log_id"]}
@@ -119,6 +135,7 @@ def test_document_access_log_rejects_version_from_another_document() -> None:
 
         response = client.post(
             f"/api/v1/documents/{first['document_id']}/access-logs",
+            headers=auth_headers(client),
             json={
                 "documentVersionId": second["latest_version"]["version_id"],
                 "action": "view_started",
@@ -127,3 +144,10 @@ def test_document_access_log_rejects_version_from_another_document() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == "documentVersionId must belong to documentId."
+
+
+def test_document_access_log_requires_authentication() -> None:
+    with create_test_client() as client:
+        response = client.get("/api/v1/documents/doc-does-not-exist/access-logs")
+
+    assert response.status_code == 401

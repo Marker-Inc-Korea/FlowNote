@@ -12,10 +12,4 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4022.49" />
     <ProjectReference Include="..\FlowNote.Windows.Core\FlowNote.Windows.Core.csproj" />
   </ItemGroup>
-
-  <ItemGroup>
-    <None Update="Data\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
 </Project>

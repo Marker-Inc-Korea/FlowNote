@@ -106,3 +106,10 @@
 - 서버 URL이 없는 현재 단계에서는 문서 열람 감사 로그를 WPF 로컬 SQLite `document_view_logs`에 먼저 저장한다.
 - 문서 보기 창이 열릴 때 문서 ID, 버전 번호, 사용자명, 열람 시작 시각을 기록하고, 창이 닫힐 때 닫힘 시각과 닫힘 사유를 같은 행에 갱신한다.
 - 다운로드 차단, 운영 설정 기반 자동 닫힘, 서버 접근 로그 동기화는 이번 범위가 아니며 후속 보안/동기화 계층에서 구현한다.
+
+## 2026-06-27. WPF 로컬 SQLite 공통 개발 경로
+
+- Windows WPF 앱과 Windows 스모크 테스트의 기본 로컬 SQLite는 저장소 루트의 `data/local/flownote.local.sqlite`를 함께 사용한다.
+- Mac mini 같은 비-Windows 개발 환경에서도 공통 로직/저장소 테스트가 같은 DB 파일을 바라볼 수 있도록 앱 프로젝트 내부 `Data` 폴더가 아니라 저장소 공통 데이터 루트를 기본값으로 둔다.
+- `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`가 지정된 경우 해당 위치를 우선 사용해 장비별 개발/테스트 위치를 명시할 수 있게 한다.
+- 파일 업로드 산출물은 DB가 있는 공통 데이터 폴더 아래 `Files/Uploads/yyyy-MM-dd/`에 저장하되, SQLite 외 파일 산출물은 Git 추적 대상에서 제외한다.
