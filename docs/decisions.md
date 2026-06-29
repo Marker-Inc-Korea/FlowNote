@@ -1,5 +1,14 @@
 # FlowNote 설계 결정 요약
 
+## 2026-06-29. WPF 로컬 서버 동기화 큐와 서버 ID 매핑
+
+- WPF는 서버가 없거나 전송에 실패해도 로컬 문서, FieldNote, 문서 접근 로그 저장을 성공으로 유지한다.
+- 서버 전송 후보는 로컬 SQLite `server_sync_queue`에 idempotency key, 상태, 시도 횟수, 실패 사유, 서버 ID 결과와 함께 저장한다.
+- 로컬 원천 레코드와 서버 ID의 연결은 원천 테이블의 서버 ID/`synced_at` 컬럼과 `server_id_mappings`에 함께 저장한다.
+- 서버 URL 부재 또는 전송 실패는 `activity_history`에 `server_sync.failed`로 남기고, 재시도 성공은 `server_sync.succeeded`로 남긴다.
+- 재시도는 큐 등록 순서대로 수행해 문서가 먼저 서버 `document_id`와 `version_id`를 받은 뒤 FieldNote와 접근 로그가 그 매핑을 사용한다.
+- FastAPI 서버 API는 아직 idempotency key 필드나 헤더를 받지 않는다. 현재 중복 방지는 WPF 로컬 원천 ID 기반 idempotency key, 서버 ID, `synced_at` 확인으로 수행한다.
+
 이 문서는 기존 `docs/decisions/` 아래에 흩어져 있던 ADR을 현재 제품 방향 기준으로 합친 단일 결정 기록이다. 상충되는 내용은 최근 정리한 제품 방향, 현장 소리 반영 기준, 현장 관찰 기준을 따른다.
 
 현재 코드와 비교할 때 이 문서는 구현 완료 목록이 아니라 제품 방향 결정이다. 실제 구현은 Windows WPF 로컬 SQLite 프로토타입과 FastAPI 헬스체크 골격이 기준이며, 서버 API, 보고서, AI, MES/ERP 연동 같은 미래 기능은 현재 구현 비교 대상이 아니다.

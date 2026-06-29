@@ -8,4 +8,8 @@ public sealed record DocumentVersionRecord(
     string? LocalPath,
     string? Comment,
     string CreatedBy,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string VersionStatus = "WORKING",
+    bool IsLatest = false,
+    bool IsPublished = false,
+    DateTime? PublishedAt = null);

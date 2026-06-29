@@ -14,8 +14,13 @@
 | POST | `/api/v1/documents` | 문서 메타데이터, 최초 버전, 변경 사유, 로컬 저장 파일 참조 등록 |
 | GET | `/api/v1/documents` | 문서 목록과 최신 버전 요약 조회 |
 | GET | `/api/v1/documents/{documentId}` | 문서 상세와 최신 버전/파일 참조 조회 |
+| PATCH | `/api/v1/documents/{documentId}/status` | 문서 상태 전환 |
+| GET | `/api/v1/documents/published` | 현장 공개 문서 목록 조회. 공개 버전만 반환 |
+| GET | `/api/v1/documents/{documentId}/published` | 현장 공개 문서 버전 조회. 공개 버전만 반환 |
 | GET | `/api/v1/documents/{documentId}/versions` | 문서 버전 목록 조회 |
 | POST | `/api/v1/documents/{documentId}/versions` | 새 파일 버전과 변경 사유 등록 |
+| PATCH | `/api/v1/documents/{documentId}/versions/{versionId}/status` | 문서 버전 상태 전환 |
+| POST | `/api/v1/documents/{documentId}/versions/{versionId}/publish` | 특정 버전을 현장 공개 버전으로 지정 |
 | POST | `/api/v1/documents/{documentId}/access-logs` | 문서 열람/닫힘 등 접근 로그 등록 |
 | GET | `/api/v1/documents/{documentId}/access-logs` | 문서 접근 로그 조회 |
 | POST | `/api/v1/field-notes` | 현장 코멘트 원천 이력 등록 |
@@ -69,8 +74,12 @@ File Upload: multipart/form-data
 | PATCH | `/documents/{documentId}` | 문서 메타데이터 수정 |
 | DELETE | `/documents/{documentId}` | 문서 삭제 상태 처리 |
 | GET | `/documents/{documentId}/download` | 관리자 다운로드 API 후보. 클라이언트 앱 단계 |
+| GET | `/documents/published` | 현장 공개 문서 목록 조회. 최신 작업 버전이 아니라 공개 버전 기준으로 반환 |
+| GET | `/documents/{documentId}/published` | 현장 공개 문서 버전 조회 |
 | GET | `/documents/{documentId}/versions` | 버전 목록 조회 |
 | POST | `/documents/{documentId}/versions` | 새 버전 업로드 |
+| PATCH | `/documents/{documentId}/versions/{versionId}/status` | 버전 상태 전환 |
+| POST | `/documents/{documentId}/versions/{versionId}/publish` | 특정 버전을 공개 버전으로 지정 |
 | GET | `/documents/{documentId}/versions/{versionNo}/download` | 관리자 특정 버전 다운로드 API 후보. 클라이언트 앱 단계 |
 | GET | `/documents/{documentId}/history` | 문서 이력 조회 |
 | POST | `/documents/{documentId}/access-logs` | 문서 접근 로그 등록 |
@@ -102,7 +111,7 @@ multipart/form-data
 - links: object[]
 ```
 
-현재 구현된 `POST /api/v1/documents`는 `file`, `title`, `documentType`, `changeReason`을 필수로 받고, `description`, `ownerId`, `categoryId`, `versionLabel`, `status`, `createdBy`, `tags`를 선택으로 받는다. `tags`는 multipart form의 반복 필드 또는 쉼표 구분 문자열로 받을 수 있으며 서버는 `tag_definitions`와 `document_tags`에 저장하고 문서 목록/상세 응답에 `tags: string[]`로 반환한다. `links`는 아직 저장하지 않는다. 파일은 `storage/documents/{document_id}/v{version_no}/` 아래에 저장하고, SQLite `file_objects`에는 `storage_key`, 원본 파일명, 확장자, MIME, 파일 계열, 크기, SHA-256 해시를 기록한다.
+현재 구현된 `POST /api/v1/documents`는 `file`, `title`, `documentType`, `changeReason`을 필수로 받고, `description`, `ownerId`, `categoryId`, `versionLabel`, `status`, `createdBy`, `tags`를 선택으로 받는다. 최초 업로드 문서는 기본 `WORKING`이며, `status`로는 `WORKING`, `IN_REVIEW`, `ARCHIVED`만 받을 수 있다. 최초 업로드나 새 버전 업로드는 `published_version_id`를 자동 지정하지 않으며, 현장 공개 버전은 별도 `POST /api/v1/documents/{documentId}/versions/{versionId}/publish` 호출로만 지정한다. `tags`는 multipart form의 반복 필드 또는 쉼표 구분 문자열로 받을 수 있으며 서버는 `tag_definitions`와 `document_tags`에 저장하고 문서 목록/상세 응답에 `tags: string[]`로 반환한다. `links`는 아직 저장하지 않는다. 파일은 `storage/documents/{document_id}/v{version_no}/` 아래에 저장하고, SQLite `file_objects`에는 `storage_key`, 원본 파일명, 확장자, MIME, 파일 계열, 크기, SHA-256 해시를 기록한다.
 권한이 없는 role로 호출하면 파일 저장 전에 `403`을 반환한다.
 
 새 버전 업로드 요청 필드:
@@ -114,8 +123,35 @@ multipart/form-data
 - changeReason: string
 ```
 
-현재 구현된 `POST /api/v1/documents/{documentId}/versions`는 `file`과 `changeReason`을 필수로 받는다. 새 버전 등록 시 기존 최신 버전의 `is_latest`를 `false`로 바꾸고 `version_status`를 `SUPERSEDED`로 표시한 뒤, 새 버전을 `is_latest=true`, `version_status=WORKING`으로 저장한다.
+현재 구현된 `POST /api/v1/documents/{documentId}/versions`는 `file`과 `changeReason`을 필수로 받는다. 새 버전 등록 시 기존 최신 버전의 `is_latest`를 `false`로 바꾸고, 기존 버전이 공개 버전이면 `PUBLISHED` 상태를 유지하며 공개 버전이 아니면 `SUPERSEDED`로 표시한다. 새 버전은 `is_latest=true`, `is_published=false`, `version_status=WORKING`으로 저장하므로, 별도 공개 처리 전에는 현장 공개 버전이 되지 않는다.
 권한이 없는 role로 호출하면 새 파일 버전 저장 전에 `403`을 반환한다.
+
+문서 상태와 공개 버전 전환:
+
+```json
+PATCH /api/v1/documents/{documentId}/status
+{
+  "status": "IN_REVIEW",
+  "changeReason": "관리자 검토 요청"
+}
+```
+
+`PATCH /api/v1/documents/{documentId}/versions/{versionId}/status`는 `WORKING`, `IN_REVIEW`, `APPROVED`, `ARCHIVED` 상태 전환에 사용한다. `PUBLISHED` 전환은 공개 버전 지정과 함께 처리해야 하므로 아래 API만 사용한다.
+
+```json
+POST /api/v1/documents/{documentId}/versions/{versionId}/publish
+{
+  "changeReason": "현장 공개 승인"
+}
+```
+
+공개 처리 시 서버는 같은 문서의 기존 공개 버전 `is_published`를 해제하고, 대상 버전을 `version_status=PUBLISHED`, `is_published=true`로 바꾸며 `documents.published_version_id`와 문서 `status=PUBLISHED`를 갱신한다. 상태 변경과 공개 처리는 `activity_history`에 남긴다.
+
+현장 공개 조회:
+
+- `GET /api/v1/documents/published`는 문서 `status=PUBLISHED`이고 공개 버전이 `version_status=PUBLISHED`, `is_published=true`인 문서만 반환한다.
+- `GET /api/v1/documents/{documentId}/published`는 최신 작업 버전이 아니라 공개 버전 1건만 반환한다.
+- 일반 `GET /api/v1/documents`와 `GET /api/v1/documents/{documentId}/versions`는 최신 버전과 공개 버전을 구분할 수 있도록 `latest_version_id`, `latest_version_no`, `published_version_id`, `published_version_no`, `is_latest`, `is_published`, `version_status`를 반환한다.
 
 문서 접근 로그 요청 예시:
 

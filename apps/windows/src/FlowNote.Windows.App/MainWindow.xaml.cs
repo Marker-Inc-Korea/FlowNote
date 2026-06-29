@@ -93,6 +93,61 @@ public partial class MainWindow : Window
         RefreshWorkspace($"문서를 등록했습니다. 위치: {plan.Folder.Path}", plan.Folder.Id);
     }
 
+    private void ApplyDocumentStatusButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureDocumentRegistrationAllowed())
+        {
+            return;
+        }
+
+        if (DocumentGrid.SelectedItem is not ExplorerDocument document)
+        {
+            workspace.StatusText = "Select a document before changing status.";
+            return;
+        }
+
+        var selectedStatus = (DocumentStatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString();
+        if (string.IsNullOrWhiteSpace(selectedStatus))
+        {
+            workspace.StatusText = "Select a document status.";
+            return;
+        }
+
+        try
+        {
+            services.Documents.UpdateDocumentStatus(document.DocumentId, selectedStatus, GetCurrentActorName());
+            RefreshDocuments(selectedFolder?.Id, $"Document status changed: {selectedStatus}");
+        }
+        catch (InvalidOperationException exception)
+        {
+            workspace.StatusText = exception.Message;
+        }
+    }
+
+    private void PublishDocumentButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureDocumentRegistrationAllowed())
+        {
+            return;
+        }
+
+        if (DocumentGrid.SelectedItem is not ExplorerDocument document)
+        {
+            workspace.StatusText = "Select a document before publishing.";
+            return;
+        }
+
+        try
+        {
+            services.Documents.PublishVersion(document.DocumentId, document.VersionNo, GetCurrentActorName());
+            RefreshDocuments(selectedFolder?.Id, $"Published document version: {document.FileName} v{document.VersionNo}");
+        }
+        catch (InvalidOperationException exception)
+        {
+            workspace.StatusText = exception.Message;
+        }
+    }
+
     private void NotificationButton_Click(object sender, RoutedEventArgs e)
     {
         var window = new NotificationWindow(services.Notifications, GetCurrentActorName())
@@ -194,7 +249,8 @@ public partial class MainWindow : Window
             record.LocalPath,
             record.LatestComment,
             record.TagText,
-            record.VersionNo);
+            record.VersionNo,
+            record.PublishedVersionNo);
     }
 
     private void FileListDropZone_DragEnter(object sender, DragEventArgs e)
@@ -426,12 +482,18 @@ public partial class MainWindow : Window
         const string noDocumentWritePermission = "문서 등록은 관리자/반장/조장 이상만 가능합니다. 조원은 현장 코멘트 등록을 사용합니다.";
         RegisterDocumentButton.IsEnabled = canRegisterDocuments;
         UploadFileButton.IsEnabled = canRegisterDocuments;
+        ApplyDocumentStatusButton.IsEnabled = canRegisterDocuments;
+        PublishDocumentButton.IsEnabled = canRegisterDocuments;
+        DocumentStatusComboBox.IsEnabled = canRegisterDocuments;
         FileListDropZone.AllowDrop = canRegisterDocuments;
 
         if (!canRegisterDocuments)
         {
             RegisterDocumentButton.ToolTip = noDocumentWritePermission;
             UploadFileButton.ToolTip = noDocumentWritePermission;
+            ApplyDocumentStatusButton.ToolTip = noDocumentWritePermission;
+            PublishDocumentButton.ToolTip = noDocumentWritePermission;
+            DocumentStatusComboBox.ToolTip = noDocumentWritePermission;
             FileListDropZone.ToolTip = noDocumentWritePermission;
         }
     }

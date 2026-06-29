@@ -16,7 +16,15 @@ from reportlab.lib.styles import getSampleStyleSheet
 from sqlalchemy import select
 
 from app.core.config import Settings
-from app.db.models import Document, DocumentTag, DocumentVersion, FileObject, TagDefinition, UserAccount
+from app.db.models import (
+    ActivityHistory,
+    Document,
+    DocumentTag,
+    DocumentVersion,
+    FileObject,
+    TagDefinition,
+    UserAccount,
+)
 from app.main import create_app
 
 
@@ -330,6 +338,121 @@ def test_document_version_change_reason_is_required() -> None:
             )
 
     assert response.status_code == 422
+
+
+def test_document_versions_are_published_only_by_explicit_publish_transition() -> None:
+    pdf_path, pdf_v2_path, _, _ = prepare_factory_sample_files()
+
+    with create_test_client() as client:
+        ensure_test_user(client)
+        created = post_document(
+            client,
+            pdf_path,
+            title="Press A public release control test",
+            document_type="work_instruction",
+        )
+
+        assert created["status"] == "WORKING"
+        assert created["published_version_id"] is None
+        assert created["published_version"] is None
+        first_version = created["latest_version"]
+        assert first_version["version_status"] == "WORKING"
+        assert first_version["is_published"] is False
+
+        published_before = client.get(
+            f"/api/v1/documents/{created['document_id']}/published",
+            headers=auth_headers(client),
+        )
+        assert published_before.status_code == 404
+
+        with pdf_v2_path.open("rb") as file:
+            version_response = client.post(
+                f"/api/v1/documents/{created['document_id']}/versions",
+                headers=auth_headers(client),
+                data={
+                    "versionLabel": "v2",
+                    "changeReason": "Draft update before public release.",
+                    "createdBy": "user-test-admin",
+                },
+                files={"file": (pdf_v2_path.name, file, "application/pdf")},
+            )
+        assert version_response.status_code == 201, version_response.text
+        second_version = version_response.json()
+        assert second_version["version_status"] == "WORKING"
+        assert second_version["is_latest"] is True
+        assert second_version["is_published"] is False
+
+        publish_response = client.post(
+            f"/api/v1/documents/{created['document_id']}/versions/{first_version['version_id']}/publish",
+            headers=auth_headers(client),
+            json={"changeReason": "Release v1 to the field while v2 remains under review."},
+        )
+        assert publish_response.status_code == 200, publish_response.text
+        published_doc = publish_response.json()
+        assert published_doc["status"] == "PUBLISHED"
+        assert published_doc["latest_version"]["version_id"] == second_version["version_id"]
+        assert published_doc["latest_version"]["version_status"] == "WORKING"
+        assert published_doc["published_version_id"] == first_version["version_id"]
+        assert published_doc["published_version"]["version_id"] == first_version["version_id"]
+        assert published_doc["published_version"]["version_status"] == "PUBLISHED"
+        assert published_doc["published_version"]["is_published"] is True
+
+        versions_response = client.get(
+            f"/api/v1/documents/{created['document_id']}/versions",
+            headers=auth_headers(client),
+        )
+        assert versions_response.status_code == 200
+        versions = versions_response.json()
+        latest = next(version for version in versions if version["version_id"] == second_version["version_id"])
+        public = next(version for version in versions if version["version_id"] == first_version["version_id"])
+        assert latest["is_latest"] is True
+        assert latest["is_published"] is False
+        assert public["is_latest"] is False
+        assert public["is_published"] is True
+        assert public["version_status"] == "PUBLISHED"
+
+        field_response = client.get(
+            f"/api/v1/documents/{created['document_id']}/published",
+            headers=auth_headers(client),
+        )
+        assert field_response.status_code == 200, field_response.text
+        field_version = field_response.json()
+        assert field_version["version_id"] == first_version["version_id"]
+        assert field_version["version_no"] == 1
+
+        published_list_response = client.get(
+            "/api/v1/documents/published",
+            headers=auth_headers(client),
+        )
+        assert published_list_response.status_code == 200
+        published_items = published_list_response.json()
+        published_item = next(
+            item for item in published_items if item["document_id"] == created["document_id"]
+        )
+        assert published_item["latest_version_no"] is None
+        assert published_item["published_version_id"] == first_version["version_id"]
+        assert published_item["published_version_no"] == 1
+
+        with client.app.state.database.session() as session:
+            document = session.scalar(
+                select(Document).where(Document.document_id == created["document_id"])
+            )
+            assert document is not None
+            assert document.published_version_id == first_version["version_id"]
+            saved_public_version = session.scalar(
+                select(DocumentVersion).where(
+                    DocumentVersion.version_id == first_version["version_id"]
+                )
+            )
+            assert saved_public_version is not None
+            assert saved_public_version.is_published is True
+            assert saved_public_version.version_status == "PUBLISHED"
+            history = session.scalars(
+                select(ActivityHistory).where(
+                    ActivityHistory.target_id == first_version["version_id"]
+                )
+            ).all()
+            assert any(item.event_type == "document.version_published" for item in history)
 
 
 def test_document_registration_requires_authentication() -> None:
