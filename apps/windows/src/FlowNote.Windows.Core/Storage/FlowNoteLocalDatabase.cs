@@ -418,6 +418,73 @@ public sealed class FlowNoteLocalDatabase
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS work_sequence_boards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                board_id TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL,
+                description TEXT NULL,
+                line_code TEXT NULL,
+                board_date TEXT NULL,
+                status TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_work_sequence_boards_updated
+                ON work_sequence_boards (updated_at, id);
+
+            CREATE TABLE IF NOT EXISTS work_sequence_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id TEXT NOT NULL UNIQUE,
+                board_id TEXT NOT NULL REFERENCES work_sequence_boards(board_id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                description TEXT NULL,
+                work_order_no TEXT NULL,
+                document_id TEXT NULL,
+                status TEXT NOT NULL,
+                sort_order INTEGER NOT NULL,
+                assigned_to TEXT NULL,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(board_id, sort_order)
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_work_sequence_items_board_order
+                ON work_sequence_items (board_id, sort_order);
+
+            CREATE TABLE IF NOT EXISTS work_sequence_change_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                change_id TEXT NOT NULL UNIQUE,
+                board_id TEXT NOT NULL REFERENCES work_sequence_boards(board_id) ON DELETE CASCADE,
+                item_id TEXT NULL REFERENCES work_sequence_items(item_id) ON DELETE SET NULL,
+                change_type TEXT NOT NULL,
+                actor_name TEXT NOT NULL,
+                before_value TEXT NULL,
+                after_value TEXT NULL,
+                change_reason TEXT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_work_sequence_history_board_created
+                ON work_sequence_change_history (board_id, created_at);
+
+            CREATE TABLE IF NOT EXISTS work_sequence_notification_candidates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id TEXT NOT NULL UNIQUE,
+                board_id TEXT NOT NULL REFERENCES work_sequence_boards(board_id) ON DELETE CASCADE,
+                item_id TEXT NULL REFERENCES work_sequence_items(item_id) ON DELETE SET NULL,
+                event_type TEXT NOT NULL,
+                actor_name TEXT NOT NULL,
+                message TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_work_sequence_notify_board_created
+                ON work_sequence_notification_candidates (board_id, created_at);
+
             CREATE TABLE IF NOT EXISTS server_sync_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sync_id TEXT NOT NULL UNIQUE,

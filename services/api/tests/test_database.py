@@ -49,6 +49,10 @@ def test_app_startup_creates_mvp_schema() -> None:
         "user_roles",
         "work_record_versions",
         "work_records",
+        "work_sequence_boards",
+        "work_sequence_change_history",
+        "work_sequence_items",
+        "work_sequence_notification_candidates",
     }
 
     with create_test_client() as client:

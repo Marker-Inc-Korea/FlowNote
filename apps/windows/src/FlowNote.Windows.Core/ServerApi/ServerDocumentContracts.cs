@@ -205,3 +205,168 @@ public sealed record ServerDocumentAccessLogResponse
     [JsonPropertyName("created_at")]
     public DateTime CreatedAt { get; init; }
 }
+
+public sealed record ServerWorkSequenceBoardCreateRequest
+{
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("lineCode")]
+    public string? LineCode { get; init; }
+
+    [JsonPropertyName("boardDate")]
+    public DateOnly? BoardDate { get; init; }
+
+    [JsonPropertyName("createdBy")]
+    public string? CreatedBy { get; init; }
+}
+
+public sealed record ServerWorkSequenceItemCreateRequest
+{
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("workOrderNo")]
+    public string? WorkOrderNo { get; init; }
+
+    [JsonPropertyName("documentId")]
+    public string? DocumentId { get; init; }
+
+    [JsonPropertyName("assignedTo")]
+    public string? AssignedTo { get; init; }
+
+    [JsonPropertyName("createdBy")]
+    public string? CreatedBy { get; init; }
+}
+
+public sealed record ServerWorkSequenceReorderRequest
+{
+    [JsonPropertyName("itemIds")]
+    public IReadOnlyList<string> ItemIds { get; init; } = [];
+
+    [JsonPropertyName("actorId")]
+    public string? ActorId { get; init; }
+
+    [JsonPropertyName("changeReason")]
+    public string? ChangeReason { get; init; }
+}
+
+public sealed record ServerWorkSequenceStatusUpdateRequest
+{
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("actorId")]
+    public string? ActorId { get; init; }
+
+    [JsonPropertyName("changeReason")]
+    public string? ChangeReason { get; init; }
+}
+
+public sealed record ServerWorkSequenceItemResponse
+{
+    [JsonPropertyName("item_id")]
+    public string ItemId { get; init; } = string.Empty;
+
+    [JsonPropertyName("board_id")]
+    public string BoardId { get; init; } = string.Empty;
+
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("work_order_no")]
+    public string? WorkOrderNo { get; init; }
+
+    [JsonPropertyName("document_id")]
+    public string? DocumentId { get; init; }
+
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("sort_order")]
+    public int SortOrder { get; init; }
+
+    [JsonPropertyName("assigned_to")]
+    public string? AssignedTo { get; init; }
+
+    [JsonPropertyName("created_by")]
+    public string? CreatedBy { get; init; }
+
+    [JsonPropertyName("created_at")]
+    public DateTime CreatedAt { get; init; }
+
+    [JsonPropertyName("updated_at")]
+    public DateTime UpdatedAt { get; init; }
+}
+
+public sealed record ServerWorkSequenceBoardResponse
+{
+    [JsonPropertyName("board_id")]
+    public string BoardId { get; init; } = string.Empty;
+
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("line_code")]
+    public string? LineCode { get; init; }
+
+    [JsonPropertyName("board_date")]
+    public DateOnly? BoardDate { get; init; }
+
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("created_by")]
+    public string? CreatedBy { get; init; }
+
+    [JsonPropertyName("created_at")]
+    public DateTime CreatedAt { get; init; }
+
+    [JsonPropertyName("updated_at")]
+    public DateTime UpdatedAt { get; init; }
+
+    [JsonPropertyName("items")]
+    public IReadOnlyList<ServerWorkSequenceItemResponse> Items { get; init; } = [];
+}
+
+public sealed record ServerWorkSequenceHistoryResponse
+{
+    [JsonPropertyName("change_id")]
+    public string ChangeId { get; init; } = string.Empty;
+
+    [JsonPropertyName("board_id")]
+    public string BoardId { get; init; } = string.Empty;
+
+    [JsonPropertyName("item_id")]
+    public string? ItemId { get; init; }
+
+    [JsonPropertyName("change_type")]
+    public string ChangeType { get; init; } = string.Empty;
+
+    [JsonPropertyName("actor_id")]
+    public string? ActorId { get; init; }
+
+    [JsonPropertyName("before_value")]
+    public string? BeforeValue { get; init; }
+
+    [JsonPropertyName("after_value")]
+    public string? AfterValue { get; init; }
+
+    [JsonPropertyName("change_reason")]
+    public string? ChangeReason { get; init; }
+
+    [JsonPropertyName("created_at")]
+    public DateTime CreatedAt { get; init; }
+}
