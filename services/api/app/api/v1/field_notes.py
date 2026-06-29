@@ -10,7 +10,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_user
+from app.core.auth import FieldNoteCreateUser, get_current_user
 from app.db.models import Document, DocumentVersion, FieldNote
 from app.db.session import get_db_session
 
@@ -178,6 +178,7 @@ def _field_note_response(note: FieldNote) -> FieldNoteResponse:
 @router.post("", response_model=FieldNoteResponse, status_code=status.HTTP_201_CREATED)
 def create_field_note(
     request: FieldNoteCreateRequest,
+    _current_user: FieldNoteCreateUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> FieldNoteResponse:
     request.document_id = _clean_optional(request.document_id)

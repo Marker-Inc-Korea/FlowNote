@@ -14,6 +14,18 @@ DEFAULT_ADMIN_DISPLAY_NAME = "FlowNote Admin"
 DEFAULT_ADMIN_ROLE = "admin"
 DEFAULT_ADMIN_PASSWORD_SALT = "flownote-dev-admin-v1"
 DEFAULT_ADMIN_PASSWORD_ITERATIONS = 100_000
+ALLOWED_USER_ROLES = (
+    "admin",
+    "manager",
+    "viewer",
+    "system-admin",
+    "document-admin",
+    "assistant-manager",
+    "department-manager",
+    "line-foreman",
+    "team-lead",
+    "team-member",
+)
 
 
 def hash_password_for_dev(password: str) -> str:
@@ -70,6 +82,93 @@ def _ensure_user_account_columns(database: Database) -> None:
         )
 
 
+def _ensure_user_account_role_constraint(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+
+    with database.engine.begin() as connection:
+        table_sql = connection.scalar(
+            text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'user_accounts'")
+        )
+        if not table_sql or "team-lead" in table_sql:
+            return
+
+        roles_sql = ", ".join(f"'{role}'" for role in ALLOWED_USER_ROLES)
+        connection.execute(text("PRAGMA foreign_keys=OFF"))
+        connection.execute(
+            text(
+                f"""
+                CREATE TABLE user_accounts_new (
+                    id INTEGER NOT NULL,
+                    user_id VARCHAR(64) NOT NULL,
+                    username VARCHAR(100) NOT NULL,
+                    login_id VARCHAR(100) NOT NULL,
+                    display_name VARCHAR(100) NOT NULL,
+                    role VARCHAR(50) NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    is_active BOOLEAN NOT NULL,
+                    status VARCHAR(20) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    PRIMARY KEY (id),
+                    CONSTRAINT ck_user_role CHECK (role IN ({roles_sql})),
+                    CONSTRAINT ck_user_status CHECK (status IN ('ACTIVE', 'LOCKED', 'DISABLED')),
+                    UNIQUE (user_id),
+                    UNIQUE (username),
+                    UNIQUE (login_id)
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO user_accounts_new (
+                    id,
+                    user_id,
+                    username,
+                    login_id,
+                    display_name,
+                    role,
+                    password_hash,
+                    is_active,
+                    status,
+                    created_at,
+                    updated_at
+                )
+                SELECT
+                    id,
+                    user_id,
+                    username,
+                    login_id,
+                    display_name,
+                    CASE
+                        WHEN role IS NULL OR role = '' THEN 'viewer'
+                        ELSE role
+                    END,
+                    password_hash,
+                    COALESCE(is_active, 1),
+                    COALESCE(NULLIF(status, ''), 'ACTIVE'),
+                    COALESCE(created_at, CURRENT_TIMESTAMP),
+                    COALESCE(updated_at, CURRENT_TIMESTAMP)
+                FROM user_accounts
+                """
+            )
+        )
+        connection.execute(text("DROP TABLE user_accounts"))
+        connection.execute(text("ALTER TABLE user_accounts_new RENAME TO user_accounts"))
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_user_accounts_user_id ON user_accounts (user_id)")
+        )
+        connection.execute(
+            text("CREATE UNIQUE INDEX IF NOT EXISTS ix_user_accounts_username ON user_accounts (username)")
+        )
+        connection.execute(
+            text("CREATE UNIQUE INDEX IF NOT EXISTS ix_user_accounts_login_id ON user_accounts (login_id)")
+        )
+        connection.execute(text("PRAGMA foreign_keys=ON"))
+
+
 def _seed_default_admin_account(database: Database) -> None:
     with database.session() as session:
         existing = session.scalar(
@@ -102,6 +201,7 @@ def _seed_default_admin_account(database: Database) -> None:
 def initialize_database(database: Database) -> None:
     Base.metadata.create_all(bind=database.engine)
     _ensure_user_account_columns(database)
+    _ensure_user_account_role_constraint(database)
     with database.session() as session:
         existing = session.scalar(
             select(SchemaMigration).where(SchemaMigration.version == INITIAL_SCHEMA_VERSION)

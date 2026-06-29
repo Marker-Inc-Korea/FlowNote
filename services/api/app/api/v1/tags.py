@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.auth import DocumentWriteUser
 from app.db.models import TagDefinition
 from app.db.session import get_db_session
 
@@ -85,6 +86,7 @@ def list_tags(
 @router.post("", response_model=TagResponse, status_code=status.HTTP_201_CREATED)
 def create_tag(
     request: TagCreateRequest,
+    _current_user: DocumentWriteUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> TagResponse:
     tag_type = request.tag_type.strip()
