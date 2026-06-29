@@ -54,12 +54,14 @@
                             Margin="0,0,8,0"
                             Content="새 폴더"
                             Click="NewFolderButton_Click" />
-                    <Button Width="104"
+                    <Button x:Name="RegisterDocumentButton"
+                            Width="104"
                             Height="34"
                             Margin="0,0,8,0"
                             Content="문서 등록"
                             Click="RegisterDocumentButton_Click" />
-                    <Button Width="104"
+                    <Button x:Name="UploadFileButton"
+                            Width="104"
                             Height="34"
                             Content="파일 업로드"
                             Click="UploadFileButton_Click" />

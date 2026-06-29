@@ -11,7 +11,7 @@ from sqlalchemy import delete, desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_user
+from app.core.auth import DocumentWriteUser, get_current_user
 from app.core.config import Settings, get_settings
 from app.core.storage import resolve_storage_root, store_upload_file
 from app.db.models import Document, DocumentTag, DocumentVersion, FileObject
@@ -275,6 +275,7 @@ async def create_document(
     title: Annotated[str, Form(min_length=1)],
     document_type: Annotated[str, Form(alias="documentType", min_length=1)],
     change_reason: Annotated[str, Form(alias="changeReason", min_length=1)],
+    _current_user: DocumentWriteUser,
     description: Annotated[str | None, Form()] = None,
     owner_id: Annotated[str | None, Form(alias="ownerId")] = None,
     category_id: Annotated[str | None, Form(alias="categoryId")] = None,
@@ -392,6 +393,7 @@ def get_document(
 def replace_document_tags(
     document_id: str,
     tags: list[str],
+    _current_user: DocumentWriteUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> DocumentResponse:
     document = session.scalar(
@@ -433,6 +435,7 @@ async def create_document_version(
     document_id: str,
     file: Annotated[UploadFile, File()],
     change_reason: Annotated[str, Form(alias="changeReason", min_length=1)],
+    _current_user: DocumentWriteUser,
     version_label: Annotated[str | None, Form(alias="versionLabel")] = None,
     created_by: Annotated[str | None, Form(alias="createdBy")] = None,
     app_settings: Annotated[Settings, Depends(get_settings)] = None,

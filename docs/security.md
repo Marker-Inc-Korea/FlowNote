@@ -2,7 +2,7 @@
 
 ## 0. 현재 코드 기준 보안 상태
 
-현재 코드에서 실제 구현된 보안 기능은 Windows WPF 앱 시작 시 로그인 요구, 기본 계정 생성, 로그인 성공 후 화면 진입, 알림 대상 사용자 식별, 문서 보기 창 열림/닫힘 로컬 감사 로그, 개발 검증용 기본 타이머 기반 뷰어 자동 닫힘, FastAPI MVP 로그인 API와 Bearer access token 인증이다. `FLOWNOTE_API_BASE_URL`이 설정된 경우 WPF 로그인 화면은 FastAPI 로그인 API를 먼저 호출하고, 성공 응답의 사용자 ID, 사용자명, 역할, 표시명, access token, 만료 시각을 로그인 결과로 보관한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인을 유지한다. FastAPI 문서/FieldNote/문서 접근 로그 API는 `Authorization: Bearer {access_token}`이 없거나 유효하지 않으면 `401`을 반환한다. 역할 기반 서버 권한, 운영용 토큰 폐기/갱신, 서버 감사 로그 자동 actor 지정 전체 적용, 다운로드 차단, 운영 설정 기반 뷰어 자동 닫힘 값 관리, 외부 접속 제어는 아직 구현된 기능이 아니라 제품 보안 목표이다.
+현재 코드에서 실제 구현된 보안 기능은 Windows WPF 앱 시작 시 로그인 요구, 기본 계정 생성, 로그인 성공 후 화면 진입, 알림 대상 사용자 식별, 문서 보기 창 열림/닫힘 로컬 감사 로그, 개발 검증용 기본 타이머 기반 뷰어 자동 닫힘, FastAPI MVP 로그인 API와 Bearer access token 인증이다. `FLOWNOTE_API_BASE_URL`이 설정된 경우 WPF 로그인 화면은 FastAPI 로그인 API를 먼저 호출하고, 성공 응답의 사용자 ID, 사용자명, 역할, 표시명, access token, 만료 시각을 로그인 결과로 보관한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인을 유지한다. FastAPI 문서/FieldNote/문서 접근 로그 API는 `Authorization: Bearer {access_token}`이 없거나 유효하지 않으면 `401`을 반환한다. 서버는 role 값으로 문서 등록, 문서 버전 등록, 문서 태그 변경, 태그 등록, 문서 접근 로그 조회 권한을 검사하고 권한이 없으면 `403`을 반환한다. WPF는 로그인 role 기준으로 문서 등록/파일 업로드 버튼과 파일 드롭을 비활성화한다. 운영용 토큰 폐기/갱신, 서버 감사 로그 자동 actor 지정 전체 적용, 다운로드 차단, 운영 설정 기반 뷰어 자동 닫힘 값 관리, 외부 접속 제어는 아직 구현된 기능이 아니라 제품 보안 목표이다.
 
 ## 0.1 개발 접근 정보와 공개 저장소 주의
 
@@ -41,11 +41,23 @@ FlowNote의 배포 보안 원칙은 사내 서버형 운영이다. 문서와 파
 
 | 역할 | 설명 | 주요 권한 |
 | --- | --- | --- |
-| `field-user` | 현장 사용자 | view, comment |
-| `document-admin` | 문서 관리자 | view, download, comment, write, delete, manage |
-| `system-admin` | 시스템 관리자 | 시스템 설정, 회원 관리, 보안 정책 관리 |
+| `admin`, `system-admin` | 시스템 관리자 | 문서 쓰기, 태그 변경, 접근 로그 조회, 후속 시스템 설정 |
+| `manager`, `document-admin`, `assistant-manager`, `department-manager` | 관리자 그룹 | 문서 등록, 버전 등록, 태그 변경, FieldNote 등록 |
+| `line-foreman` | 반장 | 문서 등록, 버전 등록, 태그 변경, FieldNote 등록 |
+| `team-lead` | 조장 | 문서 등록, 버전 등록, 태그 변경, FieldNote 등록 |
+| `team-member`, `viewer` | 조원/현장 사용자 | 문서 열람과 FieldNote 등록 중심. 문서 등록, 버전 등록, 태그 변경, 접근 로그 조회 불가 |
 
 `download` 권한은 관리자급 역할에만 부여한다. 실제 다운로드 차단 UI와 로컬 제어는 Windows WPF 클라이언트 앱 단계에서 구현한다.
+
+현재 서버 구현 기준 권한은 다음과 같다.
+
+| 기능 | 허용 role | 거부 시 |
+| --- | --- | --- |
+| 문서 등록 `POST /api/v1/documents` | 관리자 그룹, `line-foreman`, `team-lead` 이상 | `403` |
+| 문서 버전 등록 `POST /api/v1/documents/{documentId}/versions` | 관리자 그룹, `line-foreman`, `team-lead` 이상 | `403` |
+| 문서 태그 변경 `PUT /api/v1/documents/{documentId}/tags` 및 태그 등록 `POST /api/v1/tags` | 관리자 그룹, `line-foreman`, `team-lead` 이상 | `403` |
+| FieldNote 등록 `POST /api/v1/field-notes` | 인증된 관리자/반장/조장/조원 계정 | `401` 또는 미지원 role `403` |
+| 접근 로그 조회 `GET /api/v1/documents/{documentId}/access-logs` | `admin`, `system-admin` | `403` |
 
 ## 3. 문서 열람 보안
 

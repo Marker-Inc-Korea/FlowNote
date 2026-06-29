@@ -9,7 +9,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_user
+from app.core.auth import AccessLogReadUser, get_current_user
 from app.db.models import Document, DocumentAccessLog, DocumentVersion, UserAccount
 from app.db.session import get_db_session
 
@@ -159,6 +159,7 @@ def create_document_access_log(
 @router.get("/{document_id}/access-logs", response_model=list[DocumentAccessLogResponse])
 def list_document_access_logs(
     document_id: str,
+    _current_user: AccessLogReadUser,
     session: Annotated[Session, Depends(get_db_session)],
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[DocumentAccessLogResponse]:

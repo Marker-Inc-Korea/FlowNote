@@ -32,7 +32,14 @@ class SchemaMigration(Base):
 class UserAccount(TimestampMixin, Base):
     __tablename__ = "user_accounts"
     __table_args__ = (
-        CheckConstraint("role IN ('admin', 'manager', 'viewer')", name="ck_user_role"),
+        CheckConstraint(
+            (
+                "role IN ('admin', 'manager', 'viewer', 'system-admin', 'document-admin', "
+                "'assistant-manager', 'department-manager', 'line-foreman', 'team-lead', "
+                "'team-member')"
+            ),
+            name="ck_user_role",
+        ),
         CheckConstraint("status IN ('ACTIVE', 'LOCKED', 'DISABLED')", name="ck_user_status"),
     )
 
