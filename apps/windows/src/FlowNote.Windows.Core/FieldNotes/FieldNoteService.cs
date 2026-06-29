@@ -1,6 +1,7 @@
 using FlowNote.Windows.Core.Storage;
 using Microsoft.Data.Sqlite;
 using FlowNote.Windows.Core.History;
+using System.Security.Cryptography;
 
 namespace FlowNote.Windows.Core.FieldNotes;
 
@@ -174,6 +175,151 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
         return records;
     }
 
+    public FieldNoteAttachmentRecord AddAttachment(
+        string noteId,
+        string sourcePath,
+        string createdBy,
+        string? caption = null,
+        DateTime? capturedAt = null,
+        string? attachmentType = null)
+    {
+        if (string.IsNullOrWhiteSpace(noteId))
+        {
+            throw new ArgumentException("Field note id is required.", nameof(noteId));
+        }
+
+        if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+        {
+            throw new FileNotFoundException("Attachment source file was not found.", sourcePath);
+        }
+
+        var now = DateTime.UtcNow;
+        using var connection = database.OpenConnection();
+        var note = LoadNoteTarget(connection, noteId)
+            ?? throw new InvalidOperationException($"Field note not found: {noteId}");
+
+        var sourceFile = new FileInfo(sourcePath);
+        var dataDirectory = Path.GetDirectoryName(database.DatabasePath)!;
+        var attachmentRoot = Path.Combine(
+            dataDirectory,
+            "Files",
+            "FieldNoteAttachments",
+            now.ToString("yyyy-MM-dd"),
+            noteId);
+        Directory.CreateDirectory(attachmentRoot);
+
+        var targetPath = GetUniqueTargetPath(attachmentRoot, sourceFile.Name);
+        File.Copy(sourceFile.FullName, targetPath);
+        var storedRelativePath = Path.GetRelativePath(dataDirectory, targetPath);
+        var storedFile = new FileInfo(targetPath);
+        var hash = ComputeSha256(targetPath);
+        var extension = sourceFile.Extension.ToLowerInvariant();
+        var normalizedAttachmentType = NormalizeAttachmentType(attachmentType, extension);
+        var contentType = ContentTypeFromExtension(extension);
+        var attachmentId = $"att-{Guid.NewGuid():N}";
+
+        using var insert = connection.CreateCommand();
+        insert.CommandText = """
+            INSERT INTO field_note_attachments (
+                attachment_id,
+                note_id,
+                local_path,
+                original_file_name,
+                extension,
+                content_type,
+                size_bytes,
+                hash_sha256,
+                attachment_type,
+                caption,
+                captured_at,
+                created_by,
+                created_at
+            )
+            VALUES (
+                $attachment_id,
+                $note_id,
+                $local_path,
+                $original_file_name,
+                $extension,
+                $content_type,
+                $size_bytes,
+                $hash_sha256,
+                $attachment_type,
+                $caption,
+                $captured_at,
+                $created_by,
+                $created_at
+            );
+            SELECT last_insert_rowid();
+            """;
+        insert.Parameters.AddWithValue("$attachment_id", attachmentId);
+        insert.Parameters.AddWithValue("$note_id", noteId);
+        insert.Parameters.AddWithValue("$local_path", storedRelativePath);
+        insert.Parameters.AddWithValue("$original_file_name", sourceFile.Name);
+        insert.Parameters.AddWithValue("$extension", extension);
+        insert.Parameters.AddWithValue("$content_type", string.IsNullOrWhiteSpace(contentType) ? DBNull.Value : contentType);
+        insert.Parameters.AddWithValue("$size_bytes", storedFile.Length);
+        insert.Parameters.AddWithValue("$hash_sha256", hash);
+        insert.Parameters.AddWithValue("$attachment_type", normalizedAttachmentType);
+        insert.Parameters.AddWithValue("$caption", string.IsNullOrWhiteSpace(caption) ? DBNull.Value : caption.Trim());
+        insert.Parameters.AddWithValue("$captured_at", capturedAt is null ? DBNull.Value : capturedAt.Value.ToString("O"));
+        insert.Parameters.AddWithValue("$created_by", createdBy);
+        insert.Parameters.AddWithValue("$created_at", now.ToString("O"));
+        var id = Convert.ToInt64(insert.ExecuteScalar());
+
+        HistoryService.Record(
+            connection,
+            "field_note.attachment_added",
+            createdBy,
+            "field_note",
+            noteId,
+            note.DocumentTitle,
+            $"Field note attachment added: {sourceFile.Name}",
+            now);
+
+        return new FieldNoteAttachmentRecord(
+            id,
+            attachmentId,
+            noteId,
+            storedRelativePath,
+            sourceFile.Name,
+            extension,
+            contentType,
+            storedFile.Length,
+            hash,
+            normalizedAttachmentType,
+            string.IsNullOrWhiteSpace(caption) ? null : caption.Trim(),
+            capturedAt,
+            createdBy,
+            now,
+            null,
+            null);
+    }
+
+    public IReadOnlyList<FieldNoteAttachmentRecord> ListAttachments(string noteId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, attachment_id, note_id, local_path, original_file_name, extension,
+                   content_type, size_bytes, hash_sha256, attachment_type, caption,
+                   captured_at, created_by, created_at, server_attachment_id, synced_at
+            FROM field_note_attachments
+            WHERE note_id = $note_id
+            ORDER BY created_at DESC, id DESC;
+            """;
+        command.Parameters.AddWithValue("$note_id", noteId);
+
+        using var reader = command.ExecuteReader();
+        var records = new List<FieldNoteAttachmentRecord>();
+        while (reader.Read())
+        {
+            records.Add(ReadAttachment(reader));
+        }
+
+        return records;
+    }
+
     private static FieldNoteRecord ReadFieldNote(SqliteDataReader reader)
     {
         return new FieldNoteRecord(
@@ -196,6 +342,113 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
             reader.GetString(16),
             DateTime.Parse(reader.GetString(17)),
             reader.IsDBNull(18) ? null : DateTime.Parse(reader.GetString(18)));
+    }
+
+    private static FieldNoteAttachmentRecord ReadAttachment(SqliteDataReader reader)
+    {
+        return new FieldNoteAttachmentRecord(
+            reader.GetInt64(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetString(3),
+            reader.GetString(4),
+            reader.GetString(5),
+            reader.IsDBNull(6) ? null : reader.GetString(6),
+            reader.GetInt64(7),
+            reader.GetString(8),
+            reader.GetString(9),
+            reader.IsDBNull(10) ? null : reader.GetString(10),
+            reader.IsDBNull(11) ? null : DateTime.Parse(reader.GetString(11)),
+            reader.GetString(12),
+            DateTime.Parse(reader.GetString(13)),
+            reader.IsDBNull(14) ? null : reader.GetString(14),
+            reader.IsDBNull(15) ? null : DateTime.Parse(reader.GetString(15)));
+    }
+
+    private static NoteTarget? LoadNoteTarget(SqliteConnection connection, string noteId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT note.note_id, note.document_id, document.title
+            FROM field_notes AS note
+            LEFT JOIN documents AS document ON document.document_id = note.document_id
+            WHERE note.note_id = $note_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$note_id", noteId);
+
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new NoteTarget(
+            reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2));
+    }
+
+    private static string ComputeSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        var hashBytes = SHA256.HashData(stream);
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    private static string NormalizeAttachmentType(string? attachmentType, string extension)
+    {
+        if (!string.IsNullOrWhiteSpace(attachmentType))
+        {
+            var normalized = attachmentType.Trim().ToLowerInvariant();
+            return normalized is "photo" or "document" or "other"
+                ? normalized
+                : throw new ArgumentOutOfRangeException(nameof(attachmentType), "Unsupported attachment type.");
+        }
+
+        return extension switch
+        {
+            ".jpg" or ".jpeg" or ".png" or ".gif" or ".bmp" or ".webp" => "photo",
+            ".pdf" or ".txt" or ".md" => "document",
+            _ => "other"
+        };
+    }
+
+    private static string? ContentTypeFromExtension(string extension)
+    {
+        return extension switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".gif" => "image/gif",
+            ".bmp" => "image/bmp",
+            ".webp" => "image/webp",
+            ".pdf" => "application/pdf",
+            ".txt" => "text/plain",
+            ".md" => "text/markdown",
+            _ => null
+        };
+    }
+
+    private static string GetUniqueTargetPath(string directory, string fileName)
+    {
+        var candidate = Path.Combine(directory, fileName);
+        if (!File.Exists(candidate))
+        {
+            return candidate;
+        }
+
+        var name = Path.GetFileNameWithoutExtension(fileName);
+        var extension = Path.GetExtension(fileName);
+        var index = 1;
+        do
+        {
+            candidate = Path.Combine(directory, $"{name}-{index:00}{extension}");
+            index++;
+        }
+        while (File.Exists(candidate));
+
+        return candidate;
     }
 
     private static void AddFieldNoteNotification(
@@ -238,4 +491,6 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$created_at", createdAt.ToString("O"));
         command.ExecuteNonQuery();
     }
+
+    private sealed record NoteTarget(string NoteId, string? DocumentId, string? DocumentTitle);
 }

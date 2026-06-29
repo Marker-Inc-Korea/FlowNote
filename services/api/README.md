@@ -26,6 +26,8 @@ The server currently implements:
 | GET | `/api/v1/field-notes` | FieldNote list |
 | GET | `/api/v1/field-notes/{noteId}` | FieldNote detail |
 | PATCH | `/api/v1/field-notes/{noteId}` | Manager review and analysis update |
+| POST | `/api/v1/field-notes/{noteId}/attachments` | FieldNote photo/file attachment registration |
+| GET | `/api/v1/field-notes/{noteId}/attachments` | FieldNote attachment list |
 | GET | `/api/v1/documents/{documentId}/field-notes` | FieldNotes for a document |
 
 Document, FieldNote, and document access log APIs require `Authorization: Bearer {access_token}`. Missing, invalid, or expired credentials return `401`.
@@ -53,6 +55,7 @@ Useful settings:
 - `FLOWNOTE_DATABASE_URL`: default `sqlite:///./data/flownote.sqlite3`
 - `FLOWNOTE_TEST_DATABASE_URL`: default `sqlite:///./data/flownote.test.sqlite3`
 - `FLOWNOTE_STORAGE_ROOT`: default `./storage`
+- `FLOWNOTE_FIELD_NOTE_ATTACHMENT_MAX_BYTES`: default `20971520`
 
 Do not commit real accounts, passwords, tokens, API keys, production DB connection strings, customer documents, or operational data.
 

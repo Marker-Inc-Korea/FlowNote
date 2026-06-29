@@ -165,3 +165,57 @@ public sealed record ServerFieldNoteResponse
     [JsonPropertyName("analyzed_at")]
     public DateTime? AnalyzedAt { get; init; }
 }
+
+public sealed record ServerFieldNoteAttachmentFileResponse
+{
+    [JsonPropertyName("storage_type")]
+    public string StorageType { get; init; } = string.Empty;
+
+    [JsonPropertyName("storage_key")]
+    public string StorageKey { get; init; } = string.Empty;
+
+    [JsonPropertyName("original_filename")]
+    public string OriginalFilename { get; init; } = string.Empty;
+
+    [JsonPropertyName("extension")]
+    public string? Extension { get; init; }
+
+    [JsonPropertyName("mime_type")]
+    public string? MimeType { get; init; }
+
+    [JsonPropertyName("file_family")]
+    public string? FileFamily { get; init; }
+
+    [JsonPropertyName("size_bytes")]
+    public long? SizeBytes { get; init; }
+
+    [JsonPropertyName("hash_sha256")]
+    public string? HashSha256 { get; init; }
+}
+
+public sealed record ServerFieldNoteAttachmentResponse
+{
+    [JsonPropertyName("attachment_id")]
+    public string AttachmentId { get; init; } = string.Empty;
+
+    [JsonPropertyName("note_id")]
+    public string NoteId { get; init; } = string.Empty;
+
+    [JsonPropertyName("attachment_type")]
+    public string AttachmentType { get; init; } = string.Empty;
+
+    [JsonPropertyName("caption")]
+    public string? Caption { get; init; }
+
+    [JsonPropertyName("captured_at")]
+    public DateTime? CapturedAt { get; init; }
+
+    [JsonPropertyName("created_by")]
+    public string? CreatedBy { get; init; }
+
+    [JsonPropertyName("created_at")]
+    public DateTime CreatedAt { get; init; }
+
+    [JsonPropertyName("file")]
+    public ServerFieldNoteAttachmentFileResponse File { get; init; } = new();
+}

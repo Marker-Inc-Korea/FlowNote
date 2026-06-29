@@ -327,6 +327,28 @@ public sealed class FlowNoteLocalDatabase
             CREATE INDEX IF NOT EXISTS ix_field_notes_document_created
                 ON field_notes (document_id, created_at);
 
+            CREATE TABLE IF NOT EXISTS field_note_attachments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                attachment_id TEXT NOT NULL UNIQUE,
+                note_id TEXT NOT NULL REFERENCES field_notes(note_id) ON DELETE CASCADE,
+                local_path TEXT NOT NULL,
+                original_file_name TEXT NOT NULL,
+                extension TEXT NOT NULL,
+                content_type TEXT NULL,
+                size_bytes INTEGER NOT NULL,
+                hash_sha256 TEXT NOT NULL,
+                attachment_type TEXT NOT NULL,
+                caption TEXT NULL,
+                captured_at TEXT NULL,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                server_attachment_id TEXT NULL,
+                synced_at TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_field_note_attachments_note
+                ON field_note_attachments (note_id, created_at);
+
             CREATE TABLE IF NOT EXISTS document_view_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 document_id TEXT NOT NULL,
@@ -414,6 +436,7 @@ public sealed class FlowNoteLocalDatabase
                 server_document_id TEXT NULL,
                 server_version_id TEXT NULL,
                 server_note_id TEXT NULL,
+                server_attachment_id TEXT NULL,
                 server_log_id TEXT NULL
             );
 
@@ -428,6 +451,7 @@ public sealed class FlowNoteLocalDatabase
                 server_document_id TEXT NULL,
                 server_version_id TEXT NULL,
                 server_note_id TEXT NULL,
+                server_attachment_id TEXT NULL,
                 server_log_id TEXT NULL,
                 synced_at TEXT NOT NULL,
                 UNIQUE(entity_type, local_id, local_version_no)
@@ -452,6 +476,10 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "document_versions", "synced_at", "TEXT NULL");
         EnsureColumn(connection, "field_notes", "server_note_id", "TEXT NULL");
         EnsureColumn(connection, "field_notes", "synced_at", "TEXT NULL");
+        EnsureColumn(connection, "field_note_attachments", "server_attachment_id", "TEXT NULL");
+        EnsureColumn(connection, "field_note_attachments", "synced_at", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "server_attachment_id", "TEXT NULL");
+        EnsureColumn(connection, "server_id_mappings", "server_attachment_id", "TEXT NULL");
         EnsureColumn(connection, "document_view_logs", "server_start_log_id", "INTEGER NULL");
         EnsureColumn(connection, "document_view_logs", "server_close_log_id", "INTEGER NULL");
         EnsureColumn(connection, "document_view_logs", "synced_at", "TEXT NULL");
