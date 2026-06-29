@@ -390,6 +390,43 @@ public sealed class FlowNoteLocalDatabase
                 is_read INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS server_sync_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sync_id TEXT NOT NULL UNIQUE,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                local_document_id TEXT NULL,
+                local_version_no INTEGER NULL,
+                idempotency_key TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT NULL,
+                created_at TEXT NOT NULL,
+                last_attempt_at TEXT NULL,
+                synced_at TEXT NULL,
+                server_document_id TEXT NULL,
+                server_version_id TEXT NULL,
+                server_note_id TEXT NULL,
+                server_log_id TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_server_sync_queue_status
+                ON server_sync_queue (status, id);
+
+            CREATE TABLE IF NOT EXISTS server_id_mappings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL,
+                local_id TEXT NOT NULL,
+                local_version_no INTEGER NOT NULL DEFAULT 0,
+                server_document_id TEXT NULL,
+                server_version_id TEXT NULL,
+                server_note_id TEXT NULL,
+                server_log_id TEXT NULL,
+                synced_at TEXT NOT NULL,
+                UNIQUE(entity_type, local_id, local_version_no)
+            );
             """;
         command.ExecuteNonQuery();
         EnsureColumn(connection, "user_accounts", "group_id", "TEXT NULL");
@@ -398,6 +435,16 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "documents", "local_path", "TEXT NULL");
         EnsureColumn(connection, "documents", "version_no", "INTEGER NOT NULL DEFAULT 1");
         EnsureColumn(connection, "documents", "latest_comment", "TEXT NULL");
+        EnsureColumn(connection, "documents", "server_document_id", "TEXT NULL");
+        EnsureColumn(connection, "documents", "server_version_id", "TEXT NULL");
+        EnsureColumn(connection, "documents", "synced_at", "TEXT NULL");
+        EnsureColumn(connection, "document_versions", "server_version_id", "TEXT NULL");
+        EnsureColumn(connection, "document_versions", "synced_at", "TEXT NULL");
+        EnsureColumn(connection, "field_notes", "server_note_id", "TEXT NULL");
+        EnsureColumn(connection, "field_notes", "synced_at", "TEXT NULL");
+        EnsureColumn(connection, "document_view_logs", "server_start_log_id", "INTEGER NULL");
+        EnsureColumn(connection, "document_view_logs", "server_close_log_id", "INTEGER NULL");
+        EnsureColumn(connection, "document_view_logs", "synced_at", "TEXT NULL");
         EnsureDocumentUpdatedAt(connection);
         BackfillFieldNotesFromCommentVersions(connection);
 
