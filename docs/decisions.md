@@ -13,6 +13,14 @@
 
 현재 코드와 비교할 때 이 문서는 구현 완료 목록이 아니라 제품 방향 결정이다. 실제 구현은 Windows WPF 로컬 SQLite 프로토타입과 FastAPI 헬스체크 골격이 기준이며, 서버 API, 보고서, AI, MES/ERP 연동 같은 미래 기능은 현재 구현 비교 대상이 아니다.
 
+## 2026-06-29. 작업순서판 운영 데이터와 파일 기반 작업순서 기록 분리
+
+- 기존 WPF `작업순서` 폴더는 작업 관련 파일을 등록하고 보관하는 문서 구조로 유지한다.
+- 새 작업순서판은 `work_sequence_boards`, `work_sequence_items`, `work_sequence_change_history`에 저장하는 운영 데이터로 분리한다.
+- 작업순서 항목 상태는 1차 구현에서 `WAITING`, `IN_PROGRESS`, `HOLD`, `COMPLETED`로 제한한다.
+- 순서 변경과 상태 변경은 변경 전/후 값, 변경 사유, 수행자를 이력으로 남기고, 실제 알림 발송 전 단계의 `work_sequence_notification_candidates` 후보를 남긴다.
+- WPF는 관리자용 편집 화면과 현장 TV용 읽기 화면을 최소 형태로 제공한다. 서버 URL이 설정된 경우 Windows 스모크 테스트는 같은 작업순서판 API 생성/항목 추가/정렬/상태 변경/이력 조회 흐름도 검증한다.
+
 ## 1. 제품 범위
 
 - FlowNote는 생산공장 문서와 현장 지식을 함께 관리한다.

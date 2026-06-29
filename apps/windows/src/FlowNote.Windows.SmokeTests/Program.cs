@@ -3,6 +3,7 @@ using FlowNote.Windows.Core.Auth;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
 using FlowNote.Windows.Core.ServerApi;
+using FlowNote.Windows.Core.WorkSequences;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -322,6 +323,58 @@ try
     services.Notifications.MarkAllAsRead(notificationAuthor2);
     Require(services.Notifications.CountUnread(notificationAuthor2) == 0, "mark all as read should clear unread notifications");
 
+    var workSequenceBoard = services.WorkSequences.CreateBoard(
+        $"Smoke work sequence {runStamp}",
+        smokeActorName,
+        description: "Local work sequence board smoke test.",
+        lineCode: "line-a",
+        boardDate: DateTime.Today);
+    var firstWorkSequenceItem = services.WorkSequences.AddItem(
+        workSequenceBoard.BoardId,
+        $"Prepare material {runStamp}",
+        smokeActorName,
+        assignedTo: "line-a");
+    var secondWorkSequenceItem = services.WorkSequences.AddItem(
+        workSequenceBoard.BoardId,
+        $"Start press run {runStamp}",
+        smokeActorName,
+        workOrderNo: $"WO-{runStamp}");
+    Require(firstWorkSequenceItem.SortOrder == 1, "first work sequence item should start at order 1");
+    Require(secondWorkSequenceItem.SortOrder == 2, "second work sequence item should start at order 2");
+    services.WorkSequences.ReorderItems(
+        workSequenceBoard.BoardId,
+        [secondWorkSequenceItem.ItemId, firstWorkSequenceItem.ItemId],
+        smokeActorName,
+        "Smoke test changed priority.");
+    var reorderedWorkSequenceItems = services.WorkSequences.GetItems(workSequenceBoard.BoardId);
+    Require(
+        reorderedWorkSequenceItems[0].ItemId == secondWorkSequenceItem.ItemId &&
+        reorderedWorkSequenceItems[1].ItemId == firstWorkSequenceItem.ItemId,
+        "work sequence reorder should persist item order");
+    var startedWorkSequenceItem = services.WorkSequences.UpdateItemStatus(
+        workSequenceBoard.BoardId,
+        secondWorkSequenceItem.ItemId,
+        "IN_PROGRESS",
+        smokeActorName,
+        "Smoke test started work.");
+    Require(startedWorkSequenceItem.Status == "IN_PROGRESS", "work sequence status change should persist");
+    var workSequenceHistory = services.WorkSequences.ListHistory(workSequenceBoard.BoardId);
+    Require(
+        workSequenceHistory.Any(item => item.ChangeType == "ITEM_REORDERED"),
+        "work sequence history should record reorder changes");
+    Require(
+        workSequenceHistory.Any(item => item.ChangeType == "STATUS_CHANGED"),
+        "work sequence history should record status changes");
+    using (var workSequenceConnection = services.Database.OpenConnection())
+    {
+        Require(
+            ScalarLong(
+                workSequenceConnection,
+                "SELECT COUNT(*) FROM work_sequence_notification_candidates WHERE board_id = $board_id;",
+                ("$board_id", workSequenceBoard.BoardId)) >= 2,
+            "work sequence reorder and status changes should create notification candidates");
+    }
+
     var handoverFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.HandoverFolderName);
     var photosFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.PhotosFolderName);
 
@@ -637,6 +690,75 @@ try
             ?? throw new InvalidOperationException("server /auth/me should accept the login bearer token");
         Require(currentServerUser.UserId == serverLogin.UserId, "server /auth/me should return the authenticated user id");
         Require(currentServerUser.Username == serverLogin.Username, "server /auth/me should return the authenticated username");
+
+        {
+            var serverWorkSequenceBoard = await serverDocuments.CreateWorkSequenceBoardAsync(
+                new ServerWorkSequenceBoardCreateRequest
+                {
+                    Title = $"Server smoke work sequence {runStamp}",
+                    Description = "Server work sequence API smoke block.",
+                    LineCode = "line-a",
+                    BoardDate = DateOnly.FromDateTime(DateTime.Today),
+                    CreatedBy = serverLogin.UserId
+                });
+            Require(!string.IsNullOrWhiteSpace(serverWorkSequenceBoard.BoardId), "server work sequence board should receive an id");
+            Require(serverWorkSequenceBoard.Items.Count == 0, "new server work sequence board should start empty");
+
+            var serverWorkSequenceWithFirstItem = await serverDocuments.AddWorkSequenceItemAsync(
+                serverWorkSequenceBoard.BoardId,
+                new ServerWorkSequenceItemCreateRequest
+                {
+                    Title = $"Server prepare material {runStamp}",
+                    AssignedTo = "line-a",
+                    CreatedBy = serverLogin.UserId
+                });
+            var serverFirstItem = serverWorkSequenceWithFirstItem.Items.Single();
+            Require(serverFirstItem.Status == "WAITING", "server work sequence item should start in WAITING");
+
+            var serverWorkSequenceWithSecondItem = await serverDocuments.AddWorkSequenceItemAsync(
+                serverWorkSequenceBoard.BoardId,
+                new ServerWorkSequenceItemCreateRequest
+                {
+                    Title = $"Server start press run {runStamp}",
+                    WorkOrderNo = $"WO-{runStamp}",
+                    CreatedBy = serverLogin.UserId
+                });
+            var serverSecondItem = serverWorkSequenceWithSecondItem.Items.Single(item => item.ItemId != serverFirstItem.ItemId);
+            Require(serverSecondItem.SortOrder == 2, "server second work sequence item should be appended");
+
+            var serverReorderedBoard = await serverDocuments.ReorderWorkSequenceItemsAsync(
+                serverWorkSequenceBoard.BoardId,
+                new ServerWorkSequenceReorderRequest
+                {
+                    ItemIds = [serverSecondItem.ItemId, serverFirstItem.ItemId],
+                    ActorId = serverLogin.UserId,
+                    ChangeReason = "Windows smoke changed server work priority."
+                });
+            Require(
+                serverReorderedBoard.Items[0].ItemId == serverSecondItem.ItemId,
+                "server work sequence reorder should persist order");
+
+            var serverStatusBoard = await serverDocuments.UpdateWorkSequenceItemStatusAsync(
+                serverWorkSequenceBoard.BoardId,
+                serverSecondItem.ItemId,
+                new ServerWorkSequenceStatusUpdateRequest
+                {
+                    Status = "IN_PROGRESS",
+                    ActorId = serverLogin.UserId,
+                    ChangeReason = "Windows smoke started server work."
+                });
+            Require(
+                serverStatusBoard.Items[0].Status == "IN_PROGRESS",
+                "server work sequence status change should persist");
+
+            var serverWorkSequenceHistory = await serverDocuments.ListWorkSequenceHistoryAsync(serverWorkSequenceBoard.BoardId);
+            Require(
+                serverWorkSequenceHistory.Any(item => item.ChangeType == "ITEM_REORDERED"),
+                "server work sequence history should include reorder");
+            Require(
+                serverWorkSequenceHistory.Any(item => item.ChangeType == "STATUS_CHANGED"),
+                "server work sequence history should include status change");
+        }
 
         var queuedRetryResult = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
         Console.WriteLine(queuedRetryResult.Message);

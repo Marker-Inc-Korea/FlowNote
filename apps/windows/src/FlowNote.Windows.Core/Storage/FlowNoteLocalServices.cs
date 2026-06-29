@@ -7,6 +7,7 @@ using FlowNote.Windows.Core.History;
 using FlowNote.Windows.Core.Notifications;
 using FlowNote.Windows.Core.Sync;
 using FlowNote.Windows.Core.Tags;
+using FlowNote.Windows.Core.WorkSequences;
 
 namespace FlowNote.Windows.Core.Storage;
 
@@ -24,6 +25,7 @@ public sealed class FlowNoteLocalServices
         History = new HistoryService(Database);
         Notifications = new NotificationService(Database);
         Tags = new TagService(Database);
+        WorkSequences = new WorkSequenceService(Database);
         ServerSync = new ServerSyncService(Database);
         DocumentPlacement = new DocumentPlacementService(Folders);
     }
@@ -45,6 +47,8 @@ public sealed class FlowNoteLocalServices
     public NotificationService Notifications { get; }
 
     public TagService Tags { get; }
+
+    public WorkSequenceService WorkSequences { get; }
 
     public ServerSyncService ServerSync { get; }
 
