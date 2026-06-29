@@ -28,16 +28,19 @@ Windows WPF 클라이언트가 서버 연동 전에도 로그인, 폴더 관리,
 - `document_versions`: 원본 등록과 문서 파일/과거 코멘트 버전 이력
 - `field_notes`: 문서 파일 버전과 분리된 현장 코멘트 원천 이력
 - `notifications`: FieldNote 또는 과거 코멘트 버전 경로에 따른 사용자 알림
+- `server_sync_queue`: 문서, FieldNote, 접근 로그 서버 전송 후보와 실패 사유, 재시도 상태
+- `server_id_mappings`: 로컬 원천 ID와 서버 `document_id`, `version_id`, `note_id`, `log_id` 매핑
 
 ## 서비스 위치
 
 - `FlowNoteLocalDatabase`: SQLite 파일 생성, 스키마 생성, 기본 데이터 시드
-- `FlowNoteLocalServices`: Auth, Folders, Documents, FieldNotes, Notifications 서비스 묶음
+- `FlowNoteLocalServices`: Auth, Folders, Documents, FieldNotes, Notifications, ServerSync 서비스 묶음
 - `AuthService`: 로그인 검증
 - `FolderService`: 폴더 생성, 목록, 삭제
 - `DocumentService`: 문서 등록, 목록
 - `FieldNoteService`: 현장 코멘트 원천 이력 저장과 문서별 조회
 - `NotificationService`: 알림 목록, 읽지 않은 알림 수, 모두 읽음 처리
+- `ServerSyncService`: 로컬 저장 후 서버 전송 큐 등록, 실패 이력 기록, 서버 재연결 시 보류 항목 재시도
 - `DocumentPlacementService`: 기본 폴더별 문서 배치와 제목 생성 규칙
 
 ## 현재 동작
@@ -56,7 +59,8 @@ Windows WPF 클라이언트가 서버 연동 전에도 로그인, 폴더 관리,
 - `field_notes`에는 문서 ID, 당시 문서 버전 번호, 입력 방식, 원문, 작성자, 상태, 동기화 후보 시간을 저장한다.
 - 화면에서는 문서 본문 아래에 FieldNote 목록을 누적 코멘트처럼 표시한다.
 - 새 FieldNote가 저장되면 `documents.latest_comment`와 `documents.updated_at`를 갱신하고 문서 작성자에게 알림을 남긴다.
-- `DocumentViewWindow`는 로컬 FieldNote 저장 직후에만 서버 등록을 후보로 시도한다. `FLOWNOTE_API_BASE_URL`이 없으면 서버 전송을 건너뛰고, 전송 실패도 로컬 저장 성공을 되돌리지 않는다. 현재 단계에서는 자동 재시도 큐를 만들지 않고 화면 상태 문구만 남긴다.
+- `DocumentViewWindow`는 로컬 FieldNote 저장 직후 `server_sync_queue`에 서버 등록 후보를 남긴다. `FLOWNOTE_API_BASE_URL`이 없거나 전송 실패가 발생해도 로컬 저장 성공을 되돌리지 않으며, 실패 사유는 큐와 `activity_history`에 남긴다.
+- 파일 업로드 문서, FieldNote, 문서 열람 시작/닫힘 로그는 서버 재연결 후 큐 순서대로 재시도한다. 성공하면 로컬 원천 레코드에 서버 ID와 `synced_at`을 기록한다.
 - 기존 DB의 `document_versions.comment` 데이터는 앱 초기화 시 `field_notes`로 백필한다.
 - 과거 호환용 `DocumentService.AddCommentVersion` 경로를 사용하면 `document_versions`에 새 버전을 추가하고 `documents.version_no`를 올린다. 이때 알림 수신자는 최초 작성자가 아니라 직전 버전 작성자이다. 예를 들어 v3 코멘트는 v2 작성자에게 알림을 보낸다.
 - 파일 업로드 버튼과 Drag & Drop은 선택한 파일을 공통 로컬 데이터 폴더의 `Files\Uploads\yyyy-MM-dd\` 아래로 복사하고 SQLite에 문서와 원본 버전 `v1`을 즉시 저장한다.
