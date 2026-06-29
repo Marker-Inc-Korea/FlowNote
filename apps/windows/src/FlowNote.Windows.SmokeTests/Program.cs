@@ -421,6 +421,52 @@ try
         services.Documents.ListVersions(uploadedDocument.DocumentId).Any(item => item.VersionNo == 1 && item.LocalPath == sampleFile),
         "uploaded document original version should store the local file path");
 
+    var offlineSyncResult = await services.ServerSync.QueueAndTrySyncDocumentAsync(uploadedDocument, null);
+    Require(!offlineSyncResult.Success, "missing server URL should keep document sync queued locally");
+    Require(
+        services.ServerSync.CountQueuedForEntity("document", uploadedDocument.DocumentId, "FAILED") == 1,
+        "missing server URL should create a failed document sync queue row");
+
+    var offlineQueuedFieldNote = services.FieldNotes.AddDocumentNote(
+        uploadedDocument.DocumentId,
+        $"Offline queued field note before server reconnect {runId}.",
+        smokeActorName);
+    var offlineFieldNoteSyncResult = await services.ServerSync.QueueAndTrySyncFieldNoteAsync(offlineQueuedFieldNote, null);
+    Require(!offlineFieldNoteSyncResult.Success, "missing server URL should keep field note sync queued locally");
+    Require(
+        services.ServerSync.CountQueuedForEntity("field_note", offlineQueuedFieldNote.NoteId, "FAILED") == 1,
+        "missing server URL should create a failed field note sync queue row");
+
+    var offlineAccessLogId = services.DocumentViewLogs.StartDocumentView(
+        uploadedDocument.DocumentId,
+        uploadedDocument.VersionNo,
+        smokeActorName);
+    var offlineStartedAccessLog = services.DocumentViewLogs.GetLog(offlineAccessLogId)
+        ?? throw new InvalidOperationException("offline access log should be readable after start");
+    var offlineAccessLogStartSyncResult = await services.ServerSync.QueueAndTrySyncAccessLogAsync(
+        offlineStartedAccessLog,
+        "view_started",
+        null);
+    Require(!offlineAccessLogStartSyncResult.Success, "missing server URL should keep access start log sync queued locally");
+    services.DocumentViewLogs.CloseDocumentView(offlineAccessLogId, "window_closed");
+    var offlineClosedAccessLog = services.DocumentViewLogs.GetLog(offlineAccessLogId)
+        ?? throw new InvalidOperationException("offline access log should be readable after close");
+    var offlineAccessLogCloseSyncResult = await services.ServerSync.QueueAndTrySyncAccessLogAsync(
+        offlineClosedAccessLog,
+        "view_closed",
+        null);
+    Require(!offlineAccessLogCloseSyncResult.Success, "missing server URL should keep access close log sync queued locally");
+    Require(
+        services.ServerSync.CountQueuedForEntity("document_access_log", offlineAccessLogId.ToString(), "FAILED") == 2,
+        "missing server URL should create failed access log sync queue rows for start and close");
+
+    var syncFailureHistory = services.History.ListHistory();
+    Require(
+        syncFailureHistory.Any(item =>
+            item.EventType == "server_sync.failed" &&
+            item.TargetId == uploadedDocument.DocumentId),
+        "server sync failure should be recorded in full local history");
+
     var fileInfo = new FileInfo(sampleFile);
     var uploadCandidate = new UploadCandidate(
         fileInfo.Name,
@@ -544,6 +590,86 @@ try
         Require(currentServerUser.UserId == serverLogin.UserId, "server /auth/me should return the authenticated user id");
         Require(currentServerUser.Username == serverLogin.Username, "server /auth/me should return the authenticated username");
 
+        var queuedRetryResult = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
+        Console.WriteLine(queuedRetryResult.Message);
+        using (var syncConnection = services.Database.OpenConnection())
+        {
+            var syncedServerDocumentId = ScalarString(
+                syncConnection,
+                """
+                SELECT server_document_id
+                FROM documents
+                WHERE document_id = $document_id
+                  AND synced_at IS NOT NULL;
+                """,
+                ("$document_id", uploadedDocument.DocumentId));
+            var syncedServerVersionId = ScalarString(
+                syncConnection,
+                """
+                SELECT server_version_id
+                FROM documents
+                WHERE document_id = $document_id
+                  AND synced_at IS NOT NULL;
+                """,
+                ("$document_id", uploadedDocument.DocumentId));
+            Require(!string.IsNullOrWhiteSpace(syncedServerDocumentId), "queued document retry should store the server document id");
+            Require(!string.IsNullOrWhiteSpace(syncedServerVersionId), "queued document retry should store the server version id");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT server_note_id
+                    FROM field_notes
+                    WHERE note_id = $note_id
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$note_id", offlineQueuedFieldNote.NoteId)) is { Length: > 0 },
+                "queued field note retry should store the server note id");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM document_view_logs
+                    WHERE id = $id
+                      AND server_start_log_id IS NOT NULL
+                      AND server_close_log_id IS NOT NULL
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$id", offlineAccessLogId)) == 1,
+                "queued access log retry should store server start and close log ids");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_sync_queue
+                    WHERE entity_id IN ($document_id, $note_id, $log_id)
+                      AND status = 'SYNCED';
+                    """,
+                    ("$document_id", uploadedDocument.DocumentId),
+                    ("$note_id", offlineQueuedFieldNote.NoteId),
+                    ("$log_id", offlineAccessLogId.ToString())) == 4,
+                "queued retry should mark document, field note, and access log queue rows as synced");
+
+            var duplicateQueueCountBefore = ScalarLong(
+                syncConnection,
+                "SELECT COUNT(*) FROM server_sync_queue WHERE entity_type = 'document' AND entity_id = $document_id;",
+                ("$document_id", uploadedDocument.DocumentId));
+            var duplicateDocumentSync = await services.ServerSync.QueueAndTrySyncDocumentAsync(
+                uploadedDocument,
+                serverDocuments,
+                serverLogin.UserId);
+            Require(duplicateDocumentSync.Attempted == 0, "already synced document should not be retried");
+            var duplicateQueueCountAfter = ScalarLong(
+                syncConnection,
+                "SELECT COUNT(*) FROM server_sync_queue WHERE entity_type = 'document' AND entity_id = $document_id;",
+                ("$document_id", uploadedDocument.DocumentId));
+            Require(
+                duplicateQueueCountAfter == duplicateQueueCountBefore,
+                "already synced document should not create duplicate queue rows");
+        }
+
         var serverDocument = await serverDocuments.RegisterDocumentAsync(
             sampleFile,
             "Windows smoke upload",
@@ -655,6 +781,19 @@ static long ScalarLong(SqliteConnection connection, string sql, params (string N
     }
 
     return Convert.ToInt64(command.ExecuteScalar());
+}
+
+static string? ScalarString(SqliteConnection connection, string sql, params (string Name, object Value)[] parameters)
+{
+    using var command = connection.CreateCommand();
+    command.CommandText = sql;
+    foreach (var parameter in parameters)
+    {
+        command.Parameters.AddWithValue(parameter.Name, parameter.Value);
+    }
+
+    var value = command.ExecuteScalar();
+    return value is null or DBNull ? null : Convert.ToString(value);
 }
 
 static IReadOnlyList<(string FlowType, string FolderName, DocumentRecord Document)> ListExistingPastDateDocuments(

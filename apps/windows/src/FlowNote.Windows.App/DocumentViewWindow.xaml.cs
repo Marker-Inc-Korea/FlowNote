@@ -14,6 +14,7 @@ using FlowNote.Windows.Core.Explorer;
 using FlowNote.Windows.Core.FieldNotes;
 using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
+using FlowNote.Windows.Core.Sync;
 using UglyToad.PdfPig;
 
 namespace FlowNote.Windows.App;
@@ -24,6 +25,7 @@ public partial class DocumentViewWindow : Window
     private const int AutoCloseDelaySeconds = 30;
     private readonly FieldNoteService? fieldNoteService;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
+    private readonly ServerSyncService? serverSyncService;
     private readonly DocumentViewLogService? documentViewLogService;
     private readonly DispatcherTimer autoCloseTimer;
     private readonly string actorName;
@@ -57,10 +59,22 @@ public partial class DocumentViewWindow : Window
         DocumentViewLogService? documentViewLogService,
         ExplorerDocument document,
         string actorName)
+        : this(fieldNoteService, serverDocumentClient, null, documentViewLogService, document, actorName)
+    {
+    }
+
+    public DocumentViewWindow(
+        FieldNoteService? fieldNoteService,
+        FlowNoteServerDocumentClient? serverDocumentClient,
+        ServerSyncService? serverSyncService,
+        DocumentViewLogService? documentViewLogService,
+        ExplorerDocument document,
+        string actorName)
     {
         InitializeComponent();
         this.fieldNoteService = fieldNoteService;
         this.serverDocumentClient = serverDocumentClient;
+        this.serverSyncService = serverSyncService;
         this.documentViewLogService = documentViewLogService;
         this.document = document;
         this.actorName = actorName;
@@ -112,6 +126,14 @@ public partial class DocumentViewWindow : Window
             document.DocumentId,
             document.VersionNo,
             actorName);
+        if (serverSyncService is not null &&
+            documentViewLogService.GetLog(documentViewLogId.Value) is { } accessLog)
+        {
+            _ = serverSyncService.QueueAndTrySyncAccessLogAsync(
+                accessLog,
+                "view_started",
+                serverDocumentClient);
+        }
     }
 
     private void CloseDocumentViewLog(string closeReason)
@@ -123,6 +145,17 @@ public partial class DocumentViewWindow : Window
 
         documentViewLogService.CloseDocumentView(documentViewLogId.Value, closeReason);
         documentViewLogClosed = true;
+        if (serverSyncService is not null &&
+            documentViewLogService.GetLog(documentViewLogId.Value) is { } accessLog)
+        {
+            var action = string.Equals(closeReason, "auto_closed", StringComparison.Ordinal)
+                ? "auto_closed"
+                : "view_closed";
+            _ = serverSyncService.QueueAndTrySyncAccessLogAsync(
+                accessLog,
+                action,
+                serverDocumentClient);
+        }
     }
 
     private void RefreshHeader()
@@ -539,20 +572,17 @@ public partial class DocumentViewWindow : Window
 
     private async Task<string> TrySendFieldNoteToServerAsync(FieldNoteRecord savedNote)
     {
-        if (serverDocumentClient is null)
+        if (serverSyncService is null)
         {
-            return "Server URL is not configured. The field note remains saved locally.";
+            return "Server sync service is not configured. The field note remains saved locally.";
         }
 
-        try
-        {
-            await serverDocumentClient.RegisterFieldNoteAsync(savedNote);
-            return "Server field note send completed.";
-        }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
-        {
-            return $"Server field note send failed. Local save is kept. {ex.Message}";
-        }
+        var result = await serverSyncService.QueueAndTrySyncFieldNoteAsync(
+            savedNote,
+            serverDocumentClient);
+        return result.Success
+            ? "Server field note send completed."
+            : $"Server field note send queued. Local save is kept. {result.Message}";
     }
 
     private async void SaveCommentButton_Click(object sender, RoutedEventArgs e)

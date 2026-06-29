@@ -35,14 +35,30 @@ public partial class MainWindow : Window
         SignedInUserTextBlock.Text = $"{currentUser.DisplayName} ({currentUser.Role})";
         DataContext = workspace;
         ApplyRolePermissions();
+        Loaded += MainWindow_Loaded;
         RefreshWorkspace("로컬 작업 공간을 열었습니다.", services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.DocumentsFolderName).Id);
         RefreshNotificationButton();
     }
 
     protected override void OnClosed(EventArgs e)
     {
+        Loaded -= MainWindow_Loaded;
         serverHttpClient?.Dispose();
         base.OnClosed(e);
+    }
+
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (serverDocumentClient is null)
+        {
+            return;
+        }
+
+        var result = await services.ServerSync.RetryPendingAsync(serverDocumentClient, currentUser.UserId);
+        if (result.Attempted > 0)
+        {
+            workspace.StatusText = $"{workspace.StatusText}  {result.Message}";
+        }
     }
 
     private void NewFolderButton_Click(object sender, RoutedEventArgs e)
@@ -261,25 +277,14 @@ public partial class MainWindow : Window
             addedCount++;
             lastTargetFolderId = plan.Folder.Id;
 
-            if (serverDocumentClient is null)
+            var syncResult = await services.ServerSync.QueueAndTrySyncDocumentAsync(
+                document,
+                serverDocumentClient,
+                currentUser.UserId);
+            serverRegisteredCount += syncResult.Synced;
+            if (!syncResult.Success)
             {
-                continue;
-            }
-
-            try
-            {
-                await serverDocumentClient.RegisterDocumentAsync(
-                    GetAppContentPath(storedRelativePath),
-                    document.Title,
-                    document.DocumentType,
-                    FlowNoteServerDocumentClient.DefaultWpfLocalUploadChangeReason,
-                    createdBy: actorName,
-                    tags: document.TagList);
-                serverRegisteredCount++;
-            }
-            catch (Exception exception)
-            {
-                serverSyncFailures.Add(SummarizeServerSyncFailure(exception));
+                serverSyncFailures.Add(syncResult.Message);
             }
         }
 
@@ -459,6 +464,7 @@ public partial class MainWindow : Window
             : new DocumentViewWindow(
                 services.FieldNotes,
                 serverDocumentClient,
+                services.ServerSync,
                 services.DocumentViewLogs,
                 document,
                 currentUser.DisplayName ?? currentUser.LoginId ?? "admin");

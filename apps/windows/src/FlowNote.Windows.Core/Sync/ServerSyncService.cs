@@ -1,0 +1,832 @@
+using FlowNote.Windows.Core.Audit;
+using FlowNote.Windows.Core.Documents;
+using FlowNote.Windows.Core.FieldNotes;
+using FlowNote.Windows.Core.History;
+using FlowNote.Windows.Core.ServerApi;
+using FlowNote.Windows.Core.Storage;
+using FlowNote.Windows.Core.Tags;
+using Microsoft.Data.Sqlite;
+
+namespace FlowNote.Windows.Core.Sync;
+
+public sealed class ServerSyncService(FlowNoteLocalDatabase database)
+{
+    private const string Pending = "PENDING";
+    private const string Failed = "FAILED";
+    private const string Synced = "SYNCED";
+
+    public async Task<ServerSyncResult> QueueAndTrySyncDocumentAsync(
+        DocumentRecord document,
+        FlowNoteServerDocumentClient? serverClient,
+        string? serverUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnqueueDocument(document, null);
+        if (serverClient is null)
+        {
+            MarkLatestFailure("document", document.DocumentId, "Server URL is not configured.");
+            return new ServerSyncResult(false, "Server URL is not configured. Document sync is queued.");
+        }
+
+        return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
+    }
+
+    public async Task<ServerSyncResult> QueueAndTrySyncFieldNoteAsync(
+        FieldNoteRecord fieldNote,
+        FlowNoteServerDocumentClient? serverClient,
+        string? serverUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnqueueFieldNote(fieldNote, null);
+        if (serverClient is null)
+        {
+            MarkLatestFailure("field_note", fieldNote.NoteId, "Server URL is not configured.");
+            return new ServerSyncResult(false, "Server URL is not configured. Field note sync is queued.");
+        }
+
+        return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
+    }
+
+    public async Task<ServerSyncResult> QueueAndTrySyncAccessLogAsync(
+        DocumentViewLogRecord accessLog,
+        string action,
+        FlowNoteServerDocumentClient? serverClient,
+        string? serverUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnqueueAccessLog(accessLog, action, null);
+        if (serverClient is null)
+        {
+            MarkLatestFailure("document_access_log", accessLog.Id.ToString(), "Server URL is not configured.");
+            return new ServerSyncResult(false, "Server URL is not configured. Access log sync is queued.");
+        }
+
+        return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
+    }
+
+    public async Task<ServerSyncResult> RetryPendingAsync(
+        FlowNoteServerDocumentClient serverClient,
+        string? serverUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var items = LoadRetryItems();
+        var attempted = 0;
+        var synced = 0;
+        var failed = 0;
+
+        foreach (var item in items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            attempted++;
+            MarkAttempt(item.Id);
+
+            try
+            {
+                switch (item.Action)
+                {
+                    case "register_document":
+                        await SyncDocumentAsync(item, serverClient, serverUserId, cancellationToken);
+                        break;
+                    case "register_field_note":
+                        await SyncFieldNoteAsync(item, serverClient, cancellationToken);
+                        break;
+                    case "register_access_log_started":
+                    case "register_access_log_closed":
+                    case "register_access_log_auto_closed":
+                        await SyncAccessLogAsync(item, serverClient, serverUserId, cancellationToken);
+                        break;
+                    default:
+                        throw new InvalidOperationException($"Unsupported sync action: {item.Action}");
+                }
+
+                synced++;
+            }
+            catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TaskCanceledException or IOException)
+            {
+                failed++;
+                RecordFailure(item, SummarizeFailure(exception));
+            }
+        }
+
+        var message = failed == 0
+            ? $"Server sync completed. synced={synced}, attempted={attempted}."
+            : $"Server sync completed with failures. synced={synced}, failed={failed}, attempted={attempted}.";
+        return new ServerSyncResult(failed == 0, message, attempted, synced, failed);
+    }
+
+    public int CountQueuedForEntity(string entityType, string entityId, string? status = null)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = status is null
+            ? """
+              SELECT COUNT(*)
+              FROM server_sync_queue
+              WHERE entity_type = $entity_type AND entity_id = $entity_id;
+              """
+            : """
+              SELECT COUNT(*)
+              FROM server_sync_queue
+              WHERE entity_type = $entity_type AND entity_id = $entity_id AND status = $status;
+              """;
+        command.Parameters.AddWithValue("$entity_type", entityType);
+        command.Parameters.AddWithValue("$entity_id", entityId);
+        if (status is not null)
+        {
+            command.Parameters.AddWithValue("$status", status);
+        }
+
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    private void EnqueueDocument(DocumentRecord document, string? failureReason)
+    {
+        Enqueue(
+            "document",
+            document.DocumentId,
+            "register_document",
+            document.DocumentId,
+            1,
+            $"wpf:document:{document.DocumentId}:v1",
+            failureReason);
+    }
+
+    private void EnqueueFieldNote(FieldNoteRecord fieldNote, string? failureReason)
+    {
+        Enqueue(
+            "field_note",
+            fieldNote.NoteId,
+            "register_field_note",
+            fieldNote.DocumentId,
+            fieldNote.DocumentVersionNo,
+            $"wpf:field-note:{fieldNote.NoteId}",
+            failureReason);
+    }
+
+    private void EnqueueAccessLog(DocumentViewLogRecord accessLog, string action, string? failureReason)
+    {
+        var normalizedAction = action switch
+        {
+            "auto_closed" => "register_access_log_auto_closed",
+            "view_closed" => "register_access_log_closed",
+            _ => "register_access_log_started"
+        };
+
+        Enqueue(
+            "document_access_log",
+            accessLog.Id.ToString(),
+            normalizedAction,
+            accessLog.DocumentId,
+            accessLog.VersionNo,
+            $"wpf:access-log:{accessLog.Id}:{normalizedAction}",
+            failureReason);
+    }
+
+    private void Enqueue(
+        string entityType,
+        string entityId,
+        string action,
+        string? localDocumentId,
+        int? localVersionNo,
+        string idempotencyKey,
+        string? failureReason)
+    {
+        var now = DateTime.UtcNow;
+        var status = string.IsNullOrWhiteSpace(failureReason) ? Pending : Failed;
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO server_sync_queue (
+                sync_id,
+                entity_type,
+                entity_id,
+                action,
+                local_document_id,
+                local_version_no,
+                idempotency_key,
+                status,
+                attempt_count,
+                last_error,
+                created_at
+            )
+            VALUES (
+                $sync_id,
+                $entity_type,
+                $entity_id,
+                $action,
+                $local_document_id,
+                $local_version_no,
+                $idempotency_key,
+                $status,
+                0,
+                $last_error,
+                $created_at
+            )
+            ON CONFLICT(idempotency_key) DO UPDATE SET
+                status = CASE
+                    WHEN server_sync_queue.status = 'SYNCED' THEN server_sync_queue.status
+                    ELSE excluded.status
+                END,
+                last_error = CASE
+                    WHEN server_sync_queue.status = 'SYNCED' THEN server_sync_queue.last_error
+                    ELSE excluded.last_error
+                END;
+            """;
+        command.Parameters.AddWithValue("$sync_id", $"sync-{Guid.NewGuid():N}");
+        command.Parameters.AddWithValue("$entity_type", entityType);
+        command.Parameters.AddWithValue("$entity_id", entityId);
+        command.Parameters.AddWithValue("$action", action);
+        command.Parameters.AddWithValue("$local_document_id", string.IsNullOrWhiteSpace(localDocumentId) ? DBNull.Value : localDocumentId);
+        command.Parameters.AddWithValue("$local_version_no", localVersionNo is null ? DBNull.Value : localVersionNo.Value);
+        command.Parameters.AddWithValue("$idempotency_key", idempotencyKey);
+        command.Parameters.AddWithValue("$status", status);
+        command.Parameters.AddWithValue("$last_error", string.IsNullOrWhiteSpace(failureReason) ? DBNull.Value : failureReason);
+        command.Parameters.AddWithValue("$created_at", now.ToString("O"));
+        command.ExecuteNonQuery();
+
+        if (!string.IsNullOrWhiteSpace(failureReason))
+        {
+            RecordSyncHistory(connection, "server_sync.failed", entityType, entityId, failureReason, now);
+        }
+    }
+
+    private IReadOnlyList<QueueItem> LoadRetryItems()
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, entity_type, entity_id, action, local_document_id, local_version_no, idempotency_key
+            FROM server_sync_queue
+            WHERE status IN ('PENDING', 'FAILED')
+            ORDER BY id;
+            """;
+
+        using var reader = command.ExecuteReader();
+        var items = new List<QueueItem>();
+        while (reader.Read())
+        {
+            items.Add(new QueueItem(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                reader.GetString(6)));
+        }
+
+        return items;
+    }
+
+    private async Task SyncDocumentAsync(
+        QueueItem item,
+        FlowNoteServerDocumentClient serverClient,
+        string? serverUserId,
+        CancellationToken cancellationToken)
+    {
+        if (TryGetDocumentServerMapping(item.EntityId) is { ServerDocumentId: not null } existing)
+        {
+            MarkQueueSynced(item.Id, existing.ServerDocumentId, existing.ServerVersionId, null, null);
+            return;
+        }
+
+        var document = LoadDocument(item.EntityId)
+            ?? throw new InvalidOperationException($"Local document not found: {item.EntityId}");
+        if (string.IsNullOrWhiteSpace(document.LocalPath))
+        {
+            throw new InvalidOperationException("Local document has no file path for server upload.");
+        }
+
+        var filePath = FlowNoteLocalDatabase.ResolveLocalContentPath(document.LocalPath);
+        if (!File.Exists(filePath))
+        {
+            throw new IOException($"Local document file not found: {filePath}");
+        }
+
+        var response = await serverClient.RegisterDocumentAsync(
+            filePath,
+            document.Title,
+            document.DocumentType,
+            FlowNoteServerDocumentClient.DefaultWpfLocalUploadChangeReason,
+            createdBy: Clean(serverUserId),
+            tags: document.TagList,
+            cancellationToken: cancellationToken);
+
+        var serverVersionId = response.LatestVersion?.VersionId ?? response.LatestVersionId;
+        var now = DateTime.UtcNow;
+        using var connection = database.OpenConnection();
+        using var updateDocument = connection.CreateCommand();
+        updateDocument.CommandText = """
+            UPDATE documents
+            SET server_document_id = $server_document_id,
+                server_version_id = $server_version_id,
+                synced_at = $synced_at
+            WHERE document_id = $document_id;
+
+            UPDATE document_versions
+            SET server_version_id = $server_version_id,
+                synced_at = $synced_at
+            WHERE document_id = $document_id AND version_no = 1;
+            """;
+        updateDocument.Parameters.AddWithValue("$server_document_id", response.DocumentId);
+        updateDocument.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
+        updateDocument.Parameters.AddWithValue("$synced_at", now.ToString("O"));
+        updateDocument.Parameters.AddWithValue("$document_id", document.DocumentId);
+        updateDocument.ExecuteNonQuery();
+
+        UpsertMapping(connection, "document", document.DocumentId, 0, response.DocumentId, serverVersionId, null, null, now);
+        UpsertMapping(connection, "document_version", document.DocumentId, 1, response.DocumentId, serverVersionId, null, null, now);
+        MarkQueueSynced(connection, item.Id, response.DocumentId, serverVersionId, null, null, now);
+        RecordSyncHistory(connection, "server_sync.succeeded", "document", document.DocumentId, $"Server document synced: {response.DocumentId}", now);
+    }
+
+    private async Task SyncFieldNoteAsync(
+        QueueItem item,
+        FlowNoteServerDocumentClient serverClient,
+        CancellationToken cancellationToken)
+    {
+        if (TryGetFieldNoteServerId(item.EntityId) is { } existingServerNoteId)
+        {
+            MarkQueueSynced(item.Id, null, null, existingServerNoteId, null);
+            return;
+        }
+
+        var fieldNote = LoadFieldNote(item.EntityId)
+            ?? throw new InvalidOperationException($"Local field note not found: {item.EntityId}");
+        if (string.IsNullOrWhiteSpace(fieldNote.DocumentId))
+        {
+            throw new InvalidOperationException("Local field note has no document id.");
+        }
+
+        var documentMapping = TryGetDocumentServerMapping(fieldNote.DocumentId);
+        if (documentMapping?.ServerDocumentId is null)
+        {
+            throw new InvalidOperationException("Local document is not synced to server yet.");
+        }
+
+        var response = await serverClient.RegisterFieldNoteAsync(
+            fieldNote,
+            documentMapping.ServerDocumentId,
+            documentMapping.ServerVersionId,
+            cancellationToken);
+
+        var now = DateTime.UtcNow;
+        using var connection = database.OpenConnection();
+        using var update = connection.CreateCommand();
+        update.CommandText = """
+            UPDATE field_notes
+            SET server_note_id = $server_note_id,
+                synced_at = $synced_at
+            WHERE note_id = $note_id;
+            """;
+        update.Parameters.AddWithValue("$server_note_id", response.NoteId);
+        update.Parameters.AddWithValue("$synced_at", now.ToString("O"));
+        update.Parameters.AddWithValue("$note_id", fieldNote.NoteId);
+        update.ExecuteNonQuery();
+
+        UpsertMapping(connection, "field_note", fieldNote.NoteId, 0, response.DocumentId, response.DocumentVersionId, response.NoteId, null, now);
+        MarkQueueSynced(connection, item.Id, response.DocumentId, response.DocumentVersionId, response.NoteId, null, now);
+        RecordSyncHistory(connection, "server_sync.succeeded", "field_note", fieldNote.NoteId, $"Server field note synced: {response.NoteId}", now);
+    }
+
+    private async Task SyncAccessLogAsync(
+        QueueItem item,
+        FlowNoteServerDocumentClient serverClient,
+        string? serverUserId,
+        CancellationToken cancellationToken)
+    {
+        var accessLog = LoadAccessLog(item.EntityId)
+            ?? throw new InvalidOperationException($"Local access log not found: {item.EntityId}");
+        var isCloseAction = item.Action is "register_access_log_closed" or "register_access_log_auto_closed";
+        if (TryGetAccessLogServerId(accessLog.Id, isCloseAction) is { } existingServerLogId)
+        {
+            MarkQueueSynced(item.Id, null, null, null, existingServerLogId);
+            return;
+        }
+
+        var documentMapping = TryGetDocumentServerMapping(accessLog.DocumentId);
+        if (documentMapping?.ServerDocumentId is null)
+        {
+            throw new InvalidOperationException("Local document is not synced to server yet.");
+        }
+
+        var action = item.Action switch
+        {
+            "register_access_log_auto_closed" => "auto_closed",
+            "register_access_log_closed" => "view_closed",
+            _ => "view_started"
+        };
+        var response = await serverClient.RegisterAccessLogAsync(
+            documentMapping.ServerDocumentId,
+            new ServerDocumentAccessLogCreateRequest
+            {
+                DocumentVersionId = documentMapping.ServerVersionId,
+                Action = action,
+                ActorId = Clean(serverUserId),
+                UserAgent = "FlowNote.Windows"
+            },
+            cancellationToken);
+
+        var now = DateTime.UtcNow;
+        using var connection = database.OpenConnection();
+        using var update = connection.CreateCommand();
+        update.CommandText = isCloseAction
+            ? """
+              UPDATE document_view_logs
+              SET server_close_log_id = $server_log_id,
+                  synced_at = $synced_at
+              WHERE id = $id;
+              """
+            : """
+              UPDATE document_view_logs
+              SET server_start_log_id = $server_log_id,
+                  synced_at = $synced_at
+              WHERE id = $id;
+              """;
+        update.Parameters.AddWithValue("$server_log_id", response.LogId);
+        update.Parameters.AddWithValue("$synced_at", now.ToString("O"));
+        update.Parameters.AddWithValue("$id", accessLog.Id);
+        update.ExecuteNonQuery();
+
+        UpsertMapping(
+            connection,
+            isCloseAction ? "document_access_log_closed" : "document_access_log_started",
+            accessLog.Id.ToString(),
+            0,
+            response.DocumentId,
+            response.DocumentVersionId,
+            null,
+            response.LogId.ToString(),
+            now);
+        MarkQueueSynced(connection, item.Id, response.DocumentId, response.DocumentVersionId, null, response.LogId.ToString(), now);
+        RecordSyncHistory(connection, "server_sync.succeeded", "document_access_log", accessLog.Id.ToString(), $"Server access log synced: {response.LogId}", now);
+    }
+
+    private DocumentRecord? LoadDocument(string documentId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, document_id, folder_id, title, file_name, document_type, status, created_by,
+                   created_at, updated_at, local_path, version_no, latest_comment
+            FROM documents
+            WHERE document_id = $document_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$document_id", documentId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new DocumentRecord(
+            reader.GetInt64(0),
+            reader.GetString(1),
+            reader.GetInt64(2),
+            reader.GetString(3),
+            reader.GetString(4),
+            reader.GetString(5),
+            reader.GetString(6),
+            reader.GetString(7),
+            DateTime.Parse(reader.GetString(8)),
+            DateTime.Parse(reader.GetString(9)),
+            reader.IsDBNull(10) ? null : reader.GetString(10),
+            reader.GetInt32(11),
+            reader.IsDBNull(12) ? null : reader.GetString(12),
+            TagService.ListDocumentTags(connection, documentId));
+    }
+
+    private FieldNoteRecord? LoadFieldNote(string noteId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, note_id, document_id, document_version_no, note_type, input_mode, signal_level,
+                   raw_content, normalized_content, analysis_content, author_name, reported_by,
+                   operator_name, entry_source, device_id, location_code, status, created_at, synced_at
+            FROM field_notes
+            WHERE note_id = $note_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$note_id", noteId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new FieldNoteRecord(
+            reader.GetInt64(0),
+            reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2),
+            reader.IsDBNull(3) ? null : reader.GetInt32(3),
+            reader.GetString(4),
+            reader.GetString(5),
+            reader.IsDBNull(6) ? null : reader.GetString(6),
+            reader.GetString(7),
+            reader.IsDBNull(8) ? null : reader.GetString(8),
+            reader.IsDBNull(9) ? null : reader.GetString(9),
+            reader.GetString(10),
+            reader.IsDBNull(11) ? null : reader.GetString(11),
+            reader.IsDBNull(12) ? null : reader.GetString(12),
+            reader.GetString(13),
+            reader.IsDBNull(14) ? null : reader.GetString(14),
+            reader.IsDBNull(15) ? null : reader.GetString(15),
+            reader.GetString(16),
+            DateTime.Parse(reader.GetString(17)),
+            reader.IsDBNull(18) ? null : DateTime.Parse(reader.GetString(18)));
+    }
+
+    private DocumentViewLogRecord? LoadAccessLog(string entityId)
+    {
+        if (!long.TryParse(entityId, out var id))
+        {
+            return null;
+        }
+
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, document_id, version_no, user_name, view_started_at, closed_at, close_reason
+            FROM document_view_logs
+            WHERE id = $id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new DocumentViewLogRecord(
+            reader.GetInt64(0),
+            reader.GetString(1),
+            reader.GetInt32(2),
+            reader.GetString(3),
+            DateTime.Parse(reader.GetString(4)),
+            reader.IsDBNull(5) ? null : DateTime.Parse(reader.GetString(5)),
+            reader.IsDBNull(6) ? null : reader.GetString(6));
+    }
+
+    private DocumentServerMapping? TryGetDocumentServerMapping(string documentId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT server_document_id, server_version_id
+            FROM documents
+            WHERE document_id = $document_id
+              AND server_document_id IS NOT NULL
+              AND synced_at IS NOT NULL
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$document_id", documentId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new DocumentServerMapping(
+            reader.IsDBNull(0) ? null : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1));
+    }
+
+    private string? TryGetFieldNoteServerId(string noteId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT server_note_id
+            FROM field_notes
+            WHERE note_id = $note_id
+              AND server_note_id IS NOT NULL
+              AND synced_at IS NOT NULL
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$note_id", noteId);
+        return command.ExecuteScalar() as string;
+    }
+
+    private string? TryGetAccessLogServerId(long id, bool closeAction)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = closeAction
+            ? """
+              SELECT server_close_log_id
+              FROM document_view_logs
+              WHERE id = $id AND server_close_log_id IS NOT NULL;
+              """
+            : """
+              SELECT server_start_log_id
+              FROM document_view_logs
+              WHERE id = $id AND server_start_log_id IS NOT NULL;
+              """;
+        command.Parameters.AddWithValue("$id", id);
+        var value = command.ExecuteScalar();
+        return value is null or DBNull ? null : Convert.ToString(value);
+    }
+
+    private void MarkAttempt(long queueId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE server_sync_queue
+            SET attempt_count = attempt_count + 1,
+                last_attempt_at = $last_attempt_at
+            WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$last_attempt_at", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$id", queueId);
+        command.ExecuteNonQuery();
+    }
+
+    private void MarkLatestFailure(string entityType, string entityId, string reason)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE server_sync_queue
+            SET status = CASE WHEN status = 'SYNCED' THEN status ELSE 'FAILED' END,
+                last_error = CASE WHEN status = 'SYNCED' THEN last_error ELSE $last_error END
+            WHERE id = (
+                SELECT id
+                FROM server_sync_queue
+                WHERE entity_type = $entity_type AND entity_id = $entity_id
+                ORDER BY id DESC
+                LIMIT 1
+            );
+            """;
+        command.Parameters.AddWithValue("$last_error", reason);
+        command.Parameters.AddWithValue("$entity_type", entityType);
+        command.Parameters.AddWithValue("$entity_id", entityId);
+        command.ExecuteNonQuery();
+        RecordSyncHistory(connection, "server_sync.failed", entityType, entityId, reason, DateTime.UtcNow);
+    }
+
+    private void RecordFailure(QueueItem item, string reason)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE server_sync_queue
+            SET status = 'FAILED',
+                last_error = $last_error
+            WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$last_error", reason);
+        command.Parameters.AddWithValue("$id", item.Id);
+        command.ExecuteNonQuery();
+        RecordSyncHistory(connection, "server_sync.failed", item.EntityType, item.EntityId, reason, DateTime.UtcNow);
+    }
+
+    private void MarkQueueSynced(
+        long queueId,
+        string? serverDocumentId,
+        string? serverVersionId,
+        string? serverNoteId,
+        string? serverLogId)
+    {
+        using var connection = database.OpenConnection();
+        MarkQueueSynced(connection, queueId, serverDocumentId, serverVersionId, serverNoteId, serverLogId, DateTime.UtcNow);
+    }
+
+    private static void MarkQueueSynced(
+        SqliteConnection connection,
+        long queueId,
+        string? serverDocumentId,
+        string? serverVersionId,
+        string? serverNoteId,
+        string? serverLogId,
+        DateTime syncedAt)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE server_sync_queue
+            SET status = 'SYNCED',
+                last_error = NULL,
+                synced_at = $synced_at,
+                server_document_id = $server_document_id,
+                server_version_id = $server_version_id,
+                server_note_id = $server_note_id,
+                server_log_id = $server_log_id
+            WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$synced_at", syncedAt.ToString("O"));
+        command.Parameters.AddWithValue("$server_document_id", string.IsNullOrWhiteSpace(serverDocumentId) ? DBNull.Value : serverDocumentId);
+        command.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
+        command.Parameters.AddWithValue("$server_note_id", string.IsNullOrWhiteSpace(serverNoteId) ? DBNull.Value : serverNoteId);
+        command.Parameters.AddWithValue("$server_log_id", string.IsNullOrWhiteSpace(serverLogId) ? DBNull.Value : serverLogId);
+        command.Parameters.AddWithValue("$id", queueId);
+        command.ExecuteNonQuery();
+    }
+
+    private static void UpsertMapping(
+        SqliteConnection connection,
+        string entityType,
+        string localId,
+        int localVersionNo,
+        string? serverDocumentId,
+        string? serverVersionId,
+        string? serverNoteId,
+        string? serverLogId,
+        DateTime syncedAt)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO server_id_mappings (
+                entity_type,
+                local_id,
+                local_version_no,
+                server_document_id,
+                server_version_id,
+                server_note_id,
+                server_log_id,
+                synced_at
+            )
+            VALUES (
+                $entity_type,
+                $local_id,
+                $local_version_no,
+                $server_document_id,
+                $server_version_id,
+                $server_note_id,
+                $server_log_id,
+                $synced_at
+            )
+            ON CONFLICT(entity_type, local_id, local_version_no) DO UPDATE SET
+                server_document_id = excluded.server_document_id,
+                server_version_id = excluded.server_version_id,
+                server_note_id = excluded.server_note_id,
+                server_log_id = excluded.server_log_id,
+                synced_at = excluded.synced_at;
+            """;
+        command.Parameters.AddWithValue("$entity_type", entityType);
+        command.Parameters.AddWithValue("$local_id", localId);
+        command.Parameters.AddWithValue("$local_version_no", localVersionNo);
+        command.Parameters.AddWithValue("$server_document_id", string.IsNullOrWhiteSpace(serverDocumentId) ? DBNull.Value : serverDocumentId);
+        command.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
+        command.Parameters.AddWithValue("$server_note_id", string.IsNullOrWhiteSpace(serverNoteId) ? DBNull.Value : serverNoteId);
+        command.Parameters.AddWithValue("$server_log_id", string.IsNullOrWhiteSpace(serverLogId) ? DBNull.Value : serverLogId);
+        command.Parameters.AddWithValue("$synced_at", syncedAt.ToString("O"));
+        command.ExecuteNonQuery();
+    }
+
+    private static void RecordSyncHistory(
+        SqliteConnection connection,
+        string eventType,
+        string targetType,
+        string targetId,
+        string message,
+        DateTime createdAt)
+    {
+        HistoryService.Record(
+            connection,
+            eventType,
+            "server-sync",
+            targetType,
+            targetId,
+            null,
+            message,
+            createdAt);
+    }
+
+    private static string SummarizeFailure(Exception exception)
+    {
+        var message = exception switch
+        {
+            TaskCanceledException => "Server response timeout.",
+            HttpRequestException => "Server connection failed.",
+            _ => exception.Message
+        };
+
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            message = exception.GetType().Name;
+        }
+
+        message = message.Replace(Environment.NewLine, " ");
+        const int maxLength = 300;
+        return message.Length <= maxLength ? message : $"{message[..maxLength]}...";
+    }
+
+    private static string? Clean(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private sealed record QueueItem(
+        long Id,
+        string EntityType,
+        string EntityId,
+        string Action,
+        string? LocalDocumentId,
+        int? LocalVersionNo,
+        string IdempotencyKey);
+
+    private sealed record DocumentServerMapping(string? ServerDocumentId, string? ServerVersionId);
+}
