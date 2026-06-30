@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly bool canRegisterDocuments;
     private readonly bool canManageFileWatch;
+    private readonly bool canWriteReports;
     private readonly bool canManageUsers;
     private readonly ExplorerWorkspace workspace = new();
     private ExplorerFolder? selectedFolder;
@@ -35,6 +36,7 @@ public partial class MainWindow : Window
         this.currentUser = currentUser;
         canRegisterDocuments = RolePermissionPolicy.CanRegisterDocuments(currentUser.Role);
         canManageFileWatch = RolePermissionPolicy.CanManageFileWatch(currentUser.Role);
+        canWriteReports = RolePermissionPolicy.CanWriteReports(currentUser.Role);
         canManageUsers = RolePermissionPolicy.CanManageUsers(currentUser.Role);
         currentDisplayName = currentUser.DisplayName ?? currentUser.LoginId ?? "admin";
         (serverDocumentClient, serverHttpClient) = CreateServerDocumentClient(currentUser);
@@ -230,7 +232,7 @@ public partial class MainWindow : Window
 
     private void ReportDraftButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!EnsureDocumentRegistrationAllowed())
+        if (!EnsureReportWriteAllowed())
         {
             return;
         }
@@ -581,10 +583,11 @@ public partial class MainWindow : Window
     private void ApplyRolePermissions()
     {
         const string noDocumentWritePermission = "문서 등록은 관리자/반장/조장 이상만 가능합니다. 조원은 현장 코멘트 등록을 사용합니다.";
+        const string noReportWritePermission = "보고서 작성은 관리자/문서관리/부서관리 권한에서만 사용할 수 있습니다.";
         RegisterDocumentButton.IsEnabled = canRegisterDocuments;
         UploadFileButton.IsEnabled = canRegisterDocuments;
         WorkSequenceAdminButton.IsEnabled = canRegisterDocuments;
-        ReportDraftButton.IsEnabled = canRegisterDocuments;
+        ReportDraftButton.IsEnabled = canWriteReports;
         ApplyDocumentStatusButton.IsEnabled = canRegisterDocuments;
         PublishDocumentButton.IsEnabled = canRegisterDocuments;
         DocumentStatusComboBox.IsEnabled = canRegisterDocuments;
@@ -597,11 +600,15 @@ public partial class MainWindow : Window
             RegisterDocumentButton.ToolTip = noDocumentWritePermission;
             UploadFileButton.ToolTip = noDocumentWritePermission;
             WorkSequenceAdminButton.ToolTip = noDocumentWritePermission;
-            ReportDraftButton.ToolTip = noDocumentWritePermission;
             ApplyDocumentStatusButton.ToolTip = noDocumentWritePermission;
             PublishDocumentButton.ToolTip = noDocumentWritePermission;
             DocumentStatusComboBox.ToolTip = noDocumentWritePermission;
             FileListDropZone.ToolTip = noDocumentWritePermission;
+        }
+
+        if (!canWriteReports)
+        {
+            ReportDraftButton.ToolTip = noReportWritePermission;
         }
 
         if (!canManageFileWatch)
@@ -629,6 +636,17 @@ public partial class MainWindow : Window
         }
 
         workspace.StatusText = "파일 감시는 관리자급 권한에서만 사용할 수 있습니다.";
+        return false;
+    }
+
+    private bool EnsureReportWriteAllowed()
+    {
+        if (canWriteReports)
+        {
+            return true;
+        }
+
+        workspace.StatusText = "보고서 작성 권한이 없습니다. 관리자/문서관리/부서관리 권한에서만 사용할 수 있습니다.";
         return false;
     }
 

@@ -312,7 +312,7 @@ public sealed class FlowNoteServerDocumentClient
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 throw new FlowNoteServerAuthenticationException(
-                    $"Server login expired or revoked. Sign in again before retrying server sync. {errorBody}");
+                    $"로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인하세요. 로컬 데이터는 삭제되지 않습니다. {errorBody}");
             }
 
             throw new InvalidOperationException(
