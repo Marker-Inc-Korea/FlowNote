@@ -1,71 +1,59 @@
 # API Service
 
-FlowNote Python FastAPI server for the SQLite MVP API.
+FlowNote FastAPI 서버는 SQLite 기반 MVP API를 제공한다.
 
 ## Current Scope
-
-The server currently implements:
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/` | Service and environment check |
 | GET | `/api/v1/health` | Health check |
 | GET | `/api/v1/health/db` | Database health check |
-| POST | `/api/v1/auth/login` | Username/password login, user payload, Bearer access token, refresh token |
-| POST | `/api/v1/auth/refresh` | Refresh token rotation and new access/refresh token issue |
-| POST | `/api/v1/auth/logout` | Revoke the current auth session |
-| GET | `/api/v1/auth/me` | Current user lookup with Bearer access token |
-| POST | `/api/v1/documents` | Document and initial version registration |
+| POST | `/api/v1/auth/login` | Login and token issue |
+| POST | `/api/v1/auth/refresh` | Refresh token rotation |
+| POST | `/api/v1/auth/logout` | Revoke current session |
+| GET | `/api/v1/auth/me` | Current user lookup |
+| POST | `/api/v1/documents` | Register document and first version |
 | GET | `/api/v1/documents` | Document list |
-| GET | `/api/v1/documents/{documentId}` | Document detail |
-| PATCH | `/api/v1/documents/{documentId}/status` | Document status transition |
 | GET | `/api/v1/documents/published` | Published document list |
-| GET | `/api/v1/documents/{documentId}/published` | Published document version |
-| GET | `/api/v1/documents/{documentId}/versions` | Document version list |
-| POST | `/api/v1/documents/{documentId}/versions` | New document version registration |
-| PATCH | `/api/v1/documents/{documentId}/versions/{versionId}/status` | Document version status transition |
-| POST | `/api/v1/documents/{documentId}/versions/{versionId}/publish` | Publish a specific document version |
+| GET | `/api/v1/documents/{documentId}` | Document detail |
+| GET | `/api/v1/documents/{documentId}/published` | Published version |
 | PUT | `/api/v1/documents/{documentId}/tags` | Replace document tags |
-| POST | `/api/v1/documents/{documentId}/access-logs` | Document access log registration |
-| GET | `/api/v1/documents/{documentId}/access-logs` | Document access log list |
+| PATCH | `/api/v1/documents/{documentId}/status` | Change document status |
+| GET | `/api/v1/documents/{documentId}/versions` | Version list |
+| POST | `/api/v1/documents/{documentId}/versions` | Register new version |
+| PATCH | `/api/v1/documents/{documentId}/versions/{versionId}/status` | Change version status |
+| POST | `/api/v1/documents/{documentId}/versions/{versionId}/publish` | Publish selected version |
+| POST | `/api/v1/documents/{documentId}/access-logs` | Register access log |
+| GET | `/api/v1/documents/{documentId}/access-logs` | Access log list |
 | GET | `/api/v1/tags` | Tag list |
-| POST | `/api/v1/tags` | Tag creation |
-| POST | `/api/v1/field-comments` | FieldComment source history registration |
+| POST | `/api/v1/tags` | Tag create |
+| POST | `/api/v1/field-comments` | FieldComment create |
 | GET | `/api/v1/field-comments` | FieldComment list |
 | GET | `/api/v1/field-comments/{commentId}` | FieldComment detail |
-| PATCH | `/api/v1/field-comments/{commentId}` | Manager review and analysis update |
-| POST | `/api/v1/field-comments/{commentId}/attachments` | FieldComment photo/file attachment registration |
-| GET | `/api/v1/field-comments/{commentId}/attachments` | FieldComment attachment list |
-| GET | `/api/v1/documents/{documentId}/field-comments` | FieldComments for a document |
-| POST | `/api/v1/work-sequence-boards` | Work sequence board creation |
+| PATCH | `/api/v1/field-comments/{commentId}` | Review/analyze FieldComment |
+| POST | `/api/v1/field-comments/{commentId}/attachments` | Attachment create |
+| GET | `/api/v1/field-comments/{commentId}/attachments` | Attachment list |
+| GET | `/api/v1/documents/{documentId}/field-comments` | FieldComments by document |
+| POST | `/api/v1/work-sequence-boards` | Work sequence board create |
 | GET | `/api/v1/work-sequence-boards` | Work sequence board list |
 | GET | `/api/v1/work-sequence-boards/{boardId}` | Work sequence board detail |
-| POST | `/api/v1/work-sequence-boards/{boardId}/items` | Add work sequence item |
-| PUT | `/api/v1/work-sequence-boards/{boardId}/items/order` | Reorder all board items |
+| POST | `/api/v1/work-sequence-boards/{boardId}/items` | Add item |
+| PUT | `/api/v1/work-sequence-boards/{boardId}/items/order` | Reorder items |
 | PATCH | `/api/v1/work-sequence-boards/{boardId}/items/{itemId}/status` | Change item status |
-| GET | `/api/v1/work-sequence-boards/{boardId}/history` | Work sequence change history |
+| GET | `/api/v1/work-sequence-boards/{boardId}/history` | Change history |
+| GET | `/api/v1/work-sequence-boards/{boardId}/notification-candidates` | Notification candidates |
+| PATCH | `/api/v1/work-sequence-boards/{boardId}/notification-candidates/{candidateId}` | Change notification candidate status |
+| POST | `/api/v1/reports/drafts` | Create report draft |
+| POST | `/api/v1/reports` | Save report |
+| GET | `/api/v1/reports` | Report list |
+| GET | `/api/v1/reports/{reportId}` | Report detail |
 
-Document, FieldComment, and document access log APIs require `Authorization: Bearer {access_token}`. Missing, invalid, or expired credentials return `401`.
-Document registration, document version registration, document tag changes, and tag creation
-require a document-write role such as `admin`, `document-admin`, `line-foreman`, or
-`team-lead`. `team-member` and `viewer` accounts can create FieldComments but receive `403` for
-document write flows. Document access log reads are limited to `admin` and `system-admin`.
+## Auth
 
-Server auth uses HMAC-signed access tokens plus the `auth_sessions` table. Login creates a
-server session and returns an access token and refresh token. Refresh rotates both tokens for
-the same session, so the previous access token and previous refresh token are rejected. Logout
-marks the session as revoked.
+The server uses HMAC-signed Bearer access tokens plus the `auth_sessions` table. Login creates a session. Refresh rotates the access token ID and refresh token hash. Logout revokes the session.
 
-Configure the signing secret and lifetimes with:
-
-- `FLOWNOTE_ACCESS_TOKEN_SECRET`
-- `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES`, default `480`
-- `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS`, default `14`
-
-The default admin account `admin / 1234`, fixed smoke-test passwords, and default token secret
-are for local development and smoke tests only. Before operational deployment, issue a site
-admin account separately, require first-login password replacement, and replace the token
-secret with a site-specific value outside Git.
+Development defaults such as `admin / 1234` and the default token secret are local development values only.
 
 ## Local Development
 
@@ -80,8 +68,9 @@ Useful settings:
 - `FLOWNOTE_TEST_DATABASE_URL`: default `sqlite:///./data/flownote.test.sqlite3`
 - `FLOWNOTE_STORAGE_ROOT`: default `./storage`
 - `FLOWNOTE_FIELD_COMMENT_ATTACHMENT_MAX_BYTES`: default `20971520`
-
-Do not commit real accounts, passwords, tokens, API keys, production DB connection strings, customer documents, or operational data.
+- `FLOWNOTE_ACCESS_TOKEN_SECRET`
+- `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES`: default `480`
+- `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS`: default `14`
 
 ## Verification
 
@@ -90,6 +79,4 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-## Preserved Test Artifacts
-
-Test SQLite databases, logs, test upload files, sample files, and generated test artifacts are preserved unless the user explicitly asks to delete them.
+Test SQLite DBs, logs, upload files, and generated sample files are preserved unless the user explicitly asks to delete them.

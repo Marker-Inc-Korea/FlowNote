@@ -52,8 +52,23 @@ try
     var userManagementTarget = FlowNoteLocalDatabase.DefaultUserSeeds.Single(user => user.LoginId == "member-a4");
     var temporaryDisplayName = $"사용자관리검증-{runStamp}";
     var temporaryPassword = $"pw-{runStamp}";
+    var createdLoginId = $"smoke-user-{runStamp}";
+    var createdPassword = $"created-{runStamp}";
     try
     {
+        var createdUser = services.Users.CreateUser(
+            createdLoginId,
+            $"스모크 사용자 {runStamp}",
+            "team-member",
+            createdPassword,
+            smokeActorName);
+        Require(createdUser.UserId == $"user-{createdLoginId}", "created user should receive an immutable generated user id");
+        Require(createdUser.LoginId == createdLoginId, "created user should keep the requested login id");
+        Require(createdUser.Role == "team-member", "created user should keep the selected role");
+        var createdLogin = services.Auth.Login(createdLoginId, createdPassword);
+        Require(createdLogin.Success, "created user should be able to log in with the selected password");
+        Require(createdLogin.UserId == createdUser.UserId, "created user login should return the generated user id");
+
         var updatedUser = services.Users.UpdateUserProfile(
             userManagementTarget.UserId,
             temporaryDisplayName,
