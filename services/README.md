@@ -1,37 +1,37 @@
 # Services
 
-FlowNote server-side components live under this directory.
+FlowNote 서버 구성 요소를 보관하는 영역이다.
 
-## Scope
+## 범위
 
-- `api/`: Python FastAPI REST API server
+- `api/`: Python FastAPI 기반 REST API 서버
 
-## Current Implementation
+## 현재 구현
 
-`services/api/` implements the SQLite MVP API:
+`services/api/`는 SQLite 기반 서버 MVP를 구현한다.
 
-- Health check and DB connectivity check
-- Development default admin account seed
-- Username/password login
-- HMAC Bearer access token issue
-- Refresh token rotation
-- Logout session revocation through `auth_sessions`
-- `/auth/me` current user lookup
-- Document registration, list, detail, version list, and new version registration
-- Document status changes, version status changes, explicit published version selection, published document lookup
-- Document tag create/list/replace
-- FieldComment create, list, detail, manager review, and analysis update
-- FieldComment photo/file attachment create/list
-- Document access log create/list
-- Work sequence board create, item add, reorder, status change, and history lookup
+- 상태 확인과 DB 연결 확인
+- 개발 기본 관리자 계정 시드
+- 로그인, Access Token 발급, Refresh Token 회전
+- 로그아웃 시 `auth_sessions` 세션 폐기
+- 현재 사용자 조회
+- 문서 등록, 목록, 상세, 버전 목록, 새 버전 등록
+- 문서 상태 변경, 버전 상태 변경, 명시적 공개 버전 지정, 공개 문서 조회
+- 문서 태그 등록, 목록, 교체
+- FieldComment 등록, 목록, 상세, 관리자 검토, 분석 상태 갱신
+- FieldComment 사진/파일 첨부 등록과 목록
+- 문서 열람 로그 등록과 목록
+- 작업순서 보드, 항목 추가, 순서 변경, 상태 변경, 이력 조회
+- 작업순서 알림 후보 조회와 상태 변경
+- 보고서 초안 생성 보조, 보고서 등록, 목록, 상세 조회
 
-Reports, AI search/advice, MES/ERP integration, administrator-forced session revocation UI, and administrator file-watch APIs remain follow-up scope.
+## 개발 기준
 
-## Development Baseline
+- 서버 프레임워크: FastAPI
+- 메타데이터 DB: SQLite 우선
+- 파일 저장소: 서버 로컬 `storage/`
+- API 기본 경로: `/api/v1`
 
-- Server framework: FastAPI
-- Metadata DB: SQLite first
-- File storage: server-local `storage/`
-- API base path: `/api/v1`
+AI 검색/조언, MES/ERP 연동, 관리자 강제 세션 폐기 UI, 서버 파일 감시 API는 현재 구현이 아니라 후속 범위이다.
 
-Test DBs, test upload files, logs, and generated sample files are preserved unless the user explicitly asks to delete them.
+테스트 DB, 테스트 업로드 파일, 로그, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
