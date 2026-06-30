@@ -76,6 +76,48 @@ public sealed class DocumentViewLogService(FlowNoteLocalDatabase database)
             now);
     }
 
+    public long RecordDownloadBlocked(string documentId, int versionNo, string userName, string? reason = null)
+    {
+        if (string.IsNullOrWhiteSpace(documentId))
+        {
+            throw new ArgumentException("Document id is required.", nameof(documentId));
+        }
+
+        if (versionNo < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(versionNo), "Version number must be positive.");
+        }
+
+        var normalizedUserName = string.IsNullOrWhiteSpace(userName) ? "unknown" : userName.Trim();
+        var normalizedReason = string.IsNullOrWhiteSpace(reason) ? "download is blocked by role policy" : reason.Trim();
+        var now = DateTime.UtcNow;
+
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO document_view_logs (document_id, version_no, user_name, view_started_at, closed_at, close_reason)
+            VALUES ($document_id, $version_no, $user_name, $view_started_at, $closed_at, 'download_blocked');
+            SELECT last_insert_rowid();
+            """;
+        command.Parameters.AddWithValue("$document_id", documentId);
+        command.Parameters.AddWithValue("$version_no", versionNo);
+        command.Parameters.AddWithValue("$user_name", normalizedUserName);
+        command.Parameters.AddWithValue("$view_started_at", now.ToString("O"));
+        command.Parameters.AddWithValue("$closed_at", now.ToString("O"));
+
+        var id = Convert.ToInt64(command.ExecuteScalar());
+        HistoryService.Record(
+            connection,
+            "document.download_blocked",
+            normalizedUserName,
+            "document",
+            documentId,
+            null,
+            $"Document download blocked: v{versionNo}. {normalizedReason}",
+            now);
+        return id;
+    }
+
     public DocumentViewLogRecord? GetLog(long id)
     {
         using var connection = database.OpenConnection();

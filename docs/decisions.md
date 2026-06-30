@@ -121,5 +121,7 @@
 - 클라우드나 외부 접근은 별도 협의가 필요한 후속 선택지이다.
 - 로그인과 role 기반 권한을 적용한다.
 - 다운로드 차단과 운영용 뷰어 자동 닫힘은 Windows WPF 클라이언트와 서버 감사 로그를 함께 사용해 강화한다.
+- 문서 다운로드 권한은 문서 등록 권한보다 좁게 둔다. `admin`, `system-admin`, `manager`, `document-admin`, `assistant-manager`, `department-manager`만 controlled copy를 허용하고, `line-foreman`, `team-lead`, `team-member`, `viewer`는 차단한다.
+- WPF 뷰어 자동 닫힘 기본값은 30초이며 `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS`로 조정한다. 다운로드 차단은 `download_blocked`로 로컬 감사 로그와 서버 접근 로그 동기화 큐에 남긴다.
 - FlowNote는 개인 감시 도구가 아니며, 개인 위치 추적이나 개인 메신저 수집을 하지 않는다.
 

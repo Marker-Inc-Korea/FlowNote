@@ -17,7 +17,7 @@
 | `document_versions` | 원본 등록 버전과 파일 개정 버전을 저장. 기존 코멘트 버전은 호환용으로 남아 있으나 신규 WPF 코멘트 저장 기본 경로는 아님 |
 | `field_notes` | WPF 오프라인 현장 코멘트 최소 원천 이력. 문서 ID, 현재 문서 버전 번호, 입력 방식, 원문, 작성자, 동기화 상태 후보를 저장 |
 | `field_note_attachments` | WPF 오프라인 FieldNote 사진/파일 첨부 이력. 로컬 보존 경로, 원본 파일명, 확장자, 크기, SHA-256, 서버 첨부 ID 후보를 저장 |
-| `document_view_logs` | WPF 로컬 문서 열람 감사 로그. 문서 ID, 버전 번호, 사용자명, 열람 시작 시각, 닫힘 시각, 닫힘 사유를 저장 |
+| `document_view_logs` | WPF 로컬 문서 열람/차단 감사 로그. 문서 ID, 버전 번호, 사용자명, 열람 시작 시각, 닫힘 시각, 닫힘 사유(`window_closed`, `auto_closed`, `download_blocked`)를 저장 |
 | `activity_history` | WPF 로컬 전체 이력. 사용자별 알림과 별개로 누가 어떤 문서/폴더/알림/열람 작업을 수행했는지 최신순 조회용으로 저장 |
 | `tag_definitions`, `document_tags` | WPF 로컬 문서 태그 사전과 문서-태그 연결. 문서 등록 시 입력 태그와 자동 태그를 저장 |
 | `notifications` | 새 현장 코멘트 또는 기존 코멘트 버전 생성 시 문서 작성자/관련 작성자 대상 알림을 저장 |

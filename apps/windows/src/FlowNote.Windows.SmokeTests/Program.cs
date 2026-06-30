@@ -158,6 +158,17 @@ try
     Require(autoClosedViewLog is not null, "auto-closed document view log should remain readable");
     Require(autoClosedViewLog!.ClosedAt is not null, "auto-closed document view log should record the closed time");
     Require(autoClosedViewLog.CloseReason == "auto_closed", "document view log should record the auto-close reason");
+    var configuredAutoCloseDelay = WithEnvironmentVariable(
+        DocumentViewerPolicy.AutoCloseSecondsEnvironmentVariable,
+        "45",
+        DocumentViewerPolicy.ResolveAutoCloseDelay);
+    Require(configuredAutoCloseDelay == TimeSpan.FromSeconds(45), "document viewer auto-close delay should use the configured setting");
+    var invalidAutoCloseDelay = WithEnvironmentVariable(
+        DocumentViewerPolicy.AutoCloseSecondsEnvironmentVariable,
+        "1",
+        DocumentViewerPolicy.ResolveAutoCloseDelay);
+    Require(invalidAutoCloseDelay == TimeSpan.FromSeconds(DocumentViewerPolicy.DefaultAutoCloseSeconds),
+        "document viewer auto-close delay should fall back when the configured setting is below the minimum");
     using (var viewLogConnection = services.Database.OpenConnection())
     {
         Require(
@@ -599,6 +610,21 @@ try
     Require(
         !RolePermissionPolicy.CanRegisterDocuments(memberLogin.Role),
         "team member role should not be allowed to use document registration UI");
+    Require(
+        RolePermissionPolicy.CanDownloadDocuments("admin"),
+        "admin role should be allowed to use controlled document download");
+    Require(
+        RolePermissionPolicy.CanDownloadDocuments("document-admin"),
+        "document admin role should be allowed to use controlled document download");
+    Require(
+        !RolePermissionPolicy.CanDownloadDocuments(foremanLogin.Role),
+        "foreman role should not be allowed to download document copies");
+    Require(
+        !RolePermissionPolicy.CanDownloadDocuments(leadLogin.Role),
+        "team lead role should not be allowed to download document copies");
+    Require(
+        !RolePermissionPolicy.CanDownloadDocuments(memberLogin.Role),
+        "team member role should not be allowed to download document copies");
 
     var koreanPdfPath = Path.Combine(testDirectory, "flownote-korean-functional-test.pdf");
     CreateKoreanPdfOnStaThread(koreanPdfPath);
@@ -614,6 +640,29 @@ try
     Require(koreanPdfDocument.DocumentType == "PDF", "Korean PDF document should be registered as PDF");
     Require(koreanPdfDocument.CreatedBy == "반장 A", "Korean PDF document should be created by foreman-a");
     Require(koreanPdfDocument.LocalPath == koreanPdfPath, "Korean PDF document should keep the local PDF path");
+
+    var blockedDownloadLogId = services.DocumentViewLogs.RecordDownloadBlocked(
+        koreanPdfDocument.DocumentId,
+        koreanPdfDocument.VersionNo,
+        memberLogin.DisplayName ?? "team member",
+        "Smoke test role policy blocked document download.");
+    var blockedDownloadLog = services.DocumentViewLogs.GetLog(blockedDownloadLogId);
+    Require(blockedDownloadLog is not null, "download blocked event should be recorded as a local access log");
+    Require(blockedDownloadLog!.CloseReason == "download_blocked", "download blocked event should keep the close reason");
+    Require(
+        services.History.ListHistory().Any(item =>
+            item.EventType == "document.download_blocked" &&
+            item.ActorName == (memberLogin.DisplayName ?? "team member") &&
+            item.TargetId == koreanPdfDocument.DocumentId),
+        "download blocked event should be recorded in full local history");
+    var blockedDownloadSyncResult = await services.ServerSync.QueueAndTrySyncAccessLogAsync(
+        blockedDownloadLog,
+        "download_blocked",
+        null);
+    Require(!blockedDownloadSyncResult.Success, "missing server URL should keep download blocked access log sync queued locally");
+    Require(
+        services.ServerSync.CountQueuedForEntity("document_access_log", blockedDownloadLogId.ToString(), "FAILED") == 1,
+        "missing server URL should create one failed download blocked access log sync row");
 
     var leadFieldNote = services.FieldNotes.AddDocumentNote(
         koreanPdfDocument.DocumentId,
@@ -1070,6 +1119,20 @@ static IReadOnlyList<(string FlowType, string FolderName, DocumentRecord Documen
     }
 
     return candidates;
+}
+
+static T WithEnvironmentVariable<T>(string name, string value, Func<T> action)
+{
+    var previousValue = Environment.GetEnvironmentVariable(name);
+    try
+    {
+        Environment.SetEnvironmentVariable(name, value);
+        return action();
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable(name, previousValue);
+    }
 }
 
 static void CreateKoreanPdfOnStaThread(string pdfPath)
