@@ -56,10 +56,14 @@ public sealed record ServerFieldNoteCreateRequest
     [JsonPropertyName("priority")]
     public int? Priority { get; init; }
 
+    [JsonPropertyName("idempotencyKey")]
+    public string? IdempotencyKey { get; init; }
+
     public static ServerFieldNoteCreateRequest FromLocal(
         FieldNoteRecord fieldNote,
         string? documentId = null,
-        string? documentVersionId = null)
+        string? documentVersionId = null,
+        string? idempotencyKey = null)
     {
         return new ServerFieldNoteCreateRequest
         {
@@ -72,7 +76,8 @@ public sealed record ServerFieldNoteCreateRequest
             ReportedBy = Clean(fieldNote.ReportedBy) ?? Clean(fieldNote.AuthorName),
             EntrySource = fieldNote.EntrySource,
             DeviceId = Clean(fieldNote.DeviceId),
-            LocationCode = Clean(fieldNote.LocationCode)
+            LocationCode = Clean(fieldNote.LocationCode),
+            IdempotencyKey = Clean(idempotencyKey)
         };
     }
 

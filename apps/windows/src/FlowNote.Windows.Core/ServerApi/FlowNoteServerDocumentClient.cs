@@ -26,6 +26,7 @@ public sealed class FlowNoteServerDocumentClient
         string? categoryId = null,
         string? versionLabel = null,
         string? createdBy = null,
+        string? idempotencyKey = null,
         IEnumerable<string>? tags = null,
         CancellationToken cancellationToken = default)
     {
@@ -38,6 +39,7 @@ public sealed class FlowNoteServerDocumentClient
         AddString(form, "categoryId", categoryId);
         AddString(form, "versionLabel", versionLabel);
         AddString(form, "createdBy", createdBy);
+        AddString(form, "idempotencyKey", idempotencyKey);
         foreach (var tag in tags ?? [])
         {
             AddString(form, "tags", tag);
@@ -121,9 +123,14 @@ public sealed class FlowNoteServerDocumentClient
         FieldNoteRecord fieldNote,
         string? documentId = null,
         string? documentVersionId = null,
+        string? idempotencyKey = null,
         CancellationToken cancellationToken = default)
     {
-        var request = ServerFieldNoteCreateRequest.FromLocal(fieldNote, documentId, documentVersionId);
+        var request = ServerFieldNoteCreateRequest.FromLocal(
+            fieldNote,
+            documentId,
+            documentVersionId,
+            idempotencyKey);
         return await RegisterFieldNoteAsync(request, cancellationToken);
     }
 

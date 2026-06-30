@@ -140,6 +140,18 @@ def _clean_optional(value: str | None) -> str | None:
     return cleaned or None
 
 
+def _clean_idempotency_key(value: str | None) -> str | None:
+    cleaned = _clean_optional(value)
+    if cleaned is None:
+        return None
+    if len(cleaned) > 160:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="idempotencyKey is too long.",
+        )
+    return cleaned
+
+
 def _normalize_tag_code(value: str) -> str:
     return "-".join(value.strip().lower().split())
 
@@ -381,6 +393,7 @@ async def create_document(
     ] = "WORKING",
     tags: Annotated[list[str] | None, Form()] = None,
     created_by: Annotated[str | None, Form(alias="createdBy")] = None,
+    idempotency_key: Annotated[str | None, Form(alias="idempotencyKey")] = None,
     app_settings: Annotated[Settings, Depends(get_settings)] = None,
     session: Annotated[Session, Depends(get_db_session)] = None,
 ) -> DocumentResponse:
@@ -393,6 +406,17 @@ async def create_document(
     cleaned_tags = _clean_tags(tags)
     owner_id = _validate_user_id(session, _clean_optional(owner_id), "ownerId")
     created_by = _validate_user_id(session, _clean_optional(created_by), "createdBy")
+    idempotency_key = _clean_idempotency_key(idempotency_key)
+    if idempotency_key is not None:
+        existing = session.scalar(
+            select(Document).where(
+                Document.idempotency_key == idempotency_key,
+                Document.deleted_at.is_(None),
+            )
+        )
+        if existing is not None:
+            return _document_response(session, existing)
+
     document_id = _new_public_id("doc")
     version_id = _new_public_id("ver")
     version_no = 1
@@ -409,6 +433,7 @@ async def create_document(
 
     document = Document(
         document_id=document_id,
+        idempotency_key=idempotency_key,
         title=title.strip(),
         description=_clean_optional(description),
         document_type=document_type.strip(),

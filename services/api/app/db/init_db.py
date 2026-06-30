@@ -169,6 +169,34 @@ def _ensure_user_account_role_constraint(database: Database) -> None:
         connection.execute(text("PRAGMA foreign_keys=ON"))
 
 
+def _ensure_idempotency_columns(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+
+    targets = (
+        ("documents", "ix_documents_idempotency_key"),
+        ("field_notes", "ix_field_notes_idempotency_key"),
+        ("document_access_logs", "ix_document_access_logs_idempotency_key"),
+    )
+    with database.engine.begin() as connection:
+        for table_name, index_name in targets:
+            existing_columns = {
+                row[1] for row in connection.execute(text(f"PRAGMA table_info({table_name})"))
+            }
+            if not existing_columns:
+                continue
+            if "idempotency_key" not in existing_columns:
+                connection.execute(
+                    text(f"ALTER TABLE {table_name} ADD COLUMN idempotency_key VARCHAR(160)")
+                )
+            connection.execute(
+                text(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} "
+                    f"ON {table_name} (idempotency_key)"
+                )
+            )
+
+
 def _seed_default_admin_account(database: Database) -> None:
     with database.session() as session:
         existing = session.scalar(
@@ -202,6 +230,7 @@ def initialize_database(database: Database) -> None:
     Base.metadata.create_all(bind=database.engine)
     _ensure_user_account_columns(database)
     _ensure_user_account_role_constraint(database)
+    _ensure_idempotency_columns(database)
     with database.session() as session:
         existing = session.scalar(
             select(SchemaMigration).where(SchemaMigration.version == INITIAL_SCHEMA_VERSION)
