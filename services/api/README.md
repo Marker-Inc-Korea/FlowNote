@@ -11,7 +11,9 @@ The server currently implements:
 | GET | `/` | Service and environment check |
 | GET | `/api/v1/health` | Health check |
 | GET | `/api/v1/health/db` | Database health check |
-| POST | `/api/v1/auth/login` | Username/password login, user payload, Bearer access token |
+| POST | `/api/v1/auth/login` | Username/password login, user payload, Bearer access token, refresh token |
+| POST | `/api/v1/auth/refresh` | Refresh token rotation and new access/refresh token issue |
+| POST | `/api/v1/auth/logout` | Revoke the current auth session |
 | GET | `/api/v1/auth/me` | Current user lookup with Bearer access token |
 | POST | `/api/v1/documents` | Document and initial version registration |
 | GET | `/api/v1/documents` | Document list |
@@ -49,12 +51,21 @@ require a document-write role such as `admin`, `document-admin`, `line-foreman`,
 `team-lead`. `team-member` and `viewer` accounts can create FieldNotes but receive `403` for
 document write flows. Document access log reads are limited to `admin` and `system-admin`.
 
-MVP tokens are HMAC-signed access tokens with an expiration time. Configure the signing secret and lifetime with:
+Server auth uses HMAC-signed access tokens plus the `auth_sessions` table. Login creates a
+server session and returns an access token and refresh token. Refresh rotates both tokens for
+the same session, so the previous access token and previous refresh token are rejected. Logout
+marks the session as revoked.
+
+Configure the signing secret and lifetimes with:
 
 - `FLOWNOTE_ACCESS_TOKEN_SECRET`
 - `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES`, default `480`
+- `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS`, default `14`
 
-The default admin account `admin / 1234` and default token secret are for local development and smoke tests only. Replace them before any operational deployment.
+The default admin account `admin / 1234`, fixed smoke-test passwords, and default token secret
+are for local development and smoke tests only. Before operational deployment, issue a site
+admin account separately, require first-login password replacement, and replace the token
+secret with a site-specific value outside Git.
 
 ## Local Development
 

@@ -1,4 +1,13 @@
-# FlowNote 설계 결정 요약
+﻿# FlowNote 설계 결정 요약
+
+## 2026-06-30. Server-stored auth sessions for token refresh and revocation
+
+- FastAPI auth now uses HMAC Bearer access tokens plus the `auth_sessions` table.
+- Login creates an active server session and returns access and refresh tokens.
+- Refresh rotates the access token ID and refresh token hash in the same session; old access and refresh tokens are rejected.
+- Logout marks the current session as `REVOKED`; protected APIs reject revoked sessions with `401`.
+- WPF does not silently auto-refresh yet. When document, FieldNote, attachment, or access-log sync receives `401`, the local save remains, the sync queue row is marked failed, and the user-facing status tells the user to sign in again.
+- Development defaults such as `admin / 1234`, fixed WPF test passwords, and the default token secret remain local development values only and must be replaced for operational deployment.
 
 이 문서는 FlowNote의 제품 방향과 구현 기준을 한 곳에 모은 결정 기록이다. 현재 코드와 맞지 않는 과거 표현은 제거하고, 구현된 범위와 후속 범위를 구분한다.
 
@@ -113,3 +122,4 @@
 - 로그인과 role 기반 권한을 적용한다.
 - 다운로드 차단과 운영용 뷰어 자동 닫힘은 Windows WPF 클라이언트와 서버 감사 로그를 함께 사용해 강화한다.
 - FlowNote는 개인 감시 도구가 아니며, 개인 위치 추적이나 개인 메신저 수집을 하지 않는다.
+
