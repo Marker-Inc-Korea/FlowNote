@@ -380,6 +380,30 @@ public sealed class FlowNoteLocalDatabase
             CREATE INDEX IF NOT EXISTS ix_activity_history_target
                 ON activity_history (target_type, target_id);
 
+            CREATE TABLE IF NOT EXISTS file_watch_candidates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id TEXT NOT NULL UNIQUE,
+                source_path TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                last_write_time_utc TEXT NOT NULL,
+                status TEXT NOT NULL,
+                document_id TEXT NULL REFERENCES documents(document_id) ON DELETE SET NULL,
+                detected_by TEXT NOT NULL,
+                detected_at TEXT NOT NULL,
+                version_label TEXT NULL,
+                change_reason TEXT NULL,
+                resolved_by TEXT NULL,
+                resolved_at TEXT NULL,
+                UNIQUE(source_path, status)
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_file_watch_candidates_status
+                ON file_watch_candidates (status, detected_at);
+
+            CREATE INDEX IF NOT EXISTS ix_file_watch_candidates_document
+                ON file_watch_candidates (document_id, status);
+
             CREATE TABLE IF NOT EXISTS tag_definitions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tag_id TEXT NOT NULL UNIQUE,
@@ -539,6 +563,7 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "document_versions", "is_latest", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "document_versions", "is_published", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, "document_versions", "published_at", "TEXT NULL");
+        EnsureColumn(connection, "document_versions", "version_label", "TEXT NULL");
         EnsureColumn(connection, "document_versions", "server_version_id", "TEXT NULL");
         EnsureColumn(connection, "document_versions", "synced_at", "TEXT NULL");
         EnsureColumn(connection, "field_notes", "server_note_id", "TEXT NULL");
