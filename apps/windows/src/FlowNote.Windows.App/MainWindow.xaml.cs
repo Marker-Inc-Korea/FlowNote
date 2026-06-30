@@ -167,7 +167,11 @@ public partial class MainWindow : Window
 
     private void HistoryButton_Click(object sender, RoutedEventArgs e)
     {
-        var window = new HistoryWindow(services.History)
+        var window = new HistoryWindow(
+            services.History,
+            services.ServerSync,
+            serverDocumentClient,
+            currentUser.UserId)
         {
             Owner = this
         };
