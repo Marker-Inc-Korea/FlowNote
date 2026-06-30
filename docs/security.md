@@ -2,7 +2,7 @@
 
 ## 0. 현재 코드 기준 보안 상태
 
-현재 코드에서 실제 구현된 보안 기능은 Windows WPF 앱 시작 시 로그인 요구, 기본 계정 생성, 로그인 성공 후 화면 진입, 알림 대상 사용자 식별, 문서 보기 창 열림/닫힘 로컬 감사 로그, 개발 검증용 기본 타이머 기반 뷰어 자동 닫힘, FastAPI 로그인 API, 서버 저장 인증 세션, Bearer access token, refresh token 회전, logout 세션 폐기이다. `FLOWNOTE_API_BASE_URL`이 설정된 경우 WPF 로그인 화면은 FastAPI 로그인 API를 먼저 호출하고, 성공 응답의 사용자 ID, 사용자명, 역할, 표시명, access token, refresh token, 만료 시각을 로그인 결과로 보관한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인을 유지한다. FastAPI 문서/FieldNote/문서 접근 로그 API는 `Authorization: Bearer {access_token}`이 없거나 유효하지 않거나, access token이 만료/대체/폐기되었으면 `401`을 반환한다. 서버는 role 값으로 문서 등록, 문서 버전 등록, 문서 태그 변경, 태그 등록, 문서 접근 로그 조회 권한을 검사하고 권한이 없으면 `403`을 반환한다. WPF는 로그인 role 기준으로 문서 등록/파일 업로드 버튼과 파일 드롭을 비활성화한다. 서버 감사 로그 자동 actor 지정 전체 적용, 다운로드 차단, 운영 설정 기반 뷰어 자동 닫힘 값 관리, 외부 접속 제어는 아직 구현된 기능이 아니라 제품 보안 목표이다.
+현재 코드에서 실제 구현된 보안 기능은 Windows WPF 앱 시작 시 로그인 요구, 기본 계정 생성, 로그인 성공 후 화면 진입, 알림 대상 사용자 식별, 문서 보기 창 열림/닫힘 로컬 감사 로그, 설정 기반 뷰어 자동 닫힘, role 기반 문서 다운로드 차단과 `download_blocked` 감사 로그, FastAPI 로그인 API, 서버 저장 인증 세션, Bearer access token, refresh token 회전, logout 세션 폐기이다. `FLOWNOTE_API_BASE_URL`이 설정된 경우 WPF 로그인 화면은 FastAPI 로그인 API를 먼저 호출하고, 성공 응답의 사용자 ID, 사용자명, 역할, 표시명, access token, refresh token, 만료 시각을 로그인 결과로 보관한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인을 유지한다. FastAPI 문서/FieldNote/문서 접근 로그 API는 `Authorization: Bearer {access_token}`이 없거나 유효하지 않거나, access token이 만료/대체/폐기되었으면 `401`을 반환한다. 서버는 role 값으로 문서 등록, 문서 버전 등록, 문서 태그 변경, 태그 등록, 문서 접근 로그 조회 권한을 검사하고 권한이 없으면 `403`을 반환한다. WPF는 로그인 role 기준으로 문서 등록/파일 업로드 버튼과 파일 드롭을 비활성화하고, 문서 뷰어의 controlled copy는 관리자급 다운로드 role에만 허용한다. 서버 감사 로그 자동 actor 지정 전체 적용, 외부 접속 제어는 아직 구현된 기능이 아니라 제품 보안 목표이다.
 
 ## 0.1 개발 접근 정보와 공개 저장소 주의
 
@@ -37,8 +37,8 @@ FlowNote의 배포 보안 원칙은 사내 서버형 운영이다. 문서와 파
 - 모든 사용자는 회원 로그인 후 사용한다.
 - 권한은 사용자, 역할, 그룹, 문서 권한을 기준으로 판단한다.
 - 현장 사용자는 문서 열람과 코멘트 등록만 가능하다.
-- 관리자급이 아닌 사용자 다운로드 차단은 클라이언트 앱 단계에서 구현한다.
-- 문서 뷰어 자동 닫힘은 WPF 클라이언트 앱의 기본 타이머로 먼저 구현하고, 운영 설정값 관리는 후속 단계에서 구현한다.
+- 관리자급이 아닌 사용자 다운로드는 Windows WPF 클라이언트 앱에서 차단하고 `document_view_logs` 또는 `activity_history`에 `download_blocked`로 남긴다.
+- 문서 뷰어 자동 닫힘은 WPF 클라이언트 앱에서 `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS` 설정값 기준으로 동작한다. 미설정 기본값은 30초이다.
 - 단말기는 클라이언트이며, 서버는 현장별로 구축한다.
 - 운영 환경의 현장 사용자는 일반 브라우저 직접 접속이 아니라 승인된 Windows WPF 클라이언트 앱을 통해 사용한다.
 - 서버 설치 위치는 고객 현장 또는 사내 서버 PC 1대를 기본으로 한다.
@@ -57,7 +57,7 @@ FlowNote의 배포 보안 원칙은 사내 서버형 운영이다. 문서와 파
 | `team-lead` | 조장 | 문서 등록, 버전 등록, 태그 변경, FieldNote 등록 |
 | `team-member`, `viewer` | 조원/현장 사용자 | 문서 열람과 FieldNote 등록 중심. 문서 등록, 버전 등록, 태그 변경, 접근 로그 조회 불가 |
 
-`download` 권한은 관리자급 역할에만 부여한다. 실제 다운로드 차단 UI와 로컬 제어는 Windows WPF 클라이언트 앱 단계에서 구현한다.
+`download` 권한은 `admin`, `system-admin`, `manager`, `document-admin`, `assistant-manager`, `department-manager`에만 부여한다. `line-foreman`, `team-lead`, `team-member`, `viewer`는 문서 열람과 FieldNote 흐름은 사용할 수 있지만 문서 파일 copy/download는 차단한다.
 
 현재 서버 구현 기준 권한은 다음과 같다.
 
@@ -76,13 +76,15 @@ FlowNote의 배포 보안 원칙은 사내 서버형 운영이다. 문서와 파
 현장 사용자는 승인된 앱의 뷰어에서 문서를 열람한다.
 
 - 현재 단계에서는 문서 열람 자체를 불필요하게 막지 않는다.
-- Windows WPF 클라이언트 앱에서 문서 파일 직접 다운로드 차단을 구현한다.
+- Windows WPF 클라이언트 앱은 문서 파일 직접 다운로드를 role 정책으로 차단한다.
+- PDF는 WebView2 내부 뷰어를 사용하되 저장/다른 이름 저장/인쇄 툴바와 기본 컨텍스트 메뉴, 다운로드 시작 이벤트, 새 창 요청을 차단한다.
+- Excel은 앱 내부 읽기 전용 `DataGrid`, 이미지는 WPF `Image`, 텍스트는 읽기 전용 `TextBox`로 표시하며 외부 실행 경로를 만들지 않는다.
 - Windows WPF 클라이언트 앱에서 제한 시간이 지나면 뷰어를 자동 닫힘 처리한다.
-- 자동 닫힘 기록은 현재 로컬 열람 로그에 남기며, 후속 단계에서 서버 감사 로그로 확장한다.
+- 자동 닫힘과 다운로드 차단 기록은 로컬 열람 로그와 전체 이력에 남기고, 서버 문서 ID가 매핑된 경우 문서 접근 로그 동기화 큐를 통해 FastAPI `document_access_logs`로 전송한다.
 
 설정 항목:
 
-- 기본 뷰어 제한 시간
+- 기본 뷰어 제한 시간: `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS`, 기본값 30초, 최소 5초, 최대 3600초
 - 문서 유형별 제한 시간
 - 역할별 제한 시간
 - 자동 닫힘 경고 표시 시간
@@ -91,7 +93,7 @@ FlowNote의 배포 보안 원칙은 사내 서버형 운영이다. 문서와 파
 
 관리자급 사용자는 업무상 필요한 경우 문서 파일을 다운로드할 수 있다.
 
-실제 다운로드 허용/차단 정책은 Windows WPF 클라이언트 앱과 Python FastAPI 서버 권한 검사를 함께 사용해 강화한다.
+현재 WPF 앱의 `Save copy` 경로는 관리자급 다운로드 role에만 허용한다. 허용된 다운로드는 `activity_history`에 `document.downloaded`로 남기며, 차단된 시도는 `document_view_logs.close_reason=download_blocked`와 `activity_history.document.download_blocked`로 남긴다. 서버 문서 매핑이 있으면 `download_blocked` 접근 로그도 서버 동기화 후보가 된다.
 
 다운로드 시 기록할 항목:
 
@@ -118,8 +120,8 @@ FlowNote의 배포 보안 원칙은 사내 서버형 운영이다. 문서와 파
 
 - 로그인 성공/실패
 - 문서 열람
-- 뷰어 자동 닫힘. 현재 WPF 로컬 로그 기록, 후속 서버 감사 로그 확장
-- 문서 다운로드. 클라이언트 앱 단계
+- 뷰어 자동 닫힘
+- 문서 다운로드 허용과 차단
 - 권한 실패
 - 문서 새 버전 업로드
 - 현장 코멘트 등록, 사진 첨부 등록, 관리자 분석, 보고서 확정

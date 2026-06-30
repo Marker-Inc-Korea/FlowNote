@@ -9,12 +9,15 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.Xml.Linq;
 using FlowNote.Windows.Core.Audit;
+using FlowNote.Windows.Core.Auth;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
 using FlowNote.Windows.Core.FieldNotes;
+using FlowNote.Windows.Core.History;
 using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
 using FlowNote.Windows.Core.Sync;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using UglyToad.PdfPig;
 
@@ -23,26 +26,31 @@ namespace FlowNote.Windows.App;
 public partial class DocumentViewWindow : Window
 {
     private const long MaxPreviewBytes = 128 * 1024;
-    private const int AutoCloseDelaySeconds = 30;
     private readonly FieldNoteService? fieldNoteService;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly ServerSyncService? serverSyncService;
     private readonly DocumentViewLogService? documentViewLogService;
+    private readonly HistoryService? historyService;
     private readonly DispatcherTimer autoCloseTimer;
     private readonly List<string> selectedAttachmentPaths = [];
     private readonly string actorName;
+    private readonly string userRole;
+    private readonly bool canDownloadDocument;
+    private readonly TimeSpan autoCloseDelay;
     private ExplorerDocument document;
     private long? documentViewLogId;
     private bool documentViewLogClosed;
+    private bool pdfPreviewSecurityConfigured;
+    private string? currentResolvedPath;
     private string documentViewCloseReason = "window_closed";
 
     public DocumentViewWindow(ExplorerDocument document)
-        : this(null, null, null, document, string.Empty)
+        : this(null, null, null, null, null, document, string.Empty)
     {
     }
 
     public DocumentViewWindow(FieldNoteService? fieldNoteService, ExplorerDocument document, string actorName)
-        : this(fieldNoteService, null, null, document, actorName)
+        : this(fieldNoteService, null, null, null, null, document, actorName)
     {
     }
 
@@ -51,7 +59,7 @@ public partial class DocumentViewWindow : Window
         FlowNoteServerDocumentClient? serverDocumentClient,
         ExplorerDocument document,
         string actorName)
-        : this(fieldNoteService, serverDocumentClient, null, document, actorName)
+        : this(fieldNoteService, serverDocumentClient, null, null, null, document, actorName)
     {
     }
 
@@ -61,7 +69,7 @@ public partial class DocumentViewWindow : Window
         DocumentViewLogService? documentViewLogService,
         ExplorerDocument document,
         string actorName)
-        : this(fieldNoteService, serverDocumentClient, null, documentViewLogService, document, actorName)
+        : this(fieldNoteService, serverDocumentClient, null, documentViewLogService, null, document, actorName)
     {
     }
 
@@ -70,19 +78,28 @@ public partial class DocumentViewWindow : Window
         FlowNoteServerDocumentClient? serverDocumentClient,
         ServerSyncService? serverSyncService,
         DocumentViewLogService? documentViewLogService,
+        HistoryService? historyService,
         ExplorerDocument document,
-        string actorName)
+        string actorName,
+        string? userRole = null,
+        TimeSpan? autoCloseDelay = null)
     {
         InitializeComponent();
         this.fieldNoteService = fieldNoteService;
         this.serverDocumentClient = serverDocumentClient;
         this.serverSyncService = serverSyncService;
         this.documentViewLogService = documentViewLogService;
+        this.historyService = historyService;
         this.document = document;
         this.actorName = actorName;
+        this.userRole = userRole ?? string.Empty;
+        canDownloadDocument = RolePermissionPolicy.CanDownloadDocuments(this.userRole);
+        this.autoCloseDelay = autoCloseDelay.HasValue
+            ? DocumentViewerPolicy.NormalizeAutoCloseDelay(autoCloseDelay.Value)
+            : DocumentViewerPolicy.ResolveAutoCloseDelay();
         autoCloseTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(AutoCloseDelaySeconds)
+            Interval = this.autoCloseDelay
         };
         Loaded += DocumentViewWindow_Loaded;
         autoCloseTimer.Tick += AutoCloseTimer_Tick;
@@ -103,6 +120,12 @@ public partial class DocumentViewWindow : Window
         Loaded -= DocumentViewWindow_Loaded;
         autoCloseTimer.Stop();
         autoCloseTimer.Tick -= AutoCloseTimer_Tick;
+        if (PdfPreview.CoreWebView2 is not null && pdfPreviewSecurityConfigured)
+        {
+            PdfPreview.CoreWebView2.DownloadStarting -= PdfPreview_DownloadStarting;
+            PdfPreview.CoreWebView2.NewWindowRequested -= PdfPreview_NewWindowRequested;
+        }
+
         CloseDocumentViewLog(documentViewCloseReason);
         base.OnClosed(e);
     }
@@ -168,11 +191,18 @@ public partial class DocumentViewWindow : Window
         Title = $"파일 보기 - {document.FileName}";
         TitleTextBlock.Text = document.FileName;
         MetaTextBlock.Text = $"{document.Status} | {document.VersionLabel} | {document.UpdatedBy} | {document.UpdatedAt:yyyy-MM-dd HH:mm}";
+        SecurityPolicyTextBlock.Text = canDownloadDocument
+            ? $"Download: allowed | Auto close: {autoCloseDelay.TotalSeconds:N0}s"
+            : $"Download: blocked | Auto close: {autoCloseDelay.TotalSeconds:N0}s";
+        DownloadCopyButton.ToolTip = canDownloadDocument
+            ? "Save a controlled copy and record the action in local history."
+            : "Downloads are blocked for this role and attempts are audited.";
     }
 
     private void LoadPreview(ExplorerDocument document)
     {
         var resolvedPath = ResolveLocalPath(document.LocalPath);
+        currentResolvedPath = File.Exists(resolvedPath) ? resolvedPath : null;
         PdfPreview.Visibility = Visibility.Collapsed;
         PdfPreview.Source = null;
         SpreadsheetPreview.Visibility = Visibility.Collapsed;
@@ -267,7 +297,7 @@ public partial class DocumentViewWindow : Window
             Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase);
     }
 
-    private void ShowPdfPreview(ExplorerDocument document, string resolvedPath)
+    private async void ShowPdfPreview(ExplorerDocument document, string resolvedPath)
     {
         try
         {
@@ -277,6 +307,7 @@ public partial class DocumentViewWindow : Window
             SpreadsheetPreview.Visibility = Visibility.Collapsed;
             SpreadsheetPreview.ItemsSource = null;
             PdfPreview.Visibility = Visibility.Visible;
+            await ConfigurePdfPreviewSecurityAsync();
             PdfPreview.Source = new Uri(resolvedPath, UriKind.Absolute);
         }
         catch (Exception ex) when (ex is UriFormatException or InvalidOperationException)
@@ -285,6 +316,40 @@ public partial class DocumentViewWindow : Window
             ContentTextBox.Visibility = Visibility.Visible;
             ContentTextBox.Text = PreviewPdf(document, resolvedPath);
         }
+    }
+
+    private async Task ConfigurePdfPreviewSecurityAsync()
+    {
+        await PdfPreview.EnsureCoreWebView2Async();
+        var core = PdfPreview.CoreWebView2;
+        core.Settings.AreDefaultContextMenusEnabled = false;
+        core.Settings.AreBrowserAcceleratorKeysEnabled = false;
+        core.Settings.HiddenPdfToolbarItems =
+            CoreWebView2PdfToolbarItems.Save |
+            CoreWebView2PdfToolbarItems.SaveAs |
+            CoreWebView2PdfToolbarItems.Print;
+
+        if (pdfPreviewSecurityConfigured)
+        {
+            return;
+        }
+
+        core.DownloadStarting += PdfPreview_DownloadStarting;
+        core.NewWindowRequested += PdfPreview_NewWindowRequested;
+        pdfPreviewSecurityConfigured = true;
+    }
+
+    private void PdfPreview_DownloadStarting(object? sender, CoreWebView2DownloadStartingEventArgs e)
+    {
+        e.Cancel = true;
+        e.Handled = true;
+        RecordDownloadBlocked("WebView2 PDF download was blocked.");
+    }
+
+    private void PdfPreview_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        RecordDownloadBlocked("WebView2 external window request was blocked.");
     }
 
     private void ShowSpreadsheetPreview(ExplorerDocument document, string resolvedPath)
@@ -647,6 +712,85 @@ public partial class DocumentViewWindow : Window
         AttachmentSummaryTextBlock.Text = selectedAttachmentPaths.Count == 0
             ? "No attachments"
             : $"{selectedAttachmentPaths.Count} attachment(s): {string.Join(", ", selectedAttachmentPaths.Select(Path.GetFileName))}";
+    }
+
+    private void DownloadCopyButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!canDownloadDocument)
+        {
+            RecordDownloadBlocked($"Role '{(string.IsNullOrWhiteSpace(userRole) ? "unknown" : userRole)}' is not allowed to download documents.");
+            MessageBox.Show("Document download is blocked for this role. The blocked attempt was recorded.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(currentResolvedPath) || !File.Exists(currentResolvedPath))
+        {
+            MessageBox.Show("There is no local file available for controlled copy.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            FileName = document.FileName,
+            Filter = "All files|*.*",
+            OverwritePrompt = true
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        File.Copy(currentResolvedPath, dialog.FileName, overwrite: true);
+        historyService?.Record(
+            "document.downloaded",
+            actorName,
+            "document",
+            document.DocumentId,
+            document.FileName,
+            $"Controlled document copy saved: {document.FileName}");
+        MessageBox.Show("Document copy saved and recorded.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void RecordDownloadBlocked(string reason)
+    {
+        if (string.IsNullOrWhiteSpace(document.DocumentId))
+        {
+            historyService?.Record(
+                "document.download_blocked",
+                actorName,
+                "document",
+                null,
+                document.FileName,
+                reason);
+            return;
+        }
+
+        if (documentViewLogService is null)
+        {
+            historyService?.Record(
+                "document.download_blocked",
+                actorName,
+                "document",
+                document.DocumentId,
+                document.FileName,
+                reason);
+            return;
+        }
+
+        var blockedLogId = documentViewLogService.RecordDownloadBlocked(
+            document.DocumentId,
+            document.VersionNo,
+            actorName,
+            reason);
+        if (serverSyncService is not null &&
+            documentViewLogService.GetLog(blockedLogId) is { } accessLog)
+        {
+            _ = serverSyncService.QueueAndTrySyncAccessLogAsync(
+                accessLog,
+                "download_blocked",
+                serverDocumentClient);
+        }
     }
 
     private async void SaveCommentButton_Click(object sender, RoutedEventArgs e)
