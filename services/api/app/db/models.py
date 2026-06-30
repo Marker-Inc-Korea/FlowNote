@@ -155,6 +155,7 @@ class Document(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     document_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     document_type: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -285,6 +286,7 @@ class FieldNote(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     note_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
     document_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("documents.document_id"))
     document_version_id: Mapped[str | None] = mapped_column(String(64))
     structure_item_id: Mapped[str | None] = mapped_column(String(64))
@@ -535,6 +537,7 @@ class DocumentAccessLog(Base):
     __table_args__ = (Index("ix_document_access_logs_document_created", "document_id", "created_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
     document_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("documents.document_id"), nullable=False, index=True
     )

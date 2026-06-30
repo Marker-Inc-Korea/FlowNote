@@ -174,6 +174,9 @@ public sealed record ServerDocumentAccessLogCreateRequest
 
     [JsonPropertyName("userAgent")]
     public string? UserAgent { get; init; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string? IdempotencyKey { get; init; }
 }
 
 public sealed record ServerDocumentAccessLogResponse

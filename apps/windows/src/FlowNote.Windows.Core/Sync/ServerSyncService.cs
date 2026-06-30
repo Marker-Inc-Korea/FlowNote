@@ -89,13 +89,20 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var attempted = 0;
         var synced = 0;
         var failed = 0;
+        var skipped = 0;
         string? firstFailureReason = null;
 
         foreach (var item in items)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (TryMarkAlreadySynced(item))
+            {
+                skipped++;
+                continue;
+            }
+
             attempted++;
-            MarkAttempt(item.Id);
+            MarkAttempt(item);
 
             try
             {
@@ -132,9 +139,21 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         }
 
         var message = failed == 0
-            ? $"Server sync completed. synced={synced}, attempted={attempted}."
-            : $"Server sync completed with failures. synced={synced}, failed={failed}, attempted={attempted}. First failure: {firstFailureReason}";
-        return new ServerSyncResult(failed == 0, message, attempted, synced, failed);
+            ? $"Server sync completed. synced={synced}, skipped={skipped}, attempted={attempted}."
+            : $"Server sync completed with failures. synced={synced}, skipped={skipped}, failed={failed}, attempted={attempted}. First failure: {firstFailureReason}";
+        if (items.Count > 0)
+        {
+            using var connection = database.OpenConnection();
+            RecordSyncHistory(
+                connection,
+                failed == 0 ? "server_sync.retry_completed" : "server_sync.retry_completed_with_failures",
+                "server_sync_queue",
+                "pending",
+                message,
+                DateTime.UtcNow);
+        }
+
+        return new ServerSyncResult(failed == 0, message, attempted, synced, failed, skipped);
     }
 
     public int CountQueuedForEntity(string entityType, string entityId, string? status = null)
@@ -162,6 +181,26 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return Convert.ToInt32(command.ExecuteScalar());
     }
 
+    public static string CreateDocumentIdempotencyKey(string documentId, int versionNo = 1)
+    {
+        return $"wpf:document:{documentId}:v{versionNo}";
+    }
+
+    public static string CreateFieldNoteIdempotencyKey(string noteId)
+    {
+        return $"wpf:field-note:{noteId}";
+    }
+
+    public static string CreateFieldNoteAttachmentIdempotencyKey(string attachmentId)
+    {
+        return $"wpf:field-note-attachment:{attachmentId}";
+    }
+
+    public static string CreateAccessLogIdempotencyKey(long accessLogId, string action)
+    {
+        return $"wpf:access-log:{accessLogId}:{NormalizeAccessLogAction(action)}";
+    }
+
     private void EnqueueDocument(DocumentRecord document, string? failureReason)
     {
         Enqueue(
@@ -170,7 +209,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             "register_document",
             document.DocumentId,
             1,
-            $"wpf:document:{document.DocumentId}:v1",
+            CreateDocumentIdempotencyKey(document.DocumentId),
             failureReason);
     }
 
@@ -182,7 +221,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             "register_field_note",
             fieldNote.DocumentId,
             fieldNote.DocumentVersionNo,
-            $"wpf:field-note:{fieldNote.NoteId}",
+            CreateFieldNoteIdempotencyKey(fieldNote.NoteId),
             failureReason);
     }
 
@@ -194,19 +233,13 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             "register_field_note_attachment",
             null,
             null,
-            $"wpf:field-note-attachment:{attachment.AttachmentId}",
+            CreateFieldNoteAttachmentIdempotencyKey(attachment.AttachmentId),
             failureReason);
     }
 
     private void EnqueueAccessLog(DocumentViewLogRecord accessLog, string action, string? failureReason)
     {
-        var normalizedAction = action switch
-        {
-            "auto_closed" => "register_access_log_auto_closed",
-            "download_blocked" => "register_access_log_download_blocked",
-            "view_closed" => "register_access_log_closed",
-            _ => "register_access_log_started"
-        };
+        var normalizedAction = NormalizeAccessLogAction(action);
 
         Enqueue(
             "document_access_log",
@@ -214,7 +247,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             normalizedAction,
             accessLog.DocumentId,
             accessLog.VersionNo,
-            $"wpf:access-log:{accessLog.Id}:{normalizedAction}",
+            CreateAccessLogIdempotencyKey(accessLog.Id, normalizedAction),
             failureReason);
     }
 
@@ -314,6 +347,66 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return items;
     }
 
+    private bool TryMarkAlreadySynced(QueueItem item)
+    {
+        switch (item.Action)
+        {
+            case "register_document":
+                if (TryGetDocumentServerMapping(item.EntityId) is { ServerDocumentId: not null } document)
+                {
+                    MarkQueueAlreadySynced(
+                        item,
+                        document.ServerDocumentId,
+                        document.ServerVersionId,
+                        null,
+                        null,
+                        null);
+                    return true;
+                }
+
+                return false;
+
+            case "register_field_note":
+                if (TryGetFieldNoteServerId(item.EntityId) is { } serverNoteId)
+                {
+                    MarkQueueAlreadySynced(item, null, null, serverNoteId, null, null);
+                    return true;
+                }
+
+                return false;
+
+            case "register_field_note_attachment":
+                if (TryGetFieldNoteAttachmentServerId(item.EntityId) is { } serverAttachmentId)
+                {
+                    MarkQueueAlreadySynced(item, null, null, null, null, serverAttachmentId);
+                    return true;
+                }
+
+                return false;
+
+            case "register_access_log_started":
+            case "register_access_log_closed":
+            case "register_access_log_auto_closed":
+            case "register_access_log_download_blocked":
+                if (!long.TryParse(item.EntityId, out var accessLogId))
+                {
+                    return false;
+                }
+
+                var isCloseAction = item.Action is "register_access_log_closed" or "register_access_log_auto_closed" or "register_access_log_download_blocked";
+                if (TryGetAccessLogServerId(accessLogId, isCloseAction) is { } serverLogId)
+                {
+                    MarkQueueAlreadySynced(item, null, null, null, serverLogId, null);
+                    return true;
+                }
+
+                return false;
+
+            default:
+                return false;
+        }
+    }
+
     private async Task SyncDocumentAsync(
         QueueItem item,
         FlowNoteServerDocumentClient serverClient,
@@ -345,6 +438,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             document.DocumentType,
             FlowNoteServerDocumentClient.DefaultWpfLocalUploadChangeReason,
             createdBy: Clean(serverUserId),
+            idempotencyKey: item.IdempotencyKey,
             tags: document.TagList,
             cancellationToken: cancellationToken);
 
@@ -404,6 +498,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             fieldNote,
             documentMapping.ServerDocumentId,
             documentMapping.ServerVersionId,
+            item.IdempotencyKey,
             cancellationToken);
 
         var now = DateTime.UtcNow;
@@ -530,7 +625,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 DocumentVersionId = documentMapping.ServerVersionId,
                 Action = action,
                 ActorId = Clean(serverUserId),
-                UserAgent = "FlowNote.Windows"
+                UserAgent = "FlowNote.Windows",
+                IdempotencyKey = item.IdempotencyKey
             },
             cancellationToken);
 
@@ -794,7 +890,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return value is null or DBNull ? null : Convert.ToString(value);
     }
 
-    private void MarkAttempt(long queueId)
+    private void MarkAttempt(QueueItem item)
     {
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
@@ -805,8 +901,15 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             WHERE id = $id;
             """;
         command.Parameters.AddWithValue("$last_attempt_at", DateTime.UtcNow.ToString("O"));
-        command.Parameters.AddWithValue("$id", queueId);
+        command.Parameters.AddWithValue("$id", item.Id);
         command.ExecuteNonQuery();
+        RecordSyncHistory(
+            connection,
+            "server_sync.retry_attempted",
+            item.EntityType,
+            item.EntityId,
+            $"Server sync retry attempted: {item.Action} ({item.IdempotencyKey})",
+            DateTime.UtcNow);
     }
 
     private void MarkLatestFailure(string entityType, string entityId, string reason)
@@ -899,6 +1002,34 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$server_log_id", string.IsNullOrWhiteSpace(serverLogId) ? DBNull.Value : serverLogId);
         command.Parameters.AddWithValue("$id", queueId);
         command.ExecuteNonQuery();
+    }
+
+    private void MarkQueueAlreadySynced(
+        QueueItem item,
+        string? serverDocumentId,
+        string? serverVersionId,
+        string? serverNoteId,
+        string? serverLogId,
+        string? serverAttachmentId)
+    {
+        var now = DateTime.UtcNow;
+        using var connection = database.OpenConnection();
+        MarkQueueSynced(
+            connection,
+            item.Id,
+            serverDocumentId,
+            serverVersionId,
+            serverNoteId,
+            serverLogId,
+            now,
+            serverAttachmentId);
+        RecordSyncHistory(
+            connection,
+            "server_sync.skipped_already_synced",
+            item.EntityType,
+            item.EntityId,
+            $"Server sync skipped because local synced_at/server id already exists: {item.Action} ({item.IdempotencyKey})",
+            now);
     }
 
     private static void UpsertMapping(
@@ -999,6 +1130,17 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
     private static string? Clean(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string NormalizeAccessLogAction(string action)
+    {
+        return action switch
+        {
+            "auto_closed" or "register_access_log_auto_closed" => "register_access_log_auto_closed",
+            "download_blocked" or "register_access_log_download_blocked" => "register_access_log_download_blocked",
+            "view_closed" or "register_access_log_closed" => "register_access_log_closed",
+            _ => "register_access_log_started"
+        };
     }
 
     private sealed record QueueItem(

@@ -4,7 +4,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.config import Settings
 from app.db.init_db import hash_password_for_dev
@@ -126,6 +126,49 @@ def test_create_and_list_document_access_logs() -> None:
                 )
             ).all()
             assert len(saved) == 2
+
+
+def test_document_access_log_idempotency_key_returns_existing_log() -> None:
+    with create_test_client() as client:
+        account = create_user(client)
+        document = create_document(client)
+        headers = auth_headers(client)
+        idempotency_key = f"pytest:access-log:{uuid4().hex}"
+
+        payload = {
+            "documentVersionId": document["latest_version"]["version_id"],
+            "action": "view_started",
+            "actorId": account.user_id,
+            "userAgent": "FlowNote.Windows.SmokeTests",
+            "idempotencyKey": idempotency_key,
+        }
+        first_response = client.post(
+            f"/api/v1/documents/{document['document_id']}/access-logs",
+            headers=headers,
+            json=payload,
+        )
+        assert first_response.status_code == 201, first_response.text
+        first = first_response.json()
+
+        duplicate_payload = dict(payload)
+        duplicate_payload["userAgent"] = "Changed duplicate user agent"
+        second_response = client.post(
+            f"/api/v1/documents/{document['document_id']}/access-logs",
+            headers=headers,
+            json=duplicate_payload,
+        )
+        assert second_response.status_code == 201, second_response.text
+        second = second_response.json()
+        assert second["log_id"] == first["log_id"]
+        assert second["user_agent"] == first["user_agent"]
+
+        with client.app.state.database.session() as session:
+            saved_count = session.scalar(
+                select(func.count()).select_from(DocumentAccessLog).where(
+                    DocumentAccessLog.idempotency_key == idempotency_key
+                )
+            )
+            assert saved_count == 1
 
 
 def test_document_access_log_rejects_version_from_another_document() -> None:

@@ -5,10 +5,10 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.config import Settings
-from app.db.models import FieldNoteAttachment, FileObject
+from app.db.models import FieldNote, FieldNoteAttachment, FileObject
 from app.main import create_app
 
 
@@ -112,6 +112,41 @@ def test_create_list_and_review_field_note() -> None:
         assert reviewed["analysis_content"] == (
             "Repeated field note should be checked against the work standard."
         )
+
+
+def test_field_note_idempotency_key_returns_existing_note() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        idempotency_key = f"pytest:field-note:{uuid4().hex}"
+
+        payload = {
+            "documentId": document["document_id"],
+            "documentVersionId": document["latest_version"]["version_id"],
+            "noteType": "issue",
+            "inputMode": "free_text",
+            "rawContent": f"Idempotent field note {uuid4().hex}",
+            "idempotencyKey": idempotency_key,
+        }
+        first_response = client.post("/api/v1/field-notes", headers=headers, json=payload)
+        assert first_response.status_code == 201, first_response.text
+        first = first_response.json()
+
+        duplicate_payload = dict(payload)
+        duplicate_payload["rawContent"] = "Changed duplicate content should not be saved."
+        second_response = client.post("/api/v1/field-notes", headers=headers, json=duplicate_payload)
+        assert second_response.status_code == 201, second_response.text
+        second = second_response.json()
+        assert second["note_id"] == first["note_id"]
+        assert second["raw_content"] == first["raw_content"]
+
+        with client.app.state.database.session() as session:
+            saved_count = session.scalar(
+                select(func.count()).select_from(FieldNote).where(
+                    FieldNote.idempotency_key == idempotency_key
+                )
+            )
+            assert saved_count == 1
 
 
 def test_field_note_attachment_registration_and_list() -> None:

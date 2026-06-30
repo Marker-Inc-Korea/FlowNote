@@ -31,6 +31,7 @@ class DocumentAccessLogCreateRequest(BaseModel):
     device_id: str | None = Field(default=None, alias="deviceId")
     client_ip: str | None = Field(default=None, alias="clientIp")
     user_agent: str | None = Field(default=None, alias="userAgent")
+    idempotency_key: str | None = Field(default=None, alias="idempotencyKey")
 
 
 class DocumentAccessLogResponse(BaseModel):
@@ -50,6 +51,18 @@ def _clean_optional(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def _clean_idempotency_key(value: str | None) -> str | None:
+    cleaned = _clean_optional(value)
+    if cleaned is None:
+        return None
+    if len(cleaned) > 160:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="idempotencyKey is too long.",
+        )
+    return cleaned
 
 
 def _validate_action(action: str) -> str:
@@ -132,8 +145,17 @@ def create_document_access_log(
     version_id = _validate_version(session, document_id, payload.document_version_id)
     actor_id = _validate_actor(session, payload.actor_id)
     action = _validate_action(payload.action)
+    idempotency_key = _clean_idempotency_key(payload.idempotency_key)
+
+    if idempotency_key is not None:
+        existing = session.scalar(
+            select(DocumentAccessLog).where(DocumentAccessLog.idempotency_key == idempotency_key)
+        )
+        if existing is not None:
+            return _response(existing)
 
     log = DocumentAccessLog(
+        idempotency_key=idempotency_key,
         document_id=document_id,
         document_version_id=version_id,
         action=action,

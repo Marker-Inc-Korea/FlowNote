@@ -55,7 +55,7 @@ public partial class MainWindow : Window
         }
 
         var result = await services.ServerSync.RetryPendingAsync(serverDocumentClient, currentUser.UserId);
-        if (result.Attempted > 0)
+        if (result.Attempted > 0 || result.Skipped > 0)
         {
             workspace.StatusText = $"{workspace.StatusText}  {result.Message}";
         }

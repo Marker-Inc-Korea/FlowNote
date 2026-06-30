@@ -62,6 +62,7 @@ class FieldNoteCreateRequest(BaseModel):
     location_code: str | None = Field(default=None, alias="locationCode")
     category: str | None = None
     priority: int | None = None
+    idempotency_key: str | None = Field(default=None, alias="idempotencyKey")
 
 
 class FieldNoteReviewRequest(BaseModel):
@@ -135,6 +136,18 @@ def _clean_optional(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def _clean_idempotency_key(value: str | None) -> str | None:
+    cleaned = _clean_optional(value)
+    if cleaned is None:
+        return None
+    if len(cleaned) > 160:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="idempotencyKey is too long.",
+        )
+    return cleaned
 
 
 def _validate_choice(value: str, allowed: set[str], field_name: str) -> str:
@@ -285,12 +298,21 @@ def create_field_note(
     request.structure_item_id = _clean_optional(request.structure_item_id)
     request.work_record_id = _clean_optional(request.work_record_id)
     request.raw_content = request.raw_content.strip()
+    request.idempotency_key = _clean_idempotency_key(request.idempotency_key)
     _validate_choice(request.note_type, NOTE_TYPES, "noteType")
     _validate_choice(request.input_mode, INPUT_MODES, "inputMode")
     _validate_target(session, request)
 
+    if request.idempotency_key is not None:
+        existing = session.scalar(
+            select(FieldNote).where(FieldNote.idempotency_key == request.idempotency_key)
+        )
+        if existing is not None:
+            return _field_note_response(existing)
+
     note = FieldNote(
         note_id=_new_public_id("note"),
+        idempotency_key=request.idempotency_key,
         document_id=request.document_id,
         document_version_id=request.document_version_id,
         structure_item_id=request.structure_item_id,

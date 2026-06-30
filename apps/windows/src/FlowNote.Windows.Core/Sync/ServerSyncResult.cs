@@ -5,4 +5,5 @@ public sealed record ServerSyncResult(
     string Message,
     int Attempted = 0,
     int Synced = 0,
-    int Failed = 0);
+    int Failed = 0,
+    int Skipped = 0);

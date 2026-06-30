@@ -13,7 +13,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Spacer, Table, TableStyle
 from reportlab.platypus import Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.config import Settings
 from app.db.models import (
@@ -494,6 +494,53 @@ def test_document_registration_allows_missing_user_reference_after_authenticatio
     assert created["owner_id"] is None
     assert created["latest_version"]["created_by"] is None
     assert created["latest_version"]["file"]["size_bytes"] == pdf_path.stat().st_size
+
+
+def test_document_registration_idempotency_key_returns_existing_document() -> None:
+    pdf_path, _, _, _ = prepare_factory_sample_files()
+    idempotency_key = f"pytest:document:{uuid4().hex}"
+
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        with pdf_path.open("rb") as file:
+            first_response = client.post(
+                "/api/v1/documents",
+                headers=headers,
+                data={
+                    "title": "Idempotent document registration",
+                    "documentType": "work_instruction",
+                    "changeReason": "First idempotent document request.",
+                    "idempotencyKey": idempotency_key,
+                },
+                files={"file": (pdf_path.name, file, "application/pdf")},
+            )
+        assert first_response.status_code == 201, first_response.text
+        first = first_response.json()
+
+        with pdf_path.open("rb") as file:
+            second_response = client.post(
+                "/api/v1/documents",
+                headers=headers,
+                data={
+                    "title": "Changed title should not create a second document",
+                    "documentType": "work_instruction",
+                    "changeReason": "Duplicate idempotent document request.",
+                    "idempotencyKey": idempotency_key,
+                },
+                files={"file": (pdf_path.name, file, "application/pdf")},
+            )
+        assert second_response.status_code == 201, second_response.text
+        second = second_response.json()
+        assert second["document_id"] == first["document_id"]
+        assert second["title"] == first["title"]
+
+        with client.app.state.database.session() as session:
+            saved_count = session.scalar(
+                select(func.count()).select_from(Document).where(
+                    Document.idempotency_key == idempotency_key
+                )
+            )
+            assert saved_count == 1
 
 
 def test_document_registration_rejects_unknown_user_reference() -> None:
