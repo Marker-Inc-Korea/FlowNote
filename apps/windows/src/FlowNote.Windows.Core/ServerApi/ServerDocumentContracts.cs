@@ -270,6 +270,9 @@ public sealed record ServerWorkSequenceStatusUpdateRequest
 
     [JsonPropertyName("changeReason")]
     public string? ChangeReason { get; init; }
+
+    [JsonPropertyName("holdReason")]
+    public string? HoldReason { get; init; }
 }
 
 public sealed record ServerWorkSequenceItemResponse
@@ -294,6 +297,9 @@ public sealed record ServerWorkSequenceItemResponse
 
     [JsonPropertyName("status")]
     public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("hold_reason")]
+    public string? HoldReason { get; init; }
 
     [JsonPropertyName("sort_order")]
     public int SortOrder { get; init; }
@@ -369,6 +375,42 @@ public sealed record ServerWorkSequenceHistoryResponse
 
     [JsonPropertyName("change_reason")]
     public string? ChangeReason { get; init; }
+
+    [JsonPropertyName("created_at")]
+    public DateTime CreatedAt { get; init; }
+}
+
+public sealed record ServerWorkSequenceNotificationCandidateStatusRequest
+{
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+}
+
+public sealed record ServerWorkSequenceNotificationCandidateResponse
+{
+    [JsonPropertyName("candidate_id")]
+    public string CandidateId { get; init; } = string.Empty;
+
+    [JsonPropertyName("board_id")]
+    public string BoardId { get; init; } = string.Empty;
+
+    [JsonPropertyName("item_id")]
+    public string? ItemId { get; init; }
+
+    [JsonPropertyName("event_type")]
+    public string EventType { get; init; } = string.Empty;
+
+    [JsonPropertyName("actor_id")]
+    public string? ActorId { get; init; }
+
+    [JsonPropertyName("recipient_hint")]
+    public string? RecipientHint { get; init; }
+
+    [JsonPropertyName("message")]
+    public string Message { get; init; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
 
     [JsonPropertyName("created_at")]
     public DateTime CreatedAt { get; init; }

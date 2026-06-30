@@ -588,8 +588,17 @@ multipart/form-data
 | PUT | `/work-sequence-boards/{boardId}/items/order` | 작업순서 재정렬 |
 | PATCH | `/work-sequence-boards/{boardId}/items/{itemId}/status` | 작업순서 상태 변경 |
 | GET | `/work-sequence-boards/{boardId}/history` | 작업순서 변경 이력 조회 |
+| GET | `/work-sequence-boards/{boardId}/notification-candidates` | 작업순서 알림 후보 목록 조회 |
+| PATCH | `/work-sequence-boards/{boardId}/notification-candidates/{candidateId}` | 작업순서 알림 후보 상태를 `CANDIDATE`, `SENT`, `DISMISSED`로 변경 |
 
-2026-06-29 현재 구현은 최소 운영 모델이다. 작업순서판과 항목은 문서 파일 등록 흐름과 별개로 저장하며, 기존 `작업순서` 폴더는 작업 관련 파일 보관 위치로 유지한다. 작업순서 상태는 `WAITING`, `IN_PROGRESS`, `HOLD`, `COMPLETED`만 허용한다. 순서 변경과 상태 변경은 `work_sequence_change_history`에 저장하고, `work_sequence_notification_candidates`와 `activity_history`에 알림 이벤트 후보를 남긴다.
+2026-06-30 현재 구현은 최소 운영 모델이다. 작업순서판과 항목은 문서 파일 등록 흐름과 별개로 저장하며, 기존 `작업순서` 폴더는 작업 관련 파일 보관 위치로 유지한다. 작업순서 상태는 `WAITING`, `IN_PROGRESS`, `HOLD`, `COMPLETED`만 허용한다. 순서 변경, 상태 변경, `HOLD` 보류 사유 변경은 `work_sequence_change_history`에 저장하고 `work_sequence_notification_candidates`에 알림 이벤트 후보를 남긴다. WPF 로컬 앱은 후보 생성 직후 기존 `notifications` 알림함에 `work_sequence` 타입 알림을 생성하고, 읽음 처리를 `activity_history`에 남긴다. 서버 API는 후보 상태를 `SENT` 또는 `DISMISSED`로 전환하는 흐름을 제공한다.
+
+작업순서 알림 대상 기준:
+
+- 순서 변경은 보드 `lineCode` 또는 항목의 `assignedTo` 힌트를 대상 기준으로 사용한다.
+- 상태 변경과 보류 사유 변경은 항목 `assignedTo`를 우선 사용하고, 없으면 보드 `lineCode`를 사용한다.
+- WPF 로컬은 대상 힌트가 사용자 ID, 로그인 ID, 표시 이름이면 해당 사용자 표시 이름으로, 작업그룹 ID/코드/이름이면 그룹 리더 표시 이름으로 해석한다. 해석되지 않으면 입력 문자열을 그대로 수신자 이름으로 사용한다.
+- 수행자 자신에게 가는 알림은 WPF 로컬에서 `DISMISSED` 처리한다.
 
 작업순서판 생성 예시:
 
@@ -633,9 +642,18 @@ multipart/form-data
 
 ```json
 {
-  "status": "IN_PROGRESS",
+  "status": "HOLD",
   "actorId": "user-admin",
-  "changeReason": "현장 작업 시작"
+  "changeReason": "자재 도착 지연",
+  "holdReason": "15:00 입고 예정"
+}
+```
+
+알림 후보 상태 변경 예시:
+
+```json
+{
+  "status": "SENT"
 }
 ```
 

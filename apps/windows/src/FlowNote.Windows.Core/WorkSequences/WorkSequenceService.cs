@@ -102,6 +102,7 @@ public sealed class WorkSequenceService(FlowNoteLocalDatabase database)
                 work_order_no,
                 document_id,
                 status,
+                hold_reason,
                 sort_order,
                 assigned_to,
                 created_by,
@@ -116,6 +117,7 @@ public sealed class WorkSequenceService(FlowNoteLocalDatabase database)
                 $work_order_no,
                 $document_id,
                 'WAITING',
+                NULL,
                 $sort_order,
                 $assigned_to,
                 $created_by,
@@ -192,6 +194,7 @@ public sealed class WorkSequenceService(FlowNoteLocalDatabase database)
                    work_order_no,
                    document_id,
                    status,
+                   hold_reason,
                    sort_order,
                    assigned_to,
                    created_by,
@@ -273,13 +276,23 @@ public sealed class WorkSequenceService(FlowNoteLocalDatabase database)
             reason,
             now,
             transaction);
-        RecordNotificationCandidate(
+        var candidateId = RecordNotificationCandidate(
             connection,
             boardId,
             null,
             "work_sequence.reordered",
             actorName,
+            ResolveReorderRecipient(connection, boardId, transaction),
             "Work sequence order changed.",
+            transaction);
+        DispatchWorkSequenceNotification(
+            connection,
+            boardId,
+            null,
+            candidateId,
+            actorName,
+            "Work sequence order changed.",
+            now,
             transaction);
         transaction.Commit();
     }
@@ -289,12 +302,21 @@ public sealed class WorkSequenceService(FlowNoteLocalDatabase database)
         string itemId,
         string status,
         string actorName,
-        string? reason = null)
+        string? reason = null,
+        string? holdReason = null)
     {
         var normalizedStatus = NormalizeStatus(status);
+        var normalizedHoldReason = normalizedStatus == "HOLD"
+            ? NormalizeOptional(holdReason) ?? NormalizeOptional(reason)
+            : null;
         var item = GetItems(boardId).FirstOrDefault(candidate => candidate.ItemId == itemId)
             ?? throw new InvalidOperationException($"Work sequence item not found: {itemId}");
-        if (string.Equals(item.Status, normalizedStatus, StringComparison.Ordinal))
+        var statusChanged = !string.Equals(item.Status, normalizedStatus, StringComparison.Ordinal);
+        var holdReasonChanged = !string.Equals(
+            NormalizeOptional(item.HoldReason),
+            normalizedHoldReason,
+            StringComparison.Ordinal);
+        if (!statusChanged && !holdReasonChanged)
         {
             return item;
         }
@@ -305,24 +327,68 @@ public sealed class WorkSequenceService(FlowNoteLocalDatabase database)
         update.CommandText = """
             UPDATE work_sequence_items
             SET status = $status,
+                hold_reason = $hold_reason,
                 updated_at = $updated_at
             WHERE board_id = $board_id AND item_id = $item_id;
             """;
         update.Parameters.AddWithValue("$status", normalizedStatus);
+        update.Parameters.AddWithValue("$hold_reason", DbValue(normalizedHoldReason));
         update.Parameters.AddWithValue("$updated_at", now.ToString("O"));
         update.Parameters.AddWithValue("$board_id", boardId);
         update.Parameters.AddWithValue("$item_id", itemId);
         update.ExecuteNonQuery();
 
         TouchBoard(connection, boardId, now);
-        RecordChange(connection, boardId, itemId, "STATUS_CHANGED", actorName, item.Status, normalizedStatus, reason, now);
-        RecordNotificationCandidate(
-            connection,
-            boardId,
-            itemId,
-            "work_sequence.status_changed",
-            actorName,
-            $"Work sequence item status changed: {item.Title} {item.Status} -> {normalizedStatus}.");
+        if (statusChanged)
+        {
+            RecordChange(connection, boardId, itemId, "STATUS_CHANGED", actorName, item.Status, normalizedStatus, reason, now);
+            var candidateId = RecordNotificationCandidate(
+                connection,
+                boardId,
+                itemId,
+                "work_sequence.status_changed",
+                actorName,
+                ResolveItemRecipient(connection, boardId, item),
+                $"Work sequence item status changed: {item.Title} {item.Status} -> {normalizedStatus}.");
+            DispatchWorkSequenceNotification(
+                connection,
+                boardId,
+                itemId,
+                candidateId,
+                actorName,
+                $"Work sequence item status changed: {item.Title} {item.Status} -> {normalizedStatus}.",
+                now);
+        }
+
+        if (holdReasonChanged)
+        {
+            RecordChange(
+                connection,
+                boardId,
+                itemId,
+                "HOLD_REASON_CHANGED",
+                actorName,
+                item.HoldReason,
+                normalizedHoldReason,
+                reason,
+                now);
+            var candidateId = RecordNotificationCandidate(
+                connection,
+                boardId,
+                itemId,
+                "work_sequence.hold_reason_changed",
+                actorName,
+                ResolveItemRecipient(connection, boardId, item),
+                $"Work sequence hold reason changed: {item.Title}.");
+            DispatchWorkSequenceNotification(
+                connection,
+                boardId,
+                itemId,
+                candidateId,
+                actorName,
+                $"Work sequence hold reason changed: {item.Title}.",
+                now);
+        }
 
         return GetItems(boardId).Single(candidate => candidate.ItemId == itemId);
     }
@@ -435,11 +501,12 @@ public sealed class WorkSequenceService(FlowNoteLocalDatabase database)
             reader.IsDBNull(5) ? null : reader.GetString(5),
             reader.IsDBNull(6) ? null : reader.GetString(6),
             reader.GetString(7),
-            reader.GetInt32(8),
-            reader.IsDBNull(9) ? null : reader.GetString(9),
-            reader.GetString(10),
-            DateTime.Parse(reader.GetString(11)),
-            DateTime.Parse(reader.GetString(12)));
+            reader.IsDBNull(8) ? null : reader.GetString(8),
+            reader.GetInt32(9),
+            reader.IsDBNull(10) ? null : reader.GetString(10),
+            reader.GetString(11),
+            DateTime.Parse(reader.GetString(12)),
+            DateTime.Parse(reader.GetString(13)));
     }
 
     private static void TouchBoard(
@@ -521,15 +588,17 @@ public sealed class WorkSequenceService(FlowNoteLocalDatabase database)
             transaction);
     }
 
-    private static void RecordNotificationCandidate(
+    private static string RecordNotificationCandidate(
         SqliteConnection connection,
         string boardId,
         string? itemId,
         string eventType,
         string? actorName,
+        string? recipientName,
         string message,
         SqliteTransaction? transaction = null)
     {
+        var candidateId = $"wseq-notify-{Guid.NewGuid():N}";
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -539,6 +608,7 @@ public sealed class WorkSequenceService(FlowNoteLocalDatabase database)
                 item_id,
                 event_type,
                 actor_name,
+                recipient_name,
                 message,
                 status,
                 created_at
@@ -549,18 +619,282 @@ public sealed class WorkSequenceService(FlowNoteLocalDatabase database)
                 $item_id,
                 $event_type,
                 $actor_name,
+                $recipient_name,
                 $message,
                 'CANDIDATE',
                 $created_at
             );
             """;
-        command.Parameters.AddWithValue("$candidate_id", $"wseq-notify-{Guid.NewGuid():N}");
+        command.Parameters.AddWithValue("$candidate_id", candidateId);
         command.Parameters.AddWithValue("$board_id", boardId);
         command.Parameters.AddWithValue("$item_id", DbValue(itemId));
         command.Parameters.AddWithValue("$event_type", eventType);
         command.Parameters.AddWithValue("$actor_name", Normalize(actorName, "system"));
+        command.Parameters.AddWithValue("$recipient_name", DbValue(recipientName));
         command.Parameters.AddWithValue("$message", Normalize(message, eventType));
         command.Parameters.AddWithValue("$created_at", DateTime.UtcNow.ToString("O"));
+        command.ExecuteNonQuery();
+        return candidateId;
+    }
+
+    private static string? ResolveReorderRecipient(
+        SqliteConnection connection,
+        string boardId,
+        SqliteTransaction? transaction = null)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT COALESCE(
+                (
+                    SELECT assigned_to
+                    FROM work_sequence_items
+                    WHERE board_id = $board_id
+                      AND assigned_to IS NOT NULL
+                      AND trim(assigned_to) <> ''
+                    ORDER BY sort_order, id
+                    LIMIT 1
+                ),
+                (
+                    SELECT line_code
+                    FROM work_sequence_boards
+                    WHERE board_id = $board_id
+                    LIMIT 1
+                )
+            );
+            """;
+        command.Parameters.AddWithValue("$board_id", boardId);
+        return NormalizeOptional(command.ExecuteScalar() as string);
+    }
+
+    private static string? ResolveItemRecipient(
+        SqliteConnection connection,
+        string boardId,
+        WorkSequenceItemRecord item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.AssignedTo))
+        {
+            return item.AssignedTo.Trim();
+        }
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT line_code
+            FROM work_sequence_boards
+            WHERE board_id = $board_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$board_id", boardId);
+        return NormalizeOptional(command.ExecuteScalar() as string);
+    }
+
+    private static void DispatchWorkSequenceNotification(
+        SqliteConnection connection,
+        string boardId,
+        string? itemId,
+        string candidateId,
+        string? actorName,
+        string message,
+        DateTime createdAt,
+        SqliteTransaction? transaction = null)
+    {
+        var target = LookupWorkSequenceTarget(connection, boardId, itemId, transaction);
+        var recipientName = LookupCandidateRecipient(connection, candidateId, transaction)
+            ?? NormalizeOptional(target.RecipientName);
+        recipientName = ResolveNotificationRecipientName(connection, recipientName, transaction);
+        if (recipientName is null || string.Equals(recipientName, Normalize(actorName, "system"), StringComparison.Ordinal))
+        {
+            UpdateCandidateStatus(connection, candidateId, "DISMISSED", null, transaction);
+            return;
+        }
+
+        var notificationId = $"notification-{Guid.NewGuid():N}";
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO notifications (
+                notification_id,
+                notification_type,
+                recipient_name,
+                actor_name,
+                document_id,
+                document_title,
+                target_type,
+                target_id,
+                target_title,
+                source_candidate_id,
+                message,
+                is_read,
+                created_at
+            )
+            VALUES (
+                $notification_id,
+                'work_sequence',
+                $recipient_name,
+                $actor_name,
+                '',
+                $target_title,
+                $target_type,
+                $target_id,
+                $target_title,
+                $source_candidate_id,
+                $message,
+                0,
+                $created_at
+            );
+            """;
+        command.Parameters.AddWithValue("$notification_id", notificationId);
+        command.Parameters.AddWithValue("$recipient_name", recipientName);
+        command.Parameters.AddWithValue("$actor_name", Normalize(actorName, "system"));
+        command.Parameters.AddWithValue("$target_type", itemId is null ? "work_sequence_board" : "work_sequence_item");
+        command.Parameters.AddWithValue("$target_id", itemId ?? boardId);
+        command.Parameters.AddWithValue("$target_title", target.TargetTitle);
+        command.Parameters.AddWithValue("$source_candidate_id", candidateId);
+        command.Parameters.AddWithValue("$message", Normalize(message, "Work sequence changed."));
+        command.Parameters.AddWithValue("$created_at", createdAt.ToString("O"));
+        command.ExecuteNonQuery();
+
+        UpdateCandidateStatus(connection, candidateId, "SENT", notificationId, transaction);
+        RecordActivityHistory(
+            connection,
+            "work_sequence.notification_sent",
+            actorName,
+            itemId is null ? "work_sequence_board" : "work_sequence_item",
+            itemId ?? boardId,
+            target.TargetTitle,
+            $"Work sequence notification sent: {recipientName}",
+            createdAt,
+            transaction);
+    }
+
+    private static (string TargetTitle, string? RecipientName) LookupWorkSequenceTarget(
+        SqliteConnection connection,
+        string boardId,
+        string? itemId,
+        SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        if (itemId is null)
+        {
+            command.CommandText = """
+                SELECT title, line_code
+                FROM work_sequence_boards
+                WHERE board_id = $board_id
+                LIMIT 1;
+                """;
+            command.Parameters.AddWithValue("$board_id", boardId);
+        }
+        else
+        {
+            command.CommandText = """
+                SELECT item.title, COALESCE(item.assigned_to, board.line_code)
+                FROM work_sequence_items AS item
+                JOIN work_sequence_boards AS board ON board.board_id = item.board_id
+                WHERE item.board_id = $board_id AND item.item_id = $item_id
+                LIMIT 1;
+                """;
+            command.Parameters.AddWithValue("$board_id", boardId);
+            command.Parameters.AddWithValue("$item_id", itemId);
+        }
+
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return ("Work sequence", null);
+        }
+
+        return (
+            reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1));
+    }
+
+    private static string? LookupCandidateRecipient(
+        SqliteConnection connection,
+        string candidateId,
+        SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT recipient_name
+            FROM work_sequence_notification_candidates
+            WHERE candidate_id = $candidate_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$candidate_id", candidateId);
+        return NormalizeOptional(command.ExecuteScalar() as string);
+    }
+
+    private static string? ResolveNotificationRecipientName(
+        SqliteConnection connection,
+        string? recipientHint,
+        SqliteTransaction? transaction)
+    {
+        var normalizedHint = NormalizeOptional(recipientHint);
+        if (normalizedHint is null)
+        {
+            return null;
+        }
+
+        using (var user = connection.CreateCommand())
+        {
+            user.Transaction = transaction;
+            user.CommandText = """
+                SELECT display_name
+                FROM user_accounts
+                WHERE user_id = $recipient
+                   OR login_id = $recipient
+                   OR display_name = $recipient
+                LIMIT 1;
+                """;
+            user.Parameters.AddWithValue("$recipient", normalizedHint);
+            if (NormalizeOptional(user.ExecuteScalar() as string) is { } displayName)
+            {
+                return displayName;
+            }
+        }
+
+        using (var group = connection.CreateCommand())
+        {
+            group.Transaction = transaction;
+            group.CommandText = """
+                SELECT user.display_name
+                FROM user_groups AS team
+                JOIN user_accounts AS user ON user.user_id = team.leader_user_id
+                WHERE team.group_id = $recipient
+                   OR team.group_code = $recipient
+                   OR team.group_name = $recipient
+                LIMIT 1;
+                """;
+            group.Parameters.AddWithValue("$recipient", normalizedHint);
+            if (NormalizeOptional(group.ExecuteScalar() as string) is { } leaderName)
+            {
+                return leaderName;
+            }
+        }
+
+        return normalizedHint;
+    }
+
+    private static void UpdateCandidateStatus(
+        SqliteConnection connection,
+        string candidateId,
+        string status,
+        string? notificationId,
+        SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE work_sequence_notification_candidates
+            SET status = $status,
+                notification_id = $notification_id
+            WHERE candidate_id = $candidate_id;
+            """;
+        command.Parameters.AddWithValue("$status", status);
+        command.Parameters.AddWithValue("$notification_id", DbValue(notificationId));
+        command.Parameters.AddWithValue("$candidate_id", candidateId);
         command.ExecuteNonQuery();
     }
 
@@ -621,6 +955,11 @@ public sealed class WorkSequenceService(FlowNoteLocalDatabase database)
     private static string Normalize(string? value, string fallback)
     {
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static object DbValue(string? value)

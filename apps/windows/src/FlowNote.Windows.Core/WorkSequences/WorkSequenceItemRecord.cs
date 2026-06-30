@@ -9,6 +9,7 @@ public sealed record WorkSequenceItemRecord(
     string? WorkOrderNo,
     string? DocumentId,
     string Status,
+    string? HoldReason,
     int SortOrder,
     string? AssignedTo,
     string CreatedBy,

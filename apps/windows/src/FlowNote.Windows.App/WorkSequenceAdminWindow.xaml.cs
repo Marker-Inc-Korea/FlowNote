@@ -82,7 +82,13 @@ public partial class WorkSequenceAdminWindow : Window
         }
 
         var status = (StatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "WAITING";
-        workSequences.UpdateItemStatus(board.BoardId, item.ItemId, status, actorName, ReasonTextBox.Text);
+        workSequences.UpdateItemStatus(
+            board.BoardId,
+            item.ItemId,
+            status,
+            actorName,
+            ReasonTextBox.Text,
+            status == "HOLD" ? ReasonTextBox.Text : null);
         RefreshItems(board.BoardId);
         RefreshBoards(board.BoardId);
         StatusTextBlock.Text = $"Status changed: {item.Title} -> {status}";
