@@ -43,7 +43,7 @@
 | PATCH | `/api/v1/work-sequence-boards/{boardId}/items/{itemId}/status` | 작업순서 항목 상태 변경 |
 | GET | `/api/v1/work-sequence-boards/{boardId}/history` | 작업순서 변경 이력 조회 |
 
-문서 등록/버전 등록 API, 현장 코멘트 API, FieldNote 첨부 API, 문서 접근 로그 API, 작업순서판 API는 Bearer access token이 없거나 유효하지 않으면 `401`을 반환한다. 문서 등록, 새 버전 등록, 문서 태그 변경, 태그 등록, 작업순서판 생성/항목 추가/정렬/상태 변경은 관리자 그룹, 반장(`line-foreman`), 조장(`team-lead`) 이상 role만 허용하며 조원(`team-member`)이나 현장 조회자(`viewer`)는 `403`을 받는다. FieldNote 등록과 첨부 등록은 조원 계정도 허용한다. 접근 로그 조회는 관리자 성격의 API로 보아 `admin`, `system-admin` role만 허용하고, 접근 로그 등록은 현장 클라이언트가 열람 기록을 남길 수 있도록 인증 사용자에게 열어 둔다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부를 확인하고 서버 저장 `auth_sessions` 행, HMAC 서명 access token, refresh token을 발급한다. `POST /api/v1/auth/refresh`는 refresh token을 회전하며 이전 access token과 이전 refresh token을 폐기한다. `POST /api/v1/auth/logout`은 현재 access token의 세션을 `REVOKED`로 바꾸어 이후 요청을 `401`로 거부한다. 이하 현장 단말기 API, 관리자 파일 감시 API, 보고서 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`, `refresh_token`, `refresh_expires_at`을 로그인 결과에 보관한다. 이후 서버 문서/FieldNote/첨부/접근 로그/작업순서판 요청에는 `Authorization: Bearer {access_token}` 헤더를 붙인다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로그인 role이 문서 등록 권한을 가지는 경우에만 문서 등록/파일 업로드/작업순서판 편집 버튼과 파일 드롭을 사용 가능 상태로 둔다. 로컬 SQLite 문서/FieldNote/첨부/접근 로그 저장을 기본 경로로 유지하되, 서버 전송 후보는 `server_sync_queue`에 남긴다. 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공하면 `wpf:document:{localDocumentId}:v1` 형식의 idempotency key를 저장하고, 인증된 서버 클라이언트가 있으면 같은 키를 `POST /api/v1/documents`의 `idempotencyKey`로 보낸다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후 `wpf:field-note:{noteId}` 키로 서버 현장 코멘트 등록 후보를 큐에 남기고, 첨부가 있으면 `wpf:field-note-attachment:{attachmentId}` 키로 로컬 보존 파일과 첨부 전송 후보도 남긴다. 열람 시작/닫힘 접근 로그도 `wpf:access-log:{localAccessLogId}:{register_access_log_*}` 키로 별도 큐 항목을 남긴다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 실패 사유는 `server_sync_queue.last_error`와 `activity_history`에 남긴다. access token 만료, refresh 회전으로 대체된 토큰, logout으로 폐기된 세션은 WPF 서버 클라이언트에서 인증 실패로 요약되고 문서 등록/FieldNote/첨부/접근 로그 전송 항목은 실패 큐에 남으며 사용자는 재로그인이 필요하다는 상태 메시지를 받는다. 재시도 성공 시 로컬 문서/버전/FieldNote/첨부/접근 로그에는 서버 ID와 `synced_at`을 기록한다. 현재 FastAPI 서버는 문서 등록, FieldNote 등록, 문서 접근 로그 등록에서 선택 `idempotencyKey`를 수용하며, 같은 키가 이미 있으면 새 행을 만들지 않고 기존 응답을 반환한다. FieldNote 첨부 등록은 아직 서버 idempotency key를 받지 않으므로 WPF 로컬 큐의 키와 `server_attachment_id`/`synced_at`으로 중복 전송을 막는다. 현재 스모크 테스트는 서버 미설정 상태의 실패 큐 생성을 확인하고, `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, Bearer 인증 헤더가 붙은 `/auth/me`, 문서 업로드, 보류 큐 재전송, 최신 문서 버전에 연결된 서버 FieldNote 등록, FieldNote 첨부 등록/조회, 문서 접근 로그 등록/조회, 작업순서판 생성/항목 추가/정렬/상태 변경/이력 조회, 중복 큐/중복 전송 방지를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
+문서 등록/버전 등록 API, 현장 코멘트 API, FieldNote 첨부 API, 문서 접근 로그 API, 작업순서판 API는 Bearer access token이 없거나 유효하지 않으면 `401`을 반환한다. 문서 등록, 새 버전 등록, 문서 태그 변경, 태그 등록, 작업순서판 생성/항목 추가/정렬/상태 변경은 관리자 그룹, 반장(`line-foreman`), 조장(`team-lead`) 이상 role만 허용하며 조원(`team-member`)이나 현장 조회자(`viewer`)는 `403`을 받는다. FieldNote 등록과 첨부 등록은 조원 계정도 허용한다. 접근 로그 조회는 관리자 성격의 API로 보아 `admin`, `system-admin` role만 허용하고, 접근 로그 등록은 현장 클라이언트가 열람 기록을 남길 수 있도록 인증 사용자에게 열어 둔다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부를 확인하고 서버 저장 `auth_sessions` 행, HMAC 서명 access token, refresh token을 발급한다. `POST /api/v1/auth/refresh`는 refresh token을 회전하며 이전 access token과 이전 refresh token을 폐기한다. `POST /api/v1/auth/logout`은 현재 access token의 세션을 `REVOKED`로 바꾸어 이후 요청을 `401`로 거부한다. 이하 현장 단말기 API, 관리자 파일 감시 API, 보고서 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`, `refresh_token`, `refresh_expires_at`을 로그인 결과에 보관한다. 이후 서버 문서/FieldNote/첨부/접근 로그/작업순서판 요청에는 `Authorization: Bearer {access_token}` 헤더를 붙인다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로그인 role이 문서 등록 권한을 가지는 경우에만 문서 등록/파일 업로드/작업순서판 편집 버튼과 파일 드롭을 사용 가능 상태로 둔다. 파일 감시는 더 좁은 관리자급 role(`admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`)에서만 `File Watch` 창으로 사용할 수 있고, 반장/조장/조원/viewer는 비활성화된다. 파일 감지 결과는 서버 API로 즉시 전송하지 않고 로컬 `file_watch_candidates`에 후보로 남긴 뒤, 관리자가 변경 사유와 버전명을 입력해야 기존 문서의 새 로컬 버전으로 확정한다. 로컬 SQLite 문서/FieldNote/첨부/접근 로그 저장을 기본 경로로 유지하되, 서버 전송 후보는 `server_sync_queue`에 남긴다. 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공하면 `wpf:document:{localDocumentId}:v1` 형식의 idempotency key를 저장하고, 인증된 서버 클라이언트가 있으면 같은 키를 `POST /api/v1/documents`의 `idempotencyKey`로 보낸다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후 `wpf:field-note:{noteId}` 키로 서버 현장 코멘트 등록 후보를 큐에 남기고, 첨부가 있으면 `wpf:field-note-attachment:{attachmentId}` 키로 로컬 보존 파일과 첨부 전송 후보도 남긴다. 열람 시작/닫힘 접근 로그도 `wpf:access-log:{localAccessLogId}:{register_access_log_*}` 키로 별도 큐 항목을 남긴다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 실패 사유는 `server_sync_queue.last_error`와 `activity_history`에 남긴다. access token 만료, refresh 회전으로 대체된 토큰, logout으로 폐기된 세션은 WPF 서버 클라이언트에서 인증 실패로 요약되고 문서 등록/FieldNote/첨부/접근 로그 전송 항목은 실패 큐에 남으며 사용자는 재로그인이 필요하다는 상태 메시지를 받는다. 재시도 성공 시 로컬 문서/버전/FieldNote/첨부/접근 로그에는 서버 ID와 `synced_at`을 기록한다. 현재 FastAPI 서버는 문서 등록, FieldNote 등록, 문서 접근 로그 등록에서 선택 `idempotencyKey`를 수용하며, 같은 키가 이미 있으면 새 행을 만들지 않고 기존 응답을 반환한다. FieldNote 첨부 등록은 아직 서버 idempotency key를 받지 않으므로 WPF 로컬 큐의 키와 `server_attachment_id`/`synced_at`으로 중복 전송을 막는다. 현재 스모크 테스트는 서버 미설정 상태의 실패 큐 생성을 확인하고, `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, Bearer 인증 헤더가 붙은 `/auth/me`, 문서 업로드, 보류 큐 재전송, 최신 문서 버전에 연결된 서버 FieldNote 등록, FieldNote 첨부 등록/조회, 문서 접근 로그 등록/조회, 작업순서판 생성/항목 추가/정렬/상태 변경/이력 조회, 중복 큐/중복 전송 방지를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
 ## 1. 공통 원칙
 
@@ -275,6 +275,8 @@ POST /api/v1/documents/{documentId}/versions/{versionId}/publish
 
 ## 5. 관리자 파일 감시 API
 
+현재 구현된 관리자 파일 감시는 서버 REST API가 아니라 Windows WPF 로컬 기능이다. 서버 API는 아래 초안대로 후속 확장 후보로 남긴다.
+
 | Method | Path | 설명 |
 | --- | --- | --- |
 | POST | `/admin/file-watchers` | 감시 파일 또는 폴더 등록 |
@@ -300,8 +302,10 @@ multipart/form-data
 | --- | --- | --- |
 | `device.getInfo` | App UI -> Local | 단말기 ID, 모드, 앱 버전 조회 |
 | `fileWatch.register` | App UI -> Local | 관리자 단말기 감시 파일 등록 |
-| `fileWatch.list` | App UI -> Local | 로컬 감시 항목 조회 |
-| `fileWatch.getChanges` | App UI -> Local | 변경 감지 결과 조회 |
+| `fileWatch.list` | App UI -> Local | 로컬 감시 후보 조회 |
+| `fileWatch.getChanges` | App UI -> Local | 변경 감지 후보 조회 |
+| `fileWatch.confirmCandidate` | App UI -> Local | 변경 사유와 버전명을 입력해 기존 문서의 새 버전으로 확정 |
+| `fileWatch.ignoreCandidate` | App UI -> Local | 변경 후보 무시 |
 | `file.pick` | App UI -> Local | 업로드할 로컬 파일 선택 |
 | `notification.show` | App UI -> Local | OS 알림 표시 |
 | `viewer.openExternal` | App UI -> Local | 필요 시 외부 뷰어 호출 |
@@ -310,7 +314,8 @@ multipart/form-data
 
 - 현장 사용자 `viewer` 모드에서는 파일 감시 액션을 비활성화한다.
 - 앱 로컬 기능은 문서 파일을 자동 동기화하지 않는다.
-- 관리자 파일 감시 결과는 서버의 관리자 파일 감시 API로 등록한다.
+- 현재 관리자 파일 감시 결과는 로컬 SQLite `file_watch_candidates`에 저장하고, 서버의 관리자 파일 감시 API 등록은 후속 확장으로 둔다.
+- 변경 후보 확정 시 변경 사유는 필수이며 버전명과 함께 로컬 `document_versions`에 저장한다.
 - 로컬 기능 호출은 감사 로그 대상으로 고려한다.
 - 로컬 파일 접근, 파일 감시, 외부 뷰어 호출은 감사 로그 기록 대상이다.
 

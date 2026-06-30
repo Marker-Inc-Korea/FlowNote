@@ -92,6 +92,12 @@
                             Margin="0,0,8,0"
                             Content="Publish"
                             Click="PublishDocumentButton_Click" />
+                    <Button x:Name="FileWatchButton"
+                            Width="96"
+                            Height="34"
+                            Margin="0,0,8,0"
+                            Content="File Watch"
+                            Click="FileWatchButton_Click" />
                     <Button x:Name="UploadFileButton"
                             Width="104"
                             Height="34"

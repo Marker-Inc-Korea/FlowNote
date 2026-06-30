@@ -626,6 +626,116 @@ try
     Require(
         !RolePermissionPolicy.CanDownloadDocuments(memberLogin.Role),
         "team member role should not be allowed to download document copies");
+    Require(
+        RolePermissionPolicy.CanManageFileWatch(login.Role),
+        "admin role should be allowed to manage file watch");
+    Require(
+        RolePermissionPolicy.CanManageFileWatch("document-admin"),
+        "document admin role should be allowed to manage file watch");
+    Require(
+        !RolePermissionPolicy.CanManageFileWatch(foremanLogin.Role),
+        "foreman role should not be allowed to manage file watch");
+    Require(
+        !RolePermissionPolicy.CanManageFileWatch(leadLogin.Role),
+        "team lead role should not be allowed to manage file watch");
+    Require(
+        !RolePermissionPolicy.CanManageFileWatch(memberLogin.Role),
+        "team member role should not be allowed to manage file watch");
+    Require(
+        !RolePermissionPolicy.CanManageFileWatch("viewer"),
+        "viewer role should not be allowed to manage file watch");
+
+    var watchDirectory = Path.Combine(testDirectory, $"watch-{runId}");
+    Directory.CreateDirectory(watchDirectory);
+    var watchedFileName = $"watched-version-{runStamp}.txt";
+    var originalWatchedFile = Path.Combine(testDirectory, $"original-{watchedFileName}");
+    File.WriteAllText(originalWatchedFile, $"Original watched file {runId}", Encoding.UTF8);
+    var watchedDocument = services.Documents.RegisterDocument(
+        currentDocumentFolder.Id,
+        $"Watched Version Document {runStamp}",
+        watchedFileName,
+        "Text",
+        smokeActorName,
+        originalWatchedFile);
+
+    services.FileWatch.StartWatching(watchDirectory, smokeActorName);
+    var changedWatchedFile = Path.Combine(watchDirectory, watchedFileName);
+    File.WriteAllText(changedWatchedFile, $"Changed watched file {runId}", Encoding.UTF8);
+
+    var detectedCandidate = await WaitForAsync(
+        () => services.FileWatch.ListCandidates().FirstOrDefault(item =>
+            string.Equals(
+                Path.GetFullPath(item.SourcePath),
+                Path.GetFullPath(changedWatchedFile),
+                StringComparison.OrdinalIgnoreCase)),
+        TimeSpan.FromSeconds(10));
+    Require(detectedCandidate is not null, "file watcher should create a pending version candidate");
+    Require(
+        detectedCandidate!.DocumentId == watchedDocument.DocumentId,
+        "file watch candidate should match an existing document by file name");
+    Require(
+        services.History.ListHistory().Any(item =>
+            item.EventType == "file_watch.candidate_created" &&
+            item.TargetId == detectedCandidate.CandidateId),
+        "file watch candidate creation should be recorded in history");
+
+    var missingReasonRejected = false;
+    try
+    {
+        services.FileWatch.ConfirmCandidate(
+            detectedCandidate.CandidateId,
+            watchedDocument.DocumentId,
+            "watch-v2",
+            "",
+            smokeActorName);
+    }
+    catch (ArgumentException)
+    {
+        missingReasonRejected = true;
+    }
+
+    Require(missingReasonRejected, "file watch candidate confirmation should require a change reason");
+
+    var confirmedWatchDocument = services.FileWatch.ConfirmCandidate(
+        detectedCandidate.CandidateId,
+        watchedDocument.DocumentId,
+        "watch-v2",
+        "Smoke test confirmed a watched file as a new version.",
+        smokeActorName);
+    Require(confirmedWatchDocument.VersionNo == watchedDocument.VersionNo + 1, "confirmed watch candidate should add the next document version");
+    Require(
+        confirmedWatchDocument.LatestComment == "Smoke test confirmed a watched file as a new version.",
+        "confirmed watch candidate should store the required change reason");
+    var watchVersions = services.Documents.ListVersions(watchedDocument.DocumentId);
+    Require(watchVersions[0].VersionNo == confirmedWatchDocument.VersionNo, "confirmed watch version should become latest");
+    Require(watchVersions[0].VersionLabel == "watch-v2", "confirmed watch version should store the version label");
+    Require(watchVersions[0].Comment == "Smoke test confirmed a watched file as a new version.", "confirmed watch version should store the change reason");
+    Require(
+        !string.IsNullOrWhiteSpace(watchVersions[0].LocalPath) &&
+        File.Exists(FlowNoteLocalDatabase.ResolveLocalContentPath(watchVersions[0].LocalPath!)),
+        "confirmed watch version should copy the changed file into local storage");
+    Require(
+        services.FileWatch.ListCandidates().All(item => item.CandidateId != detectedCandidate.CandidateId),
+        "confirmed watch candidate should leave the pending candidate list");
+    Require(
+        services.History.ListHistory().Any(item =>
+            item.EventType == "file_watch.candidate_confirmed" &&
+            item.TargetId == detectedCandidate.CandidateId),
+        "file watch candidate confirmation should be recorded in history");
+
+    var ignoredWatchFile = Path.Combine(watchDirectory, $"ignored-{runStamp}.txt");
+    File.WriteAllText(ignoredWatchFile, $"Ignored watched file {runId}", Encoding.UTF8);
+    var ignoredCandidate = services.FileWatch.CaptureCandidateForPath(ignoredWatchFile, smokeActorName);
+    services.FileWatch.IgnoreCandidate(ignoredCandidate.CandidateId, smokeActorName);
+    Require(
+        services.FileWatch.ListCandidates().All(item => item.CandidateId != ignoredCandidate.CandidateId),
+        "ignored watch candidate should leave the pending candidate list");
+    Require(
+        services.History.ListHistory().Any(item =>
+            item.EventType == "file_watch.candidate_ignored" &&
+            item.TargetId == ignoredCandidate.CandidateId),
+        "file watch candidate ignore should be recorded in history");
+    services.FileWatch.StopWatching(smokeActorName);
 
     var koreanPdfPath = Path.Combine(testDirectory, "flownote-korean-functional-test.pdf");
     CreateKoreanPdfOnStaThread(koreanPdfPath);
@@ -1201,6 +1311,24 @@ static void Require(bool condition, string message)
     {
         throw new InvalidOperationException(message);
     }
+}
+
+static async Task<T?> WaitForAsync<T>(Func<T?> action, TimeSpan timeout)
+    where T : class
+{
+    var startedAt = DateTime.UtcNow;
+    while (DateTime.UtcNow - startedAt < timeout)
+    {
+        var result = action();
+        if (result is not null)
+        {
+            return result;
+        }
+
+        await Task.Delay(100);
+    }
+
+    return null;
 }
 
 static long ScalarLong(SqliteConnection connection, string sql, params (string Name, object Value)[] parameters)
