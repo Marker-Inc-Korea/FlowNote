@@ -6,6 +6,7 @@
 
 - [탐색기형 메인 화면](./explorer-shell.md)
 - [로컬 SQLite 기본 구조](./local-sqlite-basics.md)
+- [서버 동기화 실패와 재시도 UX](./server-sync-ux.md)
 
 ## 현재 기준
 

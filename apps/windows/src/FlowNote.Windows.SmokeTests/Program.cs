@@ -614,6 +614,18 @@ try
     Require(
         services.ServerSync.CountQueuedForEntity("document", uploadedDocument.DocumentId, "FAILED") == 1,
         "missing server URL should create a failed document sync queue row");
+    Require(
+        services.ServerSync.ListQueueItems().Any(item =>
+            item.EntityType == "document" &&
+            item.EntityId == uploadedDocument.DocumentId &&
+            item.Status == "FAILED" &&
+            item.LastError?.Contains("서버 URL이 설정되지 않아", StringComparison.Ordinal) == true),
+        "sync queue list should show a Korean missing server URL reason for document failure");
+    var failedDocumentQueueCountBefore = services.ServerSync.CountQueuedForEntity("document", uploadedDocument.DocumentId);
+    _ = await services.ServerSync.QueueAndTrySyncDocumentAsync(uploadedDocument, null);
+    Require(
+        services.ServerSync.CountQueuedForEntity("document", uploadedDocument.DocumentId) == failedDocumentQueueCountBefore,
+        "re-queuing a failed document should not create duplicate sync queue rows");
 
     var offlineQueuedFieldComment = services.FieldComments.AddDocumentComment(
         uploadedDocument.DocumentId,
@@ -637,6 +649,13 @@ try
     Require(
         services.ServerSync.CountQueuedForEntity("field_comment", offlineQueuedFieldComment.CommentId, "FAILED") == 1,
         "missing server URL should create a failed field comment sync queue row");
+    Require(
+        services.ServerSync.ListQueueItems().Any(item =>
+            item.EntityType == "field_comment" &&
+            item.EntityId == offlineQueuedFieldComment.CommentId &&
+            item.Status == "FAILED" &&
+            item.LastError?.Contains("서버 URL이 설정되지 않아", StringComparison.Ordinal) == true),
+        "sync queue list should show a Korean missing server URL reason for field comment failure");
     var offlineFieldCommentAttachmentSyncResult = await services.ServerSync.QueueAndTrySyncFieldCommentAttachmentAsync(
         offlineQueuedFieldCommentAttachment,
         null);
@@ -1101,6 +1120,11 @@ try
                     ("$attachment_id", offlineQueuedFieldCommentAttachment.AttachmentId),
                     ("$log_id", offlineAccessLogId.ToString())) == 5,
                 "queued retry should mark document, field comment attachment, field comment, and access log queue rows as synced");
+            Require(
+                services.ServerSync.ListQueueItems().Count(item =>
+                    item.EntityId == uploadedDocument.DocumentId &&
+                    item.Status == "SYNCED") == 1,
+                "sync queue list should show the document queue row as synced after retry");
             Require(
                 ScalarLong(
                     syncConnection,

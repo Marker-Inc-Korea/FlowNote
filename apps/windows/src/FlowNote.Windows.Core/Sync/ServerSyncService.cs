@@ -24,8 +24,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         EnqueueDocument(document, null);
         if (serverClient is null)
         {
-            MarkLatestFailure("document", document.DocumentId, "Server URL is not configured.");
-            return new ServerSyncResult(false, "Server URL is not configured. Document sync is queued.");
+            MarkLatestFailure("document", document.DocumentId, SyncFailureMessages.ServerUrlNotConfigured);
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 문서 전송을 큐에 보관했습니다.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
@@ -40,8 +40,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         EnqueueFieldComment(fieldComment, null);
         if (serverClient is null)
         {
-            MarkLatestFailure("field_comment", fieldComment.CommentId, "Server URL is not configured.");
-            return new ServerSyncResult(false, "Server URL is not configured. Field comment sync is queued.");
+            MarkLatestFailure("field_comment", fieldComment.CommentId, SyncFailureMessages.ServerUrlNotConfigured);
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 FieldComment 전송을 큐에 보관했습니다.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
@@ -56,8 +56,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         EnqueueFieldCommentAttachment(attachment, null);
         if (serverClient is null)
         {
-            MarkLatestFailure("field_comment_attachment", attachment.AttachmentId, "Server URL is not configured.");
-            return new ServerSyncResult(false, "Server URL is not configured. Field comment attachment sync is queued.");
+            MarkLatestFailure("field_comment_attachment", attachment.AttachmentId, SyncFailureMessages.ServerUrlNotConfigured);
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 FieldComment 첨부 전송을 큐에 보관했습니다.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
@@ -73,8 +73,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         EnqueueAccessLog(accessLog, action, null);
         if (serverClient is null)
         {
-            MarkLatestFailure("document_access_log", accessLog.Id.ToString(), "Server URL is not configured.");
-            return new ServerSyncResult(false, "Server URL is not configured. Access log sync is queued.");
+            MarkLatestFailure("document_access_log", accessLog.Id.ToString(), SyncFailureMessages.ServerUrlNotConfigured);
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 접근 로그 전송을 큐에 보관했습니다.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
@@ -139,8 +139,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         }
 
         var message = failed == 0
-            ? $"Server sync completed. synced={synced}, skipped={skipped}, attempted={attempted}."
-            : $"Server sync completed with failures. synced={synced}, skipped={skipped}, failed={failed}, attempted={attempted}. First failure: {firstFailureReason}";
+            ? $"서버 동기화 완료: 성공 {synced}건, 이미 처리 {skipped}건, 시도 {attempted}건."
+            : $"서버 동기화 실패 포함: 성공 {synced}건, 이미 처리 {skipped}건, 실패 {failed}건, 시도 {attempted}건. 첫 실패: {firstFailureReason}";
         if (items.Count > 0)
         {
             using var connection = database.OpenConnection();
@@ -179,6 +179,57 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         }
 
         return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    public IReadOnlyList<ServerSyncQueueRecord> ListQueueItems(int limit = 500)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, sync_id, entity_type, entity_id, action, local_document_id, local_version_no,
+                   idempotency_key, status, attempt_count, last_error, created_at, last_attempt_at,
+                   synced_at, server_document_id, server_version_id, server_comment_id,
+                   server_attachment_id, server_log_id
+            FROM server_sync_queue
+            ORDER BY
+                CASE status
+                    WHEN 'FAILED' THEN 0
+                    WHEN 'PENDING' THEN 1
+                    ELSE 2
+                END,
+                COALESCE(last_attempt_at, created_at) DESC,
+                id DESC
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$limit", limit);
+
+        using var reader = command.ExecuteReader();
+        var records = new List<ServerSyncQueueRecord>();
+        while (reader.Read())
+        {
+            records.Add(new ServerSyncQueueRecord(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetInt32(6),
+                reader.GetString(7),
+                reader.GetString(8),
+                reader.GetInt32(9),
+                reader.IsDBNull(10) ? null : TranslateFailureReason(reader.GetString(10)),
+                DateTime.Parse(reader.GetString(11)),
+                reader.IsDBNull(12) ? null : DateTime.Parse(reader.GetString(12)),
+                reader.IsDBNull(13) ? null : DateTime.Parse(reader.GetString(13)),
+                reader.IsDBNull(14) ? null : reader.GetString(14),
+                reader.IsDBNull(15) ? null : reader.GetString(15),
+                reader.IsDBNull(16) ? null : reader.GetString(16),
+                reader.IsDBNull(17) ? null : reader.GetString(17),
+                reader.IsDBNull(18) ? null : reader.GetString(18)));
+        }
+
+        return records;
     }
 
     public static string CreateDocumentIdempotencyKey(string documentId, int versionNo = 1)
@@ -1111,10 +1162,11 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
     {
         var message = exception switch
         {
-            FlowNoteServerAuthenticationException => "Server login expired or revoked. Sign in again; this item remains in the retry queue.",
-            TaskCanceledException => "Server response timeout.",
-            HttpRequestException => "Server connection failed.",
-            _ => exception.Message
+            FlowNoteServerAuthenticationException => SyncFailureMessages.AuthenticationExpired,
+            TaskCanceledException => SyncFailureMessages.ServerTimeout,
+            HttpRequestException => SyncFailureMessages.ServerConnectionFailed,
+            InvalidOperationException invalidOperation => TranslateFailureReason(invalidOperation.Message),
+            _ => TranslateFailureReason(exception.Message)
         };
 
         if (string.IsNullOrWhiteSpace(message))
@@ -1125,6 +1177,66 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         message = message.Replace(Environment.NewLine, " ");
         const int maxLength = 300;
         return message.Length <= maxLength ? message : $"{message[..maxLength]}...";
+    }
+
+    private static string TranslateFailureReason(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return "서버 전송 실패 사유를 확인할 수 없습니다.";
+        }
+
+        if (message.Contains("Server URL is not configured", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.ServerUrlNotConfigured;
+        }
+
+        if (message.Contains("Server login expired", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("Sign in again", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.AuthenticationExpired;
+        }
+
+        if (message.Contains("Server response timeout", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("timed out", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.ServerTimeout;
+        }
+
+        if (message.Contains("Server connection failed", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("connection", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.ServerConnectionFailed;
+        }
+
+        if (message.Contains("Local document is not synced to server yet", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.DocumentDependencyNotSynced;
+        }
+
+        if (message.Contains("Local field comment is not synced to server yet", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.FieldCommentDependencyNotSynced;
+        }
+
+        if (message.Contains("Local document file not found", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("Local field comment attachment file not found", StringComparison.OrdinalIgnoreCase))
+        {
+            return "로컬 파일을 찾을 수 없어 서버로 전송하지 못했습니다. 파일 위치를 확인하세요.";
+        }
+
+        return message.Replace(Environment.NewLine, " ").Trim();
+    }
+
+    private static class SyncFailureMessages
+    {
+        public const string ServerUrlNotConfigured = "서버 URL이 설정되지 않아 전송하지 못했습니다. 서버 설정 후 재시도하세요.";
+        public const string ServerConnectionFailed = "서버에 연결하지 못했습니다. 네트워크와 서버 실행 상태를 확인하세요.";
+        public const string ServerTimeout = "서버 응답 시간이 초과되었습니다. 네트워크 상태를 확인한 뒤 다시 시도하세요.";
+        public const string AuthenticationExpired = "로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인하세요. 로컬 데이터는 삭제되지 않습니다.";
+        public const string DocumentDependencyNotSynced = "선행 문서가 아직 서버에 전송되지 않았습니다. 문서 동기화 후 다시 시도하세요.";
+        public const string FieldCommentDependencyNotSynced = "선행 FieldComment가 아직 서버에 전송되지 않았습니다. FieldComment 동기화 후 다시 시도하세요.";
     }
 
     private static string? Clean(string? value)
