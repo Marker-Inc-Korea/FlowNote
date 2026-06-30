@@ -7,7 +7,7 @@ from sqlalchemy import func, inspect, select
 from app.core.config import Settings
 from app.db.init_db import DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME
 from app.db.init_db import INITIAL_SCHEMA_VERSION, hash_password_for_dev
-from app.db.models import Document, DocumentVersion, FieldNote, FileObject, Role
+from app.db.models import Document, DocumentVersion, FieldComment, FileObject, Role
 from app.db.models import SchemaMigration, UserAccount, UserRole
 from app.main import create_app
 
@@ -35,8 +35,8 @@ def test_app_startup_creates_mvp_schema() -> None:
         "document_tags",
         "document_versions",
         "documents",
-        "field_note_attachments",
-        "field_notes",
+        "field_comment_attachments",
+        "field_comments",
         "file_objects",
         "operator_profiles",
         "report_sources",
@@ -98,13 +98,13 @@ def test_app_startup_seeds_default_admin_account_once() -> None:
             assert admin_count == 1
 
 
-def test_mvp_schema_accepts_document_version_and_field_note() -> None:
+def test_mvp_schema_accepts_document_version_and_field_comment() -> None:
     suffix = uuid4().hex
     user_id = f"user-test-{suffix}"
     role_id = f"role-test-{suffix}"
     document_id = f"doc-test-{suffix}"
     version_id = f"ver-test-{suffix}"
-    note_id = f"note-test-{suffix}"
+    comment_id = f"comment-test-{suffix}"
 
     with create_test_client() as client:
         with client.app.state.database.session() as session:
@@ -155,12 +155,12 @@ def test_mvp_schema_accepts_document_version_and_field_note() -> None:
                 )
             )
             session.add(
-                FieldNote(
-                    note_id=note_id,
+                FieldComment(
+                    comment_id=comment_id,
                     document_id=document_id,
-                    note_type="issue",
+                    comment_type="issue",
                     input_mode="free_text",
-                    raw_content="Test field note",
+                    raw_content="Test field comment",
                     author_id=user_id,
                     entry_source="field_user",
                 )
@@ -168,6 +168,6 @@ def test_mvp_schema_accepts_document_version_and_field_note() -> None:
             session.commit()
 
         with client.app.state.database.session() as session:
-            saved_note = session.scalar(select(FieldNote).where(FieldNote.note_id == note_id))
-            assert saved_note is not None
-            assert saved_note.document_id == document_id
+            saved_comment = session.scalar(select(FieldComment).where(FieldComment.comment_id == comment_id))
+            assert saved_comment is not None
+            assert saved_comment.document_id == document_id

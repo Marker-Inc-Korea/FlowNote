@@ -1,11 +1,11 @@
-namespace FlowNote.Windows.Core.FieldNotes;
+namespace FlowNote.Windows.Core.FieldComments;
 
-public sealed record FieldNoteRecord(
+public sealed record FieldCommentRecord(
     long Id,
-    string NoteId,
+    string CommentId,
     string? DocumentId,
     int? DocumentVersionNo,
-    string NoteType,
+    string CommentType,
     string InputMode,
     string? SignalLevel,
     string RawContent,

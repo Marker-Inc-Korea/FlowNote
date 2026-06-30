@@ -34,25 +34,37 @@ public partial class WorkSequenceTvWindow : Window
         var board = workSequences.GetBoard(boardId);
         if (board is null)
         {
-            TitleTextBlock.Text = "Work Sequence";
-            MetaTextBlock.Text = "Board not found";
+            TitleTextBlock.Text = "작업순서";
+            MetaTextBlock.Text = "작업판을 찾을 수 없습니다";
             StatusTextBlock.Text = string.Empty;
             return;
         }
 
         TitleTextBlock.Text = board.Title;
-        MetaTextBlock.Text = $"{board.LineCode ?? "line"}  {board.BoardDate:yyyy-MM-dd}  {board.Status}";
+        MetaTextBlock.Text = $"{board.LineCode ?? "라인"}  {board.BoardDate:yyyy-MM-dd}  {FormatStatus(board.Status)}";
         workspace.Items.Clear();
         foreach (var item in workSequences.GetItems(boardId))
         {
             workspace.Items.Add(item);
         }
 
-        StatusTextBlock.Text = $"Read-only TV view refreshed at {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
+        StatusTextBlock.Text = $"읽기 전용 현황판을 새로고침했습니다: {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
     }
 
     private sealed class WorkSequenceTvWorkspace
     {
         public ObservableCollection<WorkSequenceItemRecord> Items { get; } = [];
+    }
+
+    private static string FormatStatus(string status)
+    {
+        return status switch
+        {
+            "WAITING" => "대기",
+            "IN_PROGRESS" => "진행중",
+            "HOLD" => "보류",
+            "COMPLETED" => "완료",
+            _ => status
+        };
     }
 }

@@ -1,7 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net;
-using FlowNote.Windows.Core.FieldNotes;
+using FlowNote.Windows.Core.FieldComments;
 
 namespace FlowNote.Windows.Core.ServerApi;
 
@@ -119,31 +119,31 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerDocumentVersionResponse>(response, cancellationToken);
     }
 
-    public async Task<ServerFieldNoteResponse> RegisterFieldNoteAsync(
-        FieldNoteRecord fieldNote,
+    public async Task<ServerFieldCommentResponse> RegisterFieldCommentAsync(
+        FieldCommentRecord fieldComment,
         string? documentId = null,
         string? documentVersionId = null,
         string? idempotencyKey = null,
         CancellationToken cancellationToken = default)
     {
-        var request = ServerFieldNoteCreateRequest.FromLocal(
-            fieldNote,
+        var request = ServerFieldCommentCreateRequest.FromLocal(
+            fieldComment,
             documentId,
             documentVersionId,
             idempotencyKey);
-        return await RegisterFieldNoteAsync(request, cancellationToken);
+        return await RegisterFieldCommentAsync(request, cancellationToken);
     }
 
-    public async Task<ServerFieldNoteResponse> RegisterFieldNoteAsync(
-        ServerFieldNoteCreateRequest request,
+    public async Task<ServerFieldCommentResponse> RegisterFieldCommentAsync(
+        ServerFieldCommentCreateRequest request,
         CancellationToken cancellationToken = default)
     {
-        using var response = await httpClient.PostAsJsonAsync("api/v1/field-notes", request, cancellationToken);
-        return await ReadJsonResponse<ServerFieldNoteResponse>(response, cancellationToken);
+        using var response = await httpClient.PostAsJsonAsync("api/v1/field-comments", request, cancellationToken);
+        return await ReadJsonResponse<ServerFieldCommentResponse>(response, cancellationToken);
     }
 
-    public async Task<ServerFieldNoteAttachmentResponse> RegisterFieldNoteAttachmentAsync(
-        string noteId,
+    public async Task<ServerFieldCommentAttachmentResponse> RegisterFieldCommentAttachmentAsync(
+        string commentId,
         string filePath,
         string? attachmentType = null,
         string? caption = null,
@@ -163,20 +163,20 @@ public sealed class FlowNoteServerDocumentClient
         form.Add(fileContent, "file", Path.GetFileName(filePath));
 
         using var response = await httpClient.PostAsync(
-            $"api/v1/field-notes/{noteId}/attachments",
+            $"api/v1/field-comments/{commentId}/attachments",
             form,
             cancellationToken);
-        return await ReadJsonResponse<ServerFieldNoteAttachmentResponse>(response, cancellationToken);
+        return await ReadJsonResponse<ServerFieldCommentAttachmentResponse>(response, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<ServerFieldNoteAttachmentResponse>> ListFieldNoteAttachmentsAsync(
-        string noteId,
+    public async Task<IReadOnlyList<ServerFieldCommentAttachmentResponse>> ListFieldCommentAttachmentsAsync(
+        string commentId,
         CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.GetAsync(
-            $"api/v1/field-notes/{noteId}/attachments",
+            $"api/v1/field-comments/{commentId}/attachments",
             cancellationToken);
-        var attachments = await ReadJsonResponse<List<ServerFieldNoteAttachmentResponse>>(
+        var attachments = await ReadJsonResponse<List<ServerFieldCommentAttachmentResponse>>(
             response,
             cancellationToken);
         return attachments;

@@ -22,8 +22,8 @@
 | `tag_definitions` | 설비, 품목, 공정, 오류 유형, 라인, 위치, 사용자 정의 태그 사전 |
 | `document_tags` | 문서와 태그 연결 |
 | `terminal_devices` | 현장/관리자 단말기 등록 기준 |
-| `field_notes` | 현장 코멘트 원천 이력과 관리자 정리/분석 필드 |
-| `field_note_attachments` | FieldNote 사진/첨부 파일 연결 |
+| `field_comments` | 현장 코멘트 원천 이력과 관리자 정리/분석 필드 |
+| `field_comment_attachments` | FieldComment 사진/첨부 파일 연결 |
 | `comment_templates` | 현장 입력용 정형 문구 |
 | `work_records` | 작업내역 헤더 |
 | `work_record_versions` | 작업내역 버전 |
@@ -43,5 +43,5 @@
 - 문서 업로드 저장 키는 `documents/{document_id}/v{version_no}/{uuid}_{safe_filename}` 형식이다.
 - 새 문서 버전 등록 시 `change_reason`은 필수이다.
 - 문서 업로드와 새 버전 등록은 자동 공개하지 않는다. 공개 버전은 별도 publish API로 지정한다.
-- `field_notes`는 `document_id`, `structure_item_id`, `work_record_id` 중 하나 이상의 연결 대상이 필요하다.
+- `field_comments`는 `document_id`, `structure_item_id`, `work_record_id` 중 하나 이상의 연결 대상이 필요하다.
 - 현재 서버 role 허용값은 `admin`, `manager`, `viewer`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`이다.

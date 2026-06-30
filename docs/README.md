@@ -1,8 +1,8 @@
-﻿# FlowNote 문서
+# FlowNote 문서
 
 이 폴더는 FlowNote의 제품 방향, 도메인 관계, 데이터 모델, API, 설계 결정을 관리한다.
 
-현재 코드 기준으로 실제 구현된 범위는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite 로그인/문서/FieldNote/FieldNote 첨부/문서 접근 로그/작업순서판 MVP API이다. FastAPI 문서, 태그, FieldNote, 문서 접근 로그, 작업순서판 API에는 Bearer access token 인증이 적용되어 있고, 문서 쓰기와 접근 로그 조회에는 role 기반 권한 검사가 적용되어 있다. 다운로드 제어, 운영용 파일 감시, 보고서, AI, MES/ERP, 배포 운영 항목은 제품 목표 또는 초안일 수 있으므로 현재 구현 완료 기능과 구분해서 읽는다.
+현재 코드 기준으로 실제 구현된 범위는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite 로그인/문서/FieldComment/FieldComment 첨부/문서 접근 로그/작업순서판/수동 보고서 MVP API이다. FastAPI 문서, 태그, FieldComment, 문서 접근 로그, 작업순서판, 보고서 API에는 Bearer access token 인증이 적용되어 있고, 문서 쓰기, 보고서 쓰기, 접근 로그 조회에는 role 기반 권한 검사가 적용되어 있다. 다운로드 제어, 운영용 파일 감시, AI, MES/ERP, 배포 운영 항목은 제품 목표 또는 초안일 수 있으므로 현재 구현 완료 기능과 구분해서 읽는다.
 
 ## 읽는 순서
 
@@ -28,7 +28,7 @@
 - [2026-06-24 문서 등록 로컬 저장 작업 결과](./daily/2026-06-24-document-registration-local-storage.md)
 - [2026-06-24 로컬 문서 저장 빌드/테스트 결과](./daily/2026-06-24-local-document-storage-build-test-result.md)
 - [2026-06-24 문서 서버 API와 Windows 테스트 결과](./daily/2026-06-24-document-server-api-and-windows-test.md)
-- [2026-06-24 FieldNote 분리 설계 및 검증 결과](./daily/2026-06-24-field-note-separation-build-test-result.md)
+- [2026-06-24 FieldComment 분리 설계 및 검증 결과](./daily/2026-06-24-field-comment-separation-build-test-result.md)
 - [2026-06-24 현재 작업 종합 정리](./daily/2026-06-24-current-work-summary.md)
 - [2026-06-26 Windows smoke 서버 검증 블록](./daily/2026-06-26-windows-smoke-server-blocks.md)
 - [2026-06-26 현재 작업 종합 정리](./daily/2026-06-26-current-work-summary.md)
@@ -66,10 +66,10 @@ Deployment
   -> Local storage folder
   -> Client installer
 
-FieldNote
+FieldComment
   -> Document / DocumentVersion
   -> DocumentStructureItem
-  -> FieldNoteAttachment / FileObject
+  -> FieldCommentAttachment / FileObject
   -> OperatorProfile / UserAccount
   -> CommentTemplate
   -> Report
@@ -85,7 +85,7 @@ WorkRecord
   -> AI Advice
 
 SearchIndexItem
-  -> DocumentVersion / FieldNote / Report / WorkRecordVersion
+  -> DocumentVersion / FieldComment / Report / WorkRecordVersion
 
 ExternalSystem
   -> IntegrationMapping

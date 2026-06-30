@@ -11,21 +11,21 @@ from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import FieldNoteCreateUser, get_current_user
+from app.core.auth import FieldCommentCreateUser, get_current_user
 from app.core.config import Settings, get_settings
 from app.core.storage import UploadTooLargeError, file_family_from_extension
 from app.core.storage import resolve_storage_root, store_upload_file_at
-from app.db.models import Document, DocumentVersion, FieldNote, FieldNoteAttachment, FileObject
+from app.db.models import Document, DocumentVersion, FieldComment, FieldCommentAttachment, FileObject
 from app.db.session import get_db_session
 
-router = APIRouter(prefix="/field-notes", tags=["field-notes"], dependencies=[Depends(get_current_user)])
-document_field_notes_router = APIRouter(
+router = APIRouter(prefix="/field-comments", tags=["field-comments"], dependencies=[Depends(get_current_user)])
+document_field_comments_router = APIRouter(
     prefix="/documents",
-    tags=["field-notes"],
+    tags=["field-comments"],
     dependencies=[Depends(get_current_user)],
 )
 
-NOTE_TYPES = {"experience", "work_evaluation", "issue"}
+COMMENT_TYPES = {"experience", "work_evaluation", "issue"}
 INPUT_MODES = {"signal", "free_text", "template", "template_with_text", "admin_proxy", "mes_integration"}
 STATUSES = {"NEW", "NEEDS_REVIEW", "ANALYZED", "REVIEWED", "SELECTED", "EXCLUDED", "ARCHIVED"}
 ATTACHMENT_TYPES = {"photo", "document", "other"}
@@ -42,14 +42,14 @@ ATTACHMENT_ALLOWED_EXTENSIONS = {
 }
 
 
-class FieldNoteCreateRequest(BaseModel):
+class FieldCommentCreateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     document_id: str | None = Field(default=None, alias="documentId")
     document_version_id: str | None = Field(default=None, alias="documentVersionId")
     structure_item_id: str | None = Field(default=None, alias="structureItemId")
     work_record_id: str | None = Field(default=None, alias="workRecordId")
-    note_type: str = Field(default="issue", alias="noteType")
+    comment_type: str = Field(default="issue", alias="commentType")
     input_mode: str = Field(default="free_text", alias="inputMode")
     signal_level: str | None = Field(default=None, alias="signalLevel")
     template_id: str | None = Field(default=None, alias="templateId")
@@ -65,7 +65,7 @@ class FieldNoteCreateRequest(BaseModel):
     idempotency_key: str | None = Field(default=None, alias="idempotencyKey")
 
 
-class FieldNoteReviewRequest(BaseModel):
+class FieldCommentReviewRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     status: str | None = None
@@ -75,13 +75,13 @@ class FieldNoteReviewRequest(BaseModel):
     analyzed_by: str | None = Field(default=None, alias="analyzedBy")
 
 
-class FieldNoteResponse(BaseModel):
-    note_id: str
+class FieldCommentResponse(BaseModel):
+    comment_id: str
     document_id: str | None
     document_version_id: str | None
     structure_item_id: str | None
     work_record_id: str | None
-    note_type: str
+    comment_type: str
     input_mode: str
     signal_level: str | None
     template_id: str | None
@@ -105,7 +105,7 @@ class FieldNoteResponse(BaseModel):
     analyzed_at: datetime | None
 
 
-class FieldNoteAttachmentFileResponse(BaseModel):
+class FieldCommentAttachmentFileResponse(BaseModel):
     storage_type: str
     storage_key: str
     original_filename: str
@@ -116,15 +116,15 @@ class FieldNoteAttachmentFileResponse(BaseModel):
     hash_sha256: str | None
 
 
-class FieldNoteAttachmentResponse(BaseModel):
+class FieldCommentAttachmentResponse(BaseModel):
     attachment_id: str
-    note_id: str
+    comment_id: str
     attachment_type: str
     caption: str | None
     captured_at: datetime | None
     created_by: str | None
     created_at: datetime
-    file: FieldNoteAttachmentFileResponse
+    file: FieldCommentAttachmentFileResponse
 
 
 def _new_public_id(prefix: str) -> str:
@@ -159,11 +159,11 @@ def _validate_choice(value: str, allowed: set[str], field_name: str) -> str:
     return value
 
 
-def _validate_target(session: Session, request: FieldNoteCreateRequest) -> None:
+def _validate_target(session: Session, request: FieldCommentCreateRequest) -> None:
     if not (request.document_id or request.structure_item_id or request.work_record_id):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="A field note must reference documentId, structureItemId, or workRecordId.",
+            detail="A field comment must reference documentId, structureItemId, or workRecordId.",
         )
 
     if request.document_id is not None:
@@ -194,14 +194,14 @@ def _validate_target(session: Session, request: FieldNoteCreateRequest) -> None:
             )
 
 
-def _field_note_response(note: FieldNote) -> FieldNoteResponse:
-    return FieldNoteResponse(
-        note_id=note.note_id,
+def _field_comment_response(note: FieldComment) -> FieldCommentResponse:
+    return FieldCommentResponse(
+        comment_id=note.comment_id,
         document_id=note.document_id,
         document_version_id=note.document_version_id,
         structure_item_id=note.structure_item_id,
         work_record_id=note.work_record_id,
-        note_type=note.note_type,
+        comment_type=note.comment_type,
         input_mode=note.input_mode,
         signal_level=note.signal_level,
         template_id=note.template_id,
@@ -258,8 +258,8 @@ def _validate_attachment_file(upload: UploadFile) -> None:
         )
 
 
-def _attachment_file_response(file_object: FileObject) -> FieldNoteAttachmentFileResponse:
-    return FieldNoteAttachmentFileResponse(
+def _attachment_file_response(file_object: FileObject) -> FieldCommentAttachmentFileResponse:
+    return FieldCommentAttachmentFileResponse(
         storage_type=file_object.storage_type,
         storage_key=file_object.storage_key,
         original_filename=file_object.original_filename,
@@ -272,12 +272,12 @@ def _attachment_file_response(file_object: FileObject) -> FieldNoteAttachmentFil
 
 
 def _attachment_response(
-    attachment: FieldNoteAttachment,
+    attachment: FieldCommentAttachment,
     file_object: FileObject,
-) -> FieldNoteAttachmentResponse:
-    return FieldNoteAttachmentResponse(
+) -> FieldCommentAttachmentResponse:
+    return FieldCommentAttachmentResponse(
         attachment_id=attachment.attachment_id,
-        note_id=attachment.note_id,
+        comment_id=attachment.comment_id,
         attachment_type=attachment.attachment_type,
         caption=attachment.caption,
         captured_at=attachment.captured_at,
@@ -287,37 +287,37 @@ def _attachment_response(
     )
 
 
-@router.post("", response_model=FieldNoteResponse, status_code=status.HTTP_201_CREATED)
-def create_field_note(
-    request: FieldNoteCreateRequest,
-    _current_user: FieldNoteCreateUser,
+@router.post("", response_model=FieldCommentResponse, status_code=status.HTTP_201_CREATED)
+def create_field_comment(
+    request: FieldCommentCreateRequest,
+    _current_user: FieldCommentCreateUser,
     session: Annotated[Session, Depends(get_db_session)],
-) -> FieldNoteResponse:
+) -> FieldCommentResponse:
     request.document_id = _clean_optional(request.document_id)
     request.document_version_id = _clean_optional(request.document_version_id)
     request.structure_item_id = _clean_optional(request.structure_item_id)
     request.work_record_id = _clean_optional(request.work_record_id)
     request.raw_content = request.raw_content.strip()
     request.idempotency_key = _clean_idempotency_key(request.idempotency_key)
-    _validate_choice(request.note_type, NOTE_TYPES, "noteType")
+    _validate_choice(request.comment_type, COMMENT_TYPES, "commentType")
     _validate_choice(request.input_mode, INPUT_MODES, "inputMode")
     _validate_target(session, request)
 
     if request.idempotency_key is not None:
         existing = session.scalar(
-            select(FieldNote).where(FieldNote.idempotency_key == request.idempotency_key)
+            select(FieldComment).where(FieldComment.idempotency_key == request.idempotency_key)
         )
         if existing is not None:
-            return _field_note_response(existing)
+            return _field_comment_response(existing)
 
-    note = FieldNote(
-        note_id=_new_public_id("note"),
+    note = FieldComment(
+        comment_id=_new_public_id("comment"),
         idempotency_key=request.idempotency_key,
         document_id=request.document_id,
         document_version_id=request.document_version_id,
         structure_item_id=request.structure_item_id,
         work_record_id=request.work_record_id,
-        note_type=request.note_type,
+        comment_type=request.comment_type,
         input_mode=request.input_mode,
         signal_level=_clean_optional(request.signal_level),
         template_id=_clean_optional(request.template_id),
@@ -339,19 +339,19 @@ def create_field_note(
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Field note could not be saved because of a database constraint.",
+            detail="Field comment could not be saved because of a database constraint.",
         ) from exc
     session.refresh(note)
-    return _field_note_response(note)
+    return _field_comment_response(note)
 
 
 @router.post(
-    "/{note_id}/attachments",
-    response_model=FieldNoteAttachmentResponse,
+    "/{comment_id}/attachments",
+    response_model=FieldCommentAttachmentResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_field_note_attachment(
-    note_id: str,
+async def create_field_comment_attachment(
+    comment_id: str,
     file: Annotated[UploadFile, File()],
     session: Annotated[Session, Depends(get_db_session)],
     attachment_type: Annotated[str | None, Form(alias="attachmentType")] = None,
@@ -359,10 +359,10 @@ async def create_field_note_attachment(
     captured_at: Annotated[datetime | None, Form(alias="capturedAt")] = None,
     created_by: Annotated[str | None, Form(alias="createdBy")] = None,
     app_settings: Annotated[Settings, Depends(get_settings)] = None,
-) -> FieldNoteAttachmentResponse:
-    note_exists = session.scalar(select(FieldNote.id).where(FieldNote.note_id == note_id))
-    if note_exists is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field note not found.")
+) -> FieldCommentAttachmentResponse:
+    comment_exists = session.scalar(select(FieldComment.id).where(FieldComment.comment_id == comment_id))
+    if comment_exists is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field comment not found.")
 
     _validate_attachment_file(file)
     storage_root = resolve_storage_root(app_settings.storage_root)
@@ -370,8 +370,8 @@ async def create_field_note_attachment(
         stored = await store_upload_file_at(
             file,
             storage_root=storage_root,
-            path_parts=("field-notes", note_id, "attachments"),
-            max_size_bytes=app_settings.field_note_attachment_max_bytes,
+            path_parts=("field-comments", comment_id, "attachments"),
+            max_size_bytes=app_settings.field_comment_attachment_max_bytes,
         )
     except UploadTooLargeError as exc:
         raise HTTPException(
@@ -391,9 +391,9 @@ async def create_field_note_attachment(
     session.add(file_object)
     session.flush()
 
-    attachment = FieldNoteAttachment(
+    attachment = FieldCommentAttachment(
         attachment_id=_new_public_id("att"),
-        note_id=note_id,
+        comment_id=comment_id,
         file_object_id=file_object.id,
         attachment_type=_clean_attachment_type(attachment_type, stored.extension, stored.mime_type),
         caption=_clean_optional(caption),
@@ -408,52 +408,52 @@ async def create_field_note_attachment(
         _delete_stored_file(storage_root, stored.storage_key)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Field note attachment could not be saved because of a database constraint.",
+            detail="Field comment attachment could not be saved because of a database constraint.",
         ) from exc
     session.refresh(attachment)
     return _attachment_response(attachment, file_object)
 
 
-@router.get("/{note_id}/attachments", response_model=list[FieldNoteAttachmentResponse])
-def list_field_note_attachments(
-    note_id: str,
+@router.get("/{comment_id}/attachments", response_model=list[FieldCommentAttachmentResponse])
+def list_field_comment_attachments(
+    comment_id: str,
     session: Annotated[Session, Depends(get_db_session)],
-) -> list[FieldNoteAttachmentResponse]:
-    note_exists = session.scalar(select(FieldNote.id).where(FieldNote.note_id == note_id))
-    if note_exists is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field note not found.")
+) -> list[FieldCommentAttachmentResponse]:
+    comment_exists = session.scalar(select(FieldComment.id).where(FieldComment.comment_id == comment_id))
+    if comment_exists is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field comment not found.")
 
     rows = session.execute(
-        select(FieldNoteAttachment, FileObject)
-        .join(FileObject, FieldNoteAttachment.file_object_id == FileObject.id)
-        .where(FieldNoteAttachment.note_id == note_id)
-        .order_by(desc(FieldNoteAttachment.created_at), desc(FieldNoteAttachment.id))
+        select(FieldCommentAttachment, FileObject)
+        .join(FileObject, FieldCommentAttachment.file_object_id == FileObject.id)
+        .where(FieldCommentAttachment.comment_id == comment_id)
+        .order_by(desc(FieldCommentAttachment.created_at), desc(FieldCommentAttachment.id))
     ).all()
     return [_attachment_response(attachment, file_object) for attachment, file_object in rows]
 
 
-@router.get("", response_model=list[FieldNoteResponse])
-def list_field_notes(
+@router.get("", response_model=list[FieldCommentResponse])
+def list_field_comments(
     session: Annotated[Session, Depends(get_db_session)],
     document_id: Annotated[str | None, Query(alias="documentId")] = None,
-    note_status: Annotated[str | None, Query(alias="status")] = None,
+    comment_status: Annotated[str | None, Query(alias="status")] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
-) -> list[FieldNoteResponse]:
-    statement = select(FieldNote).order_by(desc(FieldNote.created_at), desc(FieldNote.id)).limit(limit)
+) -> list[FieldCommentResponse]:
+    statement = select(FieldComment).order_by(desc(FieldComment.created_at), desc(FieldComment.id)).limit(limit)
     if document_id is not None:
-        statement = statement.where(FieldNote.document_id == document_id)
-    if note_status is not None:
-        _validate_choice(note_status, STATUSES, "status")
-        statement = statement.where(FieldNote.status == note_status)
-    return [_field_note_response(note) for note in session.scalars(statement).all()]
+        statement = statement.where(FieldComment.document_id == document_id)
+    if comment_status is not None:
+        _validate_choice(comment_status, STATUSES, "status")
+        statement = statement.where(FieldComment.status == comment_status)
+    return [_field_comment_response(note) for note in session.scalars(statement).all()]
 
 
-@document_field_notes_router.get("/{document_id}/field-notes", response_model=list[FieldNoteResponse])
-def list_document_field_notes(
+@document_field_comments_router.get("/{document_id}/field-comments", response_model=list[FieldCommentResponse])
+def list_document_field_comments(
     document_id: str,
     session: Annotated[Session, Depends(get_db_session)],
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
-) -> list[FieldNoteResponse]:
+) -> list[FieldCommentResponse]:
     document_exists = session.scalar(
         select(Document.id).where(Document.document_id == document_id, Document.deleted_at.is_(None))
     )
@@ -461,34 +461,34 @@ def list_document_field_notes(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
 
     notes = session.scalars(
-        select(FieldNote)
-        .where(FieldNote.document_id == document_id)
-        .order_by(desc(FieldNote.created_at), desc(FieldNote.id))
+        select(FieldComment)
+        .where(FieldComment.document_id == document_id)
+        .order_by(desc(FieldComment.created_at), desc(FieldComment.id))
         .limit(limit)
     ).all()
-    return [_field_note_response(note) for note in notes]
+    return [_field_comment_response(note) for note in notes]
 
 
-@router.get("/{note_id}", response_model=FieldNoteResponse)
-def get_field_note(
-    note_id: str,
+@router.get("/{comment_id}", response_model=FieldCommentResponse)
+def get_field_comment(
+    comment_id: str,
     session: Annotated[Session, Depends(get_db_session)],
-) -> FieldNoteResponse:
-    note = session.scalar(select(FieldNote).where(FieldNote.note_id == note_id))
+) -> FieldCommentResponse:
+    note = session.scalar(select(FieldComment).where(FieldComment.comment_id == comment_id))
     if note is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field note not found.")
-    return _field_note_response(note)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field comment not found.")
+    return _field_comment_response(note)
 
 
-@router.patch("/{note_id}", response_model=FieldNoteResponse)
-def review_field_note(
-    note_id: str,
-    request: FieldNoteReviewRequest,
+@router.patch("/{comment_id}", response_model=FieldCommentResponse)
+def review_field_comment(
+    comment_id: str,
+    request: FieldCommentReviewRequest,
     session: Annotated[Session, Depends(get_db_session)],
-) -> FieldNoteResponse:
-    note = session.scalar(select(FieldNote).where(FieldNote.note_id == note_id))
+) -> FieldCommentResponse:
+    note = session.scalar(select(FieldComment).where(FieldComment.comment_id == comment_id))
     if note is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field note not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field comment not found.")
 
     if request.status is not None:
         note.status = _validate_choice(request.status, STATUSES, "status")
@@ -509,7 +509,7 @@ def review_field_note(
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Field note could not be updated because of a database constraint.",
+            detail="Field comment could not be updated because of a database constraint.",
         ) from exc
     session.refresh(note)
-    return _field_note_response(note)
+    return _field_comment_response(note)

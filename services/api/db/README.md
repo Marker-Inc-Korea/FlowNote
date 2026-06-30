@@ -21,7 +21,7 @@
 - `documents`, `document_versions`
 - `tag_definitions`, `document_tags`
 - `terminal_devices`
-- `field_notes`, `field_note_attachments`
+- `field_comments`, `field_comment_attachments`
 - `comment_templates`
 - `work_records`, `work_record_versions`
 - `work_sequence_boards`, `work_sequence_items`

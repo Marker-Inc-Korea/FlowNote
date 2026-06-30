@@ -20,7 +20,7 @@ public partial class NotificationWindow : Window
     {
         var items = notifications.ListNotifications(recipientName);
         NotificationGrid.ItemsSource = items;
-        SummaryTextBlock.Text = $"{recipientName}: {items.Count} notifications, {items.Count(item => !item.IsRead)} unread";
+        SummaryTextBlock.Text = $"{recipientName}: 전체 {items.Count}건, 읽지 않음 {items.Count(item => !item.IsRead)}건";
     }
 
     private void MarkSelectedReadButton_Click(object sender, RoutedEventArgs e)

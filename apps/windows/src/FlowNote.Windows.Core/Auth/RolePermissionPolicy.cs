@@ -34,6 +34,12 @@ public static class RolePermissionPolicy
         "department-manager"
     };
 
+    private static readonly HashSet<string> UserManagementRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "admin",
+        "system-admin"
+    };
+
     public static bool CanRegisterDocuments(string? role)
     {
         return !string.IsNullOrWhiteSpace(role) && DocumentRegistrationRoles.Contains(role);
@@ -47,5 +53,10 @@ public static class RolePermissionPolicy
     public static bool CanManageFileWatch(string? role)
     {
         return !string.IsNullOrWhiteSpace(role) && FileWatchManagementRoles.Contains(role);
+    }
+
+    public static bool CanManageUsers(string? role)
+    {
+        return !string.IsNullOrWhiteSpace(role) && UserManagementRoles.Contains(role);
     }
 }

@@ -1,4 +1,4 @@
-﻿# FlowNote 데이터 모델
+# FlowNote 데이터 모델
 
 ## 0. 데이터베이스 기준
 
@@ -15,8 +15,8 @@
 | `document_folders` | 루트, 기본 폴더, 문서 분류 폴더, 날짜 하위 폴더를 저장 |
 | `documents` | 문서 메타데이터, 로컬 파일 상대 경로, 상태, 최신 버전, 최신 코멘트 요약을 저장 |
 | `document_versions` | 원본 등록 버전과 파일 개정 버전을 저장. 기존 코멘트 버전은 호환용으로 남아 있으나 신규 WPF 코멘트 저장 기본 경로는 아님 |
-| `field_notes` | WPF 오프라인 현장 코멘트 최소 원천 이력. 문서 ID, 현재 문서 버전 번호, 입력 방식, 원문, 작성자, 동기화 상태 후보를 저장 |
-| `field_note_attachments` | WPF 오프라인 FieldNote 사진/파일 첨부 이력. 로컬 보존 경로, 원본 파일명, 확장자, 크기, SHA-256, 서버 첨부 ID 후보를 저장 |
+| `field_comments` | WPF 오프라인 현장 코멘트 최소 원천 이력. 문서 ID, 현재 문서 버전 번호, 입력 방식, 원문, 작성자, 동기화 상태 후보를 저장 |
+| `field_comment_attachments` | WPF 오프라인 FieldComment 사진/파일 첨부 이력. 로컬 보존 경로, 원본 파일명, 확장자, 크기, SHA-256, 서버 첨부 ID 후보를 저장 |
 | `document_view_logs` | WPF 로컬 문서 열람/차단 감사 로그. 문서 ID, 버전 번호, 사용자명, 열람 시작 시각, 닫힘 시각, 닫힘 사유(`window_closed`, `auto_closed`, `download_blocked`)를 저장 |
 | `activity_history` | WPF 로컬 전체 이력. 사용자별 알림과 별개로 누가 어떤 문서/폴더/알림/열람 작업을 수행했는지 최신순 조회용으로 저장 |
 | `file_watch_candidates` | WPF 로컬 관리자 파일 감시 후보. 감지 파일 경로, 파일명, 크기, 수정 시각, 연결 문서, 후보 상태(`PENDING`, `CONFIRMED`, `IGNORED`), 버전명, 변경 사유, 처리자를 저장 |
@@ -25,12 +25,14 @@
 | `work_sequence_boards`, `work_sequence_items` | WPF 로컬 작업순서판과 작업순서 항목. 파일 기반 `작업순서` 폴더 기록과 분리된 운영 보드 데이터를 저장 |
 | `work_sequence_change_history` | WPF 로컬 작업순서 항목 추가, 순서 변경, 상태 변경 이력을 저장 |
 | `work_sequence_notification_candidates` | WPF 로컬 작업순서 순서 변경과 상태 변경에 대한 알림 이벤트 후보를 저장 |
-| `server_sync_queue` | WPF 로컬 문서, FieldNote, FieldNote 첨부, 접근 로그의 서버 전송 후보와 실패 사유, 재시도 상태, idempotency key, 서버 ID 결과를 저장 |
-| `server_id_mappings` | 로컬 문서/버전/FieldNote/FieldNote 첨부/접근 로그와 서버 `document_id`, `version_id`, `note_id`, `attachment_id`, `log_id` 매핑을 저장 |
+| `server_sync_queue` | WPF 로컬 문서, FieldComment, FieldComment 첨부, 접근 로그의 서버 전송 후보와 실패 사유, 재시도 상태, idempotency key, 서버 ID 결과를 저장 |
+| `server_id_mappings` | 로컬 문서/버전/FieldComment/FieldComment 첨부/접근 로그와 서버 `document_id`, `version_id`, `comment_id`, `attachment_id`, `log_id` 매핑을 저장 |
 
-현재 앱은 문서 등록 시 상태를 `WORKING`으로 저장한다. 문서 등록/파일 업로드와 새 로컬 버전은 자동 공개하지 않고, 관리자가 선택 문서의 최신 버전을 공개 처리해야 `documents.published_version_no`와 `document_versions.is_published`가 갱신된다. WPF 문서 목록은 최신 버전과 공개 버전을 따로 표시한다. 문서 등록/파일 업로드 시 태그 입력값과 기본 태그를 `tag_definitions`, `document_tags`에 저장하고 목록에서 표시한다. WPF 문서 보기 화면에서 새로 남기는 코멘트는 `field_notes`에 저장하고, 선택한 사진/파일은 `data/local/Files/FieldNoteAttachments/` 아래에 복사한 뒤 `field_note_attachments`에 로컬 경로와 파일 메타데이터를 남긴다. `document_versions`는 문서 파일 개정 이력으로 유지하며, 파일 감시 확정 흐름의 변경 사유는 `comment`, 버전명은 `version_label`에 저장한다. 기존 DB에 `document_versions.comment`로 누적된 코멘트는 앱 초기화 시 `field_notes`로 백필한다. 관리자급 role은 WPF `File Watch` 창에서 감시 폴더를 시작할 수 있고, 변경 감지 파일은 즉시 업로드하지 않고 `file_watch_candidates`에 후보로 남긴 뒤 관리자가 변경 사유와 버전명을 입력할 때 기존 문서의 새 `document_versions` 행으로 확정한다. 후보 생성, 확정, 무시는 `activity_history`에 남긴다. 문서 보기 창은 열릴 때 `document_view_logs`에 열람 시작을 저장하고 닫힐 때 닫힘 시각과 사유를 갱신한다. 작업순서판은 `work_sequence_boards`, `work_sequence_items`, `work_sequence_change_history`에 별도 저장한다. 기존 `작업순서` 폴더의 파일 등록 흐름은 파일 기반 기록 보관이며, 새 작업순서판은 현재 실행 순서와 상태를 보여주는 운영 데이터이다. 순서 변경과 상태 변경은 작업순서 이력과 알림 이벤트 후보로 남기며 문서 버전이나 FieldNote로 섞지 않는다. 폴더 생성, 문서 등록, 문서 버전 증가, 문서 상태 변경, 문서 공개 처리, 현장 코멘트 등록, FieldNote 첨부 등록, 문서 열람 시작/종료, 알림 읽음 처리, 작업순서 변경 같은 로컬 변경/감사 이벤트는 `activity_history`에 수행자와 함께 저장하고 상단 `이력` 메뉴에서 사용자 필터 없이 조회한다. WPF 로그인 화면은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 `POST /api/v1/auth/login`을 먼저 호출하고, 성공 응답의 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`을 앱 로그인 결과로 사용한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 로컬 `user_accounts` 기반 로그인으로 처리한다. 서버 로그인에 성공한 경우 WPF 서버 API 클라이언트는 문서/FieldNote/FieldNote 첨부/접근 로그/작업순서판 요청에 Bearer 인증 헤더를 붙인다. WPF 서버 API 클라이언트는 서버 문서 새 버전 등록, 공개 전환, 공개 버전 조회 응답도 처리한다. 로컬 FieldNote를 서버 `field_notes` 등록 요청으로 변환할 수 있지만, 로컬 DB의 `document_version_no`는 서버 등록 시 직접 전송하지 않고 서버의 `document_versions.version_id`가 확인된 경우 `documentVersionId`로 전달한다. 문서/FieldNote/FieldNote 첨부/접근 로그 서버 전송 후보는 `server_sync_queue`에 남기며, 서버 URL이 없거나 전송이 실패해도 로컬 저장을 성공으로 유지하고 실패 사유를 `server_sync_queue.last_error`와 `activity_history.server_sync.failed`에 기록한다. `server_sync_queue.status`는 `PENDING`, `FAILED`, `SYNCED`로 표시하고, `attempt_count`, `last_attempt_at`, `last_error`, `synced_at`, 서버 ID 컬럼으로 재시도 횟수와 마지막 오류, 성공 시각을 확인한다. 재시도 시작은 `activity_history.server_sync.retry_attempted`, 이미 `synced_at`/서버 ID가 있어 네트워크 호출을 생략한 경우는 `server_sync.skipped_already_synced`, 전체 재시도 결과는 `server_sync.retry_completed` 또는 `server_sync.retry_completed_with_failures`로 보존한다. 재시도 성공 시 `documents.server_document_id`, `documents.server_version_id`, `documents.synced_at`, `document_versions.server_version_id`, `field_notes.server_note_id`, `field_notes.synced_at`, `field_note_attachments.server_attachment_id`, `field_note_attachments.synced_at`, `document_view_logs.server_start_log_id`, `document_view_logs.server_close_log_id`, `document_view_logs.synced_at`, `server_id_mappings`를 갱신한다. 중복 등록은 로컬 idempotency key, FastAPI 문서/FieldNote/접근 로그의 `idempotency_key`, 이미 기록된 `synced_at`/서버 ID를 기준으로 줄인다. 역할 테이블, 권한 테이블, 작업내역, 보고서, AI 로그, 서버 저장소용 `FileObject`는 아직 WPF 로컬 앱 코드에 구현되어 있지 않다. 아래 데이터 모델은 제품 목표와 서버 확장 초안이며 현재 코드 구현 완료를 뜻하지 않는다.
+현재 앱은 문서 등록 시 상태를 `WORKING`으로 저장한다. 문서 등록/파일 업로드와 새 로컬 버전은 자동 공개하지 않고, 관리자가 선택 문서의 최신 버전을 공개 처리해야 `documents.published_version_no`와 `document_versions.is_published`가 갱신된다. WPF 문서 목록은 최신 버전과 공개 버전을 따로 표시한다. 문서 등록/파일 업로드 시 태그 입력값과 기본 태그를 `tag_definitions`, `document_tags`에 저장하고 목록에서 표시한다. WPF 문서 보기 화면에서 새로 남기는 코멘트는 `field_comments`에 저장하고, 선택한 사진/파일은 `data/local/Files/FieldCommentAttachments/` 아래에 복사한 뒤 `field_comment_attachments`에 로컬 경로와 파일 메타데이터를 남긴다. `document_versions`는 문서 파일 개정 이력으로 유지하며, 파일 감시 확정 흐름의 변경 사유는 `comment`, 버전명은 `version_label`에 저장한다. 기존 DB에 `document_versions.comment`로 누적된 코멘트는 앱 초기화 시 `field_comments`로 백필한다. 관리자급 role은 WPF `File Watch` 창에서 감시 폴더를 시작할 수 있고, 변경 감지 파일은 즉시 업로드하지 않고 `file_watch_candidates`에 후보로 남긴 뒤 관리자가 변경 사유와 버전명을 입력할 때 기존 문서의 새 `document_versions` 행으로 확정한다. 후보 생성, 확정, 무시는 `activity_history`에 남긴다. 문서 보기 창은 열릴 때 `document_view_logs`에 열람 시작을 저장하고 닫힐 때 닫힘 시각과 사유를 갱신한다. 작업순서판은 `work_sequence_boards`, `work_sequence_items`, `work_sequence_change_history`에 별도 저장한다. 기존 `작업순서` 폴더의 파일 등록 흐름은 파일 기반 기록 보관이며, 새 작업순서판은 현재 실행 순서와 상태를 보여주는 운영 데이터이다. 순서 변경과 상태 변경은 작업순서 이력과 알림 이벤트 후보로 남기며 문서 버전이나 FieldComment로 섞지 않는다. 폴더 생성, 문서 등록, 문서 버전 증가, 문서 상태 변경, 문서 공개 처리, 현장 코멘트 등록, FieldComment 첨부 등록, 문서 열람 시작/종료, 알림 읽음 처리, 작업순서 변경 같은 로컬 변경/감사 이벤트는 `activity_history`에 수행자와 함께 저장하고 상단 `이력` 메뉴에서 사용자 필터 없이 조회한다. WPF 로그인 화면은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 `POST /api/v1/auth/login`을 먼저 호출하고, 성공 응답의 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`을 앱 로그인 결과로 사용한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 로컬 `user_accounts` 기반 로그인으로 처리한다. 서버 로그인에 성공한 경우 WPF 서버 API 클라이언트는 문서/FieldComment/FieldComment 첨부/접근 로그/작업순서판 요청에 Bearer 인증 헤더를 붙인다. WPF 서버 API 클라이언트는 서버 문서 새 버전 등록, 공개 전환, 공개 버전 조회 응답도 처리한다. 로컬 FieldComment를 서버 `field_comments` 등록 요청으로 변환할 수 있지만, 로컬 DB의 `document_version_no`는 서버 등록 시 직접 전송하지 않고 서버의 `document_versions.version_id`가 확인된 경우 `documentVersionId`로 전달한다. 문서/FieldComment/FieldComment 첨부/접근 로그 서버 전송 후보는 `server_sync_queue`에 남기며, 서버 URL이 없거나 전송이 실패해도 로컬 저장을 성공으로 유지하고 실패 사유를 `server_sync_queue.last_error`와 `activity_history.server_sync.failed`에 기록한다. `server_sync_queue.status`는 `PENDING`, `FAILED`, `SYNCED`로 표시하고, `attempt_count`, `last_attempt_at`, `last_error`, `synced_at`, 서버 ID 컬럼으로 재시도 횟수와 마지막 오류, 성공 시각을 확인한다. 재시도 시작은 `activity_history.server_sync.retry_attempted`, 이미 `synced_at`/서버 ID가 있어 네트워크 호출을 생략한 경우는 `server_sync.skipped_already_synced`, 전체 재시도 결과는 `server_sync.retry_completed` 또는 `server_sync.retry_completed_with_failures`로 보존한다. 재시도 성공 시 `documents.server_document_id`, `documents.server_version_id`, `documents.synced_at`, `document_versions.server_version_id`, `field_comments.server_comment_id`, `field_comments.synced_at`, `field_comment_attachments.server_attachment_id`, `field_comment_attachments.synced_at`, `document_view_logs.server_start_log_id`, `document_view_logs.server_close_log_id`, `document_view_logs.synced_at`, `server_id_mappings`를 갱신한다. 중복 등록은 로컬 idempotency key, FastAPI 문서/FieldComment/접근 로그의 `idempotency_key`, 이미 기록된 `synced_at`/서버 ID를 기준으로 줄인다. 역할 테이블, 권한 테이블, 작업내역, 보고서, AI 로그, 서버 저장소용 `FileObject`는 아직 WPF 로컬 앱 코드에 구현되어 있지 않다. 아래 데이터 모델은 제품 목표와 서버 확장 초안이며 현재 코드 구현 완료를 뜻하지 않는다.
 
-WPF 로컬 DB 초기화는 개발/스모크 테스트용으로 다음 그룹과 계정을 보장한다. 모든 계정의 비밀번호는 `1234`이며, 현재 단계에서는 role 값으로 문서 등록/파일 업로드/작업순서판 편집 같은 쓰기 기능을 제한한다. 문서 등록 가능 기준은 관리자 계열, 반장, 조장이고, 조원은 FieldNote 작성 중심으로 검증한다. 차장, 부장, 관리자 계정은 작업조가 아니라 `group-admin` 관리자 그룹에 둔다.
+2026-06-30 기준 서버에는 수동 보고서 초안/승인/원천 연결/문서 저장 API가 구현되어 있고, WPF에는 로컬 FieldComment/문서/작업순서 이력 원천을 확인해 보고서 문서로 저장하는 최소 화면이 있다. 다만 WPF 보고서 전용 서버 동기화 큐는 아직 구현하지 않았다.
+
+WPF 로컬 DB 초기화는 개발/스모크 테스트용으로 다음 그룹과 계정을 보장한다. 모든 계정의 비밀번호는 `1234`이며, 현재 단계에서는 role 값으로 문서 등록/파일 업로드/작업순서판 편집 같은 쓰기 기능을 제한한다. 문서 등록 가능 기준은 관리자 계열, 반장, 조장이고, 조원은 FieldComment 작성 중심으로 검증한다. 차장, 부장, 관리자 계정은 작업조가 아니라 `group-admin` 관리자 그룹에 둔다.
 
 | group_id | group_name | group_type | leader_user_id |
 | --- | --- | --- | --- |
@@ -70,7 +72,7 @@ WPF 로컬 DB 초기화는 개발/스모크 테스트용으로 다음 그룹과 
 
 2026-06-24 기준 FastAPI 서버에는 SQLite 연결과 MVP 초기 테이블 생성 기준이 추가되었다. 서버 DB는 `services/api/app/db/models.py`의 SQLAlchemy 모델을 기준으로 하고, 앱 시작 시 `schema_migrations`에 `0001_initial_mvp_schema`를 기록한다. 문서 등록 API는 `documents`, `document_versions`, `file_objects`를 함께 사용해 문서 메타데이터, 파일 저장 참조, 버전 번호, 변경 사유를 로컬에 저장한다.
 
-2026-06-25 기준 서버 로그인 API는 `user_accounts`의 `username`, `password_hash`, `role`, `is_active`, `status`를 사용한다. 서버 DB 초기화 시 개발용 기본 관리자 계정 `admin / 1234`가 없으면 생성한다. 이 기본 계정은 로컬 개발과 MVP 검증용 기준이며, 운영 배포에서는 별도 초기 비밀번호 정책으로 교체해야 한다. 2026-06-30 기준 서버 로그인 API는 `auth_sessions`에 세션을 만들고 HMAC Bearer access token, refresh token, 각 만료 시각을 반환한다. access token에는 사용자 ID, 세션 ID, access token ID, 만료 시각이 들어가며, 서버는 토큰 서명뿐 아니라 `auth_sessions.status`, `access_token_id`, `revoked_at`, `access_expires_at`을 함께 검증한다. refresh API는 같은 세션의 access token ID와 refresh token hash를 회전하므로 이전 access token과 이전 refresh token은 재사용할 수 없다. logout API는 세션을 `REVOKED`로 바꾸며 이후 같은 토큰의 문서/FieldNote/FieldNote 첨부/문서 접근 로그 요청은 `401`을 반환한다. 같은 날짜 기준으로 서버 role 제약은 `admin`, `manager`, `viewer`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`를 허용한다. 문서 등록/버전 등록/태그 변경은 관리자 그룹, 반장, 조장 이상만 허용하고 조원은 FieldNote 등록과 첨부 등록 중심으로 제한한다. Windows WPF 로그인 화면은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 응답을 먼저 사용할 수 있고, 서버 URL이 없거나 호출이 실패하면 기존 로컬 SQLite 로그인을 유지한다. Windows WPF 서버 API 클라이언트는 서버 문서 등록/목록/버전 조회뿐 아니라 문서 버전에 연결된 서버 FieldNote 등록, FieldNote 첨부 등록/조회, 문서 접근 로그 등록/조회 응답까지 받을 수 있다. access token 만료 또는 세션 폐기 시 WPF는 서버 전송 후보를 실패 큐에 남기고 재로그인이 필요하다는 실패 사유를 `server_sync_queue.last_error`와 상태 메시지에 표시한다.
+2026-06-25 기준 서버 로그인 API는 `user_accounts`의 `username`, `password_hash`, `role`, `is_active`, `status`를 사용한다. 서버 DB 초기화 시 개발용 기본 관리자 계정 `admin / 1234`가 없으면 생성한다. 이 기본 계정은 로컬 개발과 MVP 검증용 기준이며, 운영 배포에서는 별도 초기 비밀번호 정책으로 교체해야 한다. 2026-06-30 기준 서버 로그인 API는 `auth_sessions`에 세션을 만들고 HMAC Bearer access token, refresh token, 각 만료 시각을 반환한다. access token에는 사용자 ID, 세션 ID, access token ID, 만료 시각이 들어가며, 서버는 토큰 서명뿐 아니라 `auth_sessions.status`, `access_token_id`, `revoked_at`, `access_expires_at`을 함께 검증한다. refresh API는 같은 세션의 access token ID와 refresh token hash를 회전하므로 이전 access token과 이전 refresh token은 재사용할 수 없다. logout API는 세션을 `REVOKED`로 바꾸며 이후 같은 토큰의 문서/FieldComment/FieldComment 첨부/문서 접근 로그 요청은 `401`을 반환한다. 같은 날짜 기준으로 서버 role 제약은 `admin`, `manager`, `viewer`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`를 허용한다. 문서 등록/버전 등록/태그 변경은 관리자 그룹, 반장, 조장 이상만 허용하고 조원은 FieldComment 등록과 첨부 등록 중심으로 제한한다. Windows WPF 로그인 화면은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 응답을 먼저 사용할 수 있고, 서버 URL이 없거나 호출이 실패하면 기존 로컬 SQLite 로그인을 유지한다. Windows WPF 서버 API 클라이언트는 서버 문서 등록/목록/버전 조회뿐 아니라 문서 버전에 연결된 서버 FieldComment 등록, FieldComment 첨부 등록/조회, 문서 접근 로그 등록/조회 응답까지 받을 수 있다. access token 만료 또는 세션 폐기 시 WPF는 서버 전송 후보를 실패 큐에 남기고 재로그인이 필요하다는 실패 사유를 `server_sync_queue.last_error`와 상태 메시지에 표시한다.
 
 기본 개발 DB 경로는 `services/api/data/flownote.sqlite3`, 테스트 DB 경로는 `services/api/data/flownote.test.sqlite3`이다. Windows 앱과 Windows 스모크 테스트는 공통 DB인 `data/local/flownote.local.sqlite`를 함께 사용한다. 테스트 DB와 검증 기록은 누적 테스트 기록이므로 삭제하지 않고 보존한다. SQLite DB는 후속 테스트와 기능 추가의 근거 데이터로 사용할 수 있으므로 Git 추적 및 커밋 대상에 포함될 수 있다. 문서 등록 통합 테스트 샘플과 로그는 `services/api/data/test-artifacts/document-registration-2026-06-24/` 아래에 보존하고, 업로드 저장 파일은 `services/api/storage/document-registration-tests/` 아래에 보존한다.
 
@@ -87,7 +89,7 @@ WPF 로컬 DB 초기화는 개발/스모크 테스트용으로 다음 그룹과 
 | `activity_history` | 문서 상태 변경, 문서 버전 상태 변경, 공개 처리 같은 서버 변경 이력 후보 |
 | `tag_definitions`, `document_tags` | 설비, 품목, 공정, 오류 유형 등 태그 연결 |
 | `terminal_devices` | 현장/관리자 단말기 등록 기준 |
-| `field_notes`, `field_note_attachments` | 현장 코멘트 원천 이력과 사진/첨부 연결. `field_notes.idempotency_key`는 WPF FieldNote 재시도 중복 방지에 사용 |
+| `field_comments`, `field_comment_attachments` | 현장 코멘트 원천 이력과 사진/첨부 연결. `field_comments.idempotency_key`는 WPF FieldComment 재시도 중복 방지에 사용 |
 | `comment_templates` | 신호등식/정형 문구 입력 보조 |
 | `work_records`, `work_record_versions` | 작업내역과 버전의 초기 기준 |
 | `work_sequence_boards`, `work_sequence_items`, `work_sequence_change_history`, `work_sequence_notification_candidates` | 관리자 입력 기준 작업순서판, 항목, 순서/상태 변경 이력, 알림 이벤트 후보 |
@@ -267,14 +269,14 @@ FlowNote는 MES/ERP를 대체하지 않는다. 외부 시스템이 있는 경우
 | is_active | 사용 여부 |
 | created_at | 생성일 |
 
-### FieldNoteTag
+### FieldCommentTag
 
 현장 코멘트와 태그의 연결을 관리한다.
 
 | 필드 | 설명 |
 | --- | --- |
 | id | 내부 식별자 |
-| note_id | 현장 코멘트 ID |
+| comment_id | 현장 코멘트 ID |
 | tag_id | 태그 ID |
 | created_at | 생성일 |
 
@@ -322,7 +324,7 @@ MES, ERP, 기타 업무 시스템의 연결 정보를 관리한다.
 | system_id | 외부 시스템 ID |
 | external_entity_type | work_order, item, process, equipment, production_result 등 |
 | external_entity_id | 외부 시스템 원본 ID |
-| flow_entity_type | document_structure, document_structure_item, work_record, field_note, document 등 |
+| flow_entity_type | document_structure, document_structure_item, work_record, field_comment, document 등 |
 | flow_entity_id | FlowNote 내부 참조 ID |
 | sync_status | PENDING, SYNCED, FAILED, DISABLED |
 | last_synced_at | 마지막 동기화 일시 |
@@ -514,18 +516,18 @@ WPF 로컬 알림함은 기존 문서 알림과 작업순서 알림을 같은 `n
 
 ## 5. 현장 코멘트와 보고서
 
-### FieldNote
+### FieldComment
 
 | 필드 | 설명 |
 | --- | --- |
 | id | 내부 식별자 |
-| note_id | 외부 참조용 문구 ID |
-| idempotency_key | 선택. WPF 로컬 FieldNote 재시도 중복 방지를 위한 키 |
+| comment_id | 외부 참조용 문구 ID |
+| idempotency_key | 선택. WPF 로컬 FieldComment 재시도 중복 방지를 위한 키 |
 | document_id | 연결 문서 ID |
 | document_version_id | 연결 버전 ID |
 | structure_item_id | 연결 문서 구조 항목 ID |
 | work_record_id | 연결 작업내역 ID |
-| note_type | experience, work_evaluation, issue |
+| comment_type | experience, work_evaluation, issue |
 | input_mode | signal, free_text, template, template_with_text, admin_proxy, mes_integration |
 | signal_level | green, yellow, red 등 단순 상태 값 |
 | template_id | 선택한 정형 문구 ID |
@@ -548,13 +550,13 @@ WPF 로컬 알림함은 기존 문서 알림과 작업순서 알림을 같은 `n
 | reviewed_at | 검토일 |
 | analyzed_at | 분석일 |
 
-`FieldNote`는 최소 하나의 연결 대상이 있어야 한다. 현재 서버 API는 `document_id`, `structure_item_id`, `work_record_id` 중 하나 이상을 요구한다. `document_version_id`가 있으면 서버 `document_versions.version_id`와 일치해야 하며, `document_id`와 함께 들어온 경우 같은 문서의 버전이어야 한다. 1차 MVP에서는 문서 또는 문서 버전 연결을 우선 사용하고, 문서 구조 항목과 작업내역 연결은 후속 단계에서 확장한다.
+`FieldComment`는 최소 하나의 연결 대상이 있어야 한다. 현재 서버 API는 `document_id`, `structure_item_id`, `work_record_id` 중 하나 이상을 요구한다. `document_version_id`가 있으면 서버 `document_versions.version_id`와 일치해야 하며, `document_id`와 함께 들어온 경우 같은 문서의 버전이어야 한다. 1차 MVP에서는 문서 또는 문서 버전 연결을 우선 사용하고, 문서 구조 항목과 작업내역 연결은 후속 단계에서 확장한다.
 
 초기 현장 입력은 많은 텍스트를 요구하지 않는다. `signal`은 정상, 주의, 문제 같은 신호등식 기록이고, `admin_proxy`는 현장 사용자가 말로 전달한 내용을 관리자가 대신 등록하는 방식이다. `mes_integration`은 MES나 자동화 시스템 연동 이후 사용한다.
 
 `raw_content`는 원천 이력, `normalized_content`는 관리자 정리 문구, `analysis_content`는 관리자급 사용자의 판단과 분석이다. 코멘트만 쌓아서는 실제 활용이 어려우므로, 보고서 작성 시 어떤 원천 코멘트가 어떤 분석과 결론으로 이어졌는지 추적해야 한다.
 
-### FieldNoteAttachment
+### FieldCommentAttachment
 
 현장 코멘트 또는 일일 작업일지성 기록에 첨부된 사진과 파일을 관리한다. 사진은 보고서 자동화의 원천 데이터가 될 수 있지만, 1차 MVP에서는 첨부, 열람, 이력 추적을 우선한다.
 
@@ -562,7 +564,7 @@ WPF 로컬 알림함은 기존 문서 알림과 작업순서 알림을 같은 `n
 | --- | --- |
 | id | 내부 식별자 |
 | attachment_id | 외부 참조용 첨부 ID |
-| note_id | 현장 코멘트 ID |
+| comment_id | 현장 코멘트 ID |
 | file_object_id | 첨부 파일 객체 ID |
 | attachment_type | photo, document, other |
 | caption | 현장 메모 또는 사진 설명 |
@@ -578,7 +580,7 @@ WPF 로컬 알림함은 기존 문서 알림과 작업순서 알림을 같은 `n
 | template_id | 외부 참조용 템플릿 ID |
 | title | 표시 문구 |
 | content | 기본 등록 문구 |
-| note_type | 문구 유형 |
+| comment_type | 문구 유형 |
 | document_type | 적용 문서 유형 |
 | category | 분류 |
 | location_code | 적용 위치 |
@@ -624,7 +626,7 @@ WPF 로컬 알림함은 기존 문서 알림과 작업순서 알림을 같은 `n
 | --- | --- |
 | id | 내부 식별자 |
 | report_id | 보고서 ID |
-| source_type | field_note, work_record_version, document_version, external_ref 등 |
+| source_type | FIELD_COMMENT, DOCUMENT, WORK_SEQUENCE_ITEM, WORK_SEQUENCE_HISTORY, WORK_RECORD, WORK_RECORD_VERSION |
 | source_id | 원천 데이터 ID |
 | source_version_id | 원천 버전 ID |
 | relation_type | evidence, issue, action, reference 등 |
@@ -764,7 +766,7 @@ WPF 로컬 알림함은 기존 문서 알림과 작업순서 알림을 같은 `n
 | 필드 | 설명 |
 | --- | --- |
 | id | 내부 식별자 |
-| source_type | document_version, field_note, report, work_record_version |
+| source_type | document_version, field_comment, report, work_record_version |
 | source_id | 원천 데이터 ID |
 | source_version_id | 원천 버전 ID |
 | title | 검색 표시 제목 |
@@ -805,6 +807,6 @@ Windows WPF 클라이언트 앱의 로컬 기능 호출 중 감사가 필요한 
 ## 7. 식별자 원칙
 
 - 내부 DB 식별자와 외부 참조용 ID를 분리한다.
-- 외부에는 `user_id`, `operator_id`, `session_id`, `document_id`, `structure_id`, `item_id`, `viewer_session_id`, `note_id`, `report_id`, `notification_id`, `work_record_id`, `advice_id`, `watched_file_id`, `candidate_id`, `local_action_id`를 노출한다.
+- 외부에는 `user_id`, `operator_id`, `session_id`, `document_id`, `structure_id`, `item_id`, `viewer_session_id`, `comment_id`, `report_id`, `notification_id`, `work_record_id`, `advice_id`, `watched_file_id`, `candidate_id`, `local_action_id`를 노출한다.
 - 외부 참조용 ID는 변경하지 않는다.
 - 물리 삭제보다 상태 변경을 우선한다.

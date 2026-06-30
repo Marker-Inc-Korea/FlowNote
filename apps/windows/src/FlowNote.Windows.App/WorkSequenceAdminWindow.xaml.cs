@@ -33,7 +33,7 @@ public partial class WorkSequenceAdminWindow : Window
             lineCode: LineCodeTextBox.Text,
             boardDate: DateTime.Today);
         RefreshBoards(board.BoardId);
-        StatusTextBlock.Text = $"Board created: {board.Title}";
+        StatusTextBlock.Text = $"작업판을 생성했습니다: {board.Title}";
     }
 
     private void BoardListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -48,7 +48,7 @@ public partial class WorkSequenceAdminWindow : Window
     {
         if (CurrentBoard() is not { } board)
         {
-            StatusTextBlock.Text = "Select a board before adding an item.";
+            StatusTextBlock.Text = "항목을 추가할 작업판을 선택하세요.";
             return;
         }
 
@@ -60,7 +60,7 @@ public partial class WorkSequenceAdminWindow : Window
         ItemTitleTextBox.Clear();
         RefreshItems(board.BoardId);
         RefreshBoards(board.BoardId);
-        StatusTextBlock.Text = $"Item added: {item.Title}";
+        StatusTextBlock.Text = $"항목을 추가했습니다: {item.Title}";
     }
 
     private void MoveUpButton_Click(object sender, RoutedEventArgs e)
@@ -77,11 +77,11 @@ public partial class WorkSequenceAdminWindow : Window
     {
         if (CurrentBoard() is not { } board || ItemGrid.SelectedItem is not WorkSequenceItemRecord item)
         {
-            StatusTextBlock.Text = "Select an item before changing status.";
+            StatusTextBlock.Text = "상태를 변경할 항목을 선택하세요.";
             return;
         }
 
-        var status = (StatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "WAITING";
+        var status = (StatusComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "WAITING";
         workSequences.UpdateItemStatus(
             board.BoardId,
             item.ItemId,
@@ -91,14 +91,14 @@ public partial class WorkSequenceAdminWindow : Window
             status == "HOLD" ? ReasonTextBox.Text : null);
         RefreshItems(board.BoardId);
         RefreshBoards(board.BoardId);
-        StatusTextBlock.Text = $"Status changed: {item.Title} -> {status}";
+        StatusTextBlock.Text = $"상태를 변경했습니다: {item.Title} -> {FormatStatus(status)}";
     }
 
     private void OpenTvViewButton_Click(object sender, RoutedEventArgs e)
     {
         if (CurrentBoard() is not { } board)
         {
-            StatusTextBlock.Text = "Select a board before opening TV view.";
+            StatusTextBlock.Text = "현황판을 열 작업판을 선택하세요.";
             return;
         }
 
@@ -113,7 +113,7 @@ public partial class WorkSequenceAdminWindow : Window
     {
         if (CurrentBoard() is not { } board || ItemGrid.SelectedItem is not WorkSequenceItemRecord item)
         {
-            StatusTextBlock.Text = "Select an item before changing order.";
+            StatusTextBlock.Text = "순서를 변경할 항목을 선택하세요.";
             return;
         }
 
@@ -130,7 +130,7 @@ public partial class WorkSequenceAdminWindow : Window
         RefreshItems(board.BoardId);
         RefreshBoards(board.BoardId);
         ItemGrid.SelectedItem = workspace.Items.FirstOrDefault(candidate => candidate.ItemId == item.ItemId);
-        StatusTextBlock.Text = "Order changed.";
+        StatusTextBlock.Text = "순서를 변경했습니다.";
     }
 
     private WorkSequenceBoardRecord? CurrentBoard()
@@ -157,8 +157,8 @@ public partial class WorkSequenceAdminWindow : Window
     {
         var board = workSequences.GetBoard(boardId);
         SelectedBoardTextBlock.Text = board is null
-            ? "Select or create a board"
-            : $"{board.Title} ({board.ItemCount} items)";
+            ? "작업판을 선택하거나 생성하세요"
+            : $"{board.Title} ({board.ItemCount}개 항목)";
         workspace.Items.Clear();
         foreach (var item in workSequences.GetItems(boardId))
         {
@@ -171,5 +171,17 @@ public partial class WorkSequenceAdminWindow : Window
         public ObservableCollection<WorkSequenceBoardRecord> Boards { get; } = [];
 
         public ObservableCollection<WorkSequenceItemRecord> Items { get; } = [];
+    }
+
+    private static string FormatStatus(string status)
+    {
+        return status switch
+        {
+            "WAITING" => "대기",
+            "IN_PROGRESS" => "진행중",
+            "HOLD" => "보류",
+            "COMPLETED" => "완료",
+            _ => status
+        };
     }
 }

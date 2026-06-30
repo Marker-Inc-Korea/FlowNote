@@ -1,6 +1,6 @@
 using FlowNote.Windows.Core.Audit;
 using FlowNote.Windows.Core.Documents;
-using FlowNote.Windows.Core.FieldNotes;
+using FlowNote.Windows.Core.FieldComments;
 using FlowNote.Windows.Core.History;
 using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
@@ -31,33 +31,33 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
     }
 
-    public async Task<ServerSyncResult> QueueAndTrySyncFieldNoteAsync(
-        FieldNoteRecord fieldNote,
+    public async Task<ServerSyncResult> QueueAndTrySyncFieldCommentAsync(
+        FieldCommentRecord fieldComment,
         FlowNoteServerDocumentClient? serverClient,
         string? serverUserId = null,
         CancellationToken cancellationToken = default)
     {
-        EnqueueFieldNote(fieldNote, null);
+        EnqueueFieldComment(fieldComment, null);
         if (serverClient is null)
         {
-            MarkLatestFailure("field_note", fieldNote.NoteId, "Server URL is not configured.");
-            return new ServerSyncResult(false, "Server URL is not configured. Field note sync is queued.");
+            MarkLatestFailure("field_comment", fieldComment.CommentId, "Server URL is not configured.");
+            return new ServerSyncResult(false, "Server URL is not configured. Field comment sync is queued.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
     }
 
-    public async Task<ServerSyncResult> QueueAndTrySyncFieldNoteAttachmentAsync(
-        FieldNoteAttachmentRecord attachment,
+    public async Task<ServerSyncResult> QueueAndTrySyncFieldCommentAttachmentAsync(
+        FieldCommentAttachmentRecord attachment,
         FlowNoteServerDocumentClient? serverClient,
         string? serverUserId = null,
         CancellationToken cancellationToken = default)
     {
-        EnqueueFieldNoteAttachment(attachment, null);
+        EnqueueFieldCommentAttachment(attachment, null);
         if (serverClient is null)
         {
-            MarkLatestFailure("field_note_attachment", attachment.AttachmentId, "Server URL is not configured.");
-            return new ServerSyncResult(false, "Server URL is not configured. Field note attachment sync is queued.");
+            MarkLatestFailure("field_comment_attachment", attachment.AttachmentId, "Server URL is not configured.");
+            return new ServerSyncResult(false, "Server URL is not configured. Field comment attachment sync is queued.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
@@ -111,11 +111,11 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                     case "register_document":
                         await SyncDocumentAsync(item, serverClient, serverUserId, cancellationToken);
                         break;
-                    case "register_field_note":
-                        await SyncFieldNoteAsync(item, serverClient, cancellationToken);
+                    case "register_field_comment":
+                        await SyncFieldCommentAsync(item, serverClient, cancellationToken);
                         break;
-                    case "register_field_note_attachment":
-                        await SyncFieldNoteAttachmentAsync(item, serverClient, serverUserId, cancellationToken);
+                    case "register_field_comment_attachment":
+                        await SyncFieldCommentAttachmentAsync(item, serverClient, serverUserId, cancellationToken);
                         break;
                     case "register_access_log_started":
                     case "register_access_log_closed":
@@ -186,14 +186,14 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return $"wpf:document:{documentId}:v{versionNo}";
     }
 
-    public static string CreateFieldNoteIdempotencyKey(string noteId)
+    public static string CreateFieldCommentIdempotencyKey(string commentId)
     {
-        return $"wpf:field-note:{noteId}";
+        return $"wpf:field-comment:{commentId}";
     }
 
-    public static string CreateFieldNoteAttachmentIdempotencyKey(string attachmentId)
+    public static string CreateFieldCommentAttachmentIdempotencyKey(string attachmentId)
     {
-        return $"wpf:field-note-attachment:{attachmentId}";
+        return $"wpf:field-comment-attachment:{attachmentId}";
     }
 
     public static string CreateAccessLogIdempotencyKey(long accessLogId, string action)
@@ -213,27 +213,27 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             failureReason);
     }
 
-    private void EnqueueFieldNote(FieldNoteRecord fieldNote, string? failureReason)
+    private void EnqueueFieldComment(FieldCommentRecord fieldComment, string? failureReason)
     {
         Enqueue(
-            "field_note",
-            fieldNote.NoteId,
-            "register_field_note",
-            fieldNote.DocumentId,
-            fieldNote.DocumentVersionNo,
-            CreateFieldNoteIdempotencyKey(fieldNote.NoteId),
+            "field_comment",
+            fieldComment.CommentId,
+            "register_field_comment",
+            fieldComment.DocumentId,
+            fieldComment.DocumentVersionNo,
+            CreateFieldCommentIdempotencyKey(fieldComment.CommentId),
             failureReason);
     }
 
-    private void EnqueueFieldNoteAttachment(FieldNoteAttachmentRecord attachment, string? failureReason)
+    private void EnqueueFieldCommentAttachment(FieldCommentAttachmentRecord attachment, string? failureReason)
     {
         Enqueue(
-            "field_note_attachment",
+            "field_comment_attachment",
             attachment.AttachmentId,
-            "register_field_note_attachment",
+            "register_field_comment_attachment",
             null,
             null,
-            CreateFieldNoteAttachmentIdempotencyKey(attachment.AttachmentId),
+            CreateFieldCommentAttachmentIdempotencyKey(attachment.AttachmentId),
             failureReason);
     }
 
@@ -366,17 +366,17 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
                 return false;
 
-            case "register_field_note":
-                if (TryGetFieldNoteServerId(item.EntityId) is { } serverNoteId)
+            case "register_field_comment":
+                if (TryGetFieldCommentServerId(item.EntityId) is { } serverCommentId)
                 {
-                    MarkQueueAlreadySynced(item, null, null, serverNoteId, null, null);
+                    MarkQueueAlreadySynced(item, null, null, serverCommentId, null, null);
                     return true;
                 }
 
                 return false;
 
-            case "register_field_note_attachment":
-                if (TryGetFieldNoteAttachmentServerId(item.EntityId) is { } serverAttachmentId)
+            case "register_field_comment_attachment":
+                if (TryGetFieldCommentAttachmentServerId(item.EntityId) is { } serverAttachmentId)
                 {
                     MarkQueueAlreadySynced(item, null, null, null, null, serverAttachmentId);
                     return true;
@@ -470,32 +470,32 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         RecordSyncHistory(connection, "server_sync.succeeded", "document", document.DocumentId, $"Server document synced: {response.DocumentId}", now);
     }
 
-    private async Task SyncFieldNoteAsync(
+    private async Task SyncFieldCommentAsync(
         QueueItem item,
         FlowNoteServerDocumentClient serverClient,
         CancellationToken cancellationToken)
     {
-        if (TryGetFieldNoteServerId(item.EntityId) is { } existingServerNoteId)
+        if (TryGetFieldCommentServerId(item.EntityId) is { } existingServerCommentId)
         {
-            MarkQueueSynced(item.Id, null, null, existingServerNoteId, null);
+            MarkQueueSynced(item.Id, null, null, existingServerCommentId, null);
             return;
         }
 
-        var fieldNote = LoadFieldNote(item.EntityId)
-            ?? throw new InvalidOperationException($"Local field note not found: {item.EntityId}");
-        if (string.IsNullOrWhiteSpace(fieldNote.DocumentId))
+        var fieldComment = LoadFieldComment(item.EntityId)
+            ?? throw new InvalidOperationException($"Local field comment not found: {item.EntityId}");
+        if (string.IsNullOrWhiteSpace(fieldComment.DocumentId))
         {
-            throw new InvalidOperationException("Local field note has no document id.");
+            throw new InvalidOperationException("Local field comment has no document id.");
         }
 
-        var documentMapping = TryGetDocumentServerMapping(fieldNote.DocumentId);
+        var documentMapping = TryGetDocumentServerMapping(fieldComment.DocumentId);
         if (documentMapping?.ServerDocumentId is null)
         {
             throw new InvalidOperationException("Local document is not synced to server yet.");
         }
 
-        var response = await serverClient.RegisterFieldNoteAsync(
-            fieldNote,
+        var response = await serverClient.RegisterFieldCommentAsync(
+            fieldComment,
             documentMapping.ServerDocumentId,
             documentMapping.ServerVersionId,
             item.IdempotencyKey,
@@ -505,49 +505,49 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         using var connection = database.OpenConnection();
         using var update = connection.CreateCommand();
         update.CommandText = """
-            UPDATE field_notes
-            SET server_note_id = $server_note_id,
+            UPDATE field_comments
+            SET server_comment_id = $server_comment_id,
                 synced_at = $synced_at
-            WHERE note_id = $note_id;
+            WHERE comment_id = $comment_id;
             """;
-        update.Parameters.AddWithValue("$server_note_id", response.NoteId);
+        update.Parameters.AddWithValue("$server_comment_id", response.CommentId);
         update.Parameters.AddWithValue("$synced_at", now.ToString("O"));
-        update.Parameters.AddWithValue("$note_id", fieldNote.NoteId);
+        update.Parameters.AddWithValue("$comment_id", fieldComment.CommentId);
         update.ExecuteNonQuery();
 
-        UpsertMapping(connection, "field_note", fieldNote.NoteId, 0, response.DocumentId, response.DocumentVersionId, response.NoteId, null, null, now);
-        MarkQueueSynced(connection, item.Id, response.DocumentId, response.DocumentVersionId, response.NoteId, null, now);
-        RecordSyncHistory(connection, "server_sync.succeeded", "field_note", fieldNote.NoteId, $"Server field note synced: {response.NoteId}", now);
+        UpsertMapping(connection, "field_comment", fieldComment.CommentId, 0, response.DocumentId, response.DocumentVersionId, response.CommentId, null, null, now);
+        MarkQueueSynced(connection, item.Id, response.DocumentId, response.DocumentVersionId, response.CommentId, null, now);
+        RecordSyncHistory(connection, "server_sync.succeeded", "field_comment", fieldComment.CommentId, $"Server field comment synced: {response.CommentId}", now);
     }
 
-    private async Task SyncFieldNoteAttachmentAsync(
+    private async Task SyncFieldCommentAttachmentAsync(
         QueueItem item,
         FlowNoteServerDocumentClient serverClient,
         string? serverUserId,
         CancellationToken cancellationToken)
     {
-        if (TryGetFieldNoteAttachmentServerId(item.EntityId) is { } existingServerAttachmentId)
+        if (TryGetFieldCommentAttachmentServerId(item.EntityId) is { } existingServerAttachmentId)
         {
             MarkQueueSynced(item.Id, null, null, null, null, existingServerAttachmentId);
             return;
         }
 
-        var attachment = LoadFieldNoteAttachment(item.EntityId)
-            ?? throw new InvalidOperationException($"Local field note attachment not found: {item.EntityId}");
-        var serverNoteId = TryGetFieldNoteServerId(attachment.NoteId);
-        if (string.IsNullOrWhiteSpace(serverNoteId))
+        var attachment = LoadFieldCommentAttachment(item.EntityId)
+            ?? throw new InvalidOperationException($"Local field comment attachment not found: {item.EntityId}");
+        var serverCommentId = TryGetFieldCommentServerId(attachment.CommentId);
+        if (string.IsNullOrWhiteSpace(serverCommentId))
         {
-            throw new InvalidOperationException("Local field note is not synced to server yet.");
+            throw new InvalidOperationException("Local field comment is not synced to server yet.");
         }
 
         var filePath = FlowNoteLocalDatabase.ResolveLocalContentPath(attachment.LocalPath);
         if (!File.Exists(filePath))
         {
-            throw new IOException($"Local field note attachment file not found: {filePath}");
+            throw new IOException($"Local field comment attachment file not found: {filePath}");
         }
 
-        var response = await serverClient.RegisterFieldNoteAttachmentAsync(
-            serverNoteId,
+        var response = await serverClient.RegisterFieldCommentAttachmentAsync(
+            serverCommentId,
             filePath,
             attachment.AttachmentType,
             attachment.Caption,
@@ -559,7 +559,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         using var connection = database.OpenConnection();
         using var update = connection.CreateCommand();
         update.CommandText = """
-            UPDATE field_note_attachments
+            UPDATE field_comment_attachments
             SET server_attachment_id = $server_attachment_id,
                 synced_at = $synced_at
             WHERE attachment_id = $attachment_id;
@@ -571,22 +571,22 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
         UpsertMapping(
             connection,
-            "field_note_attachment",
+            "field_comment_attachment",
             attachment.AttachmentId,
             0,
             null,
             null,
-            response.NoteId,
+            response.CommentId,
             response.AttachmentId,
             null,
             now);
-        MarkQueueSynced(connection, item.Id, null, null, response.NoteId, null, now, response.AttachmentId);
+        MarkQueueSynced(connection, item.Id, null, null, response.CommentId, null, now, response.AttachmentId);
         RecordSyncHistory(
             connection,
             "server_sync.succeeded",
-            "field_note_attachment",
+            "field_comment_attachment",
             attachment.AttachmentId,
-            $"Server field note attachment synced: {response.AttachmentId}",
+            $"Server field comment attachment synced: {response.AttachmentId}",
             now);
     }
 
@@ -703,26 +703,26 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             TagService.ListDocumentTags(connection, documentId));
     }
 
-    private FieldNoteRecord? LoadFieldNote(string noteId)
+    private FieldCommentRecord? LoadFieldComment(string commentId)
     {
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, note_id, document_id, document_version_no, note_type, input_mode, signal_level,
+            SELECT id, comment_id, document_id, document_version_no, comment_type, input_mode, signal_level,
                    raw_content, normalized_content, analysis_content, author_name, reported_by,
                    operator_name, entry_source, device_id, location_code, status, created_at, synced_at
-            FROM field_notes
-            WHERE note_id = $note_id
+            FROM field_comments
+            WHERE comment_id = $comment_id
             LIMIT 1;
             """;
-        command.Parameters.AddWithValue("$note_id", noteId);
+        command.Parameters.AddWithValue("$comment_id", commentId);
         using var reader = command.ExecuteReader();
         if (!reader.Read())
         {
             return null;
         }
 
-        return new FieldNoteRecord(
+        return new FieldCommentRecord(
             reader.GetInt64(0),
             reader.GetString(1),
             reader.IsDBNull(2) ? null : reader.GetString(2),
@@ -744,15 +744,15 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             reader.IsDBNull(18) ? null : DateTime.Parse(reader.GetString(18)));
     }
 
-    private FieldNoteAttachmentRecord? LoadFieldNoteAttachment(string attachmentId)
+    private FieldCommentAttachmentRecord? LoadFieldCommentAttachment(string attachmentId)
     {
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, attachment_id, note_id, local_path, original_file_name, extension,
+            SELECT id, attachment_id, comment_id, local_path, original_file_name, extension,
                    content_type, size_bytes, hash_sha256, attachment_type, caption,
                    captured_at, created_by, created_at, server_attachment_id, synced_at
-            FROM field_note_attachments
+            FROM field_comment_attachments
             WHERE attachment_id = $attachment_id
             LIMIT 1;
             """;
@@ -763,7 +763,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             return null;
         }
 
-        return new FieldNoteAttachmentRecord(
+        return new FieldCommentAttachmentRecord(
             reader.GetInt64(0),
             reader.GetString(1),
             reader.GetString(2),
@@ -838,29 +838,29 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             reader.IsDBNull(1) ? null : reader.GetString(1));
     }
 
-    private string? TryGetFieldNoteServerId(string noteId)
+    private string? TryGetFieldCommentServerId(string commentId)
     {
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT server_note_id
-            FROM field_notes
-            WHERE note_id = $note_id
-              AND server_note_id IS NOT NULL
+            SELECT server_comment_id
+            FROM field_comments
+            WHERE comment_id = $comment_id
+              AND server_comment_id IS NOT NULL
               AND synced_at IS NOT NULL
             LIMIT 1;
             """;
-        command.Parameters.AddWithValue("$note_id", noteId);
+        command.Parameters.AddWithValue("$comment_id", commentId);
         return command.ExecuteScalar() as string;
     }
 
-    private string? TryGetFieldNoteAttachmentServerId(string attachmentId)
+    private string? TryGetFieldCommentAttachmentServerId(string attachmentId)
     {
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT server_attachment_id
-            FROM field_note_attachments
+            FROM field_comment_attachments
             WHERE attachment_id = $attachment_id
               AND server_attachment_id IS NOT NULL
               AND synced_at IS NOT NULL
@@ -955,7 +955,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         long queueId,
         string? serverDocumentId,
         string? serverVersionId,
-        string? serverNoteId,
+        string? serverCommentId,
         string? serverLogId,
         string? serverAttachmentId = null)
     {
@@ -965,7 +965,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             queueId,
             serverDocumentId,
             serverVersionId,
-            serverNoteId,
+            serverCommentId,
             serverLogId,
             DateTime.UtcNow,
             serverAttachmentId);
@@ -976,7 +976,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         long queueId,
         string? serverDocumentId,
         string? serverVersionId,
-        string? serverNoteId,
+        string? serverCommentId,
         string? serverLogId,
         DateTime syncedAt,
         string? serverAttachmentId = null)
@@ -989,7 +989,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 synced_at = $synced_at,
                 server_document_id = $server_document_id,
                 server_version_id = $server_version_id,
-                server_note_id = $server_note_id,
+                server_comment_id = $server_comment_id,
                 server_attachment_id = $server_attachment_id,
                 server_log_id = $server_log_id
             WHERE id = $id;
@@ -997,7 +997,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$synced_at", syncedAt.ToString("O"));
         command.Parameters.AddWithValue("$server_document_id", string.IsNullOrWhiteSpace(serverDocumentId) ? DBNull.Value : serverDocumentId);
         command.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
-        command.Parameters.AddWithValue("$server_note_id", string.IsNullOrWhiteSpace(serverNoteId) ? DBNull.Value : serverNoteId);
+        command.Parameters.AddWithValue("$server_comment_id", string.IsNullOrWhiteSpace(serverCommentId) ? DBNull.Value : serverCommentId);
         command.Parameters.AddWithValue("$server_attachment_id", string.IsNullOrWhiteSpace(serverAttachmentId) ? DBNull.Value : serverAttachmentId);
         command.Parameters.AddWithValue("$server_log_id", string.IsNullOrWhiteSpace(serverLogId) ? DBNull.Value : serverLogId);
         command.Parameters.AddWithValue("$id", queueId);
@@ -1008,7 +1008,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         QueueItem item,
         string? serverDocumentId,
         string? serverVersionId,
-        string? serverNoteId,
+        string? serverCommentId,
         string? serverLogId,
         string? serverAttachmentId)
     {
@@ -1019,7 +1019,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             item.Id,
             serverDocumentId,
             serverVersionId,
-            serverNoteId,
+            serverCommentId,
             serverLogId,
             now,
             serverAttachmentId);
@@ -1039,7 +1039,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         int localVersionNo,
         string? serverDocumentId,
         string? serverVersionId,
-        string? serverNoteId,
+        string? serverCommentId,
         string? serverAttachmentId,
         string? serverLogId,
         DateTime syncedAt)
@@ -1052,7 +1052,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 local_version_no,
                 server_document_id,
                 server_version_id,
-                server_note_id,
+                server_comment_id,
                 server_attachment_id,
                 server_log_id,
                 synced_at
@@ -1063,7 +1063,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 $local_version_no,
                 $server_document_id,
                 $server_version_id,
-                $server_note_id,
+                $server_comment_id,
                 $server_attachment_id,
                 $server_log_id,
                 $synced_at
@@ -1071,7 +1071,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             ON CONFLICT(entity_type, local_id, local_version_no) DO UPDATE SET
                 server_document_id = excluded.server_document_id,
                 server_version_id = excluded.server_version_id,
-                server_note_id = excluded.server_note_id,
+                server_comment_id = excluded.server_comment_id,
                 server_attachment_id = excluded.server_attachment_id,
                 server_log_id = excluded.server_log_id,
                 synced_at = excluded.synced_at;
@@ -1081,7 +1081,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$local_version_no", localVersionNo);
         command.Parameters.AddWithValue("$server_document_id", string.IsNullOrWhiteSpace(serverDocumentId) ? DBNull.Value : serverDocumentId);
         command.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
-        command.Parameters.AddWithValue("$server_note_id", string.IsNullOrWhiteSpace(serverNoteId) ? DBNull.Value : serverNoteId);
+        command.Parameters.AddWithValue("$server_comment_id", string.IsNullOrWhiteSpace(serverCommentId) ? DBNull.Value : serverCommentId);
         command.Parameters.AddWithValue("$server_attachment_id", string.IsNullOrWhiteSpace(serverAttachmentId) ? DBNull.Value : serverAttachmentId);
         command.Parameters.AddWithValue("$server_log_id", string.IsNullOrWhiteSpace(serverLogId) ? DBNull.Value : serverLogId);
         command.Parameters.AddWithValue("$synced_at", syncedAt.ToString("O"));

@@ -20,8 +20,8 @@ FlowNote server-side components live under this directory.
 - Document registration, list, detail, version list, and new version registration
 - Document status changes, version status changes, explicit published version selection, published document lookup
 - Document tag create/list/replace
-- FieldNote create, list, detail, manager review, and analysis update
-- FieldNote photo/file attachment create/list
+- FieldComment create, list, detail, manager review, and analysis update
+- FieldComment photo/file attachment create/list
 - Document access log create/list
 - Work sequence board create, item add, reorder, status change, and history lookup
 

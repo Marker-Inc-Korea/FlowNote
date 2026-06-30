@@ -12,7 +12,7 @@ using FlowNote.Windows.Core.Audit;
 using FlowNote.Windows.Core.Auth;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
-using FlowNote.Windows.Core.FieldNotes;
+using FlowNote.Windows.Core.FieldComments;
 using FlowNote.Windows.Core.History;
 using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
@@ -26,7 +26,7 @@ namespace FlowNote.Windows.App;
 public partial class DocumentViewWindow : Window
 {
     private const long MaxPreviewBytes = 128 * 1024;
-    private readonly FieldNoteService? fieldNoteService;
+    private readonly FieldCommentService? fieldCommentService;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly ServerSyncService? serverSyncService;
     private readonly DocumentViewLogService? documentViewLogService;
@@ -49,32 +49,32 @@ public partial class DocumentViewWindow : Window
     {
     }
 
-    public DocumentViewWindow(FieldNoteService? fieldNoteService, ExplorerDocument document, string actorName)
-        : this(fieldNoteService, null, null, null, null, document, actorName)
+    public DocumentViewWindow(FieldCommentService? fieldCommentService, ExplorerDocument document, string actorName)
+        : this(fieldCommentService, null, null, null, null, document, actorName)
     {
     }
 
     public DocumentViewWindow(
-        FieldNoteService? fieldNoteService,
+        FieldCommentService? fieldCommentService,
         FlowNoteServerDocumentClient? serverDocumentClient,
         ExplorerDocument document,
         string actorName)
-        : this(fieldNoteService, serverDocumentClient, null, null, null, document, actorName)
+        : this(fieldCommentService, serverDocumentClient, null, null, null, document, actorName)
     {
     }
 
     public DocumentViewWindow(
-        FieldNoteService? fieldNoteService,
+        FieldCommentService? fieldCommentService,
         FlowNoteServerDocumentClient? serverDocumentClient,
         DocumentViewLogService? documentViewLogService,
         ExplorerDocument document,
         string actorName)
-        : this(fieldNoteService, serverDocumentClient, null, documentViewLogService, null, document, actorName)
+        : this(fieldCommentService, serverDocumentClient, null, documentViewLogService, null, document, actorName)
     {
     }
 
     public DocumentViewWindow(
-        FieldNoteService? fieldNoteService,
+        FieldCommentService? fieldCommentService,
         FlowNoteServerDocumentClient? serverDocumentClient,
         ServerSyncService? serverSyncService,
         DocumentViewLogService? documentViewLogService,
@@ -85,7 +85,7 @@ public partial class DocumentViewWindow : Window
         TimeSpan? autoCloseDelay = null)
     {
         InitializeComponent();
-        this.fieldNoteService = fieldNoteService;
+        this.fieldCommentService = fieldCommentService;
         this.serverDocumentClient = serverDocumentClient;
         this.serverSyncService = serverSyncService;
         this.documentViewLogService = documentViewLogService;
@@ -103,7 +103,7 @@ public partial class DocumentViewWindow : Window
         };
         Loaded += DocumentViewWindow_Loaded;
         autoCloseTimer.Tick += AutoCloseTimer_Tick;
-        SaveCommentButton.IsEnabled = fieldNoteService is not null && !string.IsNullOrWhiteSpace(document.DocumentId);
+        SaveCommentButton.IsEnabled = fieldCommentService is not null && !string.IsNullOrWhiteSpace(document.DocumentId);
         SelectAttachmentButton.IsEnabled = SaveCommentButton.IsEnabled;
         ClearAttachmentButton.IsEnabled = false;
         StartDocumentViewLog();
@@ -192,11 +192,11 @@ public partial class DocumentViewWindow : Window
         TitleTextBlock.Text = document.FileName;
         MetaTextBlock.Text = $"{document.Status} | {document.VersionLabel} | {document.UpdatedBy} | {document.UpdatedAt:yyyy-MM-dd HH:mm}";
         SecurityPolicyTextBlock.Text = canDownloadDocument
-            ? $"Download: allowed | Auto close: {autoCloseDelay.TotalSeconds:N0}s"
-            : $"Download: blocked | Auto close: {autoCloseDelay.TotalSeconds:N0}s";
+            ? $"다운로드 허용 | 자동 닫힘: {autoCloseDelay.TotalSeconds:N0}초"
+            : $"다운로드 차단 | 자동 닫힘: {autoCloseDelay.TotalSeconds:N0}초";
         DownloadCopyButton.ToolTip = canDownloadDocument
-            ? "Save a controlled copy and record the action in local history."
-            : "Downloads are blocked for this role and attempts are audited.";
+            ? "통제된 복사본을 저장하고 로컬 이력에 기록합니다."
+            : "이 역할은 문서 다운로드가 차단되며 시도 이력이 기록됩니다.";
     }
 
     private void LoadPreview(ExplorerDocument document)
@@ -343,13 +343,13 @@ public partial class DocumentViewWindow : Window
     {
         e.Cancel = true;
         e.Handled = true;
-        RecordDownloadBlocked("WebView2 PDF download was blocked.");
+        RecordDownloadBlocked("WebView2 PDF 다운로드를 차단했습니다.");
     }
 
     private void PdfPreview_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
         e.Handled = true;
-        RecordDownloadBlocked("WebView2 external window request was blocked.");
+        RecordDownloadBlocked("WebView2 외부 창 열기 요청을 차단했습니다.");
     }
 
     private void ShowSpreadsheetPreview(ExplorerDocument document, string resolvedPath)
@@ -615,13 +615,13 @@ public partial class DocumentViewWindow : Window
 
     private void RefreshCombinedComments()
     {
-        if (fieldNoteService is null || string.IsNullOrWhiteSpace(document.DocumentId))
+        if (fieldCommentService is null || string.IsNullOrWhiteSpace(document.DocumentId))
         {
             CombinedCommentTextBox.Text = "DB에 저장되지 않은 로컬 파일입니다.";
             return;
         }
 
-        var notes = fieldNoteService.ListDocumentNotes(document.DocumentId).ToList();
+        var notes = fieldCommentService.ListDocumentComments(document.DocumentId).ToList();
         if (notes.Count == 0)
         {
             CombinedCommentTextBox.Text = "아직 등록된 코멘트가 없습니다.";
@@ -632,8 +632,8 @@ public partial class DocumentViewWindow : Window
         foreach (var note in notes)
         {
             var versionLabel = note.DocumentVersionNo is null ? "문서" : $"v{note.DocumentVersionNo}";
-            var attachments = fieldNoteService.ListAttachments(note.NoteId);
-            var attachmentText = attachments.Count == 0 ? string.Empty : $" / attachments:{attachments.Count}";
+            var attachments = fieldCommentService.ListAttachments(note.CommentId);
+            var attachmentText = attachments.Count == 0 ? string.Empty : $" / 첨부:{attachments.Count}";
             builder.AppendLine($"[{note.CreatedAt:yyyy-MM-dd HH:mm}] {note.AuthorName} / {versionLabel} / {note.InputMode}{attachmentText}");
             builder.AppendLine(note.RawContent);
             foreach (var attachment in attachments)
@@ -646,34 +646,34 @@ public partial class DocumentViewWindow : Window
         CombinedCommentTextBox.Text = builder.ToString().TrimEnd();
     }
 
-    private async Task<string> TrySendFieldNoteToServerAsync(FieldNoteRecord savedNote)
+    private async Task<string> TrySendFieldCommentToServerAsync(FieldCommentRecord savedComment)
     {
         if (serverSyncService is null)
         {
-            return "Server sync service is not configured. The field note remains saved locally.";
+            return "서버 동기화가 설정되지 않아 현장 코멘트는 로컬에만 저장되었습니다.";
         }
 
-        var result = await serverSyncService.QueueAndTrySyncFieldNoteAsync(
-            savedNote,
+        var result = await serverSyncService.QueueAndTrySyncFieldCommentAsync(
+            savedComment,
             serverDocumentClient);
         return result.Success
-            ? "Server field note send completed."
-            : $"Server field note send queued. Local save is kept. {result.Message}";
+            ? "서버 현장 코멘트 전송을 완료했습니다."
+            : $"서버 현장 코멘트 전송 대기열에 남겼습니다. 로컬 저장은 유지됩니다. {result.Message}";
     }
 
-    private async Task<string> TrySendAttachmentToServerAsync(FieldNoteAttachmentRecord attachment)
+    private async Task<string> TrySendAttachmentToServerAsync(FieldCommentAttachmentRecord attachment)
     {
         if (serverSyncService is null)
         {
-            return "Server sync service is not configured. The field note attachment remains saved locally.";
+            return "서버 동기화가 설정되지 않아 현장 코멘트 첨부는 로컬에만 저장되었습니다.";
         }
 
-        var result = await serverSyncService.QueueAndTrySyncFieldNoteAttachmentAsync(
+        var result = await serverSyncService.QueueAndTrySyncFieldCommentAttachmentAsync(
             attachment,
             serverDocumentClient);
         return result.Success
-            ? "Server field note attachment send completed."
-            : $"Server field note attachment send queued. Local save is kept. {result.Message}";
+            ? "서버 현장 코멘트 첨부 전송을 완료했습니다."
+            : $"서버 현장 코멘트 첨부 전송 대기열에 남겼습니다. 로컬 저장은 유지됩니다. {result.Message}";
     }
 
     private void SelectAttachmentButton_Click(object sender, RoutedEventArgs e)
@@ -681,7 +681,7 @@ public partial class DocumentViewWindow : Window
         var dialog = new OpenFileDialog
         {
             Multiselect = true,
-            Filter = "Supported attachments|*.jpg;*.jpeg;*.png;*.gif;*.bmp;*.webp;*.pdf;*.txt;*.md|Images|*.jpg;*.jpeg;*.png;*.gif;*.bmp;*.webp|PDF files|*.pdf|Text files|*.txt;*.md|All files|*.*"
+            Filter = "지원 첨부 파일|*.jpg;*.jpeg;*.png;*.gif;*.bmp;*.webp;*.pdf;*.txt;*.md|이미지|*.jpg;*.jpeg;*.png;*.gif;*.bmp;*.webp|PDF 파일|*.pdf|텍스트 파일|*.txt;*.md|모든 파일|*.*"
         };
 
         if (dialog.ShowDialog(this) != true)
@@ -710,29 +710,29 @@ public partial class DocumentViewWindow : Window
     {
         ClearAttachmentButton.IsEnabled = selectedAttachmentPaths.Count > 0;
         AttachmentSummaryTextBlock.Text = selectedAttachmentPaths.Count == 0
-            ? "No attachments"
-            : $"{selectedAttachmentPaths.Count} attachment(s): {string.Join(", ", selectedAttachmentPaths.Select(Path.GetFileName))}";
+            ? "첨부 없음"
+            : $"{selectedAttachmentPaths.Count}개 첨부: {string.Join(", ", selectedAttachmentPaths.Select(Path.GetFileName))}";
     }
 
     private void DownloadCopyButton_Click(object sender, RoutedEventArgs e)
     {
         if (!canDownloadDocument)
         {
-            RecordDownloadBlocked($"Role '{(string.IsNullOrWhiteSpace(userRole) ? "unknown" : userRole)}' is not allowed to download documents.");
-            MessageBox.Show("Document download is blocked for this role. The blocked attempt was recorded.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
+            RecordDownloadBlocked($"역할 '{(string.IsNullOrWhiteSpace(userRole) ? "알 수 없음" : userRole)}'은 문서를 다운로드할 수 없습니다.");
+            MessageBox.Show("이 역할은 문서 다운로드가 차단됩니다. 차단 시도는 이력에 기록했습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
         if (string.IsNullOrWhiteSpace(currentResolvedPath) || !File.Exists(currentResolvedPath))
         {
-            MessageBox.Show("There is no local file available for controlled copy.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("복사할 수 있는 로컬 파일이 없습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
         var dialog = new SaveFileDialog
         {
             FileName = document.FileName,
-            Filter = "All files|*.*",
+            Filter = "모든 파일|*.*",
             OverwritePrompt = true
         };
 
@@ -748,8 +748,8 @@ public partial class DocumentViewWindow : Window
             "document",
             document.DocumentId,
             document.FileName,
-            $"Controlled document copy saved: {document.FileName}");
-        MessageBox.Show("Document copy saved and recorded.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
+            $"통제된 문서 복사본 저장: {document.FileName}");
+        MessageBox.Show("문서 복사본을 저장하고 이력에 기록했습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void RecordDownloadBlocked(string reason)
@@ -795,7 +795,7 @@ public partial class DocumentViewWindow : Window
 
     private async void SaveCommentButton_Click(object sender, RoutedEventArgs e)
     {
-        if (fieldNoteService is null || string.IsNullOrWhiteSpace(document.DocumentId))
+        if (fieldCommentService is null || string.IsNullOrWhiteSpace(document.DocumentId))
         {
             MessageBox.Show("저장된 문서만 코멘트를 남길 수 있습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
@@ -808,13 +808,13 @@ public partial class DocumentViewWindow : Window
             return;
         }
 
-        var savedNote = fieldNoteService.AddDocumentNote(document.DocumentId, comment, actorName);
-        var serverStatus = await TrySendFieldNoteToServerAsync(savedNote);
+        var savedComment = fieldCommentService.AddDocumentComment(document.DocumentId, comment, actorName);
+        var serverStatus = await TrySendFieldCommentToServerAsync(savedComment);
         var attachmentStatuses = new List<string>();
         foreach (var attachmentPath in selectedAttachmentPaths.ToList())
         {
-            var attachment = fieldNoteService.AddAttachment(
-                savedNote.NoteId,
+            var attachment = fieldCommentService.AddAttachment(
+                savedComment.CommentId,
                 attachmentPath,
                 actorName);
             attachmentStatuses.Add(await TrySendAttachmentToServerAsync(attachment));
@@ -822,8 +822,8 @@ public partial class DocumentViewWindow : Window
 
         document = document with
         {
-            UpdatedAt = savedNote.CreatedAt,
-            LatestComment = savedNote.RawContent
+            UpdatedAt = savedComment.CreatedAt,
+            LatestComment = savedComment.RawContent
         };
         CommentSaved = true;
         CommentTextBox.Clear();
@@ -832,7 +832,7 @@ public partial class DocumentViewWindow : Window
         RefreshHeader();
         var attachmentStatus = attachmentStatuses.Count == 0
             ? string.Empty
-            : $" | attachments={attachmentStatuses.Count}";
+            : $" | 첨부={attachmentStatuses.Count}";
         MetaTextBlock.Text = $"{MetaTextBlock.Text} | {serverStatus}{attachmentStatus}";
         RefreshCombinedComments();
         LoadPreview(document);

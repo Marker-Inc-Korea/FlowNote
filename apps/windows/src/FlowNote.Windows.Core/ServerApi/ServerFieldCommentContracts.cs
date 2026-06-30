@@ -1,9 +1,9 @@
 using System.Text.Json.Serialization;
-using FlowNote.Windows.Core.FieldNotes;
+using FlowNote.Windows.Core.FieldComments;
 
 namespace FlowNote.Windows.Core.ServerApi;
 
-public sealed record ServerFieldNoteCreateRequest
+public sealed record ServerFieldCommentCreateRequest
 {
     [JsonPropertyName("documentId")]
     public string? DocumentId { get; init; }
@@ -17,8 +17,8 @@ public sealed record ServerFieldNoteCreateRequest
     [JsonPropertyName("workRecordId")]
     public string? WorkRecordId { get; init; }
 
-    [JsonPropertyName("noteType")]
-    public string NoteType { get; init; } = "issue";
+    [JsonPropertyName("commentType")]
+    public string CommentType { get; init; } = "issue";
 
     [JsonPropertyName("inputMode")]
     public string InputMode { get; init; } = "free_text";
@@ -59,24 +59,24 @@ public sealed record ServerFieldNoteCreateRequest
     [JsonPropertyName("idempotencyKey")]
     public string? IdempotencyKey { get; init; }
 
-    public static ServerFieldNoteCreateRequest FromLocal(
-        FieldNoteRecord fieldNote,
+    public static ServerFieldCommentCreateRequest FromLocal(
+        FieldCommentRecord fieldComment,
         string? documentId = null,
         string? documentVersionId = null,
         string? idempotencyKey = null)
     {
-        return new ServerFieldNoteCreateRequest
+        return new ServerFieldCommentCreateRequest
         {
-            DocumentId = Clean(documentId) ?? Clean(fieldNote.DocumentId),
+            DocumentId = Clean(documentId) ?? Clean(fieldComment.DocumentId),
             DocumentVersionId = Clean(documentVersionId),
-            NoteType = fieldNote.NoteType,
-            InputMode = fieldNote.InputMode,
-            SignalLevel = Clean(fieldNote.SignalLevel),
-            RawContent = fieldNote.RawContent,
-            ReportedBy = Clean(fieldNote.ReportedBy) ?? Clean(fieldNote.AuthorName),
-            EntrySource = fieldNote.EntrySource,
-            DeviceId = Clean(fieldNote.DeviceId),
-            LocationCode = Clean(fieldNote.LocationCode),
+            CommentType = fieldComment.CommentType,
+            InputMode = fieldComment.InputMode,
+            SignalLevel = Clean(fieldComment.SignalLevel),
+            RawContent = fieldComment.RawContent,
+            ReportedBy = Clean(fieldComment.ReportedBy) ?? Clean(fieldComment.AuthorName),
+            EntrySource = fieldComment.EntrySource,
+            DeviceId = Clean(fieldComment.DeviceId),
+            LocationCode = Clean(fieldComment.LocationCode),
             IdempotencyKey = Clean(idempotencyKey)
         };
     }
@@ -87,10 +87,10 @@ public sealed record ServerFieldNoteCreateRequest
     }
 }
 
-public sealed record ServerFieldNoteResponse
+public sealed record ServerFieldCommentResponse
 {
-    [JsonPropertyName("note_id")]
-    public string NoteId { get; init; } = string.Empty;
+    [JsonPropertyName("comment_id")]
+    public string CommentId { get; init; } = string.Empty;
 
     [JsonPropertyName("document_id")]
     public string? DocumentId { get; init; }
@@ -104,8 +104,8 @@ public sealed record ServerFieldNoteResponse
     [JsonPropertyName("work_record_id")]
     public string? WorkRecordId { get; init; }
 
-    [JsonPropertyName("note_type")]
-    public string NoteType { get; init; } = string.Empty;
+    [JsonPropertyName("comment_type")]
+    public string CommentType { get; init; } = string.Empty;
 
     [JsonPropertyName("input_mode")]
     public string InputMode { get; init; } = string.Empty;
@@ -171,7 +171,7 @@ public sealed record ServerFieldNoteResponse
     public DateTime? AnalyzedAt { get; init; }
 }
 
-public sealed record ServerFieldNoteAttachmentFileResponse
+public sealed record ServerFieldCommentAttachmentFileResponse
 {
     [JsonPropertyName("storage_type")]
     public string StorageType { get; init; } = string.Empty;
@@ -198,13 +198,13 @@ public sealed record ServerFieldNoteAttachmentFileResponse
     public string? HashSha256 { get; init; }
 }
 
-public sealed record ServerFieldNoteAttachmentResponse
+public sealed record ServerFieldCommentAttachmentResponse
 {
     [JsonPropertyName("attachment_id")]
     public string AttachmentId { get; init; } = string.Empty;
 
-    [JsonPropertyName("note_id")]
-    public string NoteId { get; init; } = string.Empty;
+    [JsonPropertyName("comment_id")]
+    public string CommentId { get; init; } = string.Empty;
 
     [JsonPropertyName("attachment_type")]
     public string AttachmentType { get; init; } = string.Empty;
@@ -222,5 +222,5 @@ public sealed record ServerFieldNoteAttachmentResponse
     public DateTime CreatedAt { get; init; }
 
     [JsonPropertyName("file")]
-    public ServerFieldNoteAttachmentFileResponse File { get; init; } = new();
+    public ServerFieldCommentAttachmentFileResponse File { get; init; } = new();
 }

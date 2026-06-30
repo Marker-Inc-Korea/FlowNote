@@ -15,9 +15,9 @@ This directory contains FlowNote FastAPI server tests.
 - New document version registration and previous latest version `SUPERSEDED` handling
 - Document status changes, version status changes, explicit published version selection, published document lookup
 - Document tag create/replace and tag dictionary lookup
-- Role-based permissions for document write, FieldNote create, and access-log read
-- FieldNote create, list, document-scoped lookup, manager review, and analysis update
-- FieldNote attachment create/list with allowed extension, size, and hash records
+- Role-based permissions for document write, FieldComment create, and access-log read
+- FieldComment create, list, document-scoped lookup, manager review, and analysis update
+- FieldComment attachment create/list with allowed extension, size, and hash records
 - Document access log create/list
 - Work sequence board create, item add, full reorder, status change, history, and notification candidate records
 

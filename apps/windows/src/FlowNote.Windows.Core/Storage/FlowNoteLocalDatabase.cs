@@ -302,12 +302,12 @@ public sealed class FlowNoteLocalDatabase
                 created_at TEXT NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS field_notes (
+            CREATE TABLE IF NOT EXISTS field_comments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                note_id TEXT NOT NULL UNIQUE,
+                comment_id TEXT NOT NULL UNIQUE,
                 document_id TEXT NULL REFERENCES documents(document_id) ON DELETE CASCADE,
                 document_version_no INTEGER NULL,
-                note_type TEXT NOT NULL,
+                comment_type TEXT NOT NULL,
                 input_mode TEXT NOT NULL,
                 signal_level TEXT NULL,
                 raw_content TEXT NOT NULL,
@@ -324,13 +324,13 @@ public sealed class FlowNoteLocalDatabase
                 synced_at TEXT NULL
             );
 
-            CREATE INDEX IF NOT EXISTS ix_field_notes_document_created
-                ON field_notes (document_id, created_at);
+            CREATE INDEX IF NOT EXISTS ix_field_comments_document_created
+                ON field_comments (document_id, created_at);
 
-            CREATE TABLE IF NOT EXISTS field_note_attachments (
+            CREATE TABLE IF NOT EXISTS field_comment_attachments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 attachment_id TEXT NOT NULL UNIQUE,
-                note_id TEXT NOT NULL REFERENCES field_notes(note_id) ON DELETE CASCADE,
+                comment_id TEXT NOT NULL REFERENCES field_comments(comment_id) ON DELETE CASCADE,
                 local_path TEXT NOT NULL,
                 original_file_name TEXT NOT NULL,
                 extension TEXT NOT NULL,
@@ -346,8 +346,8 @@ public sealed class FlowNoteLocalDatabase
                 synced_at TEXT NULL
             );
 
-            CREATE INDEX IF NOT EXISTS ix_field_note_attachments_note
-                ON field_note_attachments (note_id, created_at);
+            CREATE INDEX IF NOT EXISTS ix_field_comment_attachments_comment
+                ON field_comment_attachments (comment_id, created_at);
 
             CREATE TABLE IF NOT EXISTS document_view_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -534,7 +534,7 @@ public sealed class FlowNoteLocalDatabase
                 synced_at TEXT NULL,
                 server_document_id TEXT NULL,
                 server_version_id TEXT NULL,
-                server_note_id TEXT NULL,
+                server_comment_id TEXT NULL,
                 server_attachment_id TEXT NULL,
                 server_log_id TEXT NULL
             );
@@ -549,7 +549,7 @@ public sealed class FlowNoteLocalDatabase
                 local_version_no INTEGER NOT NULL DEFAULT 0,
                 server_document_id TEXT NULL,
                 server_version_id TEXT NULL,
-                server_note_id TEXT NULL,
+                server_comment_id TEXT NULL,
                 server_attachment_id TEXT NULL,
                 server_log_id TEXT NULL,
                 synced_at TEXT NOT NULL,
@@ -574,11 +574,13 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "document_versions", "version_label", "TEXT NULL");
         EnsureColumn(connection, "document_versions", "server_version_id", "TEXT NULL");
         EnsureColumn(connection, "document_versions", "synced_at", "TEXT NULL");
-        EnsureColumn(connection, "field_notes", "server_note_id", "TEXT NULL");
-        EnsureColumn(connection, "field_notes", "synced_at", "TEXT NULL");
-        EnsureColumn(connection, "field_note_attachments", "server_attachment_id", "TEXT NULL");
-        EnsureColumn(connection, "field_note_attachments", "synced_at", "TEXT NULL");
+        EnsureColumn(connection, "field_comments", "server_comment_id", "TEXT NULL");
+        EnsureColumn(connection, "field_comments", "synced_at", "TEXT NULL");
+        EnsureColumn(connection, "field_comment_attachments", "server_attachment_id", "TEXT NULL");
+        EnsureColumn(connection, "field_comment_attachments", "synced_at", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "server_comment_id", "TEXT NULL");
         EnsureColumn(connection, "server_sync_queue", "server_attachment_id", "TEXT NULL");
+        EnsureColumn(connection, "server_id_mappings", "server_comment_id", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_attachment_id", "TEXT NULL");
         EnsureColumn(connection, "document_view_logs", "server_start_log_id", "INTEGER NULL");
         EnsureColumn(connection, "document_view_logs", "server_close_log_id", "INTEGER NULL");
@@ -593,7 +595,7 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "work_sequence_notification_candidates", "notification_id", "TEXT NULL");
         EnsureDocumentUpdatedAt(connection);
         EnsureDocumentVersionState(connection);
-        BackfillFieldNotesFromCommentVersions(connection);
+        BackfillFieldCommentsFromVersionComments(connection);
 
         SeedDefaultGroups(connection);
         SeedDefaultUsers(connection);
@@ -678,15 +680,15 @@ public sealed class FlowNoteLocalDatabase
         status.ExecuteNonQuery();
     }
 
-    private static void BackfillFieldNotesFromCommentVersions(SqliteConnection connection)
+    private static void BackfillFieldCommentsFromVersionComments(SqliteConnection connection)
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO field_notes (
-                note_id,
+            INSERT INTO field_comments (
+                comment_id,
                 document_id,
                 document_version_no,
-                note_type,
+                comment_type,
                 input_mode,
                 raw_content,
                 author_name,
@@ -695,7 +697,7 @@ public sealed class FlowNoteLocalDatabase
                 created_at
             )
             SELECT
-                'note-legacy-' || lower(hex(randomblob(16))),
+                'comment-legacy-' || lower(hex(randomblob(16))),
                 document_id,
                 version_no,
                 'issue',
@@ -710,7 +712,7 @@ public sealed class FlowNoteLocalDatabase
               AND trim(comment) <> ''
               AND NOT EXISTS (
                   SELECT 1
-                  FROM field_notes AS note
+                  FROM field_comments AS note
                   WHERE note.document_id = version.document_id
                     AND note.document_version_no = version.version_no
                     AND note.raw_content = trim(version.comment)

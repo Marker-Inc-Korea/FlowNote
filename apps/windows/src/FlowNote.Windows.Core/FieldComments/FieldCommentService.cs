@@ -3,15 +3,15 @@ using Microsoft.Data.Sqlite;
 using FlowNote.Windows.Core.History;
 using System.Security.Cryptography;
 
-namespace FlowNote.Windows.Core.FieldNotes;
+namespace FlowNote.Windows.Core.FieldComments;
 
-public sealed class FieldNoteService(FlowNoteLocalDatabase database)
+public sealed class FieldCommentService(FlowNoteLocalDatabase database)
 {
-    public FieldNoteRecord AddDocumentNote(
+    public FieldCommentRecord AddDocumentComment(
         string documentId,
         string rawContent,
         string authorName,
-        string noteType = "issue",
+        string commentType = "issue",
         string inputMode = "free_text",
         string entrySource = "field_user",
         string? signalLevel = null,
@@ -28,7 +28,7 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
         var content = rawContent.Trim();
         if (string.IsNullOrWhiteSpace(content))
         {
-            throw new ArgumentException("Field note content is required.", nameof(rawContent));
+            throw new ArgumentException("Field comment content is required.", nameof(rawContent));
         }
 
         var now = DateTime.UtcNow;
@@ -50,15 +50,15 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
         var documentVersionNo = documentReader.GetInt32(0);
         var documentTitle = documentReader.GetString(1);
         documentReader.Close();
-        var noteId = $"note-{Guid.NewGuid():N}";
+        var commentId = $"comment-{Guid.NewGuid():N}";
 
         using var insert = connection.CreateCommand();
         insert.CommandText = """
-            INSERT INTO field_notes (
-                note_id,
+            INSERT INTO field_comments (
+                comment_id,
                 document_id,
                 document_version_no,
-                note_type,
+                comment_type,
                 input_mode,
                 signal_level,
                 raw_content,
@@ -72,10 +72,10 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
                 created_at
             )
             VALUES (
-                $note_id,
+                $comment_id,
                 $document_id,
                 $document_version_no,
-                $note_type,
+                $comment_type,
                 $input_mode,
                 $signal_level,
                 $raw_content,
@@ -90,10 +90,10 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
             );
             SELECT last_insert_rowid();
             """;
-        insert.Parameters.AddWithValue("$note_id", noteId);
+        insert.Parameters.AddWithValue("$comment_id", commentId);
         insert.Parameters.AddWithValue("$document_id", documentId);
         insert.Parameters.AddWithValue("$document_version_no", documentVersionNo);
-        insert.Parameters.AddWithValue("$note_type", noteType);
+        insert.Parameters.AddWithValue("$comment_type", commentType);
         insert.Parameters.AddWithValue("$input_mode", inputMode);
         insert.Parameters.AddWithValue("$signal_level", string.IsNullOrWhiteSpace(signalLevel) ? DBNull.Value : signalLevel);
         insert.Parameters.AddWithValue("$raw_content", content);
@@ -118,10 +118,10 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
         updateDocument.Parameters.AddWithValue("$document_id", documentId);
         updateDocument.ExecuteNonQuery();
 
-        AddFieldNoteNotification(connection, documentId, authorName, content, now);
+        AddFieldCommentNotification(connection, documentId, authorName, content, now);
         HistoryService.Record(
             connection,
-            "field_note.created",
+            "field_comment.created",
             authorName,
             "document",
             documentId,
@@ -129,12 +129,12 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
             $"현장 코멘트 등록: {documentTitle}",
             now);
 
-        return new FieldNoteRecord(
+        return new FieldCommentRecord(
             id,
-            noteId,
+            commentId,
             documentId,
             documentVersionNo,
-            noteType,
+            commentType,
             inputMode,
             signalLevel,
             content,
@@ -151,41 +151,41 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
             null);
     }
 
-    public IReadOnlyList<FieldNoteRecord> ListDocumentNotes(string documentId)
+    public IReadOnlyList<FieldCommentRecord> ListDocumentComments(string documentId)
     {
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, note_id, document_id, document_version_no, note_type, input_mode, signal_level,
+            SELECT id, comment_id, document_id, document_version_no, comment_type, input_mode, signal_level,
                    raw_content, normalized_content, analysis_content, author_name, reported_by,
                    operator_name, entry_source, device_id, location_code, status, created_at, synced_at
-            FROM field_notes
+            FROM field_comments
             WHERE document_id = $document_id
             ORDER BY created_at DESC, id DESC;
             """;
         command.Parameters.AddWithValue("$document_id", documentId);
 
         using var reader = command.ExecuteReader();
-        var records = new List<FieldNoteRecord>();
+        var records = new List<FieldCommentRecord>();
         while (reader.Read())
         {
-            records.Add(ReadFieldNote(reader));
+            records.Add(ReadFieldComment(reader));
         }
 
         return records;
     }
 
-    public FieldNoteAttachmentRecord AddAttachment(
-        string noteId,
+    public FieldCommentAttachmentRecord AddAttachment(
+        string commentId,
         string sourcePath,
         string createdBy,
         string? caption = null,
         DateTime? capturedAt = null,
         string? attachmentType = null)
     {
-        if (string.IsNullOrWhiteSpace(noteId))
+        if (string.IsNullOrWhiteSpace(commentId))
         {
-            throw new ArgumentException("Field note id is required.", nameof(noteId));
+            throw new ArgumentException("Field comment id is required.", nameof(commentId));
         }
 
         if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
@@ -195,17 +195,17 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
 
         var now = DateTime.UtcNow;
         using var connection = database.OpenConnection();
-        var note = LoadNoteTarget(connection, noteId)
-            ?? throw new InvalidOperationException($"Field note not found: {noteId}");
+        var note = LoadCommentTarget(connection, commentId)
+            ?? throw new InvalidOperationException($"Field comment not found: {commentId}");
 
         var sourceFile = new FileInfo(sourcePath);
         var dataDirectory = Path.GetDirectoryName(database.DatabasePath)!;
         var attachmentRoot = Path.Combine(
             dataDirectory,
             "Files",
-            "FieldNoteAttachments",
+            "FieldCommentAttachments",
             now.ToString("yyyy-MM-dd"),
-            noteId);
+            commentId);
         Directory.CreateDirectory(attachmentRoot);
 
         var targetPath = GetUniqueTargetPath(attachmentRoot, sourceFile.Name);
@@ -220,9 +220,9 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
 
         using var insert = connection.CreateCommand();
         insert.CommandText = """
-            INSERT INTO field_note_attachments (
+            INSERT INTO field_comment_attachments (
                 attachment_id,
-                note_id,
+                comment_id,
                 local_path,
                 original_file_name,
                 extension,
@@ -237,7 +237,7 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
             )
             VALUES (
                 $attachment_id,
-                $note_id,
+                $comment_id,
                 $local_path,
                 $original_file_name,
                 $extension,
@@ -253,7 +253,7 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
             SELECT last_insert_rowid();
             """;
         insert.Parameters.AddWithValue("$attachment_id", attachmentId);
-        insert.Parameters.AddWithValue("$note_id", noteId);
+        insert.Parameters.AddWithValue("$comment_id", commentId);
         insert.Parameters.AddWithValue("$local_path", storedRelativePath);
         insert.Parameters.AddWithValue("$original_file_name", sourceFile.Name);
         insert.Parameters.AddWithValue("$extension", extension);
@@ -269,18 +269,18 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
 
         HistoryService.Record(
             connection,
-            "field_note.attachment_added",
+            "field_comment.attachment_added",
             createdBy,
-            "field_note",
-            noteId,
+            "field_comment",
+            commentId,
             note.DocumentTitle,
-            $"Field note attachment added: {sourceFile.Name}",
+            $"Field comment attachment added: {sourceFile.Name}",
             now);
 
-        return new FieldNoteAttachmentRecord(
+        return new FieldCommentAttachmentRecord(
             id,
             attachmentId,
-            noteId,
+            commentId,
             storedRelativePath,
             sourceFile.Name,
             extension,
@@ -296,22 +296,22 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
             null);
     }
 
-    public IReadOnlyList<FieldNoteAttachmentRecord> ListAttachments(string noteId)
+    public IReadOnlyList<FieldCommentAttachmentRecord> ListAttachments(string commentId)
     {
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, attachment_id, note_id, local_path, original_file_name, extension,
+            SELECT id, attachment_id, comment_id, local_path, original_file_name, extension,
                    content_type, size_bytes, hash_sha256, attachment_type, caption,
                    captured_at, created_by, created_at, server_attachment_id, synced_at
-            FROM field_note_attachments
-            WHERE note_id = $note_id
+            FROM field_comment_attachments
+            WHERE comment_id = $comment_id
             ORDER BY created_at DESC, id DESC;
             """;
-        command.Parameters.AddWithValue("$note_id", noteId);
+        command.Parameters.AddWithValue("$comment_id", commentId);
 
         using var reader = command.ExecuteReader();
-        var records = new List<FieldNoteAttachmentRecord>();
+        var records = new List<FieldCommentAttachmentRecord>();
         while (reader.Read())
         {
             records.Add(ReadAttachment(reader));
@@ -320,9 +320,9 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
         return records;
     }
 
-    private static FieldNoteRecord ReadFieldNote(SqliteDataReader reader)
+    private static FieldCommentRecord ReadFieldComment(SqliteDataReader reader)
     {
-        return new FieldNoteRecord(
+        return new FieldCommentRecord(
             reader.GetInt64(0),
             reader.GetString(1),
             reader.IsDBNull(2) ? null : reader.GetString(2),
@@ -344,9 +344,9 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
             reader.IsDBNull(18) ? null : DateTime.Parse(reader.GetString(18)));
     }
 
-    private static FieldNoteAttachmentRecord ReadAttachment(SqliteDataReader reader)
+    private static FieldCommentAttachmentRecord ReadAttachment(SqliteDataReader reader)
     {
-        return new FieldNoteAttachmentRecord(
+        return new FieldCommentAttachmentRecord(
             reader.GetInt64(0),
             reader.GetString(1),
             reader.GetString(2),
@@ -365,17 +365,17 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
             reader.IsDBNull(15) ? null : DateTime.Parse(reader.GetString(15)));
     }
 
-    private static NoteTarget? LoadNoteTarget(SqliteConnection connection, string noteId)
+    private static CommentTarget? LoadCommentTarget(SqliteConnection connection, string commentId)
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT note.note_id, note.document_id, document.title
-            FROM field_notes AS note
+            SELECT note.comment_id, note.document_id, document.title
+            FROM field_comments AS note
             LEFT JOIN documents AS document ON document.document_id = note.document_id
-            WHERE note.note_id = $note_id
+            WHERE note.comment_id = $comment_id
             LIMIT 1;
             """;
-        command.Parameters.AddWithValue("$note_id", noteId);
+        command.Parameters.AddWithValue("$comment_id", commentId);
 
         using var reader = command.ExecuteReader();
         if (!reader.Read())
@@ -383,7 +383,7 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
             return null;
         }
 
-        return new NoteTarget(
+        return new CommentTarget(
             reader.GetString(0),
             reader.IsDBNull(1) ? null : reader.GetString(1),
             reader.IsDBNull(2) ? null : reader.GetString(2));
@@ -451,7 +451,7 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
         return candidate;
     }
 
-    private static void AddFieldNoteNotification(
+    private static void AddFieldCommentNotification(
         SqliteConnection connection,
         string documentId,
         string actorName,
@@ -487,10 +487,10 @@ public sealed class FieldNoteService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$actor_name", actorName);
         command.Parameters.AddWithValue("$document_id", documentId);
         command.Parameters.AddWithValue("$document_title", documentTitle);
-        command.Parameters.AddWithValue("$message", $"{actorName} added a field note to '{documentTitle}': {note}");
+        command.Parameters.AddWithValue("$message", $"{actorName} added a field comment to '{documentTitle}': {note}");
         command.Parameters.AddWithValue("$created_at", createdAt.ToString("O"));
         command.ExecuteNonQuery();
     }
 
-    private sealed record NoteTarget(string NoteId, string? DocumentId, string? DocumentTitle);
+    private sealed record CommentTarget(string CommentId, string? DocumentId, string? DocumentTitle);
 }

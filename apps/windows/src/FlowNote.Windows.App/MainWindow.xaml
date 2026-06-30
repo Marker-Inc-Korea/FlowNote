@@ -38,6 +38,12 @@
                                FontSize="13"
                                Foreground="{StaticResource SecondaryTextBrush}"
                                VerticalAlignment="Center" />
+                    <Button x:Name="UserManagementButton"
+                            Width="104"
+                            Height="34"
+                            Margin="0,0,8,0"
+                            Content="사용자 관리"
+                            Click="UserManagementButton_Click" />
                     <Button x:Name="NotificationButton"
                             Width="104"
                             Height="34"
@@ -53,12 +59,18 @@
                             Width="104"
                             Height="34"
                             Margin="0,0,8,0"
-                            Content="Work Board"
+                            Content="작업판"
                             Click="WorkSequenceAdminButton_Click" />
+                    <Button x:Name="ReportDraftButton"
+                            Width="86"
+                            Height="34"
+                            Margin="0,0,8,0"
+                            Content="보고서"
+                            Click="ReportDraftButton_Click" />
                     <Button Width="80"
                             Height="34"
                             Margin="0,0,8,0"
-                            Content="TV"
+                            Content="현황판"
                             Click="WorkSequenceTvButton_Click" />
                     <Button Width="92"
                             Height="34"
@@ -76,27 +88,27 @@
                               Height="34"
                               Margin="0,0,8,0"
                               SelectedIndex="0">
-                        <ComboBoxItem Content="WORKING" />
-                        <ComboBoxItem Content="IN_REVIEW" />
-                        <ComboBoxItem Content="ARCHIVED" />
+                        <ComboBoxItem Content="작업중" Tag="WORKING" />
+                        <ComboBoxItem Content="검토중" Tag="IN_REVIEW" />
+                        <ComboBoxItem Content="보관" Tag="ARCHIVED" />
                     </ComboBox>
                     <Button x:Name="ApplyDocumentStatusButton"
                             Width="92"
                             Height="34"
                             Margin="0,0,8,0"
-                            Content="Status"
+                            Content="상태 변경"
                             Click="ApplyDocumentStatusButton_Click" />
                     <Button x:Name="PublishDocumentButton"
                             Width="92"
                             Height="34"
                             Margin="0,0,8,0"
-                            Content="Publish"
+                            Content="공개"
                             Click="PublishDocumentButton_Click" />
                     <Button x:Name="FileWatchButton"
                             Width="96"
                             Height="34"
                             Margin="0,0,8,0"
-                            Content="File Watch"
+                            Content="파일 감시"
                             Click="FileWatchButton_Click" />
                     <Button x:Name="UploadFileButton"
                             Width="104"
