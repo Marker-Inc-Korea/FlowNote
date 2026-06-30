@@ -113,6 +113,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                     case "register_access_log_started":
                     case "register_access_log_closed":
                     case "register_access_log_auto_closed":
+                    case "register_access_log_download_blocked":
                         await SyncAccessLogAsync(item, serverClient, serverUserId, cancellationToken);
                         break;
                     default:
@@ -202,6 +203,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var normalizedAction = action switch
         {
             "auto_closed" => "register_access_log_auto_closed",
+            "download_blocked" => "register_access_log_download_blocked",
             "view_closed" => "register_access_log_closed",
             _ => "register_access_log_started"
         };
@@ -501,7 +503,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
     {
         var accessLog = LoadAccessLog(item.EntityId)
             ?? throw new InvalidOperationException($"Local access log not found: {item.EntityId}");
-        var isCloseAction = item.Action is "register_access_log_closed" or "register_access_log_auto_closed";
+        var isCloseAction = item.Action is "register_access_log_closed" or "register_access_log_auto_closed" or "register_access_log_download_blocked";
         if (TryGetAccessLogServerId(accessLog.Id, isCloseAction) is { } existingServerLogId)
         {
             MarkQueueSynced(item.Id, null, null, null, existingServerLogId);
@@ -517,6 +519,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var action = item.Action switch
         {
             "register_access_log_auto_closed" => "auto_closed",
+            "register_access_log_download_blocked" => "download_blocked",
             "register_access_log_closed" => "view_closed",
             _ => "view_started"
         };
@@ -554,7 +557,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
         UpsertMapping(
             connection,
-            isCloseAction ? "document_access_log_closed" : "document_access_log_started",
+            item.Action == "register_access_log_download_blocked"
+                ? "document_access_log_download_blocked"
+                : isCloseAction ? "document_access_log_closed" : "document_access_log_started",
             accessLog.Id.ToString(),
             0,
             response.DocumentId,

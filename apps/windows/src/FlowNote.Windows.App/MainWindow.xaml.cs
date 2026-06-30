@@ -560,8 +560,10 @@ public partial class MainWindow : Window
                 serverDocumentClient,
                 services.ServerSync,
                 services.DocumentViewLogs,
+                services.History,
                 document,
-                currentUser.DisplayName ?? currentUser.LoginId ?? "admin");
+                currentUser.DisplayName ?? currentUser.LoginId ?? "admin",
+                currentUser.Role);
         viewWindow.Owner = this;
 
         viewWindow.ShowDialog();
