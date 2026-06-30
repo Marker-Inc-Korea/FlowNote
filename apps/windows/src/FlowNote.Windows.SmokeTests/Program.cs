@@ -3,6 +3,7 @@ using FlowNote.Windows.Core.Auth;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
 using FlowNote.Windows.Core.ServerApi;
+using FlowNote.Windows.Core.Sync;
 using FlowNote.Windows.Core.WorkSequences;
 using System;
 using System.Collections.Generic;
@@ -811,6 +812,7 @@ try
 
         var queuedRetryResult = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
         Console.WriteLine(queuedRetryResult.Message);
+        Require(queuedRetryResult.Attempted >= 5, "queued retry should attempt all offline server sync queue rows");
         using (var syncConnection = services.Database.OpenConnection())
         {
             var syncedServerDocumentId = ScalarString(
@@ -882,23 +884,165 @@ try
                     ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
                     ("$log_id", offlineAccessLogId.ToString())) == 5,
                 "queued retry should mark document, field note attachment, field note, and access log queue rows as synced");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM activity_history
+                    WHERE event_type = 'server_sync.retry_attempted'
+                      AND created_at >= $run_started_at;
+                    """,
+                    ("$run_started_at", runStartedAt.ToUniversalTime().ToString("O"))) >= 5,
+                "queued retry attempts should be preserved in local history");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM activity_history
+                    WHERE event_type = 'server_sync.succeeded'
+                      AND target_id IN ($document_id, $note_id, $attachment_id, $log_id)
+                      AND created_at >= $run_started_at;
+                    """,
+                    ("$document_id", uploadedDocument.DocumentId),
+                    ("$note_id", offlineQueuedFieldNote.NoteId),
+                    ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
+                    ("$log_id", offlineAccessLogId.ToString()),
+                    ("$run_started_at", runStartedAt.ToUniversalTime().ToString("O"))) >= 4,
+                "queued retry success should be preserved in local history");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT idempotency_key
+                    FROM server_sync_queue
+                    WHERE entity_type = 'document' AND entity_id = $document_id
+                    LIMIT 1;
+                    """,
+                    ("$document_id", uploadedDocument.DocumentId)) == ServerSyncService.CreateDocumentIdempotencyKey(uploadedDocument.DocumentId),
+                "document sync queue should use the documented idempotency key");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT idempotency_key
+                    FROM server_sync_queue
+                    WHERE entity_type = 'field_note' AND entity_id = $note_id
+                    LIMIT 1;
+                    """,
+                    ("$note_id", offlineQueuedFieldNote.NoteId)) == ServerSyncService.CreateFieldNoteIdempotencyKey(offlineQueuedFieldNote.NoteId),
+                "field note sync queue should use the documented idempotency key");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT idempotency_key
+                    FROM server_sync_queue
+                    WHERE entity_type = 'field_note_attachment' AND entity_id = $attachment_id
+                    LIMIT 1;
+                    """,
+                    ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId)) == ServerSyncService.CreateFieldNoteAttachmentIdempotencyKey(offlineQueuedFieldNoteAttachment.AttachmentId),
+                "field note attachment sync queue should use the documented idempotency key");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT idempotency_key
+                    FROM server_sync_queue
+                    WHERE entity_type = 'document_access_log'
+                      AND entity_id = $log_id
+                      AND action = 'register_access_log_started'
+                    LIMIT 1;
+                    """,
+                    ("$log_id", offlineAccessLogId.ToString())) == ServerSyncService.CreateAccessLogIdempotencyKey(offlineAccessLogId, "view_started"),
+                "access start log sync queue should use the documented idempotency key");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT idempotency_key
+                    FROM server_sync_queue
+                    WHERE entity_type = 'document_access_log'
+                      AND entity_id = $log_id
+                      AND action = 'register_access_log_closed'
+                    LIMIT 1;
+                    """,
+                    ("$log_id", offlineAccessLogId.ToString())) == ServerSyncService.CreateAccessLogIdempotencyKey(offlineAccessLogId, "view_closed"),
+                "access close log sync queue should use the documented idempotency key");
 
             var duplicateQueueCountBefore = ScalarLong(
                 syncConnection,
-                "SELECT COUNT(*) FROM server_sync_queue WHERE entity_type = 'document' AND entity_id = $document_id;",
-                ("$document_id", uploadedDocument.DocumentId));
-            var duplicateDocumentSync = await services.ServerSync.QueueAndTrySyncDocumentAsync(
+                """
+                SELECT COUNT(*)
+                FROM server_sync_queue
+                WHERE entity_id IN ($document_id, $note_id, $attachment_id, $log_id);
+                """,
+                ("$document_id", uploadedDocument.DocumentId),
+                ("$note_id", offlineQueuedFieldNote.NoteId),
+                ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
+                ("$log_id", offlineAccessLogId.ToString()));
+            var duplicateAttemptCountBefore = ScalarLong(
+                syncConnection,
+                """
+                SELECT COALESCE(SUM(attempt_count), 0)
+                FROM server_sync_queue
+                WHERE entity_id IN ($document_id, $note_id, $attachment_id, $log_id);
+                """,
+                ("$document_id", uploadedDocument.DocumentId),
+                ("$note_id", offlineQueuedFieldNote.NoteId),
+                ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
+                ("$log_id", offlineAccessLogId.ToString()));
+            _ = await services.ServerSync.QueueAndTrySyncDocumentAsync(
                 uploadedDocument,
                 serverDocuments,
                 serverLogin.UserId);
-            Require(duplicateDocumentSync.Attempted == 0, "already synced document should not be retried");
+            _ = await services.ServerSync.QueueAndTrySyncFieldNoteAsync(
+                offlineQueuedFieldNote,
+                serverDocuments,
+                serverLogin.UserId);
+            _ = await services.ServerSync.QueueAndTrySyncFieldNoteAttachmentAsync(
+                offlineQueuedFieldNoteAttachment,
+                serverDocuments,
+                serverLogin.UserId);
+            _ = await services.ServerSync.QueueAndTrySyncAccessLogAsync(
+                offlineStartedAccessLog,
+                "view_started",
+                serverDocuments,
+                serverLogin.UserId);
+            _ = await services.ServerSync.QueueAndTrySyncAccessLogAsync(
+                offlineClosedAccessLog,
+                "view_closed",
+                serverDocuments,
+                serverLogin.UserId);
             var duplicateQueueCountAfter = ScalarLong(
                 syncConnection,
-                "SELECT COUNT(*) FROM server_sync_queue WHERE entity_type = 'document' AND entity_id = $document_id;",
-                ("$document_id", uploadedDocument.DocumentId));
+                """
+                SELECT COUNT(*)
+                FROM server_sync_queue
+                WHERE entity_id IN ($document_id, $note_id, $attachment_id, $log_id);
+                """,
+                ("$document_id", uploadedDocument.DocumentId),
+                ("$note_id", offlineQueuedFieldNote.NoteId),
+                ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
+                ("$log_id", offlineAccessLogId.ToString()));
+            var duplicateAttemptCountAfter = ScalarLong(
+                syncConnection,
+                """
+                SELECT COALESCE(SUM(attempt_count), 0)
+                FROM server_sync_queue
+                WHERE entity_id IN ($document_id, $note_id, $attachment_id, $log_id);
+                """,
+                ("$document_id", uploadedDocument.DocumentId),
+                ("$note_id", offlineQueuedFieldNote.NoteId),
+                ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
+                ("$log_id", offlineAccessLogId.ToString()));
             Require(
                 duplicateQueueCountAfter == duplicateQueueCountBefore,
-                "already synced document should not create duplicate queue rows");
+                "already synced queue items should not create duplicate queue rows");
+            Require(
+                duplicateAttemptCountAfter == duplicateAttemptCountBefore,
+                "already synced queue items should not increment retry attempt counts");
         }
 
         var serverDocument = await serverDocuments.RegisterDocumentAsync(

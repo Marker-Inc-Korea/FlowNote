@@ -43,7 +43,7 @@
 | PATCH | `/api/v1/work-sequence-boards/{boardId}/items/{itemId}/status` | 작업순서 항목 상태 변경 |
 | GET | `/api/v1/work-sequence-boards/{boardId}/history` | 작업순서 변경 이력 조회 |
 
-문서 등록/버전 등록 API, 현장 코멘트 API, FieldNote 첨부 API, 문서 접근 로그 API, 작업순서판 API는 Bearer access token이 없거나 유효하지 않으면 `401`을 반환한다. 문서 등록, 새 버전 등록, 문서 태그 변경, 태그 등록, 작업순서판 생성/항목 추가/정렬/상태 변경은 관리자 그룹, 반장(`line-foreman`), 조장(`team-lead`) 이상 role만 허용하며 조원(`team-member`)이나 현장 조회자(`viewer`)는 `403`을 받는다. FieldNote 등록과 첨부 등록은 조원 계정도 허용한다. 접근 로그 조회는 관리자 성격의 API로 보아 `admin`, `system-admin` role만 허용하고, 접근 로그 등록은 현장 클라이언트가 열람 기록을 남길 수 있도록 인증 사용자에게 열어 둔다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부를 확인하고 서버 저장 `auth_sessions` 행, HMAC 서명 access token, refresh token을 발급한다. `POST /api/v1/auth/refresh`는 refresh token을 회전하며 이전 access token과 이전 refresh token을 폐기한다. `POST /api/v1/auth/logout`은 현재 access token의 세션을 `REVOKED`로 바꾸어 이후 요청을 `401`로 거부한다. 이하 현장 단말기 API, 관리자 파일 감시 API, 보고서 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`, `refresh_token`, `refresh_expires_at`을 로그인 결과에 보관한다. 이후 서버 문서/FieldNote/첨부/접근 로그/작업순서판 요청에는 `Authorization: Bearer {access_token}` 헤더를 붙인다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로그인 role이 문서 등록 권한을 가지는 경우에만 문서 등록/파일 업로드/작업순서판 편집 버튼과 파일 드롭을 사용 가능 상태로 둔다. 로컬 SQLite 문서/FieldNote/첨부/접근 로그 저장을 기본 경로로 유지하되, 서버 전송 후보는 `server_sync_queue`에 남긴다. 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공하면 `wpf:document:{localDocumentId}:v1` 형식의 idempotency key를 저장하고, 인증된 서버 클라이언트가 있으면 같은 파일을 `POST /api/v1/documents`로 서버에 등록한다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후 서버 현장 코멘트 등록 후보를 큐에 남기고, 첨부가 있으면 로컬 보존 파일과 첨부 전송 후보도 남긴다. 열람 시작/닫힘 접근 로그도 별도 큐 항목으로 남긴다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 실패 사유는 `server_sync_queue.last_error`와 `activity_history`에 남긴다. access token 만료, refresh 회전으로 대체된 토큰, logout으로 폐기된 세션은 WPF 서버 클라이언트에서 인증 실패로 요약되고 문서 등록/FieldNote/첨부/접근 로그 전송 항목은 실패 큐에 남으며 사용자는 재로그인이 필요하다는 상태 메시지를 받는다. 재시도 성공 시 로컬 문서/버전/FieldNote/첨부/접근 로그에는 서버 ID와 `synced_at`을 기록한다. 현재 서버 REST API는 별도 idempotency key 요청 필드나 헤더를 아직 받지 않으므로, 중복 방지는 WPF 로컬 큐의 idempotency key와 이미 동기화된 로컬 레코드의 서버 ID/`synced_at` 확인으로 수행한다. 현재 스모크 테스트는 서버 미설정 상태의 실패 큐 생성을 확인하고, `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, Bearer 인증 헤더가 붙은 `/auth/me`, 문서 업로드, 보류 큐 재전송, 최신 문서 버전에 연결된 서버 FieldNote 등록, FieldNote 첨부 등록/조회, 문서 접근 로그 등록/조회, 작업순서판 생성/항목 추가/정렬/상태 변경/이력 조회를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
+문서 등록/버전 등록 API, 현장 코멘트 API, FieldNote 첨부 API, 문서 접근 로그 API, 작업순서판 API는 Bearer access token이 없거나 유효하지 않으면 `401`을 반환한다. 문서 등록, 새 버전 등록, 문서 태그 변경, 태그 등록, 작업순서판 생성/항목 추가/정렬/상태 변경은 관리자 그룹, 반장(`line-foreman`), 조장(`team-lead`) 이상 role만 허용하며 조원(`team-member`)이나 현장 조회자(`viewer`)는 `403`을 받는다. FieldNote 등록과 첨부 등록은 조원 계정도 허용한다. 접근 로그 조회는 관리자 성격의 API로 보아 `admin`, `system-admin` role만 허용하고, 접근 로그 등록은 현장 클라이언트가 열람 기록을 남길 수 있도록 인증 사용자에게 열어 둔다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부를 확인하고 서버 저장 `auth_sessions` 행, HMAC 서명 access token, refresh token을 발급한다. `POST /api/v1/auth/refresh`는 refresh token을 회전하며 이전 access token과 이전 refresh token을 폐기한다. `POST /api/v1/auth/logout`은 현재 access token의 세션을 `REVOKED`로 바꾸어 이후 요청을 `401`로 거부한다. 이하 현장 단말기 API, 관리자 파일 감시 API, 보고서 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`, `refresh_token`, `refresh_expires_at`을 로그인 결과에 보관한다. 이후 서버 문서/FieldNote/첨부/접근 로그/작업순서판 요청에는 `Authorization: Bearer {access_token}` 헤더를 붙인다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로그인 role이 문서 등록 권한을 가지는 경우에만 문서 등록/파일 업로드/작업순서판 편집 버튼과 파일 드롭을 사용 가능 상태로 둔다. 로컬 SQLite 문서/FieldNote/첨부/접근 로그 저장을 기본 경로로 유지하되, 서버 전송 후보는 `server_sync_queue`에 남긴다. 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공하면 `wpf:document:{localDocumentId}:v1` 형식의 idempotency key를 저장하고, 인증된 서버 클라이언트가 있으면 같은 키를 `POST /api/v1/documents`의 `idempotencyKey`로 보낸다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후 `wpf:field-note:{noteId}` 키로 서버 현장 코멘트 등록 후보를 큐에 남기고, 첨부가 있으면 `wpf:field-note-attachment:{attachmentId}` 키로 로컬 보존 파일과 첨부 전송 후보도 남긴다. 열람 시작/닫힘 접근 로그도 `wpf:access-log:{localAccessLogId}:{register_access_log_*}` 키로 별도 큐 항목을 남긴다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 실패 사유는 `server_sync_queue.last_error`와 `activity_history`에 남긴다. access token 만료, refresh 회전으로 대체된 토큰, logout으로 폐기된 세션은 WPF 서버 클라이언트에서 인증 실패로 요약되고 문서 등록/FieldNote/첨부/접근 로그 전송 항목은 실패 큐에 남으며 사용자는 재로그인이 필요하다는 상태 메시지를 받는다. 재시도 성공 시 로컬 문서/버전/FieldNote/첨부/접근 로그에는 서버 ID와 `synced_at`을 기록한다. 현재 FastAPI 서버는 문서 등록, FieldNote 등록, 문서 접근 로그 등록에서 선택 `idempotencyKey`를 수용하며, 같은 키가 이미 있으면 새 행을 만들지 않고 기존 응답을 반환한다. FieldNote 첨부 등록은 아직 서버 idempotency key를 받지 않으므로 WPF 로컬 큐의 키와 `server_attachment_id`/`synced_at`으로 중복 전송을 막는다. 현재 스모크 테스트는 서버 미설정 상태의 실패 큐 생성을 확인하고, `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, Bearer 인증 헤더가 붙은 `/auth/me`, 문서 업로드, 보류 큐 재전송, 최신 문서 버전에 연결된 서버 FieldNote 등록, FieldNote 첨부 등록/조회, 문서 접근 로그 등록/조회, 작업순서판 생성/항목 추가/정렬/상태 변경/이력 조회, 중복 큐/중복 전송 방지를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
 ## 1. 공통 원칙
 
@@ -122,10 +122,11 @@ multipart/form-data
 - versionLabel: string
 - changeReason: string
 - tags: string[]
+- idempotencyKey: string
 - links: object[]
 ```
 
-현재 구현된 `POST /api/v1/documents`는 `file`, `title`, `documentType`, `changeReason`을 필수로 받고, `description`, `ownerId`, `categoryId`, `versionLabel`, `status`, `createdBy`, `tags`를 선택으로 받는다. 최초 업로드 문서는 기본 `WORKING`이며, `status`로는 `WORKING`, `IN_REVIEW`, `ARCHIVED`만 받을 수 있다. 최초 업로드나 새 버전 업로드는 `published_version_id`를 자동 지정하지 않으며, 현장 공개 버전은 별도 `POST /api/v1/documents/{documentId}/versions/{versionId}/publish` 호출로만 지정한다. `tags`는 multipart form의 반복 필드 또는 쉼표 구분 문자열로 받을 수 있으며 서버는 `tag_definitions`와 `document_tags`에 저장하고 문서 목록/상세 응답에 `tags: string[]`로 반환한다. `links`는 아직 저장하지 않는다. 파일은 `storage/documents/{document_id}/v{version_no}/` 아래에 저장하고, SQLite `file_objects`에는 `storage_key`, 원본 파일명, 확장자, MIME, 파일 계열, 크기, SHA-256 해시를 기록한다.
+현재 구현된 `POST /api/v1/documents`는 `file`, `title`, `documentType`, `changeReason`을 필수로 받고, `description`, `ownerId`, `categoryId`, `versionLabel`, `status`, `createdBy`, `tags`, `idempotencyKey`를 선택으로 받는다. `idempotencyKey`가 이미 저장된 문서와 일치하면 새 파일과 문서 행을 만들지 않고 기존 문서 응답을 반환한다. 최초 업로드 문서는 기본 `WORKING`이며, `status`로는 `WORKING`, `IN_REVIEW`, `ARCHIVED`만 받을 수 있다. 최초 업로드나 새 버전 업로드는 `published_version_id`를 자동 지정하지 않으며, 현장 공개 버전은 별도 `POST /api/v1/documents/{documentId}/versions/{versionId}/publish` 호출로만 지정한다. `tags`는 multipart form의 반복 필드 또는 쉼표 구분 문자열로 받을 수 있으며 서버는 `tag_definitions`와 `document_tags`에 저장하고 문서 목록/상세 응답에 `tags: string[]`로 반환한다. `links`는 아직 저장하지 않는다. 파일은 `storage/documents/{document_id}/v{version_no}/` 아래에 저장하고, SQLite `file_objects`에는 `storage_key`, 원본 파일명, 확장자, MIME, 파일 계열, 크기, SHA-256 해시를 기록한다.
 권한이 없는 role로 호출하면 파일 저장 전에 `403`을 반환한다.
 
 새 버전 업로드 요청 필드:
@@ -174,11 +175,12 @@ POST /api/v1/documents/{documentId}/versions/{versionId}/publish
   "documentVersionId": "ver_20260520_000003",
   "action": "view_started",
   "actorId": "user-admin",
-  "userAgent": "FlowNote.Windows.SmokeTests"
+  "userAgent": "FlowNote.Windows.SmokeTests",
+  "idempotencyKey": "wpf:access-log:123:register_access_log_started"
 }
 ```
 
-현재 구현된 `POST /api/v1/documents/{documentId}/access-logs`는 `action`으로 `view_started`, `view_closed`, `download_blocked`, `auto_closed`를 허용한다. `documentVersionId`가 있으면 해당 문서의 기존 버전이어야 하고, `actorId`가 있으면 기존 `user_accounts.user_id`여야 한다. `deviceId`는 등록된 단말기 ID가 있을 때만 보내야 하며, 미등록 단말기 ID를 임의로 보내지 않는다. 응답과 조회 API는 `document_access_logs` 저장값을 snake_case로 반환한다.
+현재 구현된 `POST /api/v1/documents/{documentId}/access-logs`는 `action`으로 `view_started`, `view_closed`, `download_blocked`, `auto_closed`를 허용한다. 선택 `idempotencyKey`가 기존 접근 로그와 일치하면 새 접근 로그를 만들지 않고 기존 응답을 반환한다. `documentVersionId`가 있으면 해당 문서의 기존 버전이어야 하고, `actorId`가 있으면 기존 `user_accounts.user_id`여야 한다. `deviceId`는 등록된 단말기 ID가 있을 때만 보내야 하며, 미등록 단말기 ID를 임의로 보내지 않는다. 응답과 조회 API는 `document_access_logs` 저장값을 snake_case로 반환한다.
 
 ## 3. 인증 API
 
@@ -398,11 +400,12 @@ multipart/form-data
   "authorId": "user-001",
   "operatorId": "op-line-a-team-1",
   "deviceId": "terminal-12",
-  "locationCode": "line-a"
+  "locationCode": "line-a",
+  "idempotencyKey": "wpf:field-note:note-local-001"
 }
 ```
 
-현재 구현된 `POST /api/v1/field-notes` 요청 본문은 camelCase 필드를 받는다. `documentId`, `structureItemId`, `workRecordId` 중 하나 이상은 필요하다. `documentVersionId`가 들어오면 서버의 기존 `document_versions.version_id`를 참조해야 하며, `documentId`와 함께 보낸 경우 같은 문서의 버전이어야 한다. 서버는 저장 시 `rawContent` 앞뒤 공백을 제거하고, 신규 코멘트 상태를 `NEW`로 시작한다.
+현재 구현된 `POST /api/v1/field-notes` 요청 본문은 camelCase 필드를 받는다. `documentId`, `structureItemId`, `workRecordId` 중 하나 이상은 필요하다. `documentVersionId`가 들어오면 서버의 기존 `document_versions.version_id`를 참조해야 하며, `documentId`와 함께 보낸 경우 같은 문서의 버전이어야 한다. 선택 `idempotencyKey`가 기존 FieldNote와 일치하면 새 코멘트를 만들지 않고 기존 응답을 반환한다. 서버는 저장 시 `rawContent` 앞뒤 공백을 제거하고, 신규 코멘트 상태를 `NEW`로 시작한다.
 
 서버 응답은 Python API 모델 기준 snake_case 필드이다. Windows 클라이언트의 `ServerFieldNoteResponse`는 이 응답을 `note_id`, `document_id`, `document_version_id`, `raw_content`, `status`, `created_at`, `updated_at` 등으로 역직렬화한다.
 
