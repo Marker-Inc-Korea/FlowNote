@@ -89,6 +89,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var attempted = 0;
         var synced = 0;
         var failed = 0;
+        string? firstFailureReason = null;
 
         foreach (var item in items)
         {
@@ -123,13 +124,15 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TaskCanceledException or IOException)
             {
                 failed++;
-                RecordFailure(item, SummarizeFailure(exception));
+                var reason = SummarizeFailure(exception);
+                firstFailureReason ??= reason;
+                RecordFailure(item, reason);
             }
         }
 
         var message = failed == 0
             ? $"Server sync completed. synced={synced}, attempted={attempted}."
-            : $"Server sync completed with failures. synced={synced}, failed={failed}, attempted={attempted}.";
+            : $"Server sync completed with failures. synced={synced}, failed={failed}, attempted={attempted}. First failure: {firstFailureReason}";
         return new ServerSyncResult(failed == 0, message, attempted, synced, failed);
     }
 
@@ -972,6 +975,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
     {
         var message = exception switch
         {
+            FlowNoteServerAuthenticationException => "Server login expired or revoked. Sign in again; this item remains in the retry queue.",
             TaskCanceledException => "Server response timeout.",
             HttpRequestException => "Server connection failed.",
             _ => exception.Message

@@ -7,6 +7,9 @@ public sealed record ServerLoginRequest(
     [property: JsonPropertyName("username")] string Username,
     [property: JsonPropertyName("password")] string Password);
 
+public sealed record ServerRefreshRequest(
+    [property: JsonPropertyName("refresh_token")] string RefreshToken);
+
 public sealed record ServerLoginResponse
 {
     [JsonPropertyName("user_id")]
@@ -30,6 +33,12 @@ public sealed record ServerLoginResponse
     [JsonPropertyName("expires_at")]
     public DateTimeOffset ExpiresAt { get; init; }
 
+    [JsonPropertyName("refresh_token")]
+    public string RefreshToken { get; init; } = string.Empty;
+
+    [JsonPropertyName("refresh_expires_at")]
+    public DateTimeOffset RefreshExpiresAt { get; init; }
+
     public LoginResult ToLoginResult()
     {
         return new LoginResult(
@@ -40,7 +49,9 @@ public sealed record ServerLoginResponse
             Role,
             null,
             AccessToken,
-            ExpiresAt);
+            ExpiresAt,
+            RefreshToken,
+            RefreshExpiresAt);
     }
 }
 

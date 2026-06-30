@@ -9,7 +9,9 @@
 | GET | `/` | 서비스명과 실행 환경 |
 | GET | `/api/v1/health` | `{ "status": "ok" }` |
 | GET | `/api/v1/health/db` | DB 연결 확인 결과 `{ "status": "ok", "database": "ok" }` |
-| POST | `/api/v1/auth/login` | username/password 검증 후 MVP 사용자 정보와 Bearer access token 반환 |
+| POST | `/api/v1/auth/login` | username/password 검증 후 사용자 정보, Bearer access token, refresh token 반환 |
+| POST | `/api/v1/auth/refresh` | refresh token 검증 후 access/refresh token 회전 발급 |
+| POST | `/api/v1/auth/logout` | 현재 서버 인증 세션 폐기 |
 | GET | `/api/v1/auth/me` | Bearer access token 기준 현재 사용자 확인 |
 | POST | `/api/v1/documents` | 문서 메타데이터, 최초 버전, 변경 사유, 로컬 저장 파일 참조 등록 |
 | GET | `/api/v1/documents` | 문서 목록과 최신 버전 요약 조회 |
@@ -41,7 +43,7 @@
 | PATCH | `/api/v1/work-sequence-boards/{boardId}/items/{itemId}/status` | 작업순서 항목 상태 변경 |
 | GET | `/api/v1/work-sequence-boards/{boardId}/history` | 작업순서 변경 이력 조회 |
 
-문서 등록/버전 등록 API, 현장 코멘트 API, FieldNote 첨부 API, 문서 접근 로그 API, 작업순서판 API는 Bearer access token이 없거나 유효하지 않으면 `401`을 반환한다. 문서 등록, 새 버전 등록, 문서 태그 변경, 태그 등록, 작업순서판 생성/항목 추가/정렬/상태 변경은 관리자 그룹, 반장(`line-foreman`), 조장(`team-lead`) 이상 role만 허용하며 조원(`team-member`)이나 현장 조회자(`viewer`)는 `403`을 받는다. FieldNote 등록과 첨부 등록은 조원 계정도 허용한다. 접근 로그 조회는 관리자 성격의 API로 보아 `admin`, `system-admin` role만 허용하고, 접근 로그 등록은 현장 클라이언트가 열람 기록을 남길 수 있도록 인증 사용자에게 열어 둔다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부를 확인하고 MVP용 HMAC 서명 access token과 만료 시각을 발급한다. 이하 로그아웃, 현장 단말기 API, 관리자 파일 감시 API, 보고서 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`을 로그인 결과에 보관한다. 이후 서버 문서/FieldNote/첨부/접근 로그/작업순서판 요청에는 `Authorization: Bearer {access_token}` 헤더를 붙인다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로그인 role이 문서 등록 권한을 가지는 경우에만 문서 등록/파일 업로드/작업순서판 편집 버튼과 파일 드롭을 사용 가능 상태로 둔다. 로컬 SQLite 문서/FieldNote/첨부/접근 로그 저장을 기본 경로로 유지하되, 서버 전송 후보는 `server_sync_queue`에 남긴다. 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공하면 `wpf:document:{localDocumentId}:v1` 형식의 idempotency key를 저장하고, 인증된 서버 클라이언트가 있으면 같은 파일을 `POST /api/v1/documents`로 서버에 등록한다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후 서버 현장 코멘트 등록 후보를 큐에 남기고, 첨부가 있으면 로컬 보존 파일과 첨부 전송 후보도 남긴다. 열람 시작/닫힘 접근 로그도 별도 큐 항목으로 남긴다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 실패 사유는 `server_sync_queue.last_error`와 `activity_history`에 남긴다. 재시도 성공 시 로컬 문서/버전/FieldNote/첨부/접근 로그에는 서버 ID와 `synced_at`을 기록한다. 현재 서버 REST API는 별도 idempotency key 요청 필드나 헤더를 아직 받지 않으므로, 중복 방지는 WPF 로컬 큐의 idempotency key와 이미 동기화된 로컬 레코드의 서버 ID/`synced_at` 확인으로 수행한다. 현재 스모크 테스트는 서버 미설정 상태의 실패 큐 생성을 확인하고, `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, Bearer 인증 헤더가 붙은 `/auth/me`, 문서 업로드, 보류 큐 재전송, 최신 문서 버전에 연결된 서버 FieldNote 등록, FieldNote 첨부 등록/조회, 문서 접근 로그 등록/조회, 작업순서판 생성/항목 추가/정렬/상태 변경/이력 조회를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
+문서 등록/버전 등록 API, 현장 코멘트 API, FieldNote 첨부 API, 문서 접근 로그 API, 작업순서판 API는 Bearer access token이 없거나 유효하지 않으면 `401`을 반환한다. 문서 등록, 새 버전 등록, 문서 태그 변경, 태그 등록, 작업순서판 생성/항목 추가/정렬/상태 변경은 관리자 그룹, 반장(`line-foreman`), 조장(`team-lead`) 이상 role만 허용하며 조원(`team-member`)이나 현장 조회자(`viewer`)는 `403`을 받는다. FieldNote 등록과 첨부 등록은 조원 계정도 허용한다. 접근 로그 조회는 관리자 성격의 API로 보아 `admin`, `system-admin` role만 허용하고, 접근 로그 등록은 현장 클라이언트가 열람 기록을 남길 수 있도록 인증 사용자에게 열어 둔다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부를 확인하고 서버 저장 `auth_sessions` 행, HMAC 서명 access token, refresh token을 발급한다. `POST /api/v1/auth/refresh`는 refresh token을 회전하며 이전 access token과 이전 refresh token을 폐기한다. `POST /api/v1/auth/logout`은 현재 access token의 세션을 `REVOKED`로 바꾸어 이후 요청을 `401`로 거부한다. 이하 현장 단말기 API, 관리자 파일 감시 API, 보고서 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`, `refresh_token`, `refresh_expires_at`을 로그인 결과에 보관한다. 이후 서버 문서/FieldNote/첨부/접근 로그/작업순서판 요청에는 `Authorization: Bearer {access_token}` 헤더를 붙인다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로그인 role이 문서 등록 권한을 가지는 경우에만 문서 등록/파일 업로드/작업순서판 편집 버튼과 파일 드롭을 사용 가능 상태로 둔다. 로컬 SQLite 문서/FieldNote/첨부/접근 로그 저장을 기본 경로로 유지하되, 서버 전송 후보는 `server_sync_queue`에 남긴다. 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공하면 `wpf:document:{localDocumentId}:v1` 형식의 idempotency key를 저장하고, 인증된 서버 클라이언트가 있으면 같은 파일을 `POST /api/v1/documents`로 서버에 등록한다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후 서버 현장 코멘트 등록 후보를 큐에 남기고, 첨부가 있으면 로컬 보존 파일과 첨부 전송 후보도 남긴다. 열람 시작/닫힘 접근 로그도 별도 큐 항목으로 남긴다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 실패 사유는 `server_sync_queue.last_error`와 `activity_history`에 남긴다. access token 만료, refresh 회전으로 대체된 토큰, logout으로 폐기된 세션은 WPF 서버 클라이언트에서 인증 실패로 요약되고 문서 등록/FieldNote/첨부/접근 로그 전송 항목은 실패 큐에 남으며 사용자는 재로그인이 필요하다는 상태 메시지를 받는다. 재시도 성공 시 로컬 문서/버전/FieldNote/첨부/접근 로그에는 서버 ID와 `synced_at`을 기록한다. 현재 서버 REST API는 별도 idempotency key 요청 필드나 헤더를 아직 받지 않으므로, 중복 방지는 WPF 로컬 큐의 idempotency key와 이미 동기화된 로컬 레코드의 서버 ID/`synced_at` 확인으로 수행한다. 현재 스모크 테스트는 서버 미설정 상태의 실패 큐 생성을 확인하고, `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, Bearer 인증 헤더가 붙은 `/auth/me`, 문서 업로드, 보류 큐 재전송, 최신 문서 버전에 연결된 서버 FieldNote 등록, FieldNote 첨부 등록/조회, 문서 접근 로그 등록/조회, 작업순서판 생성/항목 추가/정렬/상태 변경/이력 조회를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
 ## 1. 공통 원칙
 
@@ -183,10 +185,11 @@ POST /api/v1/documents/{documentId}/versions/{versionId}/publish
 | Method | Path | 설명 |
 | --- | --- | --- |
 | POST | `/auth/login` | 로그인 |
+| POST | `/auth/refresh` | refresh token으로 access/refresh token 회전 발급 |
 | POST | `/auth/logout` | 로그아웃 |
 | GET | `/auth/me` | 현재 사용자와 역할 조회 |
 
-현재 구현된 `POST /api/v1/auth/login`은 JSON 본문으로 `username`, `password`를 받는다. `username`은 앞뒤 공백을 제거한 뒤 조회한다. 계정 존재, `is_active=true`, `status=ACTIVE`, 비밀번호 일치 여부를 검증한 뒤 MVP용 Bearer access token과 만료 시각을 반환한다.
+현재 구현된 `POST /api/v1/auth/login`은 JSON 본문으로 `username`, `password`를 받는다. `username`은 앞뒤 공백을 제거한 뒤 조회한다. 계정 존재, `is_active=true`, `status=ACTIVE`, 비밀번호 일치 여부를 검증한 뒤 서버 저장 세션 행과 Bearer access token, refresh token을 발급한다.
 
 요청 예시:
 
@@ -197,7 +200,7 @@ POST /api/v1/documents/{documentId}/versions/{versionId}/publish
 }
 ```
 
-성공 응답은 사용자 식별 정보와 access token 정보를 포함한다.
+성공 응답은 사용자 식별 정보, access token, refresh token 정보를 포함한다.
 
 ```json
 {
@@ -205,17 +208,23 @@ POST /api/v1/documents/{documentId}/versions/{versionId}/publish
   "username": "admin",
   "role": "admin",
   "display_name": "FlowNote Admin",
-  "access_token": "mvp-token",
+  "access_token": "access-token",
   "token_type": "Bearer",
-  "expires_at": "2026-06-29T18:00:00Z"
+  "expires_at": "2026-06-30T18:00:00Z",
+  "refresh_token": "refresh-token",
+  "refresh_expires_at": "2026-07-14T18:00:00Z"
 }
 ```
 
 잘못된 비밀번호와 없는 계정은 `401`을 반환한다. 비밀번호는 맞지만 `is_active=false`이거나 `status`가 `ACTIVE`가 아니면 `403`을 반환한다.
 
-`GET /api/v1/auth/me`는 `Authorization: Bearer {access_token}` 헤더가 필요하며, 유효한 토큰이면 `user_id`, `username`, `role`, `display_name`을 반환한다. 현재 만료 정책은 `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES` 설정값을 사용하며 기본값은 480분이다. MVP 토큰 서명 비밀값은 `FLOWNOTE_ACCESS_TOKEN_SECRET`으로 교체할 수 있고, 기본값은 개발용이므로 운영 전 반드시 현장별 비밀값으로 바꾼다.
+`POST /api/v1/auth/refresh`는 JSON 본문으로 `refresh_token`을 받는다. 세션이 `ACTIVE`이고 refresh token이 만료되지 않았으면 같은 세션의 `access_token_id`와 `refresh_token_hash`를 새 값으로 바꾸고 새 access/refresh token 쌍을 반환한다. 따라서 refresh 호출 뒤 이전 access token은 `Authentication token has been replaced.`, 이전 refresh token은 `Refresh token is invalid or expired.`로 거부된다.
 
-향후 로그인 응답은 사용자 역할과 단말기 모드에 따라 허용 기능을 포함한다. 운영 전에는 개발용 기본 비밀번호 `admin / 1234`와 동일한 테스트 계정 비밀번호 정책을 폐기하고, 초기 비밀번호 강제 변경, 관리자 계정 별도 발급, 잠금/재설정 정책을 추가해야 한다.
+`POST /api/v1/auth/logout`은 `Authorization: Bearer {access_token}` 헤더가 필요하며 현재 세션을 `REVOKED`로 바꾼다. logout 뒤 같은 access token으로 `/auth/me`나 문서/FieldNote API를 호출하면 `401`을 반환한다.
+
+`GET /api/v1/auth/me`는 `Authorization: Bearer {access_token}` 헤더가 필요하며, 유효한 토큰이면 `user_id`, `username`, `role`, `display_name`을 반환한다. access token 만료 정책은 `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES` 설정값을 사용하며 기본값은 480분이다. refresh token 만료 정책은 `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS` 설정값을 사용하며 기본값은 14일이다. 토큰 서명 비밀값은 `FLOWNOTE_ACCESS_TOKEN_SECRET`으로 교체할 수 있고, 기본값은 개발용이므로 운영 전 반드시 현장별 비밀값으로 바꾼다.
+
+향후 로그인 응답은 사용자 역할과 단말기 모드에 따라 허용 기능을 포함한다. 개발용 기본 비밀번호 `admin / 1234`와 WPF 로컬 테스트 계정의 동일 비밀번호 `1234`는 로컬 개발과 스모크 테스트 전용이다. 운영 초기 계정은 현장별 초기 관리자 계정 발급, 최초 로그인 비밀번호 변경, 계정 잠금/재설정 절차로 분리한다.
 
 ## 3.1 작업자/작업그룹 API
 

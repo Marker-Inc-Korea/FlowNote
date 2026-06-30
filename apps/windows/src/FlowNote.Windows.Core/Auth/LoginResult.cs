@@ -8,7 +8,9 @@ public sealed record LoginResult(
     string? Role,
     string? FailureReason,
     string? AccessToken = null,
-    DateTimeOffset? AccessTokenExpiresAt = null)
+    DateTimeOffset? AccessTokenExpiresAt = null,
+    string? RefreshToken = null,
+    DateTimeOffset? RefreshTokenExpiresAt = null)
 {
     public static LoginResult Failed(string reason)
     {

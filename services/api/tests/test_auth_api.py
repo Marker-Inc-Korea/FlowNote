@@ -17,13 +17,14 @@ TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 TEST_STORAGE_ROOT = API_ROOT / "storage" / "auth-tests"
 
 
-def create_test_client() -> TestClient:
+def create_test_client(*, access_token_expires_minutes: int = 480) -> TestClient:
     app_settings = Settings(
         _env_file=None,
         environment="test",
         database_url=TEST_DATABASE_URL,
         test_database_url=TEST_DATABASE_URL,
         storage_root=str(TEST_STORAGE_ROOT),
+        access_token_expires_minutes=access_token_expires_minutes,
     )
     return TestClient(create_app(app_settings))
 
@@ -71,6 +72,8 @@ def test_login_returns_mvp_user_payload_with_access_token() -> None:
     assert payload["token_type"] == "Bearer"
     assert payload["access_token"]
     assert payload["expires_at"]
+    assert payload["refresh_token"]
+    assert payload["refresh_expires_at"]
 
 
 def test_me_returns_current_user_for_bearer_token() -> None:
@@ -101,6 +104,93 @@ def test_me_rejects_missing_token() -> None:
         response = client.get("/api/v1/auth/me")
 
     assert response.status_code == 401
+
+
+def test_me_rejects_expired_access_token() -> None:
+    with create_test_client(access_token_expires_minutes=-1) as client:
+        account = create_login_user(client)
+        login_response = client.post(
+            "/api/v1/auth/login",
+            json={"username": account.username, "password": "correct-password"},
+        )
+        token = login_response.json()["access_token"]
+
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Authentication token has expired."
+
+
+def test_logout_revokes_current_access_token() -> None:
+    with create_test_client() as client:
+        account = create_login_user(client)
+        login_response = client.post(
+            "/api/v1/auth/login",
+            json={"username": account.username, "password": "correct-password"},
+        )
+        token = login_response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        logout_response = client.post("/api/v1/auth/logout", headers=headers)
+        me_response = client.get("/api/v1/auth/me", headers=headers)
+
+    assert logout_response.status_code == 200, logout_response.text
+    assert logout_response.json() == {"revoked": True}
+    assert me_response.status_code == 401
+    assert me_response.json()["detail"] == "Authentication session has been revoked."
+
+
+def test_refresh_rotates_tokens_and_rejects_reused_refresh_token() -> None:
+    with create_test_client() as client:
+        account = create_login_user(client)
+        login_response = client.post(
+            "/api/v1/auth/login",
+            json={"username": account.username, "password": "correct-password"},
+        )
+        login_payload = login_response.json()
+        old_access_token = login_payload["access_token"]
+        old_refresh_token = login_payload["refresh_token"]
+
+        refresh_response = client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": old_refresh_token},
+        )
+        refreshed_payload = refresh_response.json()
+        old_access_response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {old_access_token}"},
+        )
+        new_access_response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {refreshed_payload['access_token']}"},
+        )
+        reused_refresh_response = client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": old_refresh_token},
+        )
+
+    assert refresh_response.status_code == 200, refresh_response.text
+    assert refreshed_payload["access_token"] != old_access_token
+    assert refreshed_payload["refresh_token"] != old_refresh_token
+    assert old_access_response.status_code == 401
+    assert old_access_response.json()["detail"] == "Authentication token has been replaced."
+    assert new_access_response.status_code == 200, new_access_response.text
+    assert reused_refresh_response.status_code == 401
+    assert reused_refresh_response.json()["detail"] == "Refresh token is invalid or expired."
+
+
+def test_refresh_rejects_invalid_refresh_token() -> None:
+    with create_test_client() as client:
+        response = client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": f"invalid-{uuid4().hex}"},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Refresh token is invalid or expired."
 
 
 def test_login_rejects_wrong_password() -> None:
