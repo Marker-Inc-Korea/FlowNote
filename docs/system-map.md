@@ -132,6 +132,8 @@ WorkSequenceBoard
       -> DocumentStructureItem
       -> WorkSequenceHistory
       -> WorkSequenceNotificationCandidate
+          -> Notification
+          -> ActivityHistory
 
 AiAdviceLog
   -> WorkRecord

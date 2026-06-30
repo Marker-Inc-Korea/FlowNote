@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.core.config import Settings
 from app.db.models import (
+    ActivityHistory,
     WorkSequenceChangeHistory,
     WorkSequenceItem,
     WorkSequenceNotificationCandidate,
@@ -95,11 +96,25 @@ def test_work_sequence_board_item_reorder_status_and_history() -> None:
         status_response = client.patch(
             f"/api/v1/work-sequence-boards/{board['board_id']}/items/{second_item['item_id']}/status",
             headers=headers,
-            json={"status": "IN_PROGRESS", "changeReason": "Work started at the line."},
+            json={"status": "HOLD", "changeReason": "Material is delayed.", "holdReason": "Material is delayed."},
         )
         assert status_response.status_code == 200, status_response.text
         status_items = status_response.json()["items"]
-        assert status_items[0]["status"] == "IN_PROGRESS"
+        assert status_items[0]["status"] == "HOLD"
+        assert status_items[0]["hold_reason"] == "Material is delayed."
+
+        hold_reason_response = client.patch(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/items/{second_item['item_id']}/status",
+            headers=headers,
+            json={
+                "status": "HOLD",
+                "changeReason": "Material delay detail changed.",
+                "holdReason": "Supplier delivery moved to 15:00.",
+            },
+        )
+        assert hold_reason_response.status_code == 200, hold_reason_response.text
+        hold_reason_items = hold_reason_response.json()["items"]
+        assert hold_reason_items[0]["hold_reason"] == "Supplier delivery moved to 15:00."
 
         history_response = client.get(
             f"/api/v1/work-sequence-boards/{board['board_id']}/history",
@@ -111,6 +126,25 @@ def test_work_sequence_board_item_reorder_status_and_history() -> None:
         assert "ITEM_ADDED" in history_types
         assert "ITEM_REORDERED" in history_types
         assert "STATUS_CHANGED" in history_types
+        assert "HOLD_REASON_CHANGED" in history_types
+
+        candidate_response = client.get(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates",
+            headers=headers,
+        )
+        assert candidate_response.status_code == 200, candidate_response.text
+        candidates_json = candidate_response.json()
+        status_candidate = next(
+            item for item in candidates_json if item["event_type"] == "work_sequence.status_changed"
+        )
+        assert status_candidate["status"] == "CANDIDATE"
+        sent_response = client.patch(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates/{status_candidate['candidate_id']}",
+            headers=headers,
+            json={"status": "SENT"},
+        )
+        assert sent_response.status_code == 200, sent_response.text
+        assert sent_response.json()["status"] == "SENT"
 
         list_response = client.get("/api/v1/work-sequence-boards", headers=headers)
         assert list_response.status_code == 200
@@ -123,13 +157,15 @@ def test_work_sequence_board_item_reorder_status_and_history() -> None:
                 .order_by(WorkSequenceItem.sort_order)
             ).all()
             assert [item.item_id for item in saved_items] == [second_item["item_id"], first_item["item_id"]]
-            assert saved_items[0].status == "IN_PROGRESS"
+            assert saved_items[0].status == "HOLD"
+            assert saved_items[0].hold_reason == "Supplier delivery moved to 15:00."
             history = session.scalars(
                 select(WorkSequenceChangeHistory).where(
                     WorkSequenceChangeHistory.board_id == board["board_id"]
                 )
             ).all()
             assert any(item.change_type == "ITEM_REORDERED" for item in history)
+            assert any(item.change_type == "HOLD_REASON_CHANGED" for item in history)
             candidates = session.scalars(
                 select(WorkSequenceNotificationCandidate).where(
                     WorkSequenceNotificationCandidate.board_id == board["board_id"]
@@ -137,6 +173,15 @@ def test_work_sequence_board_item_reorder_status_and_history() -> None:
             ).all()
             assert any(item.event_type == "work_sequence.reordered" for item in candidates)
             assert any(item.event_type == "work_sequence.status_changed" for item in candidates)
+            assert any(item.event_type == "work_sequence.hold_reason_changed" for item in candidates)
+            assert any(item.status == "SENT" for item in candidates)
+            status_history = session.scalars(
+                select(ActivityHistory).where(
+                    ActivityHistory.target_id == status_candidate["candidate_id"],
+                    ActivityHistory.event_type == "work_sequence.notification_candidate_status_changed",
+                )
+            ).all()
+            assert len(status_history) == 1
 
 
 def test_work_sequence_reorder_requires_every_item_once() -> None:

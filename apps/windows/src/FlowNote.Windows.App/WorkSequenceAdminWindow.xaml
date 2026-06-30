@@ -141,6 +141,7 @@
                         <DataGridTextColumn Header="#" Binding="{Binding SortOrder}" Width="52" />
                         <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="*" />
                         <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="120" />
+                        <DataGridTextColumn Header="Hold Reason" Binding="{Binding HoldReason}" Width="150" />
                         <DataGridTextColumn Header="Assigned" Binding="{Binding AssignedTo}" Width="120" />
                         <DataGridTextColumn Header="Updated" Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="150" />
                     </DataGrid.Columns>

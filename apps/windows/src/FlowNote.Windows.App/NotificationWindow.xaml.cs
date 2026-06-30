@@ -20,7 +20,16 @@ public partial class NotificationWindow : Window
     {
         var items = notifications.ListNotifications(recipientName);
         NotificationGrid.ItemsSource = items;
-        SummaryTextBlock.Text = $"{recipientName}님 알림 {items.Count}개, 읽지 않음 {items.Count(item => !item.IsRead)}개";
+        SummaryTextBlock.Text = $"{recipientName}: {items.Count} notifications, {items.Count(item => !item.IsRead)} unread";
+    }
+
+    private void MarkSelectedReadButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (NotificationGrid.SelectedItem is NotificationRecord notification)
+        {
+            notifications.MarkAsRead(notification.NotificationId, recipientName);
+            RefreshNotifications();
+        }
     }
 
     private void MarkAllReadButton_Click(object sender, RoutedEventArgs e)

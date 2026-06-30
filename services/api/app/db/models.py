@@ -433,6 +433,7 @@ class WorkSequenceItem(TimestampMixin, Base):
     work_order_no: Mapped[str | None] = mapped_column(String(120), index=True)
     document_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("documents.document_id"))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="WAITING")
+    hold_reason: Mapped[str | None] = mapped_column(Text)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
     assigned_to: Mapped[str | None] = mapped_column(String(100))
     created_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))

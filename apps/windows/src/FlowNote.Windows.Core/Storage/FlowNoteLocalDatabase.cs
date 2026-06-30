@@ -433,10 +433,15 @@ public sealed class FlowNoteLocalDatabase
             CREATE TABLE IF NOT EXISTS notifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 notification_id TEXT NOT NULL UNIQUE,
+                notification_type TEXT NOT NULL DEFAULT 'document',
                 recipient_name TEXT NOT NULL,
                 actor_name TEXT NOT NULL,
                 document_id TEXT NOT NULL,
                 document_title TEXT NOT NULL,
+                target_type TEXT NULL,
+                target_id TEXT NULL,
+                target_title TEXT NULL,
+                source_candidate_id TEXT NULL,
                 message TEXT NOT NULL,
                 is_read INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
@@ -467,6 +472,7 @@ public sealed class FlowNoteLocalDatabase
                 work_order_no TEXT NULL,
                 document_id TEXT NULL,
                 status TEXT NOT NULL,
+                hold_reason TEXT NULL,
                 sort_order INTEGER NOT NULL,
                 assigned_to TEXT NULL,
                 created_by TEXT NOT NULL,
@@ -501,8 +507,10 @@ public sealed class FlowNoteLocalDatabase
                 item_id TEXT NULL REFERENCES work_sequence_items(item_id) ON DELETE SET NULL,
                 event_type TEXT NOT NULL,
                 actor_name TEXT NOT NULL,
+                recipient_name TEXT NULL,
                 message TEXT NOT NULL,
                 status TEXT NOT NULL,
+                notification_id TEXT NULL,
                 created_at TEXT NOT NULL
             );
 
@@ -575,6 +583,14 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "document_view_logs", "server_start_log_id", "INTEGER NULL");
         EnsureColumn(connection, "document_view_logs", "server_close_log_id", "INTEGER NULL");
         EnsureColumn(connection, "document_view_logs", "synced_at", "TEXT NULL");
+        EnsureColumn(connection, "notifications", "notification_type", "TEXT NOT NULL DEFAULT 'document'");
+        EnsureColumn(connection, "notifications", "target_type", "TEXT NULL");
+        EnsureColumn(connection, "notifications", "target_id", "TEXT NULL");
+        EnsureColumn(connection, "notifications", "target_title", "TEXT NULL");
+        EnsureColumn(connection, "notifications", "source_candidate_id", "TEXT NULL");
+        EnsureColumn(connection, "work_sequence_items", "hold_reason", "TEXT NULL");
+        EnsureColumn(connection, "work_sequence_notification_candidates", "recipient_name", "TEXT NULL");
+        EnsureColumn(connection, "work_sequence_notification_candidates", "notification_id", "TEXT NULL");
         EnsureDocumentUpdatedAt(connection);
         EnsureDocumentVersionState(connection);
         BackfillFieldNotesFromCommentVersions(connection);
