@@ -116,4 +116,26 @@ FieldComment 상태:
 - `team-member`
 - `viewer`
 
+### 역할별 권한 정책
+
+FastAPI 서버의 `app/core/auth.py`와 WPF `RolePermissionPolicy`는 다음 기준을 공유한다.
+
+| 권한 영역 | FastAPI 기준 | WPF 기준 |
+| --- | --- | --- |
+| 문서 등록/버전 등록/태그 변경/작업순서 변경 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead` | 문서 등록, 파일 업로드, Drag & Drop, 상태 변경, 공개, 작업판 버튼 활성 |
+| FieldComment 등록 | 문서 쓰기 role + `team-member`, `viewer` | 문서 뷰어의 현장 코멘트 작성은 기본 role 전체 허용 |
+| 접근 로그 조회 | `admin`, `system-admin` | WPF는 로컬 열람/다운로드 차단 로그를 기록하고 서버 조회 UI는 아직 두지 않는다 |
+| 보고서 작성 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | 보고서 버튼 활성 |
+| 파일 감시 | 서버 전용 권한 그룹은 아직 없음 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
+| controlled copy 다운로드 | 서버 다운로드 API는 아직 없음 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
+| 사용자 관리 | 서버 계정 관리 API는 아직 없음 | `admin`, `system-admin` |
+
+### 로컬 계정과 서버 계정 운영 기준
+
 WPF 사용자 관리는 위 role 중 하나만 선택할 수 있다. 새 사용자 ID는 `user-{loginId}` 형식으로 자동 생성된다.
+
+현재 WPF의 사용자 추가, 역할 변경, 비밀번호 변경은 로컬 SQLite 계정 전용이다. 서버 계정 발급과 변경은 서버 DB 운영 절차에서 관리하며, WPF 사용자 관리 화면이 서버 계정을 생성하거나 수정하지 않는다. 서버 계정 관리 API와 WPF 연동은 후속 범위로 둔다.
+
+`FLOWNOTE_API_BASE_URL`이 설정되어 있고 서버 로그인이 성공하면 WPF 현재 세션의 사용자 ID, 로그인 ID, 표시 이름, role은 서버 응답을 우선한다. 같은 로그인 ID의 로컬 계정 정보가 다르더라도 서버 사용자 정보를 화면 표시, 버튼 권한, 서버 동기화 작성자 ID에 사용하고 로컬 계정 row는 자동 덮어쓰지 않는다.
+
+서버가 401 또는 403으로 로그인 실패를 명확히 응답한 경우에는 로컬 계정 fallback으로 우회하지 않는다. 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 로컬 계정 로그인을 사용한다.
