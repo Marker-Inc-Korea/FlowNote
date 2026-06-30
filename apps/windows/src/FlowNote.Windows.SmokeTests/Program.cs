@@ -758,6 +758,27 @@ try
     Require(
         !RolePermissionPolicy.CanManageFileWatch("viewer"),
         "viewer role should not be allowed to manage file watch");
+    Require(
+        RolePermissionPolicy.CanWriteReports(login.Role),
+        "admin role should be allowed to write reports");
+    Require(
+        RolePermissionPolicy.CanWriteReports("manager"),
+        "manager role should be allowed to write reports");
+    Require(
+        RolePermissionPolicy.CanWriteReports("document-admin"),
+        "document admin role should be allowed to write reports");
+    Require(
+        !RolePermissionPolicy.CanWriteReports(foremanLogin.Role),
+        "foreman role should not be allowed to write reports");
+    Require(
+        !RolePermissionPolicy.CanWriteReports(leadLogin.Role),
+        "team lead role should not be allowed to write reports");
+    Require(
+        !RolePermissionPolicy.CanWriteReports(memberLogin.Role),
+        "team member role should not be allowed to write reports");
+    Require(
+        !RolePermissionPolicy.CanWriteReports("viewer"),
+        "viewer role should not be allowed to write reports");
 
     var watchDirectory = Path.Combine(testDirectory, $"watch-{runId}");
     Directory.CreateDirectory(watchDirectory);

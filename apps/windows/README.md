@@ -46,10 +46,13 @@ apps/windows/
 ## 권한 요약
 
 - 문서 등록/작업순서 편집: 관리자 계열, 반장, 조장
+- 보고서 작성: 관리자/문서관리/부서관리 계열
 - 파일 감시: 관리자 계열만
 - 사용자 관리: `admin`, `system-admin`
 - 다운로드 허용: 관리자 계열 중 `admin`, `system-admin`, `manager`, `document-admin`, `assistant-manager`, `department-manager`
 - FieldComment 작성: 모든 기본 현장 role
+
+서버 URL이 설정된 상태에서 서버가 401 또는 403으로 로그인 실패를 응답하면 로컬 계정으로 우회하지 않는다. 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 로컬 계정 로그인을 사용한다.
 
 ## 검증
 
