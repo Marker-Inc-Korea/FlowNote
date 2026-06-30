@@ -78,6 +78,32 @@ class UserRole(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+    __table_args__ = (
+        CheckConstraint("status IN ('ACTIVE', 'REVOKED', 'EXPIRED')", name="ck_auth_session_status"),
+        Index("ix_auth_sessions_user_status", "user_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id"), nullable=False, index=True
+    )
+    access_token_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    refresh_token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    refresh_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_reason: Mapped[str | None] = mapped_column(String(120))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class OperatorProfile(TimestampMixin, Base):
     __tablename__ = "operator_profiles"
     __table_args__ = (

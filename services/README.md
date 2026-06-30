@@ -1,35 +1,37 @@
 # Services
 
-FlowNote 서버와 백엔드 구성요소를 보관하는 영역이다.
+FlowNote server-side components live under this directory.
 
-## 하위 영역
+## Scope
 
-- `api/`: Python FastAPI 기반 REST API 서버
+- `api/`: Python FastAPI REST API server
 
-## 현재 구현 기준
+## Current Implementation
 
-`services/api/`는 SQLite 기반 MVP API를 구현한다. 현재 포함된 기능은 다음과 같다.
+`services/api/` implements the SQLite MVP API:
 
-- 헬스체크와 DB 연결 확인
-- 개발용 기본 관리자 계정 시드
-- 사용자명/비밀번호 로그인과 HMAC 서명 Bearer access token 발급
-- `/auth/me` 현재 사용자 조회
-- 문서 등록, 목록, 상세, 버전 목록, 새 버전 등록
-- 문서 상태 변경, 버전 상태 변경, 명시적 공개 버전 지정
-- 공개 문서 목록과 공개 버전 조회
-- 문서 태그 등록/조회/교체
-- FieldNote 등록, 목록, 상세, 관리자 검토/분석 갱신
-- FieldNote 사진/파일 첨부 등록/조회
-- 문서 접근 로그 등록/조회
-- 작업순서판 생성, 항목 추가, 정렬, 상태 변경, 이력 조회
+- Health check and DB connectivity check
+- Development default admin account seed
+- Username/password login
+- HMAC Bearer access token issue
+- Refresh token rotation
+- Logout session revocation through `auth_sessions`
+- `/auth/me` current user lookup
+- Document registration, list, detail, version list, and new version registration
+- Document status changes, version status changes, explicit published version selection, published document lookup
+- Document tag create/list/replace
+- FieldNote create, list, detail, manager review, and analysis update
+- FieldNote photo/file attachment create/list
+- Document access log create/list
+- Work sequence board create, item add, reorder, status change, and history lookup
 
-보고서, AI 검색/조언, MES/ERP 연동, 운영용 토큰 갱신/폐기, 관리자 파일 감시 API는 아직 후속 범위이다.
+Reports, AI search/advice, MES/ERP integration, administrator-forced session revocation UI, and administrator file-watch APIs remain follow-up scope.
 
-## 개발 기준
+## Development Baseline
 
-- 서버 프레임워크: FastAPI
-- 메타데이터 DB: SQLite 우선
-- 파일 저장: 서버 로컬 `storage/`
+- Server framework: FastAPI
+- Metadata DB: SQLite first
+- File storage: server-local `storage/`
 - API base path: `/api/v1`
 
-테스트 DB, 테스트 업로드 파일, 테스트 로그와 같은 검증 산출물은 프로젝트 기록이므로 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
+Test DBs, test upload files, logs, and generated sample files are preserved unless the user explicitly asks to delete them.

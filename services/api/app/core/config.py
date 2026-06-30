@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     session_cookie_name: str = "flownote_session"
     access_token_secret: str = "flownote-local-dev-token-secret-change-before-operation"
     access_token_expires_minutes: int = 480
+    refresh_token_expires_days: int = 14
 
 
 settings = Settings()

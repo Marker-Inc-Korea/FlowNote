@@ -2,7 +2,7 @@
 
 ## 0. 현재 코드 기준 보안 상태
 
-현재 코드에서 실제 구현된 보안 기능은 Windows WPF 앱 시작 시 로그인 요구, 기본 계정 생성, 로그인 성공 후 화면 진입, 알림 대상 사용자 식별, 문서 보기 창 열림/닫힘 로컬 감사 로그, 개발 검증용 기본 타이머 기반 뷰어 자동 닫힘, FastAPI MVP 로그인 API와 Bearer access token 인증이다. `FLOWNOTE_API_BASE_URL`이 설정된 경우 WPF 로그인 화면은 FastAPI 로그인 API를 먼저 호출하고, 성공 응답의 사용자 ID, 사용자명, 역할, 표시명, access token, 만료 시각을 로그인 결과로 보관한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인을 유지한다. FastAPI 문서/FieldNote/문서 접근 로그 API는 `Authorization: Bearer {access_token}`이 없거나 유효하지 않으면 `401`을 반환한다. 서버는 role 값으로 문서 등록, 문서 버전 등록, 문서 태그 변경, 태그 등록, 문서 접근 로그 조회 권한을 검사하고 권한이 없으면 `403`을 반환한다. WPF는 로그인 role 기준으로 문서 등록/파일 업로드 버튼과 파일 드롭을 비활성화한다. 운영용 토큰 폐기/갱신, 서버 감사 로그 자동 actor 지정 전체 적용, 다운로드 차단, 운영 설정 기반 뷰어 자동 닫힘 값 관리, 외부 접속 제어는 아직 구현된 기능이 아니라 제품 보안 목표이다.
+현재 코드에서 실제 구현된 보안 기능은 Windows WPF 앱 시작 시 로그인 요구, 기본 계정 생성, 로그인 성공 후 화면 진입, 알림 대상 사용자 식별, 문서 보기 창 열림/닫힘 로컬 감사 로그, 개발 검증용 기본 타이머 기반 뷰어 자동 닫힘, FastAPI 로그인 API, 서버 저장 인증 세션, Bearer access token, refresh token 회전, logout 세션 폐기이다. `FLOWNOTE_API_BASE_URL`이 설정된 경우 WPF 로그인 화면은 FastAPI 로그인 API를 먼저 호출하고, 성공 응답의 사용자 ID, 사용자명, 역할, 표시명, access token, refresh token, 만료 시각을 로그인 결과로 보관한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인을 유지한다. FastAPI 문서/FieldNote/문서 접근 로그 API는 `Authorization: Bearer {access_token}`이 없거나 유효하지 않거나, access token이 만료/대체/폐기되었으면 `401`을 반환한다. 서버는 role 값으로 문서 등록, 문서 버전 등록, 문서 태그 변경, 태그 등록, 문서 접근 로그 조회 권한을 검사하고 권한이 없으면 `403`을 반환한다. WPF는 로그인 role 기준으로 문서 등록/파일 업로드 버튼과 파일 드롭을 비활성화한다. 서버 감사 로그 자동 actor 지정 전체 적용, 다운로드 차단, 운영 설정 기반 뷰어 자동 닫힘 값 관리, 외부 접속 제어는 아직 구현된 기능이 아니라 제품 보안 목표이다.
 
 ## 0.1 개발 접근 정보와 공개 저장소 주의
 
@@ -10,13 +10,23 @@
 
 테스트 파일, 테스트 SQLite DB, 테스트 결과 로그, 테스트 내역 문서는 사용자가 명시적으로 삭제를 지시하지 않는 한 삭제하지 않는다. 테스트 환경 데이터는 운영 데이터가 아니지만, 현재 프로젝트에서는 기능 검증 이력으로 보존 대상이다.
 
-## 0.2 MVP 서버 인증 방식
+## 0.2 서버 인증 방식
 
-FastAPI 서버는 MVP 단계에서 DB 세션 테이블을 만들지 않고 HMAC 서명 Bearer access token을 발급한다. 토큰에는 사용자 ID와 만료 시각을 담고, 서버는 `FLOWNOTE_ACCESS_TOKEN_SECRET`으로 서명을 검증한다. 만료 시간은 `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES`로 조정하며 기본값은 480분이다.
+FastAPI 서버는 HMAC 서명 Bearer access token과 서버 저장 `auth_sessions` 테이블을 함께 사용한다. access token에는 사용자 ID, 세션 ID, access token ID, 발급/만료 시각을 담고, 서버는 `FLOWNOTE_ACCESS_TOKEN_SECRET`으로 서명을 검증한 뒤 `auth_sessions`의 세션 상태와 access token ID를 확인한다. access token 만료 시간은 `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES`로 조정하며 기본값은 480분이다. refresh token 만료 시간은 `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS`로 조정하며 기본값은 14일이다.
 
-현재 토큰은 서버 요청에 로그인 사용자의 신뢰 경계를 세우기 위한 최소 구현이다. 운영 전에는 기본 서명 비밀값을 현장별 비밀값으로 교체하고, HTTPS 또는 사내망 보호, 토큰 갱신/폐기 정책, 권한별 접근 제어, 감사 로그 actor 자동 지정 정책을 함께 확정해야 한다.
+`POST /api/v1/auth/login`은 세션을 만들고 access/refresh token을 발급한다. `POST /api/v1/auth/refresh`는 refresh token hash를 검증하고 같은 세션의 access token ID와 refresh token hash를 새 값으로 바꾼다. 따라서 이전 access token과 이전 refresh token은 재사용할 수 없다. `POST /api/v1/auth/logout`은 현재 access token의 세션을 `REVOKED`로 바꾼다.
 
-개발용 기본 계정과 테스트 계정은 `admin / 1234` 또는 고정 비밀번호를 사용한다. 이 정책은 로컬 개발과 스모크 테스트 전용이며, 운영 배포 전에는 초기 관리자 비밀번호 별도 발급, 최초 로그인 비밀번호 변경, 계정 잠금, 비밀번호 재설정 절차로 교체한다.
+운영 전에는 기본 서명 비밀값을 현장별 비밀값으로 교체하고, HTTPS 또는 사내망 보호, 권한별 접근 제어, 감사 로그 actor 자동 지정 정책을 함께 확정해야 한다.
+
+## 0.3 개발용 계정과 운영 초기 비밀번호
+
+개발용 기본 계정과 테스트 계정은 `admin / 1234` 또는 고정 비밀번호 `1234`를 사용한다. 이 정책은 로컬 개발과 스모크 테스트 전용이다. 운영 배포 전에는 다음 항목으로 분리한다.
+
+- 서버 기본 관리자 계정은 현장별 초기 관리자 계정으로 재발급한다.
+- 최초 로그인 시 비밀번호 변경을 요구한다.
+- 초기 비밀번호는 저장소, 문서, 설치 파일에 고정값으로 남기지 않는다.
+- 계정 잠금, 비밀번호 재설정, 퇴사/전보 계정 비활성화 절차를 운영 문서에 둔다.
+- `FLOWNOTE_ACCESS_TOKEN_SECRET`은 현장별 비밀값으로 교체하고 저장소에 커밋하지 않는다.
 
 ## 1. 기본 원칙
 

@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net;
 using FlowNote.Windows.Core.FieldNotes;
 
 namespace FlowNote.Windows.Core.ServerApi;
@@ -275,6 +276,12 @@ public sealed class FlowNoteServerDocumentClient
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                throw new FlowNoteServerAuthenticationException(
+                    $"Server login expired or revoked. Sign in again before retrying server sync. {errorBody}");
+            }
+
             throw new InvalidOperationException(
                 $"FlowNote API request failed: {(int)response.StatusCode} {response.ReasonPhrase}. {errorBody}");
         }

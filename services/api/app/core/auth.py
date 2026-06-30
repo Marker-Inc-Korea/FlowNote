@@ -4,9 +4,11 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
+from uuid import uuid4
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -14,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.db.models import UserAccount
+from app.db.models import AuthSession, UserAccount
 from app.db.session import get_db_session
 
 TOKEN_TYPE = "Bearer"
@@ -53,6 +55,18 @@ class AuthenticatedUser:
     username: str
     role: str
     display_name: str
+    session_id: str
+    access_token_id: str
+
+
+@dataclass(frozen=True)
+class IssuedAuthTokens:
+    session_id: str
+    access_token: str
+    access_token_id: str
+    access_expires_at: datetime
+    refresh_token: str
+    refresh_expires_at: datetime
 
 
 def _base64url_encode(value: bytes) -> str:
@@ -72,6 +86,9 @@ def _sign(payload: str, secret: str) -> str:
 def create_access_token(
     account: UserAccount,
     settings: Settings,
+    *,
+    session_id: str | None = None,
+    access_token_id: str | None = None,
     now: datetime | None = None,
 ) -> tuple[str, datetime]:
     issued_at = now or datetime.now(timezone.utc)
@@ -81,10 +98,107 @@ def create_access_token(
         "iat": int(issued_at.timestamp()),
         "exp": int(expires_at.timestamp()),
     }
+    if session_id is not None:
+        payload["sid"] = session_id
+    if access_token_id is not None:
+        payload["jti"] = access_token_id
     encoded_payload = _base64url_encode(
         json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
     )
     return f"{encoded_payload}.{_sign(encoded_payload, settings.access_token_secret)}", expires_at
+
+
+def create_refresh_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def hash_refresh_token(refresh_token: str) -> str:
+    return hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
+
+
+def issue_auth_tokens(
+    account: UserAccount,
+    settings: Settings,
+    now: datetime | None = None,
+) -> IssuedAuthTokens:
+    issued_at = now or datetime.now(timezone.utc)
+    session_id = f"session-{uuid4().hex}"
+    access_token_id = f"access-{uuid4().hex}"
+    refresh_token = create_refresh_token()
+    access_token, access_expires_at = create_access_token(
+        account,
+        settings,
+        session_id=session_id,
+        access_token_id=access_token_id,
+        now=issued_at,
+    )
+    return IssuedAuthTokens(
+        session_id=session_id,
+        access_token=access_token,
+        access_token_id=access_token_id,
+        access_expires_at=access_expires_at,
+        refresh_token=refresh_token,
+        refresh_expires_at=issued_at + timedelta(days=settings.refresh_token_expires_days),
+    )
+
+
+def create_auth_session(
+    account: UserAccount,
+    settings: Settings,
+    db_session: Session,
+    now: datetime | None = None,
+) -> tuple[AuthSession, IssuedAuthTokens]:
+    issued_at = now or datetime.now(timezone.utc)
+    tokens = issue_auth_tokens(account, settings, issued_at)
+    auth_session = AuthSession(
+        session_id=tokens.session_id,
+        user_id=account.user_id,
+        access_token_id=tokens.access_token_id,
+        refresh_token_hash=hash_refresh_token(tokens.refresh_token),
+        status="ACTIVE",
+        access_expires_at=tokens.access_expires_at,
+        refresh_expires_at=tokens.refresh_expires_at,
+        last_used_at=issued_at,
+    )
+    db_session.add(auth_session)
+    db_session.commit()
+    db_session.refresh(auth_session)
+    return auth_session, tokens
+
+
+def rotate_auth_session_tokens(
+    auth_session: AuthSession,
+    account: UserAccount,
+    settings: Settings,
+    db_session: Session,
+    now: datetime | None = None,
+) -> IssuedAuthTokens:
+    issued_at = now or datetime.now(timezone.utc)
+    access_token_id = f"access-{uuid4().hex}"
+    refresh_token = create_refresh_token()
+    access_token, access_expires_at = create_access_token(
+        account,
+        settings,
+        session_id=auth_session.session_id,
+        access_token_id=access_token_id,
+        now=issued_at,
+    )
+    auth_session.access_token_id = access_token_id
+    auth_session.refresh_token_hash = hash_refresh_token(refresh_token)
+    auth_session.access_expires_at = access_expires_at
+    auth_session.refresh_expires_at = issued_at + timedelta(days=settings.refresh_token_expires_days)
+    auth_session.last_used_at = issued_at
+    db_session.add(auth_session)
+    db_session.commit()
+    db_session.refresh(auth_session)
+    return IssuedAuthTokens(
+        session_id=auth_session.session_id,
+        access_token=access_token,
+        access_token_id=access_token_id,
+        access_expires_at=access_expires_at,
+        refresh_token=refresh_token,
+        refresh_expires_at=auth_session.refresh_expires_at,
+    )
 
 
 def _decode_access_token(token: str, settings: Settings) -> dict[str, int | str]:
@@ -111,6 +225,37 @@ def _decode_access_token(token: str, settings: Settings) -> dict[str, int | str]
     return payload
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _validate_auth_session(
+    payload: dict[str, int | str],
+    db_session: Session,
+) -> AuthSession:
+    session_id = payload.get("sid")
+    access_token_id = payload.get("jti")
+    if not isinstance(session_id, str) or not isinstance(access_token_id, str):
+        raise _invalid_credentials("Authentication session is missing or invalid.")
+
+    auth_session = db_session.scalar(
+        select(AuthSession).where(AuthSession.session_id == session_id)
+    )
+    if (
+        auth_session is None
+        or auth_session.status != "ACTIVE"
+        or auth_session.revoked_at is not None
+    ):
+        raise _invalid_credentials("Authentication session has been revoked.")
+    if auth_session.access_token_id != access_token_id:
+        raise _invalid_credentials("Authentication token has been replaced.")
+    if _as_utc(auth_session.access_expires_at) <= datetime.now(timezone.utc):
+        raise _invalid_credentials("Authentication token has expired.")
+    return auth_session
+
+
 def _invalid_credentials(
     detail: str = "Authentication credentials were not provided or are invalid.",
 ) -> HTTPException:
@@ -130,6 +275,7 @@ def get_current_user(
         raise _invalid_credentials()
 
     payload = _decode_access_token(credentials.credentials, settings)
+    auth_session = _validate_auth_session(payload, session)
     account = session.scalar(
         select(UserAccount).where(UserAccount.user_id == payload["sub"])
     )
@@ -141,6 +287,8 @@ def get_current_user(
         username=account.username,
         role=account.role,
         display_name=account.display_name,
+        session_id=auth_session.session_id,
+        access_token_id=auth_session.access_token_id,
     )
 
 

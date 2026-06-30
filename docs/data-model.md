@@ -69,7 +69,7 @@ WPF 로컬 DB 초기화는 개발/스모크 테스트용으로 다음 그룹과 
 
 2026-06-24 기준 FastAPI 서버에는 SQLite 연결과 MVP 초기 테이블 생성 기준이 추가되었다. 서버 DB는 `services/api/app/db/models.py`의 SQLAlchemy 모델을 기준으로 하고, 앱 시작 시 `schema_migrations`에 `0001_initial_mvp_schema`를 기록한다. 문서 등록 API는 `documents`, `document_versions`, `file_objects`를 함께 사용해 문서 메타데이터, 파일 저장 참조, 버전 번호, 변경 사유를 로컬에 저장한다.
 
-2026-06-25 기준 서버 로그인 API는 `user_accounts`의 `username`, `password_hash`, `role`, `is_active`, `status`를 사용한다. 서버 DB 초기화 시 개발용 기본 관리자 계정 `admin / 1234`가 없으면 생성한다. 이 기본 계정은 로컬 개발과 MVP 검증용 기준이며, 운영 배포에서는 별도 초기 비밀번호 정책으로 교체해야 한다. 2026-06-29 기준 서버 로그인 API는 MVP용 Bearer access token과 만료 시각을 반환하고, 문서/FieldNote/FieldNote 첨부/문서 접근 로그 API는 인증 헤더가 없거나 유효하지 않으면 `401`을 반환한다. 같은 날짜 기준으로 서버 role 제약은 `admin`, `manager`, `viewer`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`를 허용한다. 문서 등록/버전 등록/태그 변경은 관리자 그룹, 반장, 조장 이상만 허용하고 조원은 FieldNote 등록과 첨부 등록 중심으로 제한한다. Windows WPF 로그인 화면은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 응답을 먼저 사용할 수 있고, 서버 URL이 없거나 호출이 실패하면 기존 로컬 SQLite 로그인을 유지한다. Windows WPF 서버 API 클라이언트는 서버 문서 등록/목록/버전 조회뿐 아니라 문서 버전에 연결된 서버 FieldNote 등록, FieldNote 첨부 등록/조회, 문서 접근 로그 등록/조회 응답까지 받을 수 있다.
+2026-06-25 기준 서버 로그인 API는 `user_accounts`의 `username`, `password_hash`, `role`, `is_active`, `status`를 사용한다. 서버 DB 초기화 시 개발용 기본 관리자 계정 `admin / 1234`가 없으면 생성한다. 이 기본 계정은 로컬 개발과 MVP 검증용 기준이며, 운영 배포에서는 별도 초기 비밀번호 정책으로 교체해야 한다. 2026-06-30 기준 서버 로그인 API는 `auth_sessions`에 세션을 만들고 HMAC Bearer access token, refresh token, 각 만료 시각을 반환한다. access token에는 사용자 ID, 세션 ID, access token ID, 만료 시각이 들어가며, 서버는 토큰 서명뿐 아니라 `auth_sessions.status`, `access_token_id`, `revoked_at`, `access_expires_at`을 함께 검증한다. refresh API는 같은 세션의 access token ID와 refresh token hash를 회전하므로 이전 access token과 이전 refresh token은 재사용할 수 없다. logout API는 세션을 `REVOKED`로 바꾸며 이후 같은 토큰의 문서/FieldNote/FieldNote 첨부/문서 접근 로그 요청은 `401`을 반환한다. 같은 날짜 기준으로 서버 role 제약은 `admin`, `manager`, `viewer`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`를 허용한다. 문서 등록/버전 등록/태그 변경은 관리자 그룹, 반장, 조장 이상만 허용하고 조원은 FieldNote 등록과 첨부 등록 중심으로 제한한다. Windows WPF 로그인 화면은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 응답을 먼저 사용할 수 있고, 서버 URL이 없거나 호출이 실패하면 기존 로컬 SQLite 로그인을 유지한다. Windows WPF 서버 API 클라이언트는 서버 문서 등록/목록/버전 조회뿐 아니라 문서 버전에 연결된 서버 FieldNote 등록, FieldNote 첨부 등록/조회, 문서 접근 로그 등록/조회 응답까지 받을 수 있다. access token 만료 또는 세션 폐기 시 WPF는 서버 전송 후보를 실패 큐에 남기고 재로그인이 필요하다는 실패 사유를 `server_sync_queue.last_error`와 상태 메시지에 표시한다.
 
 기본 개발 DB 경로는 `services/api/data/flownote.sqlite3`, 테스트 DB 경로는 `services/api/data/flownote.test.sqlite3`이다. Windows 앱과 Windows 스모크 테스트는 공통 DB인 `data/local/flownote.local.sqlite`를 함께 사용한다. 테스트 DB와 검증 기록은 누적 테스트 기록이므로 삭제하지 않고 보존한다. SQLite DB는 후속 테스트와 기능 추가의 근거 데이터로 사용할 수 있으므로 Git 추적 및 커밋 대상에 포함될 수 있다. 문서 등록 통합 테스트 샘플과 로그는 `services/api/data/test-artifacts/document-registration-2026-06-24/` 아래에 보존하고, 업로드 저장 파일은 `services/api/storage/document-registration-tests/` 아래에 보존한다.
 
@@ -79,6 +79,7 @@ WPF 로컬 DB 초기화는 개발/스모크 테스트용으로 다음 그룹과 
 | --- | --- |
 | `schema_migrations` | 서버 DB 스키마 적용 버전 기록 |
 | `user_accounts`, `roles`, `user_roles` | 로그인 계정과 역할 연결의 초기 기준 |
+| `auth_sessions` | 서버 로그인 세션, access token ID, refresh token hash, 만료/폐기 상태 |
 | `operator_profiles` | 실제 작업자, 작업그룹, 대리 등록 주체 추적 |
 | `file_objects` | 서버 로컬 `storage/` 파일 참조 |
 | `documents`, `document_versions` | 문서 메타데이터, 버전, 변경 사유, 공개/최신 구분 |
@@ -160,19 +161,24 @@ FlowNote는 MES/ERP를 대체하지 않는다. 외부 시스템이 있는 경우
 
 문서 수정, 문서 열람, 현장 코멘트, 작업내역은 가능한 경우 `UserAccount`와 `OperatorProfile`을 함께 남긴다. 사용자가 직접 입력하지 않고 관리자가 대리 등록한 경우에도 실제 전달자 또는 작업그룹을 추적할 수 있어야 한다.
 
-### LoginSession
+### AuthSession
 
-현재 서버 MVP는 `LoginSession` 테이블을 사용하지 않고 HMAC 서명 Bearer access token을 발급한다. 아래 모델은 운영용 세션 관리와 토큰 폐기/갱신 정책을 추가할 때 사용할 후보이다.
+현재 FastAPI 서버는 HMAC 서명 access token만으로 인증 상태를 판단하지 않고 `auth_sessions` 테이블을 함께 검증한다. 이 테이블은 로그아웃, refresh token 회전, access token 폐기를 위한 서버 저장 세션 기준이다.
 
 | 필드 | 설명 |
 | --- | --- |
 | id | 내부 식별자 |
-| session_id | 외부 참조용 세션 ID |
+| session_id | access token의 `sid`와 연결되는 외부 참조용 세션 ID |
 | user_id | 사용자 ID |
-| device_id | 단말기 ID |
-| issued_at | 발급일 |
-| expires_at | 만료일 |
-| revoked_at | 폐기일 |
+| access_token_id | access token의 `jti`. refresh 시 새 값으로 교체되어 이전 access token을 폐기 |
+| refresh_token_hash | 서버에 평문 refresh token을 저장하지 않기 위한 SHA-256 hash |
+| status | ACTIVE, REVOKED, EXPIRED |
+| access_expires_at | access token 만료일 |
+| refresh_expires_at | refresh token 만료일 |
+| revoked_at | 로그아웃 또는 관리자 폐기 시각 |
+| revoked_reason | 폐기 사유 |
+| last_used_at | 마지막 로그인/refresh 사용 시각 |
+| created_at | 생성일 |
 
 ## 1. 문서 모델
 
