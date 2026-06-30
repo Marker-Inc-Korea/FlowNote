@@ -9,9 +9,9 @@
 현재 실제 동작 범위는 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite MVP API가 병행되는 상태이다.
 
 - Windows WPF 앱은 로컬 SQLite를 기본 저장소로 사용한다.
-- `FLOWNOTE_API_BASE_URL`이 설정되면 서버 로그인, 문서 등록, FieldNote 등록, 문서 접근 로그 API 연동을 후보로 시도한다.
+- `FLOWNOTE_API_BASE_URL`이 설정되면 서버 로그인, 문서 등록, FieldComment 등록, 문서 접근 로그 API 연동을 후보로 시도한다.
 - 서버 연동 실패나 서버 URL 부재는 로컬 저장 성공을 취소하지 않는다.
-- FastAPI 서버는 SQLite와 서버 로컬 `storage/` 폴더를 기준으로 문서, 버전, 태그, FieldNote, 문서 접근 로그의 최소 API를 제공한다.
+- FastAPI 서버는 SQLite와 서버 로컬 `storage/` 폴더를 기준으로 문서, 버전, 태그, FieldComment, 문서 접근 로그의 최소 API를 제공한다.
 - 인증은 MVP 로그인 API까지 구현되어 있으며, JWT 또는 세션 발급과 요청별 권한 검사는 아직 구현 완료 범위가 아니다.
 
 ## 제품 방향 정리
@@ -33,12 +33,12 @@ Windows 앱은 `apps/windows/` 아래에 위치한다.
 - 파일 업로드 버튼과 Drag & Drop으로 파일을 `Data\Files\Uploads\yyyy-MM-dd\` 아래에 복사하고 SQLite에 문서와 원본 버전 `v1`을 등록한다.
 - `인수인계`와 `사진`은 오늘 날짜 하위 폴더 기준으로 배치하고, `작업순서`는 파일명에서 작업 제목을 만든다.
 - TXT, PDF, Excel, 이미지 미리보기를 지원한다. PDF는 WebView2 표시를 우선하고 실패 시 PdfPig 텍스트 추출을 보조로 사용한다.
-- 문서 보기 창에서 작성한 새 코멘트는 문서 버전을 증가시키지 않고 `field_notes` 원천 이력으로 저장한다.
-- FieldNote 저장 시 문서 작성자 알림을 만들고, 과거 호환용 코멘트 버전 증가 경로는 직전 버전 작성자에게 알림을 보낸다.
+- 문서 보기 창에서 작성한 새 코멘트는 문서 버전을 증가시키지 않고 `field_comments` 원천 이력으로 저장한다.
+- FieldComment 저장 시 문서 작성자 알림을 만들고, 과거 호환용 코멘트 버전 증가 경로는 직전 버전 작성자에게 알림을 보낸다.
 - 문서 보기 창 열림과 닫힘을 `document_view_logs`에 기록하고, 개발 검증용 자동 닫힘은 `auto_closed` 닫힘 사유로 저장한다.
 - 전체 이력 창은 `activity_history`에 저장된 변경/감사 이력을 최신순으로 표시한다.
 - 문서 등록과 파일 업로드 시 사용자가 입력한 태그, 폴더명, 문서 유형, 확장자 태그를 저장하고 문서 목록에 표시한다.
-- 서버 API 클라이언트는 로그인, 문서 등록/목록/버전 조회, 서버 FieldNote 등록, 문서 접근 로그 등록/조회를 호출할 수 있다.
+- 서버 API 클라이언트는 로그인, 문서 등록/목록/버전 조회, 서버 FieldComment 등록, 문서 접근 로그 등록/조회를 호출할 수 있다.
 
 ## FastAPI 서버 작업 결과
 
@@ -51,7 +51,7 @@ FastAPI 서버는 `services/api/` 아래에 위치한다.
 - SQLite에는 문서, 버전, 파일 참조, 원본 파일명, 저장 키, 확장자, MIME, 파일 계열, 크기, SHA-256 해시를 기록한다.
 - 새 버전 등록 시 기존 최신 버전은 `SUPERSEDED`로 바꾸고 새 버전을 최신 버전으로 저장한다.
 - 문서 태그 API와 문서 등록 시 태그 저장 흐름을 추가했다.
-- FieldNote API는 문서/문서 버전에 연결된 현장 코멘트 원천 이력 등록, 목록/상세 조회, 관리자 검토/분석 갱신을 제공한다.
+- FieldComment API는 문서/문서 버전에 연결된 현장 코멘트 원천 이력 등록, 목록/상세 조회, 관리자 검토/분석 갱신을 제공한다.
 - 문서 접근 로그 API `POST /api/v1/documents/{documentId}/access-logs`, `GET /api/v1/documents/{documentId}/access-logs`를 추가했다.
 
 ## WPF와 서버 연동 기준
@@ -60,7 +60,7 @@ FastAPI 서버는 `services/api/` 아래에 위치한다.
 - 서버 로그인 성공 시 `user_id`, `username`, `role`, `display_name`을 로그인 결과에 보관한다.
 - 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인으로 폴백한다.
 - WPF 로컬 문서 등록이 성공한 뒤 서버 URL이 있으면 같은 파일을 FastAPI `POST /api/v1/documents`로 등록 후보 시도한다.
-- 문서 보기 창은 로컬 FieldNote 저장 직후 서버 FieldNote 등록을 후보로 시도한다.
+- 문서 보기 창은 로컬 FieldComment 저장 직후 서버 FieldComment 등록을 후보로 시도한다.
 - 문서 접근 로그는 로컬 SQLite에 먼저 저장하고, 서버 문서 ID와 버전 ID가 있는 연동 경로에서는 FastAPI 접근 로그 API로도 보낼 수 있다.
 - 현재는 자동 재시도 큐, 충돌 해결, 완전 동기화 상태 관리가 없다.
 
@@ -76,7 +76,7 @@ FastAPI 서버는 `services/api/` 아래에 위치한다.
 | Windows smoke test + FastAPI 연동 | `FLOWNOTE_API_BASE_URL=http://127.0.0.1:5185` 지정 후 smoke test 실행 | 통과 |
 | Windows smoke test 로컬 폴백 | `FLOWNOTE_API_BASE_URL` 없이 smoke test 실행 | 통과 |
 
-스모크 테스트는 서버 URL이 없으면 로컬 SQLite 기준으로 계속 진행하고, 서버 URL이 있으면 서버 로그인, 문서 등록/목록/버전 조회, 서버 FieldNote 등록, 문서 접근 로그 등록/조회까지 추가로 확인한다.
+스모크 테스트는 서버 URL이 없으면 로컬 SQLite 기준으로 계속 진행하고, 서버 URL이 있으면 서버 로그인, 문서 등록/목록/버전 조회, 서버 FieldComment 등록, 문서 접근 로그 등록/조회까지 추가로 확인한다.
 
 ## 보존 대상 산출물
 
@@ -108,9 +108,9 @@ SQLite DB는 누적 테스트 기록으로 사용할 수 있으므로 Git 추적
 ## 다음 작업 후보
 
 - 서버 로그인 API를 JWT 또는 세션 기반 인증 흐름으로 확장한다.
-- 문서 등록, FieldNote, 접근 로그 API에 사용자 권한 검사를 적용한다.
+- 문서 등록, FieldComment, 접근 로그 API에 사용자 권한 검사를 적용한다.
 - WPF 서버 연동 실패 기록과 재시도 정책을 설계한다.
-- FieldNote 첨부 파일과 사진 기록 API를 추가한다.
+- FieldComment 첨부 파일과 사진 기록 API를 추가한다.
 - 문서 상태 전환, 공개 버전, 보관 정책을 서버와 WPF 화면에 연결한다.
 - 작업순서판과 현장 TV 화면의 최소 모델을 설계한다.
-- 보고서 초안 생성 전 단계로 FieldNote 관리자 검토/분석 화면을 구체화한다.
+- 보고서 초안 생성 전 단계로 FieldComment 관리자 검토/분석 화면을 구체화한다.

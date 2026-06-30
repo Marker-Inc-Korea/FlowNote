@@ -26,16 +26,16 @@ WPF 앱은 `apps/windows/` 아래에 위치한다.
 - 파일 등록 위치는 선택 폴더 기준으로 배치한다. `인수인계`와 `사진`은 날짜 하위 폴더를 만들고, `작업순서`는 파일명을 작업 제목으로 사용한다.
 - 서버 문서 API 연동 후보로 `FlowNoteServerDocumentClient`를 추가했다. 환경 변수 `FLOWNOTE_API_BASE_URL`이 있을 때 Windows smoke test에서 서버 등록/목록/버전 조회를 추가 검증한다.
 
-## WPF FieldNote 분리 결과
+## WPF FieldComment 분리 결과
 
-기존에는 문서 보기 창의 코멘트가 `document_versions.comment`에 누적되어 문서 버전 증가와 섞였다. 현재 흐름은 신규 코멘트를 `field_notes`에 원천 이력으로 저장하도록 분리했다.
+기존에는 문서 보기 창의 코멘트가 `document_versions.comment`에 누적되어 문서 버전 증가와 섞였다. 현재 흐름은 신규 코멘트를 `field_comments`에 원천 이력으로 저장하도록 분리했다.
 
-- 신규 코멘트 저장은 `FieldNoteService.AddDocumentNote`를 사용한다.
-- `field_notes`에는 문서 ID, 당시 문서 버전 번호, 입력 방식, 원문, 작성자, 위치/단말기 후보, 상태, 동기화 후보 시간을 저장한다.
-- 신규 FieldNote는 문서 파일 버전을 증가시키지 않는다.
+- 신규 코멘트 저장은 `FieldCommentService.AddDocumentComment`를 사용한다.
+- `field_comments`에는 문서 ID, 당시 문서 버전 번호, 입력 방식, 원문, 작성자, 위치/단말기 후보, 상태, 동기화 후보 시간을 저장한다.
+- 신규 FieldComment는 문서 파일 버전을 증가시키지 않는다.
 - 문서 목록용 요약을 위해 `documents.latest_comment`와 `documents.updated_at`만 갱신한다.
-- 기존 로컬 DB의 `document_versions.comment` 데이터는 앱 초기화 시 `field_notes`로 백필한다.
-- 과거 호환용 `DocumentService.AddCommentVersion` 경로는 남아 있지만 신규 문서 보기 코멘트의 기본 경로는 FieldNote이다.
+- 기존 로컬 DB의 `document_versions.comment` 데이터는 앱 초기화 시 `field_comments`로 백필한다.
+- 과거 호환용 `DocumentService.AddCommentVersion` 경로는 남아 있지만 신규 문서 보기 코멘트의 기본 경로는 FieldComment이다.
 
 ## FastAPI 서버 작업 결과
 
@@ -45,7 +45,7 @@ FastAPI 서버는 `services/api/` 아래에 위치한다.
 - 기본 상태 확인 API는 `GET /`, `GET /api/v1/health`, `GET /api/v1/health/db`이다.
 - 문서 등록 API는 파일을 서버 로컬 `storage/documents/{document_id}/v{version_no}/` 아래에 저장하고, SQLite에 문서, 버전, 파일 참조, SHA-256, 크기, MIME, 파일 계열을 기록한다.
 - 새 문서 버전 등록 시 변경 사유를 필수로 받고 기존 최신 버전은 `SUPERSEDED`로 바꾼다.
-- 현장 코멘트 API는 문서/문서버전과 분리된 `field_notes` 원천 이력으로 등록, 목록, 상세, 검토/분석 갱신을 제공한다.
+- 현장 코멘트 API는 문서/문서버전과 분리된 `field_comments` 원천 이력으로 등록, 목록, 상세, 검토/분석 갱신을 제공한다.
 - 현재 서버 API는 인증/권한 적용 전 단계이다. 알 수 없는 사용자 참조나 존재하지 않는 문서 참조는 검증한다.
 
 현재 구현 API는 다음과 같다.
@@ -60,11 +60,11 @@ FastAPI 서버는 `services/api/` 아래에 위치한다.
 | GET | `/api/v1/documents/{documentId}` | 문서 상세 조회 |
 | GET | `/api/v1/documents/{documentId}/versions` | 문서 버전 목록 조회 |
 | POST | `/api/v1/documents/{documentId}/versions` | 새 문서 버전 등록 |
-| POST | `/api/v1/field-notes` | 현장 코멘트 원천 이력 등록 |
-| GET | `/api/v1/field-notes` | 현장 코멘트 목록 조회 |
-| GET | `/api/v1/field-notes/{noteId}` | 현장 코멘트 상세 조회 |
-| PATCH | `/api/v1/field-notes/{noteId}` | 관리자 검토/분석 내용 갱신 |
-| GET | `/api/v1/documents/{documentId}/field-notes` | 문서별 현장 코멘트 조회 |
+| POST | `/api/v1/field-comments` | 현장 코멘트 원천 이력 등록 |
+| GET | `/api/v1/field-comments` | 현장 코멘트 목록 조회 |
+| GET | `/api/v1/field-comments/{commentId}` | 현장 코멘트 상세 조회 |
+| PATCH | `/api/v1/field-comments/{commentId}` | 관리자 검토/분석 내용 갱신 |
+| GET | `/api/v1/documents/{documentId}/field-comments` | 문서별 현장 코멘트 조회 |
 
 ## 문서 갱신 결과
 
@@ -74,8 +74,8 @@ FastAPI 서버는 `services/api/` 아래에 위치한다.
 - `docs/README.md`: 문서 읽는 순서와 날짜별 작업 기록 인덱스
 - `docs/api.md`: 현재 구현 API와 미래 API 초안 구분
 - `docs/data-model.md`: WPF 로컬 SQLite 모델과 FastAPI 서버 SQLite 초기 모델 구분
-- `docs/system-map.md`: 문서, 버전, 파일, FieldNote, 보고서, 외부 시스템 관계 정리
-- `docs/decisions.md`: 제품 방향, 클라이언트/서버/FieldNote 관련 결정 기록
+- `docs/system-map.md`: 문서, 버전, 파일, FieldComment, 보고서, 외부 시스템 관계 정리
+- `docs/decisions.md`: 제품 방향, 클라이언트/서버/FieldComment 관련 결정 기록
 - `apps/windows/README.md`: Windows 앱 현재 기능, 로컬 SQLite, 검증 명령
 - `services/api/README.md`: FastAPI 현재 API, 실행, 테스트, 산출물 보존 기준
 
@@ -101,13 +101,13 @@ FastAPI 서버는 `services/api/` 아래에 위치한다.
 - `services/api/data/flownote.test.sqlite3`
 - `services/api/data/test-artifacts/`
 - `services/api/storage/document-registration-tests/`
-- `services/api/storage/field-note-tests/`
+- `services/api/storage/field-comment-tests/`
 
 ## 후속 작업 후보
 
 - 서버 인증/권한과 세션 API 추가
-- WPF 로컬 FieldNote와 서버 FieldNote API 동기화
-- FieldNote 사진 첨부와 태그 연결
+- WPF 로컬 FieldComment와 서버 FieldComment API 동기화
+- FieldComment 사진 첨부와 태그 연결
 - 문서 다운로드/열람 권한, 감사 로그, 뷰어 자동 닫힘 정책 구현
 - 관리자 파일 감시와 새 버전 업로드 보조 흐름 구현
 - 보고서 초안 생성과 ReportSource 연결

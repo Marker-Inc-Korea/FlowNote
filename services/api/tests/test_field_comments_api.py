@@ -8,14 +8,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from app.core.config import Settings
-from app.db.models import FieldNote, FieldNoteAttachment, FileObject
+from app.db.models import FieldComment, FieldCommentAttachment, FileObject
 from app.main import create_app
 
 
 API_ROOT = Path(__file__).resolve().parents[1]
 TEST_DB_PATH = API_ROOT / "data" / "flownote.test.sqlite3"
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH.as_posix()}"
-TEST_STORAGE_ROOT = API_ROOT / "storage" / "field-note-tests"
+TEST_STORAGE_ROOT = API_ROOT / "storage" / "field-comment-tests"
 
 
 def create_test_client() -> TestClient:
@@ -44,29 +44,29 @@ def create_document(client: TestClient) -> dict:
         "/api/v1/documents",
         headers=auth_headers(client),
         data={
-            "title": f"Field note target {suffix}",
+            "title": f"Field comment target {suffix}",
             "documentType": "work_instruction",
-            "changeReason": "Create a document for field note API testing.",
+            "changeReason": "Create a document for field comment API testing.",
         },
-        files={"file": (f"field-note-target-{suffix}.txt", b"field note target", "text/plain")},
+        files={"file": (f"field-comment-target-{suffix}.txt", b"field comment target", "text/plain")},
     )
     assert response.status_code == 201, response.text
     return response.json()
 
 
-def test_create_list_and_review_field_note() -> None:
+def test_create_list_and_review_field_comment() -> None:
     with create_test_client() as client:
         document = create_document(client)
         headers = auth_headers(client)
-        content = f"Field note API raw content {uuid4().hex}"
+        content = f"Field comment API raw content {uuid4().hex}"
 
         response = client.post(
-            "/api/v1/field-notes",
+            "/api/v1/field-comments",
             headers=headers,
             json={
                 "documentId": document["document_id"],
                 "documentVersionId": document["latest_version"]["version_id"],
-                "noteType": "issue",
+                "commentType": "issue",
                 "inputMode": "free_text",
                 "rawContent": content,
                 "entrySource": "field_user",
@@ -75,34 +75,34 @@ def test_create_list_and_review_field_note() -> None:
         )
         assert response.status_code == 201, response.text
         created = response.json()
-        assert created["note_id"].startswith("note_")
+        assert created["comment_id"].startswith("comment_")
         assert created["document_id"] == document["document_id"]
         assert created["document_version_id"] == document["latest_version"]["version_id"]
         assert created["raw_content"] == content
         assert created["status"] == "NEW"
 
-        document_notes_response = client.get(
-            f"/api/v1/documents/{document['document_id']}/field-notes",
+        document_comments_response = client.get(
+            f"/api/v1/documents/{document['document_id']}/field-comments",
             headers=headers,
         )
-        assert document_notes_response.status_code == 200
-        assert any(note["note_id"] == created["note_id"] for note in document_notes_response.json())
+        assert document_comments_response.status_code == 200
+        assert any(note["comment_id"] == created["comment_id"] for note in document_comments_response.json())
 
         filtered_response = client.get(
-            "/api/v1/field-notes",
+            "/api/v1/field-comments",
             headers=headers,
             params={"documentId": document["document_id"], "status": "NEW"},
         )
         assert filtered_response.status_code == 200
-        assert any(note["note_id"] == created["note_id"] for note in filtered_response.json())
+        assert any(note["comment_id"] == created["comment_id"] for note in filtered_response.json())
 
         review_response = client.patch(
-            f"/api/v1/field-notes/{created['note_id']}",
+            f"/api/v1/field-comments/{created['comment_id']}",
             headers=headers,
             json={
                 "status": "ANALYZED",
                 "normalizedContent": "Field issue normalized for manager review.",
-                "analysisContent": "Repeated field note should be checked against the work standard.",
+                "analysisContent": "Repeated field comment should be checked against the work standard.",
             },
         )
         assert review_response.status_code == 200, review_response.text
@@ -110,92 +110,92 @@ def test_create_list_and_review_field_note() -> None:
         assert reviewed["status"] == "ANALYZED"
         assert reviewed["normalized_content"] == "Field issue normalized for manager review."
         assert reviewed["analysis_content"] == (
-            "Repeated field note should be checked against the work standard."
+            "Repeated field comment should be checked against the work standard."
         )
 
 
-def test_field_note_idempotency_key_returns_existing_note() -> None:
+def test_field_comment_idempotency_key_returns_existing_note() -> None:
     with create_test_client() as client:
         document = create_document(client)
         headers = auth_headers(client)
-        idempotency_key = f"pytest:field-note:{uuid4().hex}"
+        idempotency_key = f"pytest:field-comment:{uuid4().hex}"
 
         payload = {
             "documentId": document["document_id"],
             "documentVersionId": document["latest_version"]["version_id"],
-            "noteType": "issue",
+            "commentType": "issue",
             "inputMode": "free_text",
-            "rawContent": f"Idempotent field note {uuid4().hex}",
+            "rawContent": f"Idempotent field comment {uuid4().hex}",
             "idempotencyKey": idempotency_key,
         }
-        first_response = client.post("/api/v1/field-notes", headers=headers, json=payload)
+        first_response = client.post("/api/v1/field-comments", headers=headers, json=payload)
         assert first_response.status_code == 201, first_response.text
         first = first_response.json()
 
         duplicate_payload = dict(payload)
         duplicate_payload["rawContent"] = "Changed duplicate content should not be saved."
-        second_response = client.post("/api/v1/field-notes", headers=headers, json=duplicate_payload)
+        second_response = client.post("/api/v1/field-comments", headers=headers, json=duplicate_payload)
         assert second_response.status_code == 201, second_response.text
         second = second_response.json()
-        assert second["note_id"] == first["note_id"]
+        assert second["comment_id"] == first["comment_id"]
         assert second["raw_content"] == first["raw_content"]
 
         with client.app.state.database.session() as session:
             saved_count = session.scalar(
-                select(func.count()).select_from(FieldNote).where(
-                    FieldNote.idempotency_key == idempotency_key
+                select(func.count()).select_from(FieldComment).where(
+                    FieldComment.idempotency_key == idempotency_key
                 )
             )
             assert saved_count == 1
 
 
-def test_field_note_attachment_registration_and_list() -> None:
+def test_field_comment_attachment_registration_and_list() -> None:
     with create_test_client() as client:
         document = create_document(client)
         headers = auth_headers(client)
-        note_response = client.post(
-            "/api/v1/field-notes",
+        comment_response = client.post(
+            "/api/v1/field-comments",
             headers=headers,
             json={
                 "documentId": document["document_id"],
                 "documentVersionId": document["latest_version"]["version_id"],
-                "noteType": "issue",
+                "commentType": "issue",
                 "inputMode": "free_text",
-                "rawContent": f"Field note with attachment {uuid4().hex}",
+                "rawContent": f"Field comment with attachment {uuid4().hex}",
             },
         )
-        assert note_response.status_code == 201, note_response.text
-        note = note_response.json()
-        file_bytes = b"field note attachment text"
+        assert comment_response.status_code == 201, comment_response.text
+        note = comment_response.json()
+        file_bytes = b"field comment attachment text"
 
         response = client.post(
-            f"/api/v1/field-notes/{note['note_id']}/attachments",
+            f"/api/v1/field-comments/{note['comment_id']}/attachments",
             headers=headers,
             data={
                 "caption": "현장 확인용 텍스트 첨부",
                 "createdBy": "user-admin",
             },
-            files={"file": ("field-note-attachment.txt", file_bytes, "text/plain")},
+            files={"file": ("field-comment-attachment.txt", file_bytes, "text/plain")},
         )
 
         assert response.status_code == 201, response.text
         attachment = response.json()
         assert attachment["attachment_id"].startswith("att_")
-        assert attachment["note_id"] == note["note_id"]
+        assert attachment["comment_id"] == note["comment_id"]
         assert attachment["attachment_type"] == "document"
         assert attachment["caption"] == "현장 확인용 텍스트 첨부"
         assert attachment["created_by"] == "user-admin"
-        assert attachment["file"]["original_filename"] == "field-note-attachment.txt"
+        assert attachment["file"]["original_filename"] == "field-comment-attachment.txt"
         assert attachment["file"]["extension"] == ".txt"
         assert attachment["file"]["file_family"] == "text"
         assert attachment["file"]["size_bytes"] == len(file_bytes)
         assert attachment["file"]["hash_sha256"] == hashlib.sha256(file_bytes).hexdigest()
         assert attachment["file"]["storage_key"].startswith(
-            f"field-notes/{note['note_id']}/attachments/"
+            f"field-comments/{note['comment_id']}/attachments/"
         )
 
         list_response = client.get(
-            f"/api/v1/field-notes/{note['note_id']}/attachments",
+            f"/api/v1/field-comments/{note['comment_id']}/attachments",
             headers=headers,
         )
         assert list_response.status_code == 200, list_response.text
@@ -203,64 +203,64 @@ def test_field_note_attachment_registration_and_list() -> None:
 
         with client.app.state.database.session() as session:
             row = session.execute(
-                select(FieldNoteAttachment, FileObject)
-                .join(FileObject, FieldNoteAttachment.file_object_id == FileObject.id)
-                .where(FieldNoteAttachment.attachment_id == attachment["attachment_id"])
+                select(FieldCommentAttachment, FileObject)
+                .join(FileObject, FieldCommentAttachment.file_object_id == FileObject.id)
+                .where(FieldCommentAttachment.attachment_id == attachment["attachment_id"])
             ).first()
             assert row is not None
             saved_attachment, saved_file = row
-            assert saved_attachment.note_id == note["note_id"]
-            assert saved_file.original_filename == "field-note-attachment.txt"
+            assert saved_attachment.comment_id == note["comment_id"]
+            assert saved_file.original_filename == "field-comment-attachment.txt"
             assert saved_file.size_bytes == len(file_bytes)
             assert saved_file.hash_sha256 == hashlib.sha256(file_bytes).hexdigest()
 
 
-def test_field_note_attachment_rejects_unknown_note_id() -> None:
+def test_field_comment_attachment_rejects_unknown_comment_id() -> None:
     with create_test_client() as client:
         response = client.post(
-            "/api/v1/field-notes/note-does-not-exist/attachments",
+            "/api/v1/field-comments/comment-does-not-exist/attachments",
             headers=auth_headers(client),
-            files={"file": ("field-note-attachment.txt", b"attachment", "text/plain")},
+            files={"file": ("field-comment-attachment.txt", b"attachment", "text/plain")},
         )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "Field note not found."
+    assert response.json()["detail"] == "Field comment not found."
 
 
-def test_field_note_attachment_rejects_unsupported_file_type() -> None:
+def test_field_comment_attachment_rejects_unsupported_file_type() -> None:
     with create_test_client() as client:
         document = create_document(client)
         headers = auth_headers(client)
-        note_response = client.post(
-            "/api/v1/field-notes",
+        comment_response = client.post(
+            "/api/v1/field-comments",
             headers=headers,
             json={
                 "documentId": document["document_id"],
-                "noteType": "issue",
+                "commentType": "issue",
                 "inputMode": "free_text",
-                "rawContent": f"Field note with invalid attachment {uuid4().hex}",
+                "rawContent": f"Field comment with invalid attachment {uuid4().hex}",
             },
         )
-        assert note_response.status_code == 201, note_response.text
-        note = note_response.json()
+        assert comment_response.status_code == 201, comment_response.text
+        note = comment_response.json()
 
         response = client.post(
-            f"/api/v1/field-notes/{note['note_id']}/attachments",
+            f"/api/v1/field-comments/{note['comment_id']}/attachments",
             headers=headers,
-            files={"file": ("field-note-attachment.exe", b"attachment", "application/octet-stream")},
+            files={"file": ("field-comment-attachment.exe", b"attachment", "application/octet-stream")},
         )
 
     assert response.status_code == 422
     assert response.json()["detail"] == "Attachment file type is not allowed."
 
 
-def test_field_note_requires_a_target() -> None:
+def test_field_comment_requires_a_target() -> None:
     with create_test_client() as client:
         response = client.post(
-            "/api/v1/field-notes",
+            "/api/v1/field-comments",
             headers=auth_headers(client),
             json={
-                "noteType": "issue",
+                "commentType": "issue",
                 "inputMode": "free_text",
                 "rawContent": "This note has no target.",
             },
@@ -268,17 +268,17 @@ def test_field_note_requires_a_target() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == (
-        "A field note must reference documentId, structureItemId, or workRecordId."
+        "A field comment must reference documentId, structureItemId, or workRecordId."
     )
 
 
-def test_field_note_requires_authentication() -> None:
+def test_field_comment_requires_authentication() -> None:
     with create_test_client() as client:
         response = client.post(
-            "/api/v1/field-notes",
+            "/api/v1/field-comments",
             json={
                 "documentId": "doc-does-not-exist",
-                "noteType": "issue",
+                "commentType": "issue",
                 "inputMode": "free_text",
                 "rawContent": "This unauthenticated note should be rejected.",
             },
@@ -287,14 +287,14 @@ def test_field_note_requires_authentication() -> None:
     assert response.status_code == 401
 
 
-def test_field_note_rejects_unknown_document() -> None:
+def test_field_comment_rejects_unknown_document() -> None:
     with create_test_client() as client:
         response = client.post(
-            "/api/v1/field-notes",
+            "/api/v1/field-comments",
             headers=auth_headers(client),
             json={
                 "documentId": "doc-does-not-exist",
-                "noteType": "issue",
+                "commentType": "issue",
                 "inputMode": "free_text",
                 "rawContent": "This note references an unknown document.",
             },

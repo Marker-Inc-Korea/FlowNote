@@ -1,4 +1,4 @@
-﻿# FlowNote MVP 범위
+# FlowNote MVP 범위
 
 ## 0. 현재 코드 기준 상태
 
@@ -18,7 +18,7 @@
 - 문서 보기 창 열림/닫힘 기준 로컬 SQLite `document_view_logs` 열람 감사 로그
 - 문서 보기 창 설정 기반 자동 닫힘과 `auto_closed` 닫힘 사유 기록. 기본값은 30초이며 `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS`로 조정
 - WPF 뷰어 role 기반 다운로드 차단. 관리자급 다운로드 role은 controlled copy를 사용할 수 있고, 현장/반장/조장 role의 차단 시도는 `download_blocked`로 감사 로그와 동기화 큐에 남김
-- 문서 보기 창의 누적 코멘트 최신순 표시와 `field_notes` 기반 코멘트 저장. 신규 WPF 코멘트는 문서 버전을 증가시키지 않음
+- 문서 보기 창의 누적 코멘트 최신순 표시와 `field_comments` 기반 코멘트 저장. 신규 WPF 코멘트는 문서 버전을 증가시키지 않음
 - 직전 버전 작성자 대상 알림 생성과 알림함
 - Windows 앱 빌드와 콘솔형 스모크 테스트
 - FastAPI 헬스체크와 DB 헬스체크
@@ -26,18 +26,18 @@
 - FastAPI 로그인 API: 사용자명/비밀번호 검증, 사용자 정보 반환, Bearer access token, refresh token, 만료 시각 반환
 - FastAPI refresh/logout API: refresh token 회전, 현재 세션 폐기, 이전 token 재사용 거부
 - FastAPI `/api/v1/auth/me` 현재 사용자 확인 API
-- FastAPI 문서/FieldNote/문서 접근 로그 API의 Bearer access token 인증. 인증 정보가 없거나 유효하지 않으면 `401` 반환
+- FastAPI 문서/FieldComment/문서 접근 로그 API의 Bearer access token 인증. 인증 정보가 없거나 유효하지 않으면 `401` 반환
 - `FLOWNOTE_API_BASE_URL` 설정 시 Windows WPF 로그인 화면의 FastAPI 로그인 API 우선 호출과 로컬 SQLite 로그인 폴백
 - FastAPI 문서 등록/목록/상세/버전 API와 서버 로컬 `storage/` 파일 저장
 - FastAPI 현장 코멘트 최소 등록/조회/관리자 갱신 API
-- FastAPI FieldNote 사진/파일 첨부 등록/조회 API
+- FastAPI FieldComment 사진/파일 첨부 등록/조회 API
 - FastAPI 문서 접근 로그 등록/조회 API
 - FastAPI 문서 상태 전환, 버전 상태 전환, 명시적 공개 버전 지정, 공개 문서 조회 API
 - FastAPI 태그 조회/등록, 문서 태그 교체 API
-- FastAPI role 기반 권한 검사: 문서 쓰기, 태그 쓰기, FieldNote 등록, 접근 로그 조회
+- FastAPI role 기반 권한 검사: 문서 쓰기, 태그 쓰기, FieldComment 등록, 접근 로그 조회
 - FastAPI 작업순서판 생성, 항목 추가, 전체 재정렬, 상태 변경, 이력 조회 API
-- `FLOWNOTE_API_BASE_URL` 설정 시 Windows 스모크 테스트의 서버 로그인 API, 인증 헤더가 붙은 `/auth/me`, 서버 FieldNote 등록, 서버 문서 접근 로그 등록/조회 검증
-- `FLOWNOTE_API_BASE_URL` 설정 시 Windows 스모크 테스트의 서버 FieldNote 첨부와 작업순서판 API 검증
+- `FLOWNOTE_API_BASE_URL` 설정 시 Windows 스모크 테스트의 서버 로그인 API, 인증 헤더가 붙은 `/auth/me`, 서버 FieldComment 등록, 서버 문서 접근 로그 등록/조회 검증
+- `FLOWNOTE_API_BASE_URL` 설정 시 Windows 스모크 테스트의 서버 FieldComment 첨부와 작업순서판 API 검증
 
 현재 구현되지 않았거나 운영 안정화가 남은 범위는 관리자 강제 세션 폐기 화면, 로컬 열람 로그의 운영용 서버 동기화 정책 고도화, 고도화된 작업내역 모델, 작업순서판 알림 발송 정책, 보고서, AI 검색/조언, MES/ERP 연동이다. 아래 MVP 범위는 제품 목표와 다음 구현 기준이며 현재 코드 구현 완료 목록이 아니다.
 

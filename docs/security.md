@@ -1,8 +1,8 @@
-﻿# FlowNote 보안 정책
+# FlowNote 보안 정책
 
 ## 0. 현재 코드 기준 보안 상태
 
-현재 코드에서 실제 구현된 보안 기능은 Windows WPF 앱 시작 시 로그인 요구, 기본 계정 생성, 로그인 성공 후 화면 진입, 알림 대상 사용자 식별, 문서 보기 창 열림/닫힘 로컬 감사 로그, 설정 기반 뷰어 자동 닫힘, role 기반 문서 다운로드 차단과 `download_blocked` 감사 로그, FastAPI 로그인 API, 서버 저장 인증 세션, Bearer access token, refresh token 회전, logout 세션 폐기이다. `FLOWNOTE_API_BASE_URL`이 설정된 경우 WPF 로그인 화면은 FastAPI 로그인 API를 먼저 호출하고, 성공 응답의 사용자 ID, 사용자명, 역할, 표시명, access token, refresh token, 만료 시각을 로그인 결과로 보관한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인을 유지한다. FastAPI 문서/FieldNote/문서 접근 로그 API는 `Authorization: Bearer {access_token}`이 없거나 유효하지 않거나, access token이 만료/대체/폐기되었으면 `401`을 반환한다. 서버는 role 값으로 문서 등록, 문서 버전 등록, 문서 태그 변경, 태그 등록, 문서 접근 로그 조회 권한을 검사하고 권한이 없으면 `403`을 반환한다. WPF는 로그인 role 기준으로 문서 등록/파일 업로드 버튼과 파일 드롭을 비활성화하고, 문서 뷰어의 controlled copy는 관리자급 다운로드 role에만 허용한다. 서버 감사 로그 자동 actor 지정 전체 적용, 외부 접속 제어는 아직 구현된 기능이 아니라 제품 보안 목표이다.
+현재 코드에서 실제 구현된 보안 기능은 Windows WPF 앱 시작 시 로그인 요구, 기본 계정 생성, 로그인 성공 후 화면 진입, 알림 대상 사용자 식별, 문서 보기 창 열림/닫힘 로컬 감사 로그, 설정 기반 뷰어 자동 닫힘, role 기반 문서 다운로드 차단과 `download_blocked` 감사 로그, FastAPI 로그인 API, 서버 저장 인증 세션, Bearer access token, refresh token 회전, logout 세션 폐기이다. `FLOWNOTE_API_BASE_URL`이 설정된 경우 WPF 로그인 화면은 FastAPI 로그인 API를 먼저 호출하고, 성공 응답의 사용자 ID, 사용자명, 역할, 표시명, access token, refresh token, 만료 시각을 로그인 결과로 보관한다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인을 유지한다. FastAPI 문서/FieldComment/문서 접근 로그 API는 `Authorization: Bearer {access_token}`이 없거나 유효하지 않거나, access token이 만료/대체/폐기되었으면 `401`을 반환한다. 서버는 role 값으로 문서 등록, 문서 버전 등록, 문서 태그 변경, 태그 등록, 문서 접근 로그 조회 권한을 검사하고 권한이 없으면 `403`을 반환한다. WPF는 로그인 role 기준으로 문서 등록/파일 업로드 버튼과 파일 드롭을 비활성화하고, 문서 뷰어의 controlled copy는 관리자급 다운로드 role에만 허용한다. 서버 감사 로그 자동 actor 지정 전체 적용, 외부 접속 제어는 아직 구현된 기능이 아니라 제품 보안 목표이다.
 
 ## 0.1 개발 접근 정보와 공개 저장소 주의
 
@@ -52,12 +52,12 @@ FlowNote의 배포 보안 원칙은 사내 서버형 운영이다. 문서와 파
 | 역할 | 설명 | 주요 권한 |
 | --- | --- | --- |
 | `admin`, `system-admin` | 시스템 관리자 | 문서 쓰기, 태그 변경, 접근 로그 조회, 후속 시스템 설정 |
-| `manager`, `document-admin`, `assistant-manager`, `department-manager` | 관리자 그룹 | 문서 등록, 버전 등록, 태그 변경, FieldNote 등록 |
-| `line-foreman` | 반장 | 문서 등록, 버전 등록, 태그 변경, FieldNote 등록 |
-| `team-lead` | 조장 | 문서 등록, 버전 등록, 태그 변경, FieldNote 등록 |
-| `team-member`, `viewer` | 조원/현장 사용자 | 문서 열람과 FieldNote 등록 중심. 문서 등록, 버전 등록, 태그 변경, 접근 로그 조회 불가 |
+| `manager`, `document-admin`, `assistant-manager`, `department-manager` | 관리자 그룹 | 문서 등록, 버전 등록, 태그 변경, FieldComment 등록 |
+| `line-foreman` | 반장 | 문서 등록, 버전 등록, 태그 변경, FieldComment 등록 |
+| `team-lead` | 조장 | 문서 등록, 버전 등록, 태그 변경, FieldComment 등록 |
+| `team-member`, `viewer` | 조원/현장 사용자 | 문서 열람과 FieldComment 등록 중심. 문서 등록, 버전 등록, 태그 변경, 접근 로그 조회 불가 |
 
-`download` 권한은 `admin`, `system-admin`, `manager`, `document-admin`, `assistant-manager`, `department-manager`에만 부여한다. `line-foreman`, `team-lead`, `team-member`, `viewer`는 문서 열람과 FieldNote 흐름은 사용할 수 있지만 문서 파일 copy/download는 차단한다.
+`download` 권한은 `admin`, `system-admin`, `manager`, `document-admin`, `assistant-manager`, `department-manager`에만 부여한다. `line-foreman`, `team-lead`, `team-member`, `viewer`는 문서 열람과 FieldComment 흐름은 사용할 수 있지만 문서 파일 copy/download는 차단한다.
 
 현재 서버 구현 기준 권한은 다음과 같다.
 
@@ -66,8 +66,8 @@ FlowNote의 배포 보안 원칙은 사내 서버형 운영이다. 문서와 파
 | 문서 등록 `POST /api/v1/documents` | 관리자 그룹, `line-foreman`, `team-lead` 이상 | `403` |
 | 문서 버전 등록 `POST /api/v1/documents/{documentId}/versions` | 관리자 그룹, `line-foreman`, `team-lead` 이상 | `403` |
 | 문서 태그 변경 `PUT /api/v1/documents/{documentId}/tags` 및 태그 등록 `POST /api/v1/tags` | 관리자 그룹, `line-foreman`, `team-lead` 이상 | `403` |
-| FieldNote 등록 `POST /api/v1/field-notes` | 인증된 관리자/반장/조장/조원 계정 | `401` 또는 미지원 role `403` |
-| FieldNote 첨부 등록 `POST /api/v1/field-notes/{noteId}/attachments` | 인증 사용자. 현재 구현은 별도 role 제한 없이 인증을 요구 | `401` |
+| FieldComment 등록 `POST /api/v1/field-comments` | 인증된 관리자/반장/조장/조원 계정 | `401` 또는 미지원 role `403` |
+| FieldComment 첨부 등록 `POST /api/v1/field-comments/{commentId}/attachments` | 인증 사용자. 현재 구현은 별도 role 제한 없이 인증을 요구 | `401` |
 | 작업순서판 생성/항목 추가/정렬/상태 변경 | 관리자 그룹, `line-foreman`, `team-lead` 이상 | `403` |
 | 접근 로그 조회 `GET /api/v1/documents/{documentId}/access-logs` | `admin`, `system-admin` | `403` |
 

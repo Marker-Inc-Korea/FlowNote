@@ -1,8 +1,8 @@
-﻿# FlowNote 배포 기준
+# FlowNote 배포 기준
 
 ## 0. 현재 코드 기준 배포 상태
 
-현재 실행 가능한 구현은 개발용 Windows WPF 앱과 로컬 SQLite DB, FastAPI SQLite MVP API이다. WPF 앱은 개발 실행 시 저장소 루트의 `data/local/flownote.local.sqlite`를 사용하고, `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`로 위치를 override할 수 있다. 저장소 루트를 찾을 수 없는 배포 실행에서는 앱 실행 폴더의 `Data/flownote.local.sqlite`를 사용한다. FastAPI 서버는 개발용 SQLite DB, 로그인/refresh/logout, 문서 등록/버전 등록/공개 버전 지정, 서버 로컬 `storage/` 저장, 태그, FieldNote와 첨부, 문서 접근 로그, 작업순서판 최소 API를 제공한다. 서버 PC 운영 배포, 클라이언트 설치파일 배포, 검색 인덱스, 외부 연동 어댑터는 아직 구현된 배포 기능이 아니다.
+현재 실행 가능한 구현은 개발용 Windows WPF 앱과 로컬 SQLite DB, FastAPI SQLite MVP API이다. WPF 앱은 개발 실행 시 저장소 루트의 `data/local/flownote.local.sqlite`를 사용하고, `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`로 위치를 override할 수 있다. 저장소 루트를 찾을 수 없는 배포 실행에서는 앱 실행 폴더의 `Data/flownote.local.sqlite`를 사용한다. FastAPI 서버는 개발용 SQLite DB, 로그인/refresh/logout, 문서 등록/버전 등록/공개 버전 지정, 서버 로컬 `storage/` 저장, 태그, FieldComment와 첨부, 문서 접근 로그, 작업순서판 최소 API를 제공한다. 서버 PC 운영 배포, 클라이언트 설치파일 배포, 검색 인덱스, 외부 연동 어댑터는 아직 구현된 배포 기능이 아니다.
 
 ## 1. 배포 원칙
 

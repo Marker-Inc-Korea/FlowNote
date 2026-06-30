@@ -49,6 +49,35 @@ try
         Require(seededLogin.Role == seededUser.Role, $"{seededUser.LoginId} should keep the seeded role");
     }
 
+    var userManagementTarget = FlowNoteLocalDatabase.DefaultUserSeeds.Single(user => user.LoginId == "member-a4");
+    var temporaryDisplayName = $"사용자관리검증-{runStamp}";
+    var temporaryPassword = $"pw-{runStamp}";
+    try
+    {
+        var updatedUser = services.Users.UpdateUserProfile(
+            userManagementTarget.UserId,
+            temporaryDisplayName,
+            temporaryPassword,
+            smokeActorName);
+        Require(updatedUser.UserId == userManagementTarget.UserId, "user management should keep the immutable user id");
+        Require(updatedUser.LoginId == userManagementTarget.LoginId, "user management should not change the login id");
+        Require(updatedUser.DisplayName == temporaryDisplayName, "user management should update display name");
+
+        var oldPasswordLogin = services.Auth.Login(userManagementTarget.LoginId, "1234");
+        Require(!oldPasswordLogin.Success, "old password should stop working after password change");
+        var temporaryPasswordLogin = services.Auth.Login(userManagementTarget.LoginId, temporaryPassword);
+        Require(temporaryPasswordLogin.Success, "new password should work after password change");
+        Require(temporaryPasswordLogin.UserId == userManagementTarget.UserId, "password change should keep the same user id");
+    }
+    finally
+    {
+        services.Users.UpdateUserProfile(
+            userManagementTarget.UserId,
+            userManagementTarget.DisplayName,
+            "1234",
+            smokeActorName);
+    }
+
     using (var seedConnection = services.Database.OpenConnection())
     {
         var workGroups = FlowNoteLocalDatabase.DefaultGroupSeeds
@@ -180,23 +209,23 @@ try
             "document view should create one log row for each open/close cycle");
     }
 
-    var fieldNote = services.FieldNotes.AddDocumentNote(
+    var fieldComment = services.FieldComments.AddDocumentComment(
         document.DocumentId,
-        "Program test field note stored separately from document versions.",
+        "Program test field comment stored separately from document versions.",
         smokeActorName);
-    Require(!string.IsNullOrWhiteSpace(fieldNote.NoteId), "field note should receive an id");
-    Require(fieldNote.DocumentVersionNo == 1, "field note should keep the current document version number");
-    var fieldNotes = services.FieldNotes.ListDocumentNotes(document.DocumentId);
-    Require(fieldNotes.Count == 1, "document should list the saved field note");
-    Require(fieldNotes[0].RawContent == "Program test field note stored separately from document versions.", "field note should preserve raw content");
+    Require(!string.IsNullOrWhiteSpace(fieldComment.CommentId), "field comment should receive an id");
+    Require(fieldComment.DocumentVersionNo == 1, "field comment should keep the current document version number");
+    var fieldComments = services.FieldComments.ListDocumentComments(document.DocumentId);
+    Require(fieldComments.Count == 1, "document should list the saved field comment");
+    Require(fieldComments[0].RawContent == "Program test field comment stored separately from document versions.", "field comment should preserve raw content");
     Require(
         services.Documents.ListVersions(document.DocumentId).Count == 1,
-        "field note should not create a new document version");
+        "field comment should not create a new document version");
     Require(
         services.Documents.ListDocuments(currentDocumentFolder.Id).Any(item =>
             item.DocumentId == document.DocumentId &&
-            item.LatestComment == "Program test field note stored separately from document versions."),
-        "field note should update the document latest comment summary");
+            item.LatestComment == "Program test field comment stored separately from document versions."),
+        "field comment should update the document latest comment summary");
 
     var commentedDocument = services.Documents.AddCommentVersion(
         document.DocumentId,
@@ -252,10 +281,10 @@ try
         "history should record who closed a document view");
     Require(
         earlyHistory.Any(item =>
-            item.EventType == "field_note.created" &&
+            item.EventType == "field_comment.created" &&
             item.ActorName == smokeActorName &&
             item.TargetId == document.DocumentId),
-        "history should record who added a field note");
+        "history should record who added a field comment");
     Require(
         earlyHistory.Any(item =>
             item.EventType == "document.version_added" &&
@@ -571,35 +600,35 @@ try
         services.ServerSync.CountQueuedForEntity("document", uploadedDocument.DocumentId, "FAILED") == 1,
         "missing server URL should create a failed document sync queue row");
 
-    var offlineQueuedFieldNote = services.FieldNotes.AddDocumentNote(
+    var offlineQueuedFieldComment = services.FieldComments.AddDocumentComment(
         uploadedDocument.DocumentId,
-        $"Offline queued field note before server reconnect {runId}.",
+        $"Offline queued field comment before server reconnect {runId}.",
         smokeActorName);
-    var fieldNoteAttachmentFile = Path.Combine(testDirectory, $"field-note-attachment-{runId}.txt");
-    File.WriteAllText(fieldNoteAttachmentFile, $"FieldNote attachment smoke test {runId}.");
-    var offlineQueuedFieldNoteAttachment = services.FieldNotes.AddAttachment(
-        offlineQueuedFieldNote.NoteId,
-        fieldNoteAttachmentFile,
+    var fieldCommentAttachmentFile = Path.Combine(testDirectory, $"field-comment-attachment-{runId}.txt");
+    File.WriteAllText(fieldCommentAttachmentFile, $"FieldComment attachment smoke test {runId}.");
+    var offlineQueuedFieldCommentAttachment = services.FieldComments.AddAttachment(
+        offlineQueuedFieldComment.CommentId,
+        fieldCommentAttachmentFile,
         smokeActorName,
-        "Smoke test FieldNote attachment");
+        "Smoke test FieldComment attachment");
     Require(
-        services.FieldNotes.ListAttachments(offlineQueuedFieldNote.NoteId).Any(item =>
-            item.AttachmentId == offlineQueuedFieldNoteAttachment.AttachmentId &&
-            item.OriginalFileName == Path.GetFileName(fieldNoteAttachmentFile) &&
-            item.SizeBytes == new FileInfo(fieldNoteAttachmentFile).Length),
-        "field note attachment should be saved locally with file metadata");
-    var offlineFieldNoteSyncResult = await services.ServerSync.QueueAndTrySyncFieldNoteAsync(offlineQueuedFieldNote, null);
-    Require(!offlineFieldNoteSyncResult.Success, "missing server URL should keep field note sync queued locally");
+        services.FieldComments.ListAttachments(offlineQueuedFieldComment.CommentId).Any(item =>
+            item.AttachmentId == offlineQueuedFieldCommentAttachment.AttachmentId &&
+            item.OriginalFileName == Path.GetFileName(fieldCommentAttachmentFile) &&
+            item.SizeBytes == new FileInfo(fieldCommentAttachmentFile).Length),
+        "field comment attachment should be saved locally with file metadata");
+    var offlineFieldCommentSyncResult = await services.ServerSync.QueueAndTrySyncFieldCommentAsync(offlineQueuedFieldComment, null);
+    Require(!offlineFieldCommentSyncResult.Success, "missing server URL should keep field comment sync queued locally");
     Require(
-        services.ServerSync.CountQueuedForEntity("field_note", offlineQueuedFieldNote.NoteId, "FAILED") == 1,
-        "missing server URL should create a failed field note sync queue row");
-    var offlineFieldNoteAttachmentSyncResult = await services.ServerSync.QueueAndTrySyncFieldNoteAttachmentAsync(
-        offlineQueuedFieldNoteAttachment,
+        services.ServerSync.CountQueuedForEntity("field_comment", offlineQueuedFieldComment.CommentId, "FAILED") == 1,
+        "missing server URL should create a failed field comment sync queue row");
+    var offlineFieldCommentAttachmentSyncResult = await services.ServerSync.QueueAndTrySyncFieldCommentAttachmentAsync(
+        offlineQueuedFieldCommentAttachment,
         null);
-    Require(!offlineFieldNoteAttachmentSyncResult.Success, "missing server URL should keep field note attachment sync queued locally");
+    Require(!offlineFieldCommentAttachmentSyncResult.Success, "missing server URL should keep field comment attachment sync queued locally");
     Require(
-        services.ServerSync.CountQueuedForEntity("field_note_attachment", offlineQueuedFieldNoteAttachment.AttachmentId, "FAILED") == 1,
-        "missing server URL should create a failed field note attachment sync queue row");
+        services.ServerSync.CountQueuedForEntity("field_comment_attachment", offlineQueuedFieldCommentAttachment.AttachmentId, "FAILED") == 1,
+        "missing server URL should create a failed field comment attachment sync queue row");
 
     var offlineAccessLogId = services.DocumentViewLogs.StartDocumentView(
         uploadedDocument.DocumentId,
@@ -651,8 +680,8 @@ try
     var leadLogin = services.Auth.Login("lead-a1", "1234");
     var memberLogin = services.Auth.Login("member-a1", "1234");
     Require(foremanLogin.Success, "foreman-a / 1234 login should succeed for document registration");
-    Require(leadLogin.Success, "lead-a1 / 1234 login should succeed for field note registration");
-    Require(memberLogin.Success, "member-a1 / 1234 login should succeed for field note registration");
+    Require(leadLogin.Success, "lead-a1 / 1234 login should succeed for field comment registration");
+    Require(memberLogin.Success, "member-a1 / 1234 login should succeed for field comment registration");
     Require(
         RolePermissionPolicy.CanRegisterDocuments(foremanLogin.Role),
         "foreman role should be allowed to use document registration UI");
@@ -826,49 +855,49 @@ try
         services.ServerSync.CountQueuedForEntity("document_access_log", blockedDownloadLogId.ToString(), "FAILED") == 1,
         "missing server URL should create one failed download blocked access log sync row");
 
-    var leadFieldNote = services.FieldNotes.AddDocumentNote(
+    var leadFieldComment = services.FieldComments.AddDocumentComment(
         koreanPdfDocument.DocumentId,
         "조장 A-1 확인: PDF 한글 표시 정상, 혼합 공정 온도 기준 확인 완료.",
         leadLogin.DisplayName ?? "조장 A-1",
-        noteType: "experience",
+        commentType: "experience",
         inputMode: "template_with_text",
         signalLevel: "green",
         reportedBy: leadLogin.DisplayName,
         operatorName: "반장 A 작업조",
         deviceId: "device-line-a-01",
         locationCode: "line-a");
-    Require(leadFieldNote.DocumentVersionNo == 1, "lead field note should point to Korean PDF version 1");
-    Require(leadFieldNote.RawContent.Contains("PDF 한글 표시 정상", StringComparison.Ordinal),
-        "lead field note should preserve Korean content");
+    Require(leadFieldComment.DocumentVersionNo == 1, "lead field comment should point to Korean PDF version 1");
+    Require(leadFieldComment.RawContent.Contains("PDF 한글 표시 정상", StringComparison.Ordinal),
+        "lead field comment should preserve Korean content");
 
-    var memberFieldNote = services.FieldNotes.AddDocumentNote(
+    var memberFieldComment = services.FieldComments.AddDocumentComment(
         koreanPdfDocument.DocumentId,
         "조원 A-1 확인: 설비 점검 항목을 작업 전에 읽을 수 있었음.",
         memberLogin.DisplayName ?? "조원 A-1",
-        noteType: "work_evaluation",
+        commentType: "work_evaluation",
         inputMode: "free_text",
         signalLevel: "green",
         reportedBy: memberLogin.DisplayName,
         operatorName: "반장 A 작업조",
         deviceId: "device-line-a-02",
         locationCode: "line-a");
-    Require(memberFieldNote.DocumentVersionNo == 1, "member field note should point to Korean PDF version 1");
+    Require(memberFieldComment.DocumentVersionNo == 1, "member field comment should point to Korean PDF version 1");
 
-    var koreanPdfNotes = services.FieldNotes.ListDocumentNotes(koreanPdfDocument.DocumentId);
-    Require(koreanPdfNotes.Count == 2, "Korean PDF document should list both field notes");
+    var koreanPdfNotes = services.FieldComments.ListDocumentComments(koreanPdfDocument.DocumentId);
+    Require(koreanPdfNotes.Count == 2, "Korean PDF document should list both field comments");
     Require(koreanPdfNotes.Any(note => note.AuthorName == "조장 A-1"), "Korean PDF notes should include lead comment");
     Require(koreanPdfNotes.Any(note => note.AuthorName == "조원 A-1"), "Korean PDF notes should include member comment");
     Require(
         services.Documents.ListVersions(koreanPdfDocument.DocumentId).Count == 1,
-        "Korean PDF field notes should not create document versions");
+        "Korean PDF field comments should not create document versions");
     Require(
         services.Documents.ListDocuments(documentsFolder.Id).Any(item =>
             item.DocumentId == koreanPdfDocument.DocumentId &&
             item.LatestComment == "조원 A-1 확인: 설비 점검 항목을 작업 전에 읽을 수 있었음."),
-        "Korean PDF document latest comment should reflect the newest field note");
+        "Korean PDF document latest comment should reflect the newest field comment");
     Require(
         services.Notifications.ListNotifications("반장 A").Count >= 2,
-        "Korean PDF field notes should notify the foreman document creator");
+        "Korean PDF field comments should notify the foreman document creator");
 
     using var serverHttpClient = FlowNoteServerApiEnvironment.CreateHttpClientFromEnvironment(TimeSpan.FromSeconds(20));
     if (serverHttpClient is null)
@@ -1012,24 +1041,24 @@ try
                 ScalarString(
                     syncConnection,
                     """
-                    SELECT server_note_id
-                    FROM field_notes
-                    WHERE note_id = $note_id
+                    SELECT server_comment_id
+                    FROM field_comments
+                    WHERE comment_id = $comment_id
                       AND synced_at IS NOT NULL;
                     """,
-                    ("$note_id", offlineQueuedFieldNote.NoteId)) is { Length: > 0 },
-                "queued field note retry should store the server note id");
+                    ("$comment_id", offlineQueuedFieldComment.CommentId)) is { Length: > 0 },
+                "queued field comment retry should store the server comment id");
             Require(
                 ScalarString(
                     syncConnection,
                     """
                     SELECT server_attachment_id
-                    FROM field_note_attachments
+                    FROM field_comment_attachments
                     WHERE attachment_id = $attachment_id
                       AND synced_at IS NOT NULL;
                     """,
-                    ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId)) is { Length: > 0 },
-                "queued field note attachment retry should store the server attachment id");
+                    ("$attachment_id", offlineQueuedFieldCommentAttachment.AttachmentId)) is { Length: > 0 },
+                "queued field comment attachment retry should store the server attachment id");
             Require(
                 ScalarLong(
                     syncConnection,
@@ -1049,14 +1078,14 @@ try
                     """
                     SELECT COUNT(*)
                     FROM server_sync_queue
-                    WHERE entity_id IN ($document_id, $note_id, $attachment_id, $log_id)
+                    WHERE entity_id IN ($document_id, $comment_id, $attachment_id, $log_id)
                       AND status = 'SYNCED';
                     """,
                     ("$document_id", uploadedDocument.DocumentId),
-                    ("$note_id", offlineQueuedFieldNote.NoteId),
-                    ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
+                    ("$comment_id", offlineQueuedFieldComment.CommentId),
+                    ("$attachment_id", offlineQueuedFieldCommentAttachment.AttachmentId),
                     ("$log_id", offlineAccessLogId.ToString())) == 5,
-                "queued retry should mark document, field note attachment, field note, and access log queue rows as synced");
+                "queued retry should mark document, field comment attachment, field comment, and access log queue rows as synced");
             Require(
                 ScalarLong(
                     syncConnection,
@@ -1075,12 +1104,12 @@ try
                     SELECT COUNT(*)
                     FROM activity_history
                     WHERE event_type = 'server_sync.succeeded'
-                      AND target_id IN ($document_id, $note_id, $attachment_id, $log_id)
+                      AND target_id IN ($document_id, $comment_id, $attachment_id, $log_id)
                       AND created_at >= $run_started_at;
                     """,
                     ("$document_id", uploadedDocument.DocumentId),
-                    ("$note_id", offlineQueuedFieldNote.NoteId),
-                    ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
+                    ("$comment_id", offlineQueuedFieldComment.CommentId),
+                    ("$attachment_id", offlineQueuedFieldCommentAttachment.AttachmentId),
                     ("$log_id", offlineAccessLogId.ToString()),
                     ("$run_started_at", runStartedAt.ToUniversalTime().ToString("O"))) >= 4,
                 "queued retry success should be preserved in local history");
@@ -1101,22 +1130,22 @@ try
                     """
                     SELECT idempotency_key
                     FROM server_sync_queue
-                    WHERE entity_type = 'field_note' AND entity_id = $note_id
+                    WHERE entity_type = 'field_comment' AND entity_id = $comment_id
                     LIMIT 1;
                     """,
-                    ("$note_id", offlineQueuedFieldNote.NoteId)) == ServerSyncService.CreateFieldNoteIdempotencyKey(offlineQueuedFieldNote.NoteId),
-                "field note sync queue should use the documented idempotency key");
+                    ("$comment_id", offlineQueuedFieldComment.CommentId)) == ServerSyncService.CreateFieldCommentIdempotencyKey(offlineQueuedFieldComment.CommentId),
+                "field comment sync queue should use the documented idempotency key");
             Require(
                 ScalarString(
                     syncConnection,
                     """
                     SELECT idempotency_key
                     FROM server_sync_queue
-                    WHERE entity_type = 'field_note_attachment' AND entity_id = $attachment_id
+                    WHERE entity_type = 'field_comment_attachment' AND entity_id = $attachment_id
                     LIMIT 1;
                     """,
-                    ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId)) == ServerSyncService.CreateFieldNoteAttachmentIdempotencyKey(offlineQueuedFieldNoteAttachment.AttachmentId),
-                "field note attachment sync queue should use the documented idempotency key");
+                    ("$attachment_id", offlineQueuedFieldCommentAttachment.AttachmentId)) == ServerSyncService.CreateFieldCommentAttachmentIdempotencyKey(offlineQueuedFieldCommentAttachment.AttachmentId),
+                "field comment attachment sync queue should use the documented idempotency key");
             Require(
                 ScalarString(
                     syncConnection,
@@ -1149,33 +1178,33 @@ try
                 """
                 SELECT COUNT(*)
                 FROM server_sync_queue
-                WHERE entity_id IN ($document_id, $note_id, $attachment_id, $log_id);
+                WHERE entity_id IN ($document_id, $comment_id, $attachment_id, $log_id);
                 """,
                 ("$document_id", uploadedDocument.DocumentId),
-                ("$note_id", offlineQueuedFieldNote.NoteId),
-                ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
+                ("$comment_id", offlineQueuedFieldComment.CommentId),
+                ("$attachment_id", offlineQueuedFieldCommentAttachment.AttachmentId),
                 ("$log_id", offlineAccessLogId.ToString()));
             var duplicateAttemptCountBefore = ScalarLong(
                 syncConnection,
                 """
                 SELECT COALESCE(SUM(attempt_count), 0)
                 FROM server_sync_queue
-                WHERE entity_id IN ($document_id, $note_id, $attachment_id, $log_id);
+                WHERE entity_id IN ($document_id, $comment_id, $attachment_id, $log_id);
                 """,
                 ("$document_id", uploadedDocument.DocumentId),
-                ("$note_id", offlineQueuedFieldNote.NoteId),
-                ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
+                ("$comment_id", offlineQueuedFieldComment.CommentId),
+                ("$attachment_id", offlineQueuedFieldCommentAttachment.AttachmentId),
                 ("$log_id", offlineAccessLogId.ToString()));
             _ = await services.ServerSync.QueueAndTrySyncDocumentAsync(
                 uploadedDocument,
                 serverDocuments,
                 serverLogin.UserId);
-            _ = await services.ServerSync.QueueAndTrySyncFieldNoteAsync(
-                offlineQueuedFieldNote,
+            _ = await services.ServerSync.QueueAndTrySyncFieldCommentAsync(
+                offlineQueuedFieldComment,
                 serverDocuments,
                 serverLogin.UserId);
-            _ = await services.ServerSync.QueueAndTrySyncFieldNoteAttachmentAsync(
-                offlineQueuedFieldNoteAttachment,
+            _ = await services.ServerSync.QueueAndTrySyncFieldCommentAttachmentAsync(
+                offlineQueuedFieldCommentAttachment,
                 serverDocuments,
                 serverLogin.UserId);
             _ = await services.ServerSync.QueueAndTrySyncAccessLogAsync(
@@ -1193,22 +1222,22 @@ try
                 """
                 SELECT COUNT(*)
                 FROM server_sync_queue
-                WHERE entity_id IN ($document_id, $note_id, $attachment_id, $log_id);
+                WHERE entity_id IN ($document_id, $comment_id, $attachment_id, $log_id);
                 """,
                 ("$document_id", uploadedDocument.DocumentId),
-                ("$note_id", offlineQueuedFieldNote.NoteId),
-                ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
+                ("$comment_id", offlineQueuedFieldComment.CommentId),
+                ("$attachment_id", offlineQueuedFieldCommentAttachment.AttachmentId),
                 ("$log_id", offlineAccessLogId.ToString()));
             var duplicateAttemptCountAfter = ScalarLong(
                 syncConnection,
                 """
                 SELECT COALESCE(SUM(attempt_count), 0)
                 FROM server_sync_queue
-                WHERE entity_id IN ($document_id, $note_id, $attachment_id, $log_id);
+                WHERE entity_id IN ($document_id, $comment_id, $attachment_id, $log_id);
                 """,
                 ("$document_id", uploadedDocument.DocumentId),
-                ("$note_id", offlineQueuedFieldNote.NoteId),
-                ("$attachment_id", offlineQueuedFieldNoteAttachment.AttachmentId),
+                ("$comment_id", offlineQueuedFieldComment.CommentId),
+                ("$attachment_id", offlineQueuedFieldCommentAttachment.AttachmentId),
                 ("$log_id", offlineAccessLogId.ToString()));
             Require(
                 duplicateQueueCountAfter == duplicateQueueCountBefore,
@@ -1246,39 +1275,39 @@ try
         Require(serverVersions[0].ChangeReason.Contains("FastAPI", StringComparison.Ordinal), "server version should preserve the change reason");
 
         {
-            var serverFieldNote = await serverDocuments.RegisterFieldNoteAsync(
-                fieldNote,
+            var serverFieldComment = await serverDocuments.RegisterFieldCommentAsync(
+                fieldComment,
                 documentId: serverDocument.DocumentId,
                 documentVersionId: latestServerVersion.VersionId);
-            Require(!string.IsNullOrWhiteSpace(serverFieldNote.NoteId), "server field note should receive an id");
-            Require(serverFieldNote.DocumentId == serverDocument.DocumentId, "server field note should reference the uploaded document");
+            Require(!string.IsNullOrWhiteSpace(serverFieldComment.CommentId), "server field comment should receive an id");
+            Require(serverFieldComment.DocumentId == serverDocument.DocumentId, "server field comment should reference the uploaded document");
             Require(
-                serverFieldNote.DocumentVersionId == latestServerVersion.VersionId,
-                "server field note should reference the uploaded document version");
+                serverFieldComment.DocumentVersionId == latestServerVersion.VersionId,
+                "server field comment should reference the uploaded document version");
             Require(
-                serverFieldNote.RawContent == "Program test field note stored separately from document versions.",
-                "server field note should preserve raw content");
-            Require(serverFieldNote.Status == "NEW", "server field note should start in NEW status");
-            var serverFieldNoteAttachment = await serverDocuments.RegisterFieldNoteAttachmentAsync(
-                serverFieldNote.NoteId,
-                fieldNoteAttachmentFile,
-                caption: "Windows smoke FieldNote attachment",
+                serverFieldComment.RawContent == "Program test field comment stored separately from document versions.",
+                "server field comment should preserve raw content");
+            Require(serverFieldComment.Status == "NEW", "server field comment should start in NEW status");
+            var serverFieldCommentAttachment = await serverDocuments.RegisterFieldCommentAttachmentAsync(
+                serverFieldComment.CommentId,
+                fieldCommentAttachmentFile,
+                caption: "Windows smoke FieldComment attachment",
                 createdBy: serverLogin.UserId);
-            Require(!string.IsNullOrWhiteSpace(serverFieldNoteAttachment.AttachmentId), "server field note attachment should receive an id");
-            Require(serverFieldNoteAttachment.NoteId == serverFieldNote.NoteId, "server field note attachment should reference the note");
+            Require(!string.IsNullOrWhiteSpace(serverFieldCommentAttachment.AttachmentId), "server field comment attachment should receive an id");
+            Require(serverFieldCommentAttachment.CommentId == serverFieldComment.CommentId, "server field comment attachment should reference the note");
             Require(
-                serverFieldNoteAttachment.File.OriginalFilename == Path.GetFileName(fieldNoteAttachmentFile),
-                "server field note attachment should preserve the original filename");
+                serverFieldCommentAttachment.File.OriginalFilename == Path.GetFileName(fieldCommentAttachmentFile),
+                "server field comment attachment should preserve the original filename");
             Require(
-                serverFieldNoteAttachment.File.SizeBytes == new FileInfo(fieldNoteAttachmentFile).Length,
-                "server field note attachment should preserve the file size");
+                serverFieldCommentAttachment.File.SizeBytes == new FileInfo(fieldCommentAttachmentFile).Length,
+                "server field comment attachment should preserve the file size");
             Require(
-                !string.IsNullOrWhiteSpace(serverFieldNoteAttachment.File.HashSha256),
-                "server field note attachment should store a file hash");
-            var serverFieldNoteAttachments = await serverDocuments.ListFieldNoteAttachmentsAsync(serverFieldNote.NoteId);
+                !string.IsNullOrWhiteSpace(serverFieldCommentAttachment.File.HashSha256),
+                "server field comment attachment should store a file hash");
+            var serverFieldCommentAttachments = await serverDocuments.ListFieldCommentAttachmentsAsync(serverFieldComment.CommentId);
             Require(
-                serverFieldNoteAttachments.Any(item => item.AttachmentId == serverFieldNoteAttachment.AttachmentId),
-                "server field note attachment list should include the uploaded attachment");
+                serverFieldCommentAttachments.Any(item => item.AttachmentId == serverFieldCommentAttachment.AttachmentId),
+                "server field comment attachment list should include the uploaded attachment");
         }
 
         {

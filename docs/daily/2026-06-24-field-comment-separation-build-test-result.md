@@ -1,36 +1,36 @@
-# 2026-06-24 FieldNote 분리 설계 및 검증 결과
+# 2026-06-24 FieldComment 분리 설계 및 검증 결과
 
 ## 작업 목적
 
-현재 WPF 로컬 앱의 코멘트가 `document_versions.comment`에 누적되던 흐름을 FieldNote 원천 이력 구조로 분리할 준비를 했다. 목표는 문서 파일 개정 이력과 현장 코멘트 이력을 분리하고, 오프라인 WPF 입력을 먼저 로컬 SQLite에 안전하게 남긴 뒤 향후 FastAPI 서버 동기화로 확장할 수 있게 만드는 것이다.
+현재 WPF 로컬 앱의 코멘트가 `document_versions.comment`에 누적되던 흐름을 FieldComment 원천 이력 구조로 분리할 준비를 했다. 목표는 문서 파일 개정 이력과 현장 코멘트 이력을 분리하고, 오프라인 WPF 입력을 먼저 로컬 SQLite에 안전하게 남긴 뒤 향후 FastAPI 서버 동기화로 확장할 수 있게 만드는 것이다.
 
 ## WPF 오프라인 최소 구현
 
-WPF 로컬 SQLite에 `field_notes` 최소 테이블을 추가했다.
+WPF 로컬 SQLite에 `field_comments` 최소 테이블을 추가했다.
 
 | 필드 그룹 | 내용 |
 | --- | --- |
 | 연결 대상 | `document_id`, `document_version_no` |
-| 입력 원천 | `note_type`, `input_mode`, `signal_level`, `raw_content`, `entry_source` |
+| 입력 원천 | `comment_type`, `input_mode`, `signal_level`, `raw_content`, `entry_source` |
 | 작성 주체 | `author_name`, `reported_by`, `operator_name`, `device_id`, `location_code` |
 | 관리자 정리 후보 | `normalized_content`, `analysis_content`, `status` |
-| 동기화 후보 | `note_id`, `created_at`, `synced_at` |
+| 동기화 후보 | `comment_id`, `created_at`, `synced_at` |
 
-WPF 문서 보기 화면의 새 코멘트 저장은 `FieldNoteService.AddDocumentNote`를 사용한다. 이 흐름은 문서 버전을 증가시키지 않고 `field_notes`에 원천 코멘트를 저장한다. 문서 목록에서 빠르게 볼 수 있도록 `documents.latest_comment`와 `documents.updated_at`만 갱신한다.
+WPF 문서 보기 화면의 새 코멘트 저장은 `FieldCommentService.AddDocumentComment`를 사용한다. 이 흐름은 문서 버전을 증가시키지 않고 `field_comments`에 원천 코멘트를 저장한다. 문서 목록에서 빠르게 볼 수 있도록 `documents.latest_comment`와 `documents.updated_at`만 갱신한다.
 
-기존 로컬 DB에 남아 있는 `document_versions.comment` 데이터는 앱 초기화 시 `field_notes`로 백필한다. 테스트 SQLite DB, 샘플 파일, 기존 테스트 기록을 삭제하지 않고 이어가기 위한 호환 경로이다.
+기존 로컬 DB에 남아 있는 `document_versions.comment` 데이터는 앱 초기화 시 `field_comments`로 백필한다. 테스트 SQLite DB, 샘플 파일, 기존 테스트 기록을 삭제하지 않고 이어가기 위한 호환 경로이다.
 
 ## FastAPI 최소 구현
 
-FastAPI에는 서버 FieldNote 최소 API를 추가했다.
+FastAPI에는 서버 FieldComment 최소 API를 추가했다.
 
 | Method | Path | 역할 |
 | --- | --- | --- |
-| POST | `/api/v1/field-notes` | 현장 코멘트 원천 이력 등록 |
-| GET | `/api/v1/field-notes` | 전체/문서별/상태별 목록 조회 |
-| GET | `/api/v1/field-notes/{noteId}` | 단일 코멘트 조회 |
-| PATCH | `/api/v1/field-notes/{noteId}` | 관리자 정리, 분석, 상태 갱신 |
-| GET | `/api/v1/documents/{documentId}/field-notes` | 문서별 현장 코멘트 조회 |
+| POST | `/api/v1/field-comments` | 현장 코멘트 원천 이력 등록 |
+| GET | `/api/v1/field-comments` | 전체/문서별/상태별 목록 조회 |
+| GET | `/api/v1/field-comments/{commentId}` | 단일 코멘트 조회 |
+| PATCH | `/api/v1/field-comments/{commentId}` | 관리자 정리, 분석, 상태 갱신 |
+| GET | `/api/v1/documents/{documentId}/field-comments` | 문서별 현장 코멘트 조회 |
 
 현재 API는 인증/권한 적용 전 단계이다. `documentId`가 들어오면 서버의 `documents` 존재 여부를 확인하고, `documentVersionId`가 들어오면 기존 `document_versions.version_id`와의 연결을 확인한다.
 
@@ -38,30 +38,30 @@ FastAPI에는 서버 FieldNote 최소 API를 추가했다.
 
 ```text
 WPF 오프라인 입력
-  -> local SQLite field_notes
+  -> local SQLite field_comments
   -> documents.latest_comment 요약 갱신
   -> synced_at IS NULL 항목이 서버 동기화 후보
 
 FastAPI 동기화 후보
-  -> POST /api/v1/field-notes
-  -> 서버 SQLite field_notes
+  -> POST /api/v1/field-comments
+  -> 서버 SQLite field_comments
   -> 관리자 검토 PATCH
   -> 후속 ReportSource / Report / AI 검색 근거로 확장
 ```
 
-후속 작업은 WPF 로컬 `field_notes.synced_at` 기준 동기화 큐, 서버 note ID 매핑, 사진 첨부, 태그 연결, 충돌 처리, 권한/감사 로그이다.
+후속 작업은 WPF 로컬 `field_comments.synced_at` 기준 동기화 큐, 서버 comment ID 매핑, 사진 첨부, 태그 연결, 충돌 처리, 권한/감사 로그이다.
 
 ## 변경 파일 요약
 
 | 영역 | 파일 |
 | --- | --- |
 | WPF 로컬 DB | `apps/windows/src/FlowNote.Windows.Core/Storage/FlowNoteLocalDatabase.cs` |
-| WPF FieldNote 서비스 | `apps/windows/src/FlowNote.Windows.Core/FieldNotes/FieldNoteRecord.cs`, `apps/windows/src/FlowNote.Windows.Core/FieldNotes/FieldNoteService.cs` |
+| WPF FieldComment 서비스 | `apps/windows/src/FlowNote.Windows.Core/FieldComments/FieldCommentRecord.cs`, `apps/windows/src/FlowNote.Windows.Core/FieldComments/FieldCommentService.cs` |
 | WPF 서비스 연결 | `apps/windows/src/FlowNote.Windows.Core/Storage/FlowNoteLocalServices.cs` |
 | WPF 화면 흐름 | `apps/windows/src/FlowNote.Windows.App/DocumentViewWindow.xaml.cs`, `apps/windows/src/FlowNote.Windows.App/MainWindow.xaml.cs` |
 | Windows 테스트 | `apps/windows/src/FlowNote.Windows.SmokeTests/Program.cs` |
-| FastAPI API | `services/api/app/api/v1/field_notes.py`, `services/api/app/api/v1/router.py` |
-| FastAPI 테스트 | `services/api/tests/test_field_notes_api.py` |
+| FastAPI API | `services/api/app/api/v1/field_comments.py`, `services/api/app/api/v1/router.py` |
+| FastAPI 테스트 | `services/api/tests/test_field_comments_api.py` |
 | 제품 문서 | `docs/data-model.md`, `docs/api.md`, `docs/system-map.md`, `docs/decisions.md` |
 
 ## 검증 결과
@@ -79,4 +79,4 @@ FastAPI 동기화 후보
 
 ## 보존한 산출물
 
-요청에 따라 테스트 SQLite DB, 테스트 로그, 샘플 파일, 업로드 저장 파일은 삭제하지 않았다. 이번 테스트로 기존 `services/api/data/flownote.test.sqlite3`, `services/api/storage/document-registration-tests/`, `services/api/storage/field-note-tests/`, WPF 로컬 샘플/DB 파일은 보존된다.
+요청에 따라 테스트 SQLite DB, 테스트 로그, 샘플 파일, 업로드 저장 파일은 삭제하지 않았다. 이번 테스트로 기존 `services/api/data/flownote.test.sqlite3`, `services/api/storage/document-registration-tests/`, `services/api/storage/field-comment-tests/`, WPF 로컬 샘플/DB 파일은 보존된다.

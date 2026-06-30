@@ -43,8 +43,18 @@ DOCUMENT_WRITE_ROLES = frozenset(
         ROLE_TEAM_LEAD,
     }
 )
-FIELD_NOTE_CREATE_ROLES = DOCUMENT_WRITE_ROLES | frozenset({ROLE_VIEWER, ROLE_TEAM_MEMBER})
+FIELD_COMMENT_CREATE_ROLES = DOCUMENT_WRITE_ROLES | frozenset({ROLE_VIEWER, ROLE_TEAM_MEMBER})
 ACCESS_LOG_READ_ROLES = frozenset({ROLE_ADMIN, ROLE_SYSTEM_ADMIN})
+REPORT_WRITE_ROLES = frozenset(
+    {
+        ROLE_ADMIN,
+        ROLE_MANAGER,
+        ROLE_SYSTEM_ADMIN,
+        ROLE_DOCUMENT_ADMIN,
+        ROLE_ASSISTANT_MANAGER,
+        ROLE_DEPARTMENT_MANAGER,
+    }
+)
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -313,11 +323,15 @@ DocumentWriteUser = Annotated[
     AuthenticatedUser,
     Depends(require_roles(*DOCUMENT_WRITE_ROLES)),
 ]
-FieldNoteCreateUser = Annotated[
+FieldCommentCreateUser = Annotated[
     AuthenticatedUser,
-    Depends(require_roles(*FIELD_NOTE_CREATE_ROLES)),
+    Depends(require_roles(*FIELD_COMMENT_CREATE_ROLES)),
 ]
 AccessLogReadUser = Annotated[
     AuthenticatedUser,
     Depends(require_roles(*ACCESS_LOG_READ_ROLES)),
+]
+ReportWriteUser = Annotated[
+    AuthenticatedUser,
+    Depends(require_roles(*REPORT_WRITE_ROLES)),
 ]

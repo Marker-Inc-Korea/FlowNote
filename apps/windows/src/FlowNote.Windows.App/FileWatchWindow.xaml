@@ -1,7 +1,7 @@
 <Window x:Class="FlowNote.Windows.App.FileWatchWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="File Watch"
+        Title="파일 감시"
         Width="980"
         Height="640"
         MinWidth="820"
@@ -30,7 +30,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Watch Folder"
+                <TextBlock Text="감시 폴더"
                            Margin="0,0,10,0"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource PrimaryTextBrush}"
@@ -43,21 +43,21 @@
                         Width="84"
                         Height="32"
                         Margin="8,0,0,0"
-                        Content="Browse"
+                        Content="찾아보기"
                         Click="BrowseButton_Click" />
                 <Button x:Name="StartWatchButton"
                         Grid.Column="3"
                         Width="84"
                         Height="32"
                         Margin="8,0,0,0"
-                        Content="Start"
+                        Content="시작"
                         Click="StartWatchButton_Click" />
                 <Button x:Name="StopWatchButton"
                         Grid.Column="4"
                         Width="84"
                         Height="32"
                         Margin="8,0,0,0"
-                        Content="Stop"
+                        Content="중지"
                         Click="StopWatchButton_Click" />
             </Grid>
         </Border>
@@ -79,11 +79,11 @@
                       ColumnHeaderHeight="34"
                       SelectionChanged="CandidateGrid_SelectionChanged">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="Detected" Binding="{Binding DetectedAt, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" />
-                    <DataGridTextColumn Header="File" Binding="{Binding FileName}" Width="*" />
-                    <DataGridTextColumn Header="Matched Document" Binding="{Binding DocumentTitle}" Width="220" />
-                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" />
-                    <DataGridTextColumn Header="Size" Binding="{Binding SizeBytes}" Width="90" />
+                    <DataGridTextColumn Header="감지시간" Binding="{Binding DetectedAt, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" />
+                    <DataGridTextColumn Header="파일" Binding="{Binding FileName}" Width="*" />
+                    <DataGridTextColumn Header="연결 문서" Binding="{Binding DocumentTitle}" Width="220" />
+                    <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="100" />
+                    <DataGridTextColumn Header="크기" Binding="{Binding SizeBytes}" Width="90" />
                 </DataGrid.Columns>
             </DataGrid>
         </Border>
@@ -107,7 +107,7 @@
                     <ColumnDefinition Width="180" />
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Text="Target Document"
+                <TextBlock Text="대상 문서"
                            Margin="0,0,10,0"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource PrimaryTextBrush}"
@@ -118,7 +118,7 @@
                           DisplayMemberPath="DisplayText"
                           SelectedValuePath="DocumentId" />
                 <TextBlock Grid.Column="2"
-                           Text="Version"
+                           Text="버전"
                            Margin="12,0,8,0"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource PrimaryTextBrush}"
@@ -129,7 +129,7 @@
                          VerticalContentAlignment="Center" />
 
                 <TextBlock Grid.Row="2"
-                           Text="Change Reason"
+                           Text="변경 사유"
                            Margin="0,0,10,0"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource PrimaryTextBrush}"
@@ -155,21 +155,21 @@
                 <Button Width="84"
                         Height="34"
                         Margin="0,0,8,0"
-                        Content="Refresh"
+                        Content="새로고침"
                         Click="RefreshButton_Click" />
                 <Button Width="84"
                         Height="34"
                         Margin="0,0,8,0"
-                        Content="Confirm"
+                        Content="확정"
                         Click="ConfirmButton_Click" />
                 <Button Width="84"
                         Height="34"
                         Margin="0,0,8,0"
-                        Content="Ignore"
+                        Content="무시"
                         Click="IgnoreButton_Click" />
                 <Button Width="84"
                         Height="34"
-                        Content="Close"
+                        Content="닫기"
                         Click="CloseButton_Click" />
             </StackPanel>
         </DockPanel>

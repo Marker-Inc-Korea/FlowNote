@@ -2,7 +2,7 @@
 
 ## 작업 범위
 
-- Windows smoke test에 서버 로그인 API, 서버 FieldNote 등록, 서버 문서 접근 로그 등록/조회 검증 블록을 분리해 추가했다.
+- Windows smoke test에 서버 로그인 API, 서버 FieldComment 등록, 서버 문서 접근 로그 등록/조회 검증 블록을 분리해 추가했다.
 - `FLOWNOTE_API_BASE_URL`이 없거나 유효하지 않으면 서버 연동 블록을 건너뛰고 로컬 SQLite 검증은 계속 진행하는 기존 방식을 유지했다.
 - FastAPI에 `POST /api/v1/documents/{documentId}/access-logs`, `GET /api/v1/documents/{documentId}/access-logs`를 추가했다.
 - Windows Core 서버 문서 클라이언트에 문서 접근 로그 등록/조회 계약을 추가했다.
@@ -17,7 +17,7 @@
 | `services/api/tests/test_document_access_logs_api.py` | 접근 로그 생성/조회와 다른 문서 버전 거부 pytest 추가 |
 | `apps/windows/src/FlowNote.Windows.Core/ServerApi/FlowNoteServerDocumentClient.cs` | 서버 접근 로그 등록/조회 메서드 추가 |
 | `apps/windows/src/FlowNote.Windows.Core/ServerApi/ServerDocumentContracts.cs` | 서버 접근 로그 요청/응답 DTO 추가 |
-| `apps/windows/src/FlowNote.Windows.SmokeTests/Program.cs` | 로그인 API, FieldNote 등록, 문서 접근 로그 서버 검증 블록 추가 |
+| `apps/windows/src/FlowNote.Windows.SmokeTests/Program.cs` | 로그인 API, FieldComment 등록, 문서 접근 로그 서버 검증 블록 추가 |
 | `docs/api.md` | 현재 구현 API와 문서 접근 로그 계약 갱신 |
 | `apps/windows/README.md` | 서버 클라이언트와 smoke 검증 범위 갱신 |
 | `docs/mvp-scope.md` | 현재 구현/미구현 범위 보정 |

@@ -23,8 +23,10 @@ public partial class MainWindow : Window
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly bool canRegisterDocuments;
     private readonly bool canManageFileWatch;
+    private readonly bool canManageUsers;
     private readonly ExplorerWorkspace workspace = new();
     private ExplorerFolder? selectedFolder;
+    private string currentDisplayName;
 
     public MainWindow(FlowNoteLocalServices services, LoginResult currentUser)
     {
@@ -33,8 +35,10 @@ public partial class MainWindow : Window
         this.currentUser = currentUser;
         canRegisterDocuments = RolePermissionPolicy.CanRegisterDocuments(currentUser.Role);
         canManageFileWatch = RolePermissionPolicy.CanManageFileWatch(currentUser.Role);
+        canManageUsers = RolePermissionPolicy.CanManageUsers(currentUser.Role);
+        currentDisplayName = currentUser.DisplayName ?? currentUser.LoginId ?? "admin";
         (serverDocumentClient, serverHttpClient) = CreateServerDocumentClient(currentUser);
-        SignedInUserTextBlock.Text = $"{currentUser.DisplayName} ({currentUser.Role})";
+        SignedInUserTextBlock.Text = $"{currentDisplayName} ({FormatUserRole(currentUser.Role)})";
         DataContext = workspace;
         ApplyRolePermissions();
         Loaded += MainWindow_Loaded;
@@ -105,21 +109,21 @@ public partial class MainWindow : Window
 
         if (DocumentGrid.SelectedItem is not ExplorerDocument document)
         {
-            workspace.StatusText = "Select a document before changing status.";
+            workspace.StatusText = "상태를 변경할 문서를 선택하세요.";
             return;
         }
 
-        var selectedStatus = (DocumentStatusComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString();
+        var selectedStatus = (DocumentStatusComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
         if (string.IsNullOrWhiteSpace(selectedStatus))
         {
-            workspace.StatusText = "Select a document status.";
+            workspace.StatusText = "문서 상태를 선택하세요.";
             return;
         }
 
         try
         {
             services.Documents.UpdateDocumentStatus(document.DocumentId, selectedStatus, GetCurrentActorName());
-            RefreshDocuments(selectedFolder?.Id, $"Document status changed: {selectedStatus}");
+            RefreshDocuments(selectedFolder?.Id, $"문서 상태를 변경했습니다: {FormatDocumentStatus(selectedStatus)}");
         }
         catch (InvalidOperationException exception)
         {
@@ -136,14 +140,14 @@ public partial class MainWindow : Window
 
         if (DocumentGrid.SelectedItem is not ExplorerDocument document)
         {
-            workspace.StatusText = "Select a document before publishing.";
+            workspace.StatusText = "공개할 문서를 선택하세요.";
             return;
         }
 
         try
         {
             services.Documents.PublishVersion(document.DocumentId, document.VersionNo, GetCurrentActorName());
-            RefreshDocuments(selectedFolder?.Id, $"Published document version: {document.FileName} v{document.VersionNo}");
+            RefreshDocuments(selectedFolder?.Id, $"문서 버전을 공개했습니다: {document.FileName} v{document.VersionNo}");
         }
         catch (InvalidOperationException exception)
         {
@@ -170,6 +174,26 @@ public partial class MainWindow : Window
         window.ShowDialog();
     }
 
+    private void UserManagementButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureUserManagementAllowed())
+        {
+            return;
+        }
+
+        var window = new UserManagementWindow(services.Users, GetCurrentActorName())
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+        if (string.Equals(window.UpdatedUserId, currentUser.UserId, StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(window.UpdatedDisplayName))
+        {
+            currentDisplayName = window.UpdatedDisplayName;
+            SignedInUserTextBlock.Text = $"{window.UpdatedDisplayName} ({FormatUserRole(currentUser.Role)})";
+        }
+    }
+
     private void WorkSequenceAdminButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureDocumentRegistrationAllowed())
@@ -189,7 +213,7 @@ public partial class MainWindow : Window
         var board = services.WorkSequences.ListBoards().FirstOrDefault();
         if (board is null)
         {
-            workspace.StatusText = "Create a work sequence board before opening TV view.";
+            workspace.StatusText = "현황판을 열기 전에 작업판을 먼저 생성하세요.";
             return;
         }
 
@@ -198,6 +222,28 @@ public partial class MainWindow : Window
             Owner = this
         };
         window.Show();
+    }
+
+    private void ReportDraftButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureDocumentRegistrationAllowed())
+        {
+            return;
+        }
+
+        var folder = GetSelectedFolderOrDefault();
+        var window = new ReportDraftWindow(
+            services.Reports,
+            folder.Id,
+            GetCurrentActorName())
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+        if (window.DocumentSaved)
+        {
+            RefreshDocuments(folder.Id, "보고서 문서를 저장했습니다.");
+        }
     }
 
     private void FileWatchButton_Click(object sender, RoutedEventArgs e)
@@ -215,7 +261,7 @@ public partial class MainWindow : Window
             Owner = this
         };
         window.ShowDialog();
-        RefreshDocuments(selectedFolder?.Id, "File watch candidates updated.");
+        RefreshDocuments(selectedFolder?.Id, "파일 감시 후보를 갱신했습니다.");
     }
 
     private async void UploadFileButton_Click(object sender, RoutedEventArgs e)
@@ -362,7 +408,7 @@ public partial class MainWindow : Window
         var serverRegisteredCount = 0;
         var serverSyncFailures = new List<string>();
         long? lastTargetFolderId = null;
-        var actorName = currentUser.DisplayName ?? currentUser.LoginId ?? "admin";
+        var actorName = GetCurrentActorName();
 
         foreach (var file in files.Where(File.Exists))
         {
@@ -534,17 +580,20 @@ public partial class MainWindow : Window
         RegisterDocumentButton.IsEnabled = canRegisterDocuments;
         UploadFileButton.IsEnabled = canRegisterDocuments;
         WorkSequenceAdminButton.IsEnabled = canRegisterDocuments;
+        ReportDraftButton.IsEnabled = canRegisterDocuments;
         ApplyDocumentStatusButton.IsEnabled = canRegisterDocuments;
         PublishDocumentButton.IsEnabled = canRegisterDocuments;
         DocumentStatusComboBox.IsEnabled = canRegisterDocuments;
         FileListDropZone.AllowDrop = canRegisterDocuments;
         FileWatchButton.IsEnabled = canManageFileWatch;
+        UserManagementButton.Visibility = canManageUsers ? Visibility.Visible : Visibility.Collapsed;
 
         if (!canRegisterDocuments)
         {
             RegisterDocumentButton.ToolTip = noDocumentWritePermission;
             UploadFileButton.ToolTip = noDocumentWritePermission;
             WorkSequenceAdminButton.ToolTip = noDocumentWritePermission;
+            ReportDraftButton.ToolTip = noDocumentWritePermission;
             ApplyDocumentStatusButton.ToolTip = noDocumentWritePermission;
             PublishDocumentButton.ToolTip = noDocumentWritePermission;
             DocumentStatusComboBox.ToolTip = noDocumentWritePermission;
@@ -553,7 +602,7 @@ public partial class MainWindow : Window
 
         if (!canManageFileWatch)
         {
-            FileWatchButton.ToolTip = "File watch is available only to administrator-level roles.";
+            FileWatchButton.ToolTip = "파일 감시는 관리자급 권한에서만 사용할 수 있습니다.";
         }
     }
 
@@ -575,7 +624,18 @@ public partial class MainWindow : Window
             return true;
         }
 
-        workspace.StatusText = "File watch is available only to administrator-level roles.";
+        workspace.StatusText = "파일 감시는 관리자급 권한에서만 사용할 수 있습니다.";
+        return false;
+    }
+
+    private bool EnsureUserManagementAllowed()
+    {
+        if (canManageUsers)
+        {
+            return true;
+        }
+
+        workspace.StatusText = "사용자 관리는 관리자 전용 기능입니다.";
         return false;
     }
 
@@ -594,7 +654,7 @@ public partial class MainWindow : Window
         var viewWindow = string.IsNullOrWhiteSpace(document.DocumentId)
             ? new DocumentViewWindow(document)
             : new DocumentViewWindow(
-                services.FieldNotes,
+                services.FieldComments,
                 serverDocumentClient,
                 services.ServerSync,
                 services.DocumentViewLogs,
@@ -664,13 +724,43 @@ public partial class MainWindow : Window
 
     private string GetCurrentActorName()
     {
-        return currentUser.DisplayName ?? currentUser.LoginId ?? "admin";
+        return currentDisplayName;
     }
 
     private void RefreshNotificationButton()
     {
         var unreadCount = services.Notifications.CountUnread(GetCurrentActorName());
         NotificationButton.Content = unreadCount == 0 ? "알림함" : $"알림함 ({unreadCount})";
+    }
+
+    private static string FormatDocumentStatus(string status)
+    {
+        return status switch
+        {
+            "WORKING" => "작업중",
+            "IN_REVIEW" => "검토중",
+            "PUBLISHED" => "공개",
+            "ARCHIVED" => "보관",
+            _ => status
+        };
+    }
+
+    private static string FormatUserRole(string? role)
+    {
+        return role switch
+        {
+            "admin" => "관리자",
+            "manager" => "관리자",
+            "system-admin" => "시스템 관리자",
+            "document-admin" => "문서 관리자",
+            "assistant-manager" => "차장",
+            "department-manager" => "부서장",
+            "line-foreman" => "반장",
+            "team-lead" => "조장",
+            "team-member" => "조원",
+            "viewer" => "열람자",
+            _ => role ?? string.Empty
+        };
     }
 
     private static T? FindVisualParent<T>(DependencyObject? child)
