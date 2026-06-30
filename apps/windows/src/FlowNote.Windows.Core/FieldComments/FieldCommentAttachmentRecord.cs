@@ -1,9 +1,9 @@
-namespace FlowNote.Windows.Core.FieldNotes;
+namespace FlowNote.Windows.Core.FieldComments;
 
-public sealed record FieldNoteAttachmentRecord(
+public sealed record FieldCommentAttachmentRecord(
     long Id,
     string AttachmentId,
-    string NoteId,
+    string CommentId,
     string LocalPath,
     string OriginalFileName,
     string Extension,

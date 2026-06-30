@@ -1,7 +1,7 @@
 <Window x:Class="FlowNote.Windows.App.WorkSequenceAdminWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Work Sequence Admin"
+        Title="작업순서 관리"
         Width="980"
         Height="640"
         MinWidth="860"
@@ -27,24 +27,24 @@
                         BorderBrush="{StaticResource PanelBorderBrush}"
                         BorderThickness="0,0,0,1">
                     <StackPanel>
-                        <TextBlock Text="Boards"
+                        <TextBlock Text="작업판"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource PrimaryTextBrush}" />
                         <TextBox x:Name="BoardTitleTextBox"
                                  Height="30"
                                  Margin="0,8,0,0"
                                  VerticalContentAlignment="Center"
-                                 Text="Today work sequence" />
+                                 Text="오늘 작업순서" />
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                             <TextBox x:Name="LineCodeTextBox"
                                      Width="132"
                                      Height="30"
                                      VerticalContentAlignment="Center"
-                                     Text="line-a" />
+                                     Text="라인-A" />
                             <Button Width="110"
                                     Height="30"
                                     Margin="8,0,0,0"
-                                    Content="New Board"
+                                    Content="새 작업판"
                                     Click="CreateBoardButton_Click" />
                         </StackPanel>
                     </StackPanel>
@@ -74,14 +74,14 @@
                     Padding="12,0">
                 <DockPanel>
                     <TextBlock x:Name="SelectedBoardTextBlock"
-                               Text="Select or create a board"
+                               Text="작업판을 선택하거나 생성하세요"
                                FontWeight="SemiBold"
                                Foreground="{StaticResource PrimaryTextBrush}"
                                VerticalAlignment="Center" />
                     <Button DockPanel.Dock="Right"
                             Width="118"
                             Height="30"
-                            Content="Open TV View"
+                            Content="현황판 열기"
                             Click="OpenTvViewButton_Click" />
                 </DockPanel>
             </Border>
@@ -100,7 +100,7 @@
                         <ColumnDefinition Width="116" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="Item title"
+                        <TextBlock Text="작업 항목"
                                    Foreground="{StaticResource SecondaryTextBrush}" />
                         <TextBox x:Name="ItemTitleTextBox"
                                  Height="30"
@@ -108,7 +108,7 @@
                                  VerticalContentAlignment="Center" />
                     </StackPanel>
                     <StackPanel Grid.Column="1">
-                        <TextBlock Text="Assigned"
+                        <TextBlock Text="담당자"
                                    Foreground="{StaticResource SecondaryTextBrush}" />
                         <TextBox x:Name="AssignedToTextBox"
                                  Height="30"
@@ -118,7 +118,7 @@
                     <Button Grid.Column="2"
                             Height="32"
                             Margin="0,22,0,0"
-                            Content="Add Item"
+                            Content="항목 추가"
                             Click="AddItemButton_Click" />
                 </Grid>
             </Border>
@@ -139,11 +139,11 @@
                           ColumnHeaderHeight="34">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="#" Binding="{Binding SortOrder}" Width="52" />
-                        <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="*" />
-                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="120" />
-                        <DataGridTextColumn Header="Hold Reason" Binding="{Binding HoldReason}" Width="150" />
-                        <DataGridTextColumn Header="Assigned" Binding="{Binding AssignedTo}" Width="120" />
-                        <DataGridTextColumn Header="Updated" Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="150" />
+                        <DataGridTextColumn Header="제목" Binding="{Binding Title}" Width="*" />
+                        <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="120" />
+                        <DataGridTextColumn Header="보류 사유" Binding="{Binding HoldReason}" Width="150" />
+                        <DataGridTextColumn Header="담당자" Binding="{Binding AssignedTo}" Width="120" />
+                        <DataGridTextColumn Header="수정시간" Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="150" />
                     </DataGrid.Columns>
                 </DataGrid>
             </Border>
@@ -164,7 +164,7 @@
                         <ColumnDefinition Width="116" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="Change reason"
+                        <TextBlock Text="변경 사유"
                                    Foreground="{StaticResource SecondaryTextBrush}" />
                         <TextBox x:Name="ReasonTextBox"
                                  Height="30"
@@ -174,27 +174,27 @@
                     <Button Grid.Column="1"
                             Height="32"
                             Margin="0,22,8,0"
-                            Content="Move Up"
+                            Content="위로"
                             Click="MoveUpButton_Click" />
                     <Button Grid.Column="2"
                             Height="32"
                             Margin="0,22,8,0"
-                            Content="Move Down"
+                            Content="아래로"
                             Click="MoveDownButton_Click" />
                     <ComboBox x:Name="StatusComboBox"
                               Grid.Column="3"
                               Height="32"
                               Margin="0,22,8,0"
                               SelectedIndex="0">
-                        <ComboBoxItem Content="WAITING" />
-                        <ComboBoxItem Content="IN_PROGRESS" />
-                        <ComboBoxItem Content="HOLD" />
-                        <ComboBoxItem Content="COMPLETED" />
+                        <ComboBoxItem Content="대기" Tag="WAITING" />
+                        <ComboBoxItem Content="진행중" Tag="IN_PROGRESS" />
+                        <ComboBoxItem Content="보류" Tag="HOLD" />
+                        <ComboBoxItem Content="완료" Tag="COMPLETED" />
                     </ComboBox>
                     <Button Grid.Column="4"
                             Height="32"
                             Margin="0,22,0,0"
-                            Content="Set Status"
+                            Content="상태 변경"
                             Click="SetStatusButton_Click" />
                 </Grid>
             </Border>

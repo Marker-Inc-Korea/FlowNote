@@ -1,4 +1,4 @@
-﻿# FlowNote 상관관계 정리
+# FlowNote 상관관계 정리
 
 ## 0. 현재 코드 기준 상관관계
 
@@ -11,7 +11,7 @@ Windows WPF App
       -> document_folders
       -> documents
       -> document_versions
-      -> field_notes
+      -> field_comments
       -> file_watch_candidates
       -> work_sequence_boards / work_sequence_items
       -> work_sequence_change_history
@@ -26,11 +26,11 @@ FastAPI Server
   -> GET /api/v1/health
   -> POST /api/v1/auth/login
   -> documents / document_versions / file_objects
-  -> field_notes
+  -> field_comments
   -> work_sequence_boards / work_sequence_items
 ```
 
-현재 코드에는 FastAPI 로그인 API, refresh token 회전, logout 세션 폐기, `/auth/me`, WPF 로그인 화면의 서버 로그인 우선 호출과 로컬 SQLite 폴백, 로그인 성공 후 Bearer 인증 헤더 적용, 문서 등록/버전 등록 API, 문서 상태와 공개 버전 API, 서버 `storage/` 저장소, 서버 `FieldNote` 등록/조회/검토 API, FieldNote 첨부 API, 서버 문서 접근 로그 API, 작업순서판 최소 API, WPF 로컬 `field_notes` 오프라인 저장 흐름, WPF 로컬 작업순서판 편집/TV 읽기 화면, WPF 관리자급 파일 감시 후보 생성/확정/무시 흐름이 구현되어 있다. 로그인 API는 사용자명/비밀번호로 계정 활성 상태를 확인하고 사용자 정보, access token, refresh token, 만료 시각을 반환한다. 문서, 태그, FieldNote, 문서 접근 로그, 작업순서판 API는 인증 헤더가 없거나 token이 만료/대체/폐기되었으면 `401`을 반환한다. 문서 쓰기, 태그 쓰기, 작업순서판 쓰기, 접근 로그 조회는 role 기반 권한 검사를 수행한다. WPF 파일 감시는 관리자급 role에서만 열리며 변경 파일을 즉시 업로드하지 않고 `file_watch_candidates` 후보로 저장한 뒤, 관리자가 변경 사유와 버전명을 입력해야 기존 문서의 새 `document_versions`로 확정한다. 작업순서판은 기존 `작업순서` 폴더 파일 등록과 분리된 운영 보드이며, 항목 순서 변경과 상태 변경을 별도 이력과 알림 이벤트 후보로 남긴다. WPF는 문서, FieldNote, 첨부, 접근 로그 전송 후보를 `server_sync_queue`에 남기고 서버 URL이 있으면 재시도한다. `WorkRecord`, `Report`, `SearchIndexItem`, `AiAdviceLog`, MES/ERP 연동 모델은 아직 구현되어 있지 않다. 아래 상관관계는 제품 목표와 서버 확장 기준이며, 미래 기능은 현재 코드와의 구현 비교 대상이 아니다.
+현재 코드에는 FastAPI 로그인 API, refresh token 회전, logout 세션 폐기, `/auth/me`, WPF 로그인 화면의 서버 로그인 우선 호출과 로컬 SQLite 폴백, 로그인 성공 후 Bearer 인증 헤더 적용, 문서 등록/버전 등록 API, 문서 상태와 공개 버전 API, 서버 `storage/` 저장소, 서버 `FieldComment` 등록/조회/검토 API, FieldComment 첨부 API, 서버 문서 접근 로그 API, 작업순서판 최소 API, WPF 로컬 `field_comments` 오프라인 저장 흐름, WPF 로컬 작업순서판 편집/TV 읽기 화면, WPF 관리자급 파일 감시 후보 생성/확정/무시 흐름이 구현되어 있다. 로그인 API는 사용자명/비밀번호로 계정 활성 상태를 확인하고 사용자 정보, access token, refresh token, 만료 시각을 반환한다. 문서, 태그, FieldComment, 문서 접근 로그, 작업순서판 API는 인증 헤더가 없거나 token이 만료/대체/폐기되었으면 `401`을 반환한다. 문서 쓰기, 태그 쓰기, 작업순서판 쓰기, 접근 로그 조회는 role 기반 권한 검사를 수행한다. WPF 파일 감시는 관리자급 role에서만 열리며 변경 파일을 즉시 업로드하지 않고 `file_watch_candidates` 후보로 저장한 뒤, 관리자가 변경 사유와 버전명을 입력해야 기존 문서의 새 `document_versions`로 확정한다. 작업순서판은 기존 `작업순서` 폴더 파일 등록과 분리된 운영 보드이며, 항목 순서 변경과 상태 변경을 별도 이력과 알림 이벤트 후보로 남긴다. WPF는 문서, FieldComment, 첨부, 접근 로그 전송 후보를 `server_sync_queue`에 남기고 서버 URL이 있으면 재시도한다. `WorkRecord`, `Report`, `SearchIndexItem`, `AiAdviceLog`, MES/ERP 연동 모델은 아직 구현되어 있지 않다. 아래 상관관계는 제품 목표와 서버 확장 기준이며, 미래 기능은 현재 코드와의 구현 비교 대상이 아니다.
 
 ## 1. 전체 기준
 
@@ -88,7 +88,7 @@ TerminalDevice
       -> Published document view
       -> Work sequence TV view
       -> ViewerSession timeout (client app phase)
-      -> FieldNote create
+      -> FieldComment create
       -> Download control (client app phase)
   -> admin_support
       -> WatchedFile
@@ -102,10 +102,10 @@ WPF Local FileWatch
       -> DocumentVersion
       -> activity_history
 
-FieldNote
+FieldComment
   -> Document
   -> DocumentVersion
-  -> FieldNoteAttachment
+  -> FieldCommentAttachment
       -> FileObject
   -> OperatorProfile / UserAccount
   -> CommentTemplate
@@ -122,7 +122,7 @@ WorkRecord
 
 SearchIndexItem
   -> DocumentVersion
-  -> FieldNote
+  -> FieldComment
   -> Report
   -> WorkRecordVersion
 
@@ -142,12 +142,12 @@ AiAdviceLog
 
 ExternalSystem
   -> IntegrationMapping
-  -> DocumentStructure / WorkRecord / FieldNote
+  -> DocumentStructure / WorkRecord / FieldComment
 
 OperatorProfile / UserAccount
   -> DocumentHistory
   -> DocumentAccessLog
-  -> FieldNote
+  -> FieldComment
   -> WorkRecordParticipant
 ```
 
@@ -196,9 +196,9 @@ OperatorProfile / UserAccount
 
 기본 검색은 AI와 별개로 제공한다. 파일명, 문서명, 태그, 문서 구조, 작업지시 기준으로 윈도우 탐색기처럼 목록을 좁히고 바로 열람하는 경험을 우선한다.
 
-사진 기록은 `FieldNoteAttachment`와 `FileObject`를 통해 문서 또는 작업 맥락에 연결한다. 작업일지나 종이 기록을 촬영한 사진도 현장 기록의 원천 데이터로 본다.
+사진 기록은 `FieldCommentAttachment`와 `FileObject`를 통해 문서 또는 작업 맥락에 연결한다. 작업일지나 종이 기록을 촬영한 사진도 현장 기록의 원천 데이터로 본다.
 
-현장 관찰에서 확인한 입력 가능 순간과 단말기 위치는 `TerminalDevice`, `FieldNote`, `WorkRecord` 설계의 전제 조건이다. 단말기가 적재적소에 있다고 가정하지 않고, 실제 위치와 작업자 동선을 기준으로 사용성을 판단한다.
+현장 관찰에서 확인한 입력 가능 순간과 단말기 위치는 `TerminalDevice`, `FieldComment`, `WorkRecord` 설계의 전제 조건이다. 단말기가 적재적소에 있다고 가정하지 않고, 실제 위치와 작업자 동선을 기준으로 사용성을 판단한다.
 
 ## 4.2 MES/ERP와의 관계
 
@@ -274,9 +274,11 @@ Client App UI
 - `raw_content`는 원문 보존용이다.
 - `normalized_content`는 관리자 정리 문구이다.
 - `analysis_content`는 관리자급 사용자의 분석과 판단을 남기는 정제 영역이다.
-- 보고서는 `FieldNote`, `WorkRecord`, 관련 문서를 원천 데이터로 사용한다.
+- 보고서는 `FieldComment`, `WorkRecord`, 관련 문서를 원천 데이터로 사용한다.
 - 최종 보고서는 다시 `Document`로 저장한다.
 - 보고서와 원천 코멘트는 `ReportSource`로 연결해 보고서 결론의 근거를 추적한다.
+
+2026-06-30 현재 구현된 최소 흐름은 AI 없이 관리자급 사용자가 `FIELD_COMMENT`(현재 서버 `FieldComment`), 관련 문서, 작업순서 항목/이력을 원천으로 수동 보고서 초안을 만들고, 승인 보고서를 `Document`와 첫 `DocumentVersion`으로 저장하는 방식이다.
 
 초기에는 현장 작업 흐름을 방해하지 않는 낮은 입력 부담을 우선한다. 실시간 직접 입력을 강제하지 않고, 말로 전달된 내용을 관리자가 대신 입력하는 경로도 허용한다. MES 연동과 자동 수집은 후속 단계에서 확장하되 데이터 모델은 처음부터 연결 관계를 유지한다.
 
@@ -288,8 +290,8 @@ Client App UI
 
 - 문서 수정자는 `DocumentHistory.actor_id`로 기록한다.
 - 문서 열람자는 `DocumentAccessLog.actor_id`로 기록한다.
-- 현장 코멘트 입력자는 `FieldNote.author_id`로 기록한다.
-- 실제 전달자 또는 작업자는 `FieldNote.reported_by`로 기록한다.
+- 현장 코멘트 입력자는 `FieldComment.author_id`로 기록한다.
+- 실제 전달자 또는 작업자는 `FieldComment.reported_by`로 기록한다.
 - 개인 작업자를 특정하기 어려운 경우 작업반, 조장, 관리자 대리 등록자, 라인 단위로 기록할 수 있어야 한다.
 
 ## 9. 작업내역과 후속 AI 활용

@@ -30,13 +30,13 @@ The server currently implements:
 | GET | `/api/v1/documents/{documentId}/access-logs` | Document access log list |
 | GET | `/api/v1/tags` | Tag list |
 | POST | `/api/v1/tags` | Tag creation |
-| POST | `/api/v1/field-notes` | FieldNote source history registration |
-| GET | `/api/v1/field-notes` | FieldNote list |
-| GET | `/api/v1/field-notes/{noteId}` | FieldNote detail |
-| PATCH | `/api/v1/field-notes/{noteId}` | Manager review and analysis update |
-| POST | `/api/v1/field-notes/{noteId}/attachments` | FieldNote photo/file attachment registration |
-| GET | `/api/v1/field-notes/{noteId}/attachments` | FieldNote attachment list |
-| GET | `/api/v1/documents/{documentId}/field-notes` | FieldNotes for a document |
+| POST | `/api/v1/field-comments` | FieldComment source history registration |
+| GET | `/api/v1/field-comments` | FieldComment list |
+| GET | `/api/v1/field-comments/{commentId}` | FieldComment detail |
+| PATCH | `/api/v1/field-comments/{commentId}` | Manager review and analysis update |
+| POST | `/api/v1/field-comments/{commentId}/attachments` | FieldComment photo/file attachment registration |
+| GET | `/api/v1/field-comments/{commentId}/attachments` | FieldComment attachment list |
+| GET | `/api/v1/documents/{documentId}/field-comments` | FieldComments for a document |
 | POST | `/api/v1/work-sequence-boards` | Work sequence board creation |
 | GET | `/api/v1/work-sequence-boards` | Work sequence board list |
 | GET | `/api/v1/work-sequence-boards/{boardId}` | Work sequence board detail |
@@ -45,10 +45,10 @@ The server currently implements:
 | PATCH | `/api/v1/work-sequence-boards/{boardId}/items/{itemId}/status` | Change item status |
 | GET | `/api/v1/work-sequence-boards/{boardId}/history` | Work sequence change history |
 
-Document, FieldNote, and document access log APIs require `Authorization: Bearer {access_token}`. Missing, invalid, or expired credentials return `401`.
+Document, FieldComment, and document access log APIs require `Authorization: Bearer {access_token}`. Missing, invalid, or expired credentials return `401`.
 Document registration, document version registration, document tag changes, and tag creation
 require a document-write role such as `admin`, `document-admin`, `line-foreman`, or
-`team-lead`. `team-member` and `viewer` accounts can create FieldNotes but receive `403` for
+`team-lead`. `team-member` and `viewer` accounts can create FieldComments but receive `403` for
 document write flows. Document access log reads are limited to `admin` and `system-admin`.
 
 Server auth uses HMAC-signed access tokens plus the `auth_sessions` table. Login creates a
@@ -79,7 +79,7 @@ Useful settings:
 - `FLOWNOTE_DATABASE_URL`: default `sqlite:///./data/flownote.sqlite3`
 - `FLOWNOTE_TEST_DATABASE_URL`: default `sqlite:///./data/flownote.test.sqlite3`
 - `FLOWNOTE_STORAGE_ROOT`: default `./storage`
-- `FLOWNOTE_FIELD_NOTE_ATTACHMENT_MAX_BYTES`: default `20971520`
+- `FLOWNOTE_FIELD_COMMENT_ATTACHMENT_MAX_BYTES`: default `20971520`
 
 Do not commit real accounts, passwords, tokens, API keys, production DB connection strings, customer documents, or operational data.
 

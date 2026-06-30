@@ -9,4 +9,4 @@
 
 ## 현재 코드 기준 요약
 
-Windows 앱은 현재 FlowNote의 유일한 활성 클라이언트이다. 로컬 SQLite를 기본 저장소로 사용하고, `FLOWNOTE_API_BASE_URL`이 설정된 경우 FastAPI 서버 로그인과 문서/FieldNote/첨부/접근 로그 동기화를 시도한다. 서버가 없거나 전송이 실패해도 로컬 저장은 유지하고, 실패는 `server_sync_queue`와 `activity_history`에 남긴다.
+Windows 앱은 현재 FlowNote의 유일한 활성 클라이언트이다. 로컬 SQLite를 기본 저장소로 사용하고, `FLOWNOTE_API_BASE_URL`이 설정된 경우 FastAPI 서버 로그인과 문서/FieldComment/첨부/접근 로그 동기화를 시도한다. 서버가 없거나 전송이 실패해도 로컬 저장은 유지하고, 실패는 `server_sync_queue`와 `activity_history`에 남긴다.

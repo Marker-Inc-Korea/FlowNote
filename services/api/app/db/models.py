@@ -258,40 +258,40 @@ class TerminalDevice(TimestampMixin, Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class FieldNote(TimestampMixin, Base):
-    __tablename__ = "field_notes"
+class FieldComment(TimestampMixin, Base):
+    __tablename__ = "field_comments"
     __table_args__ = (
         CheckConstraint(
-            "note_type IN ('experience', 'work_evaluation', 'issue')", name="ck_field_note_type"
+            "comment_type IN ('experience', 'work_evaluation', 'issue')", name="ck_field_comment_type"
         ),
         CheckConstraint(
             (
                 "input_mode IN ('signal', 'free_text', 'template', 'template_with_text', "
                 "'admin_proxy', 'mes_integration')"
             ),
-            name="ck_field_note_input_mode",
+            name="ck_field_comment_input_mode",
         ),
         CheckConstraint(
             (
                 "status IN ('NEW', 'NEEDS_REVIEW', 'ANALYZED', 'REVIEWED', "
                 "'SELECTED', 'EXCLUDED', 'ARCHIVED')"
             ),
-            name="ck_field_note_status",
+            name="ck_field_comment_status",
         ),
         CheckConstraint(
             "document_id IS NOT NULL OR structure_item_id IS NOT NULL OR work_record_id IS NOT NULL",
-            name="ck_field_note_has_target",
+            name="ck_field_comment_has_target",
         ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    note_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    comment_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
     document_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("documents.document_id"))
     document_version_id: Mapped[str | None] = mapped_column(String(64))
     structure_item_id: Mapped[str | None] = mapped_column(String(64))
     work_record_id: Mapped[str | None] = mapped_column(String(64))
-    note_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    comment_type: Mapped[str] = mapped_column(String(30), nullable=False)
     input_mode: Mapped[str] = mapped_column(String(30), nullable=False)
     signal_level: Mapped[str | None] = mapped_column(String(20))
     template_id: Mapped[str | None] = mapped_column(String(64))
@@ -313,16 +313,16 @@ class FieldNote(TimestampMixin, Base):
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class FieldNoteAttachment(Base):
-    __tablename__ = "field_note_attachments"
+class FieldCommentAttachment(Base):
+    __tablename__ = "field_comment_attachments"
     __table_args__ = (
         CheckConstraint("attachment_type IN ('photo', 'document', 'other')", name="ck_attachment_type"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     attachment_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    note_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("field_notes.note_id"), nullable=False, index=True
+    comment_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("field_comments.comment_id"), nullable=False, index=True
     )
     file_object_id: Mapped[int] = mapped_column(ForeignKey("file_objects.id"), nullable=False)
     attachment_type: Mapped[str] = mapped_column(String(30), nullable=False)
@@ -341,7 +341,7 @@ class CommentTemplate(TimestampMixin, Base):
     template_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(120), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    note_type: Mapped[str | None] = mapped_column(String(30))
+    comment_type: Mapped[str | None] = mapped_column(String(30))
     document_type: Mapped[str | None] = mapped_column(String(80))
     category: Mapped[str | None] = mapped_column(String(80))
     location_code: Mapped[str | None] = mapped_column(String(64))

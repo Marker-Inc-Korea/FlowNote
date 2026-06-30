@@ -1,4 +1,4 @@
-﻿# FlowNote
+# FlowNote
 
 FlowNote는 생산공장 현장에서 사용하는 기술문서, 도면, 매뉴얼, 작업지시서 등 다양한 업무 문서와 현장 지식을 함께 관리하는 독립형 서버이다.
 
@@ -6,11 +6,11 @@ FlowNote는 파일 저장, 문서 메타데이터, 버전 관리, 권한, 변경
 
 ## 현재 코드 기준 구현 상태
 
-현재 실제 동작하는 클라이언트 구현은 `apps/windows/`의 Windows WPF 로컬 SQLite 프로토타입이다. 로그인은 기본 계정 `admin / 1234`와 개발/스모크 테스트용 관리자, 반장, 조장, 조원 계정을 자동 생성하며, 탐색기형 폴더 트리, 기본 폴더와 문서 하위 분류 폴더, 파일 업로드 버튼과 Drag & Drop, SQLite 문서 등록, 파일 목록, TXT/PDF/XLSX/이미지 미리보기, 현장 코멘트 FieldNote 원천 이력 저장, FieldNote 사진/파일 첨부 로컬 보존, 알림함, 전체 이력, 문서 태그, 문서 열람 로그를 구현했다. 샘플 파일, 테스트 SQLite DB, 테스트 로그는 보존 대상이다.
+현재 실제 동작하는 클라이언트 구현은 `apps/windows/`의 Windows WPF 로컬 SQLite 프로토타입이다. 로그인은 기본 계정 `admin / 1234`와 개발/스모크 테스트용 관리자, 반장, 조장, 조원 계정을 자동 생성하며, 탐색기형 폴더 트리, 기본 폴더와 문서 하위 분류 폴더, 파일 업로드 버튼과 Drag & Drop, SQLite 문서 등록, 파일 목록, TXT/PDF/XLSX/이미지 미리보기, 현장 코멘트 FieldComment 원천 이력 저장, FieldComment 사진/파일 첨부 로컬 보존, 알림함, 전체 이력, 문서 태그, 문서 열람 로그를 구현했다. 샘플 파일, 테스트 SQLite DB, 테스트 로그는 보존 대상이다.
 
 `admin / 1234`와 WPF 개발/스모크 테스트 계정의 공통 비밀번호 `1234`는 로컬 개발 전용 기본값이다. 운영 초기 계정은 현장별 관리자 계정 발급, 최초 로그인 비밀번호 변경, 계정 잠금/재설정 절차로 분리하고, `FLOWNOTE_ACCESS_TOKEN_SECRET`은 저장소에 남기지 않는 현장별 비밀값으로 교체한다.
 
-`services/api/`의 FastAPI 서버는 SQLite MVP API를 구현한다. 현재 구현된 API는 상태 확인, 로그인, refresh token 회전, logout 세션 폐기, `/auth/me`, 문서 등록/목록/상세/버전 등록, 문서 상태와 버전 상태 전환, 명시적 공개 버전 지정, 공개 문서 조회, 문서 태그, FieldNote 등록/조회/검토 갱신, FieldNote 사진/파일 첨부 등록/조회, 문서 접근 로그 등록/조회, 작업순서판 생성/항목 추가/정렬/상태 변경/이력 조회이다. 문서와 첨부 파일은 서버 로컬 `storage/` 아래에 저장하고 SQLite에는 문서, 버전, 파일 참조, SHA-256, 크기, MIME, 파일 계열, 변경 사유를 기록한다. 문서 쓰기, 태그 쓰기, FieldNote 작성, 접근 로그 조회에는 현재 role 기반 권한 검사가 적용되어 있다. 운영용 인증은 HMAC Bearer access token과 서버 저장 `auth_sessions` 테이블을 함께 사용하며, access token 만료/대체/폐기 시 WPF 서버 전송 항목은 실패 큐에 남고 재로그인 필요 상태 메시지를 표시한다. 다만 다운로드 제어, 서버-WPF 완전 동기화의 운영 안정화, 보고서, AI API, MES/ERP 연동 API는 아직 구현 완료 기능이 아니다. 아래 제품 방향은 목표와 설계 기준이며, 미래 기능은 현재 코드와의 구현 비교 대상에서 제외한다.
+`services/api/`의 FastAPI 서버는 SQLite MVP API를 구현한다. 현재 구현된 API는 상태 확인, 로그인, refresh token 회전, logout 세션 폐기, `/auth/me`, 문서 등록/목록/상세/버전 등록, 문서 상태와 버전 상태 전환, 명시적 공개 버전 지정, 공개 문서 조회, 문서 태그, FieldComment 등록/조회/검토 갱신, FieldComment 사진/파일 첨부 등록/조회, 문서 접근 로그 등록/조회, 작업순서판 생성/항목 추가/정렬/상태 변경/이력 조회이다. 문서와 첨부 파일은 서버 로컬 `storage/` 아래에 저장하고 SQLite에는 문서, 버전, 파일 참조, SHA-256, 크기, MIME, 파일 계열, 변경 사유를 기록한다. 문서 쓰기, 태그 쓰기, FieldComment 작성, 접근 로그 조회에는 현재 role 기반 권한 검사가 적용되어 있다. 운영용 인증은 HMAC Bearer access token과 서버 저장 `auth_sessions` 테이블을 함께 사용하며, access token 만료/대체/폐기 시 WPF 서버 전송 항목은 실패 큐에 남고 재로그인 필요 상태 메시지를 표시한다. 다만 다운로드 제어, 서버-WPF 완전 동기화의 운영 안정화, 보고서, AI API, MES/ERP 연동 API는 아직 구현 완료 기능이 아니다. 아래 제품 방향은 목표와 설계 기준이며, 미래 기능은 현재 코드와의 구현 비교 대상에서 제외한다.
 
 FlowNote의 1차 목표는 완벽한 DMS나 KMS를 처음부터 만드는 것이 아니다. 문서 버전, 현장 코멘트, 작업 문제점, 작업내역을 오래 운영하면서 서로 연결해 생산현장의 노하우와 보고서 데이터를 축적하고, 추후 AI가 검색과 조언, 의사결정 보조에 활용할 수 있는 현장 데이터 기반을 쌓는 것이다.
 
@@ -65,6 +65,6 @@ FlowNote/
 
 ## 현재 상태
 
-현재 저장소는 Python FastAPI 서버와 Windows WPF 클라이언트 기준으로 정리되어 있다. 현재 코드 구현은 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite 로그인/문서/FieldNote/FieldNote 첨부/문서 접근 로그/작업순서판 MVP API가 병행되어 있으며, WPF 기본 흐름은 로컬 SQLite를 우선 사용한다. `FLOWNOTE_API_BASE_URL`이 설정된 경우 WPF는 서버 로그인, 문서 등록, FieldNote 등록, FieldNote 첨부 등록, 접근 로그 등록/조회, 작업순서판 API 연동을 후보로 시도한다. 확정된 기본 기술 방향은 Python FastAPI, Windows WPF 클라이언트, SQLite 우선 DB, 서버 로컬 storage이다.
+현재 저장소는 Python FastAPI 서버와 Windows WPF 클라이언트 기준으로 정리되어 있다. 현재 코드 구현은 Windows WPF 로컬 SQLite 프로토타입과 FastAPI SQLite 로그인/문서/FieldComment/FieldComment 첨부/문서 접근 로그/작업순서판 MVP API가 병행되어 있으며, WPF 기본 흐름은 로컬 SQLite를 우선 사용한다. `FLOWNOTE_API_BASE_URL`이 설정된 경우 WPF는 서버 로그인, 문서 등록, FieldComment 등록, FieldComment 첨부 등록, 접근 로그 등록/조회, 작업순서판 API 연동을 후보로 시도한다. 확정된 기본 기술 방향은 Python FastAPI, Windows WPF 클라이언트, SQLite 우선 DB, 서버 로컬 storage이다.
 
 문서부터 확인하려면 [docs/README.md](./docs/README.md)를 본다. 현재까지 작업 종합 정리는 [docs/daily/2026-06-26-current-work-summary.md](./docs/daily/2026-06-26-current-work-summary.md)에 있고, 전체 도메인 관계는 [docs/system-map.md](./docs/system-map.md)에 정리한다.

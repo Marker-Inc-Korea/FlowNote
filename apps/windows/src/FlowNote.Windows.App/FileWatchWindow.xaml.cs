@@ -37,7 +37,7 @@ public partial class FileWatchWindow : Window
     {
         var dialog = new OpenFolderDialog
         {
-            Title = "Select watch folder"
+            Title = "감시 폴더 선택"
         };
 
         if (dialog.ShowDialog(this) == true)
@@ -51,7 +51,7 @@ public partial class FileWatchWindow : Window
         try
         {
             fileWatch.StartWatching(WatchFolderTextBox.Text, actorName);
-            UpdateWatchStatus("File watch started.");
+            UpdateWatchStatus("파일 감시를 시작했습니다.");
         }
         catch (Exception exception) when (exception is ArgumentException or DirectoryNotFoundException or UnauthorizedAccessException)
         {
@@ -62,39 +62,39 @@ public partial class FileWatchWindow : Window
     private void StopWatchButton_Click(object sender, RoutedEventArgs e)
     {
         fileWatch.StopWatching(actorName);
-        UpdateWatchStatus("File watch stopped.");
+        UpdateWatchStatus("파일 감시를 중지했습니다.");
     }
 
     private void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
         RefreshDocuments();
         RefreshCandidates();
-        UpdateWatchStatus("Candidate list refreshed.");
+        UpdateWatchStatus("후보 목록을 새로고침했습니다.");
     }
 
     private void ConfirmButton_Click(object sender, RoutedEventArgs e)
     {
         if (CandidateGrid.SelectedItem is not FileWatchCandidateRecord candidate)
         {
-            UpdateWatchStatus("Select a watch candidate.");
+            UpdateWatchStatus("감시 후보를 선택하세요.");
             return;
         }
 
         if (DocumentComboBox.SelectedItem is not DocumentOption document)
         {
-            UpdateWatchStatus("Select the target document.");
+            UpdateWatchStatus("대상 문서를 선택하세요.");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(VersionLabelTextBox.Text))
         {
-            UpdateWatchStatus("Version label is required.");
+            UpdateWatchStatus("버전 라벨을 입력하세요.");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(ChangeReasonTextBox.Text))
         {
-            UpdateWatchStatus("Change reason is required.");
+            UpdateWatchStatus("변경 사유를 입력하세요.");
             return;
         }
 
@@ -108,7 +108,7 @@ public partial class FileWatchWindow : Window
                 actorName);
             RefreshDocuments();
             RefreshCandidates();
-            UpdateWatchStatus($"Confirmed {candidate.FileName} as {updated.Title} v{updated.VersionNo}.");
+            UpdateWatchStatus($"{candidate.FileName}을 {updated.Title} v{updated.VersionNo}로 확정했습니다.");
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or IOException or UnauthorizedAccessException)
         {
@@ -120,7 +120,7 @@ public partial class FileWatchWindow : Window
     {
         if (CandidateGrid.SelectedItem is not FileWatchCandidateRecord candidate)
         {
-            UpdateWatchStatus("Select a watch candidate.");
+            UpdateWatchStatus("감시 후보를 선택하세요.");
             return;
         }
 
@@ -128,7 +128,7 @@ public partial class FileWatchWindow : Window
         {
             fileWatch.IgnoreCandidate(candidate.CandidateId, actorName);
             RefreshCandidates();
-            UpdateWatchStatus($"Ignored {candidate.FileName}.");
+            UpdateWatchStatus($"{candidate.FileName} 후보를 무시했습니다.");
         }
         catch (InvalidOperationException exception)
         {
@@ -185,8 +185,8 @@ public partial class FileWatchWindow : Window
     private void UpdateWatchStatus(string? message = null)
     {
         var watchState = fileWatch.IsRunning
-            ? $"Watching: {fileWatch.WatchedFolderPath}"
-            : "File watch is stopped.";
+            ? $"감시 중: {fileWatch.WatchedFolderPath}"
+            : "파일 감시가 중지되어 있습니다.";
         StatusTextBlock.Text = string.IsNullOrWhiteSpace(message)
             ? watchState
             : $"{message} {watchState}";

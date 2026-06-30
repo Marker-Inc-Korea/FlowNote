@@ -87,7 +87,7 @@ def test_document_registration_allows_admin_foreman_and_team_lead_roles() -> Non
             assert response.json()["document_id"].startswith("doc_")
 
 
-def test_team_member_can_create_field_note_but_cannot_register_document() -> None:
+def test_team_member_can_create_field_comment_but_cannot_register_document() -> None:
     with create_test_client() as client:
         lead = create_role_user(client, "team-lead")
         member = create_role_user(client, "team-member")
@@ -95,7 +95,7 @@ def test_team_member_can_create_field_note_but_cannot_register_document() -> Non
         document_response = post_document(
             client,
             auth_headers(client, lead),
-            "Team member field note target",
+            "Team member field comment target",
         )
         assert document_response.status_code == 201, document_response.text
         document = document_response.json()
@@ -107,20 +107,20 @@ def test_team_member_can_create_field_note_but_cannot_register_document() -> Non
         )
         assert denied_document_response.status_code == 403, denied_document_response.text
 
-        field_note_response = client.post(
-            "/api/v1/field-notes",
+        field_comment_response = client.post(
+            "/api/v1/field-comments",
             headers=auth_headers(client, member),
             json={
                 "documentId": document["document_id"],
                 "documentVersionId": document["latest_version"]["version_id"],
-                "noteType": "issue",
+                "commentType": "issue",
                 "inputMode": "free_text",
-                "rawContent": "Team member can leave a field note.",
+                "rawContent": "Team member can leave a field comment.",
                 "authorId": member.user_id,
             },
         )
-        assert field_note_response.status_code == 201, field_note_response.text
-        assert field_note_response.json()["raw_content"] == "Team member can leave a field note."
+        assert field_comment_response.status_code == 201, field_comment_response.text
+        assert field_comment_response.json()["raw_content"] == "Team member can leave a field comment."
 
 
 def test_team_member_cannot_register_document_version_or_change_tags() -> None:

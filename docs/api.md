@@ -1,4 +1,4 @@
-﻿# FlowNote API 초안
+# FlowNote API 초안
 
 ## 0. 현재 구현 API
 
@@ -28,13 +28,13 @@
 | GET | `/api/v1/documents/{documentId}/access-logs` | 문서 접근 로그 조회 |
 | GET | `/api/v1/tags` | 태그 사전 조회 |
 | POST | `/api/v1/tags` | 태그 등록 |
-| POST | `/api/v1/field-notes` | 현장 코멘트 원천 이력 등록 |
-| GET | `/api/v1/field-notes` | 현장 코멘트 목록 조회. `documentId`, `status`, `limit` 필터 지원 |
-| GET | `/api/v1/field-notes/{noteId}` | 현장 코멘트 상세 조회 |
-| PATCH | `/api/v1/field-notes/{noteId}` | 관리자 검토, 정리 문구, 분석 내용 갱신 |
-| POST | `/api/v1/field-notes/{noteId}/attachments` | 현장 코멘트 사진 또는 첨부 등록 |
-| GET | `/api/v1/field-notes/{noteId}/attachments` | 현장 코멘트 첨부 목록 조회 |
-| GET | `/api/v1/documents/{documentId}/field-notes` | 문서별 현장 코멘트 조회 |
+| POST | `/api/v1/field-comments` | 현장 코멘트 원천 이력 등록 |
+| GET | `/api/v1/field-comments` | 현장 코멘트 목록 조회. `documentId`, `status`, `limit` 필터 지원 |
+| GET | `/api/v1/field-comments/{commentId}` | 현장 코멘트 상세 조회 |
+| PATCH | `/api/v1/field-comments/{commentId}` | 관리자 검토, 정리 문구, 분석 내용 갱신 |
+| POST | `/api/v1/field-comments/{commentId}/attachments` | 현장 코멘트 사진 또는 첨부 등록 |
+| GET | `/api/v1/field-comments/{commentId}/attachments` | 현장 코멘트 첨부 목록 조회 |
+| GET | `/api/v1/documents/{documentId}/field-comments` | 문서별 현장 코멘트 조회 |
 | POST | `/api/v1/work-sequence-boards` | 관리자 입력 기준 작업순서판 생성 |
 | GET | `/api/v1/work-sequence-boards` | 작업순서판 목록 조회 |
 | GET | `/api/v1/work-sequence-boards/{boardId}` | 작업순서판과 항목 조회 |
@@ -43,7 +43,7 @@
 | PATCH | `/api/v1/work-sequence-boards/{boardId}/items/{itemId}/status` | 작업순서 항목 상태 변경 |
 | GET | `/api/v1/work-sequence-boards/{boardId}/history` | 작업순서 변경 이력 조회 |
 
-문서 등록/버전 등록 API, 현장 코멘트 API, FieldNote 첨부 API, 문서 접근 로그 API, 작업순서판 API는 Bearer access token이 없거나 유효하지 않으면 `401`을 반환한다. 문서 등록, 새 버전 등록, 문서 태그 변경, 태그 등록, 작업순서판 생성/항목 추가/정렬/상태 변경은 관리자 그룹, 반장(`line-foreman`), 조장(`team-lead`) 이상 role만 허용하며 조원(`team-member`)이나 현장 조회자(`viewer`)는 `403`을 받는다. FieldNote 등록과 첨부 등록은 조원 계정도 허용한다. 접근 로그 조회는 관리자 성격의 API로 보아 `admin`, `system-admin` role만 허용하고, 접근 로그 등록은 현장 클라이언트가 열람 기록을 남길 수 있도록 인증 사용자에게 열어 둔다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부를 확인하고 서버 저장 `auth_sessions` 행, HMAC 서명 access token, refresh token을 발급한다. `POST /api/v1/auth/refresh`는 refresh token을 회전하며 이전 access token과 이전 refresh token을 폐기한다. `POST /api/v1/auth/logout`은 현재 access token의 세션을 `REVOKED`로 바꾸어 이후 요청을 `401`로 거부한다. 이하 현장 단말기 API, 관리자 파일 감시 API, 보고서 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`, `refresh_token`, `refresh_expires_at`을 로그인 결과에 보관한다. 이후 서버 문서/FieldNote/첨부/접근 로그/작업순서판 요청에는 `Authorization: Bearer {access_token}` 헤더를 붙인다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로그인 role이 문서 등록 권한을 가지는 경우에만 문서 등록/파일 업로드/작업순서판 편집 버튼과 파일 드롭을 사용 가능 상태로 둔다. 파일 감시는 더 좁은 관리자급 role(`admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`)에서만 `File Watch` 창으로 사용할 수 있고, 반장/조장/조원/viewer는 비활성화된다. 파일 감지 결과는 서버 API로 즉시 전송하지 않고 로컬 `file_watch_candidates`에 후보로 남긴 뒤, 관리자가 변경 사유와 버전명을 입력해야 기존 문서의 새 로컬 버전으로 확정한다. 로컬 SQLite 문서/FieldNote/첨부/접근 로그 저장을 기본 경로로 유지하되, 서버 전송 후보는 `server_sync_queue`에 남긴다. 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공하면 `wpf:document:{localDocumentId}:v1` 형식의 idempotency key를 저장하고, 인증된 서버 클라이언트가 있으면 같은 키를 `POST /api/v1/documents`의 `idempotencyKey`로 보낸다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldNote 저장 직후 `wpf:field-note:{noteId}` 키로 서버 현장 코멘트 등록 후보를 큐에 남기고, 첨부가 있으면 `wpf:field-note-attachment:{attachmentId}` 키로 로컬 보존 파일과 첨부 전송 후보도 남긴다. 열람 시작/닫힘 접근 로그도 `wpf:access-log:{localAccessLogId}:{register_access_log_*}` 키로 별도 큐 항목을 남긴다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 실패 사유는 `server_sync_queue.last_error`와 `activity_history`에 남긴다. access token 만료, refresh 회전으로 대체된 토큰, logout으로 폐기된 세션은 WPF 서버 클라이언트에서 인증 실패로 요약되고 문서 등록/FieldNote/첨부/접근 로그 전송 항목은 실패 큐에 남으며 사용자는 재로그인이 필요하다는 상태 메시지를 받는다. 재시도 성공 시 로컬 문서/버전/FieldNote/첨부/접근 로그에는 서버 ID와 `synced_at`을 기록한다. 현재 FastAPI 서버는 문서 등록, FieldNote 등록, 문서 접근 로그 등록에서 선택 `idempotencyKey`를 수용하며, 같은 키가 이미 있으면 새 행을 만들지 않고 기존 응답을 반환한다. FieldNote 첨부 등록은 아직 서버 idempotency key를 받지 않으므로 WPF 로컬 큐의 키와 `server_attachment_id`/`synced_at`으로 중복 전송을 막는다. 현재 스모크 테스트는 서버 미설정 상태의 실패 큐 생성을 확인하고, `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, Bearer 인증 헤더가 붙은 `/auth/me`, 문서 업로드, 보류 큐 재전송, 최신 문서 버전에 연결된 서버 FieldNote 등록, FieldNote 첨부 등록/조회, 문서 접근 로그 등록/조회, 작업순서판 생성/항목 추가/정렬/상태 변경/이력 조회, 중복 큐/중복 전송 방지를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
+문서 등록/버전 등록 API, 현장 코멘트 API, FieldComment 첨부 API, 문서 접근 로그 API, 작업순서판 API는 Bearer access token이 없거나 유효하지 않으면 `401`을 반환한다. 문서 등록, 새 버전 등록, 문서 태그 변경, 태그 등록, 작업순서판 생성/항목 추가/정렬/상태 변경은 관리자 그룹, 반장(`line-foreman`), 조장(`team-lead`) 이상 role만 허용하며 조원(`team-member`)이나 현장 조회자(`viewer`)는 `403`을 받는다. FieldComment 등록과 첨부 등록은 조원 계정도 허용한다. 접근 로그 조회는 관리자 성격의 API로 보아 `admin`, `system-admin` role만 허용하고, 접근 로그 등록은 현장 클라이언트가 열람 기록을 남길 수 있도록 인증 사용자에게 열어 둔다. 로그인 API는 계정 존재, 활성 상태, 비밀번호 일치 여부를 확인하고 서버 저장 `auth_sessions` 행, HMAC 서명 access token, refresh token을 발급한다. `POST /api/v1/auth/refresh`는 refresh token을 회전하며 이전 access token과 이전 refresh token을 폐기한다. `POST /api/v1/auth/logout`은 현재 access token의 세션을 `REVOKED`로 바꾸어 이후 요청을 `401`로 거부한다. 이하 현장 단말기 API, 관리자 파일 감시 API, 보고서 API, AI API는 제품 목표를 정리한 서버 API 초안이다. Windows WPF 앱은 `FLOWNOTE_API_BASE_URL`이 설정된 경우 `FlowNoteServerAuthClient`로 서버 로그인 API를 먼저 시도하고, 성공 시 `user_id`, `username`, `role`, `display_name`, `access_token`, `expires_at`, `refresh_token`, `refresh_expires_at`을 로그인 결과에 보관한다. 이후 서버 문서/FieldComment/첨부/접근 로그/작업순서판 요청에는 `Authorization: Bearer {access_token}` 헤더를 붙인다. 서버 URL이 없거나 서버 로그인 호출이 실패하면 기존 로컬 SQLite 로그인 흐름을 유지한다. WPF 앱은 로그인 role이 문서 등록 권한을 가지는 경우에만 문서 등록/파일 업로드/작업순서판 편집 버튼과 파일 드롭을 사용 가능 상태로 둔다. 파일 감시는 더 좁은 관리자급 role(`admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`)에서만 `File Watch` 창으로 사용할 수 있고, 반장/조장/조원/viewer는 비활성화된다. 파일 감지 결과는 서버 API로 즉시 전송하지 않고 로컬 `file_watch_candidates`에 후보로 남긴 뒤, 관리자가 변경 사유와 버전명을 입력해야 기존 문서의 새 로컬 버전으로 확정한다. 로컬 SQLite 문서/FieldComment/첨부/접근 로그 저장을 기본 경로로 유지하되, 서버 전송 후보는 `server_sync_queue`에 남긴다. 파일 업로드 또는 Drag & Drop으로 로컬 문서 등록이 성공하면 `wpf:document:{localDocumentId}:v1` 형식의 idempotency key를 저장하고, 인증된 서버 클라이언트가 있으면 같은 키를 `POST /api/v1/documents`의 `idempotencyKey`로 보낸다. 이때 기본 변경 사유는 Windows Core 서버 문서 클라이언트 상수의 `WPF local upload sync`를 사용한다. 문서 보기 창은 로컬 FieldComment 저장 직후 `wpf:field-comment:{commentId}` 키로 서버 현장 코멘트 등록 후보를 큐에 남기고, 첨부가 있으면 `wpf:field-comment-attachment:{attachmentId}` 키로 로컬 보존 파일과 첨부 전송 후보도 남긴다. 열람 시작/닫힘 접근 로그도 `wpf:access-log:{localAccessLogId}:{register_access_log_*}` 키로 별도 큐 항목을 남긴다. 서버 URL이 없거나 전송에 실패해도 로컬 저장 성공은 유지하고 실패 사유는 `server_sync_queue.last_error`와 `activity_history`에 남긴다. access token 만료, refresh 회전으로 대체된 토큰, logout으로 폐기된 세션은 WPF 서버 클라이언트에서 인증 실패로 요약되고 문서 등록/FieldComment/첨부/접근 로그 전송 항목은 실패 큐에 남으며 사용자는 재로그인이 필요하다는 상태 메시지를 받는다. 재시도 성공 시 로컬 문서/버전/FieldComment/첨부/접근 로그에는 서버 ID와 `synced_at`을 기록한다. 현재 FastAPI 서버는 문서 등록, FieldComment 등록, 문서 접근 로그 등록에서 선택 `idempotencyKey`를 수용하며, 같은 키가 이미 있으면 새 행을 만들지 않고 기존 응답을 반환한다. FieldComment 첨부 등록은 아직 서버 idempotency key를 받지 않으므로 WPF 로컬 큐의 키와 `server_attachment_id`/`synced_at`으로 중복 전송을 막는다. 현재 스모크 테스트는 서버 미설정 상태의 실패 큐 생성을 확인하고, `FLOWNOTE_API_BASE_URL`이 설정된 경우 서버 로그인 API, Bearer 인증 헤더가 붙은 `/auth/me`, 문서 업로드, 보류 큐 재전송, 최신 문서 버전에 연결된 서버 FieldComment 등록, FieldComment 첨부 등록/조회, 문서 접근 로그 등록/조회, 작업순서판 생성/항목 추가/정렬/상태 변경/이력 조회, 중복 큐/중복 전송 방지를 검증한다. 미래 기능은 현재 구현 비교 대상이 아니므로, 아래 항목을 구현 완료 기능으로 해석하지 않는다.
 
 ## 1. 공통 원칙
 
@@ -104,7 +104,7 @@ File Upload: multipart/form-data
 | Method | Path | 설명 |
 | --- | --- | --- |
 | GET | `/search/documents` | 파일명, 문서명, 태그, 구조, 작업지시 기준 문서 검색 |
-| GET | `/search/field-notes` | 현장 코멘트와 사진 기록 검색 |
+| GET | `/search/field-comments` | 현장 코멘트와 사진 기록 검색 |
 | GET | `/search/work-sequences` | 작업순서 항목 검색 |
 
 기본 검색은 AI 검색과 분리한다. 1차 MVP에서는 사용자가 권한을 가진 문서와 기록만 목록으로 제공하고, PDF/Office 본문 추출 검색은 후속 인덱싱 단계에서 확장한다.
@@ -222,7 +222,7 @@ POST /api/v1/documents/{documentId}/versions/{versionId}/publish
 
 `POST /api/v1/auth/refresh`는 JSON 본문으로 `refresh_token`을 받는다. 세션이 `ACTIVE`이고 refresh token이 만료되지 않았으면 같은 세션의 `access_token_id`와 `refresh_token_hash`를 새 값으로 바꾸고 새 access/refresh token 쌍을 반환한다. 따라서 refresh 호출 뒤 이전 access token은 `Authentication token has been replaced.`, 이전 refresh token은 `Refresh token is invalid or expired.`로 거부된다.
 
-`POST /api/v1/auth/logout`은 `Authorization: Bearer {access_token}` 헤더가 필요하며 현재 세션을 `REVOKED`로 바꾼다. logout 뒤 같은 access token으로 `/auth/me`나 문서/FieldNote API를 호출하면 `401`을 반환한다.
+`POST /api/v1/auth/logout`은 `Authorization: Bearer {access_token}` 헤더가 필요하며 현재 세션을 `REVOKED`로 바꾼다. logout 뒤 같은 access token으로 `/auth/me`나 문서/FieldComment API를 호출하면 `401`을 반환한다.
 
 `GET /api/v1/auth/me`는 `Authorization: Bearer {access_token}` 헤더가 필요하며, 유효한 토큰이면 `user_id`, `username`, `role`, `display_name`을 반환한다. access token 만료 정책은 `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES` 설정값을 사용하며 기본값은 480분이다. refresh token 만료 정책은 `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS` 설정값을 사용하며 기본값은 14일이다. 토큰 서명 비밀값은 `FLOWNOTE_ACCESS_TOKEN_SECRET`으로 교체할 수 있고, 기본값은 개발용이므로 운영 전 반드시 현장별 비밀값으로 바꾼다.
 
@@ -324,7 +324,7 @@ multipart/form-data
 | Method | Path | 설명 |
 | --- | --- | --- |
 | PUT | `/documents/{documentId}/tags` | 문서 태그 변경 |
-| PUT | `/field-notes/{noteId}/tags` | 현장 코멘트 태그 변경 |
+| PUT | `/field-comments/{commentId}/tags` | 현장 코멘트 태그 변경 |
 | GET | `/tags` | 태그 사전 조회 |
 | POST | `/tags` | 태그 등록 |
 | PUT | `/documents/{documentId}/links` | 문서 연결 대상 변경 |
@@ -379,18 +379,18 @@ multipart/form-data
 
 ## 9. 현장 코멘트 API
 
-2026-06-29 기준 현재 구현된 범위는 JSON 기반 등록, 목록, 상세, 관리자 검토 갱신, 문서별 조회, 사진/파일 첨부 등록과 첨부 목록 조회이다. Windows WPF 클라이언트에는 로컬 `FieldNoteRecord`를 서버 등록 요청으로 변환하는 `ServerFieldNoteCreateRequest`, 서버 응답용 `ServerFieldNoteResponse`, 첨부 업로드/조회용 `ServerFieldNoteAttachmentResponse` 계약이 추가되었다. 문서 구조 항목별 조회는 아래 계약만 남겨둔 후속 구현 범위이다.
+2026-06-29 기준 현재 구현된 범위는 JSON 기반 등록, 목록, 상세, 관리자 검토 갱신, 문서별 조회, 사진/파일 첨부 등록과 첨부 목록 조회이다. Windows WPF 클라이언트에는 로컬 `FieldCommentRecord`를 서버 등록 요청으로 변환하는 `ServerFieldCommentCreateRequest`, 서버 응답용 `ServerFieldCommentResponse`, 첨부 업로드/조회용 `ServerFieldCommentAttachmentResponse` 계약이 추가되었다. 문서 구조 항목별 조회는 아래 계약만 남겨둔 후속 구현 범위이다.
 
 | Method | Path | 설명 |
 | --- | --- | --- |
-| POST | `/field-notes` | 현장 코멘트 등록 |
-| GET | `/field-notes` | 현장 코멘트 목록 조회 |
-| GET | `/field-notes/{noteId}` | 현장 코멘트 상세 조회 |
-| PATCH | `/field-notes/{noteId}` | 관리자 검토와 정리 |
-| POST | `/field-notes/{noteId}/attachments` | 현장 코멘트 사진 또는 첨부 등록 |
-| GET | `/field-notes/{noteId}/attachments` | 현장 코멘트 첨부 목록 조회 |
-| GET | `/documents/{documentId}/field-notes` | 문서별 코멘트 조회 |
-| GET | `/document-structures/{structureId}/items/{itemId}/field-notes` | 문서 구조 항목별 코멘트 조회 |
+| POST | `/field-comments` | 현장 코멘트 등록 |
+| GET | `/field-comments` | 현장 코멘트 목록 조회 |
+| GET | `/field-comments/{commentId}` | 현장 코멘트 상세 조회 |
+| PATCH | `/field-comments/{commentId}` | 관리자 검토와 정리 |
+| POST | `/field-comments/{commentId}/attachments` | 현장 코멘트 사진 또는 첨부 등록 |
+| GET | `/field-comments/{commentId}/attachments` | 현장 코멘트 첨부 목록 조회 |
+| GET | `/documents/{documentId}/field-comments` | 문서별 코멘트 조회 |
+| GET | `/document-structures/{structureId}/items/{itemId}/field-comments` | 문서 구조 항목별 코멘트 조회 |
 
 직접 입력 예시:
 
@@ -399,29 +399,29 @@ multipart/form-data
   "documentId": "doc_20260520_000001",
   "documentVersionId": "ver_20260520_000003",
   "structureItemId": "item_20260520_000010",
-  "noteType": "issue",
+  "commentType": "issue",
   "inputMode": "free_text",
   "rawContent": "도면의 체결 방향 설명이 현장 작업 순서와 다릅니다.",
   "authorId": "user-001",
   "operatorId": "op-line-a-team-1",
   "deviceId": "terminal-12",
   "locationCode": "line-a",
-  "idempotencyKey": "wpf:field-note:note-local-001"
+  "idempotencyKey": "wpf:field-comment:comment-local-001"
 }
 ```
 
-현재 구현된 `POST /api/v1/field-notes` 요청 본문은 camelCase 필드를 받는다. `documentId`, `structureItemId`, `workRecordId` 중 하나 이상은 필요하다. `documentVersionId`가 들어오면 서버의 기존 `document_versions.version_id`를 참조해야 하며, `documentId`와 함께 보낸 경우 같은 문서의 버전이어야 한다. 선택 `idempotencyKey`가 기존 FieldNote와 일치하면 새 코멘트를 만들지 않고 기존 응답을 반환한다. 서버는 저장 시 `rawContent` 앞뒤 공백을 제거하고, 신규 코멘트 상태를 `NEW`로 시작한다.
+현재 구현된 `POST /api/v1/field-comments` 요청 본문은 camelCase 필드를 받는다. `documentId`, `structureItemId`, `workRecordId` 중 하나 이상은 필요하다. `documentVersionId`가 들어오면 서버의 기존 `document_versions.version_id`를 참조해야 하며, `documentId`와 함께 보낸 경우 같은 문서의 버전이어야 한다. 선택 `idempotencyKey`가 기존 FieldComment와 일치하면 새 코멘트를 만들지 않고 기존 응답을 반환한다. 서버는 저장 시 `rawContent` 앞뒤 공백을 제거하고, 신규 코멘트 상태를 `NEW`로 시작한다.
 
-서버 응답은 Python API 모델 기준 snake_case 필드이다. Windows 클라이언트의 `ServerFieldNoteResponse`는 이 응답을 `note_id`, `document_id`, `document_version_id`, `raw_content`, `status`, `created_at`, `updated_at` 등으로 역직렬화한다.
+서버 응답은 Python API 모델 기준 snake_case 필드이다. Windows 클라이언트의 `ServerFieldCommentResponse`는 이 응답을 `comment_id`, `document_id`, `document_version_id`, `raw_content`, `status`, `created_at`, `updated_at` 등으로 역직렬화한다.
 
 ```json
 {
-  "note_id": "note_20260520_000001",
+  "comment_id": "comment_20260520_000001",
   "document_id": "doc_20260520_000001",
   "document_version_id": "ver_20260520_000003",
   "structure_item_id": "item_20260520_000010",
   "work_record_id": null,
-  "note_type": "issue",
+  "comment_type": "issue",
   "input_mode": "free_text",
   "signal_level": null,
   "template_id": null,
@@ -452,7 +452,7 @@ multipart/form-data
 {
   "documentId": "doc_20260520_000001",
   "structureItemId": "item_20260520_000010",
-  "noteType": "work_evaluation",
+  "commentType": "work_evaluation",
   "inputMode": "signal",
   "signalLevel": "yellow",
   "rawContent": "주의 필요",
@@ -467,7 +467,7 @@ multipart/form-data
 ```json
 {
   "documentId": "doc_20260520_000001",
-  "noteType": "issue",
+  "commentType": "issue",
   "inputMode": "admin_proxy",
   "rawContent": "작업자가 구두로 체결 순서 설명이 부족하다고 전달함",
   "authorId": "admin-001",
@@ -499,14 +499,14 @@ multipart/form-data
 - capturedAt: string
 ```
 
-현재 구현된 `POST /api/v1/field-notes/{noteId}/attachments`는 `multipart/form-data`로 `file`을 필수로 받고, `attachmentType`, `caption`, `capturedAt`, `createdBy`를 선택으로 받는다. `noteId`가 없으면 `404`를 반환한다. 허용 파일 계열 후보는 이미지(`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`), PDF(`.pdf`), 텍스트(`.txt`, `.md`)이며 기본 크기 제한은 `FLOWNOTE_FIELD_NOTE_ATTACHMENT_MAX_BYTES=20971520`이다. 서버는 파일을 `storage/field-notes/{note_id}/attachments/` 아래에 저장하고, `file_objects`에는 원본명, 확장자, MIME, 파일 계열, 크기, SHA-256 해시, `storage_key`를 남긴 뒤 `field_note_attachments`와 연결한다.
+현재 구현된 `POST /api/v1/field-comments/{commentId}/attachments`는 `multipart/form-data`로 `file`을 필수로 받고, `attachmentType`, `caption`, `capturedAt`, `createdBy`를 선택으로 받는다. `commentId`가 없으면 `404`를 반환한다. 허용 파일 계열 후보는 이미지(`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`), PDF(`.pdf`), 텍스트(`.txt`, `.md`)이며 기본 크기 제한은 `FLOWNOTE_FIELD_COMMENT_ATTACHMENT_MAX_BYTES=20971520`이다. 서버는 파일을 `storage/field-comments/{comment_id}/attachments/` 아래에 저장하고, `file_objects`에는 원본명, 확장자, MIME, 파일 계열, 크기, SHA-256 해시, `storage_key`를 남긴 뒤 `field_comment_attachments`와 연결한다.
 
 첨부 등록/조회 응답은 snake_case 필드와 파일 메타데이터를 포함한다.
 
 ```json
 {
   "attachment_id": "att_20260629_000001",
-  "note_id": "note_20260629_000001",
+  "comment_id": "comment_20260629_000001",
   "attachment_type": "photo",
   "caption": "체결 방향 확인 사진",
   "captured_at": "2026-06-29T09:30:00",
@@ -514,7 +514,7 @@ multipart/form-data
   "created_at": "2026-06-29T09:31:00",
   "file": {
     "storage_type": "local",
-    "storage_key": "field-notes/note_.../attachments/uuid_photo.jpg",
+    "storage_key": "field-comments/comment_.../attachments/uuid_photo.jpg",
     "original_filename": "photo.jpg",
     "extension": ".jpg",
     "mime_type": "image/jpeg",
@@ -535,36 +535,56 @@ multipart/form-data
 
 ## 11. 보고서 API
 
+2026-06-30 현재 구현된 MVP 보고서 흐름은 AI를 사용하지 않는 관리자 수동 흐름이다. `POST /api/v1/reports/drafts`는 `Report` 초안과 `ReportSource` 원천 연결을 저장한다. `POST /api/v1/reports`는 초안을 승인 상태로 저장하고, 선택 시 승인 보고서를 서버 저장소의 텍스트 파일과 `Document`/`DocumentVersion`으로 저장한다. `GET /api/v1/reports/{reportId}`는 보고서 상세와 원천 추적 정보를 반환한다. API 원천 타입 `FIELD_COMMENT`는 현재 서버 구현의 `FieldComment`/`field_comments.comment_id`에 매핑된다.
+
 | Method | Path | 설명 |
 | --- | --- | --- |
 | POST | `/reports/drafts` | 보고서 초안 생성 |
 | POST | `/reports` | 보고서 저장 |
+| GET | `/reports` | 보고서 목록 조회 |
 | GET | `/reports/{reportId}` | 보고서 상세 조회 |
-| POST | `/reports/{reportId}/export/document` | 보고서를 문서로 저장 |
+| POST | `/reports/{reportId}/export/document` | 후속 후보. 현재 MVP 구현 아님 |
 
 보고서 초안 생성 요청 예시:
 
 ```json
 {
-  "reportType": "issue",
+  "reportType": "field_review",
   "title": "Line A 체결 순서 문제 분석",
-  "workRecordId": "work_20260520_000001",
-  "sourceRefs": [
+  "summary": "관리자가 FieldComment와 관련 문서를 묶어 검토한다.",
+  "analysisContent": "현장 코멘트를 작업표준서와 대조한다.",
+  "sources": [
     {
-      "sourceType": "field_note",
-      "sourceId": "note_20260520_000001"
+      "sourceType": "FIELD_COMMENT",
+      "sourceId": "comment_20260520_000001",
+      "relationType": "primary"
     },
     {
-      "sourceType": "document_version",
+      "sourceType": "DOCUMENT",
       "sourceId": "doc_20260520_000001",
-      "sourceVersionId": "ver_3"
+      "sourceVersionId": "ver_20260520_000003",
+      "relationType": "related_document"
     }
-  ],
-  "useAiDraft": true
+  ]
 }
 ```
 
 보고서는 원천 코멘트와 작업내역을 정제한 관리자급 문서이다. 최종 승인된 보고서는 `Document`로 저장하고, 원천 데이터는 `ReportSource`로 추적한다.
+
+보고서 승인 및 문서 저장 요청 예시:
+
+```json
+{
+  "draftReportId": "report_20260520_000001",
+  "conclusion": "다음 교대 전 작업표준서 문구 보완이 필요하다.",
+  "actionPlan": "관리자가 작업표준서를 검토하고 보고서를 문서로 저장한다.",
+  "saveAsDocument": true,
+  "documentTitle": "Line A 체결 순서 문제 분석 보고서",
+  "documentStatus": "IN_REVIEW"
+}
+```
+
+MVP 원천 타입은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `WORK_RECORD_VERSION`이다. 보고서 작성은 `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` 같은 관리자급 role만 허용한다.
 
 ## 12. 작업내역 API
 
@@ -734,7 +754,7 @@ AI API는 1차 체감 기능이 아니라 문서, 작업내역, 현장 코멘트
 | FILE_WATCH_NOT_ALLOWED | 파일 감시 권한 없음 |
 | WATCHED_FILE_NOT_FOUND | 감시 파일 없음 |
 | FILE_CHANGE_CANDIDATE_NOT_FOUND | 파일 변경 후보 없음 |
-| FIELD_NOTE_NOT_FOUND | 현장 코멘트 없음 |
+| FIELD_COMMENT_NOT_FOUND | 현장 코멘트 없음 |
 | COMMENT_TEMPLATE_NOT_FOUND | 정형 문구 없음 |
 | REPORT_NOT_FOUND | 보고서 없음 |
 | REPORT_SOURCE_NOT_FOUND | 보고서 원천 연결 없음 |
