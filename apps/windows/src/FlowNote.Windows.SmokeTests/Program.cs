@@ -382,10 +382,61 @@ try
         Require(
             ScalarLong(
                 workSequenceConnection,
-                "SELECT COUNT(*) FROM work_sequence_notification_candidates WHERE board_id = $board_id;",
+                """
+                SELECT COUNT(*)
+                FROM work_sequence_notification_candidates
+                WHERE board_id = $board_id
+                  AND status = 'SENT';
+                """,
                 ("$board_id", workSequenceBoard.BoardId)) >= 2,
-            "work sequence reorder and status changes should create notification candidates");
+            "work sequence reorder and status changes should send notification candidates");
+        Require(
+            ScalarLong(
+                workSequenceConnection,
+                """
+                SELECT COUNT(*)
+                FROM notifications
+                WHERE notification_type = 'work_sequence'
+                  AND target_id = $item_id
+                  AND message LIKE '%status changed%';
+                """,
+                ("$item_id", secondWorkSequenceItem.ItemId)) == 1,
+            "one work sequence status event should create one notification for the target recipient");
     }
+    string workSequenceNotificationRecipient;
+    using (var workSequenceNotificationConnection = services.Database.OpenConnection())
+    {
+        workSequenceNotificationRecipient = ScalarString(
+            workSequenceNotificationConnection,
+            """
+            SELECT recipient_name
+            FROM notifications
+            WHERE notification_type = 'work_sequence'
+              AND target_id = $item_id
+              AND message LIKE '%status changed%'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1;
+            """,
+            ("$item_id", secondWorkSequenceItem.ItemId))
+            ?? throw new InvalidOperationException("work sequence status notification recipient should be recorded");
+    }
+    var workSequenceStatusNotification = services.Notifications.ListNotifications(workSequenceNotificationRecipient)
+        .FirstOrDefault(item =>
+            item.NotificationType == "work_sequence" &&
+            item.TargetId == secondWorkSequenceItem.ItemId &&
+            item.Message.Contains("status changed", StringComparison.Ordinal));
+    Require(workSequenceStatusNotification is not null, "work sequence status notification should appear in the notification inbox");
+    services.Notifications.MarkAsRead(workSequenceStatusNotification!.NotificationId, workSequenceNotificationRecipient);
+    Require(
+        services.Notifications.ListNotifications(workSequenceNotificationRecipient)
+            .Any(item => item.NotificationId == workSequenceStatusNotification.NotificationId && item.IsRead),
+        "work sequence notification should be marked as read");
+    Require(
+        services.History.ListHistory()
+            .Any(item =>
+                item.EventType == "work_sequence.notification_read" &&
+                item.TargetId == secondWorkSequenceItem.ItemId),
+        "reading a work sequence notification should be recorded in activity history");
 
     var handoverFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.HandoverFolderName);
     var photosFolder = services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.PhotosFolderName);
@@ -918,6 +969,18 @@ try
             Require(
                 serverWorkSequenceHistory.Any(item => item.ChangeType == "STATUS_CHANGED"),
                 "server work sequence history should include status change");
+
+            var serverNotificationCandidates =
+                await serverDocuments.ListWorkSequenceNotificationCandidatesAsync(serverWorkSequenceBoard.BoardId);
+            var serverStatusCandidate = serverNotificationCandidates.FirstOrDefault(item =>
+                item.EventType == "work_sequence.status_changed" &&
+                item.ItemId == serverSecondItem.ItemId);
+            Require(serverStatusCandidate is not null, "server work sequence status change should create a notification candidate");
+            var sentServerCandidate = await serverDocuments.UpdateWorkSequenceNotificationCandidateStatusAsync(
+                serverWorkSequenceBoard.BoardId,
+                serverStatusCandidate!.CandidateId,
+                new ServerWorkSequenceNotificationCandidateStatusRequest { Status = "SENT" });
+            Require(sentServerCandidate.Status == "SENT", "server work sequence notification candidate should be markable as SENT");
         }
 
         var queuedRetryResult = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);

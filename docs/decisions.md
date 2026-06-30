@@ -39,8 +39,17 @@
 - WPF 기본 폴더 `작업순서`는 작업 관련 파일을 보관하는 문서 구조로 유지한다.
 - 운영 중 현재 실행 순서와 상태를 보여주는 데이터는 `work_sequence_boards`, `work_sequence_items`, `work_sequence_change_history`에 별도로 저장한다.
 - 작업순서 항목 상태는 1차 구현에서 `WAITING`, `IN_PROGRESS`, `HOLD`, `COMPLETED`로 제한한다.
-- 순서 변경과 상태 변경은 변경 이력과 알림 이벤트 후보로 남긴다.
+- 순서 변경, 상태 변경, 보류 사유 변경은 변경 이력과 알림 이벤트 후보로 남긴다.
 - WPF는 관리자 편집 화면과 현장 TV 읽기 화면을 제공하고, FastAPI는 생성/항목 추가/정렬/상태 변경/이력 조회 API를 제공한다.
+
+## 2026-06-30. 작업순서 알림 후보를 알림함 확인 흐름에 연결
+
+- WPF 로컬 앱은 작업순서 순서 변경, 상태 변경, `HOLD` 보류 사유 변경 시 `work_sequence_notification_candidates`를 만들고 기존 `notifications` 알림함에 `notification_type=work_sequence` 알림을 생성한다.
+- 작업순서 알림 대상은 항목 `assigned_to`를 우선 사용하고, 없으면 보드 `line_code`를 사용한다. 순서 변경은 보드 라인 또는 항목 담당 힌트를 대상으로 삼는다.
+- WPF 로컬은 대상 힌트가 사용자 ID, 로그인 ID, 표시 이름이면 해당 사용자 표시 이름으로, 작업그룹 ID/코드/이름이면 그룹 리더 표시 이름으로 해석한다.
+- 수신자가 없거나 수행자 자신에게 가는 알림은 후보를 `DISMISSED`로 전환한다. 알림 생성 성공 시 후보는 `SENT`가 된다.
+- 알림함에서 작업순서 알림을 읽으면 `activity_history`에 `work_sequence.notification_read`를 남긴다.
+- FastAPI는 작업순서 알림 후보 조회와 `CANDIDATE`, `SENT`, `DISMISSED` 상태 전환 API를 제공한다.
 
 ## 2026-06-29. 공개 버전은 명시적으로 지정
 

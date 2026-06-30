@@ -268,6 +268,32 @@ public sealed class FlowNoteServerDocumentClient
         return history;
     }
 
+    public async Task<IReadOnlyList<ServerWorkSequenceNotificationCandidateResponse>> ListWorkSequenceNotificationCandidatesAsync(
+        string boardId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/work-sequence-boards/{boardId}/notification-candidates",
+            cancellationToken);
+        var candidates = await ReadJsonResponse<List<ServerWorkSequenceNotificationCandidateResponse>>(
+            response,
+            cancellationToken);
+        return candidates;
+    }
+
+    public async Task<ServerWorkSequenceNotificationCandidateResponse> UpdateWorkSequenceNotificationCandidateStatusAsync(
+        string boardId,
+        string candidateId,
+        ServerWorkSequenceNotificationCandidateStatusRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PatchAsJsonAsync(
+            $"api/v1/work-sequence-boards/{boardId}/notification-candidates/{candidateId}",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerWorkSequenceNotificationCandidateResponse>(response, cancellationToken);
+    }
+
     private static void AddString(MultipartFormDataContent form, string name, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))

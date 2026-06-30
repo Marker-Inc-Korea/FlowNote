@@ -197,6 +197,30 @@ def _ensure_idempotency_columns(database: Database) -> None:
             )
 
 
+def _ensure_work_sequence_columns(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+
+    targets = {
+        "work_sequence_items": (("hold_reason", "TEXT"),),
+        "work_sequence_notification_candidates": (
+            ("recipient_hint", "VARCHAR(120)"),
+        ),
+    }
+    with database.engine.begin() as connection:
+        for table_name, columns in targets.items():
+            existing_columns = {
+                row[1] for row in connection.execute(text(f"PRAGMA table_info({table_name})"))
+            }
+            if not existing_columns:
+                continue
+            for column_name, definition in columns:
+                if column_name not in existing_columns:
+                    connection.execute(
+                        text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+                    )
+
+
 def _seed_default_admin_account(database: Database) -> None:
     with database.session() as session:
         existing = session.scalar(
@@ -231,6 +255,7 @@ def initialize_database(database: Database) -> None:
     _ensure_user_account_columns(database)
     _ensure_user_account_role_constraint(database)
     _ensure_idempotency_columns(database)
+    _ensure_work_sequence_columns(database)
     with database.session() as session:
         existing = session.scalar(
             select(SchemaMigration).where(SchemaMigration.version == INITIAL_SCHEMA_VERSION)

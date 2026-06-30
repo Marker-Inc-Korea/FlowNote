@@ -60,6 +60,7 @@ class WorkSequenceItemStatusUpdateRequest(BaseModel):
     status: str = Field(min_length=1)
     actor_id: str | None = Field(default=None, alias="actorId")
     change_reason: str | None = Field(default=None, alias="changeReason")
+    hold_reason: str | None = Field(default=None, alias="holdReason")
 
 
 class WorkSequenceReorderRequest(BaseModel):
@@ -78,6 +79,7 @@ class WorkSequenceItemResponse(BaseModel):
     work_order_no: str | None
     document_id: str | None
     status: str
+    hold_reason: str | None
     sort_order: int
     assigned_to: str | None
     created_by: str | None
@@ -118,6 +120,22 @@ class WorkSequenceHistoryResponse(BaseModel):
     after_value: str | None
     change_reason: str | None
     created_at: datetime
+
+
+class WorkSequenceNotificationCandidateResponse(BaseModel):
+    candidate_id: str
+    board_id: str
+    item_id: str | None
+    event_type: str
+    actor_id: str | None
+    recipient_hint: str | None
+    message: str
+    status: str
+    created_at: datetime
+
+
+class WorkSequenceNotificationCandidateStatusRequest(BaseModel):
+    status: str = Field(min_length=1)
 
 
 def _new_public_id(prefix: str) -> str:
@@ -173,6 +191,7 @@ def _item_response(item: WorkSequenceItem) -> WorkSequenceItemResponse:
         work_order_no=item.work_order_no,
         document_id=item.document_id,
         status=item.status,
+        hold_reason=item.hold_reason,
         sort_order=item.sort_order,
         assigned_to=item.assigned_to,
         created_by=item.created_by,
@@ -443,6 +462,7 @@ def reorder_items(
         item_id=None,
         event_type="work_sequence.reordered",
         actor_id=actor_id,
+        recipient_hint=board.line_code,
         message=f"Work sequence board order changed: {board.title}.",
     )
     board.updated_at = datetime.now(timezone.utc)
@@ -481,27 +501,53 @@ def update_item_status(
     target_status = _validate_choice(request.status, ITEM_STATUSES, "status")
     actor_id = _validate_user_id(session, _clean_optional(request.actor_id) or current_user.user_id, "actorId")
     before = item.status
-    if before != target_status:
+    target_hold_reason = _clean_optional(request.hold_reason or request.change_reason) if target_status == "HOLD" else None
+    hold_reason_before = item.hold_reason
+    status_changed = before != target_status
+    hold_reason_changed = _clean_optional(hold_reason_before) != target_hold_reason
+    if status_changed or hold_reason_changed:
         item.status = target_status
-        _record_history(
-            session,
-            board_id=board_id,
-            item_id=item_id,
-            change_type="STATUS_CHANGED",
-            actor_id=actor_id,
-            before_value=before,
-            after_value=target_status,
-            change_reason=request.change_reason,
-        )
-        _record_notification_candidate(
-            session,
-            board_id=board_id,
-            item_id=item_id,
-            event_type="work_sequence.status_changed",
-            actor_id=actor_id,
-            recipient_hint=item.assigned_to,
-            message=f"Work sequence item status changed: {item.title} {before} -> {target_status}.",
-        )
+        item.hold_reason = target_hold_reason
+        if status_changed:
+            _record_history(
+                session,
+                board_id=board_id,
+                item_id=item_id,
+                change_type="STATUS_CHANGED",
+                actor_id=actor_id,
+                before_value=before,
+                after_value=target_status,
+                change_reason=request.change_reason,
+            )
+            _record_notification_candidate(
+                session,
+                board_id=board_id,
+                item_id=item_id,
+                event_type="work_sequence.status_changed",
+                actor_id=actor_id,
+                recipient_hint=item.assigned_to or board.line_code,
+                message=f"Work sequence item status changed: {item.title} {before} -> {target_status}.",
+            )
+        if hold_reason_changed:
+            _record_history(
+                session,
+                board_id=board_id,
+                item_id=item_id,
+                change_type="HOLD_REASON_CHANGED",
+                actor_id=actor_id,
+                before_value=hold_reason_before,
+                after_value=target_hold_reason,
+                change_reason=request.change_reason,
+            )
+            _record_notification_candidate(
+                session,
+                board_id=board_id,
+                item_id=item_id,
+                event_type="work_sequence.hold_reason_changed",
+                actor_id=actor_id,
+                recipient_hint=item.assigned_to or board.line_code,
+                message=f"Work sequence hold reason changed: {item.title}.",
+            )
         board.updated_at = datetime.now(timezone.utc)
 
     session.commit()
@@ -540,3 +586,102 @@ def list_history(
         )
         for row in rows
     ]
+
+
+@router.get(
+    "/{board_id}/notification-candidates",
+    response_model=list[WorkSequenceNotificationCandidateResponse],
+)
+def list_notification_candidates(
+    board_id: str,
+    _current_user: CurrentUser,
+    session: Annotated[Session, Depends(get_db_session)],
+    candidate_status: Annotated[str | None, Query(alias="status")] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[WorkSequenceNotificationCandidateResponse]:
+    board_exists = session.scalar(select(WorkSequenceBoard.id).where(WorkSequenceBoard.board_id == board_id))
+    if board_exists is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work sequence board not found.")
+
+    statement = (
+        select(WorkSequenceNotificationCandidate)
+        .where(WorkSequenceNotificationCandidate.board_id == board_id)
+        .order_by(desc(WorkSequenceNotificationCandidate.created_at), desc(WorkSequenceNotificationCandidate.id))
+        .limit(limit)
+    )
+    if candidate_status is not None:
+        statement = statement.where(
+            WorkSequenceNotificationCandidate.status
+            == _validate_choice(candidate_status, {"CANDIDATE", "SENT", "DISMISSED"}, "status")
+        )
+    rows = session.scalars(statement).all()
+    return [
+        WorkSequenceNotificationCandidateResponse(
+            candidate_id=row.candidate_id,
+            board_id=row.board_id,
+            item_id=row.item_id,
+            event_type=row.event_type,
+            actor_id=row.actor_id,
+            recipient_hint=row.recipient_hint,
+            message=row.message,
+            status=row.status,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+
+
+@router.patch(
+    "/{board_id}/notification-candidates/{candidate_id}",
+    response_model=WorkSequenceNotificationCandidateResponse,
+)
+def update_notification_candidate_status(
+    board_id: str,
+    candidate_id: str,
+    request: WorkSequenceNotificationCandidateStatusRequest,
+    current_user: DocumentWriteUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> WorkSequenceNotificationCandidateResponse:
+    candidate = session.scalar(
+        select(WorkSequenceNotificationCandidate).where(
+            WorkSequenceNotificationCandidate.board_id == board_id,
+            WorkSequenceNotificationCandidate.candidate_id == candidate_id,
+        )
+    )
+    if candidate is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Work sequence notification candidate not found.",
+        )
+
+    target_status = _validate_choice(request.status, {"CANDIDATE", "SENT", "DISMISSED"}, "status")
+    before = candidate.status
+    if before != target_status:
+        candidate.status = target_status
+        session.add(
+            ActivityHistory(
+                history_id=_new_public_id("hist"),
+                event_type="work_sequence.notification_candidate_status_changed",
+                actor_id=current_user.user_id,
+                target_type="work_sequence_notification_candidate",
+                target_id=candidate.candidate_id,
+                target_title=None,
+                message=f"Work sequence notification candidate status changed: {before} -> {target_status}.",
+                before_value=before,
+                after_value=target_status,
+            )
+        )
+        session.commit()
+        session.refresh(candidate)
+
+    return WorkSequenceNotificationCandidateResponse(
+        candidate_id=candidate.candidate_id,
+        board_id=candidate.board_id,
+        item_id=candidate.item_id,
+        event_type=candidate.event_type,
+        actor_id=candidate.actor_id,
+        recipient_hint=candidate.recipient_hint,
+        message=candidate.message,
+        status=candidate.status,
+        created_at=candidate.created_at,
+    )
