@@ -1,5 +1,15 @@
 ﻿# FlowNote 설계 결정 요약
 
+## 2026-06-30. WPF administrator file watch candidates
+
+- WPF file watch is a local native feature based on `FileSystemWatcher`, not a server-side watcher.
+- File watch is limited to administrator-level roles: `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`.
+- `line-foreman`, `team-lead`, `team-member`, and `viewer` cannot open or run file watch even if some of them can register documents.
+- A changed file is stored first as a `file_watch_candidates` row with `PENDING` status. It is not uploaded or made a new version automatically.
+- Confirmation requires a target document, version label, and non-empty change reason. The file is then copied into local `Files/Uploads/yyyy-MM-dd/` storage and added as a new `document_versions` row.
+- Candidate creation, confirmation, and ignore actions are recorded in `activity_history` as `file_watch.candidate_created`, `file_watch.candidate_confirmed`, and `file_watch.candidate_ignored`.
+- Server synchronization for locally confirmed watched-file versions remains a follow-up policy item.
+
 ## 2026-06-30. Server-stored auth sessions for token refresh and revocation
 
 - FastAPI auth now uses HMAC Bearer access tokens plus the `auth_sessions` table.

@@ -39,8 +39,8 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
 
         using var version = connection.CreateCommand();
         version.CommandText = """
-            INSERT INTO document_versions (document_id, version_no, file_name, local_path, comment, version_status, is_latest, is_published, published_at, created_by, created_at)
-            VALUES ($document_id, 1, $file_name, $local_path, NULL, 'WORKING', 1, 0, NULL, $created_by, $created_at);
+            INSERT INTO document_versions (document_id, version_no, file_name, local_path, comment, version_status, is_latest, is_published, published_at, created_by, created_at, version_label)
+            VALUES ($document_id, 1, $file_name, $local_path, NULL, 'WORKING', 1, 0, NULL, $created_by, $created_at, 'v1');
             """;
         version.Parameters.AddWithValue("$document_id", documentId);
         version.Parameters.AddWithValue("$file_name", fileName);
@@ -183,8 +183,8 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
 
         using var insertVersion = connection.CreateCommand();
         insertVersion.CommandText = """
-            INSERT INTO document_versions (document_id, version_no, file_name, local_path, comment, version_status, is_latest, is_published, published_at, created_by, created_at)
-            VALUES ($document_id, $version_no, $file_name, $local_path, $comment, 'WORKING', 1, 0, NULL, $created_by, $created_at);
+            INSERT INTO document_versions (document_id, version_no, file_name, local_path, comment, version_status, is_latest, is_published, published_at, created_by, created_at, version_label)
+            VALUES ($document_id, $version_no, $file_name, $local_path, $comment, 'WORKING', 1, 0, NULL, $created_by, $created_at, $version_label);
             """;
         insertVersion.Parameters.AddWithValue("$document_id", documentId);
         insertVersion.Parameters.AddWithValue("$version_no", nextVersion);
@@ -193,6 +193,7 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
         insertVersion.Parameters.AddWithValue("$comment", comment.Trim());
         insertVersion.Parameters.AddWithValue("$created_by", createdBy);
         insertVersion.Parameters.AddWithValue("$created_at", now.ToString("O"));
+        insertVersion.Parameters.AddWithValue("$version_label", $"v{nextVersion}");
         insertVersion.ExecuteNonQuery();
 
         using var update = connection.CreateCommand();
@@ -242,6 +243,166 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
             localPath,
             nextVersion,
             comment.Trim(),
+            TagService.ListDocumentTags(connection, documentId),
+            publishedVersionNo);
+    }
+
+    public DocumentRecord AddFileVersion(
+        string documentId,
+        string fileName,
+        string localPath,
+        string versionLabel,
+        string changeReason,
+        string createdBy)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            throw new ArgumentException("File name is required.", nameof(fileName));
+        }
+
+        if (string.IsNullOrWhiteSpace(localPath))
+        {
+            throw new ArgumentException("Local path is required.", nameof(localPath));
+        }
+
+        if (string.IsNullOrWhiteSpace(versionLabel))
+        {
+            throw new ArgumentException("Version label is required.", nameof(versionLabel));
+        }
+
+        if (string.IsNullOrWhiteSpace(changeReason))
+        {
+            throw new ArgumentException("Change reason is required.", nameof(changeReason));
+        }
+
+        using var connection = database.OpenConnection();
+        using var lookup = connection.CreateCommand();
+        lookup.CommandText = """
+            SELECT id, folder_id, title, file_name, document_type, status, created_by, created_at, updated_at, local_path, version_no, published_version_no
+            FROM documents
+            WHERE document_id = $document_id
+            LIMIT 1;
+            """;
+        lookup.Parameters.AddWithValue("$document_id", documentId);
+
+        using var reader = lookup.ExecuteReader();
+        if (!reader.Read())
+        {
+            throw new InvalidOperationException($"Document not found: {documentId}");
+        }
+
+        var id = reader.GetInt64(0);
+        var folderId = reader.GetInt64(1);
+        var title = reader.GetString(2);
+        var documentType = reader.GetString(4);
+        var status = reader.GetString(5);
+        var originalCreatedBy = reader.GetString(6);
+        var createdAt = DateTime.Parse(reader.GetString(7));
+        var currentVersion = reader.GetInt32(10);
+        int? publishedVersionNo = reader.IsDBNull(11) ? null : reader.GetInt32(11);
+        var nextVersion = currentVersion + 1;
+        reader.Close();
+
+        var normalizedVersionLabel = versionLabel.Trim();
+        var normalizedChangeReason = changeReason.Trim();
+        var now = DateTime.UtcNow;
+
+        using var markPreviousLatest = connection.CreateCommand();
+        markPreviousLatest.CommandText = """
+            UPDATE document_versions
+            SET is_latest = 0,
+                version_status = CASE
+                    WHEN is_published = 1 THEN 'PUBLISHED'
+                    ELSE 'SUPERSEDED'
+                END
+            WHERE document_id = $document_id AND is_latest = 1;
+            """;
+        markPreviousLatest.Parameters.AddWithValue("$document_id", documentId);
+        markPreviousLatest.ExecuteNonQuery();
+
+        using var insertVersion = connection.CreateCommand();
+        insertVersion.CommandText = """
+            INSERT INTO document_versions (
+                document_id,
+                version_no,
+                file_name,
+                local_path,
+                comment,
+                version_status,
+                is_latest,
+                is_published,
+                published_at,
+                created_by,
+                created_at,
+                version_label
+            )
+            VALUES (
+                $document_id,
+                $version_no,
+                $file_name,
+                $local_path,
+                $comment,
+                'WORKING',
+                1,
+                0,
+                NULL,
+                $created_by,
+                $created_at,
+                $version_label
+            );
+            """;
+        insertVersion.Parameters.AddWithValue("$document_id", documentId);
+        insertVersion.Parameters.AddWithValue("$version_no", nextVersion);
+        insertVersion.Parameters.AddWithValue("$file_name", fileName.Trim());
+        insertVersion.Parameters.AddWithValue("$local_path", localPath.Trim());
+        insertVersion.Parameters.AddWithValue("$comment", normalizedChangeReason);
+        insertVersion.Parameters.AddWithValue("$created_by", createdBy);
+        insertVersion.Parameters.AddWithValue("$created_at", now.ToString("O"));
+        insertVersion.Parameters.AddWithValue("$version_label", normalizedVersionLabel);
+        insertVersion.ExecuteNonQuery();
+
+        using var update = connection.CreateCommand();
+        update.CommandText = """
+            UPDATE documents
+            SET file_name = $file_name,
+                local_path = $local_path,
+                version_no = $version_no,
+                latest_comment = $comment,
+                updated_at = $updated_at
+            WHERE document_id = $document_id;
+            """;
+        update.Parameters.AddWithValue("$file_name", fileName.Trim());
+        update.Parameters.AddWithValue("$local_path", localPath.Trim());
+        update.Parameters.AddWithValue("$version_no", nextVersion);
+        update.Parameters.AddWithValue("$comment", normalizedChangeReason);
+        update.Parameters.AddWithValue("$updated_at", now.ToString("O"));
+        update.Parameters.AddWithValue("$document_id", documentId);
+        update.ExecuteNonQuery();
+
+        HistoryService.Record(
+            connection,
+            "document.file_version_added",
+            createdBy,
+            "document",
+            documentId,
+            title,
+            $"File version added: {title} {normalizedVersionLabel} (v{nextVersion})",
+            now);
+
+        return new DocumentRecord(
+            id,
+            documentId,
+            folderId,
+            title,
+            fileName.Trim(),
+            documentType,
+            status,
+            originalCreatedBy,
+            createdAt,
+            now,
+            localPath.Trim(),
+            nextVersion,
+            normalizedChangeReason,
             TagService.ListDocumentTags(connection, documentId),
             publishedVersionNo);
     }
@@ -405,7 +566,7 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT id, document_id, version_no, file_name, local_path, comment, created_by, created_at,
-                   version_status, is_latest, is_published, published_at
+                   version_status, is_latest, is_published, published_at, version_label
             FROM document_versions
             WHERE document_id = $document_id
             ORDER BY version_no DESC;
@@ -428,7 +589,8 @@ public sealed class DocumentService(FlowNoteLocalDatabase database)
                 reader.GetString(8),
                 reader.GetInt32(9) == 1,
                 reader.GetInt32(10) == 1,
-                reader.IsDBNull(11) ? null : DateTime.Parse(reader.GetString(11))));
+                reader.IsDBNull(11) ? null : DateTime.Parse(reader.GetString(11)),
+                reader.IsDBNull(12) ? null : reader.GetString(12)));
         }
 
         return records;

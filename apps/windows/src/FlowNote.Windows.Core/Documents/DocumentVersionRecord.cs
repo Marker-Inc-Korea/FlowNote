@@ -12,4 +12,5 @@ public sealed record DocumentVersionRecord(
     string VersionStatus = "WORKING",
     bool IsLatest = false,
     bool IsPublished = false,
-    DateTime? PublishedAt = null);
+    DateTime? PublishedAt = null,
+    string? VersionLabel = null);

@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private readonly HttpClient? serverHttpClient;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly bool canRegisterDocuments;
+    private readonly bool canManageFileWatch;
     private readonly ExplorerWorkspace workspace = new();
     private ExplorerFolder? selectedFolder;
 
@@ -31,6 +32,7 @@ public partial class MainWindow : Window
         this.services = services;
         this.currentUser = currentUser;
         canRegisterDocuments = RolePermissionPolicy.CanRegisterDocuments(currentUser.Role);
+        canManageFileWatch = RolePermissionPolicy.CanManageFileWatch(currentUser.Role);
         (serverDocumentClient, serverHttpClient) = CreateServerDocumentClient(currentUser);
         SignedInUserTextBlock.Text = $"{currentUser.DisplayName} ({currentUser.Role})";
         DataContext = workspace;
@@ -43,6 +45,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         Loaded -= MainWindow_Loaded;
+        services.FileWatch.Dispose();
         serverHttpClient?.Dispose();
         base.OnClosed(e);
     }
@@ -195,6 +198,24 @@ public partial class MainWindow : Window
             Owner = this
         };
         window.Show();
+    }
+
+    private void FileWatchButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureFileWatchAllowed())
+        {
+            return;
+        }
+
+        var window = new FileWatchWindow(
+            services.FileWatch,
+            services.Documents,
+            GetCurrentActorName())
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+        RefreshDocuments(selectedFolder?.Id, "File watch candidates updated.");
     }
 
     private async void UploadFileButton_Click(object sender, RoutedEventArgs e)
@@ -517,6 +538,7 @@ public partial class MainWindow : Window
         PublishDocumentButton.IsEnabled = canRegisterDocuments;
         DocumentStatusComboBox.IsEnabled = canRegisterDocuments;
         FileListDropZone.AllowDrop = canRegisterDocuments;
+        FileWatchButton.IsEnabled = canManageFileWatch;
 
         if (!canRegisterDocuments)
         {
@@ -528,6 +550,11 @@ public partial class MainWindow : Window
             DocumentStatusComboBox.ToolTip = noDocumentWritePermission;
             FileListDropZone.ToolTip = noDocumentWritePermission;
         }
+
+        if (!canManageFileWatch)
+        {
+            FileWatchButton.ToolTip = "File watch is available only to administrator-level roles.";
+        }
     }
 
     private bool EnsureDocumentRegistrationAllowed()
@@ -538,6 +565,17 @@ public partial class MainWindow : Window
         }
 
         workspace.StatusText = "문서 등록 권한이 없습니다. 현장 코멘트 등록만 사용할 수 있습니다.";
+        return false;
+    }
+
+    private bool EnsureFileWatchAllowed()
+    {
+        if (canManageFileWatch)
+        {
+            return true;
+        }
+
+        workspace.StatusText = "File watch is available only to administrator-level roles.";
         return false;
     }
 
