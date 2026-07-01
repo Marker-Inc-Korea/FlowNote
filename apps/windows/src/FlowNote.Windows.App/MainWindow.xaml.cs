@@ -241,7 +241,8 @@ public partial class MainWindow : Window
         var window = new ReportDraftWindow(
             services.Reports,
             folder.Id,
-            GetCurrentActorName())
+            GetCurrentActorName(),
+            serverDocumentClient)
         {
             Owner = this
         };

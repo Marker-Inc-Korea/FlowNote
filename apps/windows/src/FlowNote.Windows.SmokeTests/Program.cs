@@ -2,6 +2,7 @@ using FlowNote.Windows.Core.Storage;
 using FlowNote.Windows.Core.Auth;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
+using FlowNote.Windows.Core.Reports;
 using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Sync;
 using FlowNote.Windows.Core.WorkSequences;
@@ -1368,6 +1369,119 @@ try
             Require(
                 serverFieldCommentAttachments.Any(item => item.AttachmentId == serverFieldCommentAttachment.AttachmentId),
                 "server field comment attachment list should include the uploaded attachment");
+
+            var reportSequenceBoard = await serverDocuments.CreateWorkSequenceBoardAsync(
+                new ServerWorkSequenceBoardCreateRequest
+                {
+                    Title = $"Server report source sequence {runStamp}",
+                    LineCode = "line-a",
+                    BoardDate = DateOnly.FromDateTime(DateTime.Today),
+                    CreatedBy = serverLogin.UserId
+                });
+            var reportSequenceWithItem = await serverDocuments.AddWorkSequenceItemAsync(
+                reportSequenceBoard.BoardId,
+                new ServerWorkSequenceItemCreateRequest
+                {
+                    Title = $"Server report source item {runStamp}",
+                    DocumentId = serverDocument.DocumentId,
+                    CreatedBy = serverLogin.UserId
+                });
+            var reportSequenceItem = reportSequenceWithItem.Items.Single();
+            var reportSequenceHistory = await serverDocuments.ListWorkSequenceHistoryAsync(reportSequenceBoard.BoardId);
+            var reportSequenceHistorySource = reportSequenceHistory.First(item => item.ItemId == reportSequenceItem.ItemId);
+
+            var reportSources = new[]
+            {
+                new ReportSourceCandidateRecord(
+                    "FIELD_COMMENT",
+                    serverFieldComment.CommentId,
+                    serverDocument.Title,
+                    serverFieldComment.RawContent,
+                    serverFieldComment.CreatedAt,
+                    RelationType: "primary"),
+                new ReportSourceCandidateRecord(
+                    "DOCUMENT",
+                    serverDocument.DocumentId,
+                    serverDocument.Title,
+                    serverDocument.LatestVersion?.File.OriginalFilename ?? serverDocument.Title,
+                    serverDocument.UpdatedAt,
+                    latestServerVersion.VersionId,
+                    "related_document"),
+                new ReportSourceCandidateRecord(
+                    "WORK_SEQUENCE_ITEM",
+                    reportSequenceItem.ItemId,
+                    reportSequenceItem.Title,
+                    reportSequenceItem.Status,
+                    reportSequenceItem.CreatedAt,
+                    RelationType: "work_sequence"),
+                new ReportSourceCandidateRecord(
+                    "WORK_SEQUENCE_HISTORY",
+                    reportSequenceHistorySource.ChangeId,
+                    reportSequenceItem.Title,
+                    reportSequenceHistorySource.ChangeType,
+                    reportSequenceHistorySource.CreatedAt,
+                    RelationType: "work_sequence_history")
+            };
+            var reportContent = services.Reports.BuildDraftContent(
+                $"Windows server report {runStamp}",
+                "Windows smoke grouped FieldComment, document, and work sequence history.",
+                reportSources,
+                smokeActorName);
+            var reportResult = await services.Reports.SaveDraftToServerAsync(
+                serverDocuments,
+                currentDocumentFolder.Id,
+                $"Windows server report {runStamp}",
+                "Windows smoke grouped FieldComment, document, and work sequence history.",
+                reportContent,
+                reportSources,
+                smokeActorName);
+            Require(reportResult.ReportId.StartsWith("report_", StringComparison.Ordinal), "server report save should return report_id");
+            Require(
+                reportResult.GeneratedDocumentId?.StartsWith("doc_", StringComparison.Ordinal) == true,
+                "server report save should return generated_document_id");
+            Require(reportResult.LocalDocument is not null, "server report save should keep a local document copy");
+            Require(reportResult.SkippedSources.Count == 0, "server report save should map all server report sources");
+
+            var savedReportDetail = await serverDocuments.GetReportAsync(reportResult.ReportId);
+            Require(savedReportDetail.GeneratedDocumentId == reportResult.GeneratedDocumentId, "server report detail should keep generated document id");
+            Require(
+                savedReportDetail.Sources.Any(item => item.SourceType == "FIELD_COMMENT" && item.SourceId == serverFieldComment.CommentId),
+                "server report detail should trace the FieldComment source");
+            Require(
+                savedReportDetail.Sources.Any(item => item.SourceType == "DOCUMENT" && item.SourceVersionId == latestServerVersion.VersionId),
+                "server report detail should trace the document version source");
+            Require(
+                savedReportDetail.Sources.Any(item => item.SourceType == "WORK_SEQUENCE_HISTORY" && item.SourceId == reportSequenceHistorySource.ChangeId),
+                "server report detail should trace the work sequence history source");
+            var reportList = await serverDocuments.ListReportsAsync();
+            Require(reportList.Any(item => item.ReportId == reportResult.ReportId), "server report list should include the saved report");
+            var reportDocumentList = await serverDocuments.ListDocumentsAsync();
+            Require(
+                reportDocumentList.Any(item =>
+                    item.DocumentId == reportResult.GeneratedDocumentId &&
+                    item.DocumentType == "report" &&
+                    item.Tags.Contains("Report") &&
+                    item.Tags.Contains("FieldComment") &&
+                    item.Tags.Contains("Document") &&
+                    item.Tags.Contains("WorkSequence")),
+                "server document list should include generated report document tags");
+
+            using var reportConnection = services.Database.OpenConnection();
+            Require(
+                ScalarLong(
+                    reportConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM documents
+                    WHERE document_id = $document_id
+                      AND server_report_id = $server_report_id
+                      AND server_document_id = $server_document_id
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$document_id", reportResult.LocalDocument!.DocumentId),
+                    ("$server_report_id", reportResult.ReportId),
+                    ("$server_document_id", reportResult.GeneratedDocumentId!)) == 1,
+                "local report document should link server report_id and generated_document_id");
         }
 
         {

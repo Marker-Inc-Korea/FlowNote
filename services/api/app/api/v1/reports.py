@@ -18,11 +18,13 @@ from app.core.storage import resolve_storage_root
 from app.db.models import (
     ActivityHistory,
     Document,
+    DocumentTag,
     DocumentVersion,
     FieldComment,
     FileObject,
     Report,
     ReportSource,
+    TagDefinition,
     WorkRecord,
     WorkRecordVersion,
     WorkSequenceChangeHistory,
@@ -350,6 +352,8 @@ def _save_report_document(
     )
     session.add(document)
     session.add(version)
+    session.flush()
+    _apply_report_document_tags(session, document_id, sources)
     return document
 
 
@@ -365,6 +369,60 @@ def _record_activity(session: Session, event_type: str, actor_id: str, report: R
             message=message,
         )
     )
+
+
+def _normalize_tag_code(value: str) -> str:
+    return "-".join(value.strip().lower().split())
+
+
+def _ensure_tag(session: Session, name: str) -> TagDefinition:
+    code = _normalize_tag_code(name)
+    existing = session.scalar(
+        select(TagDefinition).where(TagDefinition.tag_type == "custom", TagDefinition.code == code)
+    )
+    if existing is not None:
+        if existing.name != name:
+            existing.name = name
+        if not existing.is_active:
+            existing.is_active = True
+        return existing
+
+    tag = TagDefinition(
+        tag_id=_new_public_id("tag"),
+        tag_type="custom",
+        code=code,
+        name=name,
+    )
+    session.add(tag)
+    session.flush()
+    return tag
+
+
+def _source_tag_names(sources: list[ReportSource]) -> list[str]:
+    tags = ["Report"]
+    source_tags = {
+        "FIELD_COMMENT": "FieldComment",
+        "DOCUMENT": "Document",
+        "WORK_SEQUENCE_ITEM": "WorkSequence",
+        "WORK_SEQUENCE_HISTORY": "WorkSequence",
+        "WORK_RECORD": "WorkRecord",
+        "WORK_RECORD_VERSION": "WorkRecord",
+    }
+    for source in sources:
+        tag = source_tags.get(source.source_type)
+        if tag is not None and tag not in tags:
+            tags.append(tag)
+    return tags
+
+
+def _apply_report_document_tags(
+    session: Session,
+    document_id: str,
+    sources: list[ReportSource],
+) -> None:
+    for name in _source_tag_names(sources):
+        tag = _ensure_tag(session, name)
+        session.add(DocumentTag(document_id=document_id, tag_id=tag.tag_id))
 
 
 def _report_response(session: Session, report: Report) -> ReportResponse:
