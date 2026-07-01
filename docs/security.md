@@ -48,6 +48,7 @@ WPF 문서 뷰어는 로컬 앱 계층에서 보호한다.
 - 닫힘 사유는 `window_closed`, `auto_closed`, `download_blocked` 등으로 기록한다.
 - PDF는 WebView2 기반 표시를 우선하고 저장/다운로드 이벤트를 차단한다.
 - 텍스트, 이미지, Excel은 앱 내부 읽기 전용 미리보기로 표시한다.
+- TXT/PDF/XLSX/이미지의 정상, 비정상, 한글 파일명, 큰 파일 기준과 CAD/HWP 제외 범위는 [문서 미리보기 안정화 기준](../apps/windows/docs/document-preview-stability.md)을 따른다.
 
 ## 운영 데이터 보호
 
