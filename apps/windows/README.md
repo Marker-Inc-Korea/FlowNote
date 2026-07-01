@@ -19,8 +19,9 @@
 - 알림, 전체 이력
 - 관리자 파일 감시 후보 처리
 - 작업순서 관리자 화면과 TV 화면
-- 보고서 초안 생성 보조와 문서 저장
-- FastAPI 서버 인증과 문서/FieldComment/첨부/접근 로그/작업순서 API 클라이언트
+- 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도
+- FastAPI 서버 인증과 문서/FieldComment/첨부/접근 로그/보고서/작업순서 API 클라이언트
+- 서버 동기화 큐: 문서, FieldComment, FieldComment 첨부, 문서 접근 로그
 
 ## 프로젝트 구조
 
@@ -62,3 +63,5 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Win
 ```
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
+
+파일 유형별 미리보기 샘플과 실패 안내 기준은 [문서 미리보기 안정화 기준](./docs/document-preview-stability.md)을 따른다.

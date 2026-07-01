@@ -26,7 +26,6 @@ namespace FlowNote.Windows.App;
 
 public partial class DocumentViewWindow : Window
 {
-    private const long MaxPreviewBytes = 128 * 1024;
     private readonly FieldCommentService? fieldCommentService;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly ServerSyncService? serverSyncService;
@@ -204,33 +203,43 @@ public partial class DocumentViewWindow : Window
     {
         var resolvedPath = ResolveLocalPath(document.LocalPath);
         currentResolvedPath = File.Exists(resolvedPath) ? resolvedPath : null;
+        ResetPreviewSurfaces();
+
+        switch (DocumentPreviewPolicy.ClassifyPath(resolvedPath))
+        {
+            case DocumentPreviewKind.Pdf:
+                ShowPdfPreview(document, resolvedPath!);
+                return;
+            case DocumentPreviewKind.Spreadsheet:
+                ShowSpreadsheetPreview(document, resolvedPath!);
+                return;
+            case DocumentPreviewKind.Image:
+                ShowImagePreview(document, resolvedPath!);
+                return;
+            case DocumentPreviewKind.Text:
+                ContentTextBox.Visibility = Visibility.Visible;
+                ContentTextBox.Text = LoadPreviewText(document, resolvedPath);
+                return;
+            case DocumentPreviewKind.Cad:
+            case DocumentPreviewKind.Hwp:
+            case DocumentPreviewKind.Unsupported:
+            case DocumentPreviewKind.Missing:
+            default:
+                ShowUnsupportedPreview(document, resolvedPath);
+                return;
+        }
+    }
+
+    private void ResetPreviewSurfaces()
+    {
         PdfPreview.Visibility = Visibility.Collapsed;
         PdfPreview.Source = null;
         SpreadsheetPreview.Visibility = Visibility.Collapsed;
         SpreadsheetPreview.ItemsSource = null;
-
-        if (IsPdf(resolvedPath))
-        {
-            ShowPdfPreview(document, resolvedPath!);
-            return;
-        }
-
-        if (IsSpreadsheet(resolvedPath))
-        {
-            ShowSpreadsheetPreview(document, resolvedPath!);
-            return;
-        }
-
-        if (IsImage(resolvedPath))
-        {
-            ShowImagePreview(document, resolvedPath!);
-            return;
-        }
-
         ImagePreview.Visibility = Visibility.Collapsed;
         ImagePreview.Source = null;
         ContentTextBox.Visibility = Visibility.Visible;
-        ContentTextBox.Text = LoadPreviewText(document, resolvedPath);
+        ContentTextBox.Text = string.Empty;
     }
 
     private static string? ResolveLocalPath(string? path)
@@ -270,35 +279,19 @@ public partial class DocumentViewWindow : Window
         return runtimePath;
     }
 
-    private static bool IsImage(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-        {
-            return false;
-        }
-
-        var extension = Path.GetExtension(path).ToLowerInvariant();
-        return extension is ".jpg" or ".jpeg" or ".png" or ".bmp" or ".gif" or ".tif" or ".tiff" or ".webp";
-    }
-
-    private static bool IsPdf(string? path)
-    {
-        return !string.IsNullOrWhiteSpace(path) &&
-            File.Exists(path) &&
-            Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsSpreadsheet(string? path)
-    {
-        return !string.IsNullOrWhiteSpace(path) &&
-            File.Exists(path) &&
-            Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase);
-    }
-
     private async void ShowPdfPreview(ExplorerDocument document, string resolvedPath)
     {
         try
         {
+            if (!TryValidatePdf(resolvedPath, out var pdfValidationMessage))
+            {
+                PdfPreview.Visibility = Visibility.Collapsed;
+                ContentTextBox.Visibility = Visibility.Visible;
+                ContentTextBox.Text = BuildMetadataPreview(document, pdfValidationMessage);
+                RecordPreviewFailed($"PDF 미리보기 실패: {pdfValidationMessage}");
+                return;
+            }
+
             ImagePreview.Visibility = Visibility.Collapsed;
             ImagePreview.Source = null;
             ContentTextBox.Visibility = Visibility.Collapsed;
@@ -313,6 +306,23 @@ public partial class DocumentViewWindow : Window
             PdfPreview.Visibility = Visibility.Collapsed;
             ContentTextBox.Visibility = Visibility.Visible;
             ContentTextBox.Text = PreviewPdf(document, resolvedPath);
+            RecordPreviewFailed($"PDF WebView2 미리보기 실패: {ex.Message}");
+        }
+    }
+
+    private static bool TryValidatePdf(string path, out string message)
+    {
+        try
+        {
+            using var pdf = PdfDocument.Open(path);
+            _ = pdf.NumberOfPages;
+            message = string.Empty;
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or UglyToad.PdfPig.Core.PdfDocumentFormatException)
+        {
+            message = $"PDF 미리보기를 생성할 수 없습니다.\n파일이 손상되었거나 현재 클라이언트에서 지원하지 않는 PDF 형식입니다.\n\n{ex.Message}";
+            return false;
         }
     }
 
@@ -368,7 +378,7 @@ public partial class DocumentViewWindow : Window
             SpreadsheetPreview.Visibility = Visibility.Visible;
             SpreadsheetPreview.ItemsSource = table.DefaultView;
         }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or System.Xml.XmlException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Xml.XmlException)
         {
             SpreadsheetPreview.Visibility = Visibility.Collapsed;
             ContentTextBox.Visibility = Visibility.Visible;
@@ -422,9 +432,11 @@ public partial class DocumentViewWindow : Window
             return PreviewPdf(document, resolvedPath);
         }
 
-        if (fileInfo.Length > MaxPreviewBytes)
+        if (fileInfo.Length > DocumentPreviewPolicy.MaxTextPreviewBytes)
         {
-            return BuildMetadataPreview(document, $"파일 크기: {fileInfo.Length:N0} bytes\n현재 클라이언트 미리보기는 작은 텍스트 파일만 지원합니다.");
+            var message = DocumentPreviewPolicy.BuildLargeTextMessage(fileInfo.Length);
+            RecordPreviewFailed($"TXT 미리보기 제한: {fileInfo.Length:N0} bytes");
+            return BuildMetadataPreview(document, message);
         }
 
         try
@@ -437,6 +449,24 @@ public partial class DocumentViewWindow : Window
             RecordPreviewFailed($"파일 미리보기 실패: {ex.Message}");
             return BuildMetadataPreview(document, $"현재 클라이언트에서 이 파일을 미리 볼 수 없습니다.\n\n{ex.Message}");
         }
+    }
+
+    private void ShowUnsupportedPreview(ExplorerDocument document, string? resolvedPath)
+    {
+        var kind = DocumentPreviewPolicy.ClassifyPath(resolvedPath);
+        if (kind == DocumentPreviewKind.Missing)
+        {
+            kind = DocumentPreviewPolicy.ClassifyFileName(document.FileName);
+            if (kind is not (DocumentPreviewKind.Cad or DocumentPreviewKind.Hwp or DocumentPreviewKind.Unsupported))
+            {
+                kind = DocumentPreviewKind.Missing;
+            }
+        }
+
+        var message = DocumentPreviewPolicy.BuildPreviewUnavailableMessage(kind, document.FileName);
+        ContentTextBox.Visibility = Visibility.Visible;
+        ContentTextBox.Text = BuildMetadataPreview(document, message);
+        RecordPreviewFailed($"{DocumentPreviewPolicy.DisplayName(kind)} 미리보기 제외 또는 실패: {document.FileName}");
     }
 
     private void RecordPreviewFailed(string reason)
@@ -483,7 +513,7 @@ public partial class DocumentViewWindow : Window
         var xml = XDocument.Load(stream);
         XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
         var rowValues = xml.Descendants(ns + "row")
-            .Take(100)
+            .Take(DocumentPreviewPolicy.MaxSpreadsheetPreviewRows)
             .Select(row => ReadSpreadsheetRow(row, sharedStrings))
             .Where(row => row.Any(value => !string.IsNullOrWhiteSpace(value)))
             .ToList();
