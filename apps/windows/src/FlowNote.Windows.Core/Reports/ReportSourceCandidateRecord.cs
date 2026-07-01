@@ -5,4 +5,6 @@ public sealed record ReportSourceCandidateRecord(
     string SourceId,
     string Title,
     string Detail,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string? SourceVersionId = null,
+    string? RelationType = null);

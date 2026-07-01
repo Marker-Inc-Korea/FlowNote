@@ -284,7 +284,11 @@ public sealed class FlowNoteLocalDatabase
                 local_path TEXT NULL,
                 version_no INTEGER NOT NULL DEFAULT 1,
                 published_version_no INTEGER NULL,
-                latest_comment TEXT NULL
+                latest_comment TEXT NULL,
+                server_report_id TEXT NULL,
+                server_document_id TEXT NULL,
+                server_version_id TEXT NULL,
+                synced_at TEXT NULL
             );
 
             CREATE TABLE IF NOT EXISTS document_versions (
@@ -564,6 +568,7 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "documents", "version_no", "INTEGER NOT NULL DEFAULT 1");
         EnsureColumn(connection, "documents", "published_version_no", "INTEGER NULL");
         EnsureColumn(connection, "documents", "latest_comment", "TEXT NULL");
+        EnsureColumn(connection, "documents", "server_report_id", "TEXT NULL");
         EnsureColumn(connection, "documents", "server_document_id", "TEXT NULL");
         EnsureColumn(connection, "documents", "server_version_id", "TEXT NULL");
         EnsureColumn(connection, "documents", "synced_at", "TEXT NULL");
