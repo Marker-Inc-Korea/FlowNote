@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.Xml.Linq;
@@ -222,10 +223,7 @@ public partial class DocumentViewWindow : Window
 
         if (IsImage(resolvedPath))
         {
-            ContentTextBox.Text = BuildMetadataPreview(document, "사진 문서입니다. 아래 이미지와 누적 코멘트를 함께 확인할 수 있습니다.");
-            ContentTextBox.Visibility = Visibility.Visible;
-            ImagePreview.Visibility = Visibility.Visible;
-            ImagePreview.Source = new BitmapImage(new Uri(resolvedPath!, UriKind.Absolute));
+            ShowImagePreview(document, resolvedPath!);
             return;
         }
 
@@ -280,7 +278,7 @@ public partial class DocumentViewWindow : Window
         }
 
         var extension = Path.GetExtension(path).ToLowerInvariant();
-        return extension is ".jpg" or ".jpeg" or ".png" or ".bmp" or ".gif";
+        return extension is ".jpg" or ".jpeg" or ".png" or ".bmp" or ".gif" or ".tif" or ".tiff" or ".webp";
     }
 
     private static bool IsPdf(string? path)
@@ -375,13 +373,45 @@ public partial class DocumentViewWindow : Window
             SpreadsheetPreview.Visibility = Visibility.Collapsed;
             ContentTextBox.Visibility = Visibility.Visible;
             ContentTextBox.Text = BuildMetadataPreview(document, $"엑셀 미리보기를 생성할 수 없습니다.\n\n{ex.Message}");
+            RecordPreviewFailed($"엑셀 미리보기 실패: {ex.Message}");
         }
     }
 
-    private static string LoadPreviewText(ExplorerDocument document, string? resolvedPath)
+    private void ShowImagePreview(ExplorerDocument document, string resolvedPath)
+    {
+        try
+        {
+            PdfPreview.Visibility = Visibility.Collapsed;
+            SpreadsheetPreview.Visibility = Visibility.Collapsed;
+            SpreadsheetPreview.ItemsSource = null;
+            ContentTextBox.Text = BuildMetadataPreview(document, "사진 문서입니다. 아래 이미지와 누적 코멘트를 함께 확인할 수 있습니다.");
+            ContentTextBox.Visibility = Visibility.Visible;
+
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.UriSource = new Uri(resolvedPath, UriKind.Absolute);
+            image.EndInit();
+            image.Freeze();
+
+            ImagePreview.Visibility = Visibility.Visible;
+            ImagePreview.Source = image;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or UriFormatException or NotSupportedException or FileFormatException)
+        {
+            ImagePreview.Visibility = Visibility.Collapsed;
+            ImagePreview.Source = null;
+            ContentTextBox.Visibility = Visibility.Visible;
+            ContentTextBox.Text = BuildMetadataPreview(document, $"이미지 미리보기를 생성할 수 없습니다.\n파일이 손상되었거나 현재 클라이언트에서 지원하지 않는 이미지 형식입니다.\n\n{ex.Message}");
+            RecordPreviewFailed($"이미지 미리보기 실패: {ex.Message}");
+        }
+    }
+
+    private string LoadPreviewText(ExplorerDocument document, string? resolvedPath)
     {
         if (string.IsNullOrWhiteSpace(resolvedPath) || !File.Exists(resolvedPath))
         {
+            RecordPreviewFailed("로컬 파일을 찾을 수 없어 메타데이터만 표시했습니다.");
             return BuildMetadataPreview(document, "이 문서는 메타데이터만 등록되어 있습니다. 현재 로컬 클라이언트에서 파일 본문을 열 수 없습니다.");
         }
 
@@ -404,8 +434,20 @@ public partial class DocumentViewWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DecoderFallbackException)
         {
+            RecordPreviewFailed($"파일 미리보기 실패: {ex.Message}");
             return BuildMetadataPreview(document, $"현재 클라이언트에서 이 파일을 미리 볼 수 없습니다.\n\n{ex.Message}");
         }
+    }
+
+    private void RecordPreviewFailed(string reason)
+    {
+        historyService?.Record(
+            "document.preview_failed",
+            actorName,
+            "document",
+            string.IsNullOrWhiteSpace(document.DocumentId) ? null : document.DocumentId,
+            document.FileName,
+            reason);
     }
 
     private static string BuildMetadataPreview(ExplorerDocument document, string message)
