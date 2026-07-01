@@ -27,3 +27,7 @@
 ## 일일 기록
 
 `docs/daily/`의 파일은 특정 날짜의 작업 기록이다. 최신 구현 판단은 이 폴더보다 상위 문서를 우선한다.
+
+## 검증 자동화
+
+FastAPI pytest, WPF build, WPF smoke를 테스트 DB와 산출물 보존 규칙에 맞춰 실행하는 표준 순서는 [verification.md](./verification.md)를 따른다.

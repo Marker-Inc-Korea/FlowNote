@@ -158,3 +158,7 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 - HTTPS 또는 사내망 접속 보호
 - 운영 관리자 계정 발급과 최초 비밀번호 변경 절차
 - PostgreSQL 전환 조건
+
+## 검증 자동화
+
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트에서 `.\scripts\verify-preserved-tests.ps1`을 실행하면 FastAPI pytest 43개 수집/실행, WPF build, WPF smoke, `.gitignore` 산출물 제외 규칙, 실행 전후 `git status` 금지 패턴을 함께 확인한다.
