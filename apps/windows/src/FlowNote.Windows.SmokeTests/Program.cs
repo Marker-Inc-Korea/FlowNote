@@ -911,6 +911,123 @@ try
         services.ServerSync.CountQueuedForEntity("document_access_log", blockedDownloadLogId.ToString(), "FAILED") == 1,
         "missing server URL should create one failed download blocked access log sync row");
 
+    var previewCriteria = DocumentPreviewPolicy.SampleCriteria;
+    foreach (var fileType in new[] { "TXT", "PDF", "XLSX", "이미지" })
+    {
+        foreach (var caseName in new[] { "정상", "비정상", "한글 파일명", "큰 파일" })
+        {
+            Require(
+                previewCriteria.Any(item => item.FileType == fileType && item.CaseName == caseName),
+                $"{fileType} preview criteria should include {caseName}");
+        }
+    }
+
+    Require(
+        DocumentPreviewPolicy.ClassifyFileName("도면-프레스A-금형배치.dwg") == DocumentPreviewKind.Cad,
+        "CAD files should stay in metadata-only preview scope");
+    Require(
+        DocumentPreviewPolicy.ClassifyFileName("작업절차서-현장.hwp") == DocumentPreviewKind.Hwp,
+        "HWP files should stay in metadata-only preview scope");
+
+    var previewTxtPath = Path.Combine(testDirectory, $"미리보기-TXT-한글-{runStamp}.txt");
+    File.WriteAllText(previewTxtPath, "TXT 정상 미리보기 샘플입니다.", Encoding.UTF8);
+    var previewXlsxPath = Path.Combine(testDirectory, $"미리보기-XLSX-한글-{runStamp}.xlsx");
+    CreateMinimalXlsx(previewXlsxPath);
+    var previewImagePath = Path.Combine(testDirectory, $"미리보기-이미지-한글-{runStamp}.png");
+    File.WriteAllBytes(previewImagePath, TinyPngBytes());
+
+    var previewAuditSamples = new[]
+    {
+        ("TXT", previewTxtPath, "Text"),
+        ("PDF", koreanPdfPath, "PDF"),
+        ("XLSX", previewXlsxPath, "Spreadsheet"),
+        ("이미지", previewImagePath, "Image")
+    };
+
+    foreach (var (fileType, samplePath, documentType) in previewAuditSamples)
+    {
+        Require(File.Exists(samplePath), $"{fileType} preview audit sample should exist");
+        Require(
+            DocumentPreviewPolicy.ClassifyPath(samplePath) is not DocumentPreviewKind.Missing and not DocumentPreviewKind.Unsupported,
+            $"{fileType} preview audit sample should be classified");
+
+        var previewDocument = services.Documents.RegisterDocument(
+            documentsFolder.Id,
+            $"미리보기 감사 로그 {fileType} {runStamp}",
+            Path.GetFileName(samplePath),
+            documentType,
+            smokeActorName,
+            samplePath,
+            tags: ["preview-smoke", fileType]);
+
+        var previewWindowCloseLogId = services.DocumentViewLogs.StartDocumentView(
+            previewDocument.DocumentId,
+            previewDocument.VersionNo,
+            smokeActorName);
+        services.DocumentViewLogs.CloseDocumentView(previewWindowCloseLogId, "window_closed");
+        var previewAutoCloseLogId = services.DocumentViewLogs.StartDocumentView(
+            previewDocument.DocumentId,
+            previewDocument.VersionNo,
+            smokeActorName);
+        services.DocumentViewLogs.CloseDocumentView(previewAutoCloseLogId, "auto_closed");
+        var previewDownloadBlockedLogId = services.DocumentViewLogs.RecordDownloadBlocked(
+            previewDocument.DocumentId,
+            previewDocument.VersionNo,
+            memberLogin.DisplayName ?? "team member",
+            $"{fileType} preview smoke blocked controlled copy.");
+
+        using var previewLogConnection = services.Database.OpenConnection();
+        Require(
+            ScalarLong(
+                previewLogConnection,
+                """
+                SELECT COUNT(*)
+                FROM document_view_logs
+                WHERE document_id = $document_id
+                  AND closed_at IS NOT NULL
+                  AND close_reason = 'window_closed';
+                """,
+                ("$document_id", previewDocument.DocumentId)) >= 1,
+            $"{fileType} preview should record view close");
+        Require(
+            ScalarLong(
+                previewLogConnection,
+                """
+                SELECT COUNT(*)
+                FROM document_view_logs
+                WHERE document_id = $document_id
+                  AND closed_at IS NOT NULL
+                  AND close_reason = 'auto_closed';
+                """,
+                ("$document_id", previewDocument.DocumentId)) >= 1,
+            $"{fileType} preview should record auto close");
+        Require(
+            ScalarLong(
+                previewLogConnection,
+                """
+                SELECT COUNT(*)
+                FROM document_view_logs
+                WHERE document_id = $document_id
+                  AND closed_at IS NOT NULL
+                  AND close_reason = 'download_blocked';
+                """,
+                ("$document_id", previewDocument.DocumentId)) >= 1,
+            $"{fileType} preview should record download blocked");
+        Require(
+            services.History.ListHistory().Any(item =>
+                item.EventType == "document.view_started" &&
+                item.TargetId == previewDocument.DocumentId),
+            $"{fileType} preview should record view start history");
+        Require(
+            services.History.ListHistory().Any(item =>
+                item.EventType == "document.download_blocked" &&
+                item.TargetId == previewDocument.DocumentId),
+            $"{fileType} preview should record download blocked history");
+
+        Console.WriteLine(
+            $"Preview audit smoke: type={fileType}, sample={samplePath}, logs={previewWindowCloseLogId}/{previewAutoCloseLogId}/{previewDownloadBlockedLogId}");
+    }
+
     var leadFieldComment = services.FieldComments.AddDocumentComment(
         koreanPdfDocument.DocumentId,
         "조장 A-1 확인: PDF 한글 표시 정상, 혼합 공정 온도 기준 확인 완료.",
@@ -1671,6 +1788,77 @@ static T WithEnvironmentVariable<T>(string name, string value, Func<T> action)
     {
         Environment.SetEnvironmentVariable(name, previousValue);
     }
+}
+
+static void CreateMinimalXlsx(string path)
+{
+    using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+    WriteZipText(
+        archive,
+        "[Content_Types].xml",
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+          <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+          <Default Extension="xml" ContentType="application/xml"/>
+          <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+          <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+        </Types>
+        """);
+    WriteZipText(
+        archive,
+        "_rels/.rels",
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+        </Relationships>
+        """);
+    WriteZipText(
+        archive,
+        "xl/_rels/workbook.xml.rels",
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+        </Relationships>
+        """);
+    WriteZipText(
+        archive,
+        "xl/workbook.xml",
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+          <sheets>
+            <sheet name="점검" sheetId="1" r:id="rId1"/>
+          </sheets>
+        </workbook>
+        """);
+    WriteZipText(
+        archive,
+        "xl/worksheets/sheet1.xml",
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+          <sheetData>
+            <row r="1"><c r="A1" t="inlineStr"><is><t>항목</t></is></c><c r="B1" t="inlineStr"><is><t>결과</t></is></c></row>
+            <row r="2"><c r="A2" t="inlineStr"><is><t>라인A</t></is></c><c r="B2" t="inlineStr"><is><t>정상</t></is></c></row>
+          </sheetData>
+        </worksheet>
+        """);
+}
+
+static void WriteZipText(ZipArchive archive, string entryName, string content)
+{
+    var entry = archive.CreateEntry(entryName);
+    using var stream = entry.Open();
+    using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+    writer.Write(content);
+}
+
+static byte[] TinyPngBytes()
+{
+    return Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
 }
 
 static void CreateKoreanPdfOnStaThread(string pdfPath)
