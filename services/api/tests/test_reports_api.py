@@ -178,6 +178,14 @@ def test_report_draft_final_document_and_source_traceability() -> None:
         assert saved["generated_document_id"].startswith("doc_")
         assert saved["generated_document"]["status"] == "IN_REVIEW"
 
+        document_list_response = client.get("/api/v1/documents", headers=headers)
+        assert document_list_response.status_code == 200, document_list_response.text
+        generated_document_item = next(
+            item for item in document_list_response.json() if item["document_id"] == saved["generated_document_id"]
+        )
+        assert generated_document_item["document_type"] == "report"
+        assert set(generated_document_item["tags"]) >= {"Report", "FieldComment", "Document", "WorkSequence"}
+
         detail_response = client.get(f"/api/v1/reports/{draft['report_id']}", headers=headers)
         assert detail_response.status_code == 200, detail_response.text
         detail = detail_response.json()

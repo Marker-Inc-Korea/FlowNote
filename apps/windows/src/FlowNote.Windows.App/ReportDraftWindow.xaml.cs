@@ -1,20 +1,28 @@
 using System.Collections.ObjectModel;
+using System.Net.Http;
 using System.Windows;
 using FlowNote.Windows.Core.Reports;
+using FlowNote.Windows.Core.ServerApi;
 
 namespace FlowNote.Windows.App;
 
 public partial class ReportDraftWindow : Window
 {
     private readonly ReportDraftService reports;
+    private readonly FlowNoteServerDocumentClient? serverReports;
     private readonly long targetFolderId;
     private readonly string actorName;
     private readonly ReportDraftWorkspace workspace = new();
 
-    public ReportDraftWindow(ReportDraftService reports, long targetFolderId, string actorName)
+    public ReportDraftWindow(
+        ReportDraftService reports,
+        long targetFolderId,
+        string actorName,
+        FlowNoteServerDocumentClient? serverReports = null)
     {
         InitializeComponent();
         this.reports = reports;
+        this.serverReports = serverReports;
         this.targetFolderId = targetFolderId;
         this.actorName = actorName;
         DataContext = workspace;
@@ -46,7 +54,7 @@ public partial class ReportDraftWindow : Window
         StatusTextBlock.Text = $"선택한 원천 {selected.Count}건으로 초안을 생성했습니다.";
     }
 
-    private void SaveDocumentButton_Click(object sender, RoutedEventArgs e)
+    private async void SaveDocumentButton_Click(object sender, RoutedEventArgs e)
     {
         var content = DraftTextBox.Text;
         if (string.IsNullOrWhiteSpace(content))
@@ -58,6 +66,29 @@ public partial class ReportDraftWindow : Window
         if (string.IsNullOrWhiteSpace(content))
         {
             return;
+        }
+
+        var selected = SelectedSources().ToList();
+        if (serverReports is not null)
+        {
+            try
+            {
+                var result = await reports.SaveDraftToServerAsync(
+                    serverReports,
+                    targetFolderId,
+                    TitleTextBox.Text,
+                    SummaryTextBox.Text,
+                    content,
+                    selected,
+                    actorName);
+                DocumentSaved = result.LocalDocument is not null;
+                StatusTextBlock.Text = $"서버 보고서를 저장했습니다: {result.ReportId} / {result.GeneratedDocumentId ?? "생성 문서 없음"}";
+                return;
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException)
+            {
+                StatusTextBlock.Text = $"서버 보고서 저장을 건너뛰고 로컬 문서로 저장합니다. {exception.Message}";
+            }
         }
 
         var document = reports.SaveDraftAsDocument(
