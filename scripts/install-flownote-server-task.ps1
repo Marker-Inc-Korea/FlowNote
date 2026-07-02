@@ -42,10 +42,11 @@ Register-ScheduledTask `
     -Principal $principal `
     -Settings $settings `
     -Description "Runs FlowNote FastAPI server from $serverRootPath." `
-    -Force | Out-Null
+    -Force `
+    -ErrorAction Stop | Out-Null
 
 if ($StartNow) {
-    Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
+    Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop
 }
 
 Write-Host "Registered scheduled task $TaskPath$TaskName"
