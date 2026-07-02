@@ -119,6 +119,64 @@ public static class DocumentPreviewPolicy
         new("이미지", "큰 파일", "5 MiB 이상 또는 고해상도", "앱 종료 없이 이미지 표시 또는 실패 안내")
     ];
 
+    public static IReadOnlyList<DocumentPreviewExceptionSampleCriterion> FactoryExceptionSampleCriteria { get; } =
+    [
+        new(
+            "TXT",
+            "대용량",
+            "작업표준서-혼합공정-대용량.txt",
+            "Text",
+            DocumentPreviewKind.Text,
+            "128 KiB 초과 익명 텍스트",
+            "본문 대신 메타데이터와 한글 제한 안내를 표시하고 document.preview_failed 이력을 남긴다.",
+            true),
+        new(
+            "PDF",
+            "손상",
+            "도면-프레스A-금형배치-손상.pdf",
+            "PDF",
+            DocumentPreviewKind.Pdf,
+            "PDF 확장자이지만 PDF 파서가 열 수 없는 익명 파일",
+            "앱을 종료하지 않고 PDF 손상 안내와 document.preview_failed 이력을 남긴다.",
+            true),
+        new(
+            "XLSX",
+            "큰 파일",
+            "품질점검표-라인A-대용량.xlsx",
+            "Spreadsheet",
+            DocumentPreviewKind.Spreadsheet,
+            "5 MiB 이상 익명 엑셀 양식",
+            "첫 번째 시트를 최대 100행까지 표시하고 열람/종료/다운로드 차단 로그를 남긴다.",
+            false),
+        new(
+            "이미지",
+            "고해상도",
+            "사진-설비점검-라인A-고해상도.bmp",
+            "Image",
+            DocumentPreviewKind.Image,
+            "5 MiB 이상 고해상도 익명 설비 사진",
+            "앱을 종료하지 않고 이미지 또는 한글 실패 안내를 표시하며 열람 로그를 남긴다.",
+            false),
+        new(
+            "CAD",
+            "미지원",
+            "도면-프레스A-금형배치.dwg",
+            "CAD",
+            DocumentPreviewKind.Cad,
+            "CAD 원본은 등록하되 고급 뷰어는 MVP 범위에서 제외",
+            "본문 미리보기 대신 메타데이터 안내와 document.preview_failed 이력을 남긴다.",
+            true),
+        new(
+            "HWP",
+            "미지원",
+            "작업절차서-현장-인수인계.hwp",
+            "HWP",
+            DocumentPreviewKind.Hwp,
+            "HWP 원본은 등록하되 고급 뷰어는 MVP 범위에서 제외",
+            "본문 미리보기 대신 메타데이터 안내와 document.preview_failed 이력을 남긴다.",
+            true)
+    ];
+
     private static DocumentPreviewKind ClassifyExtension(string extension)
     {
         if (string.IsNullOrWhiteSpace(extension))

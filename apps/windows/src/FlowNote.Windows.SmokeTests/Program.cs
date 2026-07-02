@@ -995,6 +995,144 @@ try
         DocumentPreviewPolicy.ClassifyFileName("작업절차서-현장.hwp") == DocumentPreviewKind.Hwp,
         "HWP files should stay in metadata-only preview scope");
 
+    var factoryExceptionCriteria = DocumentPreviewPolicy.FactoryExceptionSampleCriteria;
+    foreach (var expected in new[]
+             {
+                 ("TXT", "대용량"),
+                 ("PDF", "손상"),
+                 ("XLSX", "큰 파일"),
+                 ("이미지", "고해상도"),
+                 ("CAD", "미지원"),
+                 ("HWP", "미지원")
+             })
+    {
+        Require(
+            factoryExceptionCriteria.Any(item => item.FileType == expected.Item1 && item.CaseName == expected.Item2),
+            $"{expected.Item1} factory exception criteria should include {expected.Item2}");
+    }
+
+    foreach (var criterion in factoryExceptionCriteria)
+    {
+        var samplePath = Path.Combine(
+            testDirectory,
+            BuildRunSampleFileName(criterion.AnonymousSampleFileName, runStamp));
+        CreateFactoryExceptionSampleFile(criterion, samplePath);
+        Require(File.Exists(samplePath), $"{criterion.FileType} factory exception sample should exist");
+        Require(
+            DocumentPreviewPolicy.ClassifyPath(samplePath) == criterion.PreviewKind,
+            $"{criterion.FileType} factory exception sample should be classified as {criterion.PreviewKind}");
+
+        if (criterion.FileType == "TXT")
+        {
+            Require(
+                new FileInfo(samplePath).Length > DocumentPreviewPolicy.MaxTextPreviewBytes,
+                "large TXT sample should exceed the text preview limit");
+        }
+
+        if (criterion.FileType is "XLSX" or "이미지")
+        {
+            Require(
+                new FileInfo(samplePath).Length > DocumentPreviewPolicy.LargeSampleBytes,
+                $"{criterion.FileType} large factory sample should exceed the large sample threshold");
+        }
+
+        var exceptionDocument = services.Documents.RegisterDocument(
+            documentsFolder.Id,
+            $"현장형 미리보기 예외 {criterion.FileType} {criterion.CaseName} {runStamp}",
+            Path.GetFileName(samplePath),
+            criterion.DocumentType,
+            smokeActorName,
+            samplePath,
+            tags: ["preview-exception-smoke", criterion.FileType, criterion.CaseName]);
+
+        var exceptionWindowCloseLogId = services.DocumentViewLogs.StartDocumentView(
+            exceptionDocument.DocumentId,
+            exceptionDocument.VersionNo,
+            smokeActorName);
+        services.DocumentViewLogs.CloseDocumentView(exceptionWindowCloseLogId, "window_closed");
+        var exceptionAutoCloseLogId = services.DocumentViewLogs.StartDocumentView(
+            exceptionDocument.DocumentId,
+            exceptionDocument.VersionNo,
+            smokeActorName);
+        services.DocumentViewLogs.CloseDocumentView(exceptionAutoCloseLogId, "auto_closed");
+        var exceptionDownloadBlockedLogId = services.DocumentViewLogs.RecordDownloadBlocked(
+            exceptionDocument.DocumentId,
+            exceptionDocument.VersionNo,
+            memberLogin.DisplayName ?? "team member",
+            $"{criterion.FileType} {criterion.CaseName} preview exception smoke blocked controlled copy.");
+
+        if (criterion.RecordsPreviewFailed)
+        {
+            var failureMessage = BuildPreviewFailureSmokeMessage(criterion, samplePath);
+            services.History.Record(
+                "document.preview_failed",
+                smokeActorName,
+                "document",
+                exceptionDocument.DocumentId,
+                exceptionDocument.FileName,
+                failureMessage);
+            Require(
+                ContainsKoreanPreviewGuidance(criterion, failureMessage),
+                $"{criterion.FileType} preview failure should include Korean guidance");
+            Require(
+                services.History.ListHistory().Any(item =>
+                    item.EventType == "document.preview_failed" &&
+                    item.TargetId == exceptionDocument.DocumentId),
+                $"{criterion.FileType} preview failure should be recorded in history");
+        }
+
+        using var exceptionLogConnection = services.Database.OpenConnection();
+        Require(
+            ScalarLong(
+                exceptionLogConnection,
+                """
+                SELECT COUNT(*)
+                FROM document_view_logs
+                WHERE document_id = $document_id
+                  AND closed_at IS NOT NULL
+                  AND close_reason = 'window_closed';
+                """,
+                ("$document_id", exceptionDocument.DocumentId)) >= 1,
+            $"{criterion.FileType} exception preview should record view close");
+        Require(
+            ScalarLong(
+                exceptionLogConnection,
+                """
+                SELECT COUNT(*)
+                FROM document_view_logs
+                WHERE document_id = $document_id
+                  AND closed_at IS NOT NULL
+                  AND close_reason = 'auto_closed';
+                """,
+                ("$document_id", exceptionDocument.DocumentId)) >= 1,
+            $"{criterion.FileType} exception preview should record auto close");
+        Require(
+            ScalarLong(
+                exceptionLogConnection,
+                """
+                SELECT COUNT(*)
+                FROM document_view_logs
+                WHERE document_id = $document_id
+                  AND closed_at IS NOT NULL
+                  AND close_reason = 'download_blocked';
+                """,
+                ("$document_id", exceptionDocument.DocumentId)) >= 1,
+            $"{criterion.FileType} exception preview should record download blocked");
+        Require(
+            services.History.ListHistory().Any(item =>
+                item.EventType == "document.view_started" &&
+                item.TargetId == exceptionDocument.DocumentId),
+            $"{criterion.FileType} exception preview should record view start history");
+        Require(
+            services.History.ListHistory().Any(item =>
+                item.EventType == "document.download_blocked" &&
+                item.TargetId == exceptionDocument.DocumentId),
+            $"{criterion.FileType} exception preview should record download blocked history");
+
+        Console.WriteLine(
+            $"Preview exception smoke: type={criterion.FileType}, case={criterion.CaseName}, sample={samplePath}, logs={exceptionWindowCloseLogId}/{exceptionAutoCloseLogId}/{exceptionDownloadBlockedLogId}");
+    }
+
     var previewTxtPath = Path.Combine(testDirectory, $"미리보기-TXT-한글-{runStamp}.txt");
     File.WriteAllText(previewTxtPath, "TXT 정상 미리보기 샘플입니다.", Encoding.UTF8);
     var previewXlsxPath = Path.Combine(testDirectory, $"미리보기-XLSX-한글-{runStamp}.xlsx");
@@ -1974,6 +2112,92 @@ static T WithEnvironmentVariable<T>(string name, string value, Func<T> action)
     }
 }
 
+static string BuildRunSampleFileName(string sampleFileName, string runStamp)
+{
+    var extension = Path.GetExtension(sampleFileName);
+    var name = Path.GetFileNameWithoutExtension(sampleFileName);
+    return $"{name}-{runStamp}{extension}";
+}
+
+static void CreateFactoryExceptionSampleFile(
+    DocumentPreviewExceptionSampleCriterion criterion,
+    string path)
+{
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+    switch (criterion.PreviewKind)
+    {
+        case DocumentPreviewKind.Text:
+            File.WriteAllText(
+                path,
+                string.Join(
+                    Environment.NewLine,
+                    Enumerable.Range(1, 9000)
+                        .Select(index => $"익명 작업표준서 대용량 행 {index:0000}: 혼합 공정 점검 항목과 현장 확인 문구입니다.")),
+                Encoding.UTF8);
+            return;
+        case DocumentPreviewKind.Pdf:
+            File.WriteAllText(
+                path,
+                "이 파일은 실제 고객 문서가 아닌 손상 PDF 미리보기 검증용 익명 샘플입니다.",
+                Encoding.UTF8);
+            return;
+        case DocumentPreviewKind.Spreadsheet:
+            CreateLargeXlsx(path);
+            return;
+        case DocumentPreviewKind.Image:
+            CreateHighResolutionBmp(path);
+            return;
+        case DocumentPreviewKind.Cad:
+            File.WriteAllText(
+                path,
+                "익명 CAD 원본 자리표시자입니다. 본문 미리보기는 지원하지 않습니다.",
+                Encoding.UTF8);
+            return;
+        case DocumentPreviewKind.Hwp:
+            File.WriteAllText(
+                path,
+                "익명 HWP 원본 자리표시자입니다. 본문 미리보기는 지원하지 않습니다.",
+                Encoding.UTF8);
+            return;
+        default:
+            File.WriteAllText(path, "익명 미지원 파일 샘플입니다.", Encoding.UTF8);
+            return;
+    }
+}
+
+static string BuildPreviewFailureSmokeMessage(
+    DocumentPreviewExceptionSampleCriterion criterion,
+    string samplePath)
+{
+    return criterion.PreviewKind switch
+    {
+        DocumentPreviewKind.Text =>
+            DocumentPreviewPolicy.BuildLargeTextMessage(new FileInfo(samplePath).Length),
+        DocumentPreviewKind.Pdf =>
+            "PDF 미리보기를 생성할 수 없습니다.\n파일이 손상되었거나 현재 클라이언트에서 지원하지 않는 PDF 형식입니다.",
+        DocumentPreviewKind.Cad or DocumentPreviewKind.Hwp or DocumentPreviewKind.Unsupported =>
+            DocumentPreviewPolicy.BuildPreviewUnavailableMessage(criterion.PreviewKind, Path.GetFileName(samplePath)),
+        _ =>
+            $"{DocumentPreviewPolicy.DisplayName(criterion.PreviewKind)} 미리보기를 생성할 수 없습니다."
+    };
+}
+
+static bool ContainsKoreanPreviewGuidance(
+    DocumentPreviewExceptionSampleCriterion criterion,
+    string message)
+{
+    var expected = criterion.PreviewKind switch
+    {
+        DocumentPreviewKind.Text => "TXT 파일이 미리보기 기준보다 큽니다",
+        DocumentPreviewKind.Pdf => "PDF 미리보기를 생성할 수 없습니다",
+        DocumentPreviewKind.Cad => "CAD 고급 뷰어는 현재 MVP 범위에서 제외",
+        DocumentPreviewKind.Hwp => "HWP 고급 뷰어는 현재 MVP 범위에서 제외",
+        _ => "미리보기"
+    };
+
+    return message.Contains(expected, StringComparison.Ordinal);
+}
+
 static void CreateMinimalXlsx(string path)
 {
     using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
@@ -2030,6 +2254,118 @@ static void CreateMinimalXlsx(string path)
           </sheetData>
         </worksheet>
         """);
+}
+
+static void CreateLargeXlsx(string path)
+{
+    using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
+    WriteZipText(
+        archive,
+        "[Content_Types].xml",
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+          <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+          <Default Extension="xml" ContentType="application/xml"/>
+          <Default Extension="bin" ContentType="application/octet-stream"/>
+          <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+          <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+        </Types>
+        """);
+    WriteZipText(
+        archive,
+        "_rels/.rels",
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+        </Relationships>
+        """);
+    WriteZipText(
+        archive,
+        "xl/_rels/workbook.xml.rels",
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+        </Relationships>
+        """);
+    WriteZipText(
+        archive,
+        "xl/workbook.xml",
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+          <sheets>
+            <sheet name="익명점검표" sheetId="1" r:id="rId1"/>
+          </sheets>
+        </workbook>
+        """);
+
+    var sheet = new StringBuilder();
+    sheet.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
+    sheet.AppendLine("""<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">""");
+    sheet.AppendLine("<sheetData>");
+    sheet.AppendLine("""<row r="1"><c r="A1" t="inlineStr"><is><t>점검항목</t></is></c><c r="B1" t="inlineStr"><is><t>결과</t></is></c><c r="C1" t="inlineStr"><is><t>메모</t></is></c></row>""");
+    for (var row = 2; row <= 180; row++)
+    {
+        sheet.AppendLine($"""<row r="{row}"><c r="A{row}" t="inlineStr"><is><t>익명 설비 점검 {row - 1:000}</t></is></c><c r="B{row}" t="inlineStr"><is><t>정상</t></is></c><c r="C{row}" t="inlineStr"><is><t>현장형 대용량 엑셀 양식 미리보기 검증 행입니다.</t></is></c></row>""");
+    }
+
+    sheet.AppendLine("</sheetData>");
+    sheet.AppendLine("</worksheet>");
+    WriteZipText(archive, "xl/worksheets/sheet1.xml", sheet.ToString());
+
+    var pad = new byte[DocumentPreviewPolicy.LargeSampleBytes + 128 * 1024];
+    new Random(20260702).NextBytes(pad);
+    var padEntry = archive.CreateEntry("xl/media/anonymous-pad.bin", CompressionLevel.NoCompression);
+    using var padStream = padEntry.Open();
+    padStream.Write(pad, 0, pad.Length);
+}
+
+static void CreateHighResolutionBmp(string path)
+{
+    const int width = 1600;
+    const int height = 1200;
+    const int bytesPerPixel = 3;
+    var stride = ((width * bytesPerPixel + 3) / 4) * 4;
+    var imageSize = stride * height;
+    var fileSize = 14 + 40 + imageSize;
+    using var stream = File.Create(path);
+    using var writer = new BinaryWriter(stream, Encoding.ASCII);
+
+    writer.Write((byte)'B');
+    writer.Write((byte)'M');
+    writer.Write(fileSize);
+    writer.Write((short)0);
+    writer.Write((short)0);
+    writer.Write(14 + 40);
+    writer.Write(40);
+    writer.Write(width);
+    writer.Write(height);
+    writer.Write((short)1);
+    writer.Write((short)24);
+    writer.Write(0);
+    writer.Write(imageSize);
+    writer.Write(2835);
+    writer.Write(2835);
+    writer.Write(0);
+    writer.Write(0);
+
+    var rowBuffer = new byte[stride];
+    for (var y = height - 1; y >= 0; y--)
+    {
+        Array.Clear(rowBuffer);
+        for (var x = 0; x < width; x++)
+        {
+            var offset = x * bytesPerPixel;
+            rowBuffer[offset] = (byte)(x % 256);
+            rowBuffer[offset + 1] = (byte)(y % 256);
+            rowBuffer[offset + 2] = (byte)((x + y) % 256);
+        }
+
+        writer.Write(rowBuffer);
+    }
 }
 
 static void WriteZipText(ZipArchive archive, string entryName, string content)
