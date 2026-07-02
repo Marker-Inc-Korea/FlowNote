@@ -49,7 +49,23 @@ function ConvertTo-XmlAttribute {
     return [System.Security.SecurityElement]::Escape($Value)
 }
 
-$publishedFiles = @(Get-ChildItem -LiteralPath $publishPath -File -Recurse | Sort-Object FullName)
+function ConvertTo-RelativePublishPath {
+    param([string]$Path)
+
+    $basePath = [System.IO.Path]::GetFullPath($publishPath).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    $targetPath = [System.IO.Path]::GetFullPath($Path)
+    if (-not $targetPath.StartsWith($basePath, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Path is not under publish directory: $targetPath"
+    }
+
+    return $targetPath.Substring($basePath.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+}
+
+$publishedFiles = @(
+    Get-ChildItem -LiteralPath $publishPath -File -Recurse |
+        Where-Object { $_.Extension -notin @(".pdb", ".xml") } |
+        Sort-Object FullName
+)
 if ($publishedFiles.Count -eq 0) {
     throw "No published files were found in $publishPath"
 }
@@ -58,7 +74,7 @@ $directoryIds = @{}
 $directoryIds[""] = "APPFOLDER"
 $directoryIndex = 0
 foreach ($directory in @(Get-ChildItem -LiteralPath $publishPath -Directory -Recurse | Sort-Object FullName)) {
-    $relativeDirectory = [System.IO.Path]::GetRelativePath($publishPath, $directory.FullName).Replace("\", "/")
+    $relativeDirectory = (ConvertTo-RelativePublishPath $directory.FullName).Replace("\", "/")
     $directoryIndex += 1
     $directoryIds[$relativeDirectory] = ConvertTo-WixId "dir_$directoryIndex`_$relativeDirectory"
 }
@@ -103,7 +119,7 @@ $componentRefs = New-Object System.Collections.Generic.List[string]
 $fileIndex = 0
 foreach ($file in $publishedFiles) {
     $fileIndex += 1
-    $relativePath = [System.IO.Path]::GetRelativePath($publishPath, $file.FullName).Replace("\", "/")
+    $relativePath = (ConvertTo-RelativePublishPath $file.FullName).Replace("\", "/")
     $relativeDirectory = [System.IO.Path]::GetDirectoryName($relativePath)
     if ($null -eq $relativeDirectory) {
         $relativeDirectory = ""
