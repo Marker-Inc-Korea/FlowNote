@@ -149,6 +149,95 @@ Invoke-RestMethod http://<서버IP>:5184/api/v1/health/db
 
 클라이언트 PC에서 URL 확인이 실패하면 서버 실행 여부, Windows 방화벽 인바운드 규칙, 서버 IP, 포트 `5184` 접근 가능 여부를 먼저 확인한다.
 
+## 운영 계정 발급과 변경 절차
+
+서버 계정과 WPF 로컬 계정은 같은 로그인 ID를 쓸 수 있지만 관리 위치가 다르다. 서버 URL이 설정된 WPF는 서버 계정으로 로그인하고, 서버가 401 또는 403을 반환하면 로컬 계정으로 우회하지 않는다. 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 WPF 로컬 계정을 사용한다.
+
+### 최초 서버 관리자 계정
+
+1. 서버 DB 최초 생성 시 FastAPI는 서버 `user_accounts`에 `admin` 계정을 만든다. 이 계정은 최초 서버 관리자 계정이며 WPF 사용자 관리 화면에서 생성하거나 변경하지 않는다.
+2. 개발/스모크 테스트용 기본 비밀번호 `1234`는 운영 로그인 전에 반드시 변경한다. 현장 운영자는 아래 명령을 서버 PC의 관리자 PowerShell에서 실행해 새 비밀번호를 대화식으로 입력한다. 새 비밀번호를 명령줄 인자로 남기지 않는다.
+
+```powershell
+cd C:\FlowNote\Server\api
+@'
+from getpass import getpass
+
+from sqlalchemy import text
+
+from app.db.init_db import hash_password_for_dev
+from app.db.session import Database
+
+database = Database("sqlite:///C:/FlowNote/Server/data/flownote.sqlite3")
+username = input("username [admin]: ").strip() or "admin"
+password = getpass("new password: ")
+confirm = getpass("confirm password: ")
+if password != confirm:
+    raise SystemExit("passwords do not match")
+if len(password) < 8:
+    raise SystemExit("password must be at least 8 characters")
+
+with database.engine.begin() as connection:
+    user_id = connection.scalar(
+        text("SELECT user_id FROM user_accounts WHERE username = :username"),
+        {"username": username},
+    )
+    if user_id is None:
+        raise SystemExit(f"user not found: {username}")
+    connection.execute(
+        text(
+            """
+            UPDATE user_accounts
+            SET password_hash = :password_hash,
+                is_active = 1,
+                status = 'ACTIVE',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE username = :username
+            """
+        ),
+        {"username": username, "password_hash": hash_password_for_dev(password)},
+    )
+    connection.execute(
+        text(
+            """
+            UPDATE auth_sessions
+            SET status = 'REVOKED',
+                revoked_at = CURRENT_TIMESTAMP,
+                revoked_reason = 'password_reset'
+            WHERE user_id = :user_id
+              AND status = 'ACTIVE'
+            """
+        ),
+        {"user_id": user_id},
+    )
+print(f"updated server account: {username}")
+'@ | .\.venv\Scripts\python.exe -
+```
+
+3. 최초 운영 로그인은 변경된 서버 비밀번호로 WPF에서 수행한다. 현재 구현 범위에서는 WPF 또는 FastAPI가 첫 로그인 후 비밀번호 변경 화면을 강제로 띄우지 않는다. 운영 기준은 “첫 로그인 전 변경”으로 고정하고, `must_change_password` 같은 서버 컬럼과 변경 API, WPF 변경 화면은 후속 범위로 둔다.
+4. 변경 완료 후 기본 비밀번호 `1234`로 WPF 서버 로그인이 실패하는지 확인한다. 이 실패가 서버 401이면 WPF가 로컬 `admin / 1234`로 우회해 성공하면 안 된다.
+
+### 서버 계정과 WPF 로컬 계정
+
+- 서버 계정은 서버 DB의 `user_accounts`에서 관리한다. 서버 로그인, 서버 API 권한, 서버 문서 등록자, 서버 FieldComment 작성자, 서버 감사 이력은 서버 계정을 기준으로 남긴다.
+- WPF 로컬 사용자 관리 화면의 사용자 추가, 역할 변경, 비밀번호 변경은 로컬 SQLite 전용이다. 서버 계정을 만들거나 수정하지 않는다.
+- 서버 URL을 쓰는 운영 PC에서는 서버 계정 권한을 우선한다. 같은 로그인 ID의 로컬 계정 role이 다르더라도 서버 로그인 성공 후 화면 권한과 서버 동기화 작성자 기준은 서버 응답의 role과 사용자 ID다.
+- 서버 계정 관리 API와 WPF 서버 계정 관리 연동은 후속 범위다. 그 전까지 운영자는 서버 PC에서 DB 운영 절차로 서버 계정을 발급, 재설정, 비활성화한다.
+
+### 비밀번호 재설정
+
+1. 본인 확인과 승인자를 운영 기록에 남긴다.
+2. 위 비밀번호 변경 명령을 같은 방식으로 실행해 임시 비밀번호를 설정한다.
+3. 해당 서버 계정의 기존 `auth_sessions`는 명령 안에서 `REVOKED`로 바뀐다.
+4. 임시 비밀번호는 운영자와 사용자에게 일회성으로 전달하고, 사용자가 로그인한 뒤 운영자 입회하에 다시 변경한다. 현재 앱 강제 변경 기능은 후속 범위이므로 운영 절차로 통제한다.
+
+### 비활성 계정, 퇴사, 권한 변경
+
+- 장기 미사용, 퇴사, 권한 회수 계정은 서버 DB에서 `is_active = 0`, `status = 'DISABLED'`로 변경하고 기존 활성 세션을 `REVOKED`로 바꾼다.
+- 일시 잠금은 `is_active = 0`, `status = 'LOCKED'`로 구분한다. 재개 시 운영 승인 후 `is_active = 1`, `status = 'ACTIVE'`로 되돌리고 비밀번호 재설정을 함께 수행한다.
+- 역할 변경은 서버 DB의 `role`을 바꾸고, 변경 사유와 승인자를 운영 기록에 남긴다. WPF 로컬 계정이 별도로 필요한 PC라면 로컬 사용자 관리 화면에서도 같은 사용자에 대한 로컬 권한을 별도로 점검한다.
+- 퇴사자는 서버 계정과 WPF 로컬 계정을 각각 비활성화한다. 서버 계정 비활성화만으로 오프라인 로컬 로그인 가능성을 제거할 수 없으므로, 로컬 계정 사용 PC 목록을 함께 확인한다.
+
 ## WPF 설치 절차
 
 WPF 앱은 MSI로 Windows PC에 설치한다. 기본 설치 위치는 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`이며, 서버 PC에 관리자용 앱을 함께 설치할 때도 로컬 데이터는 별도 `C:\FlowNote\LocalData`에 둔다.
@@ -260,11 +349,14 @@ $env:FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS = "300"
 - `C:\FlowNote\Server\data\flownote.sqlite3`가 생성되었고 서버 실행 계정이 계속 쓸 수 있는지 확인한다.
 - `C:\FlowNote\Server\storage`에 테스트 문서 등록 시 파일이 저장되는지 확인한다.
 - `C:\FlowNote\Server\logs`에 실행 로그 또는 오류 로그가 남는지 확인한다.
-- 최초 운영 계정의 기본 비밀번호를 현장 비밀번호로 변경한다.
+- 최초 서버 관리자 `admin`의 기본 비밀번호 `1234`를 현장 비밀번호로 변경한다.
+- 기본 비밀번호 `1234`로 서버 로그인이 401로 실패하고, WPF가 같은 ID의 로컬 계정으로 우회해 성공하지 않는지 확인한다.
+- 비활성 서버 계정 로그인이 403으로 실패하고, WPF가 로컬 계정으로 우회하지 않는지 확인한다.
 
 ### 클라이언트
 
 - WPF 로그인 화면에서 서버 계정으로 로그인한다.
+- 서버 계정 로그인 실패가 명확한 401 또는 403이면 로컬 계정으로 자동 전환되지 않는지 확인한다.
 - 문서 목록이 열리고 서버에 등록된 문서가 조회되는지 확인한다.
 - 문서를 열어 뷰어가 표시되고 다운로드 차단 정책과 열람 로그가 동작하는지 확인한다.
 - `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS` 기준으로 뷰어 자동 닫힘이 동작하는지 확인한다.

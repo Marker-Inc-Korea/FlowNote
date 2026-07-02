@@ -12,6 +12,7 @@ using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -40,6 +41,30 @@ try
 
     var wrongLogin = services.Auth.Login("admin", "wrong");
     Require(!wrongLogin.Success, "wrong password should fail");
+
+    var localFallbackAuth = new ServerAwareAuthService(services.Auth, null);
+    var localFallbackLogin = await localFallbackAuth.LoginAsync("admin", "1234");
+    Require(localFallbackLogin.Success, "missing server URL should allow local account login fallback");
+
+    using (var unauthorizedServerClient = CreateStaticStatusClient(HttpStatusCode.Unauthorized))
+    {
+        var serverAwareAuth = new ServerAwareAuthService(services.Auth, unauthorizedServerClient);
+        var unauthorizedLogin = await serverAwareAuth.LoginAsync("admin", "1234");
+        Require(!unauthorizedLogin.Success, "server 401 should not fall back to local admin credentials");
+        Require(
+            unauthorizedLogin.FailureReason == "서버 로그인 ID 또는 비밀번호가 올바르지 않습니다.",
+            "server 401 should show the Korean server login failure message");
+    }
+
+    using (var forbiddenServerClient = CreateStaticStatusClient(HttpStatusCode.Forbidden))
+    {
+        var serverAwareAuth = new ServerAwareAuthService(services.Auth, forbiddenServerClient);
+        var forbiddenLogin = await serverAwareAuth.LoginAsync("admin", "1234");
+        Require(!forbiddenLogin.Success, "server 403 should not fall back to local admin credentials");
+        Require(
+            forbiddenLogin.FailureReason == "서버 계정이 비활성 상태입니다. 관리자에게 문의하세요.",
+            "server 403 should show the Korean inactive server account message");
+    }
 
     foreach (var seededUser in FlowNoteLocalDatabase.DefaultUserSeeds)
     {
@@ -1739,6 +1764,14 @@ static string? ScalarString(SqliteConnection connection, string sql, params (str
     return value is null or DBNull ? null : Convert.ToString(value);
 }
 
+static HttpClient CreateStaticStatusClient(HttpStatusCode statusCode)
+{
+    return new HttpClient(new StaticStatusHandler(statusCode))
+    {
+        BaseAddress = new Uri("http://127.0.0.1/")
+    };
+}
+
 static IReadOnlyList<(string FlowType, string FolderName, DocumentRecord Document)> ListExistingPastDateDocuments(
     FlowNoteLocalServices services,
     long handoverFolderId,
@@ -1995,4 +2028,18 @@ static byte[] BuildPdf(IReadOnlyList<byte[]> objects)
     output.Write(Encoding.ASCII.GetBytes(
         $"trailer\n<< /Size {objects.Count + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n"));
     return output.ToArray();
+}
+
+sealed class StaticStatusHandler(HttpStatusCode statusCode) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        return Task.FromResult(
+            new HttpResponseMessage(statusCode)
+            {
+                Content = new StringContent("{\"detail\":\"smoke\"}", Encoding.UTF8, "application/json")
+            });
+    }
 }
