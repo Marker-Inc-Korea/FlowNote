@@ -38,7 +38,11 @@ Windows WPF 앱은 서버 연결 여부와 관계없이 현장 문서와 기록�
 
 ## 동기화 원칙
 
-로컬 저장이 우선이다. 서버 URL이 없거나 서버 호출이 실패해도 로컬 문서, FieldComment, 첨부, 접근 로그는 유지된다. 동기화 성공 시 원천 테이블의 서버 ID와 `synced_at`, `server_id_mappings`를 갱신한다.
+로컬 저장이 우선이다. 서버 URL이 없거나 서버 호출이 실패해도 로컬 문서, 문서 버전/공개/상태, FieldComment, 첨부, 접근 로그는 유지된다. 동기화 성공 시 원천 테이블의 서버 ID와 `synced_at`, `server_id_mappings`를 갱신한다.
+
+문서 최신 버전은 `documents.version_no`와 `document_versions.is_latest`를 기준으로 서버 최신 버전에 연결한다. 공개 버전은 `documents.published_version_no`와 `document_versions.is_published`를 기준으로 서버 publish API에 반영한다. 상태 변경은 현재 로컬 `documents.status`를 서버에 반영하며, `PUBLISHED` 상태는 공개 버전 동기화가 선행되어야 한다.
+
+보고서를 서버에 저장해 생성 문서가 반환되면 로컬 보고서 문서를 만들고 `server_report_id`, `server_document_id`, `server_version_id`, `server_id_mappings`를 함께 남긴다. 작업순서 보드/항목/이력은 현재 단계에서 로컬 큐 대상이 아니라 로컬 기록과 서버 직접 API 검증, 보고서 근거 source 연결 범위로 둔다.
 
 ## 검증
 
