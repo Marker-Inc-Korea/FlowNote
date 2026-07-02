@@ -14,7 +14,7 @@ FastAPI Server
   -> /api/v1 REST API
 ```
 
-WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, FieldComment, 첨부, 접근 로그 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 보고서 저장은 WPF 보고서 창에서 서버 클라이언트가 있을 때 직접 서버 보고서 API를 호출하고, 실패하면 로컬 문서 저장 흐름으로 처리한다.
+WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, 첨부, 접근 로그 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 보고서 저장은 WPF 보고서 창에서 서버 클라이언트가 있을 때 직접 서버 보고서 API를 호출하고, 실패하면 로컬 문서 저장 흐름으로 처리한다.
 
 ## 주요 도메인
 
@@ -55,6 +55,8 @@ ServerSyncQueue
 
 WPF 로컬 DB는 공개 버전을 `documents.published_version_no`와 `document_versions.is_published`로 관리한다. FastAPI 서버는 `documents.published_version_id`와 `document_versions.is_published`로 관리한다.
 
+서버-WPF 동기화에서는 로컬 큐 순서를 우선한다. 문서 최초 등록이 서버 ID를 받아야 문서 버전, FieldComment, 접근 로그가 후속 서버 ID에 연결된다. 공개는 해당 버전의 서버 버전 ID가 있어야 실행하고, 상태 변경은 현재 로컬 문서 상태를 서버에 반영한다.
+
 ## FieldComment
 
 FieldComment는 문서 파일 개정이 아니라 현장 원천 기록이다. 새 WPF 코멘트는 `field_comments`에 저장되며 문서 버전을 증가시키지 않는다. 첨부 사진/파일은 `field_comment_attachments`에 별도로 저장된다.
@@ -62,6 +64,8 @@ FieldComment는 문서 파일 개정이 아니라 현장 원천 기록이다. �
 ## 작업순서
 
 작업순서는 문서 폴더의 `작업지시서` 파일과 별개인 운영 보드이다. `work_sequence_boards`와 `work_sequence_items`가 현재 작업순서와 상태를 관리하고, 순서/상태 변경은 이력과 알림 후보를 만든다.
+
+현재 단계의 서버-WPF 동기화 큐는 작업순서 보드/항목/이력을 대상으로 하지 않는다. 서버 작업순서 API는 직접 호출 스모크로 검증하고, WPF 보고서는 작업순서 항목/이력을 보고서 source로 연결한다.
 
 ## 보고서
 
