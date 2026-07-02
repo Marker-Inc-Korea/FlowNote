@@ -713,6 +713,47 @@ try
         services.ServerSync.CountQueuedForEntity("document_access_log", offlineAccessLogId.ToString(), "FAILED") == 2,
         "missing server URL should create failed access log sync queue rows for start and close");
 
+    var offlineVersionFile = Path.Combine(testDirectory, $"sample-upload-v2-{runId}.txt");
+    File.WriteAllText(offlineVersionFile, $"FlowNote upload program test v2 {runId}.");
+    var offlineVersionDocument = services.Documents.AddFileVersion(
+        uploadedDocument.DocumentId,
+        Path.GetFileName(offlineVersionFile),
+        offlineVersionFile,
+        "v2",
+        $"Offline queued file version before server reconnect {runId}.",
+        smokeActorName);
+    var offlineVersionSyncResult = await services.ServerSync.QueueAndTrySyncDocumentVersionAsync(
+        offlineVersionDocument,
+        null);
+    Require(!offlineVersionSyncResult.Success, "missing server URL should keep document version sync queued locally");
+    Require(
+        services.ServerSync.CountQueuedForEntity("document_version", uploadedDocument.DocumentId, "FAILED") == 1,
+        "missing server URL should create a failed document version sync queue row");
+
+    var offlinePublishedDocument = services.Documents.PublishVersion(
+        uploadedDocument.DocumentId,
+        offlineVersionDocument.VersionNo,
+        smokeActorName);
+    var offlinePublishSyncResult = await services.ServerSync.QueueAndTrySyncDocumentPublishAsync(
+        offlinePublishedDocument,
+        null);
+    Require(!offlinePublishSyncResult.Success, "missing server URL should keep document publish sync queued locally");
+    Require(
+        services.ServerSync.CountQueuedForEntity("document_publish", uploadedDocument.DocumentId, "FAILED") == 1,
+        "missing server URL should create a failed document publish sync queue row");
+
+    var offlineArchivedDocument = services.Documents.UpdateDocumentStatus(
+        uploadedDocument.DocumentId,
+        "ARCHIVED",
+        smokeActorName);
+    var offlineStatusSyncResult = await services.ServerSync.QueueAndTrySyncDocumentStatusAsync(
+        offlineArchivedDocument,
+        null);
+    Require(!offlineStatusSyncResult.Success, "missing server URL should keep document status sync queued locally");
+    Require(
+        services.ServerSync.CountQueuedForEntity("document_status", uploadedDocument.DocumentId, "FAILED") == 1,
+        "missing server URL should create a failed document status sync queue row");
+
     var syncFailureHistory = services.History.ListHistory();
     Require(
         syncFailureHistory.Any(item =>

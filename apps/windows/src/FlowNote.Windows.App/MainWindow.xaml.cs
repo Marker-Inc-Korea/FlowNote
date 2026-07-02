@@ -102,7 +102,7 @@ public partial class MainWindow : Window
         RefreshWorkspace($"문서를 등록했습니다. 위치: {plan.Folder.Path}", plan.Folder.Id);
     }
 
-    private void ApplyDocumentStatusButton_Click(object sender, RoutedEventArgs e)
+    private async void ApplyDocumentStatusButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureDocumentRegistrationAllowed())
         {
@@ -124,8 +124,15 @@ public partial class MainWindow : Window
 
         try
         {
-            services.Documents.UpdateDocumentStatus(document.DocumentId, selectedStatus, GetCurrentActorName());
-            RefreshDocuments(selectedFolder?.Id, $"문서 상태를 변경했습니다: {FormatDocumentStatus(selectedStatus)}");
+            var updated = services.Documents.UpdateDocumentStatus(document.DocumentId, selectedStatus, GetCurrentActorName());
+            var syncResult = await services.ServerSync.QueueAndTrySyncDocumentStatusAsync(
+                updated,
+                serverDocumentClient,
+                currentUser.UserId);
+            var statusText = syncResult.Success
+                ? $"문서 상태를 변경하고 서버에 반영했습니다: {FormatDocumentStatus(selectedStatus)}"
+                : $"문서 상태를 변경했습니다: {FormatDocumentStatus(selectedStatus)}. 서버 동기화는 큐에 남겼습니다. {syncResult.Message}";
+            RefreshDocuments(selectedFolder?.Id, statusText);
         }
         catch (InvalidOperationException exception)
         {
@@ -133,7 +140,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void PublishDocumentButton_Click(object sender, RoutedEventArgs e)
+    private async void PublishDocumentButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureDocumentRegistrationAllowed())
         {
@@ -148,8 +155,15 @@ public partial class MainWindow : Window
 
         try
         {
-            services.Documents.PublishVersion(document.DocumentId, document.VersionNo, GetCurrentActorName());
-            RefreshDocuments(selectedFolder?.Id, $"문서 버전을 공개했습니다: {document.FileName} v{document.VersionNo}");
+            var published = services.Documents.PublishVersion(document.DocumentId, document.VersionNo, GetCurrentActorName());
+            var syncResult = await services.ServerSync.QueueAndTrySyncDocumentPublishAsync(
+                published,
+                serverDocumentClient,
+                currentUser.UserId);
+            var statusText = syncResult.Success
+                ? $"문서 버전을 공개하고 서버에 반영했습니다: {document.FileName} v{document.VersionNo}"
+                : $"문서 버전을 공개했습니다: {document.FileName} v{document.VersionNo}. 서버 동기화는 큐에 남겼습니다. {syncResult.Message}";
+            RefreshDocuments(selectedFolder?.Id, statusText);
         }
         catch (InvalidOperationException exception)
         {

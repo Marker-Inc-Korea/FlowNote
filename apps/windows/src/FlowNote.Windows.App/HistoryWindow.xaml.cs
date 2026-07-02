@@ -112,6 +112,9 @@ public partial class HistoryWindow : Window
             return entityType switch
             {
                 "document" => "문서",
+                "document_version" => "문서 버전",
+                "document_publish" => "문서 공개",
+                "document_status" => "문서 상태",
                 "field_comment" => "FieldComment",
                 "field_comment_attachment" => "FieldComment 첨부",
                 "document_access_log" => "접근 로그",
@@ -124,6 +127,9 @@ public partial class HistoryWindow : Window
             return action switch
             {
                 "register_document" => "문서 전송",
+                "register_document_version" => "버전 전송",
+                "publish_document_version" => "공개 전송",
+                "update_document_status" => "상태 전송",
                 "register_field_comment" => "FieldComment 전송",
                 "register_field_comment_attachment" => "첨부 전송",
                 "register_access_log_started" => "열람 시작 전송",

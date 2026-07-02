@@ -547,13 +547,6 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 return false;
 
             case "update_document_status":
-                if (item.LocalVersionNo is not null &&
-                    TryGetServerIdMapping("document_status", item.EntityId, item.LocalVersionNo.Value) is { ServerDocumentId: not null } status)
-                {
-                    MarkQueueAlreadySynced(item, status.ServerDocumentId, status.ServerVersionId, null, null, null);
-                    return true;
-                }
-
                 return false;
 
             case "register_field_comment":
@@ -1637,6 +1630,11 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             return SyncFailureMessages.DocumentDependencyNotSynced;
         }
 
+        if (message.Contains("Local document version is not synced to server yet", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.DocumentVersionDependencyNotSynced;
+        }
+
         if (message.Contains("Local field comment is not synced to server yet", StringComparison.OrdinalIgnoreCase))
         {
             return SyncFailureMessages.FieldCommentDependencyNotSynced;
@@ -1658,6 +1656,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         public const string ServerTimeout = "서버 응답 시간이 초과되었습니다. 네트워크 상태를 확인한 뒤 다시 시도하세요.";
         public const string AuthenticationExpired = "로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string DocumentDependencyNotSynced = "선행 문서가 아직 서버에 전송되지 않았습니다. 문서 동기화 후 다시 시도하세요.";
+        public const string DocumentVersionDependencyNotSynced = "선행 문서 버전이 아직 서버에 전송되지 않았습니다. 문서 버전 동기화 후 다시 시도하세요.";
         public const string FieldCommentDependencyNotSynced = "선행 FieldComment가 아직 서버에 전송되지 않았습니다. FieldComment 동기화 후 다시 시도하세요.";
     }
 
