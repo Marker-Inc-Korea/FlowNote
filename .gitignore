@@ -120,6 +120,8 @@ TestResults/
 *.trx
 *.coverage
 *.coveragexml
+artifacts/
+installer-output/
 *.nupkg
 *.snupkg
 publish/
