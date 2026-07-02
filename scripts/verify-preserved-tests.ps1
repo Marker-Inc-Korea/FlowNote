@@ -161,6 +161,8 @@ function Assert-KnownArtifactIgnoreRules {
         "apps/windows/src/FlowNote.Windows.App/obj/.artifact-ignore-probe",
         "apps/windows/src/FlowNote.Windows.SmokeTests/bin/.artifact-ignore-probe",
         "apps/windows/src/FlowNote.Windows.SmokeTests/obj/.artifact-ignore-probe",
+        "artifacts/wpf-msi/.artifact-ignore-probe",
+        "installer-output/.artifact-ignore-probe",
         "tmp/.artifact-ignore-probe",
         "smoke-output/.artifact-ignore-probe",
         "smoke-results/.artifact-ignore-probe",

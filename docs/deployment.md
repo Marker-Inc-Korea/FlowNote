@@ -51,10 +51,17 @@ C:\FlowNote\
 | `C:\FlowNote\Server\data` | 운영 서버 SQLite와 WAL/SHM 파일 | 클라이언트 로컬 DB |
 | `C:\FlowNote\Server\storage` | 서버가 소유하는 문서 원본, 첨부, 보고서 파일 | WPF 로컬 캐시 파일 |
 | `C:\FlowNote\Server\logs` | FastAPI 실행 로그, 장애 분석 로그 | 빌드 산출물 |
-| `C:\FlowNote\Client\FlowNote.Windows.App` | WPF publish 결과물 또는 설치된 앱 파일 | WPF 로컬 DB, 실제 현장 문서 데이터 |
+| `C:\Program Files\FlowNote\Client\FlowNote.Windows.App` | MSI가 설치한 WPF 실행 파일과 의존 DLL | WPF 로컬 DB, 실제 현장 문서 데이터 |
 | `C:\FlowNote\LocalData` | WPF 로컬 SQLite, `Files\` | 서버 SQLite, 서버 `storage` |
 
-현재 저장소 기준으로 서버는 별도 패키징 산출물이 없으므로 운영 설치 시 `services/api/app`과 `pyproject.toml`을 `C:\FlowNote\Server\api`에 복사하고 해당 폴더에서 운영 `.venv`를 만든다. WPF는 `dotnet publish` 결과물을 `C:\FlowNote\Client\FlowNote.Windows.App`에 둔다.
+현재 저장소 기준으로 서버는 별도 압축 패키지 없이 `services/api/app`과 `pyproject.toml`을 `C:\FlowNote\Server\api`에 복사하고 해당 폴더에서 운영 `.venv`를 만든다. WPF 클라이언트는 MSI로 고정해 설치하며 설치 위치는 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`, 로컬 데이터 위치는 `FLOWNOTE_LOCAL_DATA_DIR`로 분리한다.
+
+## 배포 방식 결정
+
+- WPF 앱은 MSI를 기준 패키징 방식으로 사용한다. MSIX는 서명, 패키지 아이덴티티, 앱 컨테이너 제약을 현장별로 더 검토해야 하므로 초기 운영 배포 기준에서 제외한다.
+- MSI는 앱 실행 파일과 의존 DLL만 설치한다. 로컬 SQLite와 `Files\`는 설치 폴더 아래에 두지 않고 `FLOWNOTE_LOCAL_DATA_DIR`가 가리키는 폴더에 둔다.
+- FastAPI 서버는 Windows 작업 스케줄러의 부팅 시 자동 실행 작업으로 등록한다. Python/FastAPI 프로세스를 Windows 서비스로 직접 등록하려면 별도 서비스 래퍼가 필요하므로, 초기 기준은 Windows 기본 기능만 사용하는 작업 스케줄러 방식으로 고정한다.
+- 서버 작업 이름은 기본 `\FlowNote\FlowNoteApi`다. 실행 래퍼는 `C:\FlowNote\Server\scripts\run-flownote-server.ps1`, 로그는 `C:\FlowNote\Server\logs`에 둔다.
 
 ## 서버 설치 절차
 
@@ -67,7 +74,6 @@ New-Item -ItemType Directory -Force C:\FlowNote\Server\api
 New-Item -ItemType Directory -Force C:\FlowNote\Server\data
 New-Item -ItemType Directory -Force C:\FlowNote\Server\storage
 New-Item -ItemType Directory -Force C:\FlowNote\Server\logs
-New-Item -ItemType Directory -Force C:\FlowNote\Client\FlowNote.Windows.App
 New-Item -ItemType Directory -Force C:\FlowNote\LocalData
 ```
 
@@ -103,23 +109,38 @@ FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS=14
 FLOWNOTE_SESSION_COOKIE_NAME=flownote_session
 ```
 
-5. 서버를 실행한다. 운영 서비스 등록 방식이 확정되기 전까지는 아래 명령을 기준 실행 명령으로 사용한다. `C:\FlowNote\Server\.env`가 자동 적용되도록 작업 위치는 `C:\FlowNote\Server`로 둔다.
+5. 서버 실행 래퍼를 저장소에서 운영 폴더로 복사하고 작업 스케줄러에 등록한다. 등록 명령은 관리자 PowerShell에서 실행한다.
 
 ```powershell
-cd C:\FlowNote\Server
-.\api\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 5184 `
-  1>> C:\FlowNote\Server\logs\flownote-api.out.log `
-  2>> C:\FlowNote\Server\logs\flownote-api.err.log
+.\scripts\install-flownote-server-task.ps1 -ServerRoot C:\FlowNote\Server -StartNow
 ```
 
-6. 서버 PC에서 상태 URL을 확인한다.
+등록 스크립트는 `run-flownote-server.ps1`을 `C:\FlowNote\Server\scripts`로 복사하고, `C:\FlowNote\Server\.env`를 프로세스 환경변수로 읽은 뒤 `C:\FlowNote\Server\api`에서 uvicorn을 실행한다. `.env`에 값이 없으면 `FLOWNOTE_API_HOST=0.0.0.0`, `FLOWNOTE_API_PORT=5184`, `FLOWNOTE_DATABASE_URL=sqlite:///C:/FlowNote/Server/data/flownote.sqlite3`, `FLOWNOTE_STORAGE_ROOT=C:\FlowNote\Server\storage`를 기본값으로 둔다.
+
+6. 서버 작업을 시작, 중지, 재시작하거나 상태를 확인한다.
+
+```powershell
+.\scripts\manage-flownote-server-task.ps1 -Action start
+.\scripts\manage-flownote-server-task.ps1 -Action stop
+.\scripts\manage-flownote-server-task.ps1 -Action restart
+.\scripts\manage-flownote-server-task.ps1 -Action status
+```
+
+7. 서버 로그 위치를 확인한다.
+
+```text
+C:\FlowNote\Server\logs\flownote-api.out.log
+C:\FlowNote\Server\logs\flownote-api.err.log
+```
+
+8. 서버 PC에서 상태 URL을 확인한다.
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:5184/api/v1/health
 Invoke-RestMethod http://127.0.0.1:5184/api/v1/health/db
 ```
 
-7. 클라이언트 PC에서 서버 PC 주소로 같은 URL을 확인한다.
+9. 클라이언트 PC에서 서버 PC 주소로 같은 URL을 확인한다.
 
 ```powershell
 Invoke-RestMethod http://<서버IP>:5184/api/v1/health
@@ -130,28 +151,32 @@ Invoke-RestMethod http://<서버IP>:5184/api/v1/health/db
 
 ## WPF 설치 절차
 
-WPF 앱은 Windows PC에 설치한다. 서버 PC에 관리자용 앱을 함께 둘 때도 앱 파일은 `C:\FlowNote\Client\FlowNote.Windows.App`, 로컬 데이터는 `C:\FlowNote\LocalData`에 둔다.
+WPF 앱은 MSI로 Windows PC에 설치한다. 기본 설치 위치는 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`이며, 서버 PC에 관리자용 앱을 함께 설치할 때도 로컬 데이터는 별도 `C:\FlowNote\LocalData`에 둔다.
 
-1. 배포 준비 PC에서 WPF publish 산출물을 만든다.
+1. 배포 준비 PC에서 WPF MSI 산출물을 만든다.
 
 ```powershell
-dotnet publish .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj `
-  -c Release `
-  -r win-x64 `
-  --self-contained false `
-  -o C:\FlowNote\Client\FlowNote.Windows.App
+.\scripts\package-wpf-msi.ps1 -ProductVersion 0.1.0 -Runtime win-x64
 ```
 
-설치 대상 PC에 맞는 .NET Windows Desktop Runtime이 없으면 `--self-contained true` 방식의 별도 패키징을 검토한다. WebView2 Runtime은 문서 미리보기와 뷰어 동작 확인 대상이므로 설치 전 점검에 포함한다.
+MSI 패키징은 WiX Toolset CLI를 사용한다. 배포 준비 PC에 `wix` 명령이 없으면 먼저 `dotnet tool install --global wix`로 설치한다. 스크립트는 `dotnet publish` 결과와 WiX 중간 파일, MSI를 `artifacts\wpf-msi` 아래에 만들며 이 경로는 Git 제외 대상이다.
 
-2. WPF 로컬 데이터 폴더를 만든다.
+2. 설치 대상 PC에서 MSI를 관리자 권한으로 설치한다.
+
+```powershell
+msiexec /i .\artifacts\wpf-msi\FlowNote.Windows.App-0.1.0-win-x64.msi
+```
+
+설치 대상 PC에 맞는 .NET Windows Desktop Runtime이 없으면 추후 self-contained MSI를 별도 패키징한다. WebView2 Runtime은 문서 미리보기와 뷰어 동작 확인 대상이므로 설치 전 점검에 포함한다.
+
+3. WPF 로컬 데이터 폴더를 만들거나 앱 최초 실행이 만들도록 둔다. 운영 기준 경로는 명시적으로 먼저 만드는 것을 권장한다.
 
 ```powershell
 New-Item -ItemType Directory -Force C:\FlowNote\LocalData
 New-Item -ItemType Directory -Force C:\FlowNote\LocalData\Files
 ```
 
-3. 환경 변수를 설정한다. 운영 PC에서 지속 적용하려면 시스템 환경 변수로 등록한다.
+4. 환경 변수를 설정한다. 운영 PC에서 지속 적용하려면 시스템 환경 변수로 등록한다.
 
 ```powershell
 setx FLOWNOTE_LOCAL_DATA_DIR "C:\FlowNote\LocalData" /M
@@ -161,16 +186,16 @@ setx FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS "300" /M
 
 환경 변수 변경 후 이미 열려 있던 PowerShell, 서비스, WPF 앱은 새 값을 읽지 못할 수 있으므로 새 세션에서 실행한다. `FLOWNOTE_LOCAL_DATABASE_PATH`는 특정 DB 파일 경로를 강제로 지정해야 할 때만 사용하며, 일반 운영에서는 `FLOWNOTE_LOCAL_DATA_DIR`만 둔다.
 
-4. PC별 실행 스크립트로만 적용해야 하는 경우에는 시스템 환경 변수 대신 실행 직전에 프로세스 환경 변수를 둔다.
+5. PC별 실행 스크립트로만 적용해야 하는 경우에는 시스템 환경 변수 대신 실행 직전에 프로세스 환경 변수를 둔다.
 
 ```powershell
 $env:FLOWNOTE_LOCAL_DATA_DIR = "C:\FlowNote\LocalData"
 $env:FLOWNOTE_API_BASE_URL = "http://<서버IP>:5184"
 $env:FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS = "300"
-& "C:\FlowNote\Client\FlowNote.Windows.App\FlowNote.Windows.App.exe"
+& "C:\Program Files\FlowNote\Client\FlowNote.Windows.App\FlowNote.Windows.App.exe"
 ```
 
-5. WPF 앱을 실행해 서버 로그인, 문서 목록 조회, 문서 열람, FieldComment 등록을 확인한다.
+6. WPF 앱을 실행해 `C:\FlowNote\LocalData\flownote.local.sqlite`와 `C:\FlowNote\LocalData\Files`가 생성되는지 확인한 뒤 서버 로그인, 문서 목록 조회, 문서 열람, FieldComment 등록을 확인한다.
 
 ## 운영 환경 변수
 
@@ -205,7 +230,7 @@ $env:FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS = "300"
 ### 클라이언트
 
 - .NET Windows Desktop Runtime과 WebView2 Runtime 설치 여부를 확인한다.
-- `C:\FlowNote\Client\FlowNote.Windows.App`에 WPF 실행 파일과 의존 DLL이 있는지 확인한다.
+- `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`에 WPF 실행 파일과 의존 DLL이 있는지 확인한다.
 - `C:\FlowNote\LocalData`와 `C:\FlowNote\LocalData\Files`를 만들고 앱 실행 사용자에게 읽기/쓰기 권한을 부여한다.
 - `FLOWNOTE_LOCAL_DATA_DIR`, `FLOWNOTE_API_BASE_URL`, `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS` 설정 방식을 시스템 환경 변수 또는 실행 스크립트 중 하나로 정한다.
 - 서버 PC의 `/api/v1/health`, `/api/v1/health/db`를 클라이언트 PC에서 호출할 수 있는지 확인한다.
@@ -228,6 +253,7 @@ $env:FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS = "300"
 
 ### 서버
 
+- 작업 스케줄러의 `\FlowNote\FlowNoteApi` 작업이 실행 중인지 확인한다.
 - `http://127.0.0.1:5184/api/v1/health`가 서버 PC에서 성공하는지 확인한다.
 - `http://127.0.0.1:5184/api/v1/health/db`가 서버 PC에서 성공하는지 확인한다.
 - `http://<서버IP>:5184/api/v1/health`와 `http://<서버IP>:5184/api/v1/health/db`가 클라이언트 PC에서 성공하는지 확인한다.
@@ -336,8 +362,6 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 후속 배포 과제
 
-- Windows 설치파일 패키징
-- 서버 서비스 등록 방식 정리
 - HTTPS 또는 사내망 접속 보호
 - 운영 관리자 계정 발급과 최초 비밀번호 변경 절차
 - PostgreSQL 전환 조건

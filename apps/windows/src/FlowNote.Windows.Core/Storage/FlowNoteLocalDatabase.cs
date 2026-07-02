@@ -7,6 +7,7 @@ namespace FlowNote.Windows.Core.Storage;
 public sealed class FlowNoteLocalDatabase
 {
     public const string LocalDatabaseFileName = "flownote.local.sqlite";
+    public const string LocalFilesDirectoryName = "Files";
     public const string LocalDataDirectoryEnvironmentVariable = "FLOWNOTE_LOCAL_DATA_DIR";
     public const string LocalDatabasePathEnvironmentVariable = "FLOWNOTE_LOCAL_DATABASE_PATH";
 
@@ -231,6 +232,7 @@ public sealed class FlowNoteLocalDatabase
     public void Initialize()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(DatabasePath)!);
+        Directory.CreateDirectory(Path.Combine(DefaultDataDirectory, LocalFilesDirectoryName));
 
         using var connection = OpenConnection();
         using var command = connection.CreateCommand();
