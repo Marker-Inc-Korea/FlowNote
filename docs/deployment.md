@@ -32,7 +32,7 @@ C:\FlowNote\
     logs\                 서버 실행 로그
     .env                  서버 운영 환경 변수, Git 제외
   Client\
-    FlowNote.Windows.App\ WPF 앱 실행 파일과 의존 DLL
+    FlowNote.Windows.App\ WPF 앱 실행 파일, .NET 실행 메타데이터, 의존 DLL
   LocalData\
     flownote.local.sqlite WPF 공통 SQLite
     Files\                WPF 로컬 파일 복사본과 첨부
@@ -51,7 +51,7 @@ C:\FlowNote\
 | `C:\FlowNote\Server\data` | 운영 서버 SQLite와 WAL/SHM 파일 | 클라이언트 로컬 DB |
 | `C:\FlowNote\Server\storage` | 서버가 소유하는 문서 원본, 첨부, 보고서 파일 | WPF 로컬 캐시 파일 |
 | `C:\FlowNote\Server\logs` | FastAPI 실행 로그, 장애 분석 로그 | 빌드 산출물 |
-| `C:\Program Files\FlowNote\Client\FlowNote.Windows.App` | MSI가 설치한 WPF 실행 파일과 의존 DLL | WPF 로컬 DB, 실제 현장 문서 데이터 |
+| `C:\Program Files\FlowNote\Client\FlowNote.Windows.App` | MSI가 설치한 WPF 실행 파일, .NET 실행 메타데이터, 의존 DLL | WPF 로컬 DB, 실제 현장 문서 데이터 |
 | `C:\FlowNote\LocalData` | WPF 로컬 SQLite, `Files\` | 서버 SQLite, 서버 `storage` |
 
 현재 저장소 기준으로 서버는 별도 압축 패키지 없이 `services/api/app`과 `pyproject.toml`을 `C:\FlowNote\Server\api`에 복사하고 해당 폴더에서 운영 `.venv`를 만든다. WPF 클라이언트는 MSI로 고정해 설치하며 설치 위치는 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`, 로컬 데이터 위치는 `FLOWNOTE_LOCAL_DATA_DIR`로 분리한다.
@@ -59,7 +59,7 @@ C:\FlowNote\
 ## 배포 방식 결정
 
 - WPF 앱은 MSI를 기준 패키징 방식으로 사용한다. MSIX는 서명, 패키지 아이덴티티, 앱 컨테이너 제약을 현장별로 더 검토해야 하므로 초기 운영 배포 기준에서 제외한다.
-- MSI는 앱 실행 파일과 의존 DLL만 설치한다. 로컬 SQLite와 `Files\`는 설치 폴더 아래에 두지 않고 `FLOWNOTE_LOCAL_DATA_DIR`가 가리키는 폴더에 둔다.
+- MSI는 WPF 실행에 필요한 앱 파일만 설치한다. 로컬 SQLite와 `Files\`는 설치 폴더 아래에 두지 않고 `FLOWNOTE_LOCAL_DATA_DIR`가 가리키는 폴더에 둔다.
 - FastAPI 서버는 Windows 작업 스케줄러의 부팅 시 자동 실행 작업으로 등록한다. Python/FastAPI 프로세스를 Windows 서비스로 직접 등록하려면 별도 서비스 래퍼가 필요하므로, 초기 기준은 Windows 기본 기능만 사용하는 작업 스케줄러 방식으로 고정한다.
 - 서버 작업 이름은 기본 `\FlowNote\FlowNoteApi`다. 실행 래퍼는 `C:\FlowNote\Server\scripts\run-flownote-server.ps1`, 로그는 `C:\FlowNote\Server\logs`에 둔다.
 
@@ -248,7 +248,9 @@ WPF 앱은 MSI로 Windows PC에 설치한다. 기본 설치 위치는 `C:\Progra
 .\scripts\package-wpf-msi.ps1 -ProductVersion 0.1.0 -Runtime win-x64
 ```
 
-MSI 패키징은 WiX Toolset CLI를 사용한다. 배포 준비 PC에 `wix` 명령이 없으면 먼저 `dotnet tool install --global wix`로 설치한다. 스크립트는 `dotnet publish` 결과와 WiX 중간 파일, MSI를 `artifacts\wpf-msi` 아래에 만들며 이 경로는 Git 제외 대상이다.
+MSI 패키징은 WiX Toolset CLI를 사용한다. 배포 준비 PC에 `wix` 명령이 없으면 먼저 `dotnet tool install --global wix --version 5.0.2`로 설치한다. 최신 WiX 7은 OSMF EULA 수락 없이는 `wix build`가 실패하므로, WiX 7을 쓰려면 현장 또는 배포 담당자가 라이선스 조건을 확인하고 명시적으로 수락한 뒤 사용한다. 스크립트는 `dotnet publish` 결과와 WiX 중간 파일, MSI를 `artifacts\wpf-msi` 아래에 만들며 이 경로는 Git 제외 대상이다.
+
+MSI에는 WPF 실행 파일, 실행에 필요한 `.deps.json`/`.runtimeconfig.json`, 의존 DLL과 네이티브 런타임 DLL만 포함한다. 패키징 스크립트는 디버그 심볼 `.pdb`와 문서 XML을 제외한다. 로컬 SQLite, WAL/SHM 파일, `Data\Files` 또는 테스트/샘플 등록 파일은 설치 폴더에 포함하지 않는다.
 
 2. 설치 대상 PC에서 MSI를 관리자 권한으로 설치한다.
 
@@ -319,7 +321,7 @@ $env:FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS = "300"
 ### 클라이언트
 
 - .NET Windows Desktop Runtime과 WebView2 Runtime 설치 여부를 확인한다.
-- `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`에 WPF 실행 파일과 의존 DLL이 있는지 확인한다.
+- `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`에 WPF 실행 파일, .NET 실행 메타데이터, 의존 DLL이 있는지 확인한다.
 - `C:\FlowNote\LocalData`와 `C:\FlowNote\LocalData\Files`를 만들고 앱 실행 사용자에게 읽기/쓰기 권한을 부여한다.
 - `FLOWNOTE_LOCAL_DATA_DIR`, `FLOWNOTE_API_BASE_URL`, `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS` 설정 방식을 시스템 환경 변수 또는 실행 스크립트 중 하나로 정한다.
 - 서버 PC의 `/api/v1/health`, `/api/v1/health/db`를 클라이언트 PC에서 호출할 수 있는지 확인한다.
