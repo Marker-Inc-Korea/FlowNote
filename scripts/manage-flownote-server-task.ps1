@@ -16,19 +16,19 @@ function Get-FlowNoteTask {
 switch ($Action) {
     "start" {
         Get-FlowNoteTask | Out-Null
-        Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
+        Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop
         Write-Host "Started $TaskPath$TaskName"
     }
     "stop" {
         Get-FlowNoteTask | Out-Null
-        Stop-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
+        Stop-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop
         Write-Host "Stopped $TaskPath$TaskName"
     }
     "restart" {
         Get-FlowNoteTask | Out-Null
         Stop-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
-        Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
+        Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction Stop
         Write-Host "Restarted $TaskPath$TaskName"
     }
     "status" {

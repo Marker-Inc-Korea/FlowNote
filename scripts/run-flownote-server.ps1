@@ -83,4 +83,20 @@ $hostName = [Environment]::GetEnvironmentVariable("FLOWNOTE_API_HOST", "Process"
 $port = [Environment]::GetEnvironmentVariable("FLOWNOTE_API_PORT", "Process")
 
 Set-Location $apiRoot
-& $pythonPath -m uvicorn app.main:app --host $hostName --port $port 1>> $stdoutLog 2>> $stderrLog
+$commandProcessor = if ([string]::IsNullOrWhiteSpace($env:ComSpec)) {
+    Join-Path $env:SystemRoot "System32\cmd.exe"
+} else {
+    $env:ComSpec
+}
+$uvicornCommand = (
+    "`"$pythonPath`" -m uvicorn app.main:app " +
+    "--host `"$hostName`" --port `"$port`" " +
+    "1>> `"$stdoutLog`" 2>> `"$stderrLog`""
+)
+
+& $commandProcessor /d /s /c $uvicornCommand
+$serverExitCode = $LASTEXITCODE
+
+if ($serverExitCode -ne 0) {
+    exit $serverExitCode
+}
