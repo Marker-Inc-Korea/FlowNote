@@ -31,6 +31,54 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
     }
 
+    public async Task<ServerSyncResult> QueueAndTrySyncDocumentVersionAsync(
+        DocumentRecord document,
+        FlowNoteServerDocumentClient? serverClient,
+        string? serverUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnqueueDocumentVersion(document, null);
+        if (serverClient is null)
+        {
+            MarkLatestFailure("document_version", document.DocumentId, SyncFailureMessages.ServerUrlNotConfigured);
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 문서 버전 전송을 큐에 보관했습니다.");
+        }
+
+        return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
+    }
+
+    public async Task<ServerSyncResult> QueueAndTrySyncDocumentPublishAsync(
+        DocumentRecord document,
+        FlowNoteServerDocumentClient? serverClient,
+        string? serverUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnqueueDocumentPublish(document, null);
+        if (serverClient is null)
+        {
+            MarkLatestFailure("document_publish", document.DocumentId, SyncFailureMessages.ServerUrlNotConfigured);
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 문서 공개 전송을 큐에 보관했습니다.");
+        }
+
+        return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
+    }
+
+    public async Task<ServerSyncResult> QueueAndTrySyncDocumentStatusAsync(
+        DocumentRecord document,
+        FlowNoteServerDocumentClient? serverClient,
+        string? serverUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnqueueDocumentStatus(document, null);
+        if (serverClient is null)
+        {
+            MarkLatestFailure("document_status", document.DocumentId, SyncFailureMessages.ServerUrlNotConfigured);
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 문서 상태 전송을 큐에 보관했습니다.");
+        }
+
+        return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
+    }
+
     public async Task<ServerSyncResult> QueueAndTrySyncFieldCommentAsync(
         FieldCommentRecord fieldComment,
         FlowNoteServerDocumentClient? serverClient,
@@ -110,6 +158,15 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 {
                     case "register_document":
                         await SyncDocumentAsync(item, serverClient, serverUserId, cancellationToken);
+                        break;
+                    case "register_document_version":
+                        await SyncDocumentVersionAsync(item, serverClient, serverUserId, cancellationToken);
+                        break;
+                    case "publish_document_version":
+                        await SyncDocumentPublishAsync(item, serverClient, cancellationToken);
+                        break;
+                    case "update_document_status":
+                        await SyncDocumentStatusAsync(item, serverClient, cancellationToken);
                         break;
                     case "register_field_comment":
                         await SyncFieldCommentAsync(item, serverClient, cancellationToken);
@@ -237,6 +294,21 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return $"wpf:document:{documentId}:v{versionNo}";
     }
 
+    public static string CreateDocumentVersionIdempotencyKey(string documentId, int versionNo)
+    {
+        return $"wpf:document-version:{documentId}:v{versionNo}";
+    }
+
+    public static string CreateDocumentPublishIdempotencyKey(string documentId, int versionNo)
+    {
+        return $"wpf:document-publish:{documentId}:v{versionNo}";
+    }
+
+    public static string CreateDocumentStatusIdempotencyKey(string documentId, int versionNo, string status, DateTime updatedAt)
+    {
+        return $"wpf:document-status:{documentId}:v{versionNo}:{status}:{updatedAt:yyyyMMddHHmmssfffffff}";
+    }
+
     public static string CreateFieldCommentIdempotencyKey(string commentId)
     {
         return $"wpf:field-comment:{commentId}";
@@ -261,6 +333,43 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             document.DocumentId,
             1,
             CreateDocumentIdempotencyKey(document.DocumentId),
+            failureReason);
+    }
+
+    private void EnqueueDocumentVersion(DocumentRecord document, string? failureReason)
+    {
+        Enqueue(
+            "document_version",
+            document.DocumentId,
+            "register_document_version",
+            document.DocumentId,
+            document.VersionNo,
+            CreateDocumentVersionIdempotencyKey(document.DocumentId, document.VersionNo),
+            failureReason);
+    }
+
+    private void EnqueueDocumentPublish(DocumentRecord document, string? failureReason)
+    {
+        var versionNo = document.PublishedVersionNo ?? document.VersionNo;
+        Enqueue(
+            "document_publish",
+            document.DocumentId,
+            "publish_document_version",
+            document.DocumentId,
+            versionNo,
+            CreateDocumentPublishIdempotencyKey(document.DocumentId, versionNo),
+            failureReason);
+    }
+
+    private void EnqueueDocumentStatus(DocumentRecord document, string? failureReason)
+    {
+        Enqueue(
+            "document_status",
+            document.DocumentId,
+            "update_document_status",
+            document.DocumentId,
+            document.VersionNo,
+            CreateDocumentStatusIdempotencyKey(document.DocumentId, document.VersionNo, document.Status, document.UpdatedAt),
             failureReason);
     }
 
@@ -417,6 +526,36 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
                 return false;
 
+            case "register_document_version":
+                if (item.LocalVersionNo is not null &&
+                    TryGetDocumentVersionServerMapping(item.EntityId, item.LocalVersionNo.Value) is { ServerDocumentId: not null } version)
+                {
+                    MarkQueueAlreadySynced(item, version.ServerDocumentId, version.ServerVersionId, null, null, null);
+                    return true;
+                }
+
+                return false;
+
+            case "publish_document_version":
+                if (item.LocalVersionNo is not null &&
+                    TryGetServerIdMapping("document_publish", item.EntityId, item.LocalVersionNo.Value) is { ServerDocumentId: not null } publish)
+                {
+                    MarkQueueAlreadySynced(item, publish.ServerDocumentId, publish.ServerVersionId, null, null, null);
+                    return true;
+                }
+
+                return false;
+
+            case "update_document_status":
+                if (item.LocalVersionNo is not null &&
+                    TryGetServerIdMapping("document_status", item.EntityId, item.LocalVersionNo.Value) is { ServerDocumentId: not null } status)
+                {
+                    MarkQueueAlreadySynced(item, status.ServerDocumentId, status.ServerVersionId, null, null, null);
+                    return true;
+                }
+
+                return false;
+
             case "register_field_comment":
                 if (TryGetFieldCommentServerId(item.EntityId) is { } serverCommentId)
                 {
@@ -521,6 +660,146 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         RecordSyncHistory(connection, "server_sync.succeeded", "document", document.DocumentId, $"Server document synced: {response.DocumentId}", now);
     }
 
+    private async Task SyncDocumentVersionAsync(
+        QueueItem item,
+        FlowNoteServerDocumentClient serverClient,
+        string? serverUserId,
+        CancellationToken cancellationToken)
+    {
+        var versionNo = item.LocalVersionNo
+            ?? throw new InvalidOperationException("Local document version number is required.");
+        if (TryGetDocumentVersionServerMapping(item.EntityId, versionNo) is { ServerDocumentId: not null } existing)
+        {
+            MarkQueueSynced(item.Id, existing.ServerDocumentId, existing.ServerVersionId, null, null);
+            return;
+        }
+
+        var document = LoadDocument(item.EntityId)
+            ?? throw new InvalidOperationException($"Local document not found: {item.EntityId}");
+        var documentMapping = TryGetDocumentServerMapping(item.EntityId);
+        if (documentMapping?.ServerDocumentId is null)
+        {
+            throw new InvalidOperationException("Local document is not synced to server yet.");
+        }
+
+        var localVersion = LoadDocumentVersion(item.EntityId, versionNo)
+            ?? throw new InvalidOperationException($"Local document version not found: {item.EntityId} v{versionNo}");
+        var existingServerVersion = await TryFindServerVersionByNumberAsync(
+            serverClient,
+            documentMapping.ServerDocumentId,
+            versionNo,
+            cancellationToken);
+        if (existingServerVersion is not null)
+        {
+            MarkDocumentVersionSynced(
+                item,
+                document,
+                localVersion,
+                documentMapping.ServerDocumentId,
+                existingServerVersion.VersionId,
+                DateTime.UtcNow);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(localVersion.LocalPath))
+        {
+            throw new InvalidOperationException("Local document version has no file path for server upload.");
+        }
+
+        var filePath = FlowNoteLocalDatabase.ResolveLocalContentPath(localVersion.LocalPath);
+        if (!File.Exists(filePath))
+        {
+            throw new IOException($"Local document file not found: {filePath}");
+        }
+
+        var response = await serverClient.RegisterVersionAsync(
+            documentMapping.ServerDocumentId,
+            filePath,
+            Clean(localVersion.Comment) ?? FlowNoteServerDocumentClient.DefaultWpfLocalUploadChangeReason,
+            localVersion.VersionLabel,
+            Clean(serverUserId),
+            cancellationToken);
+
+        MarkDocumentVersionSynced(
+            item,
+            document,
+            localVersion,
+            response.DocumentId,
+            response.VersionId,
+            DateTime.UtcNow);
+    }
+
+    private async Task SyncDocumentPublishAsync(
+        QueueItem item,
+        FlowNoteServerDocumentClient serverClient,
+        CancellationToken cancellationToken)
+    {
+        var versionNo = item.LocalVersionNo
+            ?? throw new InvalidOperationException("Local document version number is required.");
+        var document = LoadDocument(item.EntityId)
+            ?? throw new InvalidOperationException($"Local document not found: {item.EntityId}");
+        var documentMapping = TryGetDocumentServerMapping(item.EntityId);
+        if (documentMapping?.ServerDocumentId is null)
+        {
+            throw new InvalidOperationException("Local document is not synced to server yet.");
+        }
+
+        var versionMapping = TryGetDocumentVersionServerMapping(item.EntityId, versionNo);
+        if (versionMapping?.ServerVersionId is null)
+        {
+            throw new InvalidOperationException("Local document version is not synced to server yet.");
+        }
+
+        var response = await serverClient.PublishVersionAsync(
+            documentMapping.ServerDocumentId,
+            versionMapping.ServerVersionId,
+            $"WPF local publish sync v{versionNo}",
+            cancellationToken);
+        var publishedVersionId = response.PublishedVersion?.VersionId ?? response.PublishedVersionId ?? versionMapping.ServerVersionId;
+        var now = DateTime.UtcNow;
+
+        using var connection = database.OpenConnection();
+        UpsertMapping(connection, "document_publish", document.DocumentId, versionNo, response.DocumentId, publishedVersionId, null, null, null, now);
+        UpsertMapping(connection, "document", document.DocumentId, 0, response.DocumentId, response.LatestVersionId ?? documentMapping.ServerVersionId, null, null, null, now);
+        MarkQueueSynced(connection, item.Id, response.DocumentId, publishedVersionId, null, null, now);
+        RecordSyncHistory(connection, "server_sync.succeeded", "document_publish", document.DocumentId, $"Server document publish synced: {response.DocumentId} v{versionNo}", now);
+    }
+
+    private async Task SyncDocumentStatusAsync(
+        QueueItem item,
+        FlowNoteServerDocumentClient serverClient,
+        CancellationToken cancellationToken)
+    {
+        var document = LoadDocument(item.EntityId)
+            ?? throw new InvalidOperationException($"Local document not found: {item.EntityId}");
+        var documentMapping = TryGetDocumentServerMapping(item.EntityId);
+        if (documentMapping?.ServerDocumentId is null)
+        {
+            throw new InvalidOperationException("Local document is not synced to server yet.");
+        }
+
+        if (string.Equals(document.Status, "PUBLISHED", StringComparison.Ordinal) &&
+            document.PublishedVersionNo is not null &&
+            TryGetDocumentVersionServerMapping(item.EntityId, document.PublishedVersionNo.Value)?.ServerVersionId is null)
+        {
+            throw new InvalidOperationException("Local document version is not synced to server yet.");
+        }
+
+        var response = await serverClient.UpdateDocumentStatusAsync(
+            documentMapping.ServerDocumentId,
+            document.Status,
+            $"WPF local status sync: {document.Status}",
+            cancellationToken);
+        var now = DateTime.UtcNow;
+        var serverVersionId = response.LatestVersionId ?? documentMapping.ServerVersionId;
+
+        using var connection = database.OpenConnection();
+        UpsertMapping(connection, "document_status", document.DocumentId, item.LocalVersionNo ?? document.VersionNo, response.DocumentId, serverVersionId, null, null, null, now);
+        UpsertMapping(connection, "document", document.DocumentId, 0, response.DocumentId, serverVersionId, null, null, null, now);
+        MarkQueueSynced(connection, item.Id, response.DocumentId, serverVersionId, null, null, now);
+        RecordSyncHistory(connection, "server_sync.succeeded", "document_status", document.DocumentId, $"Server document status synced: {response.DocumentId} {document.Status}", now);
+    }
+
     private async Task SyncFieldCommentAsync(
         QueueItem item,
         FlowNoteServerDocumentClient serverClient,
@@ -539,7 +818,10 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             throw new InvalidOperationException("Local field comment has no document id.");
         }
 
-        var documentMapping = TryGetDocumentServerMapping(fieldComment.DocumentId);
+        var documentMapping = fieldComment.DocumentVersionNo is null
+            ? TryGetDocumentServerMapping(fieldComment.DocumentId)
+            : TryGetDocumentVersionServerMapping(fieldComment.DocumentId, fieldComment.DocumentVersionNo.Value)
+              ?? TryGetDocumentServerMapping(fieldComment.DocumentId);
         if (documentMapping?.ServerDocumentId is null)
         {
             throw new InvalidOperationException("Local document is not synced to server yet.");
@@ -656,7 +938,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             return;
         }
 
-        var documentMapping = TryGetDocumentServerMapping(accessLog.DocumentId);
+        var documentMapping = TryGetDocumentVersionServerMapping(accessLog.DocumentId, accessLog.VersionNo)
+            ?? TryGetDocumentServerMapping(accessLog.DocumentId);
         if (documentMapping?.ServerDocumentId is null)
         {
             throw new InvalidOperationException("Local document is not synced to server yet.");
@@ -725,7 +1008,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT id, document_id, folder_id, title, file_name, document_type, status, created_by,
-                   created_at, updated_at, local_path, version_no, latest_comment
+                   created_at, updated_at, local_path, version_no, latest_comment, published_version_no
             FROM documents
             WHERE document_id = $document_id
             LIMIT 1;
@@ -751,7 +1034,92 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             reader.IsDBNull(10) ? null : reader.GetString(10),
             reader.GetInt32(11),
             reader.IsDBNull(12) ? null : reader.GetString(12),
-            TagService.ListDocumentTags(connection, documentId));
+            TagService.ListDocumentTags(connection, documentId),
+            reader.IsDBNull(13) ? null : reader.GetInt32(13));
+    }
+
+    private DocumentVersionRecord? LoadDocumentVersion(string documentId, int versionNo)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, document_id, version_no, file_name, local_path, comment, created_by, created_at,
+                   version_status, is_latest, is_published, published_at, version_label
+            FROM document_versions
+            WHERE document_id = $document_id AND version_no = $version_no
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$document_id", documentId);
+        command.Parameters.AddWithValue("$version_no", versionNo);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new DocumentVersionRecord(
+            reader.GetInt64(0),
+            reader.GetString(1),
+            reader.GetInt32(2),
+            reader.GetString(3),
+            reader.IsDBNull(4) ? null : reader.GetString(4),
+            reader.IsDBNull(5) ? null : reader.GetString(5),
+            reader.GetString(6),
+            DateTime.Parse(reader.GetString(7)),
+            reader.GetString(8),
+            reader.GetInt32(9) == 1,
+            reader.GetInt32(10) == 1,
+            reader.IsDBNull(11) ? null : DateTime.Parse(reader.GetString(11)),
+            reader.IsDBNull(12) ? null : reader.GetString(12));
+    }
+
+    private async Task<ServerDocumentVersionResponse?> TryFindServerVersionByNumberAsync(
+        FlowNoteServerDocumentClient serverClient,
+        string serverDocumentId,
+        int versionNo,
+        CancellationToken cancellationToken)
+    {
+        var versions = await serverClient.ListVersionsAsync(serverDocumentId, cancellationToken);
+        return versions.FirstOrDefault(version => version.VersionNo == versionNo);
+    }
+
+    private void MarkDocumentVersionSynced(
+        QueueItem item,
+        DocumentRecord document,
+        DocumentVersionRecord version,
+        string serverDocumentId,
+        string? serverVersionId,
+        DateTime syncedAt)
+    {
+        using var connection = database.OpenConnection();
+        using var update = connection.CreateCommand();
+        update.CommandText = """
+            UPDATE document_versions
+            SET server_version_id = $server_version_id,
+                synced_at = $synced_at
+            WHERE document_id = $document_id AND version_no = $version_no;
+
+            UPDATE documents
+            SET server_document_id = $server_document_id,
+                server_version_id = CASE WHEN version_no = $version_no THEN $server_version_id ELSE server_version_id END,
+                synced_at = $synced_at
+            WHERE document_id = $document_id;
+            """;
+        update.Parameters.AddWithValue("$server_document_id", serverDocumentId);
+        update.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
+        update.Parameters.AddWithValue("$synced_at", syncedAt.ToString("O"));
+        update.Parameters.AddWithValue("$document_id", document.DocumentId);
+        update.Parameters.AddWithValue("$version_no", version.VersionNo);
+        update.ExecuteNonQuery();
+
+        UpsertMapping(connection, "document_version", document.DocumentId, version.VersionNo, serverDocumentId, serverVersionId, null, null, null, syncedAt);
+        if (version.IsLatest || document.VersionNo == version.VersionNo)
+        {
+            UpsertMapping(connection, "document", document.DocumentId, 0, serverDocumentId, serverVersionId, null, null, null, syncedAt);
+        }
+
+        MarkQueueSynced(connection, item.Id, serverDocumentId, serverVersionId, null, null, syncedAt);
+        RecordSyncHistory(connection, "server_sync.succeeded", "document_version", document.DocumentId, $"Server document version synced: {serverDocumentId} v{version.VersionNo}", syncedAt);
     }
 
     private FieldCommentRecord? LoadFieldComment(string commentId)
@@ -878,6 +1246,60 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             LIMIT 1;
             """;
         command.Parameters.AddWithValue("$document_id", documentId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new DocumentServerMapping(
+            reader.IsDBNull(0) ? null : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1));
+    }
+
+    private DocumentServerMapping? TryGetDocumentVersionServerMapping(string documentId, int versionNo)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT document.server_document_id, version.server_version_id
+            FROM document_versions AS version
+            JOIN documents AS document ON document.document_id = version.document_id
+            WHERE version.document_id = $document_id
+              AND version.version_no = $version_no
+              AND document.server_document_id IS NOT NULL
+              AND version.server_version_id IS NOT NULL
+              AND version.synced_at IS NOT NULL
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$document_id", documentId);
+        command.Parameters.AddWithValue("$version_no", versionNo);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return TryGetServerIdMapping("document_version", documentId, versionNo);
+        }
+
+        return new DocumentServerMapping(
+            reader.IsDBNull(0) ? null : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1));
+    }
+
+    private DocumentServerMapping? TryGetServerIdMapping(string entityType, string localId, int localVersionNo)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT server_document_id, server_version_id
+            FROM server_id_mappings
+            WHERE entity_type = $entity_type
+              AND local_id = $local_id
+              AND local_version_no = $local_version_no
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$entity_type", entityType);
+        command.Parameters.AddWithValue("$local_id", localId);
+        command.Parameters.AddWithValue("$local_version_no", localVersionNo);
         using var reader = command.ExecuteReader();
         if (!reader.Read())
         {
