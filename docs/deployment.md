@@ -410,29 +410,65 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.Ap
 
 WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 
-## 백업 대상
+## 운영 백업 점검표
 
-운영 백업은 서버 데이터와 로컬 앱 데이터를 분리해서 수행한다. 백업 전에는 가능하면 서버와 WPF 앱을 종료하거나 파일 잠금이 없는 시간대에 복사한다.
+운영 백업은 서버 기준 세트와 WPF PC별 세트를 분리한다. 서버 SQLite와 서버 `storage\`는 서로를 참조하므로 같은 백업 시각의 한 세트로 묶는다. WPF 로컬 SQLite와 WPF `Files\`도 PC별 같은 시각의 한 세트로 묶는다.
 
-- 서버 SQLite: `C:\FlowNote\Server\data\flownote.sqlite3`
-- 서버 SQLite 보조 파일: 같은 폴더의 `*.sqlite3-wal`, `*.sqlite3-shm`, `*.sqlite-wal`, `*.sqlite-shm`
-- 서버 파일 저장소: `C:\FlowNote\Server\storage\`
-- 서버 운영 설정: `.env` 또는 서비스 환경 변수 내역. 비밀값은 백업 저장소 접근권한을 제한한다.
-- 서버 로그: `C:\FlowNote\Server\logs\`
-- WPF 공통 SQLite: `C:\FlowNote\LocalData\flownote.local.sqlite`
-- WPF SQLite 보조 파일: 같은 폴더의 `*.sqlite-wal`, `*.sqlite-shm`
-- WPF 로컬 파일: `C:\FlowNote\LocalData\Files\`
+### 백업 세트
 
-## 복구 순서
+| 세트 | 필수 포함 대상 | 확인 기준 |
+| --- | --- | --- |
+| 서버 데이터 세트 | `C:\FlowNote\Server\data\flownote.sqlite3`, 같은 폴더의 `*.sqlite3-wal`, `*.sqlite3-shm`, `*.sqlite-wal`, `*.sqlite-shm` | SQLite 본파일과 WAL/SHM 보조 파일을 같은 시각에 확보한다. |
+| 서버 파일 세트 | `C:\FlowNote\Server\storage\` 전체 | 문서 원본, FieldComment 첨부, 보고서 생성 파일이 누락되지 않아야 한다. |
+| 서버 운영 세트 | `C:\FlowNote\Server\.env`, 서비스/작업 스케줄러 환경 변수 기록, `C:\FlowNote\Server\logs\` | 비밀값이 포함되므로 백업 저장소 접근권한을 운영 관리자에게 제한한다. |
+| WPF PC별 데이터 세트 | `C:\FlowNote\LocalData\flownote.local.sqlite`, 같은 폴더의 `*.sqlite-wal`, `*.sqlite-shm` | PC별 로컬 로그인, 열람 로그, 동기화 큐, 로컬 작업 이력이 포함되어야 한다. |
+| WPF PC별 파일 세트 | `C:\FlowNote\LocalData\Files\` 전체 | 로컬 복사 문서와 FieldComment 첨부가 DB와 같은 시각이어야 한다. |
 
-- 서버와 WPF 앱을 종료한다.
-- 서버 `data`와 `storage`를 같은 시점의 백업본으로 복원한다.
-- `.env` 또는 서비스 환경 변수를 복원하되, 새 서버 PC의 절대 경로가 다르면 경로 값을 수정한다.
-- WPF 로컬 DB와 `Files\`를 같은 시점의 백업본으로 복원한다.
-- 서버를 먼저 실행하고 `/api/v1/health/db`를 확인한다.
-- WPF 앱을 실행해 로그인, 문서 목록, 최근 FieldComment, 문서 열람 로그를 확인한다.
+### 백업 실행 전
 
-서버 DB만 복원하고 `storage\`를 누락하면 문서 메타데이터는 있으나 파일을 열 수 없다. 반대로 `storage\`만 복원하고 DB를 누락하면 파일 소유 관계와 버전 이력을 추적할 수 없다. 두 대상은 같은 백업 세트로 관리한다.
+- 서버 PC의 작업 스케줄러 `\FlowNote\FlowNoteApi`를 중지하거나 파일 잠금이 없는 운영 시간대를 선택한다.
+- WPF 앱을 설치한 PC별로 앱을 종료한다.
+- 백업 저장소가 운영 DB, 고객 파일, 비밀값을 저장할 수 있는 접근권한과 암호화 정책을 갖췄는지 확인한다.
+- 백업 폴더명에는 백업 시각, 서버명 또는 PC명, 대상 세트명을 남긴다. 예: `2026-07-02_2300_Server_data_storage`.
+
+### 백업 실행 후
+
+- 서버 세트에 `data`, `storage`, `.env`, `logs`가 모두 포함되었는지 확인한다.
+- WPF PC별 세트에 `flownote.local.sqlite`와 `Files\`가 모두 포함되었는지 확인한다.
+- 백업 로그 또는 운영 기록에 백업 시각, 수행자, 대상 PC, 포함 세트, 실패 항목을 남긴다.
+- 백업 검증용 임시 복원은 테스트 산출물이므로 사용자가 명시적으로 지시하지 않는 한 삭제하지 않는다.
+
+## 운영 복구 점검표
+
+복구는 서버를 먼저 살리고, 그 다음 WPF 로컬 데이터를 맞춘다. 서버 DB와 서버 `storage\`는 같은 시점의 백업을 우선 사용한다. 다른 시점의 부분 복원은 장애 대응 절차로만 수행하고 정상 복구로 간주하지 않는다.
+
+### 서버 복구 순서
+
+1. 서버 작업 스케줄러 `\FlowNote\FlowNoteApi`를 중지하고 WPF 앱을 종료한다.
+2. `C:\FlowNote\Server\data`를 백업본의 서버 데이터 세트로 복원한다.
+3. `C:\FlowNote\Server\storage`를 같은 시점의 서버 파일 세트로 복원한다.
+4. `.env` 또는 서비스 환경 변수를 복원한다. 새 서버 PC의 절대 경로가 다르면 `FLOWNOTE_DATABASE_URL`과 `FLOWNOTE_STORAGE_ROOT`를 먼저 수정한다.
+5. 서버 작업을 시작한 뒤 서버 PC에서 `http://127.0.0.1:5184/api/v1/health`와 `http://127.0.0.1:5184/api/v1/health/db`를 확인한다.
+6. WPF 실행 전 서버 계정 로그인이 가능한지 확인한다.
+
+### WPF 복구 순서
+
+1. 대상 PC의 WPF 앱을 종료한다.
+2. `C:\FlowNote\LocalData\flownote.local.sqlite`와 WAL/SHM 파일을 PC별 데이터 세트로 복원한다.
+3. `C:\FlowNote\LocalData\Files\`를 같은 시점의 PC별 파일 세트로 복원한다.
+4. `FLOWNOTE_LOCAL_DATA_DIR`, `FLOWNOTE_LOCAL_DATABASE_PATH`, `FLOWNOTE_API_BASE_URL` 값이 복구 위치와 맞는지 확인한다.
+5. WPF 앱을 실행해 로그인, 문서 목록, 문서 열람, FieldComment 등록/조회, 보고서 근거 조회를 확인한다.
+6. 복구 후 저장소 루트에서 `.\scripts\verify-preserved-tests.ps1` 또는 운영자가 지정한 동등 점검을 실행한다. 운영 환경에서 전체 개발 테스트를 실행할 수 없으면 최소한 서버 health, DB health, WPF 로그인, 문서 목록, 문서 열람, FieldComment, 보고서 근거 조회를 수동 점검표로 남긴다.
+
+### 부분 복원 장애 대응
+
+| 상황 | 증상 | 대응 기준 |
+| --- | --- | --- |
+| 서버 DB만 복원하고 `storage\`가 누락됨 | 문서 목록과 메타데이터는 보이지만 파일 열람, 첨부 다운로드, 보고서 파일 접근이 실패한다. | 정상 운영 재개 금지. 같은 시점의 `storage\` 백업을 찾아 재복원한다. 없으면 누락 파일 목록을 장애 기록으로 남기고 해당 문서/첨부/보고서의 열람을 제한한 뒤 재등록 또는 파일 재수집 계획을 세운다. |
+| 서버 `storage\`만 복원하고 DB가 누락됨 | 파일은 디스크에 있으나 문서 소유 관계, 버전, 공개 상태, FieldComment 첨부 연결, 보고서 근거를 추적할 수 없다. | 정상 운영 재개 금지. 같은 시점의 서버 DB 백업을 찾아 재복원한다. 없으면 파일을 원천 증거로 보존하고 새 DB에 수동 재등록할 대상을 운영자가 선별한다. 기존 파일을 임의 삭제하거나 덮어쓰지 않는다. |
+| 서버 DB와 `storage\` 시점이 다름 | 일부 문서 버전 또는 첨부만 열리지 않거나 DB에 없는 파일이 남는다. | 최신 세트 하나로 다시 맞춘다. 불가피하면 DB 기준으로 누락 파일과 고아 파일 목록을 작성하고, 누락 항목은 열람 제한, 고아 파일은 보존 폴더로 격리한다. |
+| WPF DB만 복원하고 `Files\`가 누락됨 | 로컬 문서 목록, 열람 로그, 동기화 큐는 있으나 로컬 파일 미리보기와 첨부 열람이 실패한다. | 같은 시점의 `Files\`를 재복원한다. 서버에 이미 동기화된 문서는 서버 열람으로 대체할 수 있지만, 로컬 미동기화 파일은 재수집 전까지 보존 장애로 기록한다. |
+| WPF `Files\`만 복원하고 DB가 누락됨 | 파일은 있으나 로컬 문서, 첨부, 큐, 열람 이력과 연결되지 않는다. | 같은 시점의 WPF DB를 재복원한다. DB가 없으면 파일은 삭제하지 않고 운영자가 서버 등록 여부와 로컬 재등록 필요 여부를 판단한다. |
 
 ## 장애 시 보존 파일
 

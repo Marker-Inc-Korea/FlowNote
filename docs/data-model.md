@@ -54,6 +54,42 @@
 | `document_access_logs` | 서버 문서 접근 로그 |
 | `activity_history` | 서버 활동 이력 |
 
+## 작업지시와 후속 외부 연동 필드
+
+초기 작업지시는 관리자가 FlowNote에 직접 입력하는 수동 데이터가 기준이다. MES/ERP 어댑터는 후속 대상이며, 외부 시스템이 생기더라도 FlowNote의 현장 기록은 수동 입력 모델과 같은 연결 필드를 사용한다.
+
+### 초기 수동 입력 기준
+
+| 엔티티 | 필드 | 용도 |
+| --- | --- | --- |
+| `work_records` | `work_record_id` | FlowNote 내부 작업내역 식별자 |
+| `work_records` | `work_order_no` | 관리자가 입력한 작업지시 번호 또는 현장 식별 번호 |
+| `work_records` | `title` | 작업명, 품목/공정이 섞인 현장 표시명 |
+| `work_records` | `work_instruction_document_id` | 작업지시서, 기준서, 도면 등 연결 문서 ID |
+| `work_records` | `source_type` | 초기 수동 입력은 `manual`, 후속 외부 수신은 `external` |
+| `work_records` | `status` | `DRAFT`, `ACTIVE`, `COMPLETED`, `ARCHIVED` |
+| `work_record_versions` | `summary`, `result_note`, `issue_note`, `action_note` | 작업 수행 요약, 결과, 문제점, 조치 기록 |
+| `work_sequence_boards` | `line_code`, `board_date` | 라인 또는 작업장과 작업 날짜 |
+| `work_sequence_items` | `work_order_no`, `document_id`, `assigned_to`, `status`, `hold_reason` | 작업순서 항목과 작업지시 번호, 관련 문서, 담당자, 상태, 보류 사유 연결 |
+| `field_comments` | `document_id`, `work_record_id`, `input_mode` | 문서 또는 작업내역에 연결된 현장 원천 기록. MES 수신으로 생긴 기록은 후속 단계에서 `mes_integration`을 사용할 수 있다. |
+| `reports` | `work_record_id`, `report_sources` | 보고서가 어떤 작업내역과 원천 근거를 정제했는지 추적 |
+
+### MES/ERP 어댑터 연결 기준
+
+후속 어댑터는 외부 작업지시를 새 도메인으로 따로 만들기보다 `work_records`와 `work_sequence_items`의 연결 필드를 우선 사용한다.
+
+| 외부 데이터 | FlowNote 연결 필드 | 기준 |
+| --- | --- | --- |
+| 외부 시스템명 | `work_records.external_system`, `tag_definitions.external_system` | 예: `MES`, `ERP`, 현장 시스템 약칭 |
+| 외부 작업지시 ID | `work_records.external_ref_id` | 외부 원천 레코드의 불변 ID. 화면 표시용 작업번호와 다를 수 있다. |
+| 작업지시 번호 | `work_records.work_order_no`, `work_sequence_items.work_order_no` | 현장 사용자가 아는 번호를 유지한다. |
+| 작업명/품목/공정 표시 | `work_records.title`, 태그 | 품목, 설비, 공정은 태그로 보완 연결한다. |
+| 작업지시 문서 | `work_records.work_instruction_document_id`, `work_sequence_items.document_id` | FlowNote에 등록된 문서 ID를 연결한다. |
+| 작업 상태 | `work_records.status`, `work_sequence_items.status` | 외부 상태를 그대로 강제하지 않고 FlowNote 상태 값으로 매핑한다. |
+| 보류/재작업/현장 이슈 | `work_sequence_items.hold_reason`, `field_comments`, `work_record_versions.issue_note` | 현장 경험 기록을 외부 정형 데이터보다 우선 보존한다. |
+
+어댑터가 도입되어도 외부 시스템 수신 실패나 지연은 문서 열람, FieldComment 작성, 작업순서 수동 변경, 보고서 작성 흐름을 막지 않아야 한다. 외부 시스템으로 상태를 되돌려 쓰는 양방향 동기화는 별도 설계 결정 후에만 다룬다.
+
 ## 상태 값
 
 문서 상태:
