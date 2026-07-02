@@ -64,7 +64,18 @@
 - 서버 클라이언트가 있으면 `/api/v1/reports/drafts`와 `/api/v1/reports`를 호출해 서버 보고서와 생성 문서 저장을 먼저 시도한다.
 - 서버 보고서 저장에 성공하면 로컬 보고서 문서를 만들고 서버 보고서/문서 ID를 연결한다.
 - 서버 보고서 저장에 실패하거나 서버 클라이언트가 없으면 로컬 보고서 문서 저장 흐름으로 남긴다.
-- 보고서 저장은 현재 `server_sync_queue` 재시도 대상이 아니다. 재시도 큐는 문서, FieldComment, FieldComment 첨부, 문서 접근 로그를 대상으로 한다.
+- 보고서 저장은 현재 `server_sync_queue` 재시도 대상이 아니다. 재시도 큐는 문서, 문서 버전/공개/상태, FieldComment, FieldComment 첨부, 문서 접근 로그를 대상으로 한다.
+- 서버 보고서 저장에 성공한 로컬 보고서 문서는 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`에 연결한다.
+
+## 2026-07-02. 서버-WPF 문서 동기화 우선순위
+
+- WPF는 로컬 저장을 먼저 성공시키고 `server_sync_queue` 생성 순서대로 서버에 반영한다.
+- 문서 최초 등록이 서버 ID를 받아야 문서 버전, FieldComment, 첨부, 접근 로그가 서버 문서/버전 ID에 연결된다.
+- 문서 최신 버전은 로컬 `document_versions.version_no` 기준으로 서버 버전을 찾고, 서버에 같은 번호가 있으면 매핑을 복구하며 없으면 업로드한다.
+- 공개 버전은 해당 로컬 버전의 서버 버전 ID가 있을 때만 서버 publish API에 반영한다.
+- 문서 상태는 현재 로컬 `documents.status`를 서버에 반영한다. `PUBLISHED` 상태는 공개 버전 동기화가 선행되어야 한다.
+- 서버 미동작, 인증 만료, 선행 문서/버전 미동기화 상황에서도 로컬 데이터와 큐는 삭제하지 않는다.
+- 작업순서 보드/항목/이력은 현재 단계에서 WPF 로컬 큐 대상이 아니다. 서버 직접 API 검증과 보고서 source 추적 범위로 유지한다.
 
 ## 2026-06-30. 관리자 파일 감시
 
