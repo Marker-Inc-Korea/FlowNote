@@ -21,7 +21,7 @@
 - 작업순서 관리자 화면과 TV 화면
 - 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도
 - FastAPI 서버 인증과 문서/FieldComment/첨부/접근 로그/보고서/작업순서 API 클라이언트
-- 서버 동기화 큐: 문서, FieldComment, FieldComment 첨부, 문서 접근 로그
+- 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 첨부, 문서 접근 로그
 
 ## 프로젝트 구조
 
