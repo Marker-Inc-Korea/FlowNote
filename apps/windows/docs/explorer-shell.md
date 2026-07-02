@@ -52,4 +52,4 @@ Windows WPF 메인 화면은 현장/관리자가 폴더 트리에서 문서를 �
 
 ## 서버 연동
 
-서버 URL과 Bearer token이 있으면 문서, FieldComment, 첨부, 접근 로그를 서버로 전송한다. 실패하면 로컬 저장은 유지되고 `server_sync_queue`에 실패 사유가 남는다.
+서버 URL과 Bearer token이 있으면 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, 첨부, 접근 로그를 서버로 전송한다. 실패하면 로컬 저장은 유지되고 `server_sync_queue`에 실패 사유가 남는다.
