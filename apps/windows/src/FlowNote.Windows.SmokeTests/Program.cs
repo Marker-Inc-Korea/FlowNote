@@ -1253,7 +1253,7 @@ try
 
         var queuedRetryResult = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
         Console.WriteLine(queuedRetryResult.Message);
-        Require(queuedRetryResult.Attempted >= 5, "queued retry should attempt all offline server sync queue rows");
+        Require(queuedRetryResult.Attempted >= 8, "queued retry should attempt all offline server sync queue rows");
         using (var syncConnection = services.Database.OpenConnection())
         {
             var syncedServerDocumentId = ScalarString(
@@ -1316,6 +1316,36 @@ try
                     syncConnection,
                     """
                     SELECT COUNT(*)
+                    FROM document_versions
+                    WHERE document_id = $document_id
+                      AND version_no = $version_no
+                      AND server_version_id IS NOT NULL
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$document_id", uploadedDocument.DocumentId),
+                    ("$version_no", offlineVersionDocument.VersionNo)) == 1,
+                "queued document version retry should store the server version id");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM documents
+                    WHERE document_id = $document_id
+                      AND status = 'ARCHIVED'
+                      AND published_version_no = $version_no
+                      AND server_document_id IS NOT NULL
+                      AND server_version_id IS NOT NULL
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$document_id", uploadedDocument.DocumentId),
+                    ("$version_no", offlineVersionDocument.VersionNo)) == 1,
+                "queued publish and status retry should preserve local published version and final status");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
                     FROM server_sync_queue
                     WHERE entity_id IN ($document_id, $comment_id, $attachment_id, $log_id)
                       AND status = 'SYNCED';
@@ -1323,13 +1353,13 @@ try
                     ("$document_id", uploadedDocument.DocumentId),
                     ("$comment_id", offlineQueuedFieldComment.CommentId),
                     ("$attachment_id", offlineQueuedFieldCommentAttachment.AttachmentId),
-                    ("$log_id", offlineAccessLogId.ToString())) == 5,
-                "queued retry should mark document, field comment attachment, field comment, and access log queue rows as synced");
+                    ("$log_id", offlineAccessLogId.ToString())) == 8,
+                "queued retry should mark document, version, publish, status, field comment, attachment, and access log queue rows as synced");
             Require(
                 services.ServerSync.ListQueueItems().Count(item =>
                     item.EntityId == uploadedDocument.DocumentId &&
-                    item.Status == "SYNCED") == 1,
-                "sync queue list should show the document queue row as synced after retry");
+                    item.Status == "SYNCED") >= 4,
+                "sync queue list should show document, version, publish, and status queue rows as synced after retry");
             Require(
                 ScalarLong(
                     syncConnection,
@@ -1339,7 +1369,7 @@ try
                     WHERE event_type = 'server_sync.retry_attempted'
                       AND created_at >= $run_started_at;
                     """,
-                    ("$run_started_at", runStartedAt.ToUniversalTime().ToString("O"))) >= 5,
+                    ("$run_started_at", runStartedAt.ToUniversalTime().ToString("O"))) >= 8,
                 "queued retry attempts should be preserved in local history");
             Require(
                 ScalarLong(
@@ -1368,6 +1398,47 @@ try
                     """,
                     ("$document_id", uploadedDocument.DocumentId)) == ServerSyncService.CreateDocumentIdempotencyKey(uploadedDocument.DocumentId),
                 "document sync queue should use the documented idempotency key");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT idempotency_key
+                    FROM server_sync_queue
+                    WHERE entity_type = 'document_version'
+                      AND entity_id = $document_id
+                      AND local_version_no = $version_no
+                    LIMIT 1;
+                    """,
+                    ("$document_id", uploadedDocument.DocumentId),
+                    ("$version_no", offlineVersionDocument.VersionNo)) == ServerSyncService.CreateDocumentVersionIdempotencyKey(uploadedDocument.DocumentId, offlineVersionDocument.VersionNo),
+                "document version sync queue should use the documented idempotency key");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT idempotency_key
+                    FROM server_sync_queue
+                    WHERE entity_type = 'document_publish'
+                      AND entity_id = $document_id
+                      AND local_version_no = $version_no
+                    LIMIT 1;
+                    """,
+                    ("$document_id", uploadedDocument.DocumentId),
+                    ("$version_no", offlineVersionDocument.VersionNo)) == ServerSyncService.CreateDocumentPublishIdempotencyKey(uploadedDocument.DocumentId, offlineVersionDocument.VersionNo),
+                "document publish sync queue should use the documented idempotency key");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT idempotency_key
+                    FROM server_sync_queue
+                    WHERE entity_type = 'document_status'
+                      AND entity_id = $document_id
+                    LIMIT 1;
+                    """,
+                    ("$document_id", uploadedDocument.DocumentId)) is { } statusKey &&
+                statusKey.StartsWith($"wpf:document-status:{uploadedDocument.DocumentId}:v{offlineArchivedDocument.VersionNo}:ARCHIVED:", StringComparison.Ordinal),
+                "document status sync queue should use the documented idempotency key prefix");
             Require(
                 ScalarString(
                     syncConnection,
@@ -1416,6 +1487,19 @@ try
                     """,
                     ("$log_id", offlineAccessLogId.ToString())) == ServerSyncService.CreateAccessLogIdempotencyKey(offlineAccessLogId, "view_closed"),
                 "access close log sync queue should use the documented idempotency key");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_id_mappings
+                    WHERE local_id = $document_id
+                      AND entity_type IN ('document', 'document_version', 'document_publish', 'document_status')
+                      AND server_document_id IS NOT NULL
+                      AND server_version_id IS NOT NULL;
+                    """,
+                    ("$document_id", uploadedDocument.DocumentId)) >= 4,
+                "server_id_mappings should connect document, version, publish, and status queue results");
 
             var duplicateQueueCountBefore = ScalarLong(
                 syncConnection,
@@ -1441,6 +1525,18 @@ try
                 ("$log_id", offlineAccessLogId.ToString()));
             _ = await services.ServerSync.QueueAndTrySyncDocumentAsync(
                 uploadedDocument,
+                serverDocuments,
+                serverLogin.UserId);
+            _ = await services.ServerSync.QueueAndTrySyncDocumentVersionAsync(
+                offlineVersionDocument,
+                serverDocuments,
+                serverLogin.UserId);
+            _ = await services.ServerSync.QueueAndTrySyncDocumentPublishAsync(
+                offlinePublishedDocument,
+                serverDocuments,
+                serverLogin.UserId);
+            _ = await services.ServerSync.QueueAndTrySyncDocumentStatusAsync(
+                offlineArchivedDocument,
                 serverDocuments,
                 serverLogin.UserId);
             _ = await services.ServerSync.QueueAndTrySyncFieldCommentAsync(
@@ -1665,6 +1761,20 @@ try
                     ("$server_report_id", reportResult.ReportId),
                     ("$server_document_id", reportResult.GeneratedDocumentId!)) == 1,
                 "local report document should link server report_id and generated_document_id");
+            Require(
+                ScalarLong(
+                    reportConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_id_mappings
+                    WHERE local_id = $document_id
+                      AND entity_type IN ('document', 'document_version', 'report')
+                      AND server_document_id = $server_document_id
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$document_id", reportResult.LocalDocument!.DocumentId),
+                    ("$server_document_id", reportResult.GeneratedDocumentId!)) == 3,
+                "local report document should write document, document_version, and report server id mappings");
         }
 
         {
