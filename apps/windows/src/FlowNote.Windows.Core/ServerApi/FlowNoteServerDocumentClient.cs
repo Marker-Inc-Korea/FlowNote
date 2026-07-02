@@ -109,6 +109,23 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerDocumentResponse>(response, cancellationToken);
     }
 
+    public async Task<ServerDocumentResponse> UpdateDocumentStatusAsync(
+        string documentId,
+        string status,
+        string? changeReason = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PatchAsJsonAsync(
+            $"api/v1/documents/{documentId}/status",
+            new ServerDocumentStatusUpdateRequest
+            {
+                Status = status,
+                ChangeReason = changeReason
+            },
+            cancellationToken);
+        return await ReadJsonResponse<ServerDocumentResponse>(response, cancellationToken);
+    }
+
     public async Task<ServerDocumentVersionResponse> GetPublishedVersionAsync(
         string documentId,
         CancellationToken cancellationToken = default)

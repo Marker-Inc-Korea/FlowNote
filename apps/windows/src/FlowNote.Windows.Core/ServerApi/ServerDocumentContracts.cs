@@ -155,6 +155,15 @@ public sealed record ServerDocumentVersionPublishRequest
     public string? ChangeReason { get; init; }
 }
 
+public sealed record ServerDocumentStatusUpdateRequest
+{
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("changeReason")]
+    public string? ChangeReason { get; init; }
+}
+
 public sealed record ServerDocumentAccessLogCreateRequest
 {
     [JsonPropertyName("documentVersionId")]
