@@ -1,8 +1,8 @@
 # API Service
 
-FlowNote FastAPI 서버는 SQLite 기반 MVP API를 제공한다.
+FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다.
 
-## Current Scope
+## Current API
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -55,6 +55,8 @@ The server uses HMAC-signed Bearer access tokens plus the `auth_sessions` table.
 
 Development defaults such as `admin / 1234` and the default token secret are local development values only.
 
+Server account operations are handled by `python -m app.ops.server_accounts` for the current implementation. It supports `create`, `reset-password`, `set-status`, and `set-role`; WPF user management is local SQLite only and does not create or modify server accounts.
+
 ## Local Development
 
 ```powershell
@@ -64,10 +66,15 @@ cd services\api
 
 Useful settings:
 
+- `FLOWNOTE_ENVIRONMENT` or `FLOWNOTE_ENV`: default `local`
+- `FLOWNOTE_API_HOST`: default `127.0.0.1`
+- `FLOWNOTE_API_PORT`: default `5184`
 - `FLOWNOTE_DATABASE_URL`: default `sqlite:///./data/flownote.sqlite3`
 - `FLOWNOTE_TEST_DATABASE_URL`: default `sqlite:///./data/flownote.test.sqlite3`
+- `FLOWNOTE_DATABASE_ECHO`: default `false`
 - `FLOWNOTE_STORAGE_ROOT`: default `./storage`
 - `FLOWNOTE_FIELD_COMMENT_ATTACHMENT_MAX_BYTES`: default `20971520`
+- `FLOWNOTE_SESSION_COOKIE_NAME`: default `flownote_session`
 - `FLOWNOTE_ACCESS_TOKEN_SECRET`
 - `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES`: default `480`
 - `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS`: default `14`
@@ -78,5 +85,7 @@ Useful settings:
 cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
+
+The current collected FastAPI test count is 47.
 
 Test SQLite DBs, logs, upload files, and generated sample files are preserved unless the user explicitly asks to delete them.

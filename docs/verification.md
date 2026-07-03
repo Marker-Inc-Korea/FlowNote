@@ -14,7 +14,7 @@
 
 1. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 2. 실행 전 `git status --porcelain=v1 --untracked-files=all`에서 SQLite 예외 외 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-3. `services/api`에서 FastAPI pytest 수집 개수가 43개인지 확인한다.
+3. `services/api`에서 FastAPI pytest 수집 개수가 47개인지 확인한다.
 4. `services/api`에서 FastAPI pytest를 실행한다.
 5. WPF 앱을 빌드한다.
 6. WPF 스모크 테스트를 실행한다.

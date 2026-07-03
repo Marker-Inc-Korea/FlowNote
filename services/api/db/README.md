@@ -1,13 +1,13 @@
 # API Database
 
-FastAPI 서버의 SQLite 스키마와 마이그레이션 초안 영역이다.
+FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 코드이며, 문서는 현재 모델을 따라간다.
 
 ## 현재 코드 기준
 
 - 연결 모듈: `app/db/session.py`
 - ORM 모델: `app/db/models.py`
 - 초기화 모듈: `app/db/init_db.py`
-- 마이그레이션 설명: `migrations/0001_initial_mvp_schema.md`
+- 스키마 설명: `migrations/0001_initial_mvp_schema.md`
 
 앱 시작 시 `Base.metadata.create_all()`로 테이블을 보장하고, `schema_migrations`에 `0001_initial_mvp_schema`를 기록한다. 기존 SQLite DB 호환을 위해 일부 컬럼과 제약은 초기화 과정에서 보정한다.
 
