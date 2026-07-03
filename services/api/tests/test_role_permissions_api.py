@@ -5,6 +5,9 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from app.core.auth import ACCESS_LOG_READ_ROLES, CONTROLLED_COPY_DOWNLOAD_ROLES
+from app.core.auth import DOCUMENT_WRITE_ROLES, FIELD_COMMENT_CREATE_ROLES
+from app.core.auth import REPORT_WRITE_ROLES, USER_MANAGEMENT_ROLES
 from app.core.config import Settings
 from app.db.init_db import hash_password_for_dev
 from app.db.models import UserAccount
@@ -16,6 +19,40 @@ TEST_DB_PATH = API_ROOT / "data" / "flownote.test.sqlite3"
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 TEST_STORAGE_ROOT = API_ROOT / "storage" / "role-permission-tests"
 TEST_PASSWORD = "correct-password"
+ALL_ROLES = {
+    "admin",
+    "manager",
+    "viewer",
+    "system-admin",
+    "document-admin",
+    "assistant-manager",
+    "department-manager",
+    "line-foreman",
+    "team-lead",
+    "team-member",
+}
+DOCUMENT_WRITE_EXPECTED = {
+    "admin",
+    "manager",
+    "system-admin",
+    "document-admin",
+    "assistant-manager",
+    "department-manager",
+    "line-foreman",
+    "team-lead",
+}
+FIELD_COMMENT_CREATE_EXPECTED = ALL_ROLES
+ACCESS_LOG_READ_EXPECTED = {"admin", "system-admin"}
+REPORT_WRITE_EXPECTED = {
+    "admin",
+    "manager",
+    "system-admin",
+    "document-admin",
+    "assistant-manager",
+    "department-manager",
+}
+USER_MANAGEMENT_EXPECTED = {"admin", "system-admin"}
+CONTROLLED_COPY_DOWNLOAD_EXPECTED = REPORT_WRITE_EXPECTED
 
 
 def create_test_client() -> TestClient:
@@ -56,6 +93,15 @@ def auth_headers(client: TestClient, account: UserAccount) -> dict[str, str]:
     )
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def test_role_groups_match_wpf_policy_matrix() -> None:
+    assert DOCUMENT_WRITE_ROLES == DOCUMENT_WRITE_EXPECTED
+    assert FIELD_COMMENT_CREATE_ROLES == FIELD_COMMENT_CREATE_EXPECTED
+    assert ACCESS_LOG_READ_ROLES == ACCESS_LOG_READ_EXPECTED
+    assert REPORT_WRITE_ROLES == REPORT_WRITE_EXPECTED
+    assert USER_MANAGEMENT_ROLES == USER_MANAGEMENT_EXPECTED
+    assert CONTROLLED_COPY_DOWNLOAD_ROLES == CONTROLLED_COPY_DOWNLOAD_EXPECTED
 
 
 def post_document(client: TestClient, headers: dict[str, str], title: str):

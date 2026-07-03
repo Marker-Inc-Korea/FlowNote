@@ -66,6 +66,31 @@ try
             "server 403 should show the Korean inactive server account message");
     }
 
+    using (var serverRoleClient = CreateJsonStatusClient(
+        HttpStatusCode.OK,
+        """
+        {
+          "user_id": "server-user-admin",
+          "username": "admin",
+          "role": "team-member",
+          "display_name": "Server Admin",
+          "access_token": "server-access-token",
+          "token_type": "Bearer",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "refresh_token": "server-refresh-token",
+          "refresh_expires_at": "2030-01-02T00:00:00Z"
+        }
+        """))
+    {
+        var serverAwareAuth = new ServerAwareAuthService(services.Auth, serverRoleClient);
+        var serverLogin = await serverAwareAuth.LoginAsync("admin", "1234");
+        Require(serverLogin.Success, "server login success should use the server account result");
+        Require(serverLogin.UserId == "server-user-admin", "server login should use the server user id");
+        Require(serverLogin.Role == "team-member", "server login should use the server role when local role differs");
+        Require(!RolePermissionPolicy.CanManageUsers(serverLogin.Role), "server team-member role should drive WPF user management policy");
+        Require(RolePermissionPolicy.CanWriteFieldComments(serverLogin.Role), "server team-member role should still allow field comment policy");
+    }
+
     foreach (var seededUser in FlowNoteLocalDatabase.DefaultUserSeeds)
     {
         var seededLogin = services.Auth.Login(seededUser.LoginId, "1234");
@@ -846,6 +871,41 @@ try
     Require(
         !RolePermissionPolicy.CanWriteReports("viewer"),
         "viewer role should not be allowed to write reports");
+
+    var rolePolicyMatrix = new[]
+    {
+        new RolePolicyExpectation("admin", true, true, true, true, true, true),
+        new RolePolicyExpectation("manager", true, true, true, false, false, true),
+        new RolePolicyExpectation("viewer", false, true, false, false, false, false),
+        new RolePolicyExpectation("system-admin", true, true, true, true, true, true),
+        new RolePolicyExpectation("document-admin", true, true, true, false, false, true),
+        new RolePolicyExpectation("assistant-manager", true, true, true, false, false, true),
+        new RolePolicyExpectation("department-manager", true, true, true, false, false, true),
+        new RolePolicyExpectation("line-foreman", true, true, false, false, false, false),
+        new RolePolicyExpectation("team-lead", true, true, false, false, false, false),
+        new RolePolicyExpectation("team-member", false, true, false, false, false, false)
+    };
+    foreach (var expected in rolePolicyMatrix)
+    {
+        Require(
+            RolePermissionPolicy.CanRegisterDocuments(expected.Role) == expected.CanRegisterDocuments,
+            $"{expected.Role} document registration policy should match the server role matrix");
+        Require(
+            RolePermissionPolicy.CanWriteFieldComments(expected.Role) == expected.CanWriteFieldComments,
+            $"{expected.Role} field comment policy should match the server role matrix");
+        Require(
+            RolePermissionPolicy.CanWriteReports(expected.Role) == expected.CanWriteReports,
+            $"{expected.Role} report write policy should match the server role matrix");
+        Require(
+            RolePermissionPolicy.CanReadAccessLogs(expected.Role) == expected.CanReadAccessLogs,
+            $"{expected.Role} access log read policy should match the server role matrix");
+        Require(
+            RolePermissionPolicy.CanManageUsers(expected.Role) == expected.CanManageUsers,
+            $"{expected.Role} user management policy should match the server role matrix");
+        Require(
+            RolePermissionPolicy.CanDownloadDocuments(expected.Role) == expected.CanDownloadDocuments,
+            $"{expected.Role} controlled copy download policy should match the server role matrix");
+    }
 
     var watchDirectory = Path.Combine(testDirectory, $"watch-{runId}");
     Directory.CreateDirectory(watchDirectory);
@@ -2061,6 +2121,14 @@ static HttpClient CreateStaticStatusClient(HttpStatusCode statusCode)
     };
 }
 
+static HttpClient CreateJsonStatusClient(HttpStatusCode statusCode, string json)
+{
+    return new HttpClient(new JsonStatusHandler(statusCode, json))
+    {
+        BaseAddress = new Uri("http://127.0.0.1/")
+    };
+}
+
 static IReadOnlyList<(string FlowType, string FolderName, DocumentRecord Document)> ListExistingPastDateDocuments(
     FlowNoteLocalServices services,
     long handoverFolderId,
@@ -2517,6 +2585,15 @@ static byte[] BuildPdf(IReadOnlyList<byte[]> objects)
     return output.ToArray();
 }
 
+sealed record RolePolicyExpectation(
+    string Role,
+    bool CanRegisterDocuments,
+    bool CanWriteFieldComments,
+    bool CanWriteReports,
+    bool CanReadAccessLogs,
+    bool CanManageUsers,
+    bool CanDownloadDocuments);
+
 sealed class StaticStatusHandler(HttpStatusCode statusCode) : HttpMessageHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(
@@ -2527,6 +2604,20 @@ sealed class StaticStatusHandler(HttpStatusCode statusCode) : HttpMessageHandler
             new HttpResponseMessage(statusCode)
             {
                 Content = new StringContent("{\"detail\":\"smoke\"}", Encoding.UTF8, "application/json")
+            });
+    }
+}
+
+sealed class JsonStatusHandler(HttpStatusCode statusCode, string json) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        return Task.FromResult(
+            new HttpResponseMessage(statusCode)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
             });
     }
 }
