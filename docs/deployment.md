@@ -156,62 +156,17 @@ Invoke-RestMethod http://<서버IP>:5184/api/v1/health/db
 ### 최초 서버 관리자 계정
 
 1. 서버 DB 최초 생성 시 FastAPI는 서버 `user_accounts`에 `admin` 계정을 만든다. 이 계정은 최초 서버 관리자 계정이며 WPF 사용자 관리 화면에서 생성하거나 변경하지 않는다.
-2. 개발/스모크 테스트용 기본 비밀번호 `1234`는 운영 로그인 전에 반드시 변경한다. 현장 운영자는 아래 명령을 서버 PC의 관리자 PowerShell에서 실행해 새 비밀번호를 대화식으로 입력한다. 새 비밀번호를 명령줄 인자로 남기지 않는다.
+2. 개발/스모크 테스트용 기본 비밀번호 `1234`는 운영 로그인 전에 반드시 변경한다. 현장 운영자는 서버 PC의 관리자 PowerShell에서 운영 스크립트를 실행해 새 비밀번호를 대화식으로 입력한다. 새 비밀번호를 명령줄 인자, PowerShell 기록, 서버 로그에 남기지 않는다.
 
 ```powershell
 cd C:\FlowNote\Server\api
-@'
-from getpass import getpass
+.\.venv\Scripts\python.exe -m app.ops.server_accounts reset-password --username admin
+```
 
-from sqlalchemy import text
+스크립트는 기본적으로 `.env` 또는 `FLOWNOTE_DATABASE_URL`의 서버 DB를 사용한다. 운영 DB 위치를 명령에서 명확히 고정해야 하는 경우에는 다음처럼 DB URL만 인자로 넘긴다. 비밀번호 값은 여전히 대화식으로만 입력한다.
 
-from app.db.init_db import hash_password_for_dev
-from app.db.session import Database
-
-database = Database("sqlite:///C:/FlowNote/Server/data/flownote.sqlite3")
-username = input("username [admin]: ").strip() or "admin"
-password = getpass("new password: ")
-confirm = getpass("confirm password: ")
-if password != confirm:
-    raise SystemExit("passwords do not match")
-if len(password) < 8:
-    raise SystemExit("password must be at least 8 characters")
-
-with database.engine.begin() as connection:
-    user_id = connection.scalar(
-        text("SELECT user_id FROM user_accounts WHERE username = :username"),
-        {"username": username},
-    )
-    if user_id is None:
-        raise SystemExit(f"user not found: {username}")
-    connection.execute(
-        text(
-            """
-            UPDATE user_accounts
-            SET password_hash = :password_hash,
-                is_active = 1,
-                status = 'ACTIVE',
-                updated_at = CURRENT_TIMESTAMP
-            WHERE username = :username
-            """
-        ),
-        {"username": username, "password_hash": hash_password_for_dev(password)},
-    )
-    connection.execute(
-        text(
-            """
-            UPDATE auth_sessions
-            SET status = 'REVOKED',
-                revoked_at = CURRENT_TIMESTAMP,
-                revoked_reason = 'password_reset'
-            WHERE user_id = :user_id
-              AND status = 'ACTIVE'
-            """
-        ),
-        {"user_id": user_id},
-    )
-print(f"updated server account: {username}")
-'@ | .\.venv\Scripts\python.exe -
+```powershell
+.\.venv\Scripts\python.exe -m app.ops.server_accounts --database-url sqlite:///C:/FlowNote/Server/data/flownote.sqlite3 reset-password --username admin
 ```
 
 3. 최초 운영 로그인은 변경된 서버 비밀번호로 WPF에서 수행한다. 현재 구현 범위에서는 WPF 또는 FastAPI가 첫 로그인 후 비밀번호 변경 화면을 강제로 띄우지 않는다. 운영 기준은 “첫 로그인 전 변경”으로 고정하고, `must_change_password` 같은 서버 컬럼과 변경 API, WPF 변경 화면은 후속 범위로 둔다.
@@ -224,19 +179,43 @@ print(f"updated server account: {username}")
 - 서버 URL을 쓰는 운영 PC에서는 서버 계정 권한을 우선한다. 같은 로그인 ID의 로컬 계정 role이 다르더라도 서버 로그인 성공 후 화면 권한과 서버 동기화 작성자 기준은 서버 응답의 role과 사용자 ID다.
 - 서버 계정 관리 API와 WPF 서버 계정 관리 연동은 후속 범위다. 그 전까지 운영자는 서버 PC에서 DB 운영 절차로 서버 계정을 발급, 재설정, 비활성화한다.
 
+### 서버 계정 발급
+
+서버 계정 발급은 운영 스크립트의 `create` 명령으로 수행한다. `role` 값은 [데이터 모델 문서의 역할 값](./data-model.md#역할-값) 중 하나만 사용한다.
+
+```powershell
+cd C:\FlowNote\Server\api
+.\.venv\Scripts\python.exe -m app.ops.server_accounts create --username line-a-admin --display-name "라인 A 관리자" --role line-foreman
+```
+
+비밀번호는 `new password`와 `confirm password` 프롬프트에 대화식으로 입력한다. 스크립트 출력에는 `username`, 서버 `user_id`, 폐기된 세션 수만 표시되며 비밀번호는 출력하지 않는다.
+
 ### 비밀번호 재설정
 
 1. 본인 확인과 승인자를 운영 기록에 남긴다.
-2. 위 비밀번호 변경 명령을 같은 방식으로 실행해 임시 비밀번호를 설정한다.
-3. 해당 서버 계정의 기존 `auth_sessions`는 명령 안에서 `REVOKED`로 바뀐다.
+2. `reset-password` 명령으로 임시 비밀번호를 설정한다.
+3. 해당 서버 계정의 기존 활성 `auth_sessions`는 명령 안에서 `REVOKED`로 바뀌고 `revoked_reason`은 `password_reset`으로 남는다.
 4. 임시 비밀번호는 운영자와 사용자에게 일회성으로 전달하고, 사용자가 로그인한 뒤 운영자 입회하에 다시 변경한다. 현재 앱 강제 변경 기능은 후속 범위이므로 운영 절차로 통제한다.
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ops.server_accounts reset-password --username line-a-admin
+```
+
+잠금 계정을 승인 후 재개하면서 비밀번호까지 바꾸는 경우에는 먼저 상태를 `ACTIVE`로 바꾸고 이어서 비밀번호를 재설정한다. 한 번의 비밀번호 재설정으로 잠금/비활성 계정이 자동 활성화되지 않게 하는 것이 기본 운영 기준이다.
 
 ### 비활성 계정, 퇴사, 권한 변경
 
-- 장기 미사용, 퇴사, 권한 회수 계정은 서버 DB에서 `is_active = 0`, `status = 'DISABLED'`로 변경하고 기존 활성 세션을 `REVOKED`로 바꾼다.
-- 일시 잠금은 `is_active = 0`, `status = 'LOCKED'`로 구분한다. 재개 시 운영 승인 후 `is_active = 1`, `status = 'ACTIVE'`로 되돌리고 비밀번호 재설정을 함께 수행한다.
-- 역할 변경은 서버 DB의 `role`을 바꾸고, 변경 사유와 승인자를 운영 기록에 남긴다. WPF 로컬 계정이 별도로 필요한 PC라면 로컬 사용자 관리 화면에서도 같은 사용자에 대한 로컬 권한을 별도로 점검한다.
+- 장기 미사용, 퇴사, 권한 회수 계정은 `set-status --status DISABLED`로 변경한다. 스크립트는 `is_active = 0`, `status = 'DISABLED'`로 저장하고 기존 활성 세션을 `REVOKED`로 바꾼다.
+- 일시 잠금은 `set-status --status LOCKED`로 구분한다. 재개 시 운영 승인 후 `set-status --status ACTIVE`로 되돌리고 비밀번호 재설정을 함께 수행한다.
+- 역할 변경은 `set-role`로 서버 DB의 `role`을 바꾸고, 변경 사유와 승인자를 운영 기록에 남긴다. WPF 로컬 계정이 별도로 필요한 PC라면 로컬 사용자 관리 화면에서도 같은 사용자에 대한 로컬 권한을 별도로 점검한다.
 - 퇴사자는 서버 계정과 WPF 로컬 계정을 각각 비활성화한다. 서버 계정 비활성화만으로 오프라인 로컬 로그인 가능성을 제거할 수 없으므로, 로컬 계정 사용 PC 목록을 함께 확인한다.
+
+```powershell
+.\.venv\Scripts\python.exe -m app.ops.server_accounts set-status --username line-a-admin --status LOCKED
+.\.venv\Scripts\python.exe -m app.ops.server_accounts set-status --username line-a-admin --status DISABLED
+.\.venv\Scripts\python.exe -m app.ops.server_accounts set-status --username line-a-admin --status ACTIVE
+.\.venv\Scripts\python.exe -m app.ops.server_accounts set-role --username line-a-admin --role document-admin
+```
 
 ## WPF 설치 절차
 
