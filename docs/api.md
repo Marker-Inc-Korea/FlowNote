@@ -125,6 +125,13 @@ WPF `RolePermissionPolicy`와의 대조:
 | 사용자 관리 | `admin`, `system-admin` | 서버 계정 관리 API는 후속 범위 |
 | controlled copy 다운로드 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | 서버 다운로드 API는 후속 범위 |
 
+정합성 검증 기준:
+
+- FastAPI `app/core/auth.py`는 `DOCUMENT_WRITE_ROLES`, `FIELD_COMMENT_CREATE_ROLES`, `ACCESS_LOG_READ_ROLES`, `REPORT_WRITE_ROLES`, `USER_MANAGEMENT_ROLES`, `CONTROLLED_COPY_DOWNLOAD_ROLES`를 권한 표의 기준으로 둔다.
+- WPF `RolePermissionPolicy`는 같은 role 집합을 문서 등록, FieldComment 작성, 보고서 작성, 접근 로그 조회, 사용자 관리, controlled copy 다운로드 정책으로 검증한다.
+- controlled copy 다운로드는 서버 다운로드 API가 아직 없지만, 서버와 WPF 정책 집합은 `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`로 고정한다.
+- 서버 로그인 성공 시 WPF 현재 세션의 role은 서버 응답 role을 우선하며, 같은 로그인 ID의 로컬 role과 달라도 화면 권한은 서버 role 기준으로 계산한다.
+
 ## 설정
 
 - `FLOWNOTE_DATABASE_URL`

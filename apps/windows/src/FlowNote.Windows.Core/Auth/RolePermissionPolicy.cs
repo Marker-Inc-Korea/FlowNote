@@ -58,6 +58,12 @@ public static class RolePermissionPolicy
         "department-manager"
     };
 
+    private static readonly HashSet<string> AccessLogReadRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "admin",
+        "system-admin"
+    };
+
     private static readonly HashSet<string> UserManagementRoles = new(StringComparer.OrdinalIgnoreCase)
     {
         "admin",
@@ -74,6 +80,11 @@ public static class RolePermissionPolicy
         return !string.IsNullOrWhiteSpace(role) && DocumentDownloadRoles.Contains(role);
     }
 
+    public static bool CanWriteFieldComments(string? role)
+    {
+        return IsAllowedUserRole(role);
+    }
+
     public static bool CanManageFileWatch(string? role)
     {
         return !string.IsNullOrWhiteSpace(role) && FileWatchManagementRoles.Contains(role);
@@ -82,6 +93,11 @@ public static class RolePermissionPolicy
     public static bool CanWriteReports(string? role)
     {
         return !string.IsNullOrWhiteSpace(role) && ReportWriteRoles.Contains(role);
+    }
+
+    public static bool CanReadAccessLogs(string? role)
+    {
+        return !string.IsNullOrWhiteSpace(role) && AccessLogReadRoles.Contains(role);
     }
 
     public static bool CanManageUsers(string? role)

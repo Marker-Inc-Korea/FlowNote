@@ -53,7 +53,15 @@ apps/windows/
 - 다운로드 허용: 관리자 계열 중 `admin`, `system-admin`, `manager`, `document-admin`, `assistant-manager`, `department-manager`
 - FieldComment 작성: 모든 기본 현장 role
 
+`RolePermissionPolicy` 정합성 검증 기준:
+
+- `CanRegisterDocuments`: `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`
+- `CanWriteFieldComments`: 모든 기본 role
+- `CanWriteReports`, `CanDownloadDocuments`: `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`
+- `CanReadAccessLogs`, `CanManageUsers`: `admin`, `system-admin`
+
 서버 URL이 설정된 상태에서 서버가 401 또는 403으로 로그인 실패를 응답하면 로컬 계정으로 우회하지 않는다. 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 로컬 계정 로그인을 사용한다.
+서버 로그인 성공 시에는 같은 로그인 ID의 로컬 role과 다르더라도 서버 응답 role이 화면 버튼과 정책 결과의 기준이다.
 
 ## 검증
 
