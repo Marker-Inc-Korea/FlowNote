@@ -1368,6 +1368,52 @@ try
         Require(currentServerUser.UserId == serverLogin.UserId, "server /auth/me should return the authenticated user id");
         Require(currentServerUser.Username == serverLogin.Username, "server /auth/me should return the authenticated username");
 
+        var authExpiredDocument = services.Documents.RegisterDocument(
+            currentDocumentFolder.Id,
+            $"auth-expired-sync-{runId}",
+            $"auth-expired-sync-{runId}.txt",
+            "Text",
+            smokeActorName,
+            sampleFile);
+        var authExpiredQueueResult = await services.ServerSync.QueueAndTrySyncDocumentAsync(authExpiredDocument, null);
+        Require(!authExpiredQueueResult.Success, "missing server URL should queue the auth-expired preservation document");
+        var authExpiredQueueCountBefore = services.ServerSync.CountQueuedForEntity("document", authExpiredDocument.DocumentId);
+        using (var unauthorizedHttpClient = CreateStaticStatusClient(HttpStatusCode.Unauthorized))
+        {
+            var unauthorizedDocuments = new FlowNoteServerDocumentClient(unauthorizedHttpClient);
+            var authExpiredRetryResult = await services.ServerSync.RetryPendingAsync(unauthorizedDocuments, serverLogin.UserId);
+            Require(!authExpiredRetryResult.Success, "server 401 should fail retry without deleting queued data");
+        }
+
+        using (var authExpiredConnection = services.Database.OpenConnection())
+        {
+            Require(
+                ScalarLong(
+                    authExpiredConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM documents
+                    WHERE document_id = $document_id
+                      AND server_document_id IS NULL;
+                    """,
+                    ("$document_id", authExpiredDocument.DocumentId)) == 1,
+                "server 401 retry should preserve the local document without server ids");
+            Require(
+                ScalarLong(
+                    authExpiredConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_sync_queue
+                    WHERE entity_type = 'document'
+                      AND entity_id = $document_id
+                      AND status = 'FAILED'
+                      AND last_error LIKE '%로그인%'
+                      AND synced_at IS NULL;
+                    """,
+                    ("$document_id", authExpiredDocument.DocumentId)) == authExpiredQueueCountBefore,
+                "server 401 retry should keep the sync queue row failed with an actionable login message");
+        }
+
         {
             var serverWorkSequenceBoard = await serverDocuments.CreateWorkSequenceBoardAsync(
                 new ServerWorkSequenceBoardCreateRequest
@@ -1783,6 +1829,95 @@ try
             Require(
                 duplicateAttemptCountAfter == duplicateAttemptCountBefore,
                 "already synced queue items should not increment retry attempt counts");
+
+            var serverVersionsBeforeMappingRecovery = await serverDocuments.ListVersionsAsync(syncedServerDocumentId!);
+            var existingServerVersion = serverVersionsBeforeMappingRecovery.SingleOrDefault(item =>
+                item.VersionNo == offlineVersionDocument.VersionNo);
+            Require(existingServerVersion is not null, "server should already have the queued local v2 before mapping recovery");
+
+            ExecuteNonQuery(
+                syncConnection,
+                """
+                UPDATE document_versions
+                SET server_version_id = NULL,
+                    synced_at = NULL
+                WHERE document_id = $document_id
+                  AND version_no = $version_no;
+
+                DELETE FROM server_id_mappings
+                WHERE entity_type = 'document_version'
+                  AND local_id = $document_id
+                  AND local_version_no = $version_no;
+
+                UPDATE server_sync_queue
+                SET status = 'FAILED',
+                    last_error = 'server mapping recovery smoke',
+                    synced_at = NULL,
+                    server_version_id = NULL
+                WHERE entity_type = 'document_version'
+                  AND entity_id = $document_id
+                  AND local_version_no = $version_no;
+                """,
+                ("$document_id", uploadedDocument.DocumentId),
+                ("$version_no", offlineVersionDocument.VersionNo));
+
+            var mappingRecoveryResult = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
+            Require(mappingRecoveryResult.Synced >= 1, "mapping recovery retry should sync the local v2 queue row");
+
+            var serverVersionsAfterMappingRecovery = await serverDocuments.ListVersionsAsync(syncedServerDocumentId!);
+            Require(
+                serverVersionsAfterMappingRecovery.Count == serverVersionsBeforeMappingRecovery.Count,
+                "mapping recovery should not upload a duplicate server version");
+            Require(
+                serverVersionsAfterMappingRecovery.Count(item => item.VersionNo == offlineVersionDocument.VersionNo) == 1,
+                "mapping recovery should keep exactly one server v2");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT server_version_id
+                    FROM document_versions
+                    WHERE document_id = $document_id
+                      AND version_no = $version_no
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$document_id", uploadedDocument.DocumentId),
+                    ("$version_no", offlineVersionDocument.VersionNo)) == existingServerVersion!.VersionId,
+                "mapping recovery should restore the local document_versions server_version_id");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_id_mappings
+                    WHERE entity_type = 'document_version'
+                      AND local_id = $document_id
+                      AND local_version_no = $version_no
+                      AND server_document_id = $server_document_id
+                      AND server_version_id = $server_version_id
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$document_id", uploadedDocument.DocumentId),
+                    ("$version_no", offlineVersionDocument.VersionNo),
+                    ("$server_document_id", syncedServerDocumentId!),
+                    ("$server_version_id", existingServerVersion.VersionId)) == 1,
+                "mapping recovery should restore server_id_mappings for the already existing server version");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_sync_queue
+                    WHERE entity_type = 'document_version'
+                      AND entity_id = $document_id
+                      AND local_version_no = $version_no
+                      AND status = 'SYNCED'
+                      AND server_version_id = $server_version_id;
+                    """,
+                    ("$document_id", uploadedDocument.DocumentId),
+                    ("$version_no", offlineVersionDocument.VersionNo),
+                    ("$server_version_id", existingServerVersion.VersionId)) == 1,
+                "mapping recovery should mark the document version queue row synced with the recovered server version id");
         }
 
         var serverDocument = await serverDocuments.RegisterDocumentAsync(
@@ -2111,6 +2246,18 @@ static string? ScalarString(SqliteConnection connection, string sql, params (str
 
     var value = command.ExecuteScalar();
     return value is null or DBNull ? null : Convert.ToString(value);
+}
+
+static void ExecuteNonQuery(SqliteConnection connection, string sql, params (string Name, object Value)[] parameters)
+{
+    using var command = connection.CreateCommand();
+    command.CommandText = sql;
+    foreach (var parameter in parameters)
+    {
+        command.Parameters.AddWithValue(parameter.Name, parameter.Value);
+    }
+
+    command.ExecuteNonQuery();
 }
 
 static HttpClient CreateStaticStatusClient(HttpStatusCode statusCode)

@@ -48,7 +48,7 @@ public partial class HistoryWindow : Window
         var failedCount = items.Count(item => item.Status == "FAILED");
         var syncedCount = items.Count(item => item.Status == "SYNCED");
         SyncQueueSummaryTextBlock.Text =
-            $"대기 {pendingCount}건, 실패 {failedCount}건, 완료 {syncedCount}건. 앱 시작 자동 재시도 결과는 상태 표시줄에 요약되고 상세 이력은 이 화면에 남습니다.";
+            $"대기 {pendingCount}건, 실패 {failedCount}건, 완료 {syncedCount}건. 실패 항목은 서버 URL, 로그인 상태, 서버 실행 여부, 선행 문서 동기화 여부를 확인한 뒤 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
     }
 
     private void RefreshButton_Click(object sender, RoutedEventArgs e)
@@ -61,7 +61,7 @@ public partial class HistoryWindow : Window
         if (serverDocumentClient is null)
         {
             RefreshSyncQueue();
-            SyncQueueSummaryTextBlock.Text = "서버 URL 또는 로그인 정보가 없어 재시도할 수 없습니다. 서버 설정과 로그인을 확인하세요. 로컬 데이터는 삭제되지 않습니다.";
+            SyncQueueSummaryTextBlock.Text = "서버 URL 또는 로그인 정보가 없어 재시도할 수 없습니다. 설정 화면에서 서버 URL을 입력하고 다시 로그인한 뒤 재시도하세요. 로컬 데이터와 동기화 큐는 삭제되지 않습니다.";
             return;
         }
 

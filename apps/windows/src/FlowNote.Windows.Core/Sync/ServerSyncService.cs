@@ -25,7 +25,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         if (serverClient is null)
         {
             MarkLatestFailure("document", document.DocumentId, SyncFailureMessages.ServerUrlNotConfigured);
-            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 문서 전송을 큐에 보관했습니다.");
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 문서 전송을 큐에 보관했습니다. 서버 설정 후 동기화 큐에서 재시도하세요.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
@@ -41,7 +41,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         if (serverClient is null)
         {
             MarkLatestFailure("document_version", document.DocumentId, SyncFailureMessages.ServerUrlNotConfigured);
-            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 문서 버전 전송을 큐에 보관했습니다.");
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 문서 버전 전송을 큐에 보관했습니다. 서버 설정 후 동기화 큐에서 재시도하세요.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
@@ -57,7 +57,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         if (serverClient is null)
         {
             MarkLatestFailure("document_publish", document.DocumentId, SyncFailureMessages.ServerUrlNotConfigured);
-            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 문서 공개 전송을 큐에 보관했습니다.");
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 문서 공개 전송을 큐에 보관했습니다. 서버 설정 후 동기화 큐에서 재시도하세요.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
@@ -73,7 +73,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         if (serverClient is null)
         {
             MarkLatestFailure("document_status", document.DocumentId, SyncFailureMessages.ServerUrlNotConfigured);
-            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 문서 상태 전송을 큐에 보관했습니다.");
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 문서 상태 전송을 큐에 보관했습니다. 서버 설정 후 동기화 큐에서 재시도하세요.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
@@ -89,7 +89,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         if (serverClient is null)
         {
             MarkLatestFailure("field_comment", fieldComment.CommentId, SyncFailureMessages.ServerUrlNotConfigured);
-            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 FieldComment 전송을 큐에 보관했습니다.");
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 FieldComment 전송을 큐에 보관했습니다. 서버 설정 후 동기화 큐에서 재시도하세요.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
@@ -105,7 +105,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         if (serverClient is null)
         {
             MarkLatestFailure("field_comment_attachment", attachment.AttachmentId, SyncFailureMessages.ServerUrlNotConfigured);
-            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 FieldComment 첨부 전송을 큐에 보관했습니다.");
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 FieldComment 첨부 전송을 큐에 보관했습니다. 서버 설정 후 동기화 큐에서 재시도하세요.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
@@ -122,7 +122,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         if (serverClient is null)
         {
             MarkLatestFailure("document_access_log", accessLog.Id.ToString(), SyncFailureMessages.ServerUrlNotConfigured);
-            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 접근 로그 전송을 큐에 보관했습니다.");
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 접근 로그 전송을 큐에 보관했습니다. 서버 설정 후 동기화 큐에서 재시도하세요.");
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
@@ -197,7 +197,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
         var message = failed == 0
             ? $"서버 동기화 완료: 성공 {synced}건, 이미 처리 {skipped}건, 시도 {attempted}건."
-            : $"서버 동기화 실패 포함: 성공 {synced}건, 이미 처리 {skipped}건, 실패 {failed}건, 시도 {attempted}건. 첫 실패: {firstFailureReason}";
+            : $"서버 동기화에 실패 항목이 있습니다: 성공 {synced}건, 이미 처리 {skipped}건, 실패 {failed}건, 시도 {attempted}건. 첫 실패 사유: {firstFailureReason} 동기화 큐의 실패 사유를 확인한 뒤 서버 실행 상태, 서버 URL, 로그인 상태, 선행 문서 동기화 여부를 조치하고 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         if (items.Count > 0)
         {
             using var connection = database.OpenConnection();
@@ -1598,7 +1598,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
-            return "서버 전송 실패 사유를 확인할 수 없습니다.";
+            return "서버 전송 실패 사유를 확인할 수 없습니다. 서버 URL, 로그인 상태, 네트워크 상태를 확인한 뒤 재시도하세요.";
         }
 
         if (message.Contains("Server URL is not configured", StringComparison.OrdinalIgnoreCase))
@@ -1643,7 +1643,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         if (message.Contains("Local document file not found", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("Local field comment attachment file not found", StringComparison.OrdinalIgnoreCase))
         {
-            return "로컬 파일을 찾을 수 없어 서버로 전송하지 못했습니다. 파일 위치를 확인하세요.";
+            return "로컬 파일을 찾을 수 없어 서버로 전송하지 못했습니다. 문서 파일 위치를 확인한 뒤 재시도하세요.";
         }
 
         return message.Replace(Environment.NewLine, " ").Trim();
@@ -1651,13 +1651,13 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
     private static class SyncFailureMessages
     {
-        public const string ServerUrlNotConfigured = "서버 URL이 설정되지 않아 전송하지 못했습니다. 서버 설정 후 재시도하세요.";
-        public const string ServerConnectionFailed = "서버에 연결하지 못했습니다. 네트워크와 서버 실행 상태를 확인하세요.";
-        public const string ServerTimeout = "서버 응답 시간이 초과되었습니다. 네트워크 상태를 확인한 뒤 다시 시도하세요.";
+        public const string ServerUrlNotConfigured = "서버 URL이 설정되지 않아 전송하지 못했습니다. 설정 화면에서 서버 URL을 입력한 뒤 동기화 큐에서 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
+        public const string ServerConnectionFailed = "서버에 연결하지 못했습니다. 서버 PC가 실행 중인지, 서버 URL과 네트워크 연결이 올바른지 확인한 뒤 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
+        public const string ServerTimeout = "서버 응답 시간이 초과되었습니다. 네트워크 상태와 서버 부하를 확인한 뒤 동기화 큐에서 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string AuthenticationExpired = "로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인하세요. 로컬 데이터는 삭제되지 않습니다.";
-        public const string DocumentDependencyNotSynced = "선행 문서가 아직 서버에 전송되지 않았습니다. 문서 동기화 후 다시 시도하세요.";
-        public const string DocumentVersionDependencyNotSynced = "선행 문서 버전이 아직 서버에 전송되지 않았습니다. 문서 버전 동기화 후 다시 시도하세요.";
-        public const string FieldCommentDependencyNotSynced = "선행 FieldComment가 아직 서버에 전송되지 않았습니다. FieldComment 동기화 후 다시 시도하세요.";
+        public const string DocumentDependencyNotSynced = "선행 문서가 아직 서버에 전송되지 않았습니다. 같은 문서의 문서 등록 항목을 먼저 동기화한 뒤 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
+        public const string DocumentVersionDependencyNotSynced = "선행 문서 버전이 아직 서버에 전송되지 않았습니다. 같은 문서의 버전 전송 항목을 먼저 동기화한 뒤 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
+        public const string FieldCommentDependencyNotSynced = "선행 FieldComment가 아직 서버에 전송되지 않았습니다. FieldComment 항목을 먼저 동기화한 뒤 첨부 전송을 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
     }
 
     private static string? Clean(string? value)

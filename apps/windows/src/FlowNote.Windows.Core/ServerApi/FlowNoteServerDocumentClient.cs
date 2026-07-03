@@ -361,7 +361,7 @@ public sealed class FlowNoteServerDocumentClient
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 throw new FlowNoteServerAuthenticationException(
-                    $"로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인하세요. 로컬 데이터는 삭제되지 않습니다. {errorBody}");
+                    $"로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인한 뒤 동기화 큐에서 재시도하세요. 로컬 데이터와 동기화 큐는 삭제되지 않습니다. {errorBody}");
             }
 
             throw new InvalidOperationException(
