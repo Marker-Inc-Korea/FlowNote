@@ -1040,7 +1040,7 @@ try
     var previewCriteria = DocumentPreviewPolicy.SampleCriteria;
     foreach (var fileType in new[] { "TXT", "PDF", "XLSX", "이미지" })
     {
-        foreach (var caseName in new[] { "정상", "비정상", "한글 파일명", "큰 파일" })
+        foreach (var caseName in new[] { "정상", "비정상", "한글 파일명", "공백/괄호 파일명", "긴 경로", "큰 파일" })
         {
             Require(
                 previewCriteria.Any(item => item.FileType == fileType && item.CaseName == caseName),
@@ -1060,8 +1060,11 @@ try
              {
                  ("TXT", "대용량"),
                  ("PDF", "손상"),
+                 ("PDF", "암호/읽기 실패"),
+                 ("TXT", "긴 경로/공백"),
                  ("XLSX", "큰 파일"),
                  ("이미지", "고해상도"),
+                 ("이미지", "손상"),
                  ("CAD", "미지원"),
                  ("HWP", "미지원")
              })
@@ -1073,27 +1076,33 @@ try
 
     foreach (var criterion in factoryExceptionCriteria)
     {
-        var samplePath = Path.Combine(
-            testDirectory,
-            BuildRunSampleFileName(criterion.AnonymousSampleFileName, runStamp));
+        var samplePath = BuildFactoryExceptionSamplePath(testDirectory, criterion, runStamp);
         CreateFactoryExceptionSampleFile(criterion, samplePath);
         Require(File.Exists(samplePath), $"{criterion.FileType} factory exception sample should exist");
         Require(
             DocumentPreviewPolicy.ClassifyPath(samplePath) == criterion.PreviewKind,
             $"{criterion.FileType} factory exception sample should be classified as {criterion.PreviewKind}");
 
-        if (criterion.FileType == "TXT")
+        if (criterion.FileType == "TXT" && criterion.CaseName == "대용량")
         {
             Require(
                 new FileInfo(samplePath).Length > DocumentPreviewPolicy.MaxTextPreviewBytes,
                 "large TXT sample should exceed the text preview limit");
         }
 
-        if (criterion.FileType is "XLSX" or "이미지")
+        if (criterion.FileType is "XLSX" || criterion is { FileType: "이미지", CaseName: "고해상도" })
         {
             Require(
                 new FileInfo(samplePath).Length > DocumentPreviewPolicy.LargeSampleBytes,
                 $"{criterion.FileType} large factory sample should exceed the large sample threshold");
+        }
+
+        if (criterion.CaseName == "긴 경로/공백")
+        {
+            Require(samplePath.Length >= 160, "long path preview sample should use a long local path");
+            Require(
+                samplePath.Contains(' ') && samplePath.Contains('(') && samplePath.Contains(')'),
+                "long path preview sample should include spaces and parentheses");
         }
 
         var exceptionDocument = services.Documents.RegisterDocument(
@@ -2334,6 +2343,27 @@ static string BuildRunSampleFileName(string sampleFileName, string runStamp)
     return $"{name}-{runStamp}{extension}";
 }
 
+static string BuildFactoryExceptionSamplePath(
+    string testDirectory,
+    DocumentPreviewExceptionSampleCriterion criterion,
+    string runStamp)
+{
+    var fileName = BuildRunSampleFileName(criterion.AnonymousSampleFileName, runStamp);
+    if (criterion.CaseName != "긴 경로/공백")
+    {
+        return Path.Combine(testDirectory, fileName);
+    }
+
+    return Path.Combine(
+        testDirectory,
+        "현장 미리보기 예외 샘플",
+        "라인 A (혼합 공정)",
+        "2026년 운영 안정화",
+        "작업표준서 검증용 긴 경로 더미 폴더",
+        "교대조 공유 문서 (익명)",
+        fileName);
+}
+
 static void CreateFactoryExceptionSampleFile(
     DocumentPreviewExceptionSampleCriterion criterion,
     string path)
@@ -2351,6 +2381,12 @@ static void CreateFactoryExceptionSampleFile(
                 Encoding.UTF8);
             return;
         case DocumentPreviewKind.Pdf:
+            if (criterion.CaseName == "암호/읽기 실패")
+            {
+                CreateUnreadablePdf(path);
+                return;
+            }
+
             File.WriteAllText(
                 path,
                 "이 파일은 실제 고객 문서가 아닌 손상 PDF 미리보기 검증용 익명 샘플입니다.",
@@ -2360,6 +2396,12 @@ static void CreateFactoryExceptionSampleFile(
             CreateLargeXlsx(path);
             return;
         case DocumentPreviewKind.Image:
+            if (criterion.CaseName == "손상")
+            {
+                CreateCorruptImage(path);
+                return;
+            }
+
             CreateHighResolutionBmp(path);
             return;
         case DocumentPreviewKind.Cad:
@@ -2389,7 +2431,9 @@ static string BuildPreviewFailureSmokeMessage(
         DocumentPreviewKind.Text =>
             DocumentPreviewPolicy.BuildLargeTextMessage(new FileInfo(samplePath).Length),
         DocumentPreviewKind.Pdf =>
-            "PDF 미리보기를 생성할 수 없습니다.\n파일이 손상되었거나 현재 클라이언트에서 지원하지 않는 PDF 형식입니다.",
+            "PDF 미리보기를 생성할 수 없습니다.\n파일이 손상되었거나 암호, 권한, 현재 클라이언트에서 지원하지 않는 PDF 형식 문제일 수 있습니다.",
+        DocumentPreviewKind.Image =>
+            "이미지 미리보기를 생성할 수 없습니다.\n파일이 손상되었거나 현재 클라이언트에서 지원하지 않는 이미지 형식입니다.",
         DocumentPreviewKind.Cad or DocumentPreviewKind.Hwp or DocumentPreviewKind.Unsupported =>
             DocumentPreviewPolicy.BuildPreviewUnavailableMessage(criterion.PreviewKind, Path.GetFileName(samplePath)),
         _ =>
@@ -2405,12 +2449,42 @@ static bool ContainsKoreanPreviewGuidance(
     {
         DocumentPreviewKind.Text => "TXT 파일이 미리보기 기준보다 큽니다",
         DocumentPreviewKind.Pdf => "PDF 미리보기를 생성할 수 없습니다",
+        DocumentPreviewKind.Image => "이미지 미리보기를 생성할 수 없습니다",
         DocumentPreviewKind.Cad => "CAD 고급 뷰어는 현재 MVP 범위에서 제외",
         DocumentPreviewKind.Hwp => "HWP 고급 뷰어는 현재 MVP 범위에서 제외",
         _ => "미리보기"
     };
 
     return message.Contains(expected, StringComparison.Ordinal);
+}
+
+static void CreateUnreadablePdf(string path)
+{
+    File.WriteAllText(
+        path,
+        """
+        %PDF-1.7
+        1 0 obj
+        << /Type /Catalog /Pages 2 0 R >>
+        endobj
+        2 0 obj
+        << /Type /Pages /Kids [3 0 R] /Count 1 >>
+        endobj
+        3 0 obj
+        << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>
+        endobj
+        trailer
+        << /Root 1 0 R /Encrypt << /Filter /Standard /V 2 /R 3 /Length 128 >> >>
+        %%EOF
+        """,
+        Encoding.ASCII);
+}
+
+static void CreateCorruptImage(string path)
+{
+    File.WriteAllBytes(
+        path,
+        [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x46, 0x6C, 0x6F, 0x77, 0x4E, 0x6F, 0x74, 0x65]);
 }
 
 static void CreateMinimalXlsx(string path)

@@ -319,11 +319,26 @@ public partial class DocumentViewWindow : Window
             message = string.Empty;
             return true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or UglyToad.PdfPig.Core.PdfDocumentFormatException)
+        catch (Exception ex) when (IsPdfPreviewReadFailure(ex))
         {
-            message = $"PDF 미리보기를 생성할 수 없습니다.\n파일이 손상되었거나 현재 클라이언트에서 지원하지 않는 PDF 형식입니다.\n\n{ex.Message}";
+            message = BuildPdfPreviewFailureMessage(ex);
             return false;
         }
+    }
+
+    private static bool IsPdfPreviewReadFailure(Exception ex)
+    {
+        return ex is IOException
+            or UnauthorizedAccessException
+            or UglyToad.PdfPig.Core.PdfDocumentFormatException
+            or InvalidOperationException
+            or NotSupportedException
+            or ArgumentException;
+    }
+
+    private static string BuildPdfPreviewFailureMessage(Exception ex)
+    {
+        return $"PDF 미리보기를 생성할 수 없습니다.\n파일이 손상되었거나 암호, 권한, 현재 클라이언트에서 지원하지 않는 PDF 형식 문제일 수 있습니다.\n\n{ex.Message}";
     }
 
     private async Task ConfigurePdfPreviewSecurityAsync()
@@ -639,9 +654,9 @@ public partial class DocumentViewWindow : Window
 
             return PreviewSimplePdfText(document, path);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or UglyToad.PdfPig.Core.PdfDocumentFormatException)
+        catch (Exception ex) when (IsPdfPreviewReadFailure(ex))
         {
-            return BuildMetadataPreview(document, $"PDF 미리보기를 생성할 수 없습니다.\n\n{ex.Message}");
+            return BuildMetadataPreview(document, BuildPdfPreviewFailureMessage(ex));
         }
     }
 
