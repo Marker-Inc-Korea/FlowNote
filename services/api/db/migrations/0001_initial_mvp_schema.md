@@ -1,11 +1,11 @@
-# 0001 Initial MVP Schema
+# 0001 Initial FlowNote API Schema
 
-FastAPI 서버의 첫 SQLite MVP 스키마 설명이다. 실제 테이블 생성 기준은 `services/api/app/db/models.py`이며, 앱 시작 시 `services/api/app/db/init_db.py`가 `Base.metadata.create_all()`로 테이블을 보장한다.
+FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기준은 `services/api/app/db/models.py`이며, 앱 시작 시 `services/api/app/db/init_db.py`가 `Base.metadata.create_all()`로 테이블을 보장한다.
 
 ## Version
 
 - `schema_migrations.version`: `0001_initial_mvp_schema`
-- 목적: 문서, 파일 객체, 버전, 사용자/권한, 인증 세션, 태그, FieldComment, 첨부, 작업순서, 보고서, 접근 로그, 활동 이력을 위한 MVP 메타데이터 테이블 생성
+- 목적: 문서, 파일 객체, 버전, 사용자/권한, 인증 세션, 태그, FieldComment, 첨부, 작업순서, 보고서, 접근 로그, 활동 이력을 위한 서버 메타데이터 테이블 생성
 
 ## Tables
 

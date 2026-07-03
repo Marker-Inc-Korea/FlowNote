@@ -99,6 +99,8 @@
 - `PUBLISHED`
 - `ARCHIVED`
 
+서버 ORM의 `documents.status` 제약에는 `DELETED`도 포함되어 있다. 현재 공개 API의 문서 생성/상태 변경 흐름에서는 `DELETED`로 전환하는 엔드포인트가 없으며, 삭제 시각은 `documents.deleted_at`로 별도 관리하는 구조만 준비되어 있다.
+
 서버 문서 버전 상태:
 
 - `WORKING`
