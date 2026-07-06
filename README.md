@@ -23,11 +23,11 @@ FlowNote는 생산공장 현장의 문서와 현장 지식을 함께 관리하�
 - 관리자급 파일 감시 후보 등록과 버전 확정
 - FastAPI 인증, 문서, FieldComment, 첨부, 태그, 접근 로그, 작업순서, 보고서 API
 - FastAPI-WPF role 정책 정합성 검증: 문서 등록, FieldComment 작성, 보고서 작성, 접근 로그 조회, 사용자 관리, controlled copy 다운로드
-- WPF 동기화 큐 대상: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 첨부, 문서 접근 로그
+- WPF 동기화 큐 대상: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장
 
 운영 배포 보조 스크립트는 현재 저장소에 포함되어 있다. WPF MSI 패키징은 `scripts/package-wpf-msi.ps1`, FastAPI 서버 작업 스케줄러 등록과 관리는 `scripts/install-flownote-server-task.ps1`, `scripts/manage-flownote-server-task.ps1`를 기준으로 한다.
 
-아직 구현되지 않은 범위는 현장별 배포 검증과 서명/런타임 패키징 고도화, 서버-WPF 동기화 정책 고도화, 보고서 저장 재시도 큐, AI 검색/조언, MES/ERP 어댑터, 일반 브라우저 사용자 화면, 클라우드 운영이다.
+아직 구현되지 않은 범위는 현장별 설치 검증과 코드 서명 검증, 현장별 런타임 패키징 확정, 서버-WPF 동기화 정책 고도화, 외부 AI 호출 기반 검색/작업 조언, MES/ERP 어댑터, 일반 브라우저 사용자 화면, 클라우드 운영이다. 현재 서버에는 외부 AI 호출 없이 DB 원천에서 재생성하는 `ai_search_candidates` 근거 후보와 품질 점검 API가 구현되어 있다.
 
 ## 저장소 구조
 

@@ -29,6 +29,7 @@ Windows WPF 앱은 서버 연결 여부와 관계없이 현장 문서와 기록�
 - `work_sequence_boards`, `work_sequence_items`: 작업순서
 - `work_sequence_change_history`: 작업순서 이력
 - `work_sequence_notification_candidates`: 작업순서 알림 후보
+- `report_sources`: 로컬 보고서 문서와 근거 source 연결
 - `server_sync_queue`: 서버 전송 큐
 - `server_id_mappings`: 로컬 ID와 서버 ID 연결
 

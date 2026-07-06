@@ -197,8 +197,8 @@ if (-not $SkipFastApiPytest) {
         try {
             $collected = @(& $python -m pytest --collect-only -q)
             $testCount = @($collected | Where-Object { $_ -match "::" }).Count
-            if ($testCount -ne 47) {
-                throw "Expected 47 FastAPI pytest tests, collected $testCount."
+            if ($testCount -ne 50) {
+                throw "Expected 50 FastAPI pytest tests, collected $testCount."
             }
             Write-Host "Collected FastAPI pytest tests: $testCount"
         }
