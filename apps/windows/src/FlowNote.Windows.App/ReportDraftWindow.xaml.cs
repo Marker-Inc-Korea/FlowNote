@@ -69,35 +69,26 @@ public partial class ReportDraftWindow : Window
         }
 
         var selected = SelectedSources().ToList();
-        if (serverReports is not null)
+        try
         {
-            try
-            {
-                var result = await reports.SaveDraftToServerAsync(
-                    serverReports,
-                    targetFolderId,
-                    TitleTextBox.Text,
-                    SummaryTextBox.Text,
-                    content,
-                    selected,
-                    actorName);
-                DocumentSaved = result.LocalDocument is not null;
-                StatusTextBlock.Text = $"서버 보고서를 저장했습니다: {result.ReportId} / {result.GeneratedDocumentId ?? "생성 문서 없음"}";
-                return;
-            }
-            catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException)
-            {
-                StatusTextBlock.Text = $"서버 보고서 저장을 건너뛰고 로컬 문서로 저장합니다. {exception.Message}";
-            }
+            var result = await reports.SaveDraftToServerAsync(
+                serverReports,
+                targetFolderId,
+                TitleTextBox.Text,
+                SummaryTextBox.Text,
+                content,
+                selected,
+                actorName);
+            DocumentSaved = true;
+            StatusTextBlock.Text = result.SyncResult.Success && !string.IsNullOrWhiteSpace(result.ReportId)
+                ? $"서버 보고서를 저장했습니다: {result.ReportId} / {result.GeneratedDocumentId ?? "생성 문서 없음"}"
+                : $"보고서 문서를 로컬에 저장하고 서버 저장 재시도 큐에 보관했습니다. {result.SyncResult.Message}";
+            return;
         }
-
-        var document = reports.SaveDraftAsDocument(
-            targetFolderId,
-            TitleTextBox.Text,
-            content,
-            actorName);
-        DocumentSaved = true;
-        StatusTextBlock.Text = $"보고서 문서를 저장했습니다: {document.Title} ({document.Status})";
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException)
+        {
+            StatusTextBlock.Text = $"보고서 저장에 실패했습니다. 로컬 데이터와 동기화 큐를 확인하세요. {exception.Message}";
+        }
     }
 
     private void RefreshSources()

@@ -74,7 +74,7 @@ foreach ($directory in @($dataRoot, $storageRoot, $logRoot)) {
 
 Import-DotEnv $envPath
 Set-DefaultEnvironmentVariable "FLOWNOTE_ENV" "production"
-Set-DefaultEnvironmentVariable "FLOWNOTE_API_HOST" "0.0.0.0"
+Set-DefaultEnvironmentVariable "FLOWNOTE_API_HOST" "127.0.0.1"
 Set-DefaultEnvironmentVariable "FLOWNOTE_API_PORT" "5184"
 Set-DefaultEnvironmentVariable "FLOWNOTE_DATABASE_URL" (ConvertTo-SqliteUrl (Join-Path $dataRoot "flownote.sqlite3"))
 Set-DefaultEnvironmentVariable "FLOWNOTE_STORAGE_ROOT" $storageRoot

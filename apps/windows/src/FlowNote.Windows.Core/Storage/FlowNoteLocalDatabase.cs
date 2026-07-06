@@ -540,6 +540,7 @@ public sealed class FlowNoteLocalDatabase
                 synced_at TEXT NULL,
                 server_document_id TEXT NULL,
                 server_version_id TEXT NULL,
+                server_report_id TEXT NULL,
                 server_comment_id TEXT NULL,
                 server_attachment_id TEXT NULL,
                 server_log_id TEXT NULL
@@ -555,12 +556,31 @@ public sealed class FlowNoteLocalDatabase
                 local_version_no INTEGER NOT NULL DEFAULT 0,
                 server_document_id TEXT NULL,
                 server_version_id TEXT NULL,
+                server_report_id TEXT NULL,
                 server_comment_id TEXT NULL,
                 server_attachment_id TEXT NULL,
                 server_log_id TEXT NULL,
                 synced_at TEXT NOT NULL,
                 UNIQUE(entity_type, local_id, local_version_no)
             );
+
+            CREATE TABLE IF NOT EXISTS report_sources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                local_report_document_id TEXT NOT NULL REFERENCES documents(document_id) ON DELETE CASCADE,
+                source_type TEXT NOT NULL,
+                local_source_id TEXT NOT NULL,
+                source_version_id TEXT NULL,
+                relation_type TEXT NULL,
+                title TEXT NULL,
+                detail TEXT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_report_sources_local_report
+                ON report_sources (local_report_document_id, id);
+
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_report_sources_local_source
+                ON report_sources (local_report_document_id, source_type, local_source_id, COALESCE(source_version_id, ''));
             """;
         command.ExecuteNonQuery();
         EnsureColumn(connection, "user_accounts", "group_id", "TEXT NULL");
@@ -587,8 +607,10 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "field_comment_attachments", "synced_at", "TEXT NULL");
         EnsureColumn(connection, "server_sync_queue", "server_comment_id", "TEXT NULL");
         EnsureColumn(connection, "server_sync_queue", "server_attachment_id", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "server_report_id", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_comment_id", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_attachment_id", "TEXT NULL");
+        EnsureColumn(connection, "server_id_mappings", "server_report_id", "TEXT NULL");
         EnsureColumn(connection, "document_view_logs", "server_start_log_id", "INTEGER NULL");
         EnsureColumn(connection, "document_view_logs", "server_close_log_id", "INTEGER NULL");
         EnsureColumn(connection, "document_view_logs", "synced_at", "TEXT NULL");

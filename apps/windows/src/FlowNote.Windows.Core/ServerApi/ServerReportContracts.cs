@@ -55,6 +55,9 @@ public sealed record ServerReportDraftCreateRequest
 
 public sealed record ServerReportSaveRequest
 {
+    [JsonPropertyName("idempotencyKey")]
+    public string? IdempotencyKey { get; init; }
+
     [JsonPropertyName("draftReportId")]
     public string? DraftReportId { get; init; }
 

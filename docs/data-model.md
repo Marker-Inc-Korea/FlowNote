@@ -25,6 +25,7 @@
 | `work_sequence_items` | 작업순서 항목과 상태 |
 | `work_sequence_change_history` | 작업순서 변경 이력 |
 | `work_sequence_notification_candidates` | 작업순서 알림 후보 |
+| `report_sources` | 로컬 보고서 문서가 근거로 삼은 FieldComment, 문서, 작업순서 항목/이력 |
 | `server_sync_queue` | 서버 전송 대기/실패/성공 상태 |
 | `server_id_mappings` | 로컬 ID와 서버 ID 매핑 |
 
@@ -53,6 +54,10 @@
 | `reports`, `report_sources` | 보고서와 근거 연결 |
 | `document_access_logs` | 서버 문서 접근 로그 |
 | `activity_history` | 서버 활동 이력 |
+
+보고서 서버 저장 실패는 WPF 전용 큐를 새로 만들지 않고 기존 `server_sync_queue`에 `entity_type = report`, `action = register_report`로 남긴다. 큐는 한글 실패 사유, `last_attempt_at`, `attempt_count`를 기존 동기화 항목과 같은 방식으로 기록한다.
+
+로컬 보고서 문서는 `documents.document_type = Report`인 문서이며, 선택한 근거는 로컬 `report_sources.local_report_document_id`로 연결한다. 재시도 성공 시 `documents.server_report_id`, `documents.server_document_id`, 최신 `document_versions.server_version_id`, `server_id_mappings(entity_type IN ('report', 'document', 'document_version'))`를 채운다.
 
 ## 작업지시와 후속 외부 연동 필드
 

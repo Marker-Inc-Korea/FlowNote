@@ -495,6 +495,7 @@ class Report(TimestampMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
     report_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     report_type: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)

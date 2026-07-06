@@ -27,10 +27,10 @@ public sealed class FlowNoteLocalServices
         FieldComments = new FieldCommentService(Database);
         History = new HistoryService(Database);
         Notifications = new NotificationService(Database);
-        Reports = new ReportDraftService(Database, Documents);
+        ServerSync = new ServerSyncService(Database);
+        Reports = new ReportDraftService(Database, Documents, ServerSync);
         Tags = new TagService(Database);
         WorkSequences = new WorkSequenceService(Database);
-        ServerSync = new ServerSyncService(Database);
         DocumentPlacement = new DocumentPlacementService(Folders);
         FileWatch = new FileWatchService(Database, Documents);
     }

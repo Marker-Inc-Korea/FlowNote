@@ -2,6 +2,7 @@ using FlowNote.Windows.Core.Audit;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.FieldComments;
 using FlowNote.Windows.Core.History;
+using FlowNote.Windows.Core.Reports;
 using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
 using FlowNote.Windows.Core.Tags;
@@ -128,6 +129,22 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
     }
 
+    public async Task<ServerSyncResult> QueueAndTrySyncReportAsync(
+        DocumentRecord reportDocument,
+        FlowNoteServerDocumentClient? serverClient,
+        string? serverUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnqueueReport(reportDocument, null);
+        if (serverClient is null)
+        {
+            MarkLatestFailure("report", reportDocument.DocumentId, SyncFailureMessages.ServerUrlNotConfigured, countAttempt: true);
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 보고서 서버 저장을 큐에 보관했습니다. 서버 설정 후 동기화 큐에서 재시도하세요.");
+        }
+
+        return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
+    }
+
     public async Task<ServerSyncResult> RetryPendingAsync(
         FlowNoteServerDocumentClient serverClient,
         string? serverUserId = null,
@@ -179,6 +196,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                     case "register_access_log_auto_closed":
                     case "register_access_log_download_blocked":
                         await SyncAccessLogAsync(item, serverClient, serverUserId, cancellationToken);
+                        break;
+                    case "register_report":
+                        await SyncReportAsync(item, serverClient, cancellationToken);
                         break;
                     default:
                         throw new InvalidOperationException($"Unsupported sync action: {item.Action}");
@@ -245,7 +265,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         command.CommandText = """
             SELECT id, sync_id, entity_type, entity_id, action, local_document_id, local_version_no,
                    idempotency_key, status, attempt_count, last_error, created_at, last_attempt_at,
-                   synced_at, server_document_id, server_version_id, server_comment_id,
+                   synced_at, server_document_id, server_version_id, server_report_id, server_comment_id,
                    server_attachment_id, server_log_id
             FROM server_sync_queue
             ORDER BY
@@ -283,7 +303,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 reader.IsDBNull(15) ? null : reader.GetString(15),
                 reader.IsDBNull(16) ? null : reader.GetString(16),
                 reader.IsDBNull(17) ? null : reader.GetString(17),
-                reader.IsDBNull(18) ? null : reader.GetString(18)));
+                reader.IsDBNull(18) ? null : reader.GetString(18),
+                reader.IsDBNull(19) ? null : reader.GetString(19)));
         }
 
         return records;
@@ -322,6 +343,11 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
     public static string CreateAccessLogIdempotencyKey(long accessLogId, string action)
     {
         return $"wpf:access-log:{accessLogId}:{NormalizeAccessLogAction(action)}";
+    }
+
+    public static string CreateReportIdempotencyKey(string localReportDocumentId)
+    {
+        return $"wpf:report:{localReportDocumentId}";
     }
 
     private void EnqueueDocument(DocumentRecord document, string? failureReason)
@@ -408,6 +434,18 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             accessLog.DocumentId,
             accessLog.VersionNo,
             CreateAccessLogIdempotencyKey(accessLog.Id, normalizedAction),
+            failureReason);
+    }
+
+    private void EnqueueReport(DocumentRecord reportDocument, string? failureReason)
+    {
+        Enqueue(
+            "report",
+            reportDocument.DocumentId,
+            "register_report",
+            reportDocument.DocumentId,
+            reportDocument.VersionNo,
+            CreateReportIdempotencyKey(reportDocument.DocumentId),
             failureReason);
     }
 
@@ -580,6 +618,22 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 if (TryGetAccessLogServerId(accessLogId, isCloseAction) is { } serverLogId)
                 {
                     MarkQueueAlreadySynced(item, null, null, null, serverLogId, null);
+                    return true;
+                }
+
+                return false;
+
+            case "register_report":
+                if (TryGetReportServerMapping(item.EntityId) is { ServerReportId: not null } report)
+                {
+                    MarkQueueAlreadySynced(
+                        item,
+                        report.ServerDocumentId,
+                        report.ServerVersionId,
+                        null,
+                        null,
+                        null,
+                        report.ServerReportId);
                     return true;
                 }
 
@@ -1026,6 +1080,66 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         RecordSyncHistory(connection, "server_sync.succeeded", "document_access_log", accessLog.Id.ToString(), $"Server access log synced: {response.LogId}", now);
     }
 
+    private async Task SyncReportAsync(
+        QueueItem item,
+        FlowNoteServerDocumentClient serverClient,
+        CancellationToken cancellationToken)
+    {
+        if (TryGetReportServerMapping(item.EntityId) is { ServerReportId: not null } existing)
+        {
+            MarkQueueSynced(
+                item.Id,
+                existing.ServerDocumentId,
+                existing.ServerVersionId,
+                null,
+                null,
+                serverReportId: existing.ServerReportId);
+            return;
+        }
+
+        var document = LoadDocument(item.EntityId)
+            ?? throw new InvalidOperationException($"Local report document not found: {item.EntityId}");
+        if (!string.Equals(document.DocumentType, "Report", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Local queued report document has an unsupported document type.");
+        }
+
+        if (string.IsNullOrWhiteSpace(document.LocalPath))
+        {
+            throw new InvalidOperationException("Local report document has no file path for server upload.");
+        }
+
+        var filePath = FlowNoteLocalDatabase.ResolveLocalContentPath(document.LocalPath);
+        if (!File.Exists(filePath))
+        {
+            throw new IOException($"Local report document file not found: {filePath}");
+        }
+
+        var content = await File.ReadAllTextAsync(filePath, cancellationToken);
+        var sources = MapQueuedReportSources(item.EntityId);
+        if (sources.Count == 0)
+        {
+            throw new InvalidOperationException("No selected report source is linked to a server id.");
+        }
+
+        var response = await serverClient.SaveReportAsync(
+            new ServerReportSaveRequest
+            {
+                IdempotencyKey = item.IdempotencyKey,
+                ReportType = "field_review",
+                Title = document.Title,
+                Summary = document.LatestComment,
+                AnalysisContent = content,
+                Sources = sources,
+                SaveAsDocument = true,
+                DocumentTitle = document.Title,
+                DocumentStatus = document.Status
+            },
+            cancellationToken);
+
+        LinkReportDocumentToServer(item, document, response, DateTime.UtcNow);
+    }
+
     private DocumentRecord? LoadDocument(string documentId)
     {
         using var connection = database.OpenConnection();
@@ -1257,6 +1371,196 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             reader.IsDBNull(6) ? null : reader.GetString(6));
     }
 
+    private IReadOnlyList<ServerReportSourceRequest> MapQueuedReportSources(string localReportDocumentId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT source_type, local_source_id, source_version_id, relation_type
+            FROM report_sources
+            WHERE local_report_document_id = $document_id
+            ORDER BY id;
+            """;
+        command.Parameters.AddWithValue("$document_id", localReportDocumentId);
+
+        using var reader = command.ExecuteReader();
+        var sources = new List<ServerReportSourceRequest>();
+        while (reader.Read())
+        {
+            var localSource = new LocalReportSource(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3));
+            if (TryMapQueuedReportSource(connection, localSource) is { } mapped)
+            {
+                sources.Add(mapped);
+            }
+        }
+
+        return sources;
+    }
+
+    private static ServerReportSourceRequest? TryMapQueuedReportSource(
+        SqliteConnection connection,
+        LocalReportSource source)
+    {
+        var sourceType = Clean(source.SourceType)?.ToUpperInvariant();
+        var sourceId = Clean(source.LocalSourceId);
+        if (sourceType is null || sourceId is null)
+        {
+            return null;
+        }
+
+        return sourceType switch
+        {
+            "FIELD_COMMENT" => TryMapQueuedFieldCommentSource(connection, source, sourceId),
+            "DOCUMENT" => TryMapQueuedDocumentSource(connection, source, sourceId),
+            "WORK_SEQUENCE_ITEM" => TryMapQueuedLocalOnlySource(connection, "work_sequence_items", "item_id", source, sourceId),
+            "WORK_SEQUENCE_HISTORY" => TryMapQueuedLocalOnlySource(connection, "work_sequence_change_history", "change_id", source, sourceId),
+            "WORK_RECORD" or "WORK_RECORD_VERSION" => CreateQueuedReportSource(source, sourceType, sourceId),
+            _ => null
+        };
+    }
+
+    private static ServerReportSourceRequest? TryMapQueuedFieldCommentSource(
+        SqliteConnection connection,
+        LocalReportSource source,
+        string sourceId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT server_comment_id
+            FROM field_comments
+            WHERE comment_id = $comment_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$comment_id", sourceId);
+        var value = command.ExecuteScalar();
+        if (value is null)
+        {
+            return CreateQueuedReportSource(source, "FIELD_COMMENT", sourceId);
+        }
+
+        var serverCommentId = value is DBNull ? null : Convert.ToString(value);
+        return string.IsNullOrWhiteSpace(serverCommentId)
+            ? null
+            : CreateQueuedReportSource(source, "FIELD_COMMENT", serverCommentId);
+    }
+
+    private static ServerReportSourceRequest? TryMapQueuedDocumentSource(
+        SqliteConnection connection,
+        LocalReportSource source,
+        string sourceId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT server_document_id, server_version_id
+            FROM documents
+            WHERE document_id = $document_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$document_id", sourceId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return CreateQueuedReportSource(source, "DOCUMENT", sourceId, source.SourceVersionId);
+        }
+
+        var serverDocumentId = reader.IsDBNull(0) ? null : reader.GetString(0);
+        if (string.IsNullOrWhiteSpace(serverDocumentId))
+        {
+            return null;
+        }
+
+        var serverVersionId = reader.IsDBNull(1) ? source.SourceVersionId : reader.GetString(1);
+        return CreateQueuedReportSource(source, "DOCUMENT", serverDocumentId, serverVersionId);
+    }
+
+    private static ServerReportSourceRequest? TryMapQueuedLocalOnlySource(
+        SqliteConnection connection,
+        string tableName,
+        string idColumn,
+        LocalReportSource source,
+        string sourceId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT 1 FROM {tableName} WHERE {idColumn} = $source_id LIMIT 1;";
+        command.Parameters.AddWithValue("$source_id", sourceId);
+        var value = command.ExecuteScalar();
+        return value is null
+            ? CreateQueuedReportSource(source, source.SourceType.ToUpperInvariant(), sourceId, source.SourceVersionId)
+            : null;
+    }
+
+    private static ServerReportSourceRequest CreateQueuedReportSource(
+        LocalReportSource source,
+        string sourceType,
+        string sourceId,
+        string? sourceVersionId = null)
+    {
+        return new ServerReportSourceRequest
+        {
+            SourceType = sourceType,
+            SourceId = sourceId,
+            SourceVersionId = Clean(sourceVersionId) ?? Clean(source.SourceVersionId),
+            RelationType = Clean(source.RelationType) ?? DefaultReportRelationType(sourceType)
+        };
+    }
+
+    private static string DefaultReportRelationType(string sourceType)
+    {
+        return sourceType switch
+        {
+            "FIELD_COMMENT" => "primary",
+            "DOCUMENT" => "related_document",
+            "WORK_SEQUENCE_ITEM" => "work_sequence",
+            "WORK_SEQUENCE_HISTORY" => "work_sequence_history",
+            "WORK_RECORD" => "work_record",
+            "WORK_RECORD_VERSION" => "work_record_version",
+            _ => "related"
+        };
+    }
+
+    private void LinkReportDocumentToServer(
+        QueueItem item,
+        DocumentRecord document,
+        ServerReportResponse savedReport,
+        DateTime syncedAt)
+    {
+        var generatedDocument = savedReport.GeneratedDocument;
+        var serverDocumentId = savedReport.GeneratedDocumentId;
+        var serverVersionId = generatedDocument?.LatestVersionId ?? generatedDocument?.PublishedVersionId;
+
+        using var connection = database.OpenConnection();
+        using var update = connection.CreateCommand();
+        update.CommandText = """
+            UPDATE documents
+            SET server_report_id = $server_report_id,
+                server_document_id = $server_document_id,
+                server_version_id = $server_version_id,
+                synced_at = $synced_at
+            WHERE document_id = $document_id;
+
+            UPDATE document_versions
+            SET server_version_id = $server_version_id,
+                synced_at = $synced_at
+            WHERE document_id = $document_id AND is_latest = 1;
+            """;
+        update.Parameters.AddWithValue("$server_report_id", savedReport.ReportId);
+        update.Parameters.AddWithValue("$server_document_id", string.IsNullOrWhiteSpace(serverDocumentId) ? DBNull.Value : serverDocumentId);
+        update.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
+        update.Parameters.AddWithValue("$synced_at", syncedAt.ToString("O"));
+        update.Parameters.AddWithValue("$document_id", document.DocumentId);
+        update.ExecuteNonQuery();
+
+        UpsertMapping(connection, "document", document.DocumentId, 0, serverDocumentId, serverVersionId, null, null, null, syncedAt, savedReport.ReportId);
+        UpsertMapping(connection, "document_version", document.DocumentId, 1, serverDocumentId, serverVersionId, null, null, null, syncedAt, savedReport.ReportId);
+        UpsertMapping(connection, "report", document.DocumentId, 0, serverDocumentId, serverVersionId, null, null, null, syncedAt, savedReport.ReportId);
+        MarkQueueSynced(connection, item.Id, serverDocumentId, serverVersionId, null, null, syncedAt, serverReportId: savedReport.ReportId);
+        RecordSyncHistory(connection, "server_sync.succeeded", "report", document.DocumentId, $"Server report synced: {savedReport.ReportId} / {serverDocumentId}", syncedAt);
+    }
+
     private DocumentServerMapping? TryGetDocumentServerMapping(string documentId)
     {
         using var connection = database.OpenConnection();
@@ -1387,6 +1691,56 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return value is null or DBNull ? null : Convert.ToString(value);
     }
 
+    private ReportServerMapping? TryGetReportServerMapping(string localReportDocumentId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT server_report_id, server_document_id, server_version_id
+            FROM documents
+            WHERE document_id = $document_id
+              AND server_report_id IS NOT NULL
+              AND synced_at IS NOT NULL
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$document_id", localReportDocumentId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return TryGetReportServerIdMapping(localReportDocumentId);
+        }
+
+        return new ReportServerMapping(
+            reader.IsDBNull(0) ? null : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2));
+    }
+
+    private ReportServerMapping? TryGetReportServerIdMapping(string localReportDocumentId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT server_report_id, server_document_id, server_version_id
+            FROM server_id_mappings
+            WHERE entity_type = 'report'
+              AND local_id = $local_id
+              AND local_version_no = 0
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$local_id", localReportDocumentId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new ReportServerMapping(
+            reader.IsDBNull(0) ? null : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2));
+    }
+
     private void MarkAttempt(QueueItem item)
     {
         using var connection = database.OpenConnection();
@@ -1409,14 +1763,22 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             DateTime.UtcNow);
     }
 
-    private void MarkLatestFailure(string entityType, string entityId, string reason)
+    private void MarkLatestFailure(string entityType, string entityId, string reason, bool countAttempt = false)
     {
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE server_sync_queue
             SET status = CASE WHEN status = 'SYNCED' THEN status ELSE 'FAILED' END,
-                last_error = CASE WHEN status = 'SYNCED' THEN last_error ELSE $last_error END
+                last_error = CASE WHEN status = 'SYNCED' THEN last_error ELSE $last_error END,
+                attempt_count = CASE
+                    WHEN status = 'SYNCED' OR $count_attempt = 0 THEN attempt_count
+                    ELSE attempt_count + 1
+                END,
+                last_attempt_at = CASE
+                    WHEN status = 'SYNCED' OR $count_attempt = 0 THEN last_attempt_at
+                    ELSE $last_attempt_at
+                END
             WHERE id = (
                 SELECT id
                 FROM server_sync_queue
@@ -1426,6 +1788,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             );
             """;
         command.Parameters.AddWithValue("$last_error", reason);
+        command.Parameters.AddWithValue("$count_attempt", countAttempt ? 1 : 0);
+        command.Parameters.AddWithValue("$last_attempt_at", DateTime.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$entity_type", entityType);
         command.Parameters.AddWithValue("$entity_id", entityId);
         command.ExecuteNonQuery();
@@ -1454,7 +1818,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         string? serverVersionId,
         string? serverCommentId,
         string? serverLogId,
-        string? serverAttachmentId = null)
+        string? serverAttachmentId = null,
+        string? serverReportId = null)
     {
         using var connection = database.OpenConnection();
         MarkQueueSynced(
@@ -1465,7 +1830,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             serverCommentId,
             serverLogId,
             DateTime.UtcNow,
-            serverAttachmentId);
+            serverAttachmentId,
+            serverReportId);
     }
 
     private static void MarkQueueSynced(
@@ -1476,7 +1842,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         string? serverCommentId,
         string? serverLogId,
         DateTime syncedAt,
-        string? serverAttachmentId = null)
+        string? serverAttachmentId = null,
+        string? serverReportId = null)
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -1486,6 +1853,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 synced_at = $synced_at,
                 server_document_id = $server_document_id,
                 server_version_id = $server_version_id,
+                server_report_id = $server_report_id,
                 server_comment_id = $server_comment_id,
                 server_attachment_id = $server_attachment_id,
                 server_log_id = $server_log_id
@@ -1494,6 +1862,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$synced_at", syncedAt.ToString("O"));
         command.Parameters.AddWithValue("$server_document_id", string.IsNullOrWhiteSpace(serverDocumentId) ? DBNull.Value : serverDocumentId);
         command.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
+        command.Parameters.AddWithValue("$server_report_id", string.IsNullOrWhiteSpace(serverReportId) ? DBNull.Value : serverReportId);
         command.Parameters.AddWithValue("$server_comment_id", string.IsNullOrWhiteSpace(serverCommentId) ? DBNull.Value : serverCommentId);
         command.Parameters.AddWithValue("$server_attachment_id", string.IsNullOrWhiteSpace(serverAttachmentId) ? DBNull.Value : serverAttachmentId);
         command.Parameters.AddWithValue("$server_log_id", string.IsNullOrWhiteSpace(serverLogId) ? DBNull.Value : serverLogId);
@@ -1507,7 +1876,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         string? serverVersionId,
         string? serverCommentId,
         string? serverLogId,
-        string? serverAttachmentId)
+        string? serverAttachmentId,
+        string? serverReportId = null)
     {
         var now = DateTime.UtcNow;
         using var connection = database.OpenConnection();
@@ -1519,7 +1889,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             serverCommentId,
             serverLogId,
             now,
-            serverAttachmentId);
+            serverAttachmentId,
+            serverReportId);
         RecordSyncHistory(
             connection,
             "server_sync.skipped_already_synced",
@@ -1539,7 +1910,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         string? serverCommentId,
         string? serverAttachmentId,
         string? serverLogId,
-        DateTime syncedAt)
+        DateTime syncedAt,
+        string? serverReportId = null)
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -1549,6 +1921,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 local_version_no,
                 server_document_id,
                 server_version_id,
+                server_report_id,
                 server_comment_id,
                 server_attachment_id,
                 server_log_id,
@@ -1560,6 +1933,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 $local_version_no,
                 $server_document_id,
                 $server_version_id,
+                $server_report_id,
                 $server_comment_id,
                 $server_attachment_id,
                 $server_log_id,
@@ -1568,6 +1942,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             ON CONFLICT(entity_type, local_id, local_version_no) DO UPDATE SET
                 server_document_id = excluded.server_document_id,
                 server_version_id = excluded.server_version_id,
+                server_report_id = excluded.server_report_id,
                 server_comment_id = excluded.server_comment_id,
                 server_attachment_id = excluded.server_attachment_id,
                 server_log_id = excluded.server_log_id,
@@ -1578,6 +1953,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$local_version_no", localVersionNo);
         command.Parameters.AddWithValue("$server_document_id", string.IsNullOrWhiteSpace(serverDocumentId) ? DBNull.Value : serverDocumentId);
         command.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
+        command.Parameters.AddWithValue("$server_report_id", string.IsNullOrWhiteSpace(serverReportId) ? DBNull.Value : serverReportId);
         command.Parameters.AddWithValue("$server_comment_id", string.IsNullOrWhiteSpace(serverCommentId) ? DBNull.Value : serverCommentId);
         command.Parameters.AddWithValue("$server_attachment_id", string.IsNullOrWhiteSpace(serverAttachmentId) ? DBNull.Value : serverAttachmentId);
         command.Parameters.AddWithValue("$server_log_id", string.IsNullOrWhiteSpace(serverLogId) ? DBNull.Value : serverLogId);
@@ -1687,8 +2063,14 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             return SyncFailureMessages.FieldCommentDependencyNotSynced;
         }
 
+        if (message.Contains("No selected report source is linked to a server id", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.ReportSourceDependencyNotSynced;
+        }
+
         if (message.Contains("Local document file not found", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("Local field comment attachment file not found", StringComparison.OrdinalIgnoreCase))
+            message.Contains("Local field comment attachment file not found", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("Local report document file not found", StringComparison.OrdinalIgnoreCase))
         {
             return "로컬 파일을 찾을 수 없어 서버로 전송하지 못했습니다. 문서 파일 위치를 확인한 뒤 재시도하세요.";
         }
@@ -1717,6 +2099,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         public const string PublishedStatusMissingPublishedVersion = "문서 상태가 PUBLISHED이지만 로컬 공개 버전이 지정되지 않았습니다. 먼저 공개할 버전을 선택하고 공개 큐를 동기화한 뒤 상태 변경을 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string PublishedStatusPublishMappingNotSynced = "문서 상태가 PUBLISHED이지만 공개 버전의 서버 매핑이 없습니다. 공개 큐가 SYNCED가 된 뒤 상태 변경 큐를 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string FieldCommentDependencyNotSynced = "선행 FieldComment가 아직 서버에 전송되지 않았습니다. FieldComment 항목을 먼저 동기화한 뒤 첨부 전송을 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
+        public const string ReportSourceDependencyNotSynced = "보고서 근거 중 서버 ID가 확인되지 않은 항목이 있어 서버 보고서를 저장하지 못했습니다. 근거 문서, FieldComment, 작업순서 이력을 먼저 서버에 등록한 뒤 재시도하세요. 로컬 보고서 문서는 삭제되지 않습니다.";
     }
 
     private static string? Clean(string? value)
@@ -1745,4 +2128,12 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         string IdempotencyKey);
 
     private sealed record DocumentServerMapping(string? ServerDocumentId, string? ServerVersionId);
+
+    private sealed record ReportServerMapping(string? ServerReportId, string? ServerDocumentId, string? ServerVersionId);
+
+    private sealed record LocalReportSource(
+        string SourceType,
+        string LocalSourceId,
+        string? SourceVersionId,
+        string? RelationType);
 }
