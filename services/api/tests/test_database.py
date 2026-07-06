@@ -30,6 +30,7 @@ def create_test_client() -> TestClient:
 
 def test_app_startup_creates_mvp_schema() -> None:
     expected_tables = {
+        "ai_search_candidates",
         "comment_templates",
         "document_access_logs",
         "document_tags",

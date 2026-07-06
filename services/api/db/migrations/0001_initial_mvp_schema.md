@@ -5,7 +5,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 ## Version
 
 - `schema_migrations.version`: `0001_initial_mvp_schema`
-- 목적: 문서, 파일 객체, 버전, 사용자/권한, 인증 세션, 태그, FieldComment, 첨부, 작업순서, 보고서, 접근 로그, 활동 이력을 위한 서버 메타데이터 테이블 생성
+- 목적: 문서, 파일 객체, 버전, 사용자/권한, 인증 세션, 태그, FieldComment, 첨부, 작업순서, 보고서, AI 검색 근거 후보, 접근 로그, 활동 이력을 위한 서버 메타데이터 테이블 생성
 
 ## Tables
 
@@ -30,6 +30,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `work_sequence_change_history` | Work sequence changes |
 | `work_sequence_notification_candidates` | Work sequence notification candidates |
 | `reports`, `report_sources` | Reports and traceable sources |
+| `ai_search_candidates` | Traceable evidence candidates for search and summary before AI advice |
 | `document_access_logs` | Document view/download/auto-close access logs |
 | `activity_history` | Server activity history |
 

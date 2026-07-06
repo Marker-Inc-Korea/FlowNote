@@ -27,6 +27,7 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 - `work_sequence_boards`, `work_sequence_items`
 - `work_sequence_change_history`, `work_sequence_notification_candidates`
 - `reports`, `report_sources`
+- `ai_search_candidates`
 - `document_access_logs`
 - `activity_history`
 

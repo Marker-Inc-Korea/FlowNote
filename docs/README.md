@@ -24,7 +24,8 @@
 - WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다.
 - WPF MSI 패키징과 FastAPI 작업 스케줄러 등록/관리는 `scripts/`의 PowerShell 스크립트로 문서화되어 있다.
 - 사용자 역할은 코드와 DB에서 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`, `viewer`를 사용한다.
-- AI 검색/조언, MES/ERP 연동, 서버 계정 관리 UI는 후속 계층이다.
+- AI 자동 조언은 후속 계층이며, 현재 서버는 근거 검색 후보와 품질 점검용 `ai_search_candidates` read model까지만 다룬다.
+- MES/ERP 연동과 서버 계정 관리 UI는 후속 계층이다.
 
 ## 일일 기록
 

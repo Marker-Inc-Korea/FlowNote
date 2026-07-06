@@ -48,6 +48,9 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/reports` | Save report |
 | GET | `/api/v1/reports` | Report list |
 | GET | `/api/v1/reports/{reportId}` | Report detail |
+| POST | `/api/v1/ai-search/candidates/rebuild` | Rebuild traceable AI search evidence candidates |
+| GET | `/api/v1/ai-search/candidates` | List AI search evidence candidates |
+| GET | `/api/v1/ai-search/quality` | Candidate counts, exclusion reasons, and FieldComment review readiness |
 
 ## Auth
 
@@ -86,6 +89,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The current collected FastAPI test count is 47.
+The current collected FastAPI test count is 50.
 
 Test SQLite DBs, logs, upload files, and generated sample files are preserved unless the user explicitly asks to delete them.
