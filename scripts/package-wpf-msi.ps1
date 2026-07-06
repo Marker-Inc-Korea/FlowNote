@@ -2,7 +2,14 @@ param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$ProductVersion = "0.1.0",
-    [string]$OutputRoot = "artifacts\wpf-msi"
+    [string]$OutputRoot = "artifacts\wpf-msi",
+    [switch]$SelfContained,
+    [switch]$EnableWindowsTargeting,
+    [switch]$Sign,
+    [string]$SignToolPath = "signtool.exe",
+    [string]$SigningCertificateThumbprint = "",
+    [string]$SigningCertificateSubjectName = "",
+    [string]$TimestampUrl = "http://timestamp.digicert.com"
 )
 
 Set-StrictMode -Version Latest
@@ -13,7 +20,9 @@ $projectPath = Join-Path $repoRoot "apps\windows\src\FlowNote.Windows.App\FlowNo
 $outputRootPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
 $publishPath = Join-Path $outputRootPath "publish\FlowNote.Windows.App"
 $wixPath = Join-Path $outputRootPath "FlowNote.Windows.App.wxs"
-$msiPath = Join-Path $outputRootPath "FlowNote.Windows.App-$ProductVersion-$Runtime.msi"
+$packageSuffix = if ($SelfContained.IsPresent) { "$ProductVersion-$Runtime-self-contained" } else { "$ProductVersion-$Runtime" }
+$msiPath = Join-Path $outputRootPath "FlowNote.Windows.App-$packageSuffix.msi"
+$fileManifestPath = Join-Path $outputRootPath "FlowNote.Windows.App-$packageSuffix.files.txt"
 $upgradeCode = "8F1C478A-8D5F-48B9-8B6D-693313E3125C"
 
 if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
@@ -22,14 +31,67 @@ if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
 
 New-Item -ItemType Directory -Force $publishPath | Out-Null
 
-dotnet publish $projectPath `
-    -c $Configuration `
-    -r $Runtime `
-    --self-contained false `
-    -o $publishPath
+$selfContainedValue = if ($SelfContained.IsPresent) { "true" } else { "false" }
+$publishArguments = @(
+    "publish",
+    $projectPath,
+    "-c",
+    $Configuration,
+    "-r",
+    $Runtime,
+    "--self-contained",
+    $selfContainedValue,
+    "-o",
+    $publishPath
+)
+if ($EnableWindowsTargeting.IsPresent) {
+    $publishArguments += "-p:EnableWindowsTargeting=true"
+}
+
+dotnet @publishArguments
 
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE."
+}
+
+function Invoke-CodeSign {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Cannot sign missing file: $Path"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($SigningCertificateThumbprint) -and [string]::IsNullOrWhiteSpace($SigningCertificateSubjectName)) {
+        throw "Signing requires -SigningCertificateThumbprint or -SigningCertificateSubjectName."
+    }
+
+    $signArguments = @("sign", "/fd", "SHA256", "/td", "SHA256")
+    if (-not [string]::IsNullOrWhiteSpace($TimestampUrl)) {
+        $signArguments += @("/tr", $TimestampUrl)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint)) {
+        $signArguments += @("/sha1", $SigningCertificateThumbprint)
+    }
+    else {
+        $signArguments += @("/n", $SigningCertificateSubjectName)
+    }
+
+    $signArguments += $Path
+    & $SignToolPath @signArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "signtool sign failed for $Path with exit code $LASTEXITCODE."
+    }
+}
+
+function Invoke-CodeSignVerification {
+    param([string]$Path)
+
+    $verifyArguments = @("verify", "/pa", $Path)
+    & $SignToolPath @verifyArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "signtool verify failed for $Path with exit code $LASTEXITCODE."
+    }
 }
 
 function ConvertTo-WixId {
@@ -68,6 +130,70 @@ $publishedFiles = @(
 )
 if ($publishedFiles.Count -eq 0) {
     throw "No published files were found in $publishPath"
+}
+
+function Test-ForbiddenPackagePath {
+    param([string]$RelativePath)
+
+    $path = $RelativePath.Replace("\", "/").ToLowerInvariant()
+    $fileName = [System.IO.Path]::GetFileName($path)
+    $documentExtensions = @(
+        ".hwp",
+        ".doc",
+        ".docx",
+        ".ppt",
+        ".pptx",
+        ".xls",
+        ".xlsx",
+        ".pdf",
+        ".dwg",
+        ".zip",
+        ".7z",
+        ".rar",
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".txt",
+        ".md"
+    )
+
+    if ($path.StartsWith("data/") -or $path.StartsWith("files/") -or $path.Contains("/data/") -or $path.Contains("/files/")) {
+        return $true
+    }
+
+    if ($fileName -match "\.(sqlite|sqlite3|db)(-(wal|shm))?$" -or $fileName -match "\.(sqlite|sqlite3)-(wal|shm)$") {
+        return $true
+    }
+
+    if ($path.Contains("test") -or $path.Contains("smoke") -or $path.Contains("sample-registration") -or $path.Contains("customer")) {
+        return $true
+    }
+
+    foreach ($extension in $documentExtensions) {
+        if ($fileName.EndsWith($extension, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+$relativePublishedFiles = @(
+    $publishedFiles | ForEach-Object { (ConvertTo-RelativePublishPath $_.FullName).Replace("\", "/") }
+)
+$forbiddenPublishedFiles = @(
+    $relativePublishedFiles | Where-Object { Test-ForbiddenPackagePath $_ }
+)
+if ($forbiddenPublishedFiles.Count -gt 0) {
+    $forbiddenList = [string]::Join([Environment]::NewLine, ($forbiddenPublishedFiles | ForEach-Object { "  - $_" }))
+    throw "Forbidden files were found in the MSI file set. Remove them from publish output before packaging:$([Environment]::NewLine)$forbiddenList"
+}
+
+Set-Content -LiteralPath $fileManifestPath -Value $relativePublishedFiles -Encoding UTF8
+
+if ($Sign.IsPresent) {
+    Invoke-CodeSign -Path (Join-Path $publishPath "FlowNote.Windows.App.exe")
+    Invoke-CodeSignVerification -Path (Join-Path $publishPath "FlowNote.Windows.App.exe")
 }
 
 $directoryIds = @{}
@@ -185,4 +311,10 @@ if ($LASTEXITCODE -ne 0) {
     throw "WiX build failed with exit code $LASTEXITCODE."
 }
 
+if ($Sign.IsPresent) {
+    Invoke-CodeSign -Path $msiPath
+    Invoke-CodeSignVerification -Path $msiPath
+}
+
 Write-Host "Created MSI: $msiPath"
+Write-Host "Created package file list: $fileManifestPath"
