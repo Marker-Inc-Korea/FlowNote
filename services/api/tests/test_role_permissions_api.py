@@ -9,7 +9,7 @@ from app.core.auth import ACCESS_LOG_READ_ROLES, CONTROLLED_COPY_DOWNLOAD_ROLES
 from app.core.auth import DOCUMENT_WRITE_ROLES, FIELD_COMMENT_CREATE_ROLES
 from app.core.auth import REPORT_WRITE_ROLES, USER_MANAGEMENT_ROLES
 from app.core.config import Settings
-from app.db.init_db import hash_password_for_dev
+from app.db.init_db import ALLOWED_USER_ROLES, hash_password_for_dev
 from app.db.models import UserAccount
 from app.main import create_app
 
@@ -96,6 +96,7 @@ def auth_headers(client: TestClient, account: UserAccount) -> dict[str, str]:
 
 
 def test_role_groups_match_wpf_policy_matrix() -> None:
+    assert set(ALLOWED_USER_ROLES) == ALL_ROLES
     assert DOCUMENT_WRITE_ROLES == DOCUMENT_WRITE_EXPECTED
     assert FIELD_COMMENT_CREATE_ROLES == FIELD_COMMENT_CREATE_EXPECTED
     assert ACCESS_LOG_READ_ROLES == ACCESS_LOG_READ_EXPECTED
