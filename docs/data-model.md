@@ -52,12 +52,32 @@
 | `work_sequence_change_history` | 작업순서 변경 이력 |
 | `work_sequence_notification_candidates` | 작업순서 알림 후보 |
 | `reports`, `report_sources` | 보고서와 근거 연결 |
+| `ai_search_candidates` | AI 자동 조언 전 단계의 근거 검색 후보 read model |
 | `document_access_logs` | 서버 문서 접근 로그 |
 | `activity_history` | 서버 활동 이력 |
 
 보고서 서버 저장 실패는 WPF 전용 큐를 새로 만들지 않고 기존 `server_sync_queue`에 `entity_type = report`, `action = register_report`로 남긴다. 큐는 한글 실패 사유, `last_attempt_at`, `attempt_count`를 기존 동기화 항목과 같은 방식으로 기록한다.
 
 로컬 보고서 문서는 `documents.document_type = Report`인 문서이며, 선택한 근거는 로컬 `report_sources.local_report_document_id`로 연결한다. 재시도 성공 시 `documents.server_report_id`, `documents.server_document_id`, 최신 `document_versions.server_version_id`, `server_id_mappings(entity_type IN ('report', 'document', 'document_version'))`를 채운다.
+
+## AI 검색 근거 후보 read model
+
+AI 자동 조언과 자동 의사결정은 아직 범위에 넣지 않는다. 서버는 먼저 `ai_search_candidates` read model에 근거가 있는 검색과 요약 후보만 만든다. 이 테이블은 외부 AI API 호출 결과가 아니라 현재 DB 원천에서 재생성할 수 있는 검색 후보 목록이다.
+
+후보 원천은 다음 네 종류로 제한한다.
+
+| `source_type` | 생성 기준 | 제외 기준 | 화면 역추적 |
+| --- | --- | --- | --- |
+| `PUBLISHED_DOCUMENT_VERSION` | `documents.status = PUBLISHED`, `documents.published_version_id = document_versions.version_id`, `document_versions.version_status = PUBLISHED`, `document_versions.is_published = true` | 공개되지 않은 문서/버전, 삭제된 문서 | `trace_table = document_versions`, `trace_id = document_id`, `trace_version_id = version_id` |
+| `FIELD_COMMENT` | `field_comments.status`가 `EXCLUDED`, `ARCHIVED`가 아니고 원문/정리/분석 내용 중 하나 이상이 있음 | `EXCLUDED`, `ARCHIVED`, 빈 내용, `input_mode = mes_integration` | `trace_table = field_comments`, `trace_id = comment_id`, `trace_version_id = document_version_id` |
+| `WORK_SEQUENCE_HISTORY` | `work_sequence_change_history`의 변경 유형, 이전 값, 이후 값, 변경 사유 중 하나 이상이 있음 | 역추적 텍스트가 모두 비어 있음 | `trace_table = work_sequence_change_history`, `trace_id = change_id` |
+| `REPORT_SOURCE` | `reports.status != ARCHIVED`인 보고서의 `report_sources` row | 보고서가 없거나 보관 상태인 source, 원천 식별자가 비어 있음 | `trace_table = report_sources`, `trace_id = report_sources.id`, `trace_version_id = source_version_id` |
+
+`ai_search_candidates`의 `candidate_id`는 검색 후보 자체의 식별자이고, 원문 화면 이동은 `source_type`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `parent_type`, `parent_id`를 함께 사용한다. 보고서 source는 원천의 원천을 직접 후보 ID로 삼지 않고 `report_sources.id`를 후보 `source_id`로 삼아 보고서가 어떤 근거를 어떤 관계로 사용했는지 먼저 추적한다.
+
+품질 점검은 후보 수와 제외 사유를 함께 산출한다. FieldComment 검토 품질은 전체 상태별 개수, `ANALYZED`/`REVIEWED`/`SELECTED` 합계, AI 착수 최소 기준 100건 대비 부족분을 표시한다. FieldComment가 대부분 `NEW`라면 검색 후보에는 들어갈 수 있어도 요약 신뢰도와 AI 착수 기준은 부족한 것으로 본다.
+
+MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_records.external_system`, `external_ref_id` 같은 외부 연동 필드를 사용하지 않는다. `mes_integration` 입력으로 들어온 FieldComment도 어댑터 정책이 정해지기 전에는 후보에서 제외한다.
 
 ## 작업지시와 후속 외부 연동 필드
 

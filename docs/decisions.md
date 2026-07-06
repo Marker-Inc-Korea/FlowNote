@@ -66,6 +66,14 @@
 - 서버가 로그인에 401 또는 403을 반환하면 WPF는 같은 ID의 로컬 계정으로 fallback하지 않는다. fallback은 서버 URL이 없거나 연결 자체가 실패한 경우에만 허용한다.
 - 서버와 WPF의 role 집합과 권한표는 FastAPI `test_role_permissions_api.py`와 WPF 스모크의 `RolePermissionPolicy` 행렬로 함께 고정한다.
 
+## 2026-07-06. AI 검색 기초 범위
+
+- AI 계층의 첫 범위는 자동 조언이 아니라 근거가 있는 검색과 요약 후보 생성으로 제한한다.
+- 검색 후보 원천은 공개 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source 네 종류만 사용한다.
+- 후보는 `ai_search_candidates` read model에 저장하고, 원문 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source row로 돌아갈 수 있는 `source_*`와 `trace_*` 식별자를 함께 둔다.
+- FieldComment가 `ANALYZED`, `REVIEWED`, `SELECTED` 상태로 충분히 쌓이기 전에는 AI 답변 품질보다 관리자 검토/분석/선정 운영 흐름 보강을 우선한다.
+- MES/ERP 외부 연동 필드는 검색 후보 생성에 사용하지 않는다. `mes_integration` FieldComment도 어댑터 정책이 확정되기 전에는 후보에서 제외한다.
+
 ## 2026-07-01. WPF 보고서 저장 흐름
 
 - WPF 보고서 창은 FieldComment, 문서, 작업순서 이력을 보고서 근거 후보로 사용한다.

@@ -534,6 +534,45 @@ class ReportSource(Base):
     )
 
 
+class AISearchCandidate(Base):
+    __tablename__ = "ai_search_candidates"
+    __table_args__ = (
+        CheckConstraint(
+            (
+                "source_type IN ('PUBLISHED_DOCUMENT_VERSION', 'FIELD_COMMENT', "
+                "'WORK_SEQUENCE_HISTORY', 'REPORT_SOURCE')"
+            ),
+            name="ck_ai_search_candidate_source_type",
+        ),
+        UniqueConstraint(
+            "source_type",
+            "source_id",
+            "source_version_id",
+            name="uq_ai_search_candidates_source",
+        ),
+        Index("ix_ai_search_candidates_source", "source_type", "source_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    candidate_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_version_id: Mapped[str | None] = mapped_column(String(64))
+    trace_table: Mapped[str] = mapped_column(String(80), nullable=False)
+    trace_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    trace_version_id: Mapped[str | None] = mapped_column(String(64))
+    parent_type: Mapped[str | None] = mapped_column(String(50))
+    parent_id: Mapped[str | None] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    search_text: Mapped[str] = mapped_column(Text, nullable=False)
+    review_status: Mapped[str | None] = mapped_column(String(30))
+    metadata_json: Mapped[str | None] = mapped_column(Text)
+    refreshed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class DocumentAccessLog(Base):
     __tablename__ = "document_access_logs"
     __table_args__ = (Index("ix_document_access_logs_document_created", "document_id", "created_at"),)
