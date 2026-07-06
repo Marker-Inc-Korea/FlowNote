@@ -365,6 +365,19 @@ def test_document_versions_are_published_only_by_explicit_publish_transition() -
         )
         assert published_before.status_code == 404
 
+        status_before_publish = client.patch(
+            f"/api/v1/documents/{created['document_id']}/status",
+            headers=auth_headers(client),
+            json={
+                "status": "PUBLISHED",
+                "changeReason": "Published status must wait for an explicit published version.",
+            },
+        )
+        assert status_before_publish.status_code == 422
+        assert status_before_publish.json()["detail"] == (
+            "Document cannot be set to PUBLISHED without a published version."
+        )
+
         with pdf_v2_path.open("rb") as file:
             version_response = client.post(
                 f"/api/v1/documents/{created['document_id']}/versions",
