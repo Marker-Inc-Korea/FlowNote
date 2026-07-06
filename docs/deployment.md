@@ -231,13 +231,108 @@ MSI 패키징은 WiX Toolset CLI를 사용한다. 배포 준비 PC에 `wix` 명�
 
 MSI에는 WPF 실행 파일, 실행에 필요한 `.deps.json`/`.runtimeconfig.json`, 의존 DLL과 네이티브 런타임 DLL만 포함한다. 패키징 스크립트는 디버그 심볼 `.pdb`와 문서 XML을 제외한다. 로컬 SQLite, WAL/SHM 파일, `Data\Files` 또는 테스트/샘플 등록 파일은 설치 폴더에 포함하지 않는다.
 
+패키징 스크립트는 WiX 소스 생성 전에 MSI 포함 파일 목록을 `artifacts\wpf-msi\FlowNote.Windows.App-<version>-<runtime>.files.txt`에 남긴다. 이 목록에 다음 항목이 하나라도 있으면 MSI 생성을 실패로 처리한다.
+
+- `*.sqlite`, `*.sqlite3`, `*.db`, `*.sqlite-wal`, `*.sqlite-shm`, `*.db-wal`, `*.db-shm`
+- `Data\`, `Files\`, `storage\`, `logs\` 계열 경로
+- `test`, `smoke`, `sample-registration`, `customer`가 들어간 파일
+- PDF, Office, HWP, DWG, 압축 파일, 이미지, TXT/MD 같은 고객 문서 또는 테스트 산출물 확장자
+
+2026-07-06 현재 로컬에 남아 있는 직전 `package-wpf-msi.ps1` 산출물 기준 MSI 파일 세트는 22개이며, `FlowNote.Windows.App.exe`, `.deps.json`, `.runtimeconfig.json`, 앱/코어 DLL, `Microsoft.Data.Sqlite`, `Microsoft.Web.WebView2`, `SQLitePCLRaw`, `PdfPig`, `WebView2Loader.dll`, `e_sqlite3.dll`, `runtimes\win-x64\native\WebView2Loader.dll`만 포함한다. 금지 파일 패턴은 0건이었다.
+
+### .NET Desktop Runtime과 self-contained MSI
+
+기본 `package-wpf-msi.ps1` 명령은 framework-dependent MSI를 만든다. 이 방식은 설치 대상 PC에 FlowNote WPF 대상 프레임워크와 같은 계열의 `.NET Windows Desktop Runtime`이 설치되어 있어야 한다.
+
+설치 대상 PC에서 다음 명령으로 런타임을 확인한다.
+
+```powershell
+dotnet --list-runtimes | Select-String "Microsoft.WindowsDesktop.App 10."
+```
+
+`dotnet` 명령이 없거나 `Microsoft.WindowsDesktop.App 10.` 런타임이 없으면 framework-dependent MSI만으로는 실행을 보장하지 않는다. 다음 조건 중 하나라도 해당하면 self-contained MSI를 별도 생성한다.
+
+- 현장 PC에 .NET Windows Desktop Runtime을 설치할 수 없거나 설치 여부를 사전에 통제하기 어렵다.
+- 현장 PC가 인터넷에 연결되지 않아 런타임 설치를 설치 시점에 처리할 수 없다.
+- 클라이언트 설치파일 하나로 앱 실행에 필요한 .NET 런타임까지 고정해야 한다.
+- 여러 생산 PC의 .NET 런타임 패치 수준 차이로 장애 분석이 어려운 현장이다.
+
+self-contained MSI는 다음 명령으로 만든다.
+
+```powershell
+.\scripts\package-wpf-msi.ps1 -ProductVersion 0.1.0 -Runtime win-x64 -SelfContained
+```
+
+산출물 이름은 `FlowNote.Windows.App-0.1.0-win-x64-self-contained.msi`처럼 `self-contained` 접미사를 붙인다. self-contained MSI는 .NET 런타임 파일을 함께 담기 때문에 framework-dependent MSI보다 크다. 단, WebView2 Runtime은 self-contained .NET 배포에 포함되지 않으므로 별도 점검과 설치 기준을 유지한다.
+
+Windows가 아닌 배포 준비 PC에서 publish 가능 여부만 확인해야 할 때는 `-EnableWindowsTargeting` 옵션을 추가할 수 있다. 다만 최종 MSI 설치와 실행 검증은 Windows PC에서 수행한다.
+
+### WebView2 Runtime 점검
+
+FlowNote WPF는 문서 미리보기와 뷰어에 WebView2를 사용한다. MSI에는 `Microsoft.Web.WebView2.*.dll`과 `WebView2Loader.dll` 같은 앱 의존 DLL만 포함하고, Microsoft Edge WebView2 Evergreen Runtime 자체는 현장 PC에 별도로 설치되어 있어야 한다.
+
+설치 대상 PC에서는 다음 중 하나로 WebView2 Runtime 설치 여부를 확인한다.
+
+```powershell
+Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\*" |
+  Where-Object { $_.name -like "*WebView2*" } |
+  Select-Object name, pv
+```
+
+또는 Windows 제어판의 프로그램 목록에서 `Microsoft Edge WebView2 Runtime`을 확인한다. 설치되어 있지 않으면 Microsoft의 Evergreen Standalone Installer를 현장 배포 파일에 포함해 관리자 권한으로 먼저 설치한다.
+
+WebView2 Runtime이 없거나 손상된 PC에서 FlowNote가 문서 미리보기 또는 뷰어 초기화에 실패하면 사용자 안내는 다음 기준으로 통일한다.
+
+```text
+문서 뷰어를 시작할 수 없습니다.
+Microsoft Edge WebView2 Runtime 설치 상태를 확인한 뒤 FlowNote를 다시 실행하세요.
+문제가 계속되면 현장 관리자에게 설치 점검을 요청하세요.
+```
+
+장애 기록에는 PC명, Windows 버전, WebView2 Runtime 설치 여부와 버전, FlowNote MSI 버전, 실행 사용자, 발생 시각을 남긴다.
+
+### 코드 서명과 Windows 경고
+
+운영 배포 MSI와 실행 파일은 코드 서명 인증서로 서명하는 것을 기준으로 한다. 서명은 Windows SDK의 `signtool.exe`를 사용하며, 인증서는 조직 명의의 코드 서명 인증서 또는 현장 내부 CA에서 배포 PC와 설치 PC가 신뢰하는 인증서여야 한다.
+
+서명 순서는 다음 기준을 따른다.
+
+1. `dotnet publish` 후 publish 폴더의 `FlowNote.Windows.App.exe`를 서명한다.
+2. 서명된 EXE가 포함되도록 WiX로 MSI를 생성한다.
+3. 최종 MSI 파일을 서명한다.
+4. `signtool verify /pa`로 EXE와 MSI 서명을 검증한다.
+5. 타임스탬프 URL을 사용해 인증서 만료 후에도 서명 시점을 검증할 수 있게 한다.
+
+예시:
+
+```powershell
+.\scripts\package-wpf-msi.ps1 `
+  -ProductVersion 0.1.0 `
+  -Runtime win-x64 `
+  -Sign `
+  -SigningCertificateSubjectName "FlowNote 코드서명 인증서 표시 이름" `
+  -TimestampUrl "http://timestamp.digicert.com"
+
+signtool verify /pa .\artifacts\wpf-msi\publish\FlowNote.Windows.App\FlowNote.Windows.App.exe
+signtool verify /pa .\artifacts\wpf-msi\FlowNote.Windows.App-0.1.0-win-x64.msi
+```
+
+인증서 표시 이름 대신 지문으로 지정해야 하면 `-SigningCertificateThumbprint <인증서 SHA1 지문>`을 사용한다. 스크립트 밖에서 수동 서명할 경우 최종 MSI만 서명하면 MSI 안에 포함된 EXE는 미서명 상태로 남을 수 있으므로, EXE 서명 후 MSI를 다시 생성하고 최종 MSI를 서명한다.
+
+미서명 MSI를 현장에 임시 배포해야 하는 경우에는 다음 조건을 모두 만족해야 한다.
+
+- 배포 목적, 배포 대상 PC, MSI 해시, 승인자를 운영 기록에 남긴다.
+- 설치 담당자가 Windows SmartScreen 또는 게시자 알 수 없음 경고가 코드 서명 부재 때문임을 사전에 알고 있어야 한다.
+- MSI는 내부 공유 위치 또는 이동식 매체에서 무단 교체되지 않도록 해시로 확인한다.
+- 외부 고객 운영 배포에는 미서명 MSI를 기본 방식으로 사용하지 않는다.
+
 2. 설치 대상 PC에서 MSI를 관리자 권한으로 설치한다.
 
 ```powershell
 msiexec /i .\artifacts\wpf-msi\FlowNote.Windows.App-0.1.0-win-x64.msi
 ```
 
-설치 대상 PC에 맞는 .NET Windows Desktop Runtime이 없으면 추후 self-contained MSI를 별도 패키징한다. WebView2 Runtime은 문서 미리보기와 뷰어 동작 확인 대상이므로 설치 전 점검에 포함한다.
+설치 대상 PC에 맞는 .NET Windows Desktop Runtime이 없으면 위 기준에 따라 self-contained MSI를 사용한다. WebView2 Runtime은 문서 미리보기와 뷰어 동작 확인 대상이므로 설치 전 점검에 포함한다.
 
 3. WPF 로컬 데이터 폴더를 만들거나 앱 최초 실행이 만들도록 둔다. 운영 기준 경로는 명시적으로 먼저 만드는 것을 권장한다.
 
@@ -472,7 +567,8 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 ## 후속 배포 과제
 
 - HTTPS 또는 사내망 접속 보호
-- 코드 서명과 self-contained WPF 설치 패키지
+- 현장별 .NET/WebView2 설치 조합에서 self-contained MSI 실기 검증
+- 현장별 코드 서명 인증서 발급, 갱신, 폐기 운영 절차
 - 서버 계정 관리 UI와 관리자 세션 폐기 UI
 - PostgreSQL 전환 조건
 

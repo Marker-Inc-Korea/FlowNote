@@ -60,3 +60,55 @@ WPF 스모크 테스트는 기본적으로 저장소 루트의 `data/local/flown
 - 이미 Git에 잡힌 테스트 산출물은 파일을 삭제하지 말고 `git rm --cached`로 추적만 해제한다.
 
 표준 스크립트의 Git 점검은 금지 패턴이 `git status`나 추적 파일 목록에 잡히면 실패한다. 실패 메시지는 보존 대상 파일을 지우라는 뜻이 아니라 `.gitignore` 보강 또는 추적 해제가 필요하다는 뜻이다.
+
+## WPF MSI 패키징 검증
+
+WPF MSI는 Windows 배포 준비 PC에서 다음 순서로 검증한다.
+
+```powershell
+.\scripts\package-wpf-msi.ps1 -ProductVersion 0.1.0 -Runtime win-x64
+Get-Content .\artifacts\wpf-msi\FlowNote.Windows.App-0.1.0-win-x64.files.txt
+git status --short --untracked-files=all
+```
+
+`.files.txt`에는 앱 실행 파일, `.deps.json`, `.runtimeconfig.json`, 앱 DLL, 의존 DLL, 네이티브 DLL만 있어야 한다. 다음 항목이 포함되면 `package-wpf-msi.ps1`가 실패해야 한다.
+
+- 로컬 SQLite, WAL, SHM, DB 파일
+- `Data\`, `Files\`, `storage\`, `logs\` 계열 경로
+- `test`, `smoke`, `sample-registration`, `customer`가 들어간 파일
+- PDF, Office, HWP, DWG, 이미지, 압축 파일, TXT/MD 같은 고객 파일 또는 테스트 산출물
+
+self-contained 패키지가 필요한 PC는 별도 MSI로 검증한다.
+
+```powershell
+.\scripts\package-wpf-msi.ps1 -ProductVersion 0.1.0 -Runtime win-x64 -SelfContained
+```
+
+설치 후에는 `FLOWNOTE_LOCAL_DATA_DIR`를 설치 폴더 밖으로 지정하고 앱을 실행한다.
+
+```powershell
+setx FLOWNOTE_LOCAL_DATA_DIR "C:\FlowNote\LocalData" /M
+msiexec /i .\artifacts\wpf-msi\FlowNote.Windows.App-0.1.0-win-x64.msi
+```
+
+검증 기준은 다음과 같다.
+
+- `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`에는 실행 파일과 의존 파일만 있다.
+- `C:\Program Files\FlowNote\Client\FlowNote.Windows.App` 아래에는 `flownote.local.sqlite`, `*.sqlite-wal`, `*.sqlite-shm`, `Files\`가 생기지 않는다.
+- `C:\FlowNote\LocalData\flownote.local.sqlite`와 `C:\FlowNote\LocalData\Files`가 생성된다.
+- .NET Windows Desktop Runtime이 없는 PC에서는 framework-dependent MSI 실행 실패를 기록하고, self-contained MSI 실행 결과를 별도로 기록한다.
+- WebView2 Runtime이 없는 PC에서는 문서 뷰어 실패 안내가 표시되는지 확인하고, WebView2 Runtime 설치 후 같은 문서 열람이 성공하는지 기록한다.
+- `git status`에서 `artifacts\wpf-msi`, publish 산출물, MSI 파일, `.wixpdb`가 추적 대상으로 잡히지 않는다.
+
+코드 서명 검증은 서명 인증서가 준비된 배포 준비 PC에서 수행한다.
+
+```powershell
+.\scripts\package-wpf-msi.ps1 `
+  -ProductVersion 0.1.0 `
+  -Runtime win-x64 `
+  -Sign `
+  -SigningCertificateSubjectName "FlowNote 코드서명 인증서 표시 이름"
+
+signtool verify /pa .\artifacts\wpf-msi\publish\FlowNote.Windows.App\FlowNote.Windows.App.exe
+signtool verify /pa .\artifacts\wpf-msi\FlowNote.Windows.App-0.1.0-win-x64.msi
+```

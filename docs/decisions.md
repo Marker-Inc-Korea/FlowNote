@@ -102,6 +102,14 @@
 - Windows Service 직접 등록은 Python/FastAPI 프로세스용 서비스 래퍼 또는 별도 호스트 구현이 필요하므로 후속 선택지로 둔다.
 - 현재 저장소에는 `package-wpf-msi.ps1`, `install-flownote-server-task.ps1`, `manage-flownote-server-task.ps1`, `run-flownote-server.ps1`가 있으며, 운영 현장 적용 전에는 MSI 설치 검증, 서명, 런타임 포함 여부를 별도로 확인한다.
 
+## 2026-07-06. WPF MSI 런타임과 서명 기준
+
+- `package-wpf-msi.ps1`의 기본 산출물은 framework-dependent MSI다. 설치 대상 PC에 대상 버전의 `.NET Windows Desktop Runtime`이 보장되지 않으면 `-SelfContained` MSI를 별도 생성한다.
+- self-contained MSI는 .NET 런타임 파일을 포함하지만 WebView2 Evergreen Runtime은 포함하지 않는다. WebView2 Runtime은 설치 전 별도 점검과 설치 절차로 관리한다.
+- MSI 파일 세트에는 WPF 실행 파일, `.deps.json`, `.runtimeconfig.json`, 앱 DLL, 의존 DLL, 네이티브 DLL만 포함한다. 로컬 SQLite, WAL/SHM, `Data`/`Files`, 테스트 산출물, 고객 파일 패턴이 publish 파일 세트에 있으면 패키징을 실패시킨다.
+- 운영 배포 MSI는 코드 서명 인증서로 서명하는 것을 기준으로 한다. 서명 시 publish된 `FlowNote.Windows.App.exe`를 먼저 서명하고, 그 EXE가 포함된 MSI를 생성한 뒤 최종 MSI도 서명하고 검증한다.
+- 미서명 MSI는 내부 임시 검증용으로만 허용하며, 배포 대상, MSI 해시, 승인자, Windows 경고 안내를 운영 기록에 남긴다.
+
 ## 2026-07-02. 운영 백업/복구와 후속 계층 착수 기준
 
 - 서버 SQLite, 서버 `storage`, 서버 `.env`/로그는 서버 운영 백업 세트로 관리한다.
