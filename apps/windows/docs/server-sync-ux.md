@@ -7,8 +7,8 @@
 `동기화 큐` 탭은 다음 컬럼을 표시한다.
 
 - `상태`: `대기`, `실패`, `완료`
-- `대상`: 문서, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 첨부, 접근 로그
-- `작업`: 문서 전송, 버전 전송, 공개 전송, 상태 전송, FieldComment 전송, 첨부 전송, 열람 시작/종료/자동 종료/다운로드 차단 전송
+- `대상`: 문서, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 첨부, 접근 로그, 보고서
+- `작업`: 문서 전송, 버전 전송, 공개 전송, 상태 전송, FieldComment 전송, 첨부 전송, 열람 시작/종료/자동 종료/다운로드 차단 전송, 보고서 서버 저장
 - `시도`: 서버 전송 시도 횟수
 - `마지막 시도`: 마지막 재시도 시간
 - `실패 사유`: 사용자가 조치할 수 있는 한글 실패 문구
@@ -33,7 +33,7 @@
 
 공개는 항상 특정 로컬 버전 번호의 서버 버전 ID가 확인된 뒤 서버 publish API를 호출한다. 문서 상태는 현재 로컬 `documents.status`를 서버 상태 API에 반영한다. 상태가 `PUBLISHED`이면 공개 대상 버전의 서버 버전 ID가 먼저 있어야 한다.
 
-보고서 서버 저장은 서버 보고서 저장이 성공한 뒤 로컬 보고서 문서를 만들고 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 연결한다. 보고서 저장 실패는 현재 큐 재시도 대상이 아니며, 로컬 보고서 저장 흐름으로 남긴다.
+보고서 서버 저장은 로컬 보고서 문서와 `report_sources`를 먼저 남긴 뒤 `/api/v1/reports` 저장을 시도한다. 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 연결한다. 실패하면 기존 `server_sync_queue`에 `entity_type = report`, `action = register_report`로 남기고, 재시도 시 같은 idempotency key로 서버 저장을 다시 시도한다.
 
 작업순서 보드/항목/이력은 현재 단계에서 WPF 로컬 큐의 양방향 동기화 대상이 아니다. 서버 연동 스모크는 서버 작업순서 API의 생성, 순서 변경, 상태 변경, 이력, 알림 후보를 직접 검증하고, WPF 보고서는 작업순서 항목/이력을 report source로 추적한다.
 
@@ -50,9 +50,9 @@
 3. 같은 문서를 다시 큐에 넣어도 `idempotency_key` 기준으로 큐가 중복 생성되지 않는지 확인한다.
 4. 같은 문서에 FieldComment와 첨부를 저장하고, 접근 로그 시작/종료를 남긴다.
 5. 문서 v2 추가, publish, 상태 변경을 수행한다.
-6. FieldComment, 첨부, 접근 로그, 문서 버전, 공개, 상태 큐가 로컬에 남고 실패 사유가 한글로 표시되는지 확인한다.
+6. FieldComment, 첨부, 접근 로그, 문서 버전, 공개, 상태, 보고서 큐가 로컬에 남고 실패 사유가 한글로 표시되는지 확인한다.
 7. 서버를 켜고 같은 계정으로 로그인한 뒤 `재시도`를 누른다.
-8. 문서, 문서 버전, 공개, 상태, FieldComment, 첨부, 접근 로그 큐가 `SYNCED`로 바뀌고 각 원천 테이블의 서버 ID와 `synced_at`, `server_id_mappings`가 채워지는지 확인한다.
+8. 문서, 문서 버전, 공개, 상태, FieldComment, 첨부, 접근 로그, 보고서 큐가 `SYNCED`로 바뀌고 각 원천 테이블의 서버 ID와 `synced_at`, `server_id_mappings`가 채워지는지 확인한다.
 9. 이미 `SYNCED`인 항목을 다시 큐에 넣어도 큐 건수와 시도 횟수가 증가하지 않는지 확인한다.
 10. 만료된 토큰으로 재시도하면 인증 만료 문구가 표시되고, 로컬 데이터와 큐가 삭제되지 않는지 확인한다.
 

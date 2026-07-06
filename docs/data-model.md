@@ -145,6 +145,18 @@ FieldComment 상태:
 - `EXCLUDED`
 - `ARCHIVED`
 
+서버 작업내역 상태:
+
+- `DRAFT`
+- `ACTIVE`
+- `COMPLETED`
+- `ARCHIVED`
+
+서버 작업순서 보드 상태:
+
+- `ACTIVE`
+- `ARCHIVED`
+
 작업순서 항목 상태:
 
 - `WAITING`
@@ -163,6 +175,20 @@ FieldComment 상태:
 - `PENDING`
 - `FAILED`
 - `SYNCED`
+
+서버 보고서 상태:
+
+- `DRAFT`
+- `AI_DRAFTED`
+- `REVIEWED`
+- `APPROVED`
+- `ARCHIVED`
+
+서버 인증 세션 상태:
+
+- `ACTIVE`
+- `REVOKED`
+- `EXPIRED`
 
 ## 역할 값
 
