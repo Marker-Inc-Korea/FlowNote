@@ -99,7 +99,7 @@ FieldComment는 `documentId`, `structureItemId`, `workRecordId` 중 하나 이�
 | Method | Path | 설명 |
 | --- | --- | --- |
 | POST | `/api/v1/reports/drafts` | 수동 보고서 초안 생성 |
-| POST | `/api/v1/reports` | 보고서 저장, 선택 시 문서로 저장 |
+| POST | `/api/v1/reports` | 보고서 저장, 선택 시 문서로 저장. `idempotencyKey`를 보내면 같은 키의 재시도는 기존 보고서를 반환 |
 | GET | `/api/v1/reports` | 보고서 목록 |
 | GET | `/api/v1/reports/{reportId}` | 보고서 상세 |
 

@@ -73,6 +73,7 @@ class ReportDraftCreateRequest(BaseModel):
 class ReportSaveRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
+    idempotency_key: str | None = Field(default=None, alias="idempotencyKey")
     draft_report_id: str | None = Field(default=None, alias="draftReportId")
     report_type: str | None = Field(default=None, alias="reportType")
     title: str | None = None
@@ -150,6 +151,16 @@ def _clean_required(value: str | None, field_name: str) -> str:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"{field_name} is required.",
+        )
+    return cleaned
+
+
+def _clean_idempotency_key(value: str | None) -> str | None:
+    cleaned = _clean_optional(value)
+    if cleaned is not None and len(cleaned) > 160:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="idempotencyKey is too long.",
         )
     return cleaned
 
@@ -523,6 +534,12 @@ def save_report(
     session: Annotated[Session, Depends(get_db_session)],
 ) -> ReportResponse:
     now = datetime.now(timezone.utc)
+    idempotency_key = _clean_idempotency_key(request.idempotency_key)
+    if idempotency_key is not None:
+        existing = session.scalar(select(Report).where(Report.idempotency_key == idempotency_key))
+        if existing is not None:
+            return _report_response(session, existing)
+
     if request.draft_report_id is not None:
         report = session.scalar(select(Report).where(Report.report_id == request.draft_report_id))
         if report is None:
@@ -539,6 +556,9 @@ def save_report(
         session.add(report)
         session.flush()
         _replace_report_sources(session, report.report_id, request.sources)
+
+    if idempotency_key is not None:
+        report.idempotency_key = idempotency_key
 
     if request.sources is not None:
         _replace_report_sources(session, report.report_id, request.sources)

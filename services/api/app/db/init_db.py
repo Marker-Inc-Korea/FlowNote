@@ -177,6 +177,7 @@ def _ensure_idempotency_columns(database: Database) -> None:
         ("documents", "ix_documents_idempotency_key"),
         ("field_comments", "ix_field_comments_idempotency_key"),
         ("document_access_logs", "ix_document_access_logs_idempotency_key"),
+        ("reports", "ix_reports_idempotency_key"),
     )
     with database.engine.begin() as connection:
         for table_name, index_name in targets:

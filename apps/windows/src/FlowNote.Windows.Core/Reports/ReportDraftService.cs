@@ -1,12 +1,15 @@
 using FlowNote.Windows.Core.Documents;
-using FlowNote.Windows.Core.History;
 using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
+using FlowNote.Windows.Core.Sync;
 using Microsoft.Data.Sqlite;
 
 namespace FlowNote.Windows.Core.Reports;
 
-public sealed class ReportDraftService(FlowNoteLocalDatabase database, DocumentService documents)
+public sealed class ReportDraftService(
+    FlowNoteLocalDatabase database,
+    DocumentService documents,
+    ServerSyncService serverSync)
 {
     public IReadOnlyList<ReportSourceCandidateRecord> ListFieldCommentSources(int limit = 100)
     {
@@ -149,7 +152,9 @@ public sealed class ReportDraftService(FlowNoteLocalDatabase database, DocumentS
         long folderId,
         string title,
         string content,
-        string actorName)
+        string actorName,
+        IEnumerable<ReportSourceCandidateRecord>? selectedSources = null,
+        string? summary = null)
     {
         var now = DateTime.UtcNow;
         var dataDirectory = Path.GetDirectoryName(database.DatabasePath)!;
@@ -168,11 +173,14 @@ public sealed class ReportDraftService(FlowNoteLocalDatabase database, DocumentS
             actorName,
             relativePath,
             new[] { "Report", "FieldComment" });
-        return documents.UpdateDocumentStatus(document.DocumentId, "IN_REVIEW", actorName);
+        var updatedDocument = documents.UpdateDocumentStatus(document.DocumentId, "IN_REVIEW", actorName);
+        SaveLocalReportSources(updatedDocument.DocumentId, selectedSources ?? []);
+        SaveReportSummary(updatedDocument.DocumentId, summary);
+        return updatedDocument;
     }
 
     public async Task<ReportServerSaveResult> SaveDraftToServerAsync(
-        FlowNoteServerDocumentClient serverClient,
+        FlowNoteServerDocumentClient? serverClient,
         long folderId,
         string title,
         string summary,
@@ -181,43 +189,24 @@ public sealed class ReportDraftService(FlowNoteLocalDatabase database, DocumentS
         string actorName,
         CancellationToken cancellationToken = default)
     {
-        var sourceMap = MapServerReportSources(selectedSources);
-        if (sourceMap.Sources.Count == 0)
+        var selected = selectedSources.ToList();
+        var localDocument = SaveDraftAsDocument(folderId, title, content, actorName, selected, summary);
+        var sourceMap = MapServerReportSources(selected);
+        ServerReportResponse? saved = null;
+        var syncResult = await serverSync.QueueAndTrySyncReportAsync(
+            localDocument,
+            serverClient,
+            cancellationToken: cancellationToken);
+        if (syncResult.Success && serverClient is not null)
         {
-            throw new InvalidOperationException("No selected report source is linked to a server id.");
+            var serverReportId = TryGetLocalServerReportId(localDocument.DocumentId);
+            if (!string.IsNullOrWhiteSpace(serverReportId))
+            {
+                saved = await serverClient.GetReportAsync(serverReportId, cancellationToken);
+            }
         }
 
-        var draft = await serverClient.CreateReportDraftAsync(
-            new ServerReportDraftCreateRequest
-            {
-                ReportType = "field_review",
-                Title = Clean(title, "Field report draft"),
-                Summary = Clean(summary, string.Empty),
-                AnalysisContent = Clean(content, string.Empty),
-                Sources = sourceMap.Sources
-            },
-            cancellationToken);
-
-        var saved = await serverClient.SaveReportAsync(
-            new ServerReportSaveRequest
-            {
-                DraftReportId = draft.ReportId,
-                AnalysisContent = Clean(content, string.Empty),
-                SaveAsDocument = true,
-                DocumentTitle = Clean(title, "Field report draft"),
-                DocumentStatus = "IN_REVIEW"
-            },
-            cancellationToken);
-
-        DocumentRecord? localDocument = null;
-        if (!string.IsNullOrWhiteSpace(saved.GeneratedDocumentId))
-        {
-            localDocument = SaveDraftAsDocument(folderId, title, content, actorName);
-            LinkLocalDocumentToServerReport(localDocument.DocumentId, saved, actorName);
-            localDocument = documents.UpdateDocumentStatus(localDocument.DocumentId, "IN_REVIEW", actorName);
-        }
-
-        return new ReportServerSaveResult(draft, saved, localDocument, sourceMap.SkippedSources);
+        return new ReportServerSaveResult(saved, localDocument, sourceMap.SkippedSources, syncResult);
     }
 
     public (
@@ -271,91 +260,90 @@ public sealed class ReportDraftService(FlowNoteLocalDatabase database, DocumentS
         return candidate;
     }
 
-    private void LinkLocalDocumentToServerReport(string localDocumentId, ServerReportResponse savedReport, string actorName)
+    private void SaveLocalReportSources(
+        string localReportDocumentId,
+        IEnumerable<ReportSourceCandidateRecord> selectedSources)
     {
-        var generatedDocument = savedReport.GeneratedDocument;
-        var serverDocumentId = savedReport.GeneratedDocumentId;
-        var serverVersionId = generatedDocument?.LatestVersionId ?? generatedDocument?.PublishedVersionId;
-        var now = DateTime.UtcNow;
+        using var connection = database.OpenConnection();
+        using var delete = connection.CreateCommand();
+        delete.CommandText = """
+            DELETE FROM report_sources
+            WHERE local_report_document_id = $document_id;
+            """;
+        delete.Parameters.AddWithValue("$document_id", localReportDocumentId);
+        delete.ExecuteNonQuery();
+
+        foreach (var source in selectedSources)
+        {
+            using var insert = connection.CreateCommand();
+            insert.CommandText = """
+                INSERT INTO report_sources (
+                    local_report_document_id,
+                    source_type,
+                    local_source_id,
+                    source_version_id,
+                    relation_type,
+                    title,
+                    detail,
+                    created_at
+                )
+                VALUES (
+                    $document_id,
+                    $source_type,
+                    $local_source_id,
+                    $source_version_id,
+                    $relation_type,
+                    $title,
+                    $detail,
+                    $created_at
+                );
+                """;
+            insert.Parameters.AddWithValue("$document_id", localReportDocumentId);
+            insert.Parameters.AddWithValue("$source_type", Clean(source.SourceType, string.Empty).ToUpperInvariant());
+            insert.Parameters.AddWithValue("$local_source_id", Clean(source.SourceId, string.Empty));
+            insert.Parameters.AddWithValue("$source_version_id", string.IsNullOrWhiteSpace(source.SourceVersionId) ? DBNull.Value : source.SourceVersionId);
+            insert.Parameters.AddWithValue("$relation_type", string.IsNullOrWhiteSpace(source.RelationType) ? DBNull.Value : source.RelationType);
+            insert.Parameters.AddWithValue("$title", string.IsNullOrWhiteSpace(source.Title) ? DBNull.Value : source.Title);
+            insert.Parameters.AddWithValue("$detail", string.IsNullOrWhiteSpace(source.Detail) ? DBNull.Value : source.Detail);
+            insert.Parameters.AddWithValue("$created_at", source.CreatedAt.ToString("O"));
+            insert.ExecuteNonQuery();
+        }
+    }
+
+    private void SaveReportSummary(string localReportDocumentId, string? summary)
+    {
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            return;
+        }
 
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE documents
-            SET server_report_id = $server_report_id,
-                server_document_id = $server_document_id,
-                server_version_id = $server_version_id,
-                synced_at = $synced_at
+            SET latest_comment = $summary
             WHERE document_id = $document_id;
-
-            UPDATE document_versions
-            SET server_version_id = $server_version_id,
-                synced_at = $synced_at
-            WHERE document_id = $document_id AND is_latest = 1;
             """;
-        command.Parameters.AddWithValue("$server_report_id", Clean(savedReport.ReportId, string.Empty));
-        command.Parameters.AddWithValue(
-            "$server_document_id",
-            string.IsNullOrWhiteSpace(serverDocumentId) ? DBNull.Value : serverDocumentId);
-        command.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
-        command.Parameters.AddWithValue("$synced_at", now.ToString("O"));
-        command.Parameters.AddWithValue("$document_id", localDocumentId);
+        command.Parameters.AddWithValue("$summary", summary.Trim());
+        command.Parameters.AddWithValue("$document_id", localReportDocumentId);
         command.ExecuteNonQuery();
-
-        UpsertMapping(connection, "document", localDocumentId, 0, serverDocumentId, serverVersionId, now);
-        UpsertMapping(connection, "document_version", localDocumentId, 1, serverDocumentId, serverVersionId, now);
-        UpsertMapping(connection, "report", localDocumentId, 0, serverDocumentId, serverVersionId, now);
-
-        HistoryService.Record(
-            connection,
-            "report.server_saved",
-            actorName,
-            "document",
-            localDocumentId,
-            savedReport.Title,
-            $"Server report saved: {savedReport.ReportId} / {serverDocumentId}",
-            now);
     }
 
-    private static void UpsertMapping(
-        SqliteConnection connection,
-        string entityType,
-        string localId,
-        int localVersionNo,
-        string? serverDocumentId,
-        string? serverVersionId,
-        DateTime syncedAt)
+    private string? TryGetLocalServerReportId(string localReportDocumentId)
     {
+        using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO server_id_mappings (
-                entity_type,
-                local_id,
-                local_version_no,
-                server_document_id,
-                server_version_id,
-                synced_at
-            )
-            VALUES (
-                $entity_type,
-                $local_id,
-                $local_version_no,
-                $server_document_id,
-                $server_version_id,
-                $synced_at
-            )
-            ON CONFLICT(entity_type, local_id, local_version_no) DO UPDATE SET
-                server_document_id = excluded.server_document_id,
-                server_version_id = excluded.server_version_id,
-                synced_at = excluded.synced_at;
+            SELECT server_report_id
+            FROM documents
+            WHERE document_id = $document_id
+              AND server_report_id IS NOT NULL
+              AND synced_at IS NOT NULL
+            LIMIT 1;
             """;
-        command.Parameters.AddWithValue("$entity_type", entityType);
-        command.Parameters.AddWithValue("$local_id", localId);
-        command.Parameters.AddWithValue("$local_version_no", localVersionNo);
-        command.Parameters.AddWithValue("$server_document_id", string.IsNullOrWhiteSpace(serverDocumentId) ? DBNull.Value : serverDocumentId);
-        command.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
-        command.Parameters.AddWithValue("$synced_at", syncedAt.ToString("O"));
-        command.ExecuteNonQuery();
+        command.Parameters.AddWithValue("$document_id", localReportDocumentId);
+        var value = command.ExecuteScalar();
+        return value is null or DBNull ? null : Convert.ToString(value);
     }
 
     private static ServerReportSourceRequest? TryMapServerReportSource(SqliteConnection connection, ReportSourceCandidateRecord source)

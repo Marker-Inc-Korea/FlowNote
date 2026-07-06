@@ -1345,10 +1345,22 @@ try
         services.Notifications.ListNotifications("반장 A").Count >= 2,
         "Korean PDF field comments should notify the foreman document creator");
 
-    using var serverHttpClient = FlowNoteServerApiEnvironment.CreateHttpClientFromEnvironment(TimeSpan.FromSeconds(20));
+    var configuredServerBaseUrl = Environment.GetEnvironmentVariable(
+        FlowNoteServerApiEnvironment.ApiBaseUrlEnvironmentVariable);
+    var serverSmokeBaseUrl = string.IsNullOrWhiteSpace(configuredServerBaseUrl)
+        ? FlowNoteServerApiEnvironment.LocalLoopbackApiBaseUrl
+        : configuredServerBaseUrl;
+    using var serverHttpClient = FlowNoteServerApiEnvironment.CreateHttpClient(
+        serverSmokeBaseUrl,
+        TimeSpan.FromSeconds(20));
     if (serverHttpClient is null)
     {
         Console.WriteLine("FLOWNOTE_API_BASE_URL is not set or invalid; server integration smoke blocks skipped.");
+    }
+    else if (string.IsNullOrWhiteSpace(configuredServerBaseUrl) && !await IsServerAvailableAsync(serverHttpClient))
+    {
+        Console.WriteLine(
+            "FLOWNOTE_API_BASE_URL is not set and http://127.0.0.1:5184 is not reachable; server integration smoke blocks skipped.");
     }
     else
     {
@@ -2375,14 +2387,16 @@ try
                 reportContent,
                 reportSources,
                 smokeActorName);
-            Require(reportResult.ReportId.StartsWith("report_", StringComparison.Ordinal), "server report save should return report_id");
+            Require(
+                reportResult.ReportId?.StartsWith("report_", StringComparison.Ordinal) == true,
+                "server report save should return report_id");
             Require(
                 reportResult.GeneratedDocumentId?.StartsWith("doc_", StringComparison.Ordinal) == true,
                 "server report save should return generated_document_id");
-            Require(reportResult.LocalDocument is not null, "server report save should keep a local document copy");
             Require(reportResult.SkippedSources.Count == 0, "server report save should map all server report sources");
+            var reportId = reportResult.ReportId!;
 
-            var savedReportDetail = await serverDocuments.GetReportAsync(reportResult.ReportId);
+            var savedReportDetail = await serverDocuments.GetReportAsync(reportId);
             Require(savedReportDetail.GeneratedDocumentId == reportResult.GeneratedDocumentId, "server report detail should keep generated document id");
             Require(
                 savedReportDetail.Sources.Any(item => item.SourceType == "FIELD_COMMENT" && item.SourceId == serverFieldComment.CommentId),
@@ -2394,7 +2408,7 @@ try
                 savedReportDetail.Sources.Any(item => item.SourceType == "WORK_SEQUENCE_HISTORY" && item.SourceId == reportSequenceHistorySource.ChangeId),
                 "server report detail should trace the work sequence history source");
             var reportList = await serverDocuments.ListReportsAsync();
-            Require(reportList.Any(item => item.ReportId == reportResult.ReportId), "server report list should include the saved report");
+            Require(reportList.Any(item => item.ReportId == reportId), "server report list should include the saved report");
             var reportDocumentList = await serverDocuments.ListDocumentsAsync();
             Require(
                 reportDocumentList.Any(item =>
@@ -2418,8 +2432,8 @@ try
                       AND server_document_id = $server_document_id
                       AND synced_at IS NOT NULL;
                     """,
-                    ("$document_id", reportResult.LocalDocument!.DocumentId),
-                    ("$server_report_id", reportResult.ReportId),
+                    ("$document_id", reportResult.LocalDocument.DocumentId),
+                    ("$server_report_id", reportId),
                     ("$server_document_id", reportResult.GeneratedDocumentId!)) == 1,
                 "local report document should link server report_id and generated_document_id");
             Require(
@@ -2433,9 +2447,116 @@ try
                       AND server_document_id = $server_document_id
                       AND synced_at IS NOT NULL;
                     """,
-                    ("$document_id", reportResult.LocalDocument!.DocumentId),
+                    ("$document_id", reportResult.LocalDocument.DocumentId),
                     ("$server_document_id", reportResult.GeneratedDocumentId!)) == 3,
                 "local report document should write document, document_version, and report server id mappings");
+
+            var offlineReportContent = services.Reports.BuildDraftContent(
+                $"Windows offline queued report {runStamp}",
+                "Windows smoke stores a local report first and retries server save.",
+                reportSources,
+                smokeActorName);
+            using var unavailableReportHttpClient = new HttpClient
+            {
+                BaseAddress = new Uri("http://127.0.0.1:9/"),
+                Timeout = TimeSpan.FromSeconds(2)
+            };
+            var unavailableReportServer = new FlowNoteServerDocumentClient(unavailableReportHttpClient);
+            var offlineReportResult = await services.Reports.SaveDraftToServerAsync(
+                unavailableReportServer,
+                currentDocumentFolder.Id,
+                $"Windows offline queued report {runStamp}",
+                "Windows smoke stores a local report first and retries server save.",
+                offlineReportContent,
+                reportSources,
+                smokeActorName);
+            Require(!offlineReportResult.SyncResult.Success, "missing server client should keep report sync queued locally");
+            Require(offlineReportResult.ReportId is null, "offline report save should not have a server report id yet");
+            Require(
+                ScalarLong(
+                    reportConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM documents
+                    WHERE document_id = $document_id
+                      AND server_report_id IS NULL;
+                    """,
+                    ("$document_id", offlineReportResult.LocalDocument.DocumentId)) == 1,
+                "offline report save should keep a local report document without a server report id");
+            Require(
+                ScalarLong(
+                    reportConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_sync_queue
+                    WHERE entity_type = 'report'
+                      AND entity_id = $document_id
+                      AND action = 'register_report'
+                      AND status = 'FAILED'
+                      AND attempt_count >= 1
+                      AND last_attempt_at IS NOT NULL
+                      AND last_error IS NOT NULL;
+                    """,
+                    ("$document_id", offlineReportResult.LocalDocument.DocumentId)) == 1,
+                "offline report save should leave a failed report sync queue row");
+            Require(
+                ScalarLong(
+                    reportConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM report_sources
+                    WHERE local_report_document_id = $document_id
+                      AND source_type IN ('FIELD_COMMENT', 'DOCUMENT', 'WORK_SEQUENCE_ITEM', 'WORK_SEQUENCE_HISTORY');
+                    """,
+                    ("$document_id", offlineReportResult.LocalDocument.DocumentId)) == 4,
+                "offline report save should preserve all local report source links");
+
+            _ = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
+            Require(
+                ScalarLong(
+                    reportConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_sync_queue
+                    WHERE entity_type = 'report'
+                      AND entity_id = $document_id
+                      AND status = 'SYNCED'
+                      AND server_report_id IS NOT NULL
+                      AND attempt_count >= 1;
+                    """,
+                    ("$document_id", offlineReportResult.LocalDocument.DocumentId)) == 1,
+                "report retry should sync the queued report after the server client is available");
+            var retriedReportId = ScalarString(
+                reportConnection,
+                """
+                SELECT server_report_id
+                FROM documents
+                WHERE document_id = $document_id
+                  AND server_report_id IS NOT NULL
+                  AND server_document_id IS NOT NULL
+                  AND synced_at IS NOT NULL;
+                """,
+                ("$document_id", offlineReportResult.LocalDocument.DocumentId));
+            Require(
+                retriedReportId?.StartsWith("report_", StringComparison.Ordinal) == true,
+                "retried report should link the local document to a server report id");
+            var retriedReportDetail = await serverDocuments.GetReportAsync(retriedReportId!);
+            Require(
+                retriedReportDetail.Sources.Any(item => item.SourceType == "FIELD_COMMENT" && item.SourceId == serverFieldComment.CommentId),
+                "retried report detail should trace the FieldComment source");
+            Require(
+                retriedReportDetail.Sources.Any(item => item.SourceType == "WORK_SEQUENCE_HISTORY" && item.SourceId == reportSequenceHistorySource.ChangeId),
+                "retried report detail should trace the work sequence history source");
+            var offlineReportTitle = $"Windows offline queued report {runStamp}";
+            var serverReportCountBeforeDuplicateRetry = (await serverDocuments.ListReportsAsync()).Count(item => item.Title == offlineReportTitle);
+            _ = await services.ServerSync.QueueAndTrySyncReportAsync(
+                offlineReportResult.LocalDocument,
+                serverDocuments,
+                serverLogin.UserId);
+            var serverReportCountAfterDuplicateRetry = (await serverDocuments.ListReportsAsync()).Count(item => item.Title == offlineReportTitle);
+            Require(
+                serverReportCountAfterDuplicateRetry == serverReportCountBeforeDuplicateRetry,
+                "repeated report retry should not create a duplicate server report");
         }
 
         {
@@ -2549,6 +2670,23 @@ static async Task<T?> WaitForAsync<T>(Func<T?> action, TimeSpan timeout)
     }
 
     return null;
+}
+
+static async Task<bool> IsServerAvailableAsync(HttpClient httpClient)
+{
+    try
+    {
+        using var response = await httpClient.GetAsync("api/v1/health");
+        return response.IsSuccessStatusCode;
+    }
+    catch (HttpRequestException)
+    {
+        return false;
+    }
+    catch (TaskCanceledException)
+    {
+        return false;
+    }
 }
 
 static long ScalarLong(SqliteConnection connection, string sql, params (string Name, object Value)[] parameters)

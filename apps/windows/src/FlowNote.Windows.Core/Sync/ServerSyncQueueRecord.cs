@@ -17,6 +17,7 @@ public sealed record ServerSyncQueueRecord(
     DateTime? SyncedAt,
     string? ServerDocumentId,
     string? ServerVersionId,
+    string? ServerReportId,
     string? ServerCommentId,
     string? ServerAttachmentId,
     string? ServerLogId);

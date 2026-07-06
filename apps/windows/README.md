@@ -70,6 +70,8 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Windows.SmokeTests.csproj
 ```
 
+스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 없으면 `http://127.0.0.1:5184`의 로컬 FastAPI 서버를 자동 확인한다. 해당 서버가 실행 중이면 서버 로그인, 문서 등록, 버전, 공개 조회까지 서버 연동 블록을 검증하고, 실행 중이 아니면 기존 로컬 SQLite 검증만 계속한다.
+
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 
 파일 유형별 미리보기 샘플과 실패 안내 기준은 [문서 미리보기 안정화 기준](./docs/document-preview-stability.md)을 따른다.

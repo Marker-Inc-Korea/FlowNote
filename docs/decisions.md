@@ -61,10 +61,10 @@
 ## 2026-07-01. WPF 보고서 저장 흐름
 
 - WPF 보고서 창은 FieldComment, 문서, 작업순서 이력을 보고서 근거 후보로 사용한다.
-- 서버 클라이언트가 있으면 `/api/v1/reports/drafts`와 `/api/v1/reports`를 호출해 서버 보고서와 생성 문서 저장을 먼저 시도한다.
-- 서버 보고서 저장에 성공하면 로컬 보고서 문서를 만들고 서버 보고서/문서 ID를 연결한다.
-- 서버 보고서 저장에 실패하거나 서버 클라이언트가 없으면 로컬 보고서 문서 저장 흐름으로 남긴다.
-- 보고서 저장은 현재 `server_sync_queue` 재시도 대상이 아니다. 재시도 큐는 문서, 문서 버전/공개/상태, FieldComment, FieldComment 첨부, 문서 접근 로그를 대상으로 한다.
+- WPF 보고서 저장은 로컬 보고서 문서와 `report_sources`를 먼저 만든 뒤 서버 `/api/v1/reports` 저장을 시도한다.
+- 보고서 저장 실패는 보고서 전용 큐를 새로 만들지 않고 기존 `server_sync_queue`에 `entity_type = report`, `action = register_report`로 남긴다.
+- 큐에는 한글 실패 사유, 마지막 시도 시간, 시도 횟수를 기존 동기화 항목과 같은 방식으로 기록한다.
+- 서버 재시도 중복 방지는 `/api/v1/reports`의 `idempotencyKey`와 WPF `wpf:report:{localReportDocumentId}` 키로 처리한다.
 - 서버 보고서 저장에 성공한 로컬 보고서 문서는 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`에 연결한다.
 
 ## 2026-07-02. 서버-WPF 문서 동기화 우선순위

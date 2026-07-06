@@ -14,7 +14,7 @@ FastAPI Server
   -> /api/v1 REST API
 ```
 
-WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, 첨부, 접근 로그 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 보고서 저장은 WPF 보고서 창에서 서버 클라이언트가 있을 때 직접 서버 보고서 API를 호출하고, 실패하면 로컬 문서 저장 흐름으로 처리한다.
+WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 보고서는 로컬 보고서 문서와 `report_sources`를 먼저 남긴 뒤 `server_sync_queue`의 `register_report` 항목으로 서버 `/api/v1/reports` 저장을 재시도한다.
 
 ## 주요 도메인
 
@@ -69,7 +69,7 @@ FieldComment는 문서 파일 개정이 아니라 현장 원천 기록이다. �
 
 ## 보고서
 
-보고서는 FieldComment, 문서, 작업순서 항목/이력을 근거로 수동 초안을 만들고 문서로 저장하는 최소 흐름이 구현되어 있다. 서버 클라이언트가 있으면 `/api/v1/reports` 흐름으로 서버 보고서와 생성 문서 저장을 먼저 시도한다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
+보고서는 FieldComment, 문서, 작업순서 항목/이력을 근거로 수동 초안을 만들고 문서로 저장하는 최소 흐름이 구현되어 있다. WPF는 로컬 보고서 문서를 먼저 만들고 source를 `report_sources`에 보존한 뒤 `/api/v1/reports` 저장을 시도한다. 실패하면 `server_sync_queue`에 남기고, 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
 
 ## 후속 연동
 

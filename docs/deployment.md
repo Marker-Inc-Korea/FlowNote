@@ -115,7 +115,7 @@ FLOWNOTE_SESSION_COOKIE_NAME=flownote_session
 .\scripts\install-flownote-server-task.ps1 -ServerRoot C:\FlowNote\Server -StartNow
 ```
 
-등록 스크립트는 `run-flownote-server.ps1`을 `C:\FlowNote\Server\scripts`로 복사하고, `C:\FlowNote\Server\.env`를 프로세스 환경변수로 읽은 뒤 `C:\FlowNote\Server\api`에서 uvicorn을 실행한다. `.env`에 값이 없으면 `FLOWNOTE_API_HOST=0.0.0.0`, `FLOWNOTE_API_PORT=5184`, `FLOWNOTE_DATABASE_URL=sqlite:///C:/FlowNote/Server/data/flownote.sqlite3`, `FLOWNOTE_STORAGE_ROOT=C:\FlowNote\Server\storage`를 기본값으로 둔다.
+등록 스크립트는 `run-flownote-server.ps1`을 `C:\FlowNote\Server\scripts`로 복사하고, `C:\FlowNote\Server\.env`를 프로세스 환경변수로 읽은 뒤 `C:\FlowNote\Server\api`에서 uvicorn을 실행한다. `.env`에 값이 없으면 로컬 서버 테스트 기준으로 `FLOWNOTE_API_HOST=127.0.0.1`, `FLOWNOTE_API_PORT=5184`, `FLOWNOTE_DATABASE_URL=sqlite:///C:/FlowNote/Server/data/flownote.sqlite3`, `FLOWNOTE_STORAGE_ROOT=C:\FlowNote\Server\storage`를 기본값으로 둔다. 현장 클라이언트 PC에서 서버 PC로 접속해야 하는 운영 구성은 `.env`에 `FLOWNOTE_API_HOST=0.0.0.0`을 명시한다.
 
 6. 서버 작업을 시작, 중지, 재시작하거나 상태를 확인한다.
 
@@ -369,7 +369,7 @@ $env:FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS = "300"
 | FastAPI pytest | `FLOWNOTE_STORAGE_ROOT` | 일반 개발 실행 기본값은 `./storage`; 테스트별 하위 폴더 사용 |
 | WPF 개발/스모크 | `FLOWNOTE_LOCAL_DATA_DIR` | 지정하지 않으면 저장소 루트 `data/local` 자동 사용 |
 | WPF 개발/스모크 | `FLOWNOTE_LOCAL_DATABASE_PATH` | 지정하지 않으면 `data/local/flownote.local.sqlite` 자동 사용 |
-| WPF 서버 연동 스모크 | `FLOWNOTE_API_BASE_URL` | 서버 연동 블록을 검증할 때만 설정 |
+| WPF 서버 연동 스모크 | `FLOWNOTE_API_BASE_URL` | 지정하지 않으면 `http://127.0.0.1:5184` 로컬 서버가 실행 중일 때 서버 연동 블록 검증 |
 
 Windows 앱과 Windows 스모크 테스트는 기본적으로 저장소 루트의 `data/local/flownote.local.sqlite`를 함께 사용한다. 매 테스트마다 임시 SQLite를 새로 만들지 않고 누적된 로컬 DB를 기능 검증의 근거로 사용한다.
 

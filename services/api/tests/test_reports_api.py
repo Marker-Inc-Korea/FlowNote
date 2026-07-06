@@ -226,6 +226,50 @@ def test_report_draft_final_document_and_source_traceability() -> None:
             assert saved_version.created_by == "user-admin"
 
 
+def test_report_save_idempotency_key_returns_existing_report() -> None:
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        document = create_document(client, headers)
+        idempotency_key = f"pytest:report:{uuid4().hex}"
+        payload = {
+            "idempotencyKey": idempotency_key,
+            "reportType": "field_review",
+            "title": "Idempotent report save",
+            "summary": "Report should be created once for the same key.",
+            "analysisContent": "Retry should return the first saved report.",
+            "sources": [
+                {
+                    "sourceType": "DOCUMENT",
+                    "sourceId": document["document_id"],
+                    "sourceVersionId": document["latest_version"]["version_id"],
+                    "relationType": "related_document",
+                }
+            ],
+            "saveAsDocument": True,
+            "documentTitle": "Idempotent report document",
+            "documentStatus": "IN_REVIEW",
+        }
+
+        first_response = client.post("/api/v1/reports", headers=headers, json=payload)
+        assert first_response.status_code == 201, first_response.text
+        first = first_response.json()
+        second_response = client.post("/api/v1/reports", headers=headers, json=payload)
+        assert second_response.status_code == 201, second_response.text
+        second = second_response.json()
+
+        assert second["report_id"] == first["report_id"]
+        assert second["generated_document_id"] == first["generated_document_id"]
+        with client.app.state.database.session() as session:
+            reports = session.scalars(
+                select(Report).where(Report.idempotency_key == idempotency_key)
+            ).all()
+            assert len(reports) == 1
+            generated_documents = session.scalars(
+                select(Document).where(Document.title == "Idempotent report document")
+            ).all()
+            assert len(generated_documents) == 1
+
+
 def test_report_draft_requires_manager_role() -> None:
     with create_test_client() as client:
         headers = auth_headers(client)
