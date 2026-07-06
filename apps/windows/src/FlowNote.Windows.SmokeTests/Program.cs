@@ -885,6 +885,10 @@ try
         new RolePolicyExpectation("team-lead", true, true, false, false, false, false),
         new RolePolicyExpectation("team-member", false, true, false, false, false, false)
     };
+    Require(
+        RolePermissionPolicy.UserRoleOptions.Select(option => option.Role).OrderBy(role => role)
+            .SequenceEqual(rolePolicyMatrix.Select(expected => expected.Role).OrderBy(role => role)),
+        "WPF role options should match the documented server role set");
     foreach (var expected in rolePolicyMatrix)
     {
         Require(

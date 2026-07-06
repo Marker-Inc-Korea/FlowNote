@@ -230,7 +230,9 @@ def test_report_save_idempotency_key_returns_existing_report() -> None:
     with create_test_client() as client:
         headers = auth_headers(client)
         document = create_document(client, headers)
-        idempotency_key = f"pytest:report:{uuid4().hex}"
+        report_suffix = uuid4().hex
+        idempotency_key = f"pytest:report:{report_suffix}"
+        document_title = f"Idempotent report document {report_suffix}"
         payload = {
             "idempotencyKey": idempotency_key,
             "reportType": "field_review",
@@ -246,7 +248,7 @@ def test_report_save_idempotency_key_returns_existing_report() -> None:
                 }
             ],
             "saveAsDocument": True,
-            "documentTitle": "Idempotent report document",
+            "documentTitle": document_title,
             "documentStatus": "IN_REVIEW",
         }
 
@@ -265,7 +267,7 @@ def test_report_save_idempotency_key_returns_existing_report() -> None:
             ).all()
             assert len(reports) == 1
             generated_documents = session.scalars(
-                select(Document).where(Document.title == "Idempotent report document")
+                select(Document).where(Document.title == document_title)
             ).all()
             assert len(generated_documents) == 1
 

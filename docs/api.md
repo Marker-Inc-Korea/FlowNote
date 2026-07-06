@@ -13,6 +13,8 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 
 보호 API는 `Authorization: Bearer {access_token}`을 요구한다. access token은 HMAC 서명 payload이며 서버의 `auth_sessions` 상태와 `access_token_id`까지 검증한다.
 
+서버 계정 발급, 잠금, 비밀번호 재설정, role 변경을 수행하는 공개 API는 현재 범위에 추가하지 않는다. 운영 배포 전 기준은 서버 PC의 `app.ops.server_accounts` 운영 스크립트이며, WPF 사용자 관리 화면은 로컬 SQLite 계정만 관리한다. 첫 로그인 후 비밀번호 변경 강제도 현재 응답 payload, 서버 컬럼, WPF 화면에 추가하지 않고 “운영 첫 로그인 전 비밀번호 변경” 절차로 통제한다. `must_change_password` 컬럼, 비밀번호 변경 API, WPF 강제 변경 화면은 후속 범위다.
+
 운영 기준:
 
 - 서버 로그인은 서버 `user_accounts`의 `is_active`와 `status = ACTIVE`를 모두 만족해야 한다.
