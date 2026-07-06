@@ -1927,6 +1927,325 @@ try
                     ("$version_no", offlineVersionDocument.VersionNo),
                     ("$server_version_id", existingServerVersion.VersionId)) == 1,
                 "mapping recovery should mark the document version queue row synced with the recovered server version id");
+
+            var dependencyDocumentFile = Path.Combine(testDirectory, $"server-dependency-document-{runId}.txt");
+            File.WriteAllText(dependencyDocumentFile, $"Server dependency document smoke test {runId}.");
+            var versionDependencyDocument = services.Documents.RegisterDocument(
+                currentDocumentFolder.Id,
+                $"server-dependency-document-{runId}",
+                Path.GetFileName(dependencyDocumentFile),
+                "Text",
+                smokeActorName,
+                dependencyDocumentFile);
+            var versionDependencyFile = Path.Combine(testDirectory, $"server-dependency-document-v2-{runId}.txt");
+            File.WriteAllText(versionDependencyFile, $"Server dependency document smoke test v2 {runId}.");
+            var versionDependencyVersion = services.Documents.AddFileVersion(
+                versionDependencyDocument.DocumentId,
+                Path.GetFileName(versionDependencyFile),
+                versionDependencyFile,
+                "v2",
+                "Dependency failure smoke version.",
+                smokeActorName);
+            var versionDependencyResult = await services.ServerSync.QueueAndTrySyncDocumentVersionAsync(
+                versionDependencyVersion,
+                serverDocuments,
+                serverLogin.UserId);
+            Require(!versionDependencyResult.Success, "version sync should fail while the first document sync is missing");
+            var versionDependencyError = ScalarString(
+                syncConnection,
+                """
+                SELECT last_error
+                FROM server_sync_queue
+                WHERE entity_type = 'document_version'
+                  AND entity_id = $document_id
+                  AND local_version_no = $version_no
+                ORDER BY id DESC
+                LIMIT 1;
+                """,
+                ("$document_id", versionDependencyDocument.DocumentId),
+                ("$version_no", versionDependencyVersion.VersionNo));
+            Require(
+                versionDependencyError?.Contains("선행 문서가 아직 서버에 전송되지 않았습니다", StringComparison.Ordinal) == true,
+                "version dependency failure should remain in the queue with a Korean reason");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT message
+                    FROM activity_history
+                    WHERE event_type = 'server_sync.failed'
+                      AND target_type = 'document_version'
+                      AND target_id = $document_id
+                    ORDER BY id DESC
+                    LIMIT 1;
+                    """,
+                    ("$document_id", versionDependencyDocument.DocumentId)) == versionDependencyError,
+                "version dependency queue error should match activity_history");
+            _ = await services.ServerSync.QueueAndTrySyncDocumentAsync(
+                versionDependencyDocument,
+                serverDocuments,
+                serverLogin.UserId);
+            _ = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_sync_queue
+                    WHERE entity_id = $document_id
+                      AND entity_type IN ('document', 'document_version')
+                      AND status = 'SYNCED';
+                    """,
+                    ("$document_id", versionDependencyDocument.DocumentId)) == 2,
+                "version dependency retry should sync both document and version queue rows after the document exists on the server");
+
+            var publishDependencyDocumentFile = Path.Combine(testDirectory, $"server-publish-dependency-{runId}.txt");
+            File.WriteAllText(publishDependencyDocumentFile, $"Server publish dependency smoke test {runId}.");
+            var publishDependencyDocument = services.Documents.RegisterDocument(
+                currentDocumentFolder.Id,
+                $"server-publish-dependency-{runId}",
+                Path.GetFileName(publishDependencyDocumentFile),
+                "Text",
+                smokeActorName,
+                publishDependencyDocumentFile);
+            _ = await services.ServerSync.QueueAndTrySyncDocumentAsync(
+                publishDependencyDocument,
+                serverDocuments,
+                serverLogin.UserId);
+            var publishDependencyVersionFile = Path.Combine(testDirectory, $"server-publish-dependency-v2-{runId}.txt");
+            File.WriteAllText(publishDependencyVersionFile, $"Server publish dependency smoke test v2 {runId}.");
+            var publishDependencyVersion = services.Documents.AddFileVersion(
+                publishDependencyDocument.DocumentId,
+                Path.GetFileName(publishDependencyVersionFile),
+                publishDependencyVersionFile,
+                "v2",
+                "Publish dependency smoke version.",
+                smokeActorName);
+            var publishDependencyPublished = services.Documents.PublishVersion(
+                publishDependencyDocument.DocumentId,
+                publishDependencyVersion.VersionNo,
+                smokeActorName);
+            var publishDependencyResult = await services.ServerSync.QueueAndTrySyncDocumentPublishAsync(
+                publishDependencyPublished,
+                serverDocuments,
+                serverLogin.UserId);
+            Require(!publishDependencyResult.Success, "publish sync should fail until the published local version has a server version id");
+            var publishDependencyError = ScalarString(
+                syncConnection,
+                """
+                SELECT last_error
+                FROM server_sync_queue
+                WHERE entity_type = 'document_publish'
+                  AND entity_id = $document_id
+                  AND local_version_no = $version_no
+                ORDER BY id DESC
+                LIMIT 1;
+                """,
+                ("$document_id", publishDependencyDocument.DocumentId),
+                ("$version_no", publishDependencyVersion.VersionNo));
+            Require(
+                publishDependencyError?.Contains("공개할 서버 버전 ID가 아직 확인되지 않아", StringComparison.Ordinal) == true,
+                "publish dependency failure should explain the missing server version id in Korean");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT message
+                    FROM activity_history
+                    WHERE event_type = 'server_sync.failed'
+                      AND target_type = 'document_publish'
+                      AND target_id = $document_id
+                    ORDER BY id DESC
+                    LIMIT 1;
+                    """,
+                    ("$document_id", publishDependencyDocument.DocumentId)) == publishDependencyError,
+                "publish dependency queue error should match activity_history");
+            _ = await services.ServerSync.QueueAndTrySyncDocumentVersionAsync(
+                publishDependencyVersion,
+                serverDocuments,
+                serverLogin.UserId);
+            _ = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_sync_queue
+                    WHERE entity_type = 'document_publish'
+                      AND entity_id = $document_id
+                      AND local_version_no = $version_no
+                      AND status = 'SYNCED'
+                      AND server_version_id IS NOT NULL;
+                    """,
+                    ("$document_id", publishDependencyDocument.DocumentId),
+                    ("$version_no", publishDependencyVersion.VersionNo)) == 1,
+                "publish dependency retry should sync after the version queue has recovered the server version id");
+
+            var statusNoVersionFile = Path.Combine(testDirectory, $"server-status-no-published-version-{runId}.txt");
+            File.WriteAllText(statusNoVersionFile, $"Server status missing published version smoke test {runId}.");
+            var statusNoVersionDocument = services.Documents.RegisterDocument(
+                currentDocumentFolder.Id,
+                $"server-status-no-published-version-{runId}",
+                Path.GetFileName(statusNoVersionFile),
+                "Text",
+                smokeActorName,
+                statusNoVersionFile);
+            _ = await services.ServerSync.QueueAndTrySyncDocumentAsync(
+                statusNoVersionDocument,
+                serverDocuments,
+                serverLogin.UserId);
+            var statusNoVersionUpdatedAt = DateTime.UtcNow;
+            ExecuteNonQuery(
+                syncConnection,
+                """
+                UPDATE documents
+                SET status = 'PUBLISHED',
+                    published_version_no = NULL,
+                    updated_at = $updated_at
+                WHERE document_id = $document_id;
+                """,
+                ("$document_id", statusNoVersionDocument.DocumentId),
+                ("$updated_at", statusNoVersionUpdatedAt.ToString("O")));
+            var statusNoVersionResult = await services.ServerSync.QueueAndTrySyncDocumentStatusAsync(
+                statusNoVersionDocument with
+                {
+                    Status = "PUBLISHED",
+                    PublishedVersionNo = null,
+                    UpdatedAt = statusNoVersionUpdatedAt
+                },
+                serverDocuments,
+                serverLogin.UserId);
+            Require(!statusNoVersionResult.Success, "PUBLISHED status sync should fail when no local published version is selected");
+            var statusNoVersionError = ScalarString(
+                syncConnection,
+                """
+                SELECT last_error
+                FROM server_sync_queue
+                WHERE entity_type = 'document_status'
+                  AND entity_id = $document_id
+                ORDER BY id DESC
+                LIMIT 1;
+                """,
+                ("$document_id", statusNoVersionDocument.DocumentId));
+            Require(
+                statusNoVersionError?.Contains("로컬 공개 버전이 지정되지 않았습니다", StringComparison.Ordinal) == true,
+                "PUBLISHED status without a local published version should remain in the queue with a Korean reason");
+            ExecuteNonQuery(
+                syncConnection,
+                """
+                UPDATE documents
+                SET published_version_no = 1
+                WHERE document_id = $document_id;
+                """,
+                ("$document_id", statusNoVersionDocument.DocumentId));
+            _ = await services.ServerSync.QueueAndTrySyncDocumentPublishAsync(
+                statusNoVersionDocument with
+                {
+                    Status = "PUBLISHED",
+                    PublishedVersionNo = 1,
+                    UpdatedAt = statusNoVersionUpdatedAt
+                },
+                serverDocuments,
+                serverLogin.UserId);
+            _ = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_sync_queue
+                    WHERE entity_id = $document_id
+                      AND entity_type IN ('document_publish', 'document_status')
+                      AND status = 'SYNCED';
+                    """,
+                    ("$document_id", statusNoVersionDocument.DocumentId)) == 2,
+                "PUBLISHED status without version should sync after selecting a published version and syncing publish first");
+
+            var statusNoPublishMappingFile = Path.Combine(testDirectory, $"server-status-no-publish-mapping-{runId}.txt");
+            File.WriteAllText(statusNoPublishMappingFile, $"Server status missing publish mapping smoke test {runId}.");
+            var statusNoPublishMappingDocument = services.Documents.RegisterDocument(
+                currentDocumentFolder.Id,
+                $"server-status-no-publish-mapping-{runId}",
+                Path.GetFileName(statusNoPublishMappingFile),
+                "Text",
+                smokeActorName,
+                statusNoPublishMappingFile);
+            _ = await services.ServerSync.QueueAndTrySyncDocumentAsync(
+                statusNoPublishMappingDocument,
+                serverDocuments,
+                serverLogin.UserId);
+            var statusNoPublishMappingUpdatedAt = DateTime.UtcNow;
+            ExecuteNonQuery(
+                syncConnection,
+                """
+                UPDATE documents
+                SET status = 'PUBLISHED',
+                    published_version_no = 1,
+                    updated_at = $updated_at
+                WHERE document_id = $document_id;
+                """,
+                ("$document_id", statusNoPublishMappingDocument.DocumentId),
+                ("$updated_at", statusNoPublishMappingUpdatedAt.ToString("O")));
+            var statusNoPublishMappingResult = await services.ServerSync.QueueAndTrySyncDocumentStatusAsync(
+                statusNoPublishMappingDocument with
+                {
+                    Status = "PUBLISHED",
+                    PublishedVersionNo = 1,
+                    UpdatedAt = statusNoPublishMappingUpdatedAt
+                },
+                serverDocuments,
+                serverLogin.UserId);
+            Require(!statusNoPublishMappingResult.Success, "PUBLISHED status sync should fail until the publish queue has a server mapping");
+            var statusNoPublishMappingError = ScalarString(
+                syncConnection,
+                """
+                SELECT last_error
+                FROM server_sync_queue
+                WHERE entity_type = 'document_status'
+                  AND entity_id = $document_id
+                ORDER BY id DESC
+                LIMIT 1;
+                """,
+                ("$document_id", statusNoPublishMappingDocument.DocumentId));
+            Require(
+                statusNoPublishMappingError?.Contains("공개 버전의 서버 매핑이 없습니다", StringComparison.Ordinal) == true,
+                "PUBLISHED status without a publish mapping should remain in the queue with a Korean reason");
+            Require(
+                ScalarString(
+                    syncConnection,
+                    """
+                    SELECT message
+                    FROM activity_history
+                    WHERE event_type = 'server_sync.failed'
+                      AND target_type = 'document_status'
+                      AND target_id = $document_id
+                    ORDER BY id DESC
+                    LIMIT 1;
+                    """,
+                    ("$document_id", statusNoPublishMappingDocument.DocumentId)) == statusNoPublishMappingError,
+                "PUBLISHED status queue error should match activity_history");
+            _ = await services.ServerSync.QueueAndTrySyncDocumentPublishAsync(
+                statusNoPublishMappingDocument with
+                {
+                    Status = "PUBLISHED",
+                    PublishedVersionNo = 1,
+                    UpdatedAt = statusNoPublishMappingUpdatedAt
+                },
+                serverDocuments,
+                serverLogin.UserId);
+            _ = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_sync_queue
+                    WHERE entity_id = $document_id
+                      AND entity_type IN ('document_publish', 'document_status')
+                      AND status = 'SYNCED';
+                    """,
+                    ("$document_id", statusNoPublishMappingDocument.DocumentId)) == 2,
+                "PUBLISHED status retry should sync after the publish queue has restored the server mapping");
         }
 
         var serverDocument = await serverDocuments.RegisterDocumentAsync(

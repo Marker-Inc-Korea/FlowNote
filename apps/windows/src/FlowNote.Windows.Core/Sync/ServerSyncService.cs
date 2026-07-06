@@ -705,13 +705,38 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             throw new IOException($"Local document file not found: {filePath}");
         }
 
-        var response = await serverClient.RegisterVersionAsync(
-            documentMapping.ServerDocumentId,
-            filePath,
-            Clean(localVersion.Comment) ?? FlowNoteServerDocumentClient.DefaultWpfLocalUploadChangeReason,
-            localVersion.VersionLabel,
-            Clean(serverUserId),
-            cancellationToken);
+        ServerDocumentVersionResponse response;
+        try
+        {
+            response = await serverClient.RegisterVersionAsync(
+                documentMapping.ServerDocumentId,
+                filePath,
+                Clean(localVersion.Comment) ?? FlowNoteServerDocumentClient.DefaultWpfLocalUploadChangeReason,
+                localVersion.VersionLabel,
+                Clean(serverUserId),
+                cancellationToken);
+        }
+        catch (InvalidOperationException exception) when (IsServerVersionConflict(exception))
+        {
+            existingServerVersion = await TryFindServerVersionByNumberAsync(
+                serverClient,
+                documentMapping.ServerDocumentId,
+                versionNo,
+                cancellationToken);
+            if (existingServerVersion is null)
+            {
+                throw;
+            }
+
+            MarkDocumentVersionSynced(
+                item,
+                document,
+                localVersion,
+                documentMapping.ServerDocumentId,
+                existingServerVersion.VersionId,
+                DateTime.UtcNow);
+            return;
+        }
 
         MarkDocumentVersionSynced(
             item,
@@ -740,7 +765,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var versionMapping = TryGetDocumentVersionServerMapping(item.EntityId, versionNo);
         if (versionMapping?.ServerVersionId is null)
         {
-            throw new InvalidOperationException("Local document version is not synced to server yet.");
+            throw new InvalidOperationException("Local document publish version server id is not confirmed yet.");
         }
 
         var response = await serverClient.PublishVersionAsync(
@@ -771,11 +796,17 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             throw new InvalidOperationException("Local document is not synced to server yet.");
         }
 
-        if (string.Equals(document.Status, "PUBLISHED", StringComparison.Ordinal) &&
-            document.PublishedVersionNo is not null &&
-            TryGetDocumentVersionServerMapping(item.EntityId, document.PublishedVersionNo.Value)?.ServerVersionId is null)
+        if (string.Equals(document.Status, "PUBLISHED", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Local document version is not synced to server yet.");
+            if (document.PublishedVersionNo is null)
+            {
+                throw new InvalidOperationException("Local document status is PUBLISHED but no published version is selected.");
+            }
+
+            if (TryGetServerIdMapping("document_publish", item.EntityId, document.PublishedVersionNo.Value)?.ServerVersionId is null)
+            {
+                throw new InvalidOperationException("Local document status is PUBLISHED but published version mapping is not synced to server yet.");
+            }
         }
 
         var response = await serverClient.UpdateDocumentStatusAsync(
@@ -1635,6 +1666,22 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             return SyncFailureMessages.DocumentVersionDependencyNotSynced;
         }
 
+        if (message.Contains("Local document publish version server id is not confirmed yet", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.DocumentPublishVersionNotConfirmed;
+        }
+
+        if (message.Contains("Local document status is PUBLISHED but no published version is selected", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("Document cannot be set to PUBLISHED without a published version", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.PublishedStatusMissingPublishedVersion;
+        }
+
+        if (message.Contains("Local document status is PUBLISHED but published version mapping is not synced to server yet", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.PublishedStatusPublishMappingNotSynced;
+        }
+
         if (message.Contains("Local field comment is not synced to server yet", StringComparison.OrdinalIgnoreCase))
         {
             return SyncFailureMessages.FieldCommentDependencyNotSynced;
@@ -1649,6 +1696,15 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return message.Replace(Environment.NewLine, " ").Trim();
     }
 
+    private static bool IsServerVersionConflict(InvalidOperationException exception)
+    {
+        var message = exception.Message;
+        return message.Contains("409", StringComparison.OrdinalIgnoreCase) &&
+            (message.Contains("Document version could not be saved", StringComparison.OrdinalIgnoreCase) ||
+             message.Contains("database constraint", StringComparison.OrdinalIgnoreCase) ||
+             message.Contains("uq_document_versions_document_version", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static class SyncFailureMessages
     {
         public const string ServerUrlNotConfigured = "서버 URL이 설정되지 않아 전송하지 못했습니다. 설정 화면에서 서버 URL을 입력한 뒤 동기화 큐에서 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
@@ -1657,6 +1713,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         public const string AuthenticationExpired = "로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string DocumentDependencyNotSynced = "선행 문서가 아직 서버에 전송되지 않았습니다. 같은 문서의 문서 등록 항목을 먼저 동기화한 뒤 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string DocumentVersionDependencyNotSynced = "선행 문서 버전이 아직 서버에 전송되지 않았습니다. 같은 문서의 버전 전송 항목을 먼저 동기화한 뒤 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
+        public const string DocumentPublishVersionNotConfirmed = "공개할 서버 버전 ID가 아직 확인되지 않아 공개 전송을 실행하지 않았습니다. 같은 문서의 버전 전송 항목을 먼저 동기화한 뒤 공개 큐를 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
+        public const string PublishedStatusMissingPublishedVersion = "문서 상태가 PUBLISHED이지만 로컬 공개 버전이 지정되지 않았습니다. 먼저 공개할 버전을 선택하고 공개 큐를 동기화한 뒤 상태 변경을 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
+        public const string PublishedStatusPublishMappingNotSynced = "문서 상태가 PUBLISHED이지만 공개 버전의 서버 매핑이 없습니다. 공개 큐가 SYNCED가 된 뒤 상태 변경 큐를 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string FieldCommentDependencyNotSynced = "선행 FieldComment가 아직 서버에 전송되지 않았습니다. FieldComment 항목을 먼저 동기화한 뒤 첨부 전송을 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
     }
 
