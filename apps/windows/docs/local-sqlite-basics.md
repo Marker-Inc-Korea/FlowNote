@@ -8,7 +8,7 @@ Windows WPF 앱은 서버 연결 여부와 관계없이 현장 문서와 기록�
 
 - DB 파일명: `flownote.local.sqlite`
 - 기본 개발 경로: `data/local/flownote.local.sqlite`
-- 배포 실행 기본 경로: 실행 폴더의 `Data/flownote.local.sqlite`
+- 배포 실행 기본 경로: 저장소 루트를 찾을 수 없을 때 실행 폴더의 `Data/flownote.local.sqlite`
 - 데이터 폴더 override: `FLOWNOTE_LOCAL_DATA_DIR`
 - DB 파일 override: `FLOWNOTE_LOCAL_DATABASE_PATH`
 
@@ -43,7 +43,7 @@ Windows WPF 앱은 서버 연결 여부와 관계없이 현장 문서와 기록�
 
 문서 최신 버전은 `documents.version_no`와 `document_versions.is_latest`를 기준으로 서버 최신 버전에 연결한다. 공개 버전은 `documents.published_version_no`와 `document_versions.is_published`를 기준으로 서버 publish API에 반영한다. 상태 변경은 현재 로컬 `documents.status`를 서버에 반영하며, `PUBLISHED` 상태는 공개 버전 동기화가 선행되어야 한다.
 
-보고서를 서버에 저장해 생성 문서가 반환되면 로컬 보고서 문서를 만들고 `server_report_id`, `server_document_id`, `server_version_id`, `server_id_mappings`를 함께 남긴다. 작업순서 보드/항목/이력은 현재 단계에서 로컬 큐 대상이 아니라 로컬 기록과 서버 직접 API 검증, 보고서 근거 source 연결 범위로 둔다.
+보고서는 로컬 보고서 문서와 `report_sources`를 먼저 만든 뒤 서버 저장을 시도한다. 서버 저장이 성공하면 `server_report_id`, `server_document_id`, `server_version_id`, `server_id_mappings`를 함께 남기고, 실패하면 `server_sync_queue`에 `report/register_report` 재시도 항목을 보존한다. 작업순서 보드/항목/이력은 현재 단계에서 로컬 큐 대상이 아니라 로컬 기록과 서버 직접 API 검증, 보고서 근거 source 연결 범위로 둔다.
 
 ## 검증
 

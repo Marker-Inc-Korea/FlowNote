@@ -1,6 +1,6 @@
 # FlowNote API
 
-FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다.
+FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
 
 ## 인증
 
@@ -39,14 +39,14 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 | POST | `/api/v1/documents` | multipart 문서와 최초 버전 등록 |
 | GET | `/api/v1/documents` | 전체 문서 목록 |
 | GET | `/api/v1/documents/published` | 공개 문서 목록 |
-| GET | `/api/v1/documents/{documentId}` | 문서 상세 |
-| GET | `/api/v1/documents/{documentId}/published` | 공개 버전 조회 |
-| PUT | `/api/v1/documents/{documentId}/tags` | 문서 태그 교체 |
-| PATCH | `/api/v1/documents/{documentId}/status` | 문서 상태 변경 |
-| GET | `/api/v1/documents/{documentId}/versions` | 문서 버전 목록 |
-| POST | `/api/v1/documents/{documentId}/versions` | 새 파일 버전 등록 |
-| PATCH | `/api/v1/documents/{documentId}/versions/{versionId}/status` | 버전 상태 변경 |
-| POST | `/api/v1/documents/{documentId}/versions/{versionId}/publish` | 특정 버전을 공개 버전으로 지정 |
+| GET | `/api/v1/documents/{document_id}` | 문서 상세 |
+| GET | `/api/v1/documents/{document_id}/published` | 공개 버전 조회 |
+| PUT | `/api/v1/documents/{document_id}/tags` | 문서 태그 교체 |
+| PATCH | `/api/v1/documents/{document_id}/status` | 문서 상태 변경 |
+| GET | `/api/v1/documents/{document_id}/versions` | 문서 버전 목록 |
+| POST | `/api/v1/documents/{document_id}/versions` | 새 파일 버전 등록 |
+| PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | 버전 상태 변경 |
+| POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | 특정 버전을 공개 버전으로 지정 |
 
 문서 생성 시 허용되는 상태는 `WORKING`, `IN_REVIEW`, `ARCHIVED`이다. `PUBLISHED`는 publish 엔드포인트로만 만든다.
 
@@ -54,8 +54,8 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 
 | Method | Path | 설명 |
 | --- | --- | --- |
-| POST | `/api/v1/documents/{documentId}/access-logs` | 문서 접근 로그 등록 |
-| GET | `/api/v1/documents/{documentId}/access-logs` | 문서 접근 로그 조회 |
+| POST | `/api/v1/documents/{document_id}/access-logs` | 문서 접근 로그 등록 |
+| GET | `/api/v1/documents/{document_id}/access-logs` | 문서 접근 로그 조회 |
 
 `action` 값은 `view_started`, `view_closed`, `download_blocked`, `auto_closed`를 사용한다. 조회는 `admin`, `system-admin`만 가능하다.
 
@@ -65,11 +65,11 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 | --- | --- | --- |
 | POST | `/api/v1/field-comments` | FieldComment 원천 기록 등록 |
 | GET | `/api/v1/field-comments` | FieldComment 목록 조회 |
-| GET | `/api/v1/field-comments/{commentId}` | FieldComment 상세 조회 |
-| PATCH | `/api/v1/field-comments/{commentId}` | 상태, 정리 내용, 분석 내용 갱신 |
-| POST | `/api/v1/field-comments/{commentId}/attachments` | 첨부 파일 등록 |
-| GET | `/api/v1/field-comments/{commentId}/attachments` | 첨부 파일 목록 조회 |
-| GET | `/api/v1/documents/{documentId}/field-comments` | 특정 문서의 FieldComment 조회 |
+| GET | `/api/v1/field-comments/{comment_id}` | FieldComment 상세 조회 |
+| PATCH | `/api/v1/field-comments/{comment_id}` | 상태, 정리 내용, 분석 내용 갱신 |
+| POST | `/api/v1/field-comments/{comment_id}/attachments` | 첨부 파일 등록 |
+| GET | `/api/v1/field-comments/{comment_id}/attachments` | 첨부 파일 목록 조회 |
+| GET | `/api/v1/documents/{document_id}/field-comments` | 특정 문서의 FieldComment 조회 |
 
 FieldComment는 `documentId`, `structureItemId`, `workRecordId` 중 하나 이상을 참조해야 한다. 현재 구조에서는 문서 참조가 주 사용 경로다.
 
@@ -92,13 +92,13 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 | --- | --- | --- |
 | POST | `/api/v1/work-sequence-boards` | 작업순서 보드 생성 |
 | GET | `/api/v1/work-sequence-boards` | 작업순서 보드 목록 |
-| GET | `/api/v1/work-sequence-boards/{boardId}` | 작업순서 보드 상세 |
-| POST | `/api/v1/work-sequence-boards/{boardId}/items` | 항목 추가 |
-| PUT | `/api/v1/work-sequence-boards/{boardId}/items/order` | 항목 전체 순서 변경 |
-| PATCH | `/api/v1/work-sequence-boards/{boardId}/items/{itemId}/status` | 항목 상태 변경 |
-| GET | `/api/v1/work-sequence-boards/{boardId}/history` | 변경 이력 조회 |
-| GET | `/api/v1/work-sequence-boards/{boardId}/notification-candidates` | 알림 후보 조회 |
-| PATCH | `/api/v1/work-sequence-boards/{boardId}/notification-candidates/{candidateId}` | 알림 후보 상태 변경 |
+| GET | `/api/v1/work-sequence-boards/{board_id}` | 작업순서 보드 상세 |
+| POST | `/api/v1/work-sequence-boards/{board_id}/items` | 항목 추가 |
+| PUT | `/api/v1/work-sequence-boards/{board_id}/items/order` | 항목 전체 순서 변경 |
+| PATCH | `/api/v1/work-sequence-boards/{board_id}/items/{item_id}/status` | 항목 상태 변경 |
+| GET | `/api/v1/work-sequence-boards/{board_id}/history` | 변경 이력 조회 |
+| GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | 알림 후보 조회 |
+| PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | 알림 후보 상태 변경 |
 
 ## 보고서
 
@@ -107,7 +107,7 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 | POST | `/api/v1/reports/drafts` | 수동 보고서 초안 생성 |
 | POST | `/api/v1/reports` | 보고서 저장, 선택 시 문서로 저장. `idempotencyKey`를 보내면 같은 키의 재시도는 기존 보고서를 반환 |
 | GET | `/api/v1/reports` | 보고서 목록 |
-| GET | `/api/v1/reports/{reportId}` | 보고서 상세 |
+| GET | `/api/v1/reports/{report_id}` | 보고서 상세 |
 
 보고서 source 타입은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `WORK_RECORD_VERSION`을 사용한다. WPF 보고서 초안의 FieldComment 후보는 `SELECTED`, `REVIEWED`, `ANALYZED` 순으로 우선 노출하고 `EXCLUDED`, `ARCHIVED` 상태는 후보에서 제외한다.
 
