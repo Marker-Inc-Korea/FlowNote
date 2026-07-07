@@ -525,7 +525,24 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             SELECT id, entity_type, entity_id, action, local_document_id, local_version_no, idempotency_key
             FROM server_sync_queue
             WHERE status IN ('PENDING', 'FAILED')
-            ORDER BY id;
+            ORDER BY
+                COALESCE(local_document_id, entity_id),
+                CASE action
+                    WHEN 'register_document' THEN 10
+                    WHEN 'register_document_version' THEN 20
+                    WHEN 'publish_document_version' THEN 30
+                    WHEN 'update_document_status' THEN 40
+                    WHEN 'register_field_comment' THEN 50
+                    WHEN 'register_field_comment_attachment' THEN 60
+                    WHEN 'register_access_log_started' THEN 70
+                    WHEN 'register_access_log_closed' THEN 80
+                    WHEN 'register_access_log_auto_closed' THEN 80
+                    WHEN 'register_access_log_download_blocked' THEN 80
+                    WHEN 'register_report' THEN 90
+                    ELSE 100
+                END,
+                COALESCE(local_version_no, 0),
+                id;
             """;
 
         using var reader = command.ExecuteReader();
@@ -726,7 +743,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var documentMapping = TryGetDocumentServerMapping(item.EntityId);
         if (documentMapping?.ServerDocumentId is null)
         {
-            throw new InvalidOperationException("Local document is not synced to server yet.");
+            throw new InvalidOperationException(SyncFailureMessages.DocumentDependencyNotSynced);
         }
 
         var localVersion = LoadDocumentVersion(item.EntityId, versionNo)
@@ -813,13 +830,13 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var documentMapping = TryGetDocumentServerMapping(item.EntityId);
         if (documentMapping?.ServerDocumentId is null)
         {
-            throw new InvalidOperationException("Local document is not synced to server yet.");
+            throw new InvalidOperationException(SyncFailureMessages.DocumentDependencyNotSynced);
         }
 
         var versionMapping = TryGetDocumentVersionServerMapping(item.EntityId, versionNo);
         if (versionMapping?.ServerVersionId is null)
         {
-            throw new InvalidOperationException("Local document publish version server id is not confirmed yet.");
+            throw new InvalidOperationException(SyncFailureMessages.DocumentPublishVersionNotConfirmed);
         }
 
         var response = await serverClient.PublishVersionAsync(
@@ -847,19 +864,19 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var documentMapping = TryGetDocumentServerMapping(item.EntityId);
         if (documentMapping?.ServerDocumentId is null)
         {
-            throw new InvalidOperationException("Local document is not synced to server yet.");
+            throw new InvalidOperationException(SyncFailureMessages.DocumentDependencyNotSynced);
         }
 
         if (string.Equals(document.Status, "PUBLISHED", StringComparison.Ordinal))
         {
             if (document.PublishedVersionNo is null)
             {
-                throw new InvalidOperationException("Local document status is PUBLISHED but no published version is selected.");
+                throw new InvalidOperationException(SyncFailureMessages.PublishedStatusMissingPublishedVersion);
             }
 
             if (TryGetServerIdMapping("document_publish", item.EntityId, document.PublishedVersionNo.Value)?.ServerVersionId is null)
             {
-                throw new InvalidOperationException("Local document status is PUBLISHED but published version mapping is not synced to server yet.");
+                throw new InvalidOperationException(SyncFailureMessages.PublishedStatusPublishMappingNotSynced);
             }
         }
 
@@ -902,7 +919,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
               ?? TryGetDocumentServerMapping(fieldComment.DocumentId);
         if (documentMapping?.ServerDocumentId is null)
         {
-            throw new InvalidOperationException("Local document is not synced to server yet.");
+            throw new InvalidOperationException(SyncFailureMessages.DocumentDependencyNotSynced);
         }
 
         var response = await serverClient.RegisterFieldCommentAsync(
@@ -948,7 +965,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var serverCommentId = TryGetFieldCommentServerId(attachment.CommentId);
         if (string.IsNullOrWhiteSpace(serverCommentId))
         {
-            throw new InvalidOperationException("Local field comment is not synced to server yet.");
+            throw new InvalidOperationException(SyncFailureMessages.FieldCommentDependencyNotSynced);
         }
 
         var filePath = FlowNoteLocalDatabase.ResolveLocalContentPath(attachment.LocalPath);
@@ -1020,7 +1037,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             ?? TryGetDocumentServerMapping(accessLog.DocumentId);
         if (documentMapping?.ServerDocumentId is null)
         {
-            throw new InvalidOperationException("Local document is not synced to server yet.");
+            throw new InvalidOperationException(SyncFailureMessages.DocumentDependencyNotSynced);
         }
 
         var action = item.Action switch
@@ -1119,7 +1136,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var sources = MapQueuedReportSources(item.EntityId);
         if (sources.Count == 0)
         {
-            throw new InvalidOperationException("No selected report source is linked to a server id.");
+            throw new InvalidOperationException(SyncFailureMessages.ReportSourceDependencyNotSynced);
         }
 
         var response = await serverClient.SaveReportAsync(
