@@ -74,6 +74,14 @@
 - FieldComment가 `ANALYZED`, `REVIEWED`, `SELECTED` 상태로 충분히 쌓이기 전에는 AI 답변 품질보다 관리자 검토/분석/선정 운영 흐름 보강을 우선한다.
 - MES/ERP 외부 연동 필드는 검색 후보 생성에 사용하지 않는다. `mes_integration` FieldComment도 어댑터 정책이 확정되기 전에는 후보에서 제외한다.
 
+## 2026-07-07. AI 검색 운영 점검 흐름
+
+- AI 검색 운영 점검 화면은 외부 AI 호출 없이 `ai_search_candidates` 재생성 결과와 품질 지표를 확인하는 범위로 둔다.
+- 운영자는 공개 문서 버전, FieldComment, 작업순서 이력, 보고서 source별 후보 수와 제외 사유를 먼저 확인한다.
+- 제외 사유는 공개 문서 미충족, FieldComment 보관/제외, MES 통합 입력, 빈 FieldComment, 텍스트 없는 작업순서 이력, 누락/보관/원천 누락 보고서 source로 구분하고 운영 조치 힌트를 함께 제공한다.
+- 후보 row는 `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`로 원문 문서 버전, FieldComment, 작업순서 이력, 보고서 source row까지 역추적되어야 한다.
+- 자동 답변 생성, 자동 의사결정, 작업지시 자동 변경은 이번 운영 점검 범위에 포함하지 않는다.
+
 ## 2026-07-01. WPF 보고서 저장 흐름
 
 - WPF 보고서 창은 FieldComment, 문서, 작업순서 이력을 보고서 근거 후보로 사용한다.

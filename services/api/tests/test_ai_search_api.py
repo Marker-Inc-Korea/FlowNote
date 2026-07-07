@@ -54,11 +54,14 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
     new_comment_id = f"comment-ai-new-{suffix}"
     mes_comment_id = f"comment-ai-mes-{suffix}"
     archived_comment_id = f"comment-ai-archived-{suffix}"
+    empty_comment_id = f"comment-ai-empty-{suffix}"
     board_id = f"wseqboard-ai-{suffix}"
     history_id = f"wseqhist-ai-{suffix}"
+    empty_history_id = f"wseqhist-ai-empty-{suffix}"
     report_id = f"report-ai-{suffix}"
     archived_report_id = f"report-ai-archived-{suffix}"
     blank_report_id = f"report-ai-blank-source-{suffix}"
+    missing_origin_report_id = f"report-ai-missing-source-{suffix}"
 
     with client.app.state.database.session() as session:
         published_file = FileObject(
@@ -188,6 +191,21 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
             )
         )
         session.add(
+            FieldComment(
+                comment_id=empty_comment_id,
+                document_id=published_document_id,
+                document_version_id=published_version_id,
+                comment_type="issue",
+                input_mode="signal",
+                signal_level="yellow",
+                raw_content="",
+                author_id="user-admin",
+                entry_source="field_user",
+                category="empty-content-marker",
+                status="NEW",
+            )
+        )
+        session.add(
             WorkSequenceBoard(
                 board_id=board_id,
                 title=f"AI search work board {suffix[:8]}",
@@ -206,6 +224,18 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 before_value="step-a, step-b",
                 after_value="step-b, step-a",
                 change_reason="Priority changed after line review.",
+            )
+        )
+        session.add(
+            WorkSequenceChangeHistory(
+                change_id=empty_history_id,
+                board_id=board_id,
+                item_id=None,
+                change_type="STATUS_CHANGED",
+                actor_id="user-admin",
+                before_value=None,
+                after_value=None,
+                change_reason=None,
             )
         )
         session.add(
@@ -267,6 +297,25 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 relation_type="blank-source-id",
             )
         )
+        session.add(
+            Report(
+                report_id=missing_origin_report_id,
+                report_type="field_review",
+                title=f"AI search missing source {suffix[:8]}",
+                status="APPROVED",
+                ai_draft_used=False,
+                created_by="user-admin",
+            )
+        )
+        session.add(
+            ReportSource(
+                report_id=missing_origin_report_id,
+                source_type="FIELD_COMMENT",
+                source_id=f"comment-ai-missing-origin-{suffix}",
+                source_version_id=None,
+                relation_type="missing-origin",
+            )
+        )
         session.commit()
 
         active_report_source = session.scalar(
@@ -285,9 +334,53 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
         "new_comment_id": new_comment_id,
         "mes_comment_id": mes_comment_id,
         "archived_comment_id": archived_comment_id,
+        "empty_comment_id": empty_comment_id,
         "history_id": history_id,
+        "empty_history_id": empty_history_id,
         "report_source_row_id": str(active_report_source.id),
     }
+
+
+def assert_candidate_trace_row_exists(client: TestClient, candidate: dict[str, object]) -> None:
+    with client.app.state.database.session() as session:
+        source_type = candidate["source_type"]
+        trace_table = candidate["trace_table"]
+        if source_type == "PUBLISHED_DOCUMENT_VERSION":
+            assert trace_table == "document_versions"
+            row = session.scalar(
+                select(DocumentVersion).where(
+                    DocumentVersion.document_id == candidate["trace_id"],
+                    DocumentVersion.version_id == candidate["trace_version_id"],
+                )
+            )
+            assert row is not None
+            assert row.document_id == candidate["source_id"]
+            assert row.version_id == candidate["source_version_id"]
+        elif source_type == "FIELD_COMMENT":
+            assert trace_table == "field_comments"
+            row = session.scalar(
+                select(FieldComment).where(FieldComment.comment_id == candidate["trace_id"])
+            )
+            assert row is not None
+            assert row.comment_id == candidate["source_id"]
+            assert row.document_version_id == candidate["source_version_id"]
+        elif source_type == "WORK_SEQUENCE_HISTORY":
+            assert trace_table == "work_sequence_change_history"
+            row = session.scalar(
+                select(WorkSequenceChangeHistory).where(
+                    WorkSequenceChangeHistory.change_id == candidate["trace_id"]
+                )
+            )
+            assert row is not None
+            assert row.change_id == candidate["source_id"]
+        elif source_type == "REPORT_SOURCE":
+            assert trace_table == "report_sources"
+            row = session.scalar(select(ReportSource).where(ReportSource.id == int(candidate["trace_id"])))
+            assert row is not None
+            assert str(row.id) == candidate["source_id"]
+            assert row.source_version_id == candidate["source_version_id"]
+        else:
+            raise AssertionError(f"unexpected source_type: {source_type}")
 
 
 def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
@@ -306,29 +399,63 @@ def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
         assert rebuild["excluded_counts_by_reason"]["document_version_not_published"] >= 1
         assert rebuild["excluded_counts_by_reason"]["field_comment_excluded_status"] >= 1
         assert rebuild["excluded_counts_by_reason"]["field_comment_mes_integration"] >= 1
+        assert rebuild["excluded_counts_by_reason"]["field_comment_without_content"] >= 1
+        assert rebuild["excluded_counts_by_reason"]["work_sequence_history_without_trace_text"] >= 1
         assert rebuild["excluded_counts_by_reason"]["report_source_archived_report"] >= 1
         assert rebuild["excluded_counts_by_reason"]["report_source_without_trace_id"] >= 1
+        assert rebuild["excluded_counts_by_reason"]["report_source_missing_origin"] >= 1
+        assert rebuild["excluded_reason_guidance"]["document_version_not_published"]["label"]
+        assert set(rebuild["counts_by_source_type"]) == {
+            "PUBLISHED_DOCUMENT_VERSION",
+            "FIELD_COMMENT",
+            "WORK_SEQUENCE_HISTORY",
+            "REPORT_SOURCE",
+        }
 
         published_response = client.get(
             "/api/v1/ai-search/candidates",
             headers=headers,
-            params={"sourceType": "PUBLISHED_DOCUMENT_VERSION", "limit": 500},
+            params={
+                "sourceType": "PUBLISHED_DOCUMENT_VERSION",
+                "sourceId": seeded["published_document_id"],
+                "limit": 500,
+            },
         )
         assert published_response.status_code == 200, published_response.text
         published_candidates = published_response.json()
 
-        field_comment_response = client.get(
+        analyzed_field_comment_response = client.get(
             "/api/v1/ai-search/candidates",
             headers=headers,
-            params={"sourceType": "FIELD_COMMENT", "limit": 500},
+            params={
+                "sourceType": "FIELD_COMMENT",
+                "sourceId": seeded["analyzed_comment_id"],
+                "limit": 500,
+            },
         )
-        assert field_comment_response.status_code == 200, field_comment_response.text
-        field_comment_candidates = field_comment_response.json()
+        assert analyzed_field_comment_response.status_code == 200, analyzed_field_comment_response.text
+        new_field_comment_response = client.get(
+            "/api/v1/ai-search/candidates",
+            headers=headers,
+            params={
+                "sourceType": "FIELD_COMMENT",
+                "sourceId": seeded["new_comment_id"],
+                "limit": 500,
+            },
+        )
+        assert new_field_comment_response.status_code == 200, new_field_comment_response.text
+        field_comment_candidates = (
+            analyzed_field_comment_response.json() + new_field_comment_response.json()
+        )
 
         history_response = client.get(
             "/api/v1/ai-search/candidates",
             headers=headers,
-            params={"sourceType": "WORK_SEQUENCE_HISTORY", "limit": 500},
+            params={
+                "sourceType": "WORK_SEQUENCE_HISTORY",
+                "sourceId": seeded["history_id"],
+                "limit": 500,
+            },
         )
         assert history_response.status_code == 200, history_response.text
         history_candidates = history_response.json()
@@ -336,7 +463,11 @@ def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
         report_source_response = client.get(
             "/api/v1/ai-search/candidates",
             headers=headers,
-            params={"sourceType": "REPORT_SOURCE", "limit": 500},
+            params={
+                "sourceType": "REPORT_SOURCE",
+                "sourceId": seeded["report_source_row_id"],
+                "limit": 500,
+            },
         )
         assert report_source_response.status_code == 200, report_source_response.text
         report_source_candidates = report_source_response.json()
@@ -405,9 +536,23 @@ def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
             for item in all_checked_candidates
         )
         assert not any(
+            item["source_id"] == seeded["empty_comment_id"]
+            for item in all_checked_candidates
+        )
+        assert not any(
+            item["source_id"] == seeded["empty_history_id"]
+            for item in all_checked_candidates
+        )
+        assert not any(
             item["source_type"] == "REPORT_SOURCE" and item["summary"] == "blank-source-id"
             for item in all_checked_candidates
         )
+        assert not any(
+            item["source_type"] == "REPORT_SOURCE" and item["summary"] == "missing-origin"
+            for item in all_checked_candidates
+        )
+        for candidate in all_checked_candidates:
+            assert_candidate_trace_row_exists(client, candidate)
 
         with client.app.state.database.session() as session:
             source_types = {
@@ -443,6 +588,7 @@ def test_ai_search_quality_reports_field_comment_review_readiness_gap() -> None:
             100 - readiness["reviewed_status_count"],
             0,
         )
+        assert quality["excluded_reason_guidance"]["field_comment_without_content"]["operator_action"]
 
         review_response = client.patch(
             f"/api/v1/field-comments/{seeded['new_comment_id']}",
