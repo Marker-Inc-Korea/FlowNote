@@ -36,6 +36,7 @@ public partial class DocumentViewWindow : Window
     private readonly string actorName;
     private readonly string userRole;
     private readonly bool canDownloadDocument;
+    private readonly bool canWriteFieldComments;
     private readonly TimeSpan autoCloseDelay;
     private ExplorerDocument document;
     private long? documentViewLogId;
@@ -94,6 +95,7 @@ public partial class DocumentViewWindow : Window
         this.actorName = actorName;
         this.userRole = userRole ?? string.Empty;
         canDownloadDocument = RolePermissionPolicy.CanDownloadDocuments(this.userRole);
+        canWriteFieldComments = RolePermissionPolicy.CanWriteFieldComments(this.userRole);
         this.autoCloseDelay = autoCloseDelay.HasValue
             ? DocumentViewerPolicy.NormalizeAutoCloseDelay(autoCloseDelay.Value)
             : DocumentViewerPolicy.ResolveAutoCloseDelay();
@@ -103,7 +105,7 @@ public partial class DocumentViewWindow : Window
         };
         Loaded += DocumentViewWindow_Loaded;
         autoCloseTimer.Tick += AutoCloseTimer_Tick;
-        SaveCommentButton.IsEnabled = fieldCommentService is not null && !string.IsNullOrWhiteSpace(document.DocumentId);
+        SaveCommentButton.IsEnabled = canWriteFieldComments && fieldCommentService is not null && !string.IsNullOrWhiteSpace(document.DocumentId);
         SelectAttachmentButton.IsEnabled = SaveCommentButton.IsEnabled;
         ClearAttachmentButton.IsEnabled = false;
         StartDocumentViewLog();
@@ -197,6 +199,10 @@ public partial class DocumentViewWindow : Window
         DownloadCopyButton.ToolTip = canDownloadDocument
             ? "통제된 복사본을 저장하고 로컬 이력에 기록합니다."
             : "이 역할은 문서 다운로드가 차단되며 시도 이력이 기록됩니다.";
+        SaveCommentButton.ToolTip = canWriteFieldComments
+            ? "현장 코멘트를 저장하고 로컬 이력에 기록합니다."
+            : "이 역할은 현장 코멘트를 저장할 수 없습니다.";
+        SelectAttachmentButton.ToolTip = SaveCommentButton.ToolTip;
     }
 
     private void LoadPreview(ExplorerDocument document)
