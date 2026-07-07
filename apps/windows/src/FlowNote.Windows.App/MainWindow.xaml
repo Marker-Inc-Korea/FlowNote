@@ -61,6 +61,12 @@
                             Margin="0,0,8,0"
                             Content="작업판"
                             Click="WorkSequenceAdminButton_Click" />
+                    <Button x:Name="FieldCommentReviewButton"
+                            Width="104"
+                            Height="34"
+                            Margin="0,0,8,0"
+                            Content="코멘트 검토"
+                            Click="FieldCommentReviewButton_Click" />
                     <Button x:Name="ReportDraftButton"
                             Width="86"
                             Height="34"

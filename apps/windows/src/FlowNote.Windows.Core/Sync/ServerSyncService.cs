@@ -112,6 +112,23 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
     }
 
+    public async Task<ServerSyncResult> QueueAndTrySyncFieldCommentReviewAsync(
+        FieldCommentRecord fieldComment,
+        FlowNoteServerDocumentClient? serverClient,
+        string? serverUserId = null,
+        DateTime? changedAt = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnqueueFieldCommentReview(fieldComment, changedAt ?? DateTime.UtcNow, null);
+        if (serverClient is null)
+        {
+            MarkLatestFailure("field_comment_review", fieldComment.CommentId, SyncFailureMessages.ServerUrlNotConfigured);
+            return new ServerSyncResult(false, "서버 URL이 설정되지 않아 FieldComment 검토 변경을 큐에 보관했습니다. 서버 설정 후 동기화 큐에서 재시도하세요.");
+        }
+
+        return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
+    }
+
     public async Task<ServerSyncResult> QueueAndTrySyncAccessLogAsync(
         DocumentViewLogRecord accessLog,
         string action,
@@ -187,6 +204,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                         break;
                     case "register_field_comment":
                         await SyncFieldCommentAsync(item, serverClient, cancellationToken);
+                        break;
+                    case "update_field_comment_review":
+                        await SyncFieldCommentReviewAsync(item, serverClient, serverUserId, cancellationToken);
                         break;
                     case "register_field_comment_attachment":
                         await SyncFieldCommentAttachmentAsync(item, serverClient, serverUserId, cancellationToken);
@@ -340,6 +360,11 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return $"wpf:field-comment-attachment:{attachmentId}";
     }
 
+    public static string CreateFieldCommentReviewIdempotencyKey(string commentId, DateTime changedAt)
+    {
+        return $"wpf:field-comment-review:{commentId}:{changedAt:yyyyMMddHHmmssfffffff}";
+    }
+
     public static string CreateAccessLogIdempotencyKey(long accessLogId, string action)
     {
         return $"wpf:access-log:{accessLogId}:{NormalizeAccessLogAction(action)}";
@@ -420,6 +445,18 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             null,
             null,
             CreateFieldCommentAttachmentIdempotencyKey(attachment.AttachmentId),
+            failureReason);
+    }
+
+    private void EnqueueFieldCommentReview(FieldCommentRecord fieldComment, DateTime changedAt, string? failureReason)
+    {
+        Enqueue(
+            "field_comment_review",
+            fieldComment.CommentId,
+            "update_field_comment_review",
+            fieldComment.DocumentId,
+            fieldComment.DocumentVersionNo,
+            CreateFieldCommentReviewIdempotencyKey(fieldComment.CommentId, changedAt),
             failureReason);
     }
 
@@ -533,6 +570,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                     WHEN 'publish_document_version' THEN 30
                     WHEN 'update_document_status' THEN 40
                     WHEN 'register_field_comment' THEN 50
+                    WHEN 'update_field_comment_review' THEN 55
                     WHEN 'register_field_comment_attachment' THEN 60
                     WHEN 'register_access_log_started' THEN 70
                     WHEN 'register_access_log_closed' THEN 80
@@ -611,6 +649,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                     return true;
                 }
 
+                return false;
+
+            case "update_field_comment_review":
                 return false;
 
             case "register_field_comment_attachment":
@@ -946,6 +987,48 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         UpsertMapping(connection, "field_comment", fieldComment.CommentId, 0, response.DocumentId, response.DocumentVersionId, response.CommentId, null, null, now);
         MarkQueueSynced(connection, item.Id, response.DocumentId, response.DocumentVersionId, response.CommentId, null, now);
         RecordSyncHistory(connection, "server_sync.succeeded", "field_comment", fieldComment.CommentId, $"Server field comment synced: {response.CommentId}", now);
+    }
+
+    private async Task SyncFieldCommentReviewAsync(
+        QueueItem item,
+        FlowNoteServerDocumentClient serverClient,
+        string? serverUserId,
+        CancellationToken cancellationToken)
+    {
+        var fieldComment = LoadFieldComment(item.EntityId)
+            ?? throw new InvalidOperationException($"Local field comment not found: {item.EntityId}");
+        var serverCommentId = TryGetFieldCommentServerId(fieldComment.CommentId);
+        if (string.IsNullOrWhiteSpace(serverCommentId))
+        {
+            throw new InvalidOperationException(SyncFailureMessages.FieldCommentDependencyNotSynced);
+        }
+
+        var response = await serverClient.UpdateFieldCommentReviewAsync(
+            serverCommentId,
+            ServerFieldCommentReviewRequest.FromLocal(fieldComment, serverUserId),
+            cancellationToken);
+
+        var now = DateTime.UtcNow;
+        using var connection = database.OpenConnection();
+        UpsertMapping(
+            connection,
+            "field_comment_review",
+            fieldComment.CommentId,
+            0,
+            response.DocumentId,
+            response.DocumentVersionId,
+            response.CommentId,
+            null,
+            null,
+            now);
+        MarkQueueSynced(connection, item.Id, response.DocumentId, response.DocumentVersionId, response.CommentId, null, now);
+        RecordSyncHistory(
+            connection,
+            "server_sync.succeeded",
+            "field_comment_review",
+            fieldComment.CommentId,
+            $"Server field comment review synced: {response.CommentId} {response.Status}",
+            now);
     }
 
     private async Task SyncFieldCommentAttachmentAsync(

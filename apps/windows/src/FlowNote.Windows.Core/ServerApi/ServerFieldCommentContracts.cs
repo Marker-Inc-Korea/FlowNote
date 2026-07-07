@@ -171,6 +171,48 @@ public sealed record ServerFieldCommentResponse
     public DateTime? AnalyzedAt { get; init; }
 }
 
+public sealed record ServerFieldCommentReviewRequest
+{
+    [JsonPropertyName("status")]
+    public string? Status { get; init; }
+
+    [JsonPropertyName("normalizedContent")]
+    public string? NormalizedContent { get; init; }
+
+    [JsonPropertyName("analysisContent")]
+    public string? AnalysisContent { get; init; }
+
+    [JsonPropertyName("reviewedBy")]
+    public string? ReviewedBy { get; init; }
+
+    [JsonPropertyName("analyzedBy")]
+    public string? AnalyzedBy { get; init; }
+
+    public static ServerFieldCommentReviewRequest FromLocal(
+        FieldCommentRecord fieldComment,
+        string? actorId = null)
+    {
+        var status = Clean(fieldComment.Status);
+        return new ServerFieldCommentReviewRequest
+        {
+            Status = status,
+            NormalizedContent = Clean(fieldComment.NormalizedContent),
+            AnalysisContent = Clean(fieldComment.AnalysisContent),
+            ReviewedBy = status is "REVIEWED" or "SELECTED" or "EXCLUDED" or "ARCHIVED"
+                ? Clean(actorId)
+                : null,
+            AnalyzedBy = status is "ANALYZED" or "REVIEWED" or "SELECTED"
+                ? Clean(actorId)
+                : null
+        };
+    }
+
+    private static string? Clean(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+}
+
 public sealed record ServerFieldCommentAttachmentFileResponse
 {
     [JsonPropertyName("storage_type")]

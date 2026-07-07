@@ -7,6 +7,17 @@ namespace FlowNote.Windows.Core.FieldComments;
 
 public sealed class FieldCommentService(FlowNoteLocalDatabase database)
 {
+    public static readonly IReadOnlyList<string> ReviewStatuses =
+    [
+        "NEW",
+        "NEEDS_REVIEW",
+        "ANALYZED",
+        "REVIEWED",
+        "SELECTED",
+        "EXCLUDED",
+        "ARCHIVED"
+    ];
+
     public FieldCommentRecord AddDocumentComment(
         string documentId,
         string rawContent,
@@ -173,6 +184,173 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         }
 
         return records;
+    }
+
+    public IReadOnlyList<FieldCommentReviewRecord> ListForReview(FieldCommentReviewFilter? filter = null)
+    {
+        filter ??= new FieldCommentReviewFilter();
+        var clauses = new List<string>();
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+
+        var status = CleanFilter(filter.Status);
+        if (!string.IsNullOrWhiteSpace(status) &&
+            !string.Equals(status, "ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateReviewStatus(status);
+            clauses.Add("comment.status = $status");
+            command.Parameters.AddWithValue("$status", status);
+        }
+
+        var documentText = CleanFilter(filter.DocumentText);
+        if (!string.IsNullOrWhiteSpace(documentText))
+        {
+            clauses.Add("(comment.document_id LIKE $document_text OR document.title LIKE $document_text OR document.file_name LIKE $document_text)");
+            command.Parameters.AddWithValue("$document_text", $"%{documentText}%");
+        }
+
+        var authorText = CleanFilter(filter.AuthorText);
+        if (!string.IsNullOrWhiteSpace(authorText))
+        {
+            clauses.Add("(comment.author_name LIKE $author_text OR comment.reported_by LIKE $author_text OR comment.operator_name LIKE $author_text)");
+            command.Parameters.AddWithValue("$author_text", $"%{authorText}%");
+        }
+
+        var tagText = CleanFilter(filter.TagText);
+        if (!string.IsNullOrWhiteSpace(tagText))
+        {
+            clauses.Add(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM document_tags AS filter_document_tag
+                    JOIN tag_definitions AS filter_tag ON filter_tag.tag_id = filter_document_tag.tag_id
+                    WHERE filter_document_tag.document_id = comment.document_id
+                      AND (filter_tag.name LIKE $tag_text OR filter_tag.code LIKE $tag_text)
+                )
+                """);
+            command.Parameters.AddWithValue("$tag_text", $"%{tagText}%");
+        }
+
+        if (filter.CreatedFrom is not null)
+        {
+            clauses.Add("comment.created_at >= $created_from");
+            command.Parameters.AddWithValue("$created_from", filter.CreatedFrom.Value.Date.ToString("O"));
+        }
+
+        if (filter.CreatedTo is not null)
+        {
+            clauses.Add("comment.created_at < $created_to");
+            command.Parameters.AddWithValue("$created_to", filter.CreatedTo.Value.Date.AddDays(1).ToString("O"));
+        }
+
+        var where = clauses.Count == 0 ? string.Empty : $"WHERE {string.Join(" AND ", clauses)}";
+        command.CommandText = $"""
+            SELECT comment.id,
+                   comment.comment_id,
+                   comment.document_id,
+                   COALESCE(document.title, comment.document_id, '문서 연결 없음') AS document_title,
+                   COALESCE((
+                       SELECT group_concat(tag.name, ', ')
+                       FROM document_tags AS document_tag
+                       JOIN tag_definitions AS tag ON tag.tag_id = document_tag.tag_id
+                       WHERE document_tag.document_id = comment.document_id
+                   ), '') AS document_tags,
+                   comment.document_version_no,
+                   comment.comment_type,
+                   comment.input_mode,
+                   comment.signal_level,
+                   comment.raw_content,
+                   comment.normalized_content,
+                   comment.analysis_content,
+                   comment.author_name,
+                   comment.reported_by,
+                   comment.operator_name,
+                   comment.entry_source,
+                   comment.device_id,
+                   comment.location_code,
+                   comment.status,
+                   (
+                       SELECT COUNT(*)
+                       FROM field_comment_attachments AS attachment
+                       WHERE attachment.comment_id = comment.comment_id
+                   ) AS attachment_count,
+                   comment.created_at,
+                   comment.synced_at
+            FROM field_comments AS comment
+            LEFT JOIN documents AS document ON document.document_id = comment.document_id
+            {where}
+            ORDER BY
+                CASE comment.status
+                    WHEN 'SELECTED' THEN 0
+                    WHEN 'REVIEWED' THEN 1
+                    WHEN 'ANALYZED' THEN 2
+                    WHEN 'NEEDS_REVIEW' THEN 3
+                    WHEN 'NEW' THEN 4
+                    WHEN 'EXCLUDED' THEN 5
+                    WHEN 'ARCHIVED' THEN 6
+                    ELSE 7
+                END,
+                comment.created_at DESC,
+                comment.id DESC
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$limit", Math.Clamp(filter.Limit, 1, 500));
+
+        using var reader = command.ExecuteReader();
+        var records = new List<FieldCommentReviewRecord>();
+        while (reader.Read())
+        {
+            records.Add(ReadFieldCommentReview(reader));
+        }
+
+        return records;
+    }
+
+    public FieldCommentRecord UpdateReview(
+        string commentId,
+        string? normalizedContent,
+        string? analysisContent,
+        string status,
+        string actorName)
+    {
+        if (string.IsNullOrWhiteSpace(commentId))
+        {
+            throw new ArgumentException("Field comment id is required.", nameof(commentId));
+        }
+
+        ValidateReviewStatus(status);
+        var now = DateTime.UtcNow;
+        using var connection = database.OpenConnection();
+        var existing = LoadCommentTarget(connection, commentId)
+            ?? throw new InvalidOperationException($"Field comment not found: {commentId}");
+
+        using var update = connection.CreateCommand();
+        update.CommandText = """
+            UPDATE field_comments
+            SET normalized_content = $normalized_content,
+                analysis_content = $analysis_content,
+                status = $status
+            WHERE comment_id = $comment_id;
+            """;
+        update.Parameters.AddWithValue("$normalized_content", CleanNullable(normalizedContent) ?? (object)DBNull.Value);
+        update.Parameters.AddWithValue("$analysis_content", CleanNullable(analysisContent) ?? (object)DBNull.Value);
+        update.Parameters.AddWithValue("$status", status);
+        update.Parameters.AddWithValue("$comment_id", commentId);
+        update.ExecuteNonQuery();
+
+        HistoryService.Record(
+            connection,
+            "field_comment.review_updated",
+            actorName,
+            "field_comment",
+            commentId,
+            existing.DocumentTitle,
+            $"FieldComment 검토 상태 변경: {status}",
+            now);
+
+        return LoadComment(connection, commentId)
+            ?? throw new InvalidOperationException($"Field comment not found after update: {commentId}");
     }
 
     public FieldCommentAttachmentRecord AddAttachment(
@@ -342,6 +520,67 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             reader.GetString(16),
             DateTime.Parse(reader.GetString(17)),
             reader.IsDBNull(18) ? null : DateTime.Parse(reader.GetString(18)));
+    }
+
+    private static FieldCommentReviewRecord ReadFieldCommentReview(SqliteDataReader reader)
+    {
+        return new FieldCommentReviewRecord(
+            reader.GetInt64(0),
+            reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2),
+            reader.GetString(3),
+            reader.IsDBNull(4) ? null : reader.GetString(4),
+            reader.IsDBNull(5) ? null : reader.GetInt32(5),
+            reader.GetString(6),
+            reader.GetString(7),
+            reader.IsDBNull(8) ? null : reader.GetString(8),
+            reader.GetString(9),
+            reader.IsDBNull(10) ? null : reader.GetString(10),
+            reader.IsDBNull(11) ? null : reader.GetString(11),
+            reader.GetString(12),
+            reader.IsDBNull(13) ? null : reader.GetString(13),
+            reader.IsDBNull(14) ? null : reader.GetString(14),
+            reader.GetString(15),
+            reader.IsDBNull(16) ? null : reader.GetString(16),
+            reader.IsDBNull(17) ? null : reader.GetString(17),
+            reader.GetString(18),
+            reader.GetInt32(19),
+            DateTime.Parse(reader.GetString(20)),
+            reader.IsDBNull(21) ? null : DateTime.Parse(reader.GetString(21)));
+    }
+
+    private static FieldCommentRecord? LoadComment(SqliteConnection connection, string commentId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, comment_id, document_id, document_version_no, comment_type, input_mode, signal_level,
+                   raw_content, normalized_content, analysis_content, author_name, reported_by,
+                   operator_name, entry_source, device_id, location_code, status, created_at, synced_at
+            FROM field_comments
+            WHERE comment_id = $comment_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$comment_id", commentId);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadFieldComment(reader) : null;
+    }
+
+    private static void ValidateReviewStatus(string status)
+    {
+        if (!ReviewStatuses.Contains(status, StringComparer.Ordinal))
+        {
+            throw new ArgumentOutOfRangeException(nameof(status), "Unsupported FieldComment status.");
+        }
+    }
+
+    private static string? CleanFilter(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string? CleanNullable(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static FieldCommentAttachmentRecord ReadAttachment(SqliteDataReader reader)

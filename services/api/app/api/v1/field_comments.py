@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import desc, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,7 +15,8 @@ from app.core.auth import FieldCommentCreateUser, get_current_user
 from app.core.config import Settings, get_settings
 from app.core.storage import UploadTooLargeError, file_family_from_extension
 from app.core.storage import resolve_storage_root, store_upload_file_at
-from app.db.models import Document, DocumentVersion, FieldComment, FieldCommentAttachment, FileObject
+from app.db.models import Document, DocumentTag, DocumentVersion, FieldComment, FieldCommentAttachment, FileObject
+from app.db.models import TagDefinition
 from app.db.session import get_db_session
 
 router = APIRouter(prefix="/field-comments", tags=["field-comments"], dependencies=[Depends(get_current_user)])
@@ -437,6 +438,11 @@ def list_field_comments(
     session: Annotated[Session, Depends(get_db_session)],
     document_id: Annotated[str | None, Query(alias="documentId")] = None,
     comment_status: Annotated[str | None, Query(alias="status")] = None,
+    document_text: Annotated[str | None, Query(alias="documentText")] = None,
+    author_text: Annotated[str | None, Query(alias="author")] = None,
+    tag_text: Annotated[str | None, Query(alias="tag")] = None,
+    created_from: Annotated[datetime | None, Query(alias="createdFrom")] = None,
+    created_to: Annotated[datetime | None, Query(alias="createdTo")] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[FieldCommentResponse]:
     statement = select(FieldComment).order_by(desc(FieldComment.created_at), desc(FieldComment.id)).limit(limit)
@@ -445,6 +451,37 @@ def list_field_comments(
     if comment_status is not None:
         _validate_choice(comment_status, STATUSES, "status")
         statement = statement.where(FieldComment.status == comment_status)
+    if document_text := _clean_optional(document_text):
+        pattern = f"%{document_text}%"
+        document_ids = select(Document.document_id).where(
+            Document.deleted_at.is_(None),
+            or_(Document.document_id.ilike(pattern), Document.title.ilike(pattern)),
+        )
+        statement = statement.where(FieldComment.document_id.in_(document_ids))
+    if author_text := _clean_optional(author_text):
+        pattern = f"%{author_text}%"
+        statement = statement.where(
+            or_(
+                FieldComment.author_id.ilike(pattern),
+                FieldComment.reported_by.ilike(pattern),
+                FieldComment.operator_id.ilike(pattern),
+            )
+        )
+    if tag_text := _clean_optional(tag_text):
+        pattern = f"%{tag_text}%"
+        tagged_document_ids = (
+            select(DocumentTag.document_id)
+            .join(TagDefinition, DocumentTag.tag_id == TagDefinition.tag_id)
+            .where(
+                TagDefinition.is_active.is_(True),
+                or_(TagDefinition.name.ilike(pattern), TagDefinition.code.ilike(pattern)),
+            )
+        )
+        statement = statement.where(FieldComment.document_id.in_(tagged_document_ids))
+    if created_from is not None:
+        statement = statement.where(FieldComment.created_at >= created_from)
+    if created_to is not None:
+        statement = statement.where(FieldComment.created_at <= created_to)
     return [_field_comment_response(note) for note in session.scalars(statement).all()]
 
 

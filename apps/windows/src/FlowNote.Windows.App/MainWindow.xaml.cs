@@ -267,6 +267,29 @@ public partial class MainWindow : Window
         }
     }
 
+    private void FieldCommentReviewButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureReportWriteAllowed())
+        {
+            return;
+        }
+
+        var window = new FieldCommentReviewWindow(
+            services.FieldComments,
+            services.ServerSync,
+            GetCurrentActorName(),
+            currentUser.UserId,
+            serverDocumentClient)
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+        if (window.ReviewChanged)
+        {
+            workspace.StatusText = "FieldComment 검토 변경을 반영했습니다.";
+        }
+    }
+
     private void FileWatchButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureFileWatchAllowed())
@@ -602,6 +625,7 @@ public partial class MainWindow : Window
         RegisterDocumentButton.IsEnabled = canRegisterDocuments;
         UploadFileButton.IsEnabled = canRegisterDocuments;
         WorkSequenceAdminButton.IsEnabled = canRegisterDocuments;
+        FieldCommentReviewButton.IsEnabled = canWriteReports;
         ReportDraftButton.IsEnabled = canWriteReports;
         ApplyDocumentStatusButton.IsEnabled = canRegisterDocuments;
         PublishDocumentButton.IsEnabled = canRegisterDocuments;
@@ -623,6 +647,7 @@ public partial class MainWindow : Window
 
         if (!canWriteReports)
         {
+            FieldCommentReviewButton.ToolTip = noReportWritePermission;
             ReportDraftButton.ToolTip = noReportWritePermission;
         }
 
