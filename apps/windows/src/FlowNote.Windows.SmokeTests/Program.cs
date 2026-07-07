@@ -2425,6 +2425,116 @@ try
                     """,
                     ("$document_id", statusNoPublishMappingDocument.DocumentId)) == 2,
                 "PUBLISHED status retry should sync after the publish queue has restored the server mapping");
+
+            var orderedQueueFile = Path.Combine(testDirectory, $"server-ordered-document-{runId}.txt");
+            File.WriteAllText(orderedQueueFile, $"Server ordered queue smoke test {runId}.");
+            var orderedQueueDocument = services.Documents.RegisterDocument(
+                currentDocumentFolder.Id,
+                $"server-ordered-document-{runId}",
+                Path.GetFileName(orderedQueueFile),
+                "Text",
+                smokeActorName,
+                orderedQueueFile);
+            var orderedQueueVersionFile = Path.Combine(testDirectory, $"server-ordered-document-v2-{runId}.txt");
+            File.WriteAllText(orderedQueueVersionFile, $"Server ordered queue smoke test v2 {runId}.");
+            var orderedQueueVersion = services.Documents.AddFileVersion(
+                orderedQueueDocument.DocumentId,
+                Path.GetFileName(orderedQueueVersionFile),
+                orderedQueueVersionFile,
+                "v2",
+                "Ordered retry smoke version.",
+                smokeActorName);
+            var orderedQueuePublished = services.Documents.PublishVersion(
+                orderedQueueDocument.DocumentId,
+                orderedQueueVersion.VersionNo,
+                smokeActorName);
+            var orderedQueueArchived = services.Documents.UpdateDocumentStatus(
+                orderedQueueDocument.DocumentId,
+                "ARCHIVED",
+                smokeActorName);
+
+            _ = await services.ServerSync.QueueAndTrySyncDocumentStatusAsync(orderedQueueArchived, null);
+            _ = await services.ServerSync.QueueAndTrySyncDocumentPublishAsync(orderedQueuePublished, null);
+            _ = await services.ServerSync.QueueAndTrySyncDocumentVersionAsync(orderedQueueVersion, null);
+            _ = await services.ServerSync.QueueAndTrySyncDocumentAsync(orderedQueueDocument, null);
+
+            var orderedRetryResult = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
+            Require(orderedRetryResult.Synced >= 4, "document queue retry should process the reverse-queued document flow");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_sync_queue
+                    WHERE entity_id = $document_id
+                      AND entity_type IN ('document', 'document_version', 'document_publish', 'document_status')
+                      AND status = 'SYNCED'
+                      AND attempt_count >= 1
+                      AND last_attempt_at IS NOT NULL
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$document_id", orderedQueueDocument.DocumentId)) == 4,
+                "document, version, publish, and status queue rows should keep attempts and sync timestamps");
+
+            var orderedAttemptOrder = ScalarString(
+                syncConnection,
+                """
+                SELECT GROUP_CONCAT(action, '|')
+                FROM (
+                    SELECT server_sync_queue.action AS action
+                    FROM activity_history
+                    JOIN server_sync_queue
+                      ON server_sync_queue.entity_type = activity_history.target_type
+                     AND server_sync_queue.entity_id = activity_history.target_id
+                     AND activity_history.message LIKE '%' || server_sync_queue.idempotency_key || '%'
+                    WHERE activity_history.event_type = 'server_sync.retry_attempted'
+                      AND activity_history.target_id = $document_id
+                      AND activity_history.created_at >= $run_started_at
+                    ORDER BY activity_history.id
+                    LIMIT 4
+                );
+                """,
+                ("$document_id", orderedQueueDocument.DocumentId),
+                ("$run_started_at", runStartedAt.ToUniversalTime().ToString("O")));
+            Require(
+                orderedAttemptOrder == "register_document|register_document_version|publish_document_version|update_document_status",
+                "document queue retry attempts should run document, version, publish, then status");
+
+            var orderedServerDocumentId = ScalarString(
+                syncConnection,
+                """
+                SELECT server_document_id
+                FROM documents
+                WHERE document_id = $document_id;
+                """,
+                ("$document_id", orderedQueueDocument.DocumentId));
+            var orderedServerVersionId = ScalarString(
+                syncConnection,
+                """
+                SELECT server_version_id
+                FROM document_versions
+                WHERE document_id = $document_id
+                  AND version_no = $version_no;
+                """,
+                ("$document_id", orderedQueueDocument.DocumentId),
+                ("$version_no", orderedQueueVersion.VersionNo));
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_id_mappings
+                    WHERE local_id = $document_id
+                      AND local_version_no = $version_no
+                      AND entity_type IN ('document_version', 'document_publish')
+                      AND server_document_id = $server_document_id
+                      AND server_version_id = $server_version_id;
+                    """,
+                    ("$document_id", orderedQueueDocument.DocumentId),
+                    ("$version_no", orderedQueueVersion.VersionNo),
+                    ("$server_document_id", orderedServerDocumentId!),
+                    ("$server_version_id", orderedServerVersionId!)) == 2,
+                "server_id_mappings should trace the local v2 version and published version to the same server ids");
         }
 
         var serverDocument = await serverDocuments.RegisterDocumentAsync(
