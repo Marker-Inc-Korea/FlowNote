@@ -186,6 +186,18 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerFieldCommentAttachmentResponse>(response, cancellationToken);
     }
 
+    public async Task<ServerFieldCommentResponse> UpdateFieldCommentReviewAsync(
+        string commentId,
+        ServerFieldCommentReviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PatchAsJsonAsync(
+            $"api/v1/field-comments/{commentId}",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerFieldCommentResponse>(response, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<ServerFieldCommentAttachmentResponse>> ListFieldCommentAttachmentsAsync(
         string commentId,
         CancellationToken cancellationToken = default)

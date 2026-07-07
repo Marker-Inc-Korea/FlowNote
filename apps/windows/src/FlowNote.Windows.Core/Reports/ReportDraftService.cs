@@ -18,11 +18,27 @@ public sealed class ReportDraftService(
         command.CommandText = """
             SELECT comment.comment_id,
                    COALESCE(document.title, comment.document_id, 'No document') AS title,
-                   comment.raw_content,
+                   COALESCE(NULLIF(comment.normalized_content, ''), comment.raw_content) ||
+                       CASE
+                           WHEN comment.analysis_content IS NOT NULL AND trim(comment.analysis_content) <> ''
+                           THEN char(10) || '분석: ' || comment.analysis_content
+                           ELSE ''
+                       END AS detail,
                    comment.created_at
             FROM field_comments AS comment
             LEFT JOIN documents AS document ON document.document_id = comment.document_id
-            ORDER BY comment.created_at DESC, comment.id DESC
+            WHERE comment.status NOT IN ('EXCLUDED', 'ARCHIVED')
+            ORDER BY
+                CASE comment.status
+                    WHEN 'SELECTED' THEN 0
+                    WHEN 'REVIEWED' THEN 1
+                    WHEN 'ANALYZED' THEN 2
+                    WHEN 'NEEDS_REVIEW' THEN 3
+                    WHEN 'NEW' THEN 4
+                    ELSE 5
+                END,
+                comment.created_at DESC,
+                comment.id DESC
             LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 500));

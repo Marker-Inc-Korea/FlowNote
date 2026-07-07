@@ -61,6 +61,8 @@ WPF 로컬 DB는 공개 버전을 `documents.published_version_no`와 `document_
 
 FieldComment는 문서 파일 개정이 아니라 현장 원천 기록이다. 새 WPF 코멘트는 `field_comments`에 저장되며 문서 버전을 증가시키지 않는다. 첨부 사진/파일은 `field_comment_attachments`에 별도로 저장된다.
 
+관리자 검토 화면은 FieldComment를 상태, 문서, 작성자, 태그, 기간으로 필터링하고 선택 항목의 정리 내용, 분석 내용, 상태를 수정한다. 첨부 사진/파일은 같은 화면의 첨부 목록에서 원본 파일명, 유형, 로컬 경로, 서버 첨부 ID로 추적한다. 검토 변경은 로컬 DB에 먼저 저장하고 서버가 연결되어 있으면 `/api/v1/field-comments/{commentId}` PATCH로 반영하며, 실패하면 `server_sync_queue`의 `field_comment_review/update_field_comment_review` 항목으로 남긴다.
+
 ## 작업순서
 
 작업순서는 문서 폴더의 `작업지시서` 파일과 별개인 운영 보드이다. `work_sequence_boards`와 `work_sequence_items`가 현재 작업순서와 상태를 관리하고, 순서/상태 변경은 이력과 알림 후보를 만든다.
@@ -69,7 +71,7 @@ FieldComment는 문서 파일 개정이 아니라 현장 원천 기록이다. �
 
 ## 보고서
 
-보고서는 FieldComment, 문서, 작업순서 항목/이력을 근거로 수동 초안을 만들고 문서로 저장하는 최소 흐름이 구현되어 있다. WPF는 로컬 보고서 문서를 먼저 만들고 source를 `report_sources`에 보존한 뒤 `/api/v1/reports` 저장을 시도한다. 실패하면 `server_sync_queue`에 남기고, 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
+보고서는 FieldComment, 문서, 작업순서 항목/이력을 근거로 수동 초안을 만들고 문서로 저장하는 최소 흐름이 구현되어 있다. WPF는 로컬 보고서 문서를 먼저 만들고 source를 `report_sources`에 보존한 뒤 `/api/v1/reports` 저장을 시도한다. 실패하면 `server_sync_queue`에 남기고, 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다. FieldComment 보고서 후보는 `SELECTED`, `REVIEWED`, `ANALYZED`를 우선 노출하고 `EXCLUDED`, `ARCHIVED`는 제외한다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
 
 ## 후속 연동
 

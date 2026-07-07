@@ -425,7 +425,7 @@ def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
 def test_ai_search_quality_reports_field_comment_review_readiness_gap() -> None:
     with create_test_client() as client:
         headers = auth_headers(client)
-        seed_ai_search_sources(client)
+        seeded = seed_ai_search_sources(client)
         rebuild_response = client.post("/api/v1/ai-search/candidates/rebuild", headers=headers)
         assert rebuild_response.status_code == 200, rebuild_response.text
 
@@ -441,6 +441,28 @@ def test_ai_search_quality_reports_field_comment_review_readiness_gap() -> None:
         assert readiness["required_reviewed_count"] == 100
         assert readiness["missing_reviewed_count"] == max(
             100 - readiness["reviewed_status_count"],
+            0,
+        )
+
+        review_response = client.patch(
+            f"/api/v1/field-comments/{seeded['new_comment_id']}",
+            headers=headers,
+            json={
+                "status": "REVIEWED",
+                "normalizedContent": "Reviewed comment now contributes to readiness.",
+                "analysisContent": "Manager review should change AI search quality counts.",
+                "reviewedBy": "user-admin",
+            },
+        )
+        assert review_response.status_code == 200, review_response.text
+
+        updated_quality_response = client.get("/api/v1/ai-search/quality", headers=headers)
+        assert updated_quality_response.status_code == 200, updated_quality_response.text
+        updated_readiness = updated_quality_response.json()["field_comment_review_readiness"]
+        assert updated_readiness["reviewed_status_count"] == readiness["reviewed_status_count"] + 1
+        assert updated_readiness["counts_by_status"]["REVIEWED"] >= 1
+        assert updated_readiness["missing_reviewed_count"] == max(
+            100 - updated_readiness["reviewed_status_count"],
             0,
         )
         assert quality["candidate_count"] >= 4

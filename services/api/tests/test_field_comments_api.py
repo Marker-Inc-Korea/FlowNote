@@ -69,6 +69,8 @@ def test_create_list_and_review_field_comment() -> None:
                 "commentType": "issue",
                 "inputMode": "free_text",
                 "rawContent": content,
+                "authorId": "user-admin",
+                "reportedBy": "관리자",
                 "entrySource": "field_user",
                 "locationCode": "line-a",
             },
@@ -95,6 +97,14 @@ def test_create_list_and_review_field_comment() -> None:
         )
         assert filtered_response.status_code == 200
         assert any(note["comment_id"] == created["comment_id"] for note in filtered_response.json())
+
+        author_filtered_response = client.get(
+            "/api/v1/field-comments",
+            headers=headers,
+            params={"author": "user-admin", "createdFrom": "2000-01-01T00:00:00"},
+        )
+        assert author_filtered_response.status_code == 200
+        assert any(note["comment_id"] == created["comment_id"] for note in author_filtered_response.json())
 
         review_response = client.patch(
             f"/api/v1/field-comments/{created['comment_id']}",
