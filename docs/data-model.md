@@ -90,7 +90,7 @@ MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_record
 | `work_records` | `work_record_id` | FlowNote 내부 작업내역 식별자 |
 | `work_records` | `work_order_no` | 관리자가 입력한 작업지시 번호 또는 현장 식별 번호 |
 | `work_records` | `title` | 작업명, 품목/공정이 섞인 현장 표시명 |
-| `work_records` | `work_instruction_document_id` | 작업지시서, 기준서, 도면 등 연결 문서 ID |
+| `work_records` | `work_instruction_document_id` | 작업지시 문서, 기준서, 도면 등 연결 문서 ID |
 | `work_records` | `source_type` | 초기 수동 입력은 `manual`, 후속 외부 수신은 `external` |
 | `work_records` | `status` | `DRAFT`, `ACTIVE`, `COMPLETED`, `ARCHIVED` |
 | `work_record_versions` | `summary`, `result_note`, `issue_note`, `action_note` | 작업 수행 요약, 결과, 문제점, 조치 기록 |

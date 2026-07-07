@@ -16,7 +16,7 @@
 - 작업순서 보드, 항목, 순서 변경, 상태 변경, 이력, 알림 후보, TV 화면
 - 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도
 - 관리자 파일 감시 후보와 버전 확정
-- AI 자동 조언 전 단계의 `ai_search_candidates` 근거 후보 재생성과 품질 점검 API
+- AI 자동 조언 전 단계의 `ai_search_candidates` 근거 후보 재생성, 목록, 품질 점검 API
 - WPF 로컬 저장 후 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, 첨부, 접근 로그, 보고서 서버 저장 큐와 서버 ID 매핑
 - WPF MSI 패키징 스크립트와 FastAPI 작업 스케줄러 등록/관리 스크립트
 
@@ -56,7 +56,7 @@ MVP의 성공 기준은 AI가 답변하는 것이 아니라 현장 문서와 현
 
 AI 계층의 첫 착수 범위는 “근거가 있는 검색과 요약”까지로 제한한다. 자동 의사결정, 작업 지시 자동 변경, 현장 조치 승인 자동화는 별도 보안/책임 기준이 정해지기 전까지 포함하지 않는다.
 
-현재 구현 착수 범위는 외부 AI API 호출이 아니라 `ai_search_candidates` read model과 품질 점검 API다. 검색 후보는 `PUBLISHED` 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source로 제한하고, 후보마다 원문 ID와 version ID를 유지한다. FieldComment 관리자 검토 상태가 `ANALYZED`, `REVIEWED`, `SELECTED`로 충분히 쌓이기 전에는 답변 자동화보다 관리자 검토/분석/선정 운영 흐름을 먼저 보강한다.
+현재 구현 착수 범위는 외부 AI API 호출이 아니라 `ai_search_candidates` read model의 재생성, 목록 조회, 품질 점검 API다. 검색 후보는 `PUBLISHED` 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source로 제한하고, 후보마다 원문 ID와 version ID를 유지한다. FieldComment 관리자 검토 상태가 `ANALYZED`, `REVIEWED`, `SELECTED`로 충분히 쌓이기 전에는 답변 자동화보다 관리자 검토/분석/선정 운영 흐름을 먼저 보강한다.
 
 ### MES/ERP 어댑터
 

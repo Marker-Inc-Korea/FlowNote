@@ -238,7 +238,7 @@ MSI에는 WPF 실행 파일, 실행에 필요한 `.deps.json`/`.runtimeconfig.js
 - `test`, `smoke`, `sample-registration`, `customer`가 들어간 파일
 - PDF, Office, HWP, DWG, 압축 파일, 이미지, TXT/MD 같은 고객 문서 또는 테스트 산출물 확장자
 
-2026-07-06 현재 로컬에 남아 있는 직전 `package-wpf-msi.ps1` 산출물 기준 MSI 파일 세트는 22개이며, `FlowNote.Windows.App.exe`, `.deps.json`, `.runtimeconfig.json`, 앱/코어 DLL, `Microsoft.Data.Sqlite`, `Microsoft.Web.WebView2`, `SQLitePCLRaw`, `PdfPig`, `WebView2Loader.dll`, `e_sqlite3.dll`, `runtimes\win-x64\native\WebView2Loader.dll`만 포함한다. 금지 파일 패턴은 0건이었다.
+현재 패키징 스크립트 기준 MSI 파일 세트는 `FlowNote.Windows.App.exe`, `.deps.json`, `.runtimeconfig.json`, 앱/코어 DLL, `Microsoft.Data.Sqlite`, `Microsoft.Web.WebView2`, `SQLitePCLRaw`, `PdfPig`, `WebView2Loader.dll`, `e_sqlite3.dll`, `runtimes\win-x64\native\WebView2Loader.dll` 같은 실행 필수 파일만 포함해야 한다. 금지 파일 패턴은 스크립트가 생성 직전에 검사한다.
 
 `package-wpf-msi.ps1`는 publish 폴더를 매번 비운 뒤 새로 publish한다. framework-dependent MSI와 self-contained MSI를 번갈아 만들 때 이전 런타임 파일이 남아 다른 MSI에 섞이면 안 된다.
 

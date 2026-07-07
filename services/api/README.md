@@ -1,6 +1,6 @@
 # API Service
 
-FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다.
+FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
 ## Current API
 
@@ -16,38 +16,38 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/documents` | Register document and first version |
 | GET | `/api/v1/documents` | Document list |
 | GET | `/api/v1/documents/published` | Published document list |
-| GET | `/api/v1/documents/{documentId}` | Document detail |
-| GET | `/api/v1/documents/{documentId}/published` | Published version |
-| PUT | `/api/v1/documents/{documentId}/tags` | Replace document tags |
-| PATCH | `/api/v1/documents/{documentId}/status` | Change document status |
-| GET | `/api/v1/documents/{documentId}/versions` | Version list |
-| POST | `/api/v1/documents/{documentId}/versions` | Register new version |
-| PATCH | `/api/v1/documents/{documentId}/versions/{versionId}/status` | Change version status |
-| POST | `/api/v1/documents/{documentId}/versions/{versionId}/publish` | Publish selected version |
-| POST | `/api/v1/documents/{documentId}/access-logs` | Register access log |
-| GET | `/api/v1/documents/{documentId}/access-logs` | Access log list |
+| GET | `/api/v1/documents/{document_id}` | Document detail |
+| GET | `/api/v1/documents/{document_id}/published` | Published version |
+| PUT | `/api/v1/documents/{document_id}/tags` | Replace document tags |
+| PATCH | `/api/v1/documents/{document_id}/status` | Change document status |
+| GET | `/api/v1/documents/{document_id}/versions` | Version list |
+| POST | `/api/v1/documents/{document_id}/versions` | Register new version |
+| PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | Change version status |
+| POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | Publish selected version |
+| POST | `/api/v1/documents/{document_id}/access-logs` | Register access log |
+| GET | `/api/v1/documents/{document_id}/access-logs` | Access log list |
 | GET | `/api/v1/tags` | Tag list |
 | POST | `/api/v1/tags` | Tag create |
 | POST | `/api/v1/field-comments` | FieldComment create |
 | GET | `/api/v1/field-comments` | FieldComment list |
-| GET | `/api/v1/field-comments/{commentId}` | FieldComment detail |
-| PATCH | `/api/v1/field-comments/{commentId}` | Review/analyze FieldComment |
-| POST | `/api/v1/field-comments/{commentId}/attachments` | Attachment create |
-| GET | `/api/v1/field-comments/{commentId}/attachments` | Attachment list |
-| GET | `/api/v1/documents/{documentId}/field-comments` | FieldComments by document |
+| GET | `/api/v1/field-comments/{comment_id}` | FieldComment detail |
+| PATCH | `/api/v1/field-comments/{comment_id}` | Review/analyze FieldComment |
+| POST | `/api/v1/field-comments/{comment_id}/attachments` | Attachment create |
+| GET | `/api/v1/field-comments/{comment_id}/attachments` | Attachment list |
+| GET | `/api/v1/documents/{document_id}/field-comments` | FieldComments by document |
 | POST | `/api/v1/work-sequence-boards` | Work sequence board create |
 | GET | `/api/v1/work-sequence-boards` | Work sequence board list |
-| GET | `/api/v1/work-sequence-boards/{boardId}` | Work sequence board detail |
-| POST | `/api/v1/work-sequence-boards/{boardId}/items` | Add item |
-| PUT | `/api/v1/work-sequence-boards/{boardId}/items/order` | Reorder items |
-| PATCH | `/api/v1/work-sequence-boards/{boardId}/items/{itemId}/status` | Change item status |
-| GET | `/api/v1/work-sequence-boards/{boardId}/history` | Change history |
-| GET | `/api/v1/work-sequence-boards/{boardId}/notification-candidates` | Notification candidates |
-| PATCH | `/api/v1/work-sequence-boards/{boardId}/notification-candidates/{candidateId}` | Change notification candidate status |
+| GET | `/api/v1/work-sequence-boards/{board_id}` | Work sequence board detail |
+| POST | `/api/v1/work-sequence-boards/{board_id}/items` | Add item |
+| PUT | `/api/v1/work-sequence-boards/{board_id}/items/order` | Reorder items |
+| PATCH | `/api/v1/work-sequence-boards/{board_id}/items/{item_id}/status` | Change item status |
+| GET | `/api/v1/work-sequence-boards/{board_id}/history` | Change history |
+| GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | Notification candidates |
+| PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | Change notification candidate status |
 | POST | `/api/v1/reports/drafts` | Create report draft |
 | POST | `/api/v1/reports` | Save report |
 | GET | `/api/v1/reports` | Report list |
-| GET | `/api/v1/reports/{reportId}` | Report detail |
+| GET | `/api/v1/reports/{report_id}` | Report detail |
 | POST | `/api/v1/ai-search/candidates/rebuild` | Rebuild traceable AI search evidence candidates |
 | GET | `/api/v1/ai-search/candidates` | List AI search evidence candidates |
 | GET | `/api/v1/ai-search/quality` | Candidate counts, exclusion reasons, and FieldComment review readiness |
@@ -59,6 +59,8 @@ The server uses HMAC-signed Bearer access tokens plus the `auth_sessions` table.
 Development defaults such as `admin / 1234` and the default token secret are local development values only.
 
 Server account operations are handled by `python -m app.ops.server_accounts` for the current implementation. It supports `create`, `reset-password`, `set-status`, and `set-role`; WPF user management is local SQLite only and does not create or modify server accounts.
+
+`GET /api/v1/tags` is currently readable without authentication. Creating tags and all document, FieldComment, access log, work sequence, report, and AI search candidate endpoints use the authentication and role policies described in [docs/api.md](../../docs/api.md).
 
 ## Local Development
 
