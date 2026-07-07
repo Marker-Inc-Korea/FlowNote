@@ -82,6 +82,7 @@ self-contained 패키지가 필요한 PC는 별도 MSI로 검증한다.
 
 ```powershell
 .\scripts\package-wpf-msi.ps1 -ProductVersion 0.1.0 -Runtime win-x64 -SelfContained
+Get-Content .\artifacts\wpf-msi\FlowNote.Windows.App-0.1.0-win-x64-self-contained.files.txt
 ```
 
 설치 후에는 `FLOWNOTE_LOCAL_DATA_DIR`를 설치 폴더 밖으로 지정하고 앱을 실행한다.
@@ -100,6 +101,34 @@ msiexec /i .\artifacts\wpf-msi\FlowNote.Windows.App-0.1.0-win-x64.msi
 - WebView2 Runtime이 없는 PC에서는 문서 뷰어 실패 안내가 표시되는지 확인하고, WebView2 Runtime 설치 후 같은 문서 열람이 성공하는지 기록한다.
 - `git status`에서 `artifacts\wpf-msi`, publish 산출물, MSI 파일, `.wixpdb`가 추적 대상으로 잡히지 않는다.
 
+설치 후 자동 점검은 다음 스크립트로 수행한다. 이 스크립트는 MSI 산출물 목록의 금지 패턴, 설치 폴더의 로컬 DB/`Files` 혼입 여부, `FLOWNOTE_LOCAL_DATA_DIR` 기준 로컬 데이터 생성 여부, .NET Windows Desktop Runtime, WebView2 Runtime, 선택적 서명 검증을 확인한다.
+
+```powershell
+.\scripts\verify-wpf-msi-install.ps1 `
+  -ProductVersion 0.1.0 `
+  -Runtime win-x64 `
+  -InstallFolder "C:\Program Files\FlowNote\Client\FlowNote.Windows.App" `
+  -LocalDataDir "C:\FlowNote\LocalData"
+
+.\scripts\verify-wpf-msi-install.ps1 `
+  -ProductVersion 0.1.0 `
+  -Runtime win-x64 `
+  -SelfContained `
+  -InstallFolder "C:\Program Files\FlowNote\Client\FlowNote.Windows.App" `
+  -LocalDataDir "C:\FlowNote\LocalData"
+```
+
+framework-dependent MSI 실패 양상은 .NET Windows Desktop Runtime이 없는 Windows PC에서 다음 기준으로 남긴다.
+
+- MSI 설치 자체가 성공하더라도 앱 실행 시 .NET Desktop Runtime 요구 오류가 표시되는지 기록한다.
+- `dotnet --list-runtimes` 결과에 `Microsoft.WindowsDesktop.App 10.`이 없는 상태임을 기록한다.
+- 같은 PC에서 self-contained MSI 설치 후 앱 실행 성공 여부를 별도로 기록한다.
+
+WebView2 Runtime 유무 검증은 같은 PDF 문서로 두 번 수행한다.
+
+- WebView2 Runtime 미설치 또는 제거 상태에서 문서를 열어 `문서 뷰어를 시작할 수 없습니다.` 안내가 표시되는지 확인한다.
+- Microsoft Edge WebView2 Runtime 설치 후 같은 문서가 WebView2 PDF 뷰어로 표시되고 저장/인쇄/외부 창 열기 차단이 유지되는지 확인한다.
+
 코드 서명 검증은 서명 인증서가 준비된 배포 준비 PC에서 수행한다.
 
 ```powershell
@@ -112,3 +141,22 @@ msiexec /i .\artifacts\wpf-msi\FlowNote.Windows.App-0.1.0-win-x64.msi
 signtool verify /pa .\artifacts\wpf-msi\publish\FlowNote.Windows.App\FlowNote.Windows.App.exe
 signtool verify /pa .\artifacts\wpf-msi\FlowNote.Windows.App-0.1.0-win-x64.msi
 ```
+
+서명 인증서가 준비된 PC에서는 같은 설치 후 점검에 `-CheckSignature`를 추가한다.
+
+```powershell
+.\scripts\verify-wpf-msi-install.ps1 `
+  -ProductVersion 0.1.0 `
+  -Runtime win-x64 `
+  -CheckSignature
+```
+
+2026-07-07 KST 기준 현재 macOS 개발 환경에서는 `wix`, `pwsh`, `msiexec`, `signtool`이 없어 실제 MSI 생성과 설치 검증은 수행하지 못했다. 대신 다음 항목을 확인했다.
+
+- `dotnet publish` framework-dependent: `-p:EnableWindowsTargeting=true`, `win-x64`, 성공
+- `dotnet publish` self-contained: `-p:EnableWindowsTargeting=true`, `win-x64`, 성공
+- `dotnet build` WPF 앱: 성공, 경고 0개
+- `dotnet build` WPF 스모크 테스트: 성공, NuGet 취약성 데이터 조회 경고 2개
+- `artifacts/wpf-msi` 하위 파일명 기준 금지 패턴 검사: 0건
+
+남은 실기 검증은 Windows 배포 준비 PC 또는 현장 검증 PC에서 `package-wpf-msi.ps1` 기본 MSI와 `-SelfContained` MSI를 실제 생성하고, 위 설치 후 점검 스크립트와 수동 WebView2 열람 확인으로 완료한다.

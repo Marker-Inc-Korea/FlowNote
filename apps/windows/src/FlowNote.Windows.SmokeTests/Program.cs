@@ -1349,6 +1349,179 @@ try
         services.Notifications.ListNotifications("반장 A").Count >= 2,
         "Korean PDF field comments should notify the foreman document creator");
 
+    var managerLogin = services.Auth.Login("manager", "1234");
+    var memberA2Login = services.Auth.Login("member-a2", "1234");
+    var leadB1Login = services.Auth.Login("lead-b1", "1234");
+    var memberB1Login = services.Auth.Login("member-b1", "1234");
+    Require(managerLogin.Success, "manager / 1234 login should succeed for AI readiness review");
+    Require(memberA2Login.Success, "member-a2 / 1234 login should succeed for human-like smoke activity");
+    Require(leadB1Login.Success, "lead-b1 / 1234 login should succeed for human-like smoke activity");
+    Require(memberB1Login.Success, "member-b1 / 1234 login should succeed for human-like smoke activity");
+
+    var aiEvidenceFile = Path.Combine(testDirectory, $"ai-readiness-evidence-{runId}.txt");
+    File.WriteAllText(
+        aiEvidenceFile,
+        """
+        AI 근거 축적용 익명 작업 기록입니다.
+        설비: press-a
+        품목: bracket-42
+        공정: mixed-press
+        오류유형: alignment-delay
+        """,
+        Encoding.UTF8);
+    var aiEvidenceDocument = services.Documents.RegisterDocument(
+        currentDocumentFolder.Id,
+        $"AI 근거 축적 스모크 작업표준 {runStamp}",
+        Path.GetFileName(aiEvidenceFile),
+        "Text",
+        managerLogin.DisplayName ?? "관리자",
+        aiEvidenceFile,
+        tags: ["ai-readiness", "equipment:press-a", "item:bracket-42", "process:mixed-press", "issue:alignment-delay"]);
+    aiEvidenceDocument = services.Documents.PublishVersion(
+        aiEvidenceDocument.DocumentId,
+        aiEvidenceDocument.VersionNo,
+        managerLogin.DisplayName ?? "관리자");
+    Require(aiEvidenceDocument.Status == "PUBLISHED", "AI readiness evidence document should be published for search candidate quality");
+
+    var humanActors = new[]
+    {
+        (Login: foremanLogin, DeviceId: "device-line-a-foreman", Location: "line-a", Signal: "green", Memo: "반장 A 확인: 전 교대 금형 위치 기준과 현재 작업표준 일치."),
+        (Login: leadLogin, DeviceId: "device-line-a-lead-01", Location: "line-a", Signal: "yellow", Memo: "조장 A-1 확인: 투입 전 정렬 지연 2회, 가이드핀 청소 후 정상화."),
+        (Login: memberLogin, DeviceId: "device-line-a-02", Location: "line-a", Signal: "green", Memo: "조원 A-1 기록: 사진 기준 위치와 실제 클램프 방향 일치."),
+        (Login: memberA2Login, DeviceId: "device-line-a-03", Location: "line-a", Signal: "yellow", Memo: "조원 A-2 기록: 소재 대기 중 짧은 보류 발생, 다음 조에 전달 필요."),
+        (Login: leadB1Login, DeviceId: "device-line-b-lead-01", Location: "line-b", Signal: "red", Memo: "조장 B-1 확인: 동일 품목 전환 시 센서 재영점 절차 누락 위험."),
+        (Login: memberB1Login, DeviceId: "device-line-b-02", Location: "line-b", Signal: "green", Memo: "조원 B-1 기록: 재영점 후 첫 제품 외관 이상 없음.")
+    };
+    var humanLikeComments = new List<string>();
+    foreach (var activity in humanActors)
+    {
+        var actorName = activity.Login.DisplayName ?? activity.Login.LoginId ?? "현장 사용자";
+        var viewLog = services.DocumentViewLogs.StartDocumentView(
+            aiEvidenceDocument.DocumentId,
+            aiEvidenceDocument.VersionNo,
+            actorName);
+        await SimulateHumanPauseAsync();
+        services.DocumentViewLogs.CloseDocumentView(viewLog, "window_closed");
+        await SimulateHumanPauseAsync();
+
+        var comment = services.FieldComments.AddDocumentComment(
+            aiEvidenceDocument.DocumentId,
+            $"{activity.Memo} run={runId}",
+            actorName,
+            commentType: activity.Signal == "red" ? "issue" : "experience",
+            inputMode: activity.Signal == "green" ? "template_with_text" : "free_text",
+            signalLevel: activity.Signal,
+            reportedBy: actorName,
+            operatorName: "AI 근거 축적 스모크 작업조",
+            deviceId: activity.DeviceId,
+            locationCode: activity.Location);
+        humanLikeComments.Add(comment.CommentId);
+        await SimulateHumanPauseAsync();
+    }
+
+    using (var aiReadinessConnection = services.Database.OpenConnection())
+    {
+        ExecuteNonQuery(
+            aiReadinessConnection,
+            """
+            UPDATE field_comments
+            SET status = CASE comment_id
+                    WHEN $comment1 THEN 'ANALYZED'
+                    WHEN $comment2 THEN 'REVIEWED'
+                    WHEN $comment3 THEN 'SELECTED'
+                    ELSE status
+                END,
+                normalized_content = CASE comment_id
+                    WHEN $comment1 THEN '정렬 지연은 가이드핀 청소 후 정상화됨.'
+                    WHEN $comment2 THEN '보류 발생 사항은 다음 조 인수인계 대상으로 분류됨.'
+                    WHEN $comment3 THEN '센서 재영점 절차 누락 위험을 관리자 검토 대상으로 선정함.'
+                    ELSE normalized_content
+                END,
+                analysis_content = CASE comment_id
+                    WHEN $comment1 THEN '공정 전 청소 기준을 작업표준과 연결해 재발 여부를 추적한다.'
+                    WHEN $comment2 THEN '보류 사유와 전달 누락 여부를 보고서 근거로 남긴다.'
+                    WHEN $comment3 THEN 'AI 검색 후보에서 절차 누락 위험 사례로 역추적 가능해야 한다.'
+                    ELSE analysis_content
+                END
+            WHERE comment_id IN ($comment1, $comment2, $comment3);
+            """,
+            ("$comment1", humanLikeComments[1]),
+            ("$comment2", humanLikeComments[3]),
+            ("$comment3", humanLikeComments[4]));
+    }
+    foreach (var reviewedCommentId in humanLikeComments.Skip(1).Take(4))
+    {
+        services.History.Record(
+            "field_comment.reviewed",
+            managerLogin.DisplayName,
+            "field_comment",
+            reviewedCommentId,
+            aiEvidenceDocument.Title,
+            "AI 근거 축적 스모크: 현장 코멘트 관리자 검토 상태 기록");
+    }
+
+    var aiFieldCommentSources = services.Reports.ListFieldCommentSources(limit: 20)
+        .Where(source => humanLikeComments.Contains(source.SourceId))
+        .ToList();
+    Require(aiFieldCommentSources.Count == humanLikeComments.Count, "AI readiness report sources should include all human-like field comments");
+    var aiReportSources = aiFieldCommentSources
+        .Take(3)
+        .Concat(new[]
+        {
+            new ReportSourceCandidateRecord(
+                "DOCUMENT",
+                aiEvidenceDocument.DocumentId,
+                aiEvidenceDocument.Title,
+                aiEvidenceDocument.FileName,
+                aiEvidenceDocument.UpdatedAt,
+                aiEvidenceDocument.VersionNo.ToString(CultureInfo.InvariantCulture),
+                "related_document")
+        })
+        .ToList();
+    var aiReportContent = services.Reports.BuildDraftContent(
+        $"AI 근거 축적 스모크 보고서 {runStamp}",
+        "여러 현장 계정이 남긴 FieldComment와 공개 문서를 묶어 향후 AI 검색 근거로 추적한다.",
+        aiReportSources,
+        managerLogin.DisplayName ?? "관리자");
+    var aiReportDocument = services.Reports.SaveDraftAsDocument(
+        currentDocumentFolder.Id,
+        $"AI 근거 축적 스모크 보고서 {runStamp}",
+        aiReportContent,
+        managerLogin.DisplayName ?? "관리자",
+        aiReportSources,
+        "여러 현장 계정이 남긴 FieldComment와 공개 문서를 묶어 향후 AI 검색 근거로 추적한다.");
+    using (var aiReportConnection = services.Database.OpenConnection())
+    {
+        Require(
+            ScalarLong(
+                aiReportConnection,
+                """
+                SELECT COUNT(*)
+                FROM report_sources
+                WHERE local_report_document_id = $document_id
+                  AND source_type IN ('FIELD_COMMENT', 'DOCUMENT');
+                """,
+                ("$document_id", aiReportDocument.DocumentId)) == 4,
+            "AI readiness report should preserve FieldComment and document source links");
+        Require(
+            ScalarLong(
+                aiReportConnection,
+                """
+                SELECT COUNT(*)
+                FROM field_comments
+                WHERE comment_id IN ($comment1, $comment2, $comment3)
+                  AND status IN ('ANALYZED', 'REVIEWED', 'SELECTED')
+                  AND normalized_content IS NOT NULL
+                  AND analysis_content IS NOT NULL;
+                """,
+                ("$comment1", humanLikeComments[1]),
+                ("$comment2", humanLikeComments[3]),
+                ("$comment3", humanLikeComments[4])) == 3,
+            "AI readiness reviewed field comments should keep normalized and analysis text");
+    }
+    Console.WriteLine(
+        $"AI readiness human-like smoke: document={aiEvidenceDocument.DocumentId}, comments={humanLikeComments.Count}, report={aiReportDocument.DocumentId}");
+
     var configuredServerBaseUrl = Environment.GetEnvironmentVariable(
         FlowNoteServerApiEnvironment.ApiBaseUrlEnvironmentVariable);
     var serverSmokeBaseUrl = string.IsNullOrWhiteSpace(configuredServerBaseUrl)
@@ -2674,6 +2847,11 @@ static async Task<T?> WaitForAsync<T>(Func<T?> action, TimeSpan timeout)
     }
 
     return null;
+}
+
+static Task SimulateHumanPauseAsync()
+{
+    return Task.Delay(Random.Shared.Next(450, 1150));
 }
 
 static async Task<bool> IsServerAvailableAsync(HttpClient httpClient)
