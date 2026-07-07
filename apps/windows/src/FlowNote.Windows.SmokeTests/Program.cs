@@ -37,6 +37,7 @@ try
 
     var login = services.Auth.Login("admin", "1234");
     Require(login.Success, "admin / 1234 login should succeed");
+    Require(login.Role == "admin", "local admin account should keep the admin role");
     var smokeActorName = login.DisplayName ?? "Administrator";
 
     var wrongLogin = services.Auth.Login("admin", "wrong");
@@ -87,8 +88,11 @@ try
         Require(serverLogin.Success, "server login success should use the server account result");
         Require(serverLogin.UserId == "server-user-admin", "server login should use the server user id");
         Require(serverLogin.Role == "team-member", "server login should use the server role when local role differs");
-        Require(!RolePermissionPolicy.CanManageUsers(serverLogin.Role), "server team-member role should drive WPF user management policy");
-        Require(RolePermissionPolicy.CanWriteFieldComments(serverLogin.Role), "server team-member role should still allow field comment policy");
+        Require(login.Role != serverLogin.Role, "server role priority smoke should compare against a different local role");
+        AssertRolePolicy(
+            serverLogin.Role,
+            new RolePolicyExpectation("team-member", false, true, false, false, false, false, false),
+            "server team-member role should drive WPF button policy instead of the local admin role");
     }
 
     foreach (var seededUser in FlowNoteLocalDatabase.DefaultUserSeeds)
@@ -874,16 +878,16 @@ try
 
     var rolePolicyMatrix = new[]
     {
-        new RolePolicyExpectation("admin", true, true, true, true, true, true),
-        new RolePolicyExpectation("manager", true, true, true, false, false, true),
-        new RolePolicyExpectation("viewer", false, true, false, false, false, false),
-        new RolePolicyExpectation("system-admin", true, true, true, true, true, true),
-        new RolePolicyExpectation("document-admin", true, true, true, false, false, true),
-        new RolePolicyExpectation("assistant-manager", true, true, true, false, false, true),
-        new RolePolicyExpectation("department-manager", true, true, true, false, false, true),
-        new RolePolicyExpectation("line-foreman", true, true, false, false, false, false),
-        new RolePolicyExpectation("team-lead", true, true, false, false, false, false),
-        new RolePolicyExpectation("team-member", false, true, false, false, false, false)
+        new RolePolicyExpectation("admin", true, true, true, true, true, true, true),
+        new RolePolicyExpectation("manager", true, true, true, true, false, false, true),
+        new RolePolicyExpectation("viewer", false, true, false, false, false, false, false),
+        new RolePolicyExpectation("system-admin", true, true, true, true, true, true, true),
+        new RolePolicyExpectation("document-admin", true, true, true, true, false, false, true),
+        new RolePolicyExpectation("assistant-manager", true, true, true, true, false, false, true),
+        new RolePolicyExpectation("department-manager", true, true, true, true, false, false, true),
+        new RolePolicyExpectation("line-foreman", true, true, false, false, false, false, false),
+        new RolePolicyExpectation("team-lead", true, true, false, false, false, false, false),
+        new RolePolicyExpectation("team-member", false, true, false, false, false, false, false)
     };
     Require(
         RolePermissionPolicy.UserRoleOptions.Select(option => option.Role).OrderBy(role => role)
@@ -891,24 +895,10 @@ try
         "WPF role options should match the documented server role set");
     foreach (var expected in rolePolicyMatrix)
     {
-        Require(
-            RolePermissionPolicy.CanRegisterDocuments(expected.Role) == expected.CanRegisterDocuments,
-            $"{expected.Role} document registration policy should match the server role matrix");
-        Require(
-            RolePermissionPolicy.CanWriteFieldComments(expected.Role) == expected.CanWriteFieldComments,
-            $"{expected.Role} field comment policy should match the server role matrix");
-        Require(
-            RolePermissionPolicy.CanWriteReports(expected.Role) == expected.CanWriteReports,
-            $"{expected.Role} report write policy should match the server role matrix");
-        Require(
-            RolePermissionPolicy.CanReadAccessLogs(expected.Role) == expected.CanReadAccessLogs,
-            $"{expected.Role} access log read policy should match the server role matrix");
-        Require(
-            RolePermissionPolicy.CanManageUsers(expected.Role) == expected.CanManageUsers,
-            $"{expected.Role} user management policy should match the server role matrix");
-        Require(
-            RolePermissionPolicy.CanDownloadDocuments(expected.Role) == expected.CanDownloadDocuments,
-            $"{expected.Role} controlled copy download policy should match the server role matrix");
+        AssertRolePolicy(
+            expected.Role,
+            expected,
+            $"{expected.Role} WPF button policy should match the documented server role matrix");
     }
 
     var watchDirectory = Path.Combine(testDirectory, $"watch-{runId}");
@@ -2908,6 +2898,32 @@ static void ExecuteNonQuery(SqliteConnection connection, string sql, params (str
     command.ExecuteNonQuery();
 }
 
+static void AssertRolePolicy(string? role, RolePolicyExpectation expected, string context)
+{
+    Require(string.Equals(role, expected.Role, StringComparison.OrdinalIgnoreCase), $"{context}: expected role {expected.Role}");
+    Require(
+        RolePermissionPolicy.CanRegisterDocuments(role) == expected.CanRegisterDocuments,
+        $"{context}: document registration, upload, status, publish, and work board buttons should match");
+    Require(
+        RolePermissionPolicy.CanWriteFieldComments(role) == expected.CanWriteFieldComments,
+        $"{context}: FieldComment save button should match");
+    Require(
+        RolePermissionPolicy.CanManageFileWatch(role) == expected.CanManageFileWatch,
+        $"{context}: file watch button should match");
+    Require(
+        RolePermissionPolicy.CanWriteReports(role) == expected.CanWriteReports,
+        $"{context}: report button should match");
+    Require(
+        RolePermissionPolicy.CanReadAccessLogs(role) == expected.CanReadAccessLogs,
+        $"{context}: access log read policy should match");
+    Require(
+        RolePermissionPolicy.CanManageUsers(role) == expected.CanManageUsers,
+        $"{context}: user management button should match");
+    Require(
+        RolePermissionPolicy.CanDownloadDocuments(role) == expected.CanDownloadDocuments,
+        $"{context}: controlled copy download button should match");
+}
+
 static HttpClient CreateStaticStatusClient(HttpStatusCode statusCode)
 {
     return new HttpClient(new StaticStatusHandler(statusCode))
@@ -3449,6 +3465,7 @@ sealed record RolePolicyExpectation(
     string Role,
     bool CanRegisterDocuments,
     bool CanWriteFieldComments,
+    bool CanManageFileWatch,
     bool CanWriteReports,
     bool CanReadAccessLogs,
     bool CanManageUsers,
