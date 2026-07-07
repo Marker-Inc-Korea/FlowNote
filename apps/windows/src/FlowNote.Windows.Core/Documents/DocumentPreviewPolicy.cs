@@ -7,6 +7,8 @@ public static class DocumentPreviewPolicy
     public const long MaxTextPreviewBytes = 128 * 1024;
     public const int MaxSpreadsheetPreviewRows = 100;
     public const long LargeSampleBytes = 5 * 1024 * 1024;
+    public const string WebView2RuntimeUnavailableMessage =
+        "문서 뷰어를 시작할 수 없습니다.\nMicrosoft Edge WebView2 Runtime 설치 상태를 확인한 뒤 FlowNote를 다시 실행하세요.\n문제가 계속되면 현장 관리자에게 설치 점검을 요청하세요.";
 
     private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
     {

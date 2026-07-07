@@ -301,7 +301,14 @@ public partial class DocumentViewWindow : Window
             await ConfigurePdfPreviewSecurityAsync();
             PdfPreview.Source = new Uri(resolvedPath, UriKind.Absolute);
         }
-        catch (Exception ex) when (ex is UriFormatException or InvalidOperationException)
+        catch (Exception ex) when (IsWebView2InitializationFailure(ex))
+        {
+            PdfPreview.Visibility = Visibility.Collapsed;
+            ContentTextBox.Visibility = Visibility.Visible;
+            ContentTextBox.Text = BuildMetadataPreview(document, DocumentPreviewPolicy.WebView2RuntimeUnavailableMessage);
+            RecordPreviewFailed($"PDF WebView2 런타임 미리보기 실패: {ex.Message}");
+        }
+        catch (UriFormatException ex)
         {
             PdfPreview.Visibility = Visibility.Collapsed;
             ContentTextBox.Visibility = Visibility.Visible;
@@ -339,6 +346,15 @@ public partial class DocumentViewWindow : Window
     private static string BuildPdfPreviewFailureMessage(Exception ex)
     {
         return $"PDF 미리보기를 생성할 수 없습니다.\n파일이 손상되었거나 암호, 권한, 현재 클라이언트에서 지원하지 않는 PDF 형식 문제일 수 있습니다.\n\n{ex.Message}";
+    }
+
+    private static bool IsWebView2InitializationFailure(Exception ex)
+    {
+        return ex is InvalidOperationException
+            or DllNotFoundException
+            or FileNotFoundException
+            or BadImageFormatException
+            || ex.GetType().Name.Contains("WebView2RuntimeNotFound", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task ConfigurePdfPreviewSecurityAsync()

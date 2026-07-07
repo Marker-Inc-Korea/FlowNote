@@ -240,6 +240,8 @@ MSI에는 WPF 실행 파일, 실행에 필요한 `.deps.json`/`.runtimeconfig.js
 
 2026-07-06 현재 로컬에 남아 있는 직전 `package-wpf-msi.ps1` 산출물 기준 MSI 파일 세트는 22개이며, `FlowNote.Windows.App.exe`, `.deps.json`, `.runtimeconfig.json`, 앱/코어 DLL, `Microsoft.Data.Sqlite`, `Microsoft.Web.WebView2`, `SQLitePCLRaw`, `PdfPig`, `WebView2Loader.dll`, `e_sqlite3.dll`, `runtimes\win-x64\native\WebView2Loader.dll`만 포함한다. 금지 파일 패턴은 0건이었다.
 
+`package-wpf-msi.ps1`는 publish 폴더를 매번 비운 뒤 새로 publish한다. framework-dependent MSI와 self-contained MSI를 번갈아 만들 때 이전 런타임 파일이 남아 다른 MSI에 섞이면 안 된다.
+
 ### .NET Desktop Runtime과 self-contained MSI
 
 기본 `package-wpf-msi.ps1` 명령은 framework-dependent MSI를 만든다. 이 방식은 설치 대상 PC에 FlowNote WPF 대상 프레임워크와 같은 계열의 `.NET Windows Desktop Runtime`이 설치되어 있어야 한다.
@@ -362,6 +364,18 @@ $env:FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS = "300"
 
 6. WPF 앱을 실행해 `C:\FlowNote\LocalData\flownote.local.sqlite`와 `C:\FlowNote\LocalData\Files`가 생성되는지 확인한 뒤 서버 로그인, 문서 목록 조회, 문서 열람, FieldComment 등록을 확인한다.
 
+7. 설치 후 자동 점검 스크립트를 실행한다.
+
+```powershell
+.\scripts\verify-wpf-msi-install.ps1 `
+  -ProductVersion 0.1.0 `
+  -Runtime win-x64 `
+  -InstallFolder "C:\Program Files\FlowNote\Client\FlowNote.Windows.App" `
+  -LocalDataDir "C:\FlowNote\LocalData"
+```
+
+self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 서명 인증서로 EXE와 MSI를 서명한 배포 PC에서는 `-CheckSignature`도 함께 사용한다.
+
 ## 운영 환경 변수
 
 운영에서는 상대 경로보다 절대 경로를 사용한다. 환경 변수는 Windows 시스템 환경 변수, 서비스 계정 환경 변수, 실행 스크립트, 또는 Git에 포함하지 않는 `.env`에 둔다.
@@ -435,6 +449,7 @@ $env:FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS = "300"
 - 서버 계정 로그인 실패가 명확한 401 또는 403이면 로컬 계정으로 자동 전환되지 않는지 확인한다.
 - 문서 목록이 열리고 서버에 등록된 문서가 조회되는지 확인한다.
 - 문서를 열어 뷰어가 표시되고 다운로드 차단 정책과 열람 로그가 동작하는지 확인한다.
+- WebView2 Runtime 미설치 또는 손상 환경에서는 `문서 뷰어를 시작할 수 없습니다.` 안내가 표시되는지 확인하고, WebView2 Runtime 설치 후 같은 문서가 정상 열람되는지 기록한다.
 - `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS` 기준으로 뷰어 자동 닫힘이 동작하는지 확인한다.
 - FieldComment를 등록하고 서버 목록 또는 문서별 FieldComment 조회에서 확인한다.
 - 서버 호출 실패 시 로컬 저장이 유지되고 동기화 이력이 남는지 장애 테스트에서 별도로 확인한다.

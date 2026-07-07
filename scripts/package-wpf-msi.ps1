@@ -29,6 +29,10 @@ if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
     throw "WiX Toolset CLI was not found. Install it with: dotnet tool install --global wix"
 }
 
+if (Test-Path -LiteralPath $publishPath) {
+    Remove-Item -LiteralPath $publishPath -Recurse -Force
+}
+
 New-Item -ItemType Directory -Force $publishPath | Out-Null
 
 $selfContainedValue = if ($SelfContained.IsPresent) { "true" } else { "false" }
@@ -156,6 +160,14 @@ function Test-ForbiddenPackagePath {
         ".txt",
         ".md"
     )
+
+    $forbiddenDirectoryNames = @("data", "files", "storage", "logs")
+    $pathSegments = @($path -split "/" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    foreach ($directoryName in $forbiddenDirectoryNames) {
+        if ($pathSegments -contains $directoryName) {
+            return $true
+        }
+    }
 
     if ($path.StartsWith("data/") -or $path.StartsWith("files/") -or $path.Contains("/data/") -or $path.Contains("/files/")) {
         return $true
