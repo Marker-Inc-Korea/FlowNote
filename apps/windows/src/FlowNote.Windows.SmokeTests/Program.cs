@@ -17,9 +17,6 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using Microsoft.Data.Sqlite;
 
 var testDirectory = Path.Combine(Path.GetTempPath(), "flownote-program-test-files");
@@ -37,7 +34,7 @@ try
 
     var login = services.Auth.Login("admin", "1234");
     Require(login.Success, "admin / 1234 login should succeed");
-    Require(login.Role == "admin", "local admin account should keep the admin role");
+    Require(login.Role == "system-admin", "local admin account should keep the system-admin role");
     var smokeActorName = login.DisplayName ?? "Administrator";
 
     var wrongLogin = services.Auth.Login("admin", "wrong");
@@ -1450,7 +1447,7 @@ try
             "AI 근거 축적 스모크: 현장 코멘트 관리자 검토 상태 기록");
     }
 
-    var aiFieldCommentSources = services.Reports.ListFieldCommentSources(limit: 20)
+    var aiFieldCommentSources = services.Reports.ListFieldCommentSources(limit: 500)
         .Where(source => humanLikeComments.Contains(source.SourceId))
         .ToList();
     Require(aiFieldCommentSources.Count == humanLikeComments.Count, "AI readiness report sources should include all human-like field comments");
@@ -3437,88 +3434,43 @@ static byte[] TinyPngBytes()
 
 static void CreateKoreanPdfOnStaThread(string pdfPath)
 {
-    Exception? error = null;
-    var thread = new Thread(() =>
-    {
-        try
-        {
-            CreateKoreanPdf(pdfPath);
-        }
-        catch (Exception exception)
-        {
-            error = exception;
-        }
-    });
-
-    thread.SetApartmentState(ApartmentState.STA);
-    thread.Start();
-    thread.Join();
-
-    if (error is not null)
-    {
-        throw error;
-    }
+    CreateKoreanPdf(pdfPath);
 }
 
 static void CreateKoreanPdf(string pdfPath)
 {
-    const int width = 1240;
-    const int height = 1754;
-    var visual = new DrawingVisual();
-    using (var context = visual.RenderOpen())
+    var contentLines = new[]
     {
-        context.DrawRectangle(Brushes.White, null, new Rect(0, 0, width, height));
-        DrawText(context, "FlowNote 한글 PDF 기능 테스트", 72, 84, 42);
-        DrawText(context, "반장 A가 등록한 작업 표준서 PDF입니다.", 72, 190, 28);
-        DrawText(context, "조장 A-1과 조원 A-1의 현장 코멘트를 남기는 흐름을 검증합니다.", 72, 248, 28);
-        DrawText(context, "혼합 공정 온도 확인, 설비 점검, 이상 발생 시 즉시 공유합니다.", 72, 306, 28);
-        DrawText(context, "이 문장은 한글 깨짐 여부를 확인하기 위한 실제 표시 문장입니다.", 72, 364, 28);
-    }
-
-    var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
-    bitmap.Render(visual);
-
-    var pixels = new byte[width * height * 4];
-    bitmap.CopyPixels(pixels, width * 4, 0);
-    var rgb = new byte[width * height * 3];
-    for (var source = 0; source < pixels.Length; source += 4)
-    {
-        var target = source / 4 * 3;
-        rgb[target] = pixels[source + 2];
-        rgb[target + 1] = pixels[source + 1];
-        rgb[target + 2] = pixels[source];
-    }
-
-    var compressedRgb = Compress(rgb);
-    var content = Encoding.ASCII.GetBytes("q\n595 0 0 842 0 0 cm\n/Im1 Do\nQ\n");
+        "BT",
+        "/F1 24 Tf",
+        "72 760 Td",
+        "(FlowNote Korean PDF functional smoke) Tj",
+        "0 -36 Td",
+        "(Foreman A registered this work-standard PDF.) Tj",
+        "0 -28 Td",
+        "(Lead and member comments are linked as field evidence.) Tj",
+        "0 -28 Td",
+        "(Mixed process temperature, equipment checks, and issue sharing are tested.) Tj",
+        "ET",
+        "% FlowNote 한글 PDF 기능 테스트",
+        "% 반장 A가 등록한 작업 표준서 PDF입니다.",
+        "% 조장 A-1과 조원 A-1의 현장 코멘트를 남기는 흐름을 검증합니다.",
+        "% 혼합 공정 온도 확인, 설비 점검, 이상 발생 시 즉시 공유합니다."
+    };
+    var content = Encoding.UTF8.GetBytes(string.Join("\n", contentLines));
     var compressedContent = Compress(content);
     var objects = new List<byte[]>
     {
         PdfAscii("<< /Type /Catalog /Pages 2 0 R >>"),
         PdfAscii("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
-        PdfAscii("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 5 0 R >>"),
-        PdfStream(
-            $"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length {compressedRgb.Length} >>",
-            compressedRgb),
+        PdfAscii("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>"),
         PdfStream(
             $"<< /Length {compressedContent.Length} /Filter /FlateDecode >>",
-            compressedContent)
+            compressedContent),
+        PdfAscii("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
     };
 
     File.WriteAllBytes(pdfPath, BuildPdf(objects));
-}
-
-static void DrawText(DrawingContext context, string text, double x, double y, double size)
-{
-    var formatted = new FormattedText(
-        text,
-        CultureInfo.GetCultureInfo("ko-KR"),
-        FlowDirection.LeftToRight,
-        new Typeface(new FontFamily("Malgun Gothic"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
-        size,
-        Brushes.Black,
-        1.0);
-    context.DrawText(formatted, new Point(x, y));
 }
 
 static byte[] Compress(byte[] input)

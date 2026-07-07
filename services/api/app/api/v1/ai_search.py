@@ -18,7 +18,10 @@ from app.db.models import (
     FieldComment,
     Report,
     ReportSource,
+    WorkRecord,
+    WorkRecordVersion,
     WorkSequenceChangeHistory,
+    WorkSequenceItem,
 )
 from app.db.session import get_db_session
 
@@ -28,6 +31,59 @@ FIELD_COMMENT_REVIEWED_STATUSES = {"ANALYZED", "REVIEWED", "SELECTED"}
 FIELD_COMMENT_EXCLUDED_STATUSES = {"EXCLUDED", "ARCHIVED"}
 FIELD_COMMENT_EXCLUDED_INPUT_MODES = {"mes_integration"}
 FIELD_COMMENT_REVIEWED_MINIMUM = 100
+AI_SEARCH_SOURCE_TYPES = (
+    "PUBLISHED_DOCUMENT_VERSION",
+    "FIELD_COMMENT",
+    "WORK_SEQUENCE_HISTORY",
+    "REPORT_SOURCE",
+)
+EXCLUDED_REASON_GUIDANCE = {
+    "document_version_not_published": {
+        "label": "공개 문서 버전 미충족",
+        "operator_action": "문서 상태와 공개 버전을 확인하고 현장 사용 가능 버전을 publish한다.",
+        "source_type": "PUBLISHED_DOCUMENT_VERSION",
+    },
+    "field_comment_excluded_status": {
+        "label": "FieldComment 보관/제외",
+        "operator_action": "보관 또는 제외 처리된 FieldComment가 의도한 결정인지 검토한다.",
+        "source_type": "FIELD_COMMENT",
+    },
+    "field_comment_mes_integration": {
+        "label": "FieldComment MES 통합 입력 제외",
+        "operator_action": "MES/ERP 어댑터 정책 확정 전에는 수동 검토 FieldComment를 우선 축적한다.",
+        "source_type": "FIELD_COMMENT",
+    },
+    "field_comment_without_content": {
+        "label": "FieldComment 빈 내용",
+        "operator_action": "원문, 정리 내용, 분석 내용 중 하나를 채우거나 검토 대상에서 제외한다.",
+        "source_type": "FIELD_COMMENT",
+    },
+    "work_sequence_history_without_trace_text": {
+        "label": "작업순서 이력 텍스트 없음",
+        "operator_action": "변경 전/후 값 또는 변경 사유가 남도록 작업순서 변경 기록 방식을 점검한다.",
+        "source_type": "WORK_SEQUENCE_HISTORY",
+    },
+    "report_source_missing_report": {
+        "label": "보고서 source의 보고서 누락",
+        "operator_action": "report_sources의 report_id가 실제 보고서와 연결되는지 정리한다.",
+        "source_type": "REPORT_SOURCE",
+    },
+    "report_source_archived_report": {
+        "label": "보관 보고서 source 제외",
+        "operator_action": "보관된 보고서를 후보로 쓸 필요가 있으면 보고서 상태를 먼저 검토한다.",
+        "source_type": "REPORT_SOURCE",
+    },
+    "report_source_without_trace_id": {
+        "label": "보고서 source 식별자 누락",
+        "operator_action": "source_type과 source_id가 비어 있는 보고서 근거를 보완하거나 삭제한다.",
+        "source_type": "REPORT_SOURCE",
+    },
+    "report_source_missing_origin": {
+        "label": "보고서 source 원천 누락",
+        "operator_action": "보고서 근거가 가리키는 문서, FieldComment, 작업순서 이력 row를 복구하거나 source를 정리한다.",
+        "source_type": "REPORT_SOURCE",
+    },
+}
 
 
 class AISearchCandidateResponse(BaseModel):
@@ -50,6 +106,7 @@ class AISearchRebuildResponse(BaseModel):
     candidate_count: int
     counts_by_source_type: dict[str, int]
     excluded_counts_by_reason: dict[str, int]
+    excluded_reason_guidance: dict[str, dict[str, str]]
     rebuilt_at: datetime
 
 
@@ -66,6 +123,7 @@ class AISearchQualityResponse(BaseModel):
     candidate_count: int
     counts_by_source_type: dict[str, int]
     excluded_counts_by_reason: dict[str, int]
+    excluded_reason_guidance: dict[str, dict[str, str]]
     field_comment_review_readiness: FieldCommentReviewReadinessResponse
 
 
@@ -76,6 +134,14 @@ def _new_public_id(prefix: str) -> str:
 def _clean_text(*values: str | None) -> str:
     parts = [value.strip() for value in values if value is not None and value.strip()]
     return "\n".join(parts)
+
+
+def _field_comment_content_text(comment: FieldComment) -> str:
+    return _clean_text(comment.normalized_content, comment.raw_content, comment.analysis_content)
+
+
+def _work_sequence_history_trace_text(history: WorkSequenceChangeHistory) -> str:
+    return _clean_text(history.before_value, history.after_value, history.change_reason)
 
 
 def _candidate_response(candidate: AISearchCandidate) -> AISearchCandidateResponse:
@@ -183,6 +249,48 @@ def _report_source_rows(session: Session) -> list[tuple[ReportSource, Report]]:
     ).all()
 
 
+def _report_source_origin_exists(session: Session, source: ReportSource) -> bool:
+    source_type = source.source_type.strip().upper()
+    source_id = source.source_id.strip()
+    if source_type == "FIELD_COMMENT":
+        return session.scalar(
+            select(func.count()).select_from(FieldComment).where(FieldComment.comment_id == source_id)
+        ) > 0
+    if source_type == "DOCUMENT":
+        statement = select(func.count()).select_from(Document).where(Document.document_id == source_id)
+        if source.source_version_id:
+            statement = (
+                select(func.count())
+                .select_from(DocumentVersion)
+                .where(
+                    DocumentVersion.document_id == source_id,
+                    DocumentVersion.version_id == source.source_version_id,
+                )
+            )
+        return session.scalar(statement) > 0
+    if source_type == "WORK_SEQUENCE_ITEM":
+        return session.scalar(
+            select(func.count()).select_from(WorkSequenceItem).where(WorkSequenceItem.item_id == source_id)
+        ) > 0
+    if source_type == "WORK_SEQUENCE_HISTORY":
+        return session.scalar(
+            select(func.count())
+            .select_from(WorkSequenceChangeHistory)
+            .where(WorkSequenceChangeHistory.change_id == source_id)
+        ) > 0
+    if source_type == "WORK_RECORD":
+        return session.scalar(
+            select(func.count()).select_from(WorkRecord).where(WorkRecord.work_record_id == source_id)
+        ) > 0
+    if source_type == "WORK_RECORD_VERSION":
+        return session.scalar(
+            select(func.count())
+            .select_from(WorkRecordVersion)
+            .where(WorkRecordVersion.version_id == source_id)
+        ) > 0
+    return False
+
+
 def _report_source_text(source: ReportSource, report: Report) -> str:
     return _clean_text(
         report.title,
@@ -230,15 +338,10 @@ def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
         )
 
     for comment in _field_comment_rows(session):
-        search_text = _clean_text(
-            comment.normalized_content,
-            comment.raw_content,
-            comment.analysis_content,
-            comment.category,
-            comment.signal_level,
-        )
-        if not search_text:
+        content_text = _field_comment_content_text(comment)
+        if not content_text:
             continue
+        search_text = _clean_text(content_text, comment.category, comment.signal_level)
         _add_candidate(
             session,
             source_type="FIELD_COMMENT",
@@ -263,14 +366,10 @@ def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
         )
 
     for history in _work_sequence_history_rows(session):
-        search_text = _clean_text(
-            history.change_type,
-            history.before_value,
-            history.after_value,
-            history.change_reason,
-        )
-        if not search_text:
+        trace_text = _work_sequence_history_trace_text(history)
+        if not trace_text:
             continue
+        search_text = _clean_text(history.change_type, trace_text)
         _add_candidate(
             session,
             source_type="WORK_SEQUENCE_HISTORY",
@@ -292,6 +391,8 @@ def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
         )
 
     for source, report in _report_source_rows(session):
+        if not _report_source_origin_exists(session, source):
+            continue
         source_row_id = str(source.id)
         _add_candidate(
             session,
@@ -321,6 +422,7 @@ def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
         candidate_count=_candidate_count(session),
         counts_by_source_type=_candidate_counts_by_source_type(session),
         excluded_counts_by_reason=_excluded_counts_by_reason(session),
+        excluded_reason_guidance=EXCLUDED_REASON_GUIDANCE,
         rebuilt_at=refreshed_at,
     )
 
@@ -335,7 +437,9 @@ def _candidate_counts_by_source_type(session: Session) -> dict[str, int]:
         .group_by(AISearchCandidate.source_type)
         .order_by(AISearchCandidate.source_type)
     ).all()
-    return {source_type: count for source_type, count in rows}
+    counts = {source_type: 0 for source_type in AI_SEARCH_SOURCE_TYPES}
+    counts.update({source_type: count for source_type, count in rows})
+    return counts
 
 
 def _excluded_counts_by_reason(session: Session) -> dict[str, int]:
@@ -373,13 +477,13 @@ def _excluded_counts_by_reason(session: Session) -> dict[str, int]:
             FieldComment.input_mode.not_in(FIELD_COMMENT_EXCLUDED_INPUT_MODES),
             func.trim(func.coalesce(FieldComment.raw_content, "")) == "",
             func.trim(func.coalesce(FieldComment.normalized_content, "")) == "",
+            func.trim(func.coalesce(FieldComment.analysis_content, "")) == "",
         )
     ) or 0
     work_sequence_history_empty = session.scalar(
         select(func.count())
         .select_from(WorkSequenceChangeHistory)
         .where(
-            func.trim(func.coalesce(WorkSequenceChangeHistory.change_type, "")) == "",
             func.trim(func.coalesce(WorkSequenceChangeHistory.before_value, "")) == "",
             func.trim(func.coalesce(WorkSequenceChangeHistory.after_value, "")) == "",
             func.trim(func.coalesce(WorkSequenceChangeHistory.change_reason, "")) == "",
@@ -407,6 +511,12 @@ def _excluded_counts_by_reason(session: Session) -> dict[str, int]:
             )
         )
     ) or 0
+    report_sources_missing_origin = 0
+    for source, report in _report_source_rows(session):
+        if report.status == "ARCHIVED":
+            continue
+        if not _report_source_origin_exists(session, source):
+            report_sources_missing_origin += 1
 
     return {
         "document_version_not_published": max(total_document_versions - eligible_document_versions, 0),
@@ -417,6 +527,7 @@ def _excluded_counts_by_reason(session: Session) -> dict[str, int]:
         "report_source_missing_report": report_sources_missing_report,
         "report_source_archived_report": report_sources_archived_report,
         "report_source_without_trace_id": report_sources_blank_trace,
+        "report_source_missing_origin": report_sources_missing_origin,
     }
 
 
@@ -446,6 +557,7 @@ def _quality_response(session: Session) -> AISearchQualityResponse:
         candidate_count=_candidate_count(session),
         counts_by_source_type=_candidate_counts_by_source_type(session),
         excluded_counts_by_reason=_excluded_counts_by_reason(session),
+        excluded_reason_guidance=EXCLUDED_REASON_GUIDANCE,
         field_comment_review_readiness=_field_comment_review_readiness(session),
     )
 
@@ -463,6 +575,7 @@ def list_candidates(
     _current_user: CurrentUser,
     session: Annotated[Session, Depends(get_db_session)],
     source_type: Annotated[str | None, Query(alias="sourceType")] = None,
+    source_id: Annotated[str | None, Query(alias="sourceId")] = None,
     limit: int = 100,
 ) -> list[AISearchCandidateResponse]:
     statement = select(AISearchCandidate).order_by(
@@ -471,6 +584,8 @@ def list_candidates(
     )
     if source_type is not None:
         statement = statement.where(AISearchCandidate.source_type == source_type.strip().upper())
+    if source_id is not None and source_id.strip():
+        statement = statement.where(AISearchCandidate.source_id == source_id.strip())
     rows = session.scalars(statement.limit(min(max(limit, 1), 500))).all()
     return [_candidate_response(candidate) for candidate in rows]
 
