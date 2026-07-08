@@ -14,7 +14,7 @@
 
 1. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 2. 실행 전 `git status --porcelain=v1 --untracked-files=all`에서 SQLite 예외 외 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-3. `services/api`에서 FastAPI pytest 수집 개수가 50개인지 확인한다.
+3. `services/api`에서 FastAPI pytest 수집 개수가 51개인지 확인한다.
 4. `services/api`에서 FastAPI pytest를 실행한다.
 5. WPF 앱을 빌드한다.
 6. WPF 스모크 테스트를 실행한다.
@@ -52,14 +52,15 @@ WPF 스모크 테스트는 기본적으로 저장소 루트의 `data/local/flown
 
 ## 2026-07-08 누적 스모크 기록
 
-공통 SQLite `data/local/flownote.local.sqlite`에는 2026-07-08 KST 기준 `smoke-102-human-20260708-132307` 실행 기록이 누적되어 있다. 이 기록은 삭제하지 않고 이후 회귀 검증의 기준 데이터로 사용한다.
+공통 SQLite `data/local/flownote.local.sqlite`에는 2026-07-08 14:50 KST 기준 `smoke-102-human-20260708-132307`, `smoke-102-20260708143141`, `102-20260708143304` 실행 기록이 누적되어 있다. 이 기록은 삭제하지 않고 이후 회귀 검증의 기준 데이터로 사용한다.
 
-- 오늘 날짜 폴더 기준으로 `smoke-102-human-20260708-132307 라인A 인수인계`, `라인A 계량기 사진`, `라인B 야간전달` 문서가 등록되었다.
-- 라인A 인수인계와 라인B 야간전달 문서는 v2가 `PUBLISHED`로 공개되었고, 라인A 계량기 사진은 FieldComment 첨부 근거 문서로 남았다.
-- 과거 날짜 무작위 검증은 기존 `사진/2026-06-29` 문서 `사진당일라인A20260629113103758`의 버전을 v4로 증가시켰다. 과거 날짜 폴더와 문서는 새로 만들지 않았다.
-- FieldComment 6건이 추가되었고 검토 상태는 `ANALYZED` 2건, `REVIEWED` 2건, `SELECTED` 2건으로 남았다. 사진 첨부 1건도 `field_comment_attachments`에 연결되었다.
-- 보고서 문서 `smoke-102-human-20260708-132307 AI 근거 축적 보고서`가 저장되었고, `report_sources`에는 FieldComment 5건, 문서 3건, 작업순서 이력 1건이 `ai_evidence` 관계로 연결되었다.
-- 문서 열람 시작/종료, 자동 닫힘, 다운로드 차단, FieldComment 생성/검토, 작업순서 연결, 보고서 저장 이벤트가 `activity_history`에 21건 남았다.
+- `smoke-102-human-20260708-132307` 실행에서는 오늘 날짜 폴더 기준으로 `라인A 인수인계`, `라인A 계량기 사진`, `라인B 야간전달` 문서가 등록되었다. 라인A 인수인계와 라인B 야간전달 문서는 v2가 `PUBLISHED`로 공개되었고, 라인A 계량기 사진은 FieldComment 첨부 근거 문서로 남았다.
+- 같은 실행의 과거 날짜 무작위 검증은 기존 `사진/2026-06-29` 문서 `사진당일라인A20260629113103758`의 버전을 v4로 증가시켰다. 과거 날짜 폴더와 문서는 새로 만들지 않았다.
+- `102-20260708143304` 실행에서는 오늘 날짜 기준 인수인계/사진 문서 12건과 보고서 문서 6건이 추가되었다. 이 중 3건은 v2가 `PUBLISHED`인 공개 문서, 9건은 `WORKING`, 보고서 6건은 `IN_REVIEW` 상태다.
+- `102-20260708143304` 실행에서는 FieldComment 24건이 추가되었고 검토 상태는 `ANALYZED` 8건, `REVIEWED` 8건, `SELECTED` 8건으로 남았다. 신호등식 입력도 `green`, `yellow`, `red`가 각각 8건씩 누적되었다.
+- `102 사람형 스모크 작업순서 20260708143304` 보드는 `LINE-A`, `2026-07-08` 기준으로 생성되었고, 작업순서 항목은 `COMPLETED` 1건, `HOLD` 1건으로 남았다. 변경 이력은 보드 생성 1건, 항목 추가 2건, 상태 변경 3건, 보류 사유 변경 1건이다.
+- `102 AI 근거 축적 보고서 20260708143304-01`부터 `-06`까지 6개 보고서 문서는 각각 `report_sources` 4건을 보존한다. 전체 source 구성은 FieldComment 12건, 문서 6건, 작업순서 이력 6건이다.
+- 2026-07-08 14:50 KST 기준 누적 테이블 수는 `documents` 1552건, `document_versions` 2280건, `field_comments` 1394건, `field_comment_attachments` 107건, `report_sources` 233건, `notifications` 1539건, `server_sync_queue` 762건이다.
 
 ## 산출물 보존과 Git 점검
 
