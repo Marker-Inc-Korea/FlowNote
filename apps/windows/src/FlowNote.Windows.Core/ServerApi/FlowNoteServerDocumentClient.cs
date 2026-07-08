@@ -363,6 +363,44 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerWorkSequenceNotificationCandidateResponse>(response, cancellationToken);
     }
 
+    public async Task<ServerAISearchRebuildResponse> RebuildAISearchCandidatesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsync("api/v1/ai-search/candidates/rebuild", null, cancellationToken);
+        return await ReadJsonResponse<ServerAISearchRebuildResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerAISearchQualityResponse> GetAISearchQualityAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync("api/v1/ai-search/quality", cancellationToken);
+        return await ReadJsonResponse<ServerAISearchQualityResponse>(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ServerAISearchCandidateResponse>> ListAISearchCandidatesAsync(
+        string? sourceType = null,
+        string? sourceId = null,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string> { $"limit={Math.Clamp(limit, 1, 500)}" };
+        if (!string.IsNullOrWhiteSpace(sourceType))
+        {
+            query.Add($"sourceType={Uri.EscapeDataString(sourceType.Trim())}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(sourceId))
+        {
+            query.Add($"sourceId={Uri.EscapeDataString(sourceId.Trim())}");
+        }
+
+        using var response = await httpClient.GetAsync(
+            $"api/v1/ai-search/candidates?{string.Join("&", query)}",
+            cancellationToken);
+        var candidates = await ReadJsonResponse<List<ServerAISearchCandidateResponse>>(response, cancellationToken);
+        return candidates;
+    }
+
     private static void AddString(MultipartFormDataContent form, string name, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))

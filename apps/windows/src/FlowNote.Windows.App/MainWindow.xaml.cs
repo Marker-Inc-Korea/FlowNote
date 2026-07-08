@@ -267,6 +267,20 @@ public partial class MainWindow : Window
         }
     }
 
+    private void AISearchQualityButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureReportWriteAllowed())
+        {
+            return;
+        }
+
+        var window = new AISearchQualityWindow(serverDocumentClient)
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+    }
+
     private void FieldCommentReviewButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureReportWriteAllowed())
@@ -627,6 +641,7 @@ public partial class MainWindow : Window
         WorkSequenceAdminButton.IsEnabled = canRegisterDocuments;
         FieldCommentReviewButton.IsEnabled = canWriteReports;
         ReportDraftButton.IsEnabled = canWriteReports;
+        AISearchQualityButton.IsEnabled = canWriteReports;
         ApplyDocumentStatusButton.IsEnabled = canRegisterDocuments;
         PublishDocumentButton.IsEnabled = canRegisterDocuments;
         DocumentStatusComboBox.IsEnabled = canRegisterDocuments;
@@ -649,6 +664,7 @@ public partial class MainWindow : Window
         {
             FieldCommentReviewButton.ToolTip = noReportWritePermission;
             ReportDraftButton.ToolTip = noReportWritePermission;
+            AISearchQualityButton.ToolTip = noReportWritePermission;
         }
 
         if (!canManageFileWatch)
