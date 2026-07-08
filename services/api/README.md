@@ -58,7 +58,7 @@ The server uses HMAC-signed Bearer access tokens plus the `auth_sessions` table.
 
 Development defaults such as `admin / 1234` and the default token secret are local development values only.
 
-Server account operations are handled by `python -m app.ops.server_accounts` for the current implementation. It supports `create`, `reset-password`, `set-status`, and `set-role`; WPF user management is local SQLite only and does not create or modify server accounts.
+Server account operations are handled by `python -m app.ops.server_accounts` for the current implementation. It supports `create`, `reset-password`, `set-status`, and `set-role`; WPF user management is local SQLite only and does not create or modify server accounts. Password entry is interactive and the current script rejects passwords shorter than 8 characters.
 
 `GET /api/v1/tags` is currently readable without authentication. Creating tags and all document, FieldComment, access log, work sequence, report, and AI search candidate endpoints use the authentication and role policies described in [docs/api.md](../../docs/api.md).
 

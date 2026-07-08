@@ -179,7 +179,7 @@ Invoke-RestMethod http://<서버IP>:5184/api/v1/health/db
 ### 최초 서버 관리자 계정
 
 1. 서버 DB 최초 생성 시 FastAPI는 서버 `user_accounts`에 `admin` 계정을 만든다. 이 계정은 최초 서버 관리자 계정이며 WPF 사용자 관리 화면에서 생성하거나 변경하지 않는다.
-2. 개발/스모크 테스트용 기본 비밀번호 `1234`는 운영 로그인 전에 반드시 변경한다. 현장 운영자는 서버 PC의 관리자 PowerShell에서 운영 스크립트를 실행해 새 비밀번호를 대화식으로 입력한다. 새 비밀번호를 명령줄 인자, PowerShell 기록, 서버 로그에 남기지 않는다.
+2. 개발/스모크 테스트용 기본 비밀번호 `1234`는 운영 로그인 전에 반드시 변경한다. 현장 운영자는 서버 PC의 관리자 PowerShell에서 운영 스크립트를 실행해 새 비밀번호를 대화식으로 입력한다. 현재 스크립트는 8자 미만 비밀번호를 거부한다. 새 비밀번호를 명령줄 인자, PowerShell 기록, 서버 로그에 남기지 않는다.
 
 ```powershell
 cd C:\FlowNote\Server\api
@@ -211,7 +211,7 @@ cd C:\FlowNote\Server\api
 .\.venv\Scripts\python.exe -m app.ops.server_accounts create --username line-a-admin --display-name "라인 A 관리자" --role line-foreman
 ```
 
-비밀번호는 `new password`와 `confirm password` 프롬프트에 대화식으로 입력한다. 스크립트 출력에는 `username`, 서버 `user_id`, 폐기된 세션 수만 표시되며 비밀번호는 출력하지 않는다.
+비밀번호는 `new password`와 `confirm password` 프롬프트에 대화식으로 입력한다. 현재 스크립트는 8자 미만 비밀번호를 거부한다. 스크립트 출력에는 `username`, 서버 `user_id`, 폐기된 세션 수만 표시되며 비밀번호는 출력하지 않는다.
 
 ### 비밀번호 재설정
 
@@ -224,7 +224,7 @@ cd C:\FlowNote\Server\api
 .\.venv\Scripts\python.exe -m app.ops.server_accounts reset-password --username line-a-admin
 ```
 
-잠금 계정을 승인 후 재개하면서 비밀번호까지 바꾸는 경우에는 먼저 상태를 `ACTIVE`로 바꾸고 이어서 비밀번호를 재설정한다. 한 번의 비밀번호 재설정으로 잠금/비활성 계정이 자동 활성화되지 않게 하는 것이 기본 운영 기준이다.
+잠금 계정을 승인 후 재개하면서 비밀번호까지 바꾸는 경우에는 먼저 상태를 `ACTIVE`로 바꾸고 이어서 비밀번호를 재설정한다. 한 번의 비밀번호 재설정으로 잠금/비활성 계정이 자동 활성화되지 않게 하는 것이 기본 운영 기준이다. 운영 승인 기록이 이미 남아 있고 한 번의 명령으로 처리해야 하는 경우에만 `reset-password --activate`를 사용할 수 있으며, 이 옵션은 비밀번호 재설정과 함께 계정을 `ACTIVE`로 바꾼다.
 
 ### 비활성 계정, 퇴사, 권한 변경
 

@@ -96,15 +96,18 @@
                                   HeadersVisibility="Column"
                                   GridLinesVisibility="Horizontal"
                                   BorderThickness="0"
-                                  RowHeight="42"
+                                  RowHeight="48"
                                   ColumnHeaderHeight="34">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="상태" Binding="{Binding StatusText}" Width="78" />
+                                <DataGridTextColumn Header="우선순위" Binding="{Binding PriorityText}" Width="104" />
+                                <DataGridTextColumn Header="분류" Binding="{Binding Category}" Width="150" />
                                 <DataGridTextColumn Header="대상" Binding="{Binding EntityText}" Width="142" />
                                 <DataGridTextColumn Header="작업" Binding="{Binding ActionText}" Width="150" />
                                 <DataGridTextColumn Header="시도" Binding="{Binding AttemptCount}" Width="60" />
                                 <DataGridTextColumn Header="마지막 시도" Binding="{Binding LastAttemptAt, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" />
-                                <DataGridTextColumn Header="실패 사유" Binding="{Binding LastError}" Width="*" />
+                                <DataGridTextColumn Header="조치" Binding="{Binding OperatorAction}" Width="260" />
+                                <DataGridTextColumn Header="실패 사유" Binding="{Binding LastError}" Width="360" />
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>

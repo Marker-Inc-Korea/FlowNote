@@ -172,6 +172,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var synced = 0;
         var failed = 0;
         var skipped = 0;
+        var held = 0;
         string? firstFailureReason = null;
 
         foreach (var item in items)
@@ -180,6 +181,14 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             if (TryMarkAlreadySynced(item))
             {
                 skipped++;
+                continue;
+            }
+
+            if (GetDependencyHoldReason(item) is { } holdReason)
+            {
+                held++;
+                firstFailureReason ??= holdReason;
+                MarkDependencyHold(item, holdReason);
                 continue;
             }
 
@@ -235,22 +244,23 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             }
         }
 
-        var message = failed == 0
+        var success = failed == 0 && held == 0;
+        var message = success
             ? $"서버 동기화 완료: 성공 {synced}건, 이미 처리 {skipped}건, 시도 {attempted}건."
-            : $"서버 동기화에 실패 항목이 있습니다: 성공 {synced}건, 이미 처리 {skipped}건, 실패 {failed}건, 시도 {attempted}건. 첫 실패 사유: {firstFailureReason} 동기화 큐의 실패 사유를 확인한 뒤 서버 실행 상태, 서버 URL, 로그인 상태, 선행 문서 동기화 여부를 조치하고 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
+            : $"서버 동기화에 조치가 필요한 항목이 있습니다: 성공 {synced}건, 이미 처리 {skipped}건, 보류 {held}건, 실패 {failed}건, 시도 {attempted}건. 첫 사유: {firstFailureReason} 동기화 큐의 우선순위와 조치 내용을 확인한 뒤 서버 실행 상태, 서버 URL, 로그인 상태, 선행 문서/버전 동기화 여부를 조치하고 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         if (items.Count > 0)
         {
             using var connection = database.OpenConnection();
             RecordSyncHistory(
                 connection,
-                failed == 0 ? "server_sync.retry_completed" : "server_sync.retry_completed_with_failures",
+                success ? "server_sync.retry_completed" : "server_sync.retry_completed_with_failures",
                 "server_sync_queue",
                 "pending",
                 message,
                 DateTime.UtcNow);
         }
 
-        return new ServerSyncResult(failed == 0, message, attempted, synced, failed, skipped);
+        return new ServerSyncResult(success, message, attempted, synced, failed, skipped, held);
     }
 
     public int CountQueuedForEntity(string entityType, string entityId, string? status = null)
@@ -1945,6 +1955,22 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         RecordSyncHistory(connection, "server_sync.failed", entityType, entityId, reason, DateTime.UtcNow);
     }
 
+    private void MarkDependencyHold(QueueItem item, string reason)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE server_sync_queue
+            SET status = 'FAILED',
+                last_error = $last_error
+            WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$last_error", reason);
+        command.Parameters.AddWithValue("$id", item.Id);
+        command.ExecuteNonQuery();
+        RecordSyncHistory(connection, "server_sync.failed", item.EntityType, item.EntityId, reason, DateTime.UtcNow);
+    }
+
     private void RecordFailure(QueueItem item, string reason)
     {
         using var connection = database.OpenConnection();
@@ -2217,6 +2243,16 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             return SyncFailureMessages.ReportSourceDependencyNotSynced;
         }
 
+        if (message.Contains("Unsupported sync action: register_field_note_attachment", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.LegacyFieldNoteAttachmentUnsupported;
+        }
+
+        if (message.Contains("Unsupported sync action: register_field_note", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.LegacyFieldNoteUnsupported;
+        }
+
         if (message.Contains("Local document file not found", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("Local field comment attachment file not found", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("Local report document file not found", StringComparison.OrdinalIgnoreCase))
@@ -2249,6 +2285,113 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         public const string PublishedStatusPublishMappingNotSynced = "문서 상태가 PUBLISHED이지만 공개 버전의 서버 매핑이 없습니다. 공개 큐가 SYNCED가 된 뒤 상태 변경 큐를 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string FieldCommentDependencyNotSynced = "선행 FieldComment가 아직 서버에 전송되지 않았습니다. FieldComment 항목을 먼저 동기화한 뒤 첨부 전송을 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string ReportSourceDependencyNotSynced = "보고서 근거 중 서버 ID가 확인되지 않은 항목이 있어 서버 보고서를 저장하지 못했습니다. 근거 문서, FieldComment, 작업순서 이력을 먼저 서버에 등록한 뒤 재시도하세요. 로컬 보고서 문서는 삭제되지 않습니다.";
+        public const string LegacyFieldNoteUnsupported = "구 FieldNote 큐는 현재 FieldComment 동기화 대상이 아니어서 자동 전송하지 않았습니다. 관리자 검토 후 FieldComment 전환 또는 별도 마이그레이션으로 정리하세요. 로컬 데이터는 삭제되지 않습니다.";
+        public const string LegacyFieldNoteAttachmentUnsupported = "구 FieldNote 첨부 큐는 현재 FieldComment 첨부 동기화 대상이 아니어서 자동 전송하지 않았습니다. 관리자 검토 후 FieldComment 첨부로 전환하거나 별도 마이그레이션으로 정리하세요. 로컬 데이터는 삭제되지 않습니다.";
+    }
+
+    private string? GetDependencyHoldReason(QueueItem item)
+    {
+        switch (item.Action)
+        {
+            case "register_document":
+                return null;
+
+            case "register_document_version":
+                return TryGetDocumentServerMapping(item.EntityId)?.ServerDocumentId is null
+                    ? SyncFailureMessages.DocumentDependencyNotSynced
+                    : null;
+
+            case "publish_document_version":
+                if (TryGetDocumentServerMapping(item.EntityId)?.ServerDocumentId is null)
+                {
+                    return SyncFailureMessages.DocumentDependencyNotSynced;
+                }
+
+                return item.LocalVersionNo is null ||
+                    TryGetDocumentVersionServerMapping(item.EntityId, item.LocalVersionNo.Value)?.ServerVersionId is null
+                    ? SyncFailureMessages.DocumentPublishVersionNotConfirmed
+                    : null;
+
+            case "update_document_status":
+                var document = LoadDocument(item.EntityId);
+                if (document is null)
+                {
+                    return null;
+                }
+
+                if (TryGetDocumentServerMapping(item.EntityId)?.ServerDocumentId is null)
+                {
+                    return SyncFailureMessages.DocumentDependencyNotSynced;
+                }
+
+                if (!string.Equals(document.Status, "PUBLISHED", StringComparison.Ordinal))
+                {
+                    return null;
+                }
+
+                if (document.PublishedVersionNo is null)
+                {
+                    return SyncFailureMessages.PublishedStatusMissingPublishedVersion;
+                }
+
+                return TryGetServerIdMapping("document_publish", item.EntityId, document.PublishedVersionNo.Value)?.ServerVersionId is null
+                    ? SyncFailureMessages.PublishedStatusPublishMappingNotSynced
+                    : null;
+
+            case "register_field_comment":
+                var fieldComment = LoadFieldComment(item.EntityId);
+                if (fieldComment?.DocumentId is null)
+                {
+                    return null;
+                }
+
+                var fieldCommentDocumentMapping = fieldComment.DocumentVersionNo is null
+                    ? TryGetDocumentServerMapping(fieldComment.DocumentId)
+                    : TryGetDocumentVersionServerMapping(fieldComment.DocumentId, fieldComment.DocumentVersionNo.Value)
+                      ?? TryGetDocumentServerMapping(fieldComment.DocumentId);
+                return fieldCommentDocumentMapping?.ServerDocumentId is null
+                    ? SyncFailureMessages.DocumentDependencyNotSynced
+                    : null;
+
+            case "update_field_comment_review":
+                return string.IsNullOrWhiteSpace(TryGetFieldCommentServerId(item.EntityId))
+                    ? SyncFailureMessages.FieldCommentDependencyNotSynced
+                    : null;
+
+            case "register_field_comment_attachment":
+                var attachment = LoadFieldCommentAttachment(item.EntityId);
+                return attachment is not null && string.IsNullOrWhiteSpace(TryGetFieldCommentServerId(attachment.CommentId))
+                    ? SyncFailureMessages.FieldCommentDependencyNotSynced
+                    : null;
+
+            case "register_access_log_started":
+            case "register_access_log_closed":
+            case "register_access_log_auto_closed":
+            case "register_access_log_download_blocked":
+                var accessLog = LoadAccessLog(item.EntityId);
+                if (accessLog is null)
+                {
+                    return null;
+                }
+
+                var accessLogDocumentMapping = TryGetDocumentVersionServerMapping(accessLog.DocumentId, accessLog.VersionNo)
+                    ?? TryGetDocumentServerMapping(accessLog.DocumentId);
+                return accessLogDocumentMapping?.ServerDocumentId is null
+                    ? SyncFailureMessages.DocumentDependencyNotSynced
+                    : null;
+
+            case "register_report":
+                return null;
+
+            case "register_field_note":
+                return SyncFailureMessages.LegacyFieldNoteUnsupported;
+
+            case "register_field_note_attachment":
+                return SyncFailureMessages.LegacyFieldNoteAttachmentUnsupported;
+
+            default:
+                return null;
+        }
     }
 
     private static string? Clean(string? value)

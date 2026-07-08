@@ -7,13 +7,18 @@
 `동기화 큐` 탭은 다음 컬럼을 표시한다.
 
 - `상태`: `대기`, `실패`, `완료`
+- `우선순위`: 운영자가 먼저 확인할 순서. `10 설정 필요`, `11 로그인 필요`, `12 연결 확인`, `20 파일 확인`, `30 문서 먼저`, `31 버전 먼저`, `32 FieldComment 먼저`, `33 근거 먼저`, `50 재시도`, `80 별도 정리`, `90 완료`
+- `분류`: 서버 URL 미설정, 인증 만료, 네트워크 실패, 로컬 파일 누락, 선행 문서 미동기화, 선행 문서 버전 미동기화, 선행 FieldComment 미동기화, 보고서 근거 미동기화, 구 FieldNote 큐, 재시도 가능, 완료
 - `대상`: 문서, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 첨부, 접근 로그, 보고서
 - `작업`: 문서 전송, 버전 전송, 공개 전송, 상태 전송, FieldComment 전송, 첨부 전송, 열람 시작/종료/자동 종료/다운로드 차단 전송, 보고서 서버 저장
 - `시도`: 서버 전송 시도 횟수
 - `마지막 시도`: 마지막 재시도 시간
+- `조치`: 운영자가 먼저 할 일
 - `실패 사유`: 사용자가 조치할 수 있는 한글 실패 문구
 
 `재시도` 버튼은 현재 `PENDING`, `FAILED` 큐를 다시 전송한다. 서버 URL 또는 로그인 토큰이 없으면 재시도하지 않고 “서버 URL 또는 로그인 정보가 없어 재시도할 수 없습니다. 서버 설정과 로그인을 확인하세요. 로컬 데이터는 삭제되지 않습니다.”를 표시한다.
+
+재시도 루프는 선행 문서, 문서 버전, FieldComment, 보고서 근거가 아직 서버 ID로 연결되지 않은 항목을 `보류`로 집계한다. 보류 항목은 `FAILED` 상태와 한글 실패 사유를 유지하지만 실제 서버 호출을 하지 않고 `attempt_count`를 올리지 않는다. 같은 재시도 배치 안에 선행 문서 항목이 같이 있으면 문서 등록이 먼저 처리된 뒤 후행 버전, 공개, 상태, FieldComment, 첨부, 접근 로그 항목을 이어서 전송한다.
 
 ## 실패 문구
 
@@ -24,6 +29,7 @@
 - 선행 문서 미동기화: `선행 문서가 아직 서버에 전송되지 않았습니다. 문서 동기화 후 다시 시도하세요.`
 - 선행 문서 버전 미동기화: `선행 문서 버전이 아직 서버에 전송되지 않았습니다. 문서 버전 동기화 후 다시 시도하세요.`
 - 선행 FieldComment 미동기화: `선행 FieldComment가 아직 서버에 전송되지 않았습니다. FieldComment 동기화 후 다시 시도하세요.`
+- 구 FieldNote 큐: `구 FieldNote 큐는 현재 FieldComment 동기화 대상이 아니어서 자동 전송하지 않았습니다. 관리자 검토 후 FieldComment 전환 또는 별도 마이그레이션으로 정리하세요. 로컬 데이터는 삭제되지 않습니다.`
 
 ## 문서 버전/공개/상태 우선순위
 
@@ -42,6 +48,29 @@
 앱 시작 시 서버 클라이언트가 구성되어 있으면 `RetryPendingAsync`를 한 번 실행한다. 결과 요약은 메인 화면 하단 상태 표시줄에 표시한다. 세부 시도, 실패, 성공은 `activity_history`와 `동기화 큐` 탭에서 확인한다.
 
 알림함은 사용자 업무 알림을 우선하므로 자동 재시도 요약을 새 알림으로 만들지 않는다.
+
+## 2026-07-08 실패 큐 분류
+
+사용자 확인 기준으로 WPF 공통 SQLite에는 `SYNCED` 387건, `FAILED` 277건이 있었다. 이후 테스트 이력이 누적된 현재 재조회 기준은 `SYNCED` 472건, `FAILED` 281건이다. 테스트 이력 보존 규칙에 따라 기존 큐와 SQLite 기록은 삭제하지 않는다.
+
+현재 `sqlite3 data/local/flownote.local.sqlite`에서 `server_sync_queue`를 `entity_type`, `action`, `status`, `last_error`로 묶으면 실패 큐는 다음 패턴으로 나뉜다.
+
+- 선행 문서 미동기화 221건: 접근 로그 다운로드 차단 88건, 접근 로그 종료 26건, 접근 로그 시작 26건, FieldComment 21건, 문서 공개 20건, 문서 상태 20건, 문서 버전 20건. 같은 문서의 `document/register_document`가 먼저 서버 ID와 `synced_at`을 받아야 한다.
+- 로컬 파일 누락 20건: `document/register_document`. 서버가 실행되어도 파일이 없으면 재시도할 수 없으므로 운영자가 원본 파일 위치를 복구해야 한다.
+- 선행 FieldComment 미동기화 20건: `field_comment_attachment/register_field_comment_attachment`. 첨부보다 FieldComment 서버 등록이 먼저다.
+- 구 FieldNote 큐 20건: `field_note/register_field_note` 10건, `field_note_attachment/register_field_note_attachment` 10건. 현재 명칭과 API는 FieldComment 기준이므로 자동 재전송 대상이 아니라 관리자 검토 후 전환 또는 별도 마이그레이션으로 정리한다.
+- 서버 URL 미설정, 인증 만료, 네트워크 실패는 현재 실패 그룹에는 남아 있지 않지만 코드와 UI 분류에는 유지한다. 이 항목은 서버 설정, 재로그인, 서버 PC/네트워크 확인 후 바로 재시도한다.
+
+현재 `server_id_mappings`는 585건이며 문서, 문서 버전, 공개, 상태, 접근 로그, FieldComment, 첨부, 보고서 매핑이 남아 있다. 이미 서버에 존재하는 문서 버전은 `document_versions.version_no`로 서버 버전을 찾아 `server_version_id`, `synced_at`, `server_id_mappings`를 복구하고 중복 업로드하지 않는다. 큐 재등록도 `idempotency_key` 유니크 제약과 `ON CONFLICT(idempotency_key)`로 중복 행을 만들지 않는다.
+
+운영 우선순위는 다음 순서로 본다.
+
+1. 서버 URL, 로그인, 네트워크 문제를 먼저 조치한다.
+2. 로컬 파일 누락 문서는 파일 위치를 복구한다.
+3. 같은 문서의 `document/register_document`를 먼저 동기화한다.
+4. 같은 문서의 `document_version/register_document_version`과 `document_publish/publish_document_version`을 처리한다.
+5. FieldComment를 먼저 동기화한 뒤 첨부, 검토 변경, 접근 로그를 재시도한다.
+6. 구 FieldNote 큐는 자동 재시도 대상에서 분리해 관리자 전환 작업으로 다룬다.
 
 ## 검증 시나리오
 

@@ -2127,6 +2127,7 @@ try
                 serverDocuments,
                 serverLogin.UserId);
             Require(!versionDependencyResult.Success, "version sync should fail while the first document sync is missing");
+            Require(versionDependencyResult.Held >= 1, "version dependency should be counted as a held queue item");
             var versionDependencyError = ScalarString(
                 syncConnection,
                 """
@@ -2143,6 +2144,21 @@ try
             Require(
                 versionDependencyError?.Contains("선행 문서가 아직 서버에 전송되지 않았습니다", StringComparison.Ordinal) == true,
                 "version dependency failure should remain in the queue with a Korean reason");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT attempt_count
+                    FROM server_sync_queue
+                    WHERE entity_type = 'document_version'
+                      AND entity_id = $document_id
+                      AND local_version_no = $version_no
+                    ORDER BY id DESC
+                    LIMIT 1;
+                    """,
+                    ("$document_id", versionDependencyDocument.DocumentId),
+                    ("$version_no", versionDependencyVersion.VersionNo)) == 0,
+                "held version dependency should not increment retry attempt count before the document is synced");
             Require(
                 ScalarString(
                     syncConnection,
@@ -2206,6 +2222,7 @@ try
                 serverDocuments,
                 serverLogin.UserId);
             Require(!publishDependencyResult.Success, "publish sync should fail until the published local version has a server version id");
+            Require(publishDependencyResult.Held >= 1, "publish dependency should be counted as a held queue item");
             var publishDependencyError = ScalarString(
                 syncConnection,
                 """
@@ -2222,6 +2239,14 @@ try
             Require(
                 publishDependencyError?.Contains("공개할 서버 버전 ID가 아직 확인되지 않아", StringComparison.Ordinal) == true,
                 "publish dependency failure should explain the missing server version id in Korean");
+            var publishDependencyQueue = services.ServerSync.ListQueueItems().First(item =>
+                item.EntityType == "document_publish" &&
+                item.EntityId == publishDependencyDocument.DocumentId &&
+                item.LocalVersionNo == publishDependencyVersion.VersionNo);
+            Require(
+                publishDependencyQueue.Diagnosis.Category == "선행 문서 버전 미동기화" &&
+                publishDependencyQueue.Diagnosis.IsDependencyHold,
+                "publish dependency queue should expose a document version dependency diagnosis");
             Require(
                 ScalarString(
                     syncConnection,
