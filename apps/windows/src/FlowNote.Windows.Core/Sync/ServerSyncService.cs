@@ -575,6 +575,32 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             WHERE status IN ('PENDING', 'FAILED')
             ORDER BY
                 COALESCE(
+                    CASE
+                        WHEN entity_type = 'report' THEN (
+                            SELECT COALESCE(
+                                CASE report_sources.source_type
+                                    WHEN 'DOCUMENT' THEN report_sources.local_source_id
+                                END,
+                                (
+                                    SELECT field_comments.document_id
+                                    FROM field_comments
+                                    WHERE field_comments.comment_id = report_sources.local_source_id
+                                    LIMIT 1
+                                )
+                            )
+                            FROM report_sources
+                            WHERE report_sources.local_report_document_id = server_sync_queue.entity_id
+                              AND report_sources.source_type IN ('DOCUMENT', 'FIELD_COMMENT')
+                            ORDER BY
+                                CASE report_sources.source_type
+                                    WHEN 'DOCUMENT' THEN 0
+                                    WHEN 'FIELD_COMMENT' THEN 1
+                                    ELSE 2
+                                END,
+                                report_sources.id
+                            LIMIT 1
+                        )
+                    END,
                     local_document_id,
                     CASE
                         WHEN entity_type = 'field_comment_attachment' THEN (
@@ -1276,7 +1302,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
         var content = await File.ReadAllTextAsync(filePath, cancellationToken);
         var sources = MapQueuedReportSources(item.EntityId);
-        if (sources.Count == 0)
+        var sourceCount = CountQueuedReportSources(item.EntityId);
+        if (sourceCount == 0 || sources.Count < sourceCount)
         {
             throw new InvalidOperationException(SyncFailureMessages.ReportSourceDependencyNotSynced);
         }
@@ -1558,6 +1585,19 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         }
 
         return sources;
+    }
+
+    private int CountQueuedReportSources(string localReportDocumentId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM report_sources
+            WHERE local_report_document_id = $document_id;
+            """;
+        command.Parameters.AddWithValue("$document_id", localReportDocumentId);
+        return Convert.ToInt32(command.ExecuteScalar());
     }
 
     private static ServerReportSourceRequest? TryMapQueuedReportSource(
@@ -2381,7 +2421,15 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                     : null;
 
             case "register_report":
-                return null;
+                var reportSourceCount = CountQueuedReportSources(item.EntityId);
+                if (reportSourceCount == 0)
+                {
+                    return SyncFailureMessages.ReportSourceDependencyNotSynced;
+                }
+
+                return MapQueuedReportSources(item.EntityId).Count < reportSourceCount
+                    ? SyncFailureMessages.ReportSourceDependencyNotSynced
+                    : null;
 
             case "register_field_note":
                 return SyncFailureMessages.LegacyFieldNoteUnsupported;

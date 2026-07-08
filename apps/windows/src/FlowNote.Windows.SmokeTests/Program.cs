@@ -2571,14 +2571,70 @@ try
                 orderedQueueDocument.DocumentId,
                 "ARCHIVED",
                 smokeActorName);
+            var orderedQueueFieldComment = services.FieldComments.AddDocumentComment(
+                orderedQueueDocument.DocumentId,
+                $"Ordered retry field comment {runId}.",
+                smokeActorName);
+            var orderedQueueAttachmentFile = Path.Combine(testDirectory, $"server-ordered-field-comment-attachment-{runId}.txt");
+            File.WriteAllText(orderedQueueAttachmentFile, $"Server ordered FieldComment attachment smoke test {runId}.");
+            var orderedQueueAttachment = services.FieldComments.AddAttachment(
+                orderedQueueFieldComment.CommentId,
+                orderedQueueAttachmentFile,
+                smokeActorName,
+                "Ordered retry FieldComment attachment");
+            var orderedQueueAccessLogId = services.DocumentViewLogs.StartDocumentView(
+                orderedQueueDocument.DocumentId,
+                orderedQueueDocument.VersionNo,
+                smokeActorName);
+            var orderedQueueStartedAccessLog = services.DocumentViewLogs.GetLog(orderedQueueAccessLogId)
+                ?? throw new InvalidOperationException("ordered access log should be readable after start");
+            services.DocumentViewLogs.CloseDocumentView(orderedQueueAccessLogId, "window_closed");
+            var orderedQueueClosedAccessLog = services.DocumentViewLogs.GetLog(orderedQueueAccessLogId)
+                ?? throw new InvalidOperationException("ordered access log should be readable after close");
+            var orderedReportSources = new[]
+            {
+                new ReportSourceCandidateRecord(
+                    "FIELD_COMMENT",
+                    orderedQueueFieldComment.CommentId,
+                    orderedQueueDocument.Title,
+                    orderedQueueFieldComment.RawContent,
+                    orderedQueueFieldComment.CreatedAt,
+                    RelationType: "primary"),
+                new ReportSourceCandidateRecord(
+                    "DOCUMENT",
+                    orderedQueueDocument.DocumentId,
+                    orderedQueueDocument.Title,
+                    orderedQueueDocument.FileName,
+                    orderedQueueDocument.UpdatedAt,
+                    orderedQueueVersion.VersionNo.ToString(CultureInfo.InvariantCulture),
+                    "related_document")
+            };
+            var orderedReportContent = services.Reports.BuildDraftContent(
+                $"Server ordered retry report {runStamp}",
+                "Server retry should save the report only after document and FieldComment sources are synced.",
+                orderedReportSources,
+                smokeActorName);
+            var orderedReportDocument = services.Reports.SaveDraftAsDocument(
+                currentDocumentFolder.Id,
+                $"Server ordered retry report {runStamp}",
+                orderedReportContent,
+                smokeActorName,
+                orderedReportSources,
+                "Server retry should save the report only after document and FieldComment sources are synced.");
 
+            _ = await services.ServerSync.QueueAndTrySyncReportAsync(orderedReportDocument, null);
+            _ = await services.ServerSync.QueueAndTrySyncAccessLogAsync(orderedQueueClosedAccessLog, "view_closed", null);
+            _ = await services.ServerSync.QueueAndTrySyncAccessLogAsync(orderedQueueStartedAccessLog, "view_started", null);
+            _ = await services.ServerSync.QueueAndTrySyncFieldCommentAttachmentAsync(orderedQueueAttachment, null);
+            _ = await services.ServerSync.QueueAndTrySyncFieldCommentAsync(orderedQueueFieldComment, null);
             _ = await services.ServerSync.QueueAndTrySyncDocumentStatusAsync(orderedQueueArchived, null);
             _ = await services.ServerSync.QueueAndTrySyncDocumentPublishAsync(orderedQueuePublished, null);
             _ = await services.ServerSync.QueueAndTrySyncDocumentVersionAsync(orderedQueueVersion, null);
             _ = await services.ServerSync.QueueAndTrySyncDocumentAsync(orderedQueueDocument, null);
 
+            var orderedRetryStartedAt = DateTime.UtcNow;
             var orderedRetryResult = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
-            Require(orderedRetryResult.Synced >= 4, "document queue retry should process the reverse-queued document flow");
+            Require(orderedRetryResult.Synced >= 9, "document queue retry should process the reverse-queued document, FieldComment, access log, and report flow");
             Require(
                 ScalarLong(
                     syncConnection,
@@ -2594,8 +2650,179 @@ try
                     """,
                     ("$document_id", orderedQueueDocument.DocumentId)) == 4,
                 "document, version, publish, and status queue rows should keep attempts and sync timestamps");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_sync_queue
+                    WHERE (
+                        (
+                            entity_id = $document_id
+                            AND entity_type IN ('document', 'document_version', 'document_publish', 'document_status')
+                        )
+                        OR (entity_type = 'field_comment' AND entity_id = $comment_id)
+                        OR (entity_type = 'field_comment_attachment' AND entity_id = $attachment_id)
+                        OR (entity_type = 'document_access_log' AND entity_id = $log_id)
+                        OR (entity_type = 'report' AND entity_id = $report_id)
+                    )
+                      AND status = 'SYNCED';
+                    """,
+                    ("$document_id", orderedQueueDocument.DocumentId),
+                    ("$comment_id", orderedQueueFieldComment.CommentId),
+                    ("$attachment_id", orderedQueueAttachment.AttachmentId),
+                    ("$log_id", orderedQueueAccessLogId.ToString()),
+                    ("$report_id", orderedReportDocument.DocumentId)) == 9,
+                "full ordered retry should mark document, version, publish, status, FieldComment, attachment, access logs, and report as synced");
 
             var orderedAttemptOrder = ScalarString(
+                syncConnection,
+                """
+                SELECT GROUP_CONCAT(entity_type || ':' || action, '|')
+                FROM (
+                    SELECT server_sync_queue.entity_type AS entity_type,
+                           server_sync_queue.action AS action
+                    FROM activity_history
+                    JOIN server_sync_queue
+                      ON server_sync_queue.entity_type = activity_history.target_type
+                     AND server_sync_queue.entity_id = activity_history.target_id
+                     AND activity_history.message LIKE '%' || server_sync_queue.idempotency_key || '%'
+                    WHERE activity_history.event_type = 'server_sync.retry_attempted'
+                      AND activity_history.created_at >= $ordered_retry_started_at
+                      AND (
+                            activity_history.target_id = $document_id
+                         OR activity_history.target_id = $comment_id
+                         OR activity_history.target_id = $attachment_id
+                         OR activity_history.target_id = $log_id
+                         OR activity_history.target_id = $report_id
+                      )
+                    ORDER BY activity_history.id
+                );
+                """,
+                ("$document_id", orderedQueueDocument.DocumentId),
+                ("$comment_id", orderedQueueFieldComment.CommentId),
+                ("$attachment_id", orderedQueueAttachment.AttachmentId),
+                ("$log_id", orderedQueueAccessLogId.ToString()),
+                ("$report_id", orderedReportDocument.DocumentId),
+                ("$ordered_retry_started_at", orderedRetryStartedAt.ToString("O")));
+            Require(
+                orderedAttemptOrder ==
+                    "document:register_document|" +
+                    "document_version:register_document_version|" +
+                    "document_publish:publish_document_version|" +
+                    "document_status:update_document_status|" +
+                    "field_comment:register_field_comment|" +
+                    "field_comment_attachment:register_field_comment_attachment|" +
+                    "document_access_log:register_access_log_started|" +
+                    "document_access_log:register_access_log_closed|" +
+                    "report:register_report",
+                "full queue retry attempts should run document, version, publish, status, FieldComment, attachment, access logs, then report");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM field_comments
+                    WHERE comment_id = $comment_id
+                      AND server_comment_id IS NOT NULL
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$comment_id", orderedQueueFieldComment.CommentId)) == 1,
+                "ordered FieldComment retry should store the server comment id before report sync");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM field_comment_attachments
+                    WHERE attachment_id = $attachment_id
+                      AND server_attachment_id IS NOT NULL
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$attachment_id", orderedQueueAttachment.AttachmentId)) == 1,
+                "ordered FieldComment attachment retry should store the server attachment id");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM document_view_logs
+                    WHERE id = $log_id
+                      AND server_start_log_id IS NOT NULL
+                      AND server_close_log_id IS NOT NULL
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$log_id", orderedQueueAccessLogId)) == 1,
+                "ordered access log retry should store both server access log ids");
+            var orderedReportServerId = ScalarString(
+                syncConnection,
+                """
+                SELECT server_report_id
+                FROM documents
+                WHERE document_id = $report_id
+                  AND server_report_id IS NOT NULL
+                  AND server_document_id IS NOT NULL
+                  AND synced_at IS NOT NULL;
+                """,
+                ("$report_id", orderedReportDocument.DocumentId));
+            Require(
+                orderedReportServerId?.StartsWith("report_", StringComparison.Ordinal) == true,
+                "ordered report retry should link the local report document to a server report id");
+            var orderedServerDocumentId = ScalarString(
+                syncConnection,
+                """
+                SELECT server_document_id
+                FROM documents
+                WHERE document_id = $document_id;
+                """,
+                ("$document_id", orderedQueueDocument.DocumentId));
+            var orderedReportDetail = await serverDocuments.GetReportAsync(orderedReportServerId!);
+            var orderedServerCommentId = ScalarString(
+                syncConnection,
+                """
+                SELECT server_comment_id
+                FROM field_comments
+                WHERE comment_id = $comment_id;
+                """,
+                ("$comment_id", orderedQueueFieldComment.CommentId));
+            Require(
+                orderedReportDetail.Sources.Any(item => item.SourceType == "FIELD_COMMENT" && item.SourceId == orderedServerCommentId),
+                "ordered report retry should trace the synced server FieldComment source");
+            Require(
+                orderedReportDetail.Sources.Any(item => item.SourceType == "DOCUMENT" && item.SourceId == orderedServerDocumentId),
+                "ordered report retry should trace the synced server document source");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT entity_type, local_id, local_version_no, COUNT(*) AS mapping_count
+                        FROM server_id_mappings
+                        WHERE local_id IN ($document_id, $comment_id, $attachment_id, $log_id, $report_id)
+                        GROUP BY entity_type, local_id, local_version_no
+                        HAVING mapping_count > 1
+                    );
+                    """,
+                    ("$document_id", orderedQueueDocument.DocumentId),
+                    ("$comment_id", orderedQueueFieldComment.CommentId),
+                    ("$attachment_id", orderedQueueAttachment.AttachmentId),
+                    ("$log_id", orderedQueueAccessLogId.ToString()),
+                    ("$report_id", orderedReportDocument.DocumentId)) == 0,
+                "ordered retry should not create duplicate server_id_mappings rows");
+            var orderedQueuedReportCountBeforeDuplicateRetry = (await serverDocuments.ListReportsAsync())
+                .Count(item => item.Title == orderedReportDocument.Title);
+            _ = await services.ServerSync.QueueAndTrySyncReportAsync(
+                orderedReportDocument,
+                serverDocuments,
+                serverLogin.UserId);
+            var orderedQueuedReportCountAfterDuplicateRetry = (await serverDocuments.ListReportsAsync())
+                .Count(item => item.Title == orderedReportDocument.Title);
+            Require(
+                orderedQueuedReportCountAfterDuplicateRetry == orderedQueuedReportCountBeforeDuplicateRetry,
+                "repeated ordered report retry should not create a duplicate server report");
+
+            var orderedDocumentAttemptOrder = ScalarString(
                 syncConnection,
                 """
                 SELECT GROUP_CONCAT(action, '|')
@@ -2608,25 +2835,17 @@ try
                      AND activity_history.message LIKE '%' || server_sync_queue.idempotency_key || '%'
                     WHERE activity_history.event_type = 'server_sync.retry_attempted'
                       AND activity_history.target_id = $document_id
-                      AND activity_history.created_at >= $run_started_at
+                      AND activity_history.created_at >= $ordered_retry_started_at
                     ORDER BY activity_history.id
                     LIMIT 4
                 );
                 """,
                 ("$document_id", orderedQueueDocument.DocumentId),
-                ("$run_started_at", runStartedAt.ToUniversalTime().ToString("O")));
+                ("$ordered_retry_started_at", orderedRetryStartedAt.ToString("O")));
             Require(
-                orderedAttemptOrder == "register_document|register_document_version|publish_document_version|update_document_status",
+                orderedDocumentAttemptOrder == "register_document|register_document_version|publish_document_version|update_document_status",
                 "document queue retry attempts should run document, version, publish, then status");
 
-            var orderedServerDocumentId = ScalarString(
-                syncConnection,
-                """
-                SELECT server_document_id
-                FROM documents
-                WHERE document_id = $document_id;
-                """,
-                ("$document_id", orderedQueueDocument.DocumentId));
             var orderedServerVersionId = ScalarString(
                 syncConnection,
                 """
