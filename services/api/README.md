@@ -91,6 +91,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The current collected FastAPI test count is 50.
+The current collected FastAPI test count is 51.
 
 Test SQLite DBs, logs, upload files, and generated sample files are preserved unless the user explicitly asks to delete them.

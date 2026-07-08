@@ -16,6 +16,7 @@
 
 - Windows WPF 앱은 로컬 SQLite를 사용한다.
 - 문서 등록, 문서 열람, FieldComment, 작업순서, 알림, 보고서, 사용자 관리 기능이 구현되어 있다.
+- 서버 연결 시 AI 근거 후보 운영 점검 화면에서 후보 재생성, 품질 지표, 제외 사유, 원천 추적값을 확인할 수 있다.
 - 기본 DB는 저장소 루트의 `data/local/flownote.local.sqlite`이다.
 - `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`가 있으면 해당 위치를 우선한다.
 

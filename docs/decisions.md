@@ -81,6 +81,7 @@
 - 운영자는 공개 문서 버전, FieldComment, 작업순서 이력, 보고서 source별 후보 수와 제외 사유를 먼저 확인한다.
 - 제외 사유는 공개 문서 미충족, FieldComment 보관/제외, MES 통합 입력, 빈 FieldComment, 텍스트 없는 작업순서 이력, 누락/보관/원천 누락 보고서 source로 구분하고 운영 조치 힌트를 함께 제공한다.
 - 후보 row는 `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`로 원문 문서 버전, FieldComment, 작업순서 이력, 보고서 source row까지 역추적되어야 한다.
+- WPF 운영 점검 화면은 서버의 후보 재생성/품질/목록 API를 호출하고, 선택한 후보의 추적값을 운영자가 복사해 원천 row 확인에 사용할 수 있게 한다.
 - 자동 답변 생성, 자동 의사결정, 작업지시 자동 변경은 이번 운영 점검 범위에 포함하지 않는다.
 
 ## 2026-07-01. WPF 보고서 저장 흐름
@@ -136,7 +137,7 @@
 - 서버 DB와 서버 `storage`는 같은 시점의 백업을 정상 복구 기준으로 삼는다. DB만 또는 `storage`만 복원한 상태는 정상 운영 재개가 아니라 장애 대응 상태다.
 - 복구 검증은 서버 health, DB health, WPF 로그인, 문서 목록, 문서 열람, FieldComment, 보고서 근거 조회를 포함한다.
 - 복구 후 가능한 환경에서는 `.\scripts\verify-preserved-tests.ps1` 또는 동등 운영 점검을 실행한다.
-- 외부 AI 호출 기반 검색/작업 조언은 공개 문서, FieldComment, 보고서, 작업순서 이력이 충분히 축적되고 근거 역추적이 가능해진 뒤 후속 계층으로 착수한다. 현재 구현은 `ai_search_candidates` 근거 후보 read model의 재생성, 목록 조회, 품질 점검 API까지다.
+- 외부 AI 호출 기반 검색/작업 조언은 공개 문서, FieldComment, 보고서, 작업순서 이력이 충분히 축적되고 근거 역추적이 가능해진 뒤 후속 계층으로 착수한다. 현재 구현은 `ai_search_candidates` 근거 후보 read model의 재생성, 목록 조회, 품질 점검 API와 WPF 운영 점검 화면까지다.
 - MES/ERP 어댑터는 후속 연동 대상이며, 초기 수동 작업지시의 `work_order_no`, 문서 연결, 작업순서, FieldComment, 보고서 근거와 연결되는 방식으로 설계한다.
 
 ## 제품 범위 결정
