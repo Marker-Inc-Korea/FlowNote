@@ -21,9 +21,10 @@
 - 작업순서 관리자 화면과 TV 화면
 - 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도
 - FastAPI 서버 인증과 문서/FieldComment/첨부/접근 로그/보고서/작업순서 API 클라이언트
+- AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
 - 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장
 
-AI 검색 근거 후보는 현재 FastAPI 서버 API와 서버 테스트 범위에 구현되어 있다. WPF 서버 클라이언트에는 아직 `/api/v1/ai-search` 호출 메서드나 운영 점검 화면이 없다.
+AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트, `AI 근거 후보 운영 점검` 화면에 구현되어 있다. 이 화면은 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`를 호출해 외부 AI 호출 전 데이터 품질과 원천 추적 가능성을 확인한다.
 
 ## 후속 제품 방향
 
