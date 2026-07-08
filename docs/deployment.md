@@ -68,7 +68,7 @@ C:\FlowNote\
 - WPF 앱은 MSI를 기준 패키징 방식으로 사용한다. MSIX는 서명, 패키지 아이덴티티, 앱 컨테이너 제약을 현장별로 더 검토해야 하므로 초기 운영 배포 기준에서 제외한다.
 - MSI는 WPF 실행에 필요한 앱 파일만 설치한다. 로컬 SQLite와 `Files\`는 설치 폴더 아래에 두지 않고 `FLOWNOTE_LOCAL_DATA_DIR`가 가리키는 폴더에 둔다.
 - Android 앱은 승인된 현장 단말용 설치 패키지로 배포한다. 개인 휴대폰 기본 배포와 일반 웹 브라우저 접속은 기준이 아니다.
-- Windows와 Android의 채널 알림은 서버 사용자, 클라이언트/단말 승인 상태, 채널 멤버십을 함께 확인해 표시한다. 외부 푸시 서비스를 쓸지, 사내망 polling 또는 WebSocket을 쓸지는 현장 네트워크 정책 확정 후 결정한다.
+- Windows와 Android의 채널 알림은 후속 구현 범위다. 구현 시 서버 사용자, 클라이언트/단말 승인 상태, 채널 멤버십을 함께 확인해 표시하며, 외부 푸시 서비스를 쓸지 사내망 polling 또는 WebSocket을 쓸지는 현장 네트워크 정책 확정 후 결정한다.
 - FastAPI 서버는 Windows 작업 스케줄러의 부팅 시 자동 실행 작업으로 등록한다. Python/FastAPI 프로세스를 Windows 서비스로 직접 등록하려면 별도 서비스 래퍼가 필요하므로, 초기 기준은 Windows 기본 기능만 사용하는 작업 스케줄러 방식으로 고정한다.
 - 서버 작업 이름은 기본 `\FlowNote\FlowNoteApi`다. 실행 래퍼는 `C:\FlowNote\Server\scripts\run-flownote-server.ps1`, 로그는 `C:\FlowNote\Server\logs`에 둔다.
 

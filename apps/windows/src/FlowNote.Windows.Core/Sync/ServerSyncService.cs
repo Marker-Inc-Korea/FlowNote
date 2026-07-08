@@ -438,12 +438,13 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
     private void EnqueueFieldCommentAttachment(FieldCommentAttachmentRecord attachment, string? failureReason)
     {
+        var parent = TryGetFieldCommentParent(attachment.CommentId);
         Enqueue(
             "field_comment_attachment",
             attachment.AttachmentId,
             "register_field_comment_attachment",
-            null,
-            null,
+            parent.DocumentId,
+            parent.VersionNo,
             CreateFieldCommentAttachmentIdempotencyKey(attachment.AttachmentId),
             failureReason);
     }
@@ -563,7 +564,20 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             FROM server_sync_queue
             WHERE status IN ('PENDING', 'FAILED')
             ORDER BY
-                COALESCE(local_document_id, entity_id),
+                COALESCE(
+                    local_document_id,
+                    CASE
+                        WHEN entity_type = 'field_comment_attachment' THEN (
+                            SELECT field_comments.document_id
+                            FROM field_comment_attachments
+                            JOIN field_comments
+                              ON field_comments.comment_id = field_comment_attachments.comment_id
+                            WHERE field_comment_attachments.attachment_id = server_sync_queue.entity_id
+                            LIMIT 1
+                        )
+                    END,
+                    entity_id
+                ),
                 CASE action
                     WHEN 'register_document' THEN 10
                     WHEN 'register_document_version' THEN 20
@@ -579,7 +593,20 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                     WHEN 'register_report' THEN 90
                     ELSE 100
                 END,
-                COALESCE(local_version_no, 0),
+                COALESCE(
+                    local_version_no,
+                    CASE
+                        WHEN entity_type = 'field_comment_attachment' THEN (
+                            SELECT field_comments.document_version_no
+                            FROM field_comment_attachments
+                            JOIN field_comments
+                              ON field_comments.comment_id = field_comment_attachments.comment_id
+                            WHERE field_comment_attachments.attachment_id = server_sync_queue.entity_id
+                            LIMIT 1
+                        )
+                    END,
+                    0
+                ),
                 id;
             """;
 
@@ -598,6 +625,28 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         }
 
         return items;
+    }
+
+    private (string? DocumentId, int? VersionNo) TryGetFieldCommentParent(string commentId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT document_id, document_version_no
+            FROM field_comments
+            WHERE comment_id = $comment_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$comment_id", commentId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return (null, null);
+        }
+
+        return (
+            reader.IsDBNull(0) ? null : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetInt32(1));
     }
 
     private bool TryMarkAlreadySynced(QueueItem item)

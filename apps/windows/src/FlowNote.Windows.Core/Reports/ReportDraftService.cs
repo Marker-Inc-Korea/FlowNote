@@ -213,7 +213,7 @@ public sealed class ReportDraftService(
             localDocument,
             serverClient,
             cancellationToken: cancellationToken);
-        if (syncResult.Success && serverClient is not null)
+        if (serverClient is not null)
         {
             var serverReportId = TryGetLocalServerReportId(localDocument.DocumentId);
             if (!string.IsNullOrWhiteSpace(serverReportId))

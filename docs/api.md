@@ -102,25 +102,16 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 
 ## 채널 알림과 인수인계
 
-Windows와 Android의 알림은 업무 채널 기준으로 제공한다. 채널은 라인, 설비, 공정, 작업조, 작업내역, 인수인계 같은 운영 단위에 연결되며, 개인 메신저 또는 사내 메신저 전체 대체 기능으로 확장하지 않는다.
+현재 FastAPI 서버에는 채널, 인수인계, 사용자별 알림 조회/읽음 처리 API가 아직 구현되어 있지 않다. 라우터에 포함된 알림 관련 서버 기능은 작업순서 보드의 알림 후보 조회와 상태 변경이다.
 
 | Method | Path | 설명 |
 | --- | --- | --- |
-| POST | `/api/v1/notification-channels` | 업무 채널 생성 |
-| GET | `/api/v1/notification-channels` | 내가 볼 수 있는 채널 목록 조회 |
-| GET | `/api/v1/notification-channels/{channel_id}` | 채널 상세와 멤버십 조회 |
-| POST | `/api/v1/notification-channels/{channel_id}/members` | 채널 수신자 추가 |
-| PATCH | `/api/v1/notification-channels/{channel_id}/members/{user_id}` | 채널 수신 설정 또는 역할 변경 |
-| GET | `/api/v1/notification-channels/{channel_id}/messages` | 채널 메시지/업무 이벤트 목록 조회 |
-| POST | `/api/v1/notification-channels/{channel_id}/messages` | 채널 업무 메시지 등록 |
-| GET | `/api/v1/notifications` | 현재 사용자의 알림 목록 조회 |
-| PATCH | `/api/v1/notifications/{notification_id}` | 알림 읽음, 보류, 숨김 상태 변경 |
-| POST | `/api/v1/handovers` | 인수인계 등록과 채널 알림 생성 |
-| GET | `/api/v1/handovers` | 인수인계 목록 조회 |
-| GET | `/api/v1/handovers/{handover_id}` | 인수인계 상세 조회 |
-| PATCH | `/api/v1/handovers/{handover_id}/receipts/{user_id}` | 수신자별 확인, 보류, 후속 조치 상태 변경 |
+| GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | 작업순서 변경으로 생성된 알림 후보 조회 |
+| PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | 작업순서 알림 후보 상태를 `CANDIDATE`, `SENT`, `DISMISSED` 중 하나로 변경 |
 
-채널 메시지와 인수인계는 가능한 한 `documentId`, `fieldCommentId`, `workRecordId`, `workSequenceItemId`, `handoverId` 같은 원천 식별자를 포함해야 한다. Windows와 Android 앱은 사용자가 속한 채널과 권한에 맞는 알림만 표시하고, 서버는 알림 생성, 읽음 처리, 확인 상태를 감사 가능한 이력으로 남긴다. Windows는 채널 생성, 멤버 관리, 인수인계 확인 현황, 후속 조치 추적을 우선하고 Android는 알림 확인, 현장 응답, 사진/FieldComment 연결을 우선한다.
+WPF 로컬 앱은 `notifications` 테이블과 알림 창을 통해 문서, FieldComment, 작업순서 이벤트 알림을 저장하고 읽음 처리한다. 이 로컬 알림은 아직 서버 채널 멤버십과 동기화되지 않는다.
+
+후속 서버 API 초안은 업무 채널 생성, 채널 멤버 관리, 채널 메시지, 사용자 알림 목록/읽음 처리, 인수인계 등록/확인으로 둔다. 이 후속 API가 구현되기 전까지 `notification-channels`, `notifications`, `handovers` 계열 경로는 현재 제공 API로 간주하지 않는다.
 
 ## 보고서
 

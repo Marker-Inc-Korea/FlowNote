@@ -241,19 +241,23 @@ def _validate_source(session: Session, source: ReportSourceRequest) -> tuple[str
     return source_type, source_id, source_version_id, relation_type
 
 
-def _replace_report_sources(session: Session, report_id: str, sources: list[ReportSourceRequest]) -> None:
+def _replace_report_sources(session: Session, report_id: str, sources: list[ReportSourceRequest]) -> list[ReportSource]:
     session.query(ReportSource).filter(ReportSource.report_id == report_id).delete(synchronize_session=False)
+    session.flush()
+    report_sources: list[ReportSource] = []
     for source in sources:
         source_type, source_id, source_version_id, relation_type = _validate_source(session, source)
-        session.add(
-            ReportSource(
-                report_id=report_id,
-                source_type=source_type,
-                source_id=source_id,
-                source_version_id=source_version_id,
-                relation_type=relation_type,
-            )
+        report_source = ReportSource(
+            report_id=report_id,
+            source_type=source_type,
+            source_id=source_id,
+            source_version_id=source_version_id,
+            relation_type=relation_type,
         )
+        session.add(report_source)
+        report_sources.append(report_source)
+    session.flush()
+    return report_sources
 
 
 def _source_summary(session: Session, source: ReportSource) -> str | None:
@@ -555,13 +559,13 @@ def save_report(
         )
         session.add(report)
         session.flush()
-        _replace_report_sources(session, report.report_id, request.sources)
 
     if idempotency_key is not None:
         report.idempotency_key = idempotency_key
 
+    saved_sources: list[ReportSource] | None = None
     if request.sources is not None:
-        _replace_report_sources(session, report.report_id, request.sources)
+        saved_sources = _replace_report_sources(session, report.report_id, request.sources)
 
     report.report_type = _clean_optional(request.report_type) or report.report_type
     report.title = _clean_optional(request.title) or report.title
@@ -579,9 +583,11 @@ def save_report(
     report.reviewed_at = now
     report.approved_at = now
 
-    sources = session.scalars(
-        select(ReportSource).where(ReportSource.report_id == report.report_id).order_by(ReportSource.id)
-    ).all()
+    sources = saved_sources
+    if sources is None:
+        sources = session.scalars(
+            select(ReportSource).where(ReportSource.report_id == report.report_id).order_by(ReportSource.id)
+        ).all()
     if request.save_as_document:
         document = _save_report_document(
             session,
