@@ -53,6 +53,11 @@
 | `work_sequence_notification_candidates` | 작업순서 알림 후보 |
 | `reports`, `report_sources` | 보고서와 근거 연결 |
 | `ai_search_candidates` | AI 자동 조언 전 단계의 근거 검색 후보 read model |
+| `notification_channels` | 라인, 설비, 공정, 작업조, 인수인계 등 업무 채널 |
+| `notification_channel_members` | 채널별 수신 사용자, 역할, 알림 수신 설정 |
+| `channel_messages` | 채널에 남는 업무 이벤트/짧은 메시지와 원천 연결 |
+| `handovers` | 인수인계 원문, 대상 채널, 확인 상태 |
+| `handover_receipts` | 인수인계 수신자별 확인, 보류, 후속 조치 상태 |
 | `document_access_logs` | 서버 문서 접근 로그 |
 | `activity_history` | 서버 활동 이력 |
 
@@ -175,6 +180,40 @@ FieldComment 상태:
 - `PENDING`
 - `FAILED`
 - `SYNCED`
+
+채널 유형:
+
+- `LINE`
+- `EQUIPMENT`
+- `PROCESS`
+- `WORK_GROUP`
+- `HANDOVER`
+- `WORK_RECORD`
+- `CUSTOM`
+
+채널 메시지 유형:
+
+- `NOTICE`
+- `DOCUMENT_EVENT`
+- `FIELD_COMMENT_EVENT`
+- `WORK_SEQUENCE_EVENT`
+- `HANDOVER`
+- `SYSTEM`
+
+인수인계 상태:
+
+- `DRAFT`
+- `SENT`
+- `ACKNOWLEDGED`
+- `FOLLOW_UP_REQUIRED`
+- `ARCHIVED`
+
+인수인계 수신 상태:
+
+- `UNREAD`
+- `READ`
+- `ACKNOWLEDGED`
+- `FOLLOW_UP_REQUIRED`
 
 서버 보고서 상태:
 
