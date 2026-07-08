@@ -4,7 +4,7 @@
 
 기본 경로는 저장소 루트의 `data/local/flownote.local.sqlite`이다. `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`가 설정되면 해당 위치를 우선한다.
 
-현재 WPF 로컬 DB 테이블은 다음과 같다.
+현재 WPF 로컬 DB의 주 테이블은 다음과 같다. 이 목록은 새 코드에서 사용하는 `FieldComment` 기준 테이블과 현재 기능 테이블을 기준으로 한다.
 
 | 테이블 | 역할 |
 | --- | --- |
@@ -28,6 +28,15 @@
 | `report_sources` | 로컬 보고서 문서가 근거로 삼은 FieldComment, 문서, 작업순서 항목/이력 |
 | `server_sync_queue` | 서버 전송 대기/실패/성공 상태 |
 | `server_id_mappings` | 로컬 ID와 서버 ID 매핑 |
+
+기존 공통 SQLite에는 FieldComment 명칭 전환 전에 만들어진 호환/잔존 테이블도 남아 있을 수 있다.
+
+| 테이블 | 역할 |
+| --- | --- |
+| `field_notes` | 구 FieldNote 원천 기록. 새 작업에서는 사용하지 않으며 FieldComment 전환 또는 별도 마이그레이션 검토 대상 |
+| `field_note_attachments` | 구 FieldNote 첨부 기록. 새 작업에서는 사용하지 않으며 FieldComment 첨부 전환 또는 별도 마이그레이션 검토 대상 |
+
+2026-07-08 현재 공통 개발 DB `data/local/flownote.local.sqlite`에는 누적 테스트 기록으로 `field_notes` 345건, `field_note_attachments` 20건이 남아 있다. 이 데이터는 테스트 기록 보존 원칙에 따라 삭제하지 않는다. 현재 WPF 동기화 코드는 `server_sync_queue`의 `field_note/register_field_note`, `field_note_attachment/register_field_note_attachment` 항목을 자동 서버 전송 대상에서 제외하고 “구 FieldNote 큐”로 분류한다.
 
 ## FastAPI 서버 SQLite
 

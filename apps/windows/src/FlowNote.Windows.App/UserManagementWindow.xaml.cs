@@ -34,7 +34,7 @@ public partial class UserManagementWindow : Window
     private void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
         RefreshUsers(isAddingUser ? null : SelectedUser()?.UserId);
-        StatusTextBlock.Text = "사용자 목록을 새로고침했습니다.";
+        StatusTextBlock.Text = "로컬 사용자 목록을 새로고침했습니다.";
     }
 
     private void UserGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -57,7 +57,7 @@ public partial class UserManagementWindow : Window
         if (isAddingUser)
         {
             StartNewUser();
-            StatusTextBlock.Text = "새 사용자 입력을 초기화했습니다.";
+            StatusTextBlock.Text = "새 로컬 사용자 입력을 초기화했습니다.";
             return;
         }
 
@@ -78,7 +78,7 @@ public partial class UserManagementWindow : Window
         var confirmPassword = ConfirmPasswordBox.Password;
         if (isAddingUser && string.IsNullOrWhiteSpace(newPassword))
         {
-            StatusTextBlock.Text = "새 사용자의 비밀번호를 입력하세요.";
+            StatusTextBlock.Text = "새 로컬 사용자의 비밀번호를 입력하세요.";
             return;
         }
 
@@ -107,7 +107,7 @@ public partial class UserManagementWindow : Window
             RefreshUsers(updated.UserId);
             UpdatedUserId = updated.UserId;
             UpdatedDisplayName = updated.DisplayName;
-            StatusTextBlock.Text = $"{updated.DisplayName} 사용자 정보를 저장했습니다.";
+            StatusTextBlock.Text = $"{updated.DisplayName} 로컬 사용자 정보를 저장했습니다.";
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
@@ -161,7 +161,7 @@ public partial class UserManagementWindow : Window
         ConfirmPasswordBox.Clear();
         SaveButton.Content = "추가";
         LoginIdTextBox.Focus();
-        StatusTextBlock.Text = "새 사용자 정보를 입력하세요.";
+        StatusTextBlock.Text = "새 로컬 사용자 정보를 입력하세요.";
     }
 
     private UserAccountRecord UpdateSelectedUser(string selectedRole, string newPassword)

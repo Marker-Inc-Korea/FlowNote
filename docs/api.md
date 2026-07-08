@@ -13,7 +13,7 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 
 보호 API는 `Authorization: Bearer {access_token}`을 요구한다. access token은 HMAC 서명 payload이며 서버의 `auth_sessions` 상태와 `access_token_id`까지 검증한다.
 
-서버 계정 발급, 잠금, 비밀번호 재설정, role 변경을 수행하는 공개 API는 현재 범위에 추가하지 않는다. 운영 배포 전 기준은 서버 PC의 `app.ops.server_accounts` 운영 스크립트이며, WPF 사용자 관리 화면은 로컬 SQLite 계정만 관리한다. 운영 스크립트의 비밀번호 입력은 대화식이며 현재 최소 8자를 요구한다. 첫 로그인 후 비밀번호 변경 강제도 현재 응답 payload, 서버 컬럼, WPF 화면에 추가하지 않고 “운영 첫 로그인 전 비밀번호 변경” 절차로 통제한다. `must_change_password` 컬럼, 비밀번호 변경 API, WPF 강제 변경 화면은 후속 범위다.
+서버 계정 발급, 잠금, 비밀번호 재설정, role 변경을 수행하는 공개 API는 현재 범위에 추가하지 않는다. 운영 배포 전 기준은 서버 PC의 `app.ops.server_accounts` 운영 스크립트이며, WPF 사용자 관리 화면은 로컬 SQLite 계정만 관리한다. 이 화면은 제목, 목록, 상세 안내에서 로컬 계정 전용임을 표시해야 한다. 운영 스크립트의 비밀번호 입력은 대화식이며 현재 최소 8자를 요구한다. 첫 로그인 후 비밀번호 변경 강제도 현재 응답 payload, 서버 컬럼, WPF 화면에 추가하지 않고 “운영 첫 로그인 전 비밀번호 변경” 절차로 통제한다. `must_change_password` 컬럼, 비밀번호 변경 API, WPF 강제 변경 화면은 후속 범위다.
 
 운영 기준:
 
@@ -21,6 +21,7 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 - 서버 로그인 성공 시 WPF는 서버 응답의 사용자 ID, 표시 이름, role을 현재 세션 기준으로 사용한다.
 - 서버가 로그인 요청에 401 또는 403을 반환하면 WPF는 로컬 계정 로그인으로 우회하지 않는다.
 - 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 WPF 로컬 계정 로그인을 사용한다.
+- 서버 계정 운영 스크립트의 `create`, `reset-password`, `set-status`, `set-role` 경로는 `services/api/tests/test_server_account_ops.py`로 검증한다.
 - refresh는 같은 `auth_sessions` row에서 access token ID와 refresh token hash를 회전한다. 이전 access token과 이전 refresh token은 거부된다.
 - logout은 현재 세션을 `REVOKED`로 바꾸며 이후 같은 access token은 거부된다.
 - WPF 서버 동기화 중 인증 만료, 토큰 교체, logout 폐기가 확인되면 `로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인하세요. 로컬 데이터는 삭제되지 않습니다.` 문구를 표시하고 로컬 데이터와 동기화 큐를 삭제하지 않는다.
@@ -166,6 +167,7 @@ WPF `RolePermissionPolicy`와의 대조:
 - WPF `RolePermissionPolicy`는 같은 role 집합을 문서 등록, FieldComment 작성, 보고서 작성, 접근 로그 조회, 사용자 관리, controlled copy 다운로드 정책으로 검증한다.
 - controlled copy 다운로드는 서버 다운로드 API가 아직 없지만, 서버와 WPF 정책 집합은 `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`로 고정한다.
 - 서버 로그인 성공 시 WPF 현재 세션의 role은 서버 응답 role을 우선하며, 같은 로그인 ID의 로컬 role과 달라도 화면 권한은 서버 role 기준으로 계산한다.
+- 서버 401/403 로그인 실패는 WPF 로컬 계정 fallback 금지 대상으로 유지하며 WPF 스모크 테스트에서 확인한다.
 
 ## 설정
 
