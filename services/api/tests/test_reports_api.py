@@ -272,6 +272,44 @@ def test_report_save_idempotency_key_returns_existing_report() -> None:
             assert len(generated_documents) == 1
 
 
+def test_report_rejects_excluded_field_comment_source() -> None:
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        document = create_document(client, headers)
+        field_comment = create_field_comment(client, headers, document)
+
+        review_response = client.patch(
+            f"/api/v1/field-comments/{field_comment['comment_id']}",
+            headers=headers,
+            json={
+                "status": "EXCLUDED",
+                "normalizedContent": "Excluded from report source candidates.",
+                "analysisContent": "Manager decided this source should not be reused.",
+                "reviewedBy": "user-admin",
+            },
+        )
+        assert review_response.status_code == 200, review_response.text
+
+        response = client.post(
+            "/api/v1/reports/drafts",
+            headers=headers,
+            json={
+                "reportType": "field_review",
+                "title": "Excluded field comment source report",
+                "sources": [
+                    {
+                        "sourceType": "FIELD_COMMENT",
+                        "sourceId": field_comment["comment_id"],
+                        "relationType": "primary",
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "FIELD_COMMENT source is excluded from report sources."
+
+
 def test_report_draft_requires_manager_role() -> None:
     with create_test_client() as client:
         headers = auth_headers(client)

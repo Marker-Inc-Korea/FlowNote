@@ -1405,6 +1405,26 @@ try
         humanLikeComments.Add(comment.CommentId);
         await SimulateHumanPauseAsync();
     }
+    var excludedAiComment = services.FieldComments.AddDocumentComment(
+        aiEvidenceDocument.DocumentId,
+        $"관리자 제외 검증용 FieldComment run={runId}",
+        managerLogin.DisplayName ?? "관리자",
+        commentType: "issue",
+        inputMode: "free_text",
+        reportedBy: managerLogin.DisplayName,
+        operatorName: "AI 근거 축적 스모크 작업조",
+        deviceId: "device-line-a-manager",
+        locationCode: "line-a");
+    var archivedAiComment = services.FieldComments.AddDocumentComment(
+        aiEvidenceDocument.DocumentId,
+        $"관리자 보관 검증용 FieldComment run={runId}",
+        managerLogin.DisplayName ?? "관리자",
+        commentType: "issue",
+        inputMode: "free_text",
+        reportedBy: managerLogin.DisplayName,
+        operatorName: "AI 근거 축적 스모크 작업조",
+        deviceId: "device-line-a-manager",
+        locationCode: "line-a");
 
     using (var aiReadinessConnection = services.Database.OpenConnection())
     {
@@ -1435,6 +1455,21 @@ try
             ("$comment1", humanLikeComments[1]),
             ("$comment2", humanLikeComments[3]),
             ("$comment3", humanLikeComments[4]));
+        ExecuteNonQuery(
+            aiReadinessConnection,
+            """
+            UPDATE field_comments
+            SET status = CASE comment_id
+                    WHEN $excluded_comment THEN 'EXCLUDED'
+                    WHEN $archived_comment THEN 'ARCHIVED'
+                    ELSE status
+                END,
+                normalized_content = '보고서 및 AI 후보 제외 검증용 기록',
+                analysis_content = '관리자가 보고서 근거로 사용하지 않기로 결정한 항목'
+            WHERE comment_id IN ($excluded_comment, $archived_comment);
+            """,
+            ("$excluded_comment", excludedAiComment.CommentId),
+            ("$archived_comment", archivedAiComment.CommentId));
     }
     foreach (var reviewedCommentId in humanLikeComments.Skip(1).Take(4))
     {
@@ -1451,6 +1486,20 @@ try
         .Where(source => humanLikeComments.Contains(source.SourceId))
         .ToList();
     Require(aiFieldCommentSources.Count == humanLikeComments.Count, "AI readiness report sources should include all human-like field comments");
+    Require(
+        aiFieldCommentSources.Take(3).Select(source => source.SourceId).SequenceEqual(new[]
+        {
+            humanLikeComments[4],
+            humanLikeComments[3],
+            humanLikeComments[1]
+        }),
+        "AI readiness report sources should show SELECTED, REVIEWED, and ANALYZED field comments first");
+    var excludedAiFieldCommentSources = services.Reports.ListFieldCommentSources(limit: 500)
+        .Where(source => source.SourceId == excludedAiComment.CommentId || source.SourceId == archivedAiComment.CommentId)
+        .ToList();
+    Require(
+        excludedAiFieldCommentSources.Count == 0,
+        "AI readiness report sources should exclude EXCLUDED and ARCHIVED field comments");
     var aiReportSources = aiFieldCommentSources
         .Take(3)
         .Concat(new[]
@@ -2014,6 +2063,54 @@ try
             Require(
                 duplicateAttemptCountAfter == duplicateAttemptCountBefore,
                 "already synced queue items should not increment retry attempt counts");
+
+            var reviewedQueuedFieldComment = services.FieldComments.UpdateReview(
+                offlineQueuedFieldComment.CommentId,
+                "서버 재시도 큐가 FieldComment 정리 내용을 PATCH로 반영함.",
+                "검토 상태 변경이 서버 field_comments와 AI 준비도 기준에 누적되는지 확인한다.",
+                "ANALYZED",
+                smokeActorName);
+            var queuedReviewSyncResult = await services.ServerSync.QueueAndTrySyncFieldCommentReviewAsync(
+                reviewedQueuedFieldComment,
+                serverDocuments,
+                serverLogin.UserId);
+            Require(
+                queuedReviewSyncResult.Synced >= 1 || queuedReviewSyncResult.Skipped >= 1 || queuedReviewSyncResult.Attempted >= 1,
+                "field comment review queue retry should process at least one queue item after the comment has a server id");
+            var reviewedQueuedServerCommentId = ScalarString(
+                syncConnection,
+                """
+                SELECT server_comment_id
+                FROM field_comments
+                WHERE comment_id = $comment_id
+                  AND synced_at IS NOT NULL;
+                """,
+                ("$comment_id", offlineQueuedFieldComment.CommentId));
+            Require(!string.IsNullOrWhiteSpace(reviewedQueuedServerCommentId), "reviewed queued field comment should keep server comment id");
+            var reviewedQueuedServerComment = await serverDocuments.GetFieldCommentAsync(reviewedQueuedServerCommentId!);
+            Require(reviewedQueuedServerComment.Status == "ANALYZED", "server field comment review patch should update status");
+            Require(
+                reviewedQueuedServerComment.NormalizedContent == reviewedQueuedFieldComment.NormalizedContent,
+                "server field comment review patch should preserve normalized content");
+            Require(
+                reviewedQueuedServerComment.AnalysisContent == reviewedQueuedFieldComment.AnalysisContent,
+                "server field comment review patch should preserve analysis content");
+            Require(
+                ScalarLong(
+                    syncConnection,
+                    """
+                    SELECT COUNT(*)
+                    FROM server_sync_queue
+                    WHERE entity_type = 'field_comment_review'
+                      AND entity_id = $comment_id
+                      AND action = 'update_field_comment_review'
+                      AND status = 'SYNCED'
+                      AND server_comment_id = $server_comment_id
+                      AND synced_at IS NOT NULL;
+                    """,
+                    ("$comment_id", offlineQueuedFieldComment.CommentId),
+                    ("$server_comment_id", reviewedQueuedServerCommentId!)) >= 1,
+                "field comment review queue should keep synced PATCH trace with server comment id");
 
             var serverVersionsBeforeMappingRecovery = await serverDocuments.ListVersionsAsync(syncedServerDocumentId!);
             var existingServerVersion = serverVersionsBeforeMappingRecovery.SingleOrDefault(item =>

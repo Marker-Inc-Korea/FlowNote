@@ -254,7 +254,13 @@ def _report_source_origin_exists(session: Session, source: ReportSource) -> bool
     source_id = source.source_id.strip()
     if source_type == "FIELD_COMMENT":
         return session.scalar(
-            select(func.count()).select_from(FieldComment).where(FieldComment.comment_id == source_id)
+            select(func.count())
+            .select_from(FieldComment)
+            .where(
+                FieldComment.comment_id == source_id,
+                FieldComment.status.not_in(FIELD_COMMENT_EXCLUDED_STATUSES),
+                FieldComment.input_mode.not_in(FIELD_COMMENT_EXCLUDED_INPUT_MODES),
+            )
         ) > 0
     if source_type == "DOCUMENT":
         statement = select(func.count()).select_from(Document).where(Document.document_id == source_id)

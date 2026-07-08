@@ -51,15 +51,16 @@
 
 ## 2026-07-08 실패 큐 분류
 
-사용자 확인 기준으로 WPF 공통 SQLite에는 `SYNCED` 387건, `FAILED` 277건이 있었다. 이후 테스트 이력이 누적된 현재 재조회 기준은 `SYNCED` 472건, `FAILED` 281건이다. 테스트 이력 보존 규칙에 따라 기존 큐와 SQLite 기록은 삭제하지 않는다.
+사용자 확인 기준으로 WPF 공통 SQLite에는 `SYNCED` 387건, `FAILED` 277건이 있었다. 이후 테스트 이력이 누적된 2026-07-08 KST 현재 재조회 기준은 `SYNCED` 472건, `FAILED` 290건이다. 테스트 이력 보존 규칙에 따라 기존 큐와 SQLite 기록은 삭제하지 않는다.
 
 현재 `sqlite3 data/local/flownote.local.sqlite`에서 `server_sync_queue`를 `entity_type`, `action`, `status`, `last_error`로 묶으면 실패 큐는 다음 패턴으로 나뉜다.
 
+- 서버 URL 미설정 9건: 문서 등록, FieldComment, FieldComment 첨부, 문서 버전, 공개, 상태, 접근 로그 시작/종료/다운로드 차단이 각각 1건씩 남아 있다. 서버 URL과 로그인을 설정한 뒤 재시도한다.
 - 선행 문서 미동기화 221건: 접근 로그 다운로드 차단 88건, 접근 로그 종료 26건, 접근 로그 시작 26건, FieldComment 21건, 문서 공개 20건, 문서 상태 20건, 문서 버전 20건. 같은 문서의 `document/register_document`가 먼저 서버 ID와 `synced_at`을 받아야 한다.
 - 로컬 파일 누락 20건: `document/register_document`. 서버가 실행되어도 파일이 없으면 재시도할 수 없으므로 운영자가 원본 파일 위치를 복구해야 한다.
 - 선행 FieldComment 미동기화 20건: `field_comment_attachment/register_field_comment_attachment`. 첨부보다 FieldComment 서버 등록이 먼저다.
 - 구 FieldNote 큐 20건: `field_note/register_field_note` 10건, `field_note_attachment/register_field_note_attachment` 10건. 현재 명칭과 API는 FieldComment 기준이므로 자동 재전송 대상이 아니라 관리자 검토 후 전환 또는 별도 마이그레이션으로 정리한다.
-- 서버 URL 미설정, 인증 만료, 네트워크 실패는 현재 실패 그룹에는 남아 있지 않지만 코드와 UI 분류에는 유지한다. 이 항목은 서버 설정, 재로그인, 서버 PC/네트워크 확인 후 바로 재시도한다.
+- 인증 만료, 네트워크 실패는 현재 실패 그룹에는 남아 있지 않지만 코드와 UI 분류에는 유지한다. 이 항목은 재로그인, 서버 PC/네트워크 확인 후 바로 재시도한다.
 
 현재 `server_id_mappings`는 585건이며 문서, 문서 버전, 공개, 상태, 접근 로그, FieldComment, 첨부, 보고서 매핑이 남아 있다. 이미 서버에 존재하는 문서 버전은 `document_versions.version_no`로 서버 버전을 찾아 `server_version_id`, `synced_at`, `server_id_mappings`를 복구하고 중복 업로드하지 않는다. 큐 재등록도 `idempotency_key` 유니크 제약과 `ON CONFLICT(idempotency_key)`로 중복 행을 만들지 않는다.
 

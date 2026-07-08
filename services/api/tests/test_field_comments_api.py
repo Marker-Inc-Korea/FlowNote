@@ -113,6 +113,7 @@ def test_create_list_and_review_field_comment() -> None:
                 "status": "ANALYZED",
                 "normalizedContent": "Field issue normalized for manager review.",
                 "analysisContent": "Repeated field comment should be checked against the work standard.",
+                "analyzedBy": "user-admin",
             },
         )
         assert review_response.status_code == 200, review_response.text
@@ -122,6 +123,8 @@ def test_create_list_and_review_field_comment() -> None:
         assert reviewed["analysis_content"] == (
             "Repeated field comment should be checked against the work standard."
         )
+        assert reviewed["analyzed_by"] == "user-admin"
+        assert reviewed["analyzed_at"] is not None
 
 
 def test_field_comment_idempotency_key_returns_existing_note() -> None:
