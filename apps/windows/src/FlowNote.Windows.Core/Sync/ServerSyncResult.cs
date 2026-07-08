@@ -6,4 +6,5 @@ public sealed record ServerSyncResult(
     int Attempted = 0,
     int Synced = 0,
     int Failed = 0,
-    int Skipped = 0);
+    int Skipped = 0,
+    int Held = 0);

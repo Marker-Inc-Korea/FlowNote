@@ -20,4 +20,8 @@ public sealed record ServerSyncQueueRecord(
     string? ServerReportId,
     string? ServerCommentId,
     string? ServerAttachmentId,
-    string? ServerLogId);
+    string? ServerLogId)
+{
+    public ServerSyncQueueDiagnosis Diagnosis =>
+        ServerSyncQueueDiagnostics.Classify(Status, EntityType, Action, LastError);
+}
