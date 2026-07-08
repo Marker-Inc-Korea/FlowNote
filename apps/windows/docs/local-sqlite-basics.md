@@ -33,13 +33,19 @@ Windows WPF 앱은 서버 연결 여부와 관계없이 현장 문서와 기록�
 - `server_sync_queue`: 서버 전송 큐
 - `server_id_mappings`: 로컬 ID와 서버 ID 연결
 
+기존 공통 SQLite에는 FieldComment 명칭 전환 전 테스트 이력인 `field_notes`, `field_note_attachments`가 남아 있을 수 있다. 이 테이블과 관련 `server_sync_queue`의 `field_note/register_field_note`, `field_note_attachment/register_field_note_attachment` 항목은 새 기능의 작성 대상이 아니다. 현재 WPF는 이를 구 FieldNote 큐로 분류하고 자동 서버 전송하지 않으며, 운영자가 FieldComment 전환 또는 별도 마이그레이션 대상으로 검토한다.
+
 ## 기본 시드
 
 로컬 DB 초기화 시 관리자 그룹과 A/B/C 라인 작업조, 관리자/반장/조장/조원 계정을 만든다. 모든 개발/스모크 테스트 계정의 기본 비밀번호는 `1234`이다.
 
+WPF 사용자 관리 화면은 이 로컬 SQLite 계정 전용이다. 창 제목, 사용자 목록, 사용자 상세 안내는 “로컬” 계정임을 표시해야 하며 서버 계정 발급, 잠금, 비밀번호 재설정, role 변경은 서버 PC의 `app.ops.server_accounts` 운영 스크립트에서 수행한다.
+
 ## 동기화 원칙
 
 로컬 저장이 우선이다. 서버 URL이 없거나 서버 호출이 실패해도 로컬 문서, 문서 버전/공개/상태, FieldComment, 첨부, 접근 로그는 유지된다. 동기화 성공 시 원천 테이블의 서버 ID와 `synced_at`, `server_id_mappings`를 갱신한다.
+
+구 FieldNote 큐는 동기화 실패 기록이 남아 있어도 FieldComment API로 자동 변환하지 않는다. 테스트/스모크 이력 보존 규칙에 따라 기존 SQLite row와 큐 기록은 삭제하지 않고, 이력 창의 분류와 조치 문구로 별도 정리 대상으로 표시한다.
 
 문서 최신 버전은 `documents.version_no`와 `document_versions.is_latest`를 기준으로 서버 최신 버전에 연결한다. 공개 버전은 `documents.published_version_no`와 `document_versions.is_published`를 기준으로 서버 publish API에 반영한다. 상태 변경은 현재 로컬 `documents.status`를 서버에 반영하며, `PUBLISHED` 상태는 공개 버전 동기화가 선행되어야 한다.
 

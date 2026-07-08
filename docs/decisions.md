@@ -11,6 +11,7 @@
 - 현장 코멘트 도메인 명칭은 `FieldComment`, `field_comments`, `field-comments`를 사용한다.
 - `FieldNote`, `field_notes`, `field-notes`, `FIELD_NOTE`는 FlowNote 제품명과 혼선을 만들 수 있으므로 새 작업에 사용하지 않는다.
 - 새 WPF 코멘트는 문서 버전이 아니라 `field_comments` 원천 이력으로 저장한다.
+- 기존 공통 SQLite에 남아 있는 구 FieldNote 테이블과 큐 row는 테스트 이력으로 보존한다. 현재 WPF는 `field_note/register_field_note`, `field_note_attachment/register_field_note_attachment` 큐를 FieldComment API로 자동 변환하지 않고 별도 전환 또는 마이그레이션 검토 대상으로 분류한다.
 
 ## 2026-06-30. 사용자 관리
 
