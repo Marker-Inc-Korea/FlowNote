@@ -42,6 +42,7 @@ REPORT_SOURCE_TYPES = {
     "WORK_RECORD",
     "WORK_RECORD_VERSION",
 }
+FIELD_COMMENT_SOURCE_EXCLUDED_STATUSES = {"EXCLUDED", "ARCHIVED"}
 DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "PUBLISHED", "ARCHIVED"}
 
 
@@ -196,9 +197,14 @@ def _validate_source(session: Session, source: ReportSourceRequest) -> tuple[str
     relation_type = _clean_optional(source.relation_type)
 
     if source_type == "FIELD_COMMENT":
-        exists = session.scalar(select(FieldComment.id).where(FieldComment.comment_id == source_id))
-        if exists is None:
+        field_comment = session.scalar(select(FieldComment).where(FieldComment.comment_id == source_id))
+        if field_comment is None:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="FIELD_COMMENT source is unknown.")
+        if field_comment.status in FIELD_COMMENT_SOURCE_EXCLUDED_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="FIELD_COMMENT source is excluded from report sources.",
+            )
     elif source_type == "DOCUMENT":
         document = session.scalar(
             select(Document).where(Document.document_id == source_id, Document.deleted_at.is_(None))

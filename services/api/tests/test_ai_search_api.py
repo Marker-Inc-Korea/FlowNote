@@ -62,6 +62,7 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
     archived_report_id = f"report-ai-archived-{suffix}"
     blank_report_id = f"report-ai-blank-source-{suffix}"
     missing_origin_report_id = f"report-ai-missing-source-{suffix}"
+    excluded_comment_report_id = f"report-ai-excluded-comment-source-{suffix}"
 
     with client.app.state.database.session() as session:
         published_file = FileObject(
@@ -316,6 +317,25 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 relation_type="missing-origin",
             )
         )
+        session.add(
+            Report(
+                report_id=excluded_comment_report_id,
+                report_type="field_review",
+                title=f"AI search excluded comment source {suffix[:8]}",
+                status="APPROVED",
+                ai_draft_used=False,
+                created_by="user-admin",
+            )
+        )
+        session.add(
+            ReportSource(
+                report_id=excluded_comment_report_id,
+                source_type="FIELD_COMMENT",
+                source_id=archived_comment_id,
+                source_version_id=None,
+                relation_type="archived-field-comment-source",
+            )
+        )
         session.commit()
 
         active_report_source = session.scalar(
@@ -471,6 +491,13 @@ def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
         )
         assert report_source_response.status_code == 200, report_source_response.text
         report_source_candidates = report_source_response.json()
+        all_report_source_response = client.get(
+            "/api/v1/ai-search/candidates",
+            headers=headers,
+            params={"sourceType": "REPORT_SOURCE", "limit": 500},
+        )
+        assert all_report_source_response.status_code == 200, all_report_source_response.text
+        all_report_source_candidates = all_report_source_response.json()
 
         published_candidate = next(
             item
@@ -522,6 +549,7 @@ def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
             + field_comment_candidates
             + history_candidates
             + report_source_candidates
+            + all_report_source_candidates
         )
         assert not any(
             item["source_version_id"] == seeded["draft_version_id"]
@@ -549,6 +577,10 @@ def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
         )
         assert not any(
             item["source_type"] == "REPORT_SOURCE" and item["summary"] == "missing-origin"
+            for item in all_checked_candidates
+        )
+        assert not any(
+            item["source_type"] == "REPORT_SOURCE" and item["summary"] == "archived-field-comment-source"
             for item in all_checked_candidates
         )
         for candidate in all_checked_candidates:
