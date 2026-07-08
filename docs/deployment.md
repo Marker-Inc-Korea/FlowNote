@@ -2,7 +2,7 @@
 
 ## 기준
 
-FlowNote의 기본 배포 형태는 사내 단일 서버 PC 운영과 Windows WPF 설치형 클라이언트 배포이다. 클라우드, 외부 접근, 일반 브라우저 직접 사용은 초기 기준이 아니며 별도 협의가 필요한 후속 선택지다.
+FlowNote의 기본 배포 형태는 사내 단일 서버 PC 운영과 승인된 설치형 클라이언트 배포이다. Windows WPF는 관리자/현장 PC용 기본 클라이언트이고, Android는 승인된 현장 태블릿 또는 러기드 단말용 현장 입력 클라이언트로 추가한다. 클라우드, 외부 접근, 일반 브라우저 직접 사용은 초기 기준이 아니며 별도 협의가 필요한 후속 선택지다.
 
 ```text
 Server PC
@@ -14,9 +14,16 @@ Client PCs
   -> Windows WPF installed app
   -> local SQLite DB and local Files/ folder
   -> API connection to Server PC when FLOWNOTE_API_BASE_URL is set
+
+Approved Android field devices
+  -> Android installed app
+  -> document viewing, FieldComment, photos, handover, channel notifications
+  -> API connection to Server PC through configured server URL
 ```
 
 WPF 앱은 로컬 SQLite에 먼저 기록하고 서버 URL이 설정되어 있으면 서버 동기화를 시도한다. 서버 호출 실패는 로컬 저장을 되돌리지 않고 동기화 큐와 이력으로 남긴다.
+
+Android 앱은 현장 입력과 알림 확인을 서버 기준으로 처리한다. 네트워크가 불안정한 구간의 임시 저장은 허용하되, 장기 원천 데이터는 서버 SQLite와 `storage/`에 남기는 것을 기준으로 한다. Android 배포는 개인 휴대폰 기본 배포가 아니라 현장 승인 단말 배포를 기준으로 하며, MDM, APK/AAB 배포 방식, 사내 Wi-Fi, 푸시 전달 방식은 구현 단계에서 현장 보안 정책과 함께 확정한다.
 
 ## 운영 설치 경로
 
@@ -54,14 +61,30 @@ C:\FlowNote\
 | `C:\Program Files\FlowNote\Client\FlowNote.Windows.App` | MSI가 설치한 WPF 실행 파일, .NET 실행 메타데이터, 의존 DLL | WPF 로컬 DB, 실제 현장 문서 데이터 |
 | `C:\FlowNote\LocalData` | WPF 로컬 SQLite, `Files\` | 서버 SQLite, 서버 `storage` |
 
-현재 저장소 기준으로 서버는 별도 압축 패키지 없이 `services/api/app`과 `pyproject.toml`을 `C:\FlowNote\Server\api`에 복사하고 해당 폴더에서 운영 `.venv`를 만든다. WPF 클라이언트는 MSI로 고정해 설치하며 설치 위치는 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`, 로컬 데이터 위치는 `FLOWNOTE_LOCAL_DATA_DIR`로 분리한다.
+현재 저장소 기준으로 서버는 별도 압축 패키지 없이 `services/api/app`과 `pyproject.toml`을 `C:\FlowNote\Server\api`에 복사하고 해당 폴더에서 운영 `.venv`를 만든다. WPF 클라이언트는 MSI로 고정해 설치하며 설치 위치는 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`, 로컬 데이터 위치는 `FLOWNOTE_LOCAL_DATA_DIR`로 분리한다. Android 클라이언트의 패키징과 설치 산출물 경로는 아직 구현되지 않았으며, `apps/android/` 구현 단계에서 별도 배포 절차를 추가한다.
 
 ## 배포 방식 결정
 
 - WPF 앱은 MSI를 기준 패키징 방식으로 사용한다. MSIX는 서명, 패키지 아이덴티티, 앱 컨테이너 제약을 현장별로 더 검토해야 하므로 초기 운영 배포 기준에서 제외한다.
 - MSI는 WPF 실행에 필요한 앱 파일만 설치한다. 로컬 SQLite와 `Files\`는 설치 폴더 아래에 두지 않고 `FLOWNOTE_LOCAL_DATA_DIR`가 가리키는 폴더에 둔다.
+- Android 앱은 승인된 현장 단말용 설치 패키지로 배포한다. 개인 휴대폰 기본 배포와 일반 웹 브라우저 접속은 기준이 아니다.
+- Windows와 Android의 채널 알림은 서버 사용자, 클라이언트/단말 승인 상태, 채널 멤버십을 함께 확인해 표시한다. 외부 푸시 서비스를 쓸지, 사내망 polling 또는 WebSocket을 쓸지는 현장 네트워크 정책 확정 후 결정한다.
 - FastAPI 서버는 Windows 작업 스케줄러의 부팅 시 자동 실행 작업으로 등록한다. Python/FastAPI 프로세스를 Windows 서비스로 직접 등록하려면 별도 서비스 래퍼가 필요하므로, 초기 기준은 Windows 기본 기능만 사용하는 작업 스케줄러 방식으로 고정한다.
 - 서버 작업 이름은 기본 `\FlowNote\FlowNoteApi`다. 실행 래퍼는 `C:\FlowNote\Server\scripts\run-flownote-server.ps1`, 로그는 `C:\FlowNote\Server\logs`에 둔다.
+
+## Windows MSI 운영 배포 확정 조건
+
+WPF MSI는 Windows 배포 준비 PC와 최소 1대 이상의 설치 대상 Windows PC에서 실기 검증을 통과하기 전까지 운영 배포 확정 상태로 보지 않는다. macOS 또는 비Windows 개발 환경의 publish 성공은 사전 점검일 뿐이며, `wix`, `msiexec`, `signtool`, WebView2 Runtime, .NET Windows Desktop Runtime 조합은 Windows PC에서 별도 확인한다.
+
+운영 배포 확정 전에는 다음 결과를 [검증 자동화 문서](./verification.md)에 기록한다.
+
+- framework-dependent MSI와 self-contained MSI가 모두 생성된다.
+- 두 MSI의 포함 파일 목록에 로컬 SQLite, WAL/SHM, `Data\Files`, `storage`, `logs`, 테스트/샘플/고객 파일이 없다.
+- 설치 폴더 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`에는 실행 파일과 의존 파일만 있고, 로컬 DB와 `Files\`는 `FLOWNOTE_LOCAL_DATA_DIR`가 가리키는 폴더에만 생성된다.
+- .NET Windows Desktop Runtime이 없는 PC에서 framework-dependent MSI의 실행 실패 양상과 self-contained MSI의 실행 결과를 구분해 기록한다.
+- WebView2 Runtime 미설치 상태의 PDF 열람 실패 안내와 설치 후 동일 PDF 정상 열람을 기록한다.
+- 코드 서명 인증서가 준비된 경우 EXE와 MSI 모두 `signtool verify /pa`를 통과한다.
+- 검증 후 `git status --short --untracked-files=all`에 `artifacts`, publish 산출물, MSI, `.wixpdb`, 테스트 산출물이 추적 대상으로 잡히지 않는다.
 
 ## 서버 설치 절차
 

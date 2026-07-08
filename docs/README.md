@@ -17,6 +17,8 @@
 ## 현재 코드 기준
 
 - Windows WPF 앱은 로컬 SQLite를 기본 저장소로 사용한다.
+- Android 현장 단말 앱은 제품 방향에 포함되지만 아직 코드 구현 범위는 아니다. 역할은 현장 문서 열람, FieldComment, 사진 기록, 인수인계, 채널 알림이다.
+- Windows의 채널 수신함, 채널 관리, 인수인계 확인 현황도 제품 방향에 포함되지만 아직 코드 구현 범위는 아니다.
 - FastAPI 서버는 `/api/v1` REST API와 SQLite, 로컬 `storage/` 파일 저장소를 사용한다.
 - WPF와 스모크 테스트는 기본적으로 `data/local/flownote.local.sqlite`를 함께 사용한다.
 - 문서 등록은 즉시 공개가 아니다. 등록된 문서는 `WORKING` 상태와 최신 버전으로 저장되고, 공개 버전은 별도 publish 절차로 지정한다.
@@ -26,6 +28,7 @@
 - 사용자 역할은 코드와 DB에서 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`, `viewer`를 사용한다.
 - AI 자동 조언은 후속 계층이며, 현재 서버는 근거 검색 후보 재생성/목록/품질 점검용 `ai_search_candidates` read model까지만 다룬다.
 - MES/ERP 연동과 서버 계정 관리 UI는 후속 계층이다.
+- Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
 
 ## 일일 기록
 
