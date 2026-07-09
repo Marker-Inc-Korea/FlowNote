@@ -165,6 +165,7 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 | FieldComment 등록 | 위 role + `team-member`, `viewer` |
 | 접근 로그 조회 | `admin`, `system-admin` |
 | 보고서 작성 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
+| 채널 생성/멤버 관리 | 문서/작업순서 쓰기 role. 단, 채널 조회와 메시지/인수인계 조회는 채널 멤버 또는 `admin`, `system-admin` |
 
 WPF `RolePermissionPolicy`와의 대조:
 
@@ -173,6 +174,7 @@ WPF `RolePermissionPolicy`와의 대조:
 | 문서 등록, 파일 업로드, 상태 변경, 공개, 작업판 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead` | `DocumentWriteUser` |
 | 현장 코멘트 작성 | 기본 role 전체 | `FieldCommentCreateUser` |
 | 보고서 버튼 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | `ReportWriteUser` |
+| 채널 관리/인수인계 확인 현황 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead` | 채널 생성은 `DocumentWriteUser`, 조회/읽음/수신확인은 채널 멤버십 또는 `admin`, `system-admin` |
 | 파일 감시 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | WPF 로컬 기능 |
 | 사용자 관리 | `admin`, `system-admin` | 서버 계정 관리 API는 후속 범위 |
 | controlled copy 다운로드 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | 서버 다운로드 API는 후속 범위 |

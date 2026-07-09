@@ -11,7 +11,7 @@
 
 ## 현재 코드 반영 상태
 
-- 서버 API는 `/api/v1` 경로 아래 인증, 문서, FieldComment, 태그, 작업순서, 보고서 기능을 구현한다.
+- 서버 API는 `/api/v1` 경로 아래 인증, 문서, FieldComment, 태그, 작업순서, 채널/인수인계, 보고서 기능을 구현한다.
 - Windows 앱은 공통 로컬 SQLite `data/local/flownote.local.sqlite`를 사용하며, 환경 변수로 위치를 바꿀 수 있다.
 - 현장 기록 명칭은 코드, DB, API, 문서에서 `FieldComment` / `field_comments` / `field-comments`를 사용한다.
 

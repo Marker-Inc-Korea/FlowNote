@@ -36,7 +36,7 @@
 | `field_notes` | 구 FieldNote 원천 기록. 새 작업에서는 사용하지 않으며 FieldComment 전환 또는 별도 마이그레이션 검토 대상 |
 | `field_note_attachments` | 구 FieldNote 첨부 기록. 새 작업에서는 사용하지 않으며 FieldComment 첨부 전환 또는 별도 마이그레이션 검토 대상 |
 
-2026-07-08 현재 공통 개발 DB `data/local/flownote.local.sqlite`에는 누적 테스트 기록으로 `field_notes` 345건, `field_note_attachments` 20건이 남아 있다. 이 데이터는 테스트 기록 보존 원칙에 따라 삭제하지 않는다. 현재 WPF 동기화 코드는 `server_sync_queue`의 `field_note/register_field_note`, `field_note_attachment/register_field_note_attachment` 항목을 자동 서버 전송 대상에서 제외하고 “구 FieldNote 큐”로 분류한다.
+2026-07-09 현재 공통 개발 DB `data/local/flownote.local.sqlite`에는 누적 테스트 기록으로 `field_notes` 345건, `field_note_attachments` 20건이 남아 있다. 이 데이터는 테스트 기록 보존 원칙에 따라 삭제하지 않는다. 현재 WPF 동기화 코드는 `server_sync_queue`의 `field_note/register_field_note`, `field_note_attachment/register_field_note_attachment` 항목을 자동 서버 전송 대상에서 제외하고 “구 FieldNote 큐”로 분류한다.
 
 ## FastAPI 서버 SQLite
 
@@ -246,6 +246,7 @@ FastAPI 서버의 `app/core/auth.py`와 WPF `RolePermissionPolicy`는 다음 기
 | FieldComment 등록 | 문서 쓰기 role + `team-member`, `viewer` | 문서 뷰어의 현장 코멘트 작성은 기본 role 전체 허용 |
 | 접근 로그 조회 | `admin`, `system-admin` | WPF는 로컬 열람/다운로드 차단 로그를 기록하고 서버 조회 UI는 아직 두지 않는다 |
 | 보고서 작성 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | 보고서 버튼 활성 |
+| 채널 관리/인수인계 확인 현황 | 채널 생성은 문서/작업순서 쓰기 role, 조회와 수신확인은 채널 멤버십 또는 `admin`, `system-admin` 기준 | 채널 관리와 인수인계 확인 현황 버튼은 문서 등록 권한과 같은 role에서 활성 |
 | 파일 감시 | 서버 전용 권한 그룹은 아직 없음 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
 | controlled copy 다운로드 | 서버 다운로드 API는 아직 없음 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
 | 사용자 관리 | 서버 계정 관리 API는 아직 없음 | `admin`, `system-admin` |

@@ -13,8 +13,11 @@
 - FastAPI `auth_sessions` 기반 세션 폐기와 token 교체 검증
 - FastAPI role 기반 문서 쓰기, 태그 생성, FieldComment 작성, 접근 로그 조회, 보고서 작성 권한
 - FastAPI 채널 멤버십 기반 채널 메시지 조회, 사용자별 알림 읽음, 인수인계 수신 확인 권한
+- Android 승인 단말 `deviceId` 로그인 검증과 `auth_sessions.device_id` 기록
+- WPF 채널함, 채널 관리, 인수인계 확인 현황 화면의 서버 인증/멤버십 기반 조회와 상태 변경
+- Android 현장 단말 앱의 서버 Bearer token 사용, FieldComment/사진 outbox 재전송, 알림 읽음/인수인계 확인
 
-Android 현장 단말 보안과 Windows/Android 채널 전용 화면은 제품 방향에 포함하지만 아직 클라이언트 코드 구현 범위는 아니다. 공통 채널 API는 서버 로그인, role, 채널 멤버십으로 접근을 제한하며, 클라이언트/단말 승인 상태는 후속 클라이언트 구현에서 함께 사용한다. Android는 개인 휴대폰 기본 배포가 아니라 승인된 현장 태블릿 또는 러기드 단말을 기준으로 한다.
+Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현이 들어와 있다. 공통 채널 API는 서버 로그인, role, 채널 멤버십으로 접근을 제한하며, Android 로그인은 승인된 `terminal_devices.device_id`와 `status = ACTIVE`를 요구한다. Android는 개인 휴대폰 기본 배포가 아니라 승인된 현장 태블릿 또는 러기드 단말을 기준으로 한다. MDM, 운영 인증서, 단말 등록/폐기 UI, outbox 암호화 정책은 후속 보안 범위다.
 
 ## 계정과 role
 
@@ -108,5 +111,5 @@ WPF 문서 뷰어는 로컬 앱 계층에서 보호한다.
 - HTTPS 또는 사내망 보호 배포 정책
 - 서버 접근 감사 로그의 운영 정책
 - 브라우저 직접 접근 제한 정책의 설치/배포 자동화
-- Android 단말 등록, MDM 또는 현장 단말 관리 정책
-- Windows/Android 채널 알림 전달 방식과 오프라인 임시 저장 암호화
+- Android 단말 등록/폐기 관리 UI, MDM 또는 현장 단말 관리 정책
+- Windows/Android 채널 알림 전달 방식 확정과 Android outbox 암호화

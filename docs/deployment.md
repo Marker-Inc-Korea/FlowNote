@@ -61,14 +61,14 @@ C:\FlowNote\
 | `C:\Program Files\FlowNote\Client\FlowNote.Windows.App` | MSI가 설치한 WPF 실행 파일, .NET 실행 메타데이터, 의존 DLL | WPF 로컬 DB, 실제 현장 문서 데이터 |
 | `C:\FlowNote\LocalData` | WPF 로컬 SQLite, `Files\` | 서버 SQLite, 서버 `storage` |
 
-현재 저장소 기준으로 서버는 별도 압축 패키지 없이 `services/api/app`과 `pyproject.toml`을 `C:\FlowNote\Server\api`에 복사하고 해당 폴더에서 운영 `.venv`를 만든다. WPF 클라이언트는 MSI로 고정해 설치하며 설치 위치는 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`, 로컬 데이터 위치는 `FLOWNOTE_LOCAL_DATA_DIR`로 분리한다. Android 클라이언트의 패키징과 설치 산출물 경로는 아직 구현되지 않았으며, `apps/android/` 구현 단계에서 별도 배포 절차를 추가한다.
+현재 저장소 기준으로 서버는 별도 압축 패키지 없이 `services/api/app`과 `pyproject.toml`을 `C:\FlowNote\Server\api`에 복사하고 해당 폴더에서 운영 `.venv`를 만든다. WPF 클라이언트는 MSI로 고정해 설치하며 설치 위치는 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`, 로컬 데이터 위치는 `FLOWNOTE_LOCAL_DATA_DIR`로 분리한다. Android 클라이언트 코드는 `apps/android/`에 있으며 `./gradlew assembleDebug`로 개발 APK를 만들 수 있다. 운영 배포용 서명, APK/AAB 산출물 보관 위치, MDM 또는 현장 단말 설치 절차는 아직 확정되지 않았다.
 
 ## 배포 방식 결정
 
 - WPF 앱은 MSI를 기준 패키징 방식으로 사용한다. MSIX는 서명, 패키지 아이덴티티, 앱 컨테이너 제약을 현장별로 더 검토해야 하므로 초기 운영 배포 기준에서 제외한다.
 - MSI는 WPF 실행에 필요한 앱 파일만 설치한다. 로컬 SQLite와 `Files\`는 설치 폴더 아래에 두지 않고 `FLOWNOTE_LOCAL_DATA_DIR`가 가리키는 폴더에 둔다.
 - Android 앱은 승인된 현장 단말용 설치 패키지로 배포한다. 개인 휴대폰 기본 배포와 일반 웹 브라우저 접속은 기준이 아니다.
-- Windows와 Android의 채널 알림은 후속 구현 범위다. 구현 시 서버 사용자, 클라이언트/단말 승인 상태, 채널 멤버십을 함께 확인해 표시하며, 외부 푸시 서비스를 쓸지 사내망 polling 또는 WebSocket을 쓸지는 현장 네트워크 정책 확정 후 결정한다.
+- Windows와 Android의 채널 알림과 인수인계 확인은 현재 서버 API와 기본 클라이언트 화면에서 수동 조회/읽음/수신 확인 흐름으로 구현되어 있다. 외부 푸시 서비스를 쓸지, 사내망 polling 또는 WebSocket을 쓸지는 현장 네트워크 정책 확정 후 결정한다.
 - FastAPI 서버는 Windows 작업 스케줄러의 부팅 시 자동 실행 작업으로 등록한다. Python/FastAPI 프로세스를 Windows 서비스로 직접 등록하려면 별도 서비스 래퍼가 필요하므로, 초기 기준은 Windows 기본 기능만 사용하는 작업 스케줄러 방식으로 고정한다.
 - 서버 작업 이름은 기본 `\FlowNote\FlowNoteApi`다. 실행 래퍼는 `C:\FlowNote\Server\scripts\run-flownote-server.ps1`, 로그는 `C:\FlowNote\Server\logs`에 둔다.
 
