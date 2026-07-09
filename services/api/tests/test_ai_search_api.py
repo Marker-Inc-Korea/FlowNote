@@ -51,6 +51,7 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
     draft_document_id = f"doc-ai-draft-{suffix}"
     draft_version_id = f"ver-ai-draft-{suffix}"
     analyzed_comment_id = f"comment-ai-analyzed-{suffix}"
+    selected_comment_id = f"comment-ai-selected-{suffix}"
     new_comment_id = f"comment-ai-new-{suffix}"
     mes_comment_id = f"comment-ai-mes-{suffix}"
     archived_comment_id = f"comment-ai-archived-{suffix}"
@@ -149,6 +150,25 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 author_id="user-admin",
                 entry_source="field_user",
                 status="ANALYZED",
+                analyzed_by="user-admin",
+            )
+        )
+        session.add(
+            FieldComment(
+                comment_id=selected_comment_id,
+                document_id=published_document_id,
+                document_version_id=published_version_id,
+                comment_type="issue",
+                input_mode="template_with_text",
+                signal_level="red",
+                raw_content="Selected field comment for report evidence.",
+                normalized_content="Manager selected the sensor reset issue.",
+                analysis_content="This selected comment should remain traceable as AI evidence.",
+                author_id="user-admin",
+                entry_source="field_user",
+                category="sensor-reset",
+                status="SELECTED",
+                reviewed_by="user-admin",
                 analyzed_by="user-admin",
             )
         )
@@ -351,6 +371,7 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
         "published_version_id": published_version_id,
         "draft_version_id": draft_version_id,
         "analyzed_comment_id": analyzed_comment_id,
+        "selected_comment_id": selected_comment_id,
         "new_comment_id": new_comment_id,
         "mes_comment_id": mes_comment_id,
         "archived_comment_id": archived_comment_id,
@@ -413,7 +434,7 @@ def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
         rebuild = rebuild_response.json()
         assert rebuild["candidate_count"] >= 4
         assert rebuild["counts_by_source_type"]["PUBLISHED_DOCUMENT_VERSION"] >= 1
-        assert rebuild["counts_by_source_type"]["FIELD_COMMENT"] >= 2
+        assert rebuild["counts_by_source_type"]["FIELD_COMMENT"] >= 3
         assert rebuild["counts_by_source_type"]["WORK_SEQUENCE_HISTORY"] >= 1
         assert rebuild["counts_by_source_type"]["REPORT_SOURCE"] >= 1
         assert rebuild["excluded_counts_by_reason"]["document_version_not_published"] >= 1
@@ -464,8 +485,19 @@ def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
             },
         )
         assert new_field_comment_response.status_code == 200, new_field_comment_response.text
+        selected_field_comment_response = client.get(
+            "/api/v1/ai-search/candidates",
+            headers=headers,
+            params={
+                "sourceType": "FIELD_COMMENT",
+                "sourceId": seeded["selected_comment_id"],
+                "limit": 500,
+            },
+        )
+        assert selected_field_comment_response.status_code == 200, selected_field_comment_response.text
         field_comment_candidates = (
             analyzed_field_comment_response.json() + new_field_comment_response.json()
+            + selected_field_comment_response.json()
         )
 
         history_response = client.get(
@@ -526,6 +558,15 @@ def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
             and item["source_id"] == seeded["new_comment_id"]
         )
         assert new_comment_candidate["review_status"] == "NEW"
+
+        selected_comment_candidate = next(
+            item
+            for item in field_comment_candidates
+            if item["source_type"] == "FIELD_COMMENT"
+            and item["source_id"] == seeded["selected_comment_id"]
+        )
+        assert selected_comment_candidate["trace_table"] == "field_comments"
+        assert selected_comment_candidate["review_status"] == "SELECTED"
 
         history_candidate = next(
             item
@@ -614,7 +655,8 @@ def test_ai_search_quality_reports_field_comment_review_readiness_gap() -> None:
         assert readiness["total_count"] >= 3
         assert readiness["counts_by_status"]["NEW"] >= 1
         assert readiness["counts_by_status"]["ANALYZED"] >= 1
-        assert readiness["reviewed_status_count"] >= 1
+        assert readiness["counts_by_status"]["SELECTED"] >= 1
+        assert readiness["reviewed_status_count"] >= 2
         assert readiness["required_reviewed_count"] == 100
         assert readiness["missing_reviewed_count"] == max(
             100 - readiness["reviewed_status_count"],
