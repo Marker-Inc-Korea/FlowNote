@@ -18,15 +18,18 @@ from app.core.auth import (
 )
 from app.core.config import Settings, get_settings
 from app.db.init_db import hash_password_for_dev
-from app.db.models import AuthSession, UserAccount
+from app.db.models import AuthSession, TerminalDevice, UserAccount
 from app.db.session import get_db_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class LoginRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+
     username: str = Field(min_length=1)
     password: str = Field(min_length=1)
+    device_id: str | None = Field(default=None, alias="deviceId")
 
 
 class LoginResponse(BaseModel):
@@ -34,6 +37,7 @@ class LoginResponse(BaseModel):
     username: str
     role: str
     display_name: str
+    device_id: str | None = None
     access_token: str
     token_type: str = "Bearer"
     expires_at: datetime
@@ -60,6 +64,30 @@ def _password_matches(password: str, stored_password_hash: str) -> bool:
     return compare_digest(hash_password_for_dev(password), stored_password_hash)
 
 
+def _clean_device_id(device_id: str | None) -> str | None:
+    if device_id is None:
+        return None
+    cleaned = device_id.strip()
+    return cleaned or None
+
+
+def _validate_active_terminal_device(session: Session, device_id: str | None) -> str | None:
+    cleaned = _clean_device_id(device_id)
+    if cleaned is None:
+        return None
+    terminal = session.scalar(
+        select(TerminalDevice).where(TerminalDevice.device_id == cleaned)
+    )
+    if terminal is None or terminal.status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Terminal device is not approved or active.",
+        )
+    terminal.last_seen_at = datetime.now(timezone.utc)
+    session.add(terminal)
+    return cleaned
+
+
 @router.post("/login", response_model=LoginResponse)
 def login(
     request: LoginRequest,
@@ -78,13 +106,15 @@ def login(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is not active.",
         )
+    device_id = _validate_active_terminal_device(session, request.device_id)
 
-    _, tokens = create_auth_session(account, app_settings, session)
+    _, tokens = create_auth_session(account, app_settings, session, device_id=device_id)
     return LoginResponse(
         user_id=account.user_id,
         username=account.username,
         role=account.role,
         display_name=account.display_name,
+        device_id=device_id,
         access_token=tokens.access_token,
         expires_at=tokens.access_expires_at,
         refresh_token=tokens.refresh_token,
@@ -127,6 +157,7 @@ def refresh(
         username=account.username,
         role=account.role,
         display_name=account.display_name,
+        device_id=auth_session.device_id,
         access_token=tokens.access_token,
         expires_at=tokens.access_expires_at,
         refresh_token=tokens.refresh_token,

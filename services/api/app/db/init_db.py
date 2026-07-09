@@ -198,6 +198,19 @@ def _ensure_idempotency_columns(database: Database) -> None:
             )
 
 
+def _ensure_auth_session_device_column(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+
+    with database.engine.begin() as connection:
+        existing_columns = {
+            row[1] for row in connection.execute(text("PRAGMA table_info(auth_sessions)"))
+        }
+        if not existing_columns or "device_id" in existing_columns:
+            return
+        connection.execute(text("ALTER TABLE auth_sessions ADD COLUMN device_id VARCHAR(64)"))
+
+
 def _ensure_work_sequence_columns(database: Database) -> None:
     if not database.database_url.startswith("sqlite"):
         return
@@ -256,6 +269,7 @@ def initialize_database(database: Database) -> None:
     _ensure_user_account_columns(database)
     _ensure_user_account_role_constraint(database)
     _ensure_idempotency_columns(database)
+    _ensure_auth_session_device_column(database)
     _ensure_work_sequence_columns(database)
     with database.session() as session:
         existing = session.scalar(

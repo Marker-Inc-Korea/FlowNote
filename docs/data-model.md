@@ -48,12 +48,12 @@
 | --- | --- |
 | `schema_migrations` | 스키마 적용 버전 기록 |
 | `user_accounts`, `roles`, `user_roles` | 계정과 역할 기반 권한 |
-| `auth_sessions` | access token ID, refresh token hash, 세션 만료/폐기 상태 |
+| `auth_sessions` | access token ID, refresh token hash, 세션 만료/폐기 상태, Android 승인 단말 `device_id` |
 | `operator_profiles` | 작업자/작업그룹/대리 입력 주체 |
 | `file_objects` | 서버 로컬 파일 참조, MIME, 크기, SHA-256 |
 | `documents`, `document_versions` | 문서, 버전, 최신/공개 버전 |
 | `tag_definitions`, `document_tags` | 태그 사전과 문서 연결 |
-| `terminal_devices` | 현장 단말기 기준 정보 |
+| `terminal_devices` | Android 현장 단말기 승인 기준 정보 |
 | `field_comments`, `field_comment_attachments` | 현장 코멘트와 첨부 |
 | `comment_templates` | 정형 코멘트 문구 |
 | `work_records`, `work_record_versions` | 작업내역 모델 기반 |
@@ -71,6 +71,10 @@
 | `activity_history` | 서버 활동 이력 |
 
 채널 메시지는 별도 개인 DM이나 개인 메신저 수집이 아니라 업무 채널 멤버십 기준으로 조회된다. 사용자별 알림 목록과 읽음 처리는 `channel_messages`와 `notification_channel_members.last_read_message_id`, `last_read_at`를 함께 사용한다.
+
+`terminal_devices`는 개인 휴대폰 자동 등록 테이블이 아니라 승인된 현장 태블릿 또는 러기드 단말의 운영 기준이다. Android 앱은 로그인 시 `deviceId`를 보내며, 서버는 같은 ID가 `terminal_devices.device_id`에 있고 `status = ACTIVE`일 때만 세션을 만든다. 성공한 Android 세션은 `auth_sessions.device_id`에 단말 ID를 남기고 `terminal_devices.last_seen_at`을 갱신한다.
+
+Android 로컬 DB `flownote_android_outbox.db`는 장기 기준 데이터가 아니다. 네트워크 불안정 구간의 FieldComment와 사진 첨부 재전송을 위해 `local_id`, `idempotency_key`, 원천 문서/버전 ID, `device_id`, 사진 URI, 서버 `comment_id`, 시도 횟수, 마지막 오류만 임시 보관한다. 재전송 성공 후 서버 원천 ID를 연결하고 `SYNCED`로 전환한다.
 
 보고서 서버 저장 실패는 WPF 전용 큐를 새로 만들지 않고 기존 `server_sync_queue`에 `entity_type = report`, `action = register_report`로 남긴다. 큐는 한글 실패 사유, `last_attempt_at`, `attempt_count`를 기존 동기화 항목과 같은 방식으로 기록한다.
 

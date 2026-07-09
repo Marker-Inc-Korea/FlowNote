@@ -91,6 +91,7 @@ class AuthSession(Base):
     user_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("user_accounts.user_id"), nullable=False, index=True
     )
+    device_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("terminal_devices.device_id"))
     access_token_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     refresh_token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")

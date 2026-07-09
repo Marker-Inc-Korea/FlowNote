@@ -11,7 +11,10 @@ Windows WPF App
 
 Android Field App
   -> approved shop-floor tablet or rugged device
-  -> document viewing, FieldComment, photos
+  -> device_id approved server login
+  -> published document viewing, FieldComment, photos, signal input
+  -> channel notifications and handover receipts
+  -> local SQLite outbox for unstable network retry
   -> FastAPI sync through configured server URL
 
 FastAPI Server
@@ -24,7 +27,7 @@ WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으�
 
 WPF 앱은 현재 로컬 `notifications` 테이블과 알림 창으로 문서, FieldComment, 작업순서 이벤트 알림을 확인하고 읽음 처리한다. 채널 생성, 채널 멤버 관리, 인수인계 수신 확인, 후속 조치 추적은 서버 채널/인수인계 모델이 추가된 뒤 WPF 감독 화면으로 확장한다.
 
-Android 앱은 현장 단말 입력을 우선한다. 현장 작업자는 공개 문서 열람, QR/검색 기반 문서 접근, FieldComment와 사진 기록, 신호등식 상태 기록을 수행한다. 인수인계 작성/확인과 채널 알림 확인은 후속 채널/인수인계 서버 모델과 함께 확장한다. Android의 로컬 저장은 네트워크 불안정 구간의 임시 보관과 재전송을 위한 범위로 제한하고, 장기 기준 데이터는 FastAPI 서버에 남긴다.
+Android 앱은 현장 단말 입력을 우선한다. 현장 작업자는 승인된 `deviceId`로 로그인하고 공개 문서 열람, FieldComment와 사진 기록, 신호등식 상태 기록을 수행한다. 채널 알림과 인수인계는 서버 공통 채널/인수인계 API를 조회하고 읽음 또는 수신확인을 남기는 방식으로 붙는다. Android의 로컬 저장은 네트워크 불안정 구간의 FieldComment와 사진 첨부 임시 보관, 재전송, 서버 원천 ID 연결 범위로 제한하고, 장기 기준 데이터는 FastAPI 서버에 남긴다.
 
 ## 주요 도메인
 
@@ -93,7 +96,7 @@ Windows와 Android의 알림은 장기적으로 개인 메신저가 아니라 �
 
 채널 메시지는 자유 대화를 무제한 보관하는 기능이 아니다. 각 메시지는 가능한 한 `document_id`, `field_comment_id`, `work_record_id`, `work_sequence_item_id`, `handover_id` 같은 원천 ID를 가져야 하며, 이후 보고서와 AI 검색 후보가 원문 근거로 역추적할 수 있어야 한다. 인수인계는 채널에 등록되는 업무 이벤트이며, 수신자는 확인, 보류, 후속 FieldComment 작성 같은 상태를 남길 수 있다.
 
-초기 구현에서는 개인 DM, 사내 메신저 대체, 개인 휴대폰 알림 수집, GPS/근태 추적을 포함하지 않는다. 채널/인수인계 API는 서버 로그인 사용자, role, 채널 멤버십 기준으로 접근을 제한하며, 단말/클라이언트 승인 상태와 Windows/Android 전용 화면은 후속 클라이언트 구현에서 함께 적용한다.
+초기 구현에서는 개인 DM, 사내 메신저 대체, 개인 휴대폰 알림 수집, GPS/근태 추적을 포함하지 않는다. 채널/인수인계 API는 서버 로그인 사용자, role, 채널 멤버십 기준으로 접근을 제한한다. Android는 `terminal_devices` 승인 상태를 로그인 단계에서 검증하고, Windows는 관리자/감독 화면 중심으로 같은 서버 채널 데이터를 공유한다.
 
 ## 보고서
 
