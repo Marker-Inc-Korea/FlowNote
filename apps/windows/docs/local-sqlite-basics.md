@@ -43,11 +43,13 @@ WPF 사용자 관리 화면은 이 로컬 SQLite 계정 전용이다. 창 제목
 
 ## 동기화 원칙
 
-로컬 저장이 우선이다. 서버 URL이 없거나 서버 호출이 실패해도 로컬 문서, 문서 버전/공개/상태, FieldComment, 첨부, 접근 로그는 유지된다. 동기화 성공 시 원천 테이블의 서버 ID와 `synced_at`, `server_id_mappings`를 갱신한다.
+로컬 저장이 우선이다. 서버 URL이 없거나 서버 호출이 실패해도 로컬 문서, 문서 버전/공개/상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서는 유지된다. 동기화 성공 시 원천 테이블의 서버 ID와 `synced_at`, `server_id_mappings`를 갱신한다.
+
+재시도 큐는 같은 문서 또는 보고서 근거 단위로 묶은 뒤 문서 등록, 문서 버전, 공개, 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 순서로 처리한다. 선행 문서, 문서 버전, FieldComment, 보고서 근거 서버 ID가 없으면 해당 항목은 `FAILED` 상태와 한글 보류 사유를 유지하되 실제 서버 호출과 `attempt_count` 증가는 하지 않는다.
 
 구 FieldNote 큐는 동기화 실패 기록이 남아 있어도 FieldComment API로 자동 변환하지 않는다. 테스트/스모크 이력 보존 규칙에 따라 기존 SQLite row와 큐 기록은 삭제하지 않고, 이력 창의 분류와 조치 문구로 별도 정리 대상으로 표시한다.
 
-문서 최신 버전은 `documents.version_no`와 `document_versions.is_latest`를 기준으로 서버 최신 버전에 연결한다. 공개 버전은 `documents.published_version_no`와 `document_versions.is_published`를 기준으로 서버 publish API에 반영한다. 상태 변경은 현재 로컬 `documents.status`를 서버에 반영하며, `PUBLISHED` 상태는 공개 버전 동기화가 선행되어야 한다.
+문서 최신 버전은 `documents.version_no`와 `document_versions.is_latest`를 기준으로 서버 최신 버전에 연결한다. 이미 서버에 같은 `version_no`가 있으면 중복 업로드하지 않고 매핑을 복구한다. 공개 버전은 `documents.published_version_no`와 `document_versions.is_published`를 기준으로 서버 publish API에 반영한다. 상태 변경은 현재 로컬 `documents.status`를 서버에 반영하며, `PUBLISHED` 상태는 공개 버전 동기화가 선행되어야 한다.
 
 보고서는 로컬 보고서 문서와 `report_sources`를 먼저 만든 뒤 서버 저장을 시도한다. 서버 저장이 성공하면 `server_report_id`, `server_document_id`, `server_version_id`, `server_id_mappings`를 함께 남기고, 실패하면 `server_sync_queue`에 `report/register_report` 재시도 항목을 보존한다. 작업순서 보드/항목/이력은 현재 단계에서 로컬 큐 대상이 아니라 로컬 기록과 서버 직접 API 검증, 보고서 근거 source 연결 범위로 둔다.
 

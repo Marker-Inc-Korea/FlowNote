@@ -103,16 +103,30 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 
 ## 채널 알림과 인수인계
 
-현재 FastAPI 서버에는 채널, 인수인계, 사용자별 알림 조회/읽음 처리 API가 아직 구현되어 있지 않다. 라우터에 포함된 알림 관련 서버 기능은 작업순서 보드의 알림 후보 조회와 상태 변경이다.
-
 | Method | Path | 설명 |
 | --- | --- | --- |
+| POST | `/api/v1/notification-channels` | 업무 채널 생성. 생성자는 `OWNER` 멤버로 자동 등록 |
+| GET | `/api/v1/notification-channels` | 현재 사용자가 속한 채널 목록. `admin`, `system-admin`은 전체 조회 |
+| GET | `/api/v1/notification-channels/{channel_id}` | 채널 상세 조회 |
+| POST | `/api/v1/notification-channels/{channel_id}/members` | 채널 멤버 추가 또는 재활성화 |
+| GET | `/api/v1/notification-channels/{channel_id}/members` | 채널 멤버 목록 |
+| PATCH | `/api/v1/notification-channels/{channel_id}/members/{member_id}` | 멤버 역할 또는 상태 변경 |
+| POST | `/api/v1/notification-channels/{channel_id}/messages` | 채널 메시지 등록 |
+| GET | `/api/v1/notification-channels/{channel_id}/messages` | 채널 메시지 조회 |
+| GET | `/api/v1/notifications` | 현재 사용자 기준 채널 알림 목록. `unreadOnly` 지원 |
+| PATCH | `/api/v1/notifications/{message_id}/read` | 현재 사용자의 해당 채널 메시지 읽음 처리 |
+| POST | `/api/v1/handovers` | 인수인계 등록, 수신자별 receipt 생성, 채널 메시지 생성 |
+| GET | `/api/v1/handovers` | 현재 사용자가 속한 채널의 인수인계 목록 |
+| GET | `/api/v1/handovers/{handover_id}` | 인수인계 상세와 수신자별 receipt 조회 |
+| PATCH | `/api/v1/handovers/{handover_id}/receipts/{receipt_id}` | 수신자별 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 상태 기록 |
 | GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | 작업순서 변경으로 생성된 알림 후보 조회 |
 | PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | 작업순서 알림 후보 상태를 `CANDIDATE`, `SENT`, `DISMISSED` 중 하나로 변경 |
 
-WPF 로컬 앱은 `notifications` 테이블과 알림 창을 통해 문서, FieldComment, 작업순서 이벤트 알림을 저장하고 읽음 처리한다. 이 로컬 알림은 아직 서버 채널 멤버십과 동기화되지 않는다.
+채널 유형은 `LINE`, `EQUIPMENT`, `PROCESS`, `WORK_GROUP`, `HANDOVER`, `WORK_RECORD`, `CUSTOM`이다. 채널 메시지 유형은 `NOTICE`, `DOCUMENT_EVENT`, `FIELD_COMMENT_EVENT`, `WORK_SEQUENCE_EVENT`, `HANDOVER`, `SYSTEM`이다. 인수인계 상태는 `DRAFT`, `SENT`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`, `ARCHIVED`이고, 수신 상태는 `UNREAD`, `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`이다.
 
-후속 서버 API 초안은 업무 채널 생성, 채널 멤버 관리, 채널 메시지, 사용자 알림 목록/읽음 처리, 인수인계 등록/확인으로 둔다. 이 후속 API가 구현되기 전까지 `notification-channels`, `notifications`, `handovers` 계열 경로는 현재 제공 API로 간주하지 않는다.
+채널 메시지와 인수인계는 `sourceType`, `sourceId`, `sourceVersionId`로 원천을 추적한다. 메시지 source는 `DOCUMENT`, `FIELD_COMMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `REPORT`, `HANDOVER`, `SYSTEM`을 허용한다. 인수인계 source는 `DOCUMENT`, `FIELD_COMMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `REPORT`, `CHANNEL_MESSAGE`를 허용한다.
+
+채널 생성과 메시지 등록은 서버 인증이 필요하다. 채널 생성은 문서/작업순서 쓰기 role 기준을 사용하며, 채널 조회, 메시지 조회, 인수인계 조회는 채널 멤버 또는 `admin`, `system-admin`만 가능하다. 수신확인은 해당 receipt 수신자 또는 `admin`, `system-admin`만 변경할 수 있다. 개인 DM, 개인 메신저 수집, GPS, 근태 기능은 이 API에 포함하지 않는다.
 
 ## 보고서
 

@@ -485,6 +485,166 @@ class WorkSequenceNotificationCandidate(Base):
     )
 
 
+class NotificationChannel(TimestampMixin, Base):
+    __tablename__ = "notification_channels"
+    __table_args__ = (
+        CheckConstraint(
+            (
+                "channel_type IN ('LINE', 'EQUIPMENT', 'PROCESS', 'WORK_GROUP', "
+                "'HANDOVER', 'WORK_RECORD', 'CUSTOM')"
+            ),
+            name="ck_notification_channel_type",
+        ),
+        CheckConstraint("status IN ('ACTIVE', 'ARCHIVED')", name="ck_notification_channel_status"),
+        Index("ix_notification_channels_type_status", "channel_type", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    channel_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    channel_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    source_type: Mapped[str | None] = mapped_column(String(50), index=True)
+    source_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    source_version_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    created_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+
+
+class NotificationChannelMember(Base):
+    __tablename__ = "notification_channel_members"
+    __table_args__ = (
+        CheckConstraint("member_role IN ('OWNER', 'MANAGER', 'MEMBER')", name="ck_channel_member_role"),
+        CheckConstraint("status IN ('ACTIVE', 'REMOVED')", name="ck_channel_member_status"),
+        UniqueConstraint("channel_id", "user_id", name="uq_channel_members_channel_user"),
+        Index("ix_channel_members_user_status", "user_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    member_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    channel_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("notification_channels.channel_id"), nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id"), nullable=False, index=True
+    )
+    member_role: Mapped[str] = mapped_column(String(20), nullable=False, default="MEMBER")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    last_read_message_id: Mapped[str | None] = mapped_column(String(64))
+    last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    added_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class ChannelMessage(Base):
+    __tablename__ = "channel_messages"
+    __table_args__ = (
+        CheckConstraint(
+            (
+                "message_type IN ('NOTICE', 'DOCUMENT_EVENT', 'FIELD_COMMENT_EVENT', "
+                "'WORK_SEQUENCE_EVENT', 'HANDOVER', 'SYSTEM')"
+            ),
+            name="ck_channel_message_type",
+        ),
+        CheckConstraint(
+            (
+                "source_type IN ('DOCUMENT', 'FIELD_COMMENT', 'WORK_SEQUENCE_ITEM', "
+                "'WORK_SEQUENCE_HISTORY', 'WORK_RECORD', 'REPORT', 'HANDOVER', 'SYSTEM')"
+            ),
+            name="ck_channel_message_source_type",
+        ),
+        Index("ix_channel_messages_channel_created", "channel_id", "created_at"),
+        Index("ix_channel_messages_source", "source_type", "source_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    channel_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("notification_channels.channel_id"), nullable=False, index=True
+    )
+    message_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_version_id: Mapped[str | None] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Handover(TimestampMixin, Base):
+    __tablename__ = "handovers"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('DRAFT', 'SENT', 'ACKNOWLEDGED', 'FOLLOW_UP_REQUIRED', 'ARCHIVED')",
+            name="ck_handover_status",
+        ),
+        CheckConstraint(
+            (
+                "source_type IN ('DOCUMENT', 'FIELD_COMMENT', 'WORK_SEQUENCE_ITEM', "
+                "'WORK_SEQUENCE_HISTORY', 'WORK_RECORD', 'REPORT', 'CHANNEL_MESSAGE')"
+            ),
+            name="ck_handover_source_type",
+        ),
+        Index("ix_handovers_channel_status", "channel_id", "status"),
+        Index("ix_handovers_source", "source_type", "source_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    handover_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    channel_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("notification_channels.channel_id"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    source_type: Mapped[str | None] = mapped_column(String(50))
+    source_id: Mapped[str | None] = mapped_column(String(64))
+    source_version_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="SENT")
+    created_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class HandoverReceipt(Base):
+    __tablename__ = "handover_receipts"
+    __table_args__ = (
+        CheckConstraint(
+            "receipt_status IN ('UNREAD', 'READ', 'ACKNOWLEDGED', 'FOLLOW_UP_REQUIRED')",
+            name="ck_handover_receipt_status",
+        ),
+        UniqueConstraint("handover_id", "recipient_id", name="uq_handover_receipts_handover_recipient"),
+        Index("ix_handover_receipts_recipient_status", "recipient_id", "receipt_status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    receipt_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    handover_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("handovers.handover_id"), nullable=False, index=True
+    )
+    recipient_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id"), nullable=False, index=True
+    )
+    receipt_status: Mapped[str] = mapped_column(String(30), nullable=False, default="UNREAD")
+    note: Mapped[str | None] = mapped_column(Text)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    follow_up_required_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class Report(TimestampMixin, Base):
     __tablename__ = "reports"
     __table_args__ = (

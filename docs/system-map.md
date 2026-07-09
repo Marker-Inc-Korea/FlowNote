@@ -20,7 +20,7 @@ FastAPI Server
   -> /api/v1 REST API
 ```
 
-WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 보고서는 로컬 보고서 문서와 `report_sources`를 먼저 남긴 뒤 `server_sync_queue`의 `register_report` 항목으로 서버 `/api/v1/reports` 저장을 재시도한다.
+WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 보고서는 로컬 보고서 문서와 `report_sources`를 먼저 남긴 뒤 `server_sync_queue`의 `register_report` 항목으로 서버 `/api/v1/reports` 저장을 재시도한다. 큐 재시도는 단순 생성 순서가 아니라 같은 문서 또는 보고서 근거 단위로 묶고, 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다.
 
 WPF 앱은 현재 로컬 `notifications` 테이블과 알림 창으로 문서, FieldComment, 작업순서 이벤트 알림을 확인하고 읽음 처리한다. 채널 생성, 채널 멤버 관리, 인수인계 수신 확인, 후속 조치 추적은 서버 채널/인수인계 모델이 추가된 뒤 WPF 감독 화면으로 확장한다.
 
@@ -71,7 +71,7 @@ ServerSyncQueue
 
 WPF 로컬 DB는 공개 버전을 `documents.published_version_no`와 `document_versions.is_published`로 관리한다. FastAPI 서버는 `documents.published_version_id`와 `document_versions.is_published`로 관리한다.
 
-서버-WPF 동기화에서는 로컬 큐 순서를 우선한다. 문서 최초 등록이 서버 ID를 받아야 문서 버전, FieldComment, 접근 로그가 후속 서버 ID에 연결된다. 공개는 해당 버전의 서버 버전 ID가 있어야 실행하고, 상태 변경은 현재 로컬 문서 상태를 서버에 반영한다.
+서버-WPF 동기화에서는 같은 문서의 서버 ID 선행 조건을 우선한다. 재시도 큐는 문서 등록, 문서 버전, 공개, 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 순서로 처리한다. 문서 최초 등록이 서버 ID를 받아야 문서 버전, FieldComment, 접근 로그가 후속 서버 ID에 연결된다. 공개는 해당 버전의 서버 버전 ID가 있어야 실행하고, `PUBLISHED` 상태 변경은 공개 버전 매핑이 있어야 서버에 반영한다.
 
 ## FieldComment
 
@@ -89,11 +89,11 @@ FieldComment는 문서 파일 개정이 아니라 현장 원천 기록이다. �
 
 Windows와 Android의 알림은 장기적으로 개인 메신저가 아니라 업무 채널 모델로 다룬다. 채널은 라인, 설비, 공정, 작업조, 작업내역, 인수인계 같은 운영 단위에 연결된다. 사용자는 자신이 속한 채널의 문서 공개/변경, FieldComment 등록/검토 요청, 작업순서 변경, 인수인계 등록/확인 요청 알림을 받는다.
 
-현재 구현된 알림은 WPF 로컬 `notifications`와 서버 작업순서 알림 후보(`work_sequence_notification_candidates`)이다. WPF는 문서, FieldComment, 작업순서 이벤트 알림을 로컬 DB에 저장하고 읽음 처리한다. FastAPI는 사용자별 알림 목록, 채널 멤버십, 채널 메시지, 인수인계 API를 아직 제공하지 않는다.
+현재 구현된 알림은 WPF 로컬 `notifications`, 서버 작업순서 알림 후보(`work_sequence_notification_candidates`), FastAPI 공통 채널 모델(`notification_channels`, `notification_channel_members`, `channel_messages`)이다. WPF는 문서, FieldComment, 작업순서 이벤트 알림을 로컬 DB에 저장하고 읽음 처리한다. FastAPI는 채널 멤버십, 채널 메시지, 사용자별 알림 목록/읽음 처리, 인수인계와 수신 확인 API를 제공한다.
 
 채널 메시지는 자유 대화를 무제한 보관하는 기능이 아니다. 각 메시지는 가능한 한 `document_id`, `field_comment_id`, `work_record_id`, `work_sequence_item_id`, `handover_id` 같은 원천 ID를 가져야 하며, 이후 보고서와 AI 검색 후보가 원문 근거로 역추적할 수 있어야 한다. 인수인계는 채널에 등록되는 업무 이벤트이며, 수신자는 확인, 보류, 후속 FieldComment 작성 같은 상태를 남길 수 있다.
 
-초기 구현에서는 개인 DM, 사내 메신저 대체, 개인 휴대폰 알림 수집, GPS/근태 추적을 포함하지 않는다. 후속 채널/인수인계 구현에서는 Windows와 Android 알림을 서버 로그인 사용자, role, 채널 멤버십, 단말/클라이언트 승인 상태 기준으로 표시한다.
+초기 구현에서는 개인 DM, 사내 메신저 대체, 개인 휴대폰 알림 수집, GPS/근태 추적을 포함하지 않는다. 채널/인수인계 API는 서버 로그인 사용자, role, 채널 멤버십 기준으로 접근을 제한하며, 단말/클라이언트 승인 상태와 Windows/Android 전용 화면은 후속 클라이언트 구현에서 함께 적용한다.
 
 ## 보고서
 

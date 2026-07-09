@@ -95,7 +95,9 @@
 
 ## 2026-07-02. 서버-WPF 문서 동기화 우선순위
 
-- WPF는 로컬 저장을 먼저 성공시키고 `server_sync_queue` 생성 순서대로 서버에 반영한다.
+- WPF는 로컬 저장을 먼저 성공시키고 `server_sync_queue` 재시도 시 같은 문서 또는 보고서 근거 단위의 선행 조건을 우선한다.
+- 재시도 처리 순서는 문서 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 접근 로그 시작/종료/자동 종료/다운로드 차단, 보고서 저장이다.
+- 선행 문서, 문서 버전, FieldComment, 보고서 근거의 서버 ID가 없으면 해당 큐는 실제 서버 호출 없이 보류로 분류하고 `attempt_count`를 증가시키지 않는다.
 - 문서 최초 등록이 서버 ID를 받아야 문서 버전, FieldComment, 첨부, 접근 로그가 서버 문서/버전 ID에 연결된다.
 - 문서 최신 버전은 로컬 `document_versions.version_no` 기준으로 서버 버전을 찾고, 서버에 같은 번호가 있으면 매핑을 복구하며 없으면 업로드한다.
 - 공개 버전은 해당 로컬 버전의 서버 버전 ID가 있을 때만 서버 publish API에 반영한다.
@@ -156,3 +158,12 @@
 - 채널은 라인, 설비, 공정, 작업조, 작업내역, 인수인계 같은 운영 단위에 연결한다.
 - 인수인계는 채널에 등록되는 업무 이벤트이며 수신자는 확인, 보류, 후속 FieldComment 작성 같은 상태를 남긴다.
 - 개인 휴대폰 기본 배포, 개인 메신저 수집, GPS 추적, 근태 관리는 초기 범위에 포함하지 않는다.
+
+## 2026-07-09. 서버 공통 채널과 인수인계 모델
+
+- FastAPI 서버는 `notification_channels`, `notification_channel_members`, `channel_messages`, `handovers`, `handover_receipts`를 Windows와 Android가 공유하는 채널/인수인계 원천 모델로 둔다.
+- 사용자별 알림은 별도 개인 DM 테이블이 아니라 채널 멤버십과 `channel_messages` 읽음 위치로 계산한다.
+- 채널 메시지와 인수인계는 문서, FieldComment, 작업순서 항목/이력, 작업내역, 보고서, 인수인계 원천 ID를 보존한다.
+- 인수인계 receipt는 수신자별 `UNREAD`, `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`를 기록한다.
+- 서버 API는 채널 멤버 또는 `admin`, `system-admin`만 채널 메시지와 인수인계를 조회할 수 있게 한다.
+- 개인 DM, 개인 메신저 수집, GPS, 근태 기능은 서버 채널/인수인계 모델에 포함하지 않는다.

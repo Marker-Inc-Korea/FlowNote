@@ -60,12 +60,17 @@
 | `work_sequence_boards`, `work_sequence_items` | 작업순서 보드와 항목 |
 | `work_sequence_change_history` | 작업순서 변경 이력 |
 | `work_sequence_notification_candidates` | 작업순서 알림 후보 |
+| `notification_channels` | 라인, 설비, 공정, 작업조, 작업내역 단위 업무 채널 |
+| `notification_channel_members` | 채널별 사용자 멤버십, 역할, 마지막 읽음 위치 |
+| `channel_messages` | 문서, FieldComment, 작업순서, 보고서, 인수인계 원천 이벤트 메시지 |
+| `handovers` | 인수인계 원문, 원천 연결, 채널 연결, 전체 상태 |
+| `handover_receipts` | 수신자별 인수인계 읽음, 확인, 후속조치 필요 상태 |
 | `reports`, `report_sources` | 보고서와 근거 연결 |
 | `ai_search_candidates` | AI 자동 조언 전 단계의 근거 검색 후보 read model |
 | `document_access_logs` | 서버 문서 접근 로그 |
 | `activity_history` | 서버 활동 이력 |
 
-서버 ORM에는 아직 `notification_channels`, `notification_channel_members`, `channel_messages`, `handovers`, `handover_receipts` 테이블이 없다. 채널 멤버십과 인수인계 수신 확인은 후속 서버 모델로 두고, 현재 구현은 작업순서 알림 후보와 WPF 로컬 `notifications`를 먼저 사용한다.
+채널 메시지는 별도 개인 DM이나 개인 메신저 수집이 아니라 업무 채널 멤버십 기준으로 조회된다. 사용자별 알림 목록과 읽음 처리는 `channel_messages`와 `notification_channel_members.last_read_message_id`, `last_read_at`를 함께 사용한다.
 
 보고서 서버 저장 실패는 WPF 전용 큐를 새로 만들지 않고 기존 `server_sync_queue`에 `entity_type = report`, `action = register_report`로 남긴다. 큐는 한글 실패 사유, `last_attempt_at`, `attempt_count`를 기존 동기화 항목과 같은 방식으로 기록한다.
 
@@ -187,14 +192,14 @@ FieldComment 상태:
 - `FAILED`
 - `SYNCED`
 
-후속 채널/인수인계 상태 초안:
+채널/인수인계 상태:
 
 - 채널 유형: `LINE`, `EQUIPMENT`, `PROCESS`, `WORK_GROUP`, `HANDOVER`, `WORK_RECORD`, `CUSTOM`
 - 채널 메시지 유형: `NOTICE`, `DOCUMENT_EVENT`, `FIELD_COMMENT_EVENT`, `WORK_SEQUENCE_EVENT`, `HANDOVER`, `SYSTEM`
 - 인수인계 상태: `DRAFT`, `SENT`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`, `ARCHIVED`
 - 인수인계 수신 상태: `UNREAD`, `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`
 
-위 상태값은 현재 서버 ORM 제약이나 API 응답으로 제공되는 값이 아니라 후속 채널/인수인계 모델의 설계 기준이다.
+채널 메시지와 인수인계 source는 문서, FieldComment, 작업순서 항목/이력, 작업내역, 보고서, 인수인계 원천 ID를 보존한다. 개인 DM, 개인 메신저 수집, GPS, 근태 상태는 이 모델에 포함하지 않는다.
 
 서버 보고서 상태:
 
