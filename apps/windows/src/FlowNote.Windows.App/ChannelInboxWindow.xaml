@@ -1,0 +1,226 @@
+<Window x:Class="FlowNote.Windows.App.ChannelInboxWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="채널 수신함"
+        Width="1060"
+        Height="680"
+        MinWidth="900"
+        MinHeight="560"
+        Background="{StaticResource WindowBackgroundBrush}">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="10" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="44" />
+        </Grid.RowDefinitions>
+
+        <Border Background="{StaticResource PanelBackgroundBrush}"
+                BorderBrush="{StaticResource PanelBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="14">
+            <DockPanel>
+                <StackPanel>
+                    <TextBlock Text="채널 수신함"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource PrimaryTextBrush}" />
+                    <TextBlock x:Name="StatusTextBlock"
+                               Margin="0,6,0,0"
+                               Foreground="{StaticResource SecondaryTextBrush}" />
+                </StackPanel>
+                <Button DockPanel.Dock="Right"
+                        Width="96"
+                        Height="34"
+                        Content="새로고침"
+                        Click="RefreshButton_Click" />
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="{StaticResource PanelBackgroundBrush}"
+                    BorderBrush="{StaticResource PanelBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top"
+                            Height="42"
+                            Padding="12,0"
+                            Background="{StaticResource PanelMutedBrush}"
+                            BorderBrush="{StaticResource PanelBorderBrush}"
+                            BorderThickness="0,0,0,1">
+                        <TextBlock Text="내 채널"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource PrimaryTextBrush}" />
+                    </Border>
+                    <DataGrid x:Name="ChannelGrid"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              IsReadOnly="True"
+                              SelectionChanged="ChannelGrid_SelectionChanged"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal"
+                              BorderThickness="0">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="유형" Binding="{Binding ChannelTypeLabel}" Width="72" />
+                            <DataGridTextColumn Header="채널" Binding="{Binding Name}" Width="*" />
+                            <DataGridTextColumn Header="상태" Binding="{Binding StatusLabel}" Width="70" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </Border>
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="2*" />
+                    <RowDefinition Height="10" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border Background="{StaticResource PanelBackgroundBrush}"
+                        BorderBrush="{StaticResource PanelBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top"
+                                Height="42"
+                                Padding="12,0"
+                                Background="{StaticResource PanelMutedBrush}"
+                                BorderBrush="{StaticResource PanelBorderBrush}"
+                                BorderThickness="0,0,0,1">
+                            <DockPanel>
+                                <TextBlock Text="채널 메시지"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource PrimaryTextBrush}" />
+                                <StackPanel DockPanel.Dock="Right"
+                                            Orientation="Horizontal"
+                                            VerticalAlignment="Center">
+                                    <CheckBox x:Name="UnreadOnlyCheckBox"
+                                              Margin="0,0,10,0"
+                                              Content="읽지 않음만"
+                                              VerticalAlignment="Center"
+                                              Checked="UnreadOnlyCheckBox_Changed"
+                                              Unchecked="UnreadOnlyCheckBox_Changed" />
+                                    <Button Width="92"
+                                            Height="30"
+                                            Content="읽음 처리"
+                                            Click="MarkSelectedReadButton_Click" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                        <DataGrid x:Name="NotificationGrid"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  IsReadOnly="True"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  BorderThickness="0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="읽음" Binding="{Binding ReadLabel}" Width="80" />
+                                <DataGridTextColumn Header="채널" Binding="{Binding ChannelName}" Width="150" />
+                                <DataGridTextColumn Header="유형" Binding="{Binding MessageTypeLabel}" Width="110" />
+                                <DataGridTextColumn Header="제목" Binding="{Binding Title}" Width="180" />
+                                <DataGridTextColumn Header="원천 링크" Binding="{Binding SourceLinkText}" Width="230" />
+                                <DataGridTextColumn Header="시간" Binding="{Binding CreatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="140" />
+                                <DataGridTextColumn Header="내용" Binding="{Binding Body}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                </Border>
+
+                <Border Grid.Row="2"
+                        Background="{StaticResource PanelBackgroundBrush}"
+                        BorderBrush="{StaticResource PanelBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top"
+                                Height="42"
+                                Padding="12,0"
+                                Background="{StaticResource PanelMutedBrush}"
+                                BorderBrush="{StaticResource PanelBorderBrush}"
+                                BorderThickness="0,0,0,1">
+                            <DockPanel>
+                                <TextBlock Text="인수인계"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource PrimaryTextBrush}" />
+                                <StackPanel DockPanel.Dock="Right"
+                                            Orientation="Horizontal"
+                                            VerticalAlignment="Center">
+                                    <Button Width="76"
+                                            Height="30"
+                                            Margin="0,0,6,0"
+                                            Content="읽음"
+                                            Click="ReadReceiptButton_Click" />
+                                    <Button Width="76"
+                                            Height="30"
+                                            Margin="0,0,6,0"
+                                            Content="확인"
+                                            Click="AckReceiptButton_Click" />
+                                    <Button Width="76"
+                                            Height="30"
+                                            Margin="0,0,6,0"
+                                            Content="보류"
+                                            Click="HoldReceiptButton_Click" />
+                                    <Button Width="88"
+                                            Height="30"
+                                            Content="후속 필요"
+                                            Click="FollowUpReceiptButton_Click" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                        <DataGrid x:Name="HandoverGrid"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  IsReadOnly="True"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  BorderThickness="0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="상태" Binding="{Binding StatusLabel}" Width="100" />
+                                <DataGridTextColumn Header="제목" Binding="{Binding Title}" Width="180" />
+                                <DataGridTextColumn Header="원천 링크" Binding="{Binding SourceLinkText}" Width="230" />
+                                <DataGridTextColumn Header="발송" Binding="{Binding SentAt, StringFormat=yyyy-MM-dd HH:mm}" Width="140" />
+                                <DataGridTextColumn Header="내용" Binding="{Binding Body}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom">
+            <Button Width="122"
+                    Height="34"
+                    Margin="0,0,8,0"
+                    Content="원천 정보 복사"
+                    Click="CopySourceButton_Click" />
+            <Button Width="150"
+                    Height="34"
+                    Margin="0,0,8,0"
+                    Content="후속 FieldComment"
+                    Click="FollowUpFieldCommentButton_Click" />
+            <Button Width="84"
+                    Height="34"
+                    Content="닫기"
+                    Click="CloseButton_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

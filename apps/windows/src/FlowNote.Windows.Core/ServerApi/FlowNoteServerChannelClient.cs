@@ -1,0 +1,229 @@
+using System.Net;
+using System.Net.Http.Json;
+
+namespace FlowNote.Windows.Core.ServerApi;
+
+public sealed class FlowNoteServerChannelClient
+{
+    private readonly HttpClient httpClient;
+
+    public FlowNoteServerChannelClient(HttpClient httpClient)
+    {
+        this.httpClient = httpClient;
+    }
+
+    public async Task<IReadOnlyList<ServerNotificationChannelResponse>> ListChannelsAsync(
+        string? channelType = null,
+        string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(channelType))
+        {
+            query.Add($"channelType={Uri.EscapeDataString(channelType.Trim())}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            query.Add($"status={Uri.EscapeDataString(status.Trim())}");
+        }
+
+        using var response = await httpClient.GetAsync(
+            query.Count == 0 ? "api/v1/notification-channels" : $"api/v1/notification-channels?{string.Join("&", query)}",
+            cancellationToken);
+        var channels = await ReadJsonResponse<List<ServerNotificationChannelResponse>>(response, cancellationToken);
+        return channels;
+    }
+
+    public async Task<ServerNotificationChannelResponse> CreateChannelAsync(
+        ServerNotificationChannelCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            "api/v1/notification-channels",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerNotificationChannelResponse>(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ServerChannelMemberResponse>> ListChannelMembersAsync(
+        string channelId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/notification-channels/{Uri.EscapeDataString(channelId)}/members",
+            cancellationToken);
+        var members = await ReadJsonResponse<List<ServerChannelMemberResponse>>(response, cancellationToken);
+        return members;
+    }
+
+    public async Task<ServerChannelMemberResponse> UpsertChannelMemberAsync(
+        string channelId,
+        ServerChannelMemberUpsertRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/v1/notification-channels/{Uri.EscapeDataString(channelId)}/members",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerChannelMemberResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerChannelMemberResponse> UpdateChannelMemberAsync(
+        string channelId,
+        string memberId,
+        ServerChannelMemberUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PatchAsJsonAsync(
+            $"api/v1/notification-channels/{Uri.EscapeDataString(channelId)}/members/{Uri.EscapeDataString(memberId)}",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerChannelMemberResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerChannelMessageResponse> CreateChannelMessageAsync(
+        string channelId,
+        ServerChannelMessageCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/v1/notification-channels/{Uri.EscapeDataString(channelId)}/messages",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerChannelMessageResponse>(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ServerChannelMessageResponse>> ListChannelMessagesAsync(
+        string channelId,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/notification-channels/{Uri.EscapeDataString(channelId)}/messages?limit={Math.Clamp(limit, 1, 500)}",
+            cancellationToken);
+        var messages = await ReadJsonResponse<List<ServerChannelMessageResponse>>(response, cancellationToken);
+        return messages;
+    }
+
+    public async Task<IReadOnlyList<ServerUserNotificationResponse>> ListMyNotificationsAsync(
+        bool unreadOnly = false,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/notifications?unreadOnly={unreadOnly.ToString().ToLowerInvariant()}&limit={Math.Clamp(limit, 1, 500)}",
+            cancellationToken);
+        var notifications = await ReadJsonResponse<List<ServerUserNotificationResponse>>(response, cancellationToken);
+        return notifications;
+    }
+
+    public async Task<ServerUserNotificationResponse> MarkNotificationReadAsync(
+        string messageId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PatchAsync(
+            $"api/v1/notifications/{Uri.EscapeDataString(messageId)}/read",
+            null,
+            cancellationToken);
+        return await ReadJsonResponse<ServerUserNotificationResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerHandoverResponse> CreateHandoverAsync(
+        ServerHandoverCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync("api/v1/handovers", request, cancellationToken);
+        return await ReadJsonResponse<ServerHandoverResponse>(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ServerHandoverResponse>> ListHandoversAsync(
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/handovers?limit={Math.Clamp(limit, 1, 200)}",
+            cancellationToken);
+        var handovers = await ReadJsonResponse<List<ServerHandoverResponse>>(response, cancellationToken);
+        return handovers;
+    }
+
+    public async Task<ServerHandoverResponse> GetHandoverAsync(
+        string handoverId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/handovers/{Uri.EscapeDataString(handoverId)}",
+            cancellationToken);
+        return await ReadJsonResponse<ServerHandoverResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerHandoverResponse> UpdateHandoverReceiptAsync(
+        string handoverId,
+        string receiptId,
+        ServerHandoverReceiptUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PatchAsJsonAsync(
+            $"api/v1/handovers/{Uri.EscapeDataString(handoverId)}/receipts/{Uri.EscapeDataString(receiptId)}",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerHandoverResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerFieldCommentResponse> CreateHandoverFollowUpFieldCommentAsync(
+        ServerHandoverResponse handover,
+        string rawContent,
+        string actorId,
+        CancellationToken cancellationToken = default)
+    {
+        var request = new ServerFieldCommentCreateRequest
+        {
+            WorkRecordId = handover.HandoverId,
+            CommentType = "issue",
+            InputMode = "free_text",
+            RawContent = $"원천 인수인계: {handover.HandoverId}{Environment.NewLine}{rawContent.Trim()}",
+            AuthorId = actorId,
+            ReportedBy = actorId,
+            EntrySource = "handover_follow_up",
+            Category = "handover-follow-up",
+            Priority = 2,
+            IdempotencyKey = $"handover-follow-up:{handover.HandoverId}:{Guid.NewGuid():N}"
+        };
+        using var response = await httpClient.PostAsJsonAsync("api/v1/field-comments", request, cancellationToken);
+        var fieldComment = await ReadJsonResponse<ServerFieldCommentResponse>(response, cancellationToken);
+        await CreateChannelMessageAsync(
+            handover.ChannelId,
+            new ServerChannelMessageCreateRequest
+            {
+                MessageType = "FIELD_COMMENT_EVENT",
+                SourceType = "FIELD_COMMENT",
+                SourceId = fieldComment.CommentId,
+                Title = $"인수인계 후속 FieldComment: {handover.Title}",
+                Body = $"원천 인수인계 {handover.HandoverId}에서 후속 FieldComment를 작성했습니다."
+            },
+            cancellationToken);
+        return fieldComment;
+    }
+
+    private static async Task<T> ReadJsonResponse<T>(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                throw new FlowNoteServerAuthenticationException(
+                    $"로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인한 뒤 채널 화면을 새로고침하세요. 로컬 데이터와 동기화 큐는 삭제되지 않습니다. {errorBody}");
+            }
+
+            throw new InvalidOperationException(
+                $"FlowNote API request failed: {(int)response.StatusCode} {response.ReasonPhrase}. {errorBody}");
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<T>(cancellationToken);
+        return result ?? throw new InvalidOperationException("FlowNote API returned an empty response body.");
+    }
+}
