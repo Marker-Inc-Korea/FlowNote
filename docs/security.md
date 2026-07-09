@@ -12,8 +12,9 @@
 - FastAPI 로그인, access token, refresh token, logout
 - FastAPI `auth_sessions` 기반 세션 폐기와 token 교체 검증
 - FastAPI role 기반 문서 쓰기, 태그 생성, FieldComment 작성, 접근 로그 조회, 보고서 작성 권한
+- FastAPI 채널 멤버십 기반 채널 메시지 조회, 사용자별 알림 읽음, 인수인계 수신 확인 권한
 
-공통 채널 알림과 Android 현장 단말 보안은 제품 방향에 포함하지만 아직 코드 구현 범위는 아니다. Windows와 Android의 채널 수신 범위는 서버 로그인, role, 채널 멤버십, 클라이언트/단말 승인 상태를 함께 사용해 제한한다. Android는 개인 휴대폰 기본 배포가 아니라 승인된 현장 태블릿 또는 러기드 단말을 기준으로 한다.
+Android 현장 단말 보안과 Windows/Android 채널 전용 화면은 제품 방향에 포함하지만 아직 클라이언트 코드 구현 범위는 아니다. 공통 채널 API는 서버 로그인, role, 채널 멤버십으로 접근을 제한하며, 클라이언트/단말 승인 상태는 후속 클라이언트 구현에서 함께 사용한다. Android는 개인 휴대폰 기본 배포가 아니라 승인된 현장 태블릿 또는 러기드 단말을 기준으로 한다.
 
 ## 계정과 role
 
