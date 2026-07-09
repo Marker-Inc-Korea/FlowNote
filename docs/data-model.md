@@ -180,7 +180,7 @@ FieldComment 상태:
 - `HOLD`
 - `COMPLETED`
 
-FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관리자/TV 화면은 위 네 상태를 정식 상태로 사용한다. 2026-07-09 현재 공통 개발 DB에는 테스트 실행 중 직접 삽입된 `TODO` 상태 작업순서 항목 2건이 남아 있지만, 새 코드와 API의 허용 상태는 아니므로 새 기능과 문서에서는 `WAITING`을 대기 상태로 사용한다. 해당 row는 테스트 기록 보존 원칙에 따라 삭제하지 않고 잔존 데이터로 분류한다.
+FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관리자/TV 화면은 위 네 상태를 정식 상태로 사용한다. 2026-07-09 현재 공통 개발 DB에는 테스트 실행 중 직접 삽입된 `TODO` 상태 작업순서 항목 3건이 남아 있지만, 새 코드와 API의 허용 상태는 아니므로 새 기능과 문서에서는 `WAITING`을 대기 상태로 사용한다. 해당 row는 테스트 기록 보존 원칙에 따라 삭제하지 않고 잔존 데이터로 분류한다.
 
 작업순서 알림 후보 상태:
 

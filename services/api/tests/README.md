@@ -31,6 +31,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-현재 FastAPI 테스트 수집 기준은 51개이다.
+현재 FastAPI 테스트 수집 기준은 53개이다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
