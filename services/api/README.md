@@ -44,6 +44,20 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/work-sequence-boards/{board_id}/history` | Change history |
 | GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | Notification candidates |
 | PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | Change notification candidate status |
+| POST | `/api/v1/notification-channels` | Create notification channel |
+| GET | `/api/v1/notification-channels` | List channels visible to current user |
+| GET | `/api/v1/notification-channels/{channel_id}` | Channel detail |
+| POST | `/api/v1/notification-channels/{channel_id}/members` | Add or reactivate channel member |
+| GET | `/api/v1/notification-channels/{channel_id}/members` | Channel member list |
+| PATCH | `/api/v1/notification-channels/{channel_id}/members/{member_id}` | Change member role or status |
+| POST | `/api/v1/notification-channels/{channel_id}/messages` | Create channel message |
+| GET | `/api/v1/notification-channels/{channel_id}/messages` | Channel message list |
+| GET | `/api/v1/notifications` | Current user notification list |
+| PATCH | `/api/v1/notifications/{message_id}/read` | Mark channel message as read |
+| POST | `/api/v1/handovers` | Create handover and receipts |
+| GET | `/api/v1/handovers` | List visible handovers |
+| GET | `/api/v1/handovers/{handover_id}` | Handover detail |
+| PATCH | `/api/v1/handovers/{handover_id}/receipts/{receipt_id}` | Update handover receipt status |
 | POST | `/api/v1/reports/drafts` | Create report draft |
 | POST | `/api/v1/reports` | Save report |
 | GET | `/api/v1/reports` | Report list |
@@ -91,6 +105,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The current collected FastAPI test count is 51.
+The current collected FastAPI test count is 55.
 
 Test SQLite DBs, logs, upload files, and generated sample files are preserved unless the user explicitly asks to delete them.
