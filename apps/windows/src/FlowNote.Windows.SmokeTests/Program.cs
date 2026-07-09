@@ -1579,6 +1579,7 @@ try
     {
         var serverAuth = new FlowNoteServerAuthClient(serverHttpClient);
         var serverDocuments = new FlowNoteServerDocumentClient(serverHttpClient);
+        var serverChannels = new FlowNoteServerChannelClient(serverHttpClient);
 
         ServerLoginResponse serverLogin;
         {
@@ -1727,6 +1728,135 @@ try
                 serverStatusCandidate!.CandidateId,
                 new ServerWorkSequenceNotificationCandidateStatusRequest { Status = "SENT" });
             Require(sentServerCandidate.Status == "SENT", "server work sequence notification candidate should be markable as SENT");
+        }
+
+        {
+            var channel = await serverChannels.CreateChannelAsync(
+                new ServerNotificationChannelCreateRequest
+                {
+                    Name = $"Windows 채널 수신함 스모크 {runStamp}",
+                    Description = "Windows 채널 수신함과 인수인계 확인 현황 스모크 테스트 채널",
+                    ChannelType = "HANDOVER",
+                    SourceType = "HANDOVER",
+                    SourceId = $"windows-smoke-{runId}"
+                });
+            Require(!string.IsNullOrWhiteSpace(channel.ChannelId), "server channel should receive an id");
+            Require(channel.ChannelType == "HANDOVER", "server channel should keep the handover channel type");
+
+            var myChannels = await serverChannels.ListChannelsAsync(status: "ACTIVE");
+            Require(
+                myChannels.Any(item => item.ChannelId == channel.ChannelId),
+                "Windows channel inbox should list channels for the current user");
+
+            var channelMembers = await serverChannels.ListChannelMembersAsync(channel.ChannelId);
+            Require(
+                channelMembers.Any(item => item.UserId == serverLogin.UserId && item.MemberRole == "OWNER"),
+                "channel creator should be listed as an owner member");
+
+            var message = await serverChannels.CreateChannelMessageAsync(
+                channel.ChannelId,
+                new ServerChannelMessageCreateRequest
+                {
+                    MessageType = "WORK_SEQUENCE_EVENT",
+                    SourceType = "WORK_SEQUENCE_ITEM",
+                    SourceId = $"wseqitem-{runId}",
+                    Title = $"Windows 채널 메시지 {runStamp}",
+                    Body = "작업순서 이벤트 원천 링크 표시 검증"
+                });
+            Require(message.SourceType == "WORK_SEQUENCE_ITEM", "channel message should keep the source type");
+            Require(message.SourceLinkText.Contains($"wseqitem-{runId}", StringComparison.Ordinal), "channel message should expose the source link text");
+
+            var inboxNotifications = await serverChannels.ListMyNotificationsAsync();
+            Require(
+                inboxNotifications.Any(item => item.MessageId == message.MessageId && !item.Read),
+                "Windows channel inbox should query unread messages for my channels");
+
+            var readNotification = await serverChannels.MarkNotificationReadAsync(message.MessageId);
+            Require(readNotification.Read, "Windows channel inbox should mark a selected channel message as read");
+
+            var handover = await serverChannels.CreateHandoverAsync(
+                new ServerHandoverCreateRequest
+                {
+                    ChannelId = channel.ChannelId,
+                    Title = $"Windows 인수인계 {runStamp}",
+                    Body = "수신자별 읽음, 확인, 후속 필요 상태 검증",
+                    SourceType = "WORK_SEQUENCE_ITEM",
+                    SourceId = $"wseqitem-{runId}",
+                    RecipientIds = [serverLogin.UserId]
+                });
+            Require(handover.Receipts.Count == 1, "server handover should create one receipt for the recipient");
+            var receipt = handover.Receipts.Single();
+            Require(receipt.ReceiptStatus == "UNREAD", "new handover receipt should start unread");
+
+            var readHandover = await serverChannels.UpdateHandoverReceiptAsync(
+                handover.HandoverId,
+                receipt.ReceiptId,
+                new ServerHandoverReceiptUpdateRequest
+                {
+                    ReceiptStatus = "READ",
+                    Note = "Windows 스모크 읽음 처리"
+                });
+            Require(
+                readHandover.Receipts.Single().ReceiptStatus == "READ",
+                "Windows handover status screen should change a receipt to read");
+
+            var heldHandover = await serverChannels.UpdateHandoverReceiptAsync(
+                handover.HandoverId,
+                receipt.ReceiptId,
+                new ServerHandoverReceiptUpdateRequest
+                {
+                    ReceiptStatus = "UNREAD",
+                    Note = "Windows 스모크 보류 처리"
+                });
+            Require(
+                heldHandover.Receipts.Single().ReceiptStatus == "UNREAD",
+                "Windows handover status screen should change a receipt to hold");
+
+            var acknowledgedHandover = await serverChannels.UpdateHandoverReceiptAsync(
+                handover.HandoverId,
+                receipt.ReceiptId,
+                new ServerHandoverReceiptUpdateRequest
+                {
+                    ReceiptStatus = "ACKNOWLEDGED",
+                    Note = "Windows 스모크 확인 처리"
+                });
+            Require(
+                acknowledgedHandover.Receipts.Single().ReceiptStatus == "ACKNOWLEDGED",
+                "Windows handover status screen should change a receipt to acknowledged");
+
+            var followUpHandover = await serverChannels.UpdateHandoverReceiptAsync(
+                handover.HandoverId,
+                receipt.ReceiptId,
+                new ServerHandoverReceiptUpdateRequest
+                {
+                    ReceiptStatus = "FOLLOW_UP_REQUIRED",
+                    Note = "Windows 스모크 후속 필요 처리"
+                });
+            Require(
+                followUpHandover.Status == "FOLLOW_UP_REQUIRED",
+                "Windows handover status screen should expose follow-up-required handover state");
+            Require(
+                followUpHandover.Receipts.Single().ReceiptStatus == "FOLLOW_UP_REQUIRED",
+                "Windows handover status screen should change a receipt to follow-up required");
+
+            var followUpFieldComment = await serverChannels.CreateHandoverFollowUpFieldCommentAsync(
+                followUpHandover,
+                "Windows 스모크에서 원천 인수인계와 연결한 후속 FieldComment입니다.",
+                serverLogin.UserId);
+            Require(
+                followUpFieldComment.WorkRecordId == followUpHandover.HandoverId,
+                "handover follow-up FieldComment should keep the source handover id as a traceable work record id");
+            Require(
+                followUpFieldComment.EntrySource == "handover_follow_up",
+                "handover follow-up FieldComment should keep a traceable entry source");
+
+            var messagesAfterFollowUp = await serverChannels.ListChannelMessagesAsync(channel.ChannelId);
+            Require(
+                messagesAfterFollowUp.Any(item =>
+                    item.SourceType == "FIELD_COMMENT" &&
+                    item.SourceId == followUpFieldComment.CommentId &&
+                    (item.Body ?? string.Empty).Contains(followUpHandover.HandoverId, StringComparison.Ordinal)),
+                "handover follow-up should create a channel event linking the FieldComment back to the source handover");
         }
 
         var queuedRetryResult = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);

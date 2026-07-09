@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private readonly LoginResult currentUser;
     private readonly HttpClient? serverHttpClient;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
+    private readonly FlowNoteServerChannelClient? serverChannelClient;
     private readonly bool canRegisterDocuments;
     private readonly bool canManageFileWatch;
     private readonly bool canWriteReports;
@@ -39,7 +40,7 @@ public partial class MainWindow : Window
         canWriteReports = RolePermissionPolicy.CanWriteReports(currentUser.Role);
         canManageUsers = RolePermissionPolicy.CanManageUsers(currentUser.Role);
         currentDisplayName = currentUser.DisplayName ?? currentUser.LoginId ?? "admin";
-        (serverDocumentClient, serverHttpClient) = CreateServerDocumentClient(currentUser);
+        (serverDocumentClient, serverChannelClient, serverHttpClient) = CreateServerClients(currentUser);
         SignedInUserTextBlock.Text = $"{currentDisplayName} ({FormatUserRole(currentUser.Role)})";
         DataContext = workspace;
         ApplyRolePermissions();
@@ -179,6 +180,43 @@ public partial class MainWindow : Window
         };
         window.ShowDialog();
         RefreshNotificationButton();
+    }
+
+    private void ChannelInboxButton_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new ChannelInboxWindow(serverChannelClient, GetCurrentUserId())
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+    }
+
+    private void ChannelManagementButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureChannelManagementAllowed())
+        {
+            return;
+        }
+
+        var window = new ChannelManagementWindow(serverChannelClient)
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+    }
+
+    private void HandoverStatusButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureChannelManagementAllowed())
+        {
+            return;
+        }
+
+        var window = new HandoverStatusWindow(serverChannelClient, GetCurrentUserId())
+        {
+            Owner = this
+        };
+        window.ShowDialog();
     }
 
     private void HistoryButton_Click(object sender, RoutedEventArgs e)
@@ -639,6 +677,8 @@ public partial class MainWindow : Window
         RegisterDocumentButton.IsEnabled = canRegisterDocuments;
         UploadFileButton.IsEnabled = canRegisterDocuments;
         WorkSequenceAdminButton.IsEnabled = canRegisterDocuments;
+        ChannelManagementButton.IsEnabled = canRegisterDocuments;
+        HandoverStatusButton.IsEnabled = canRegisterDocuments;
         FieldCommentReviewButton.IsEnabled = canWriteReports;
         ReportDraftButton.IsEnabled = canWriteReports;
         AISearchQualityButton.IsEnabled = canWriteReports;
@@ -654,6 +694,8 @@ public partial class MainWindow : Window
             RegisterDocumentButton.ToolTip = noDocumentWritePermission;
             UploadFileButton.ToolTip = noDocumentWritePermission;
             WorkSequenceAdminButton.ToolTip = noDocumentWritePermission;
+            ChannelManagementButton.ToolTip = "채널 관리는 관리자/반장/조장 이상 권한에서 사용할 수 있습니다.";
+            HandoverStatusButton.ToolTip = "인수인계 확인 현황은 관리자/반장/조장 이상 권한에서 사용할 수 있습니다.";
             ApplyDocumentStatusButton.ToolTip = noDocumentWritePermission;
             PublishDocumentButton.ToolTip = noDocumentWritePermission;
             DocumentStatusComboBox.ToolTip = noDocumentWritePermission;
@@ -703,6 +745,17 @@ public partial class MainWindow : Window
         }
 
         workspace.StatusText = "보고서 작성 권한이 없습니다. 관리자/문서관리/부서관리 권한에서만 사용할 수 있습니다.";
+        return false;
+    }
+
+    private bool EnsureChannelManagementAllowed()
+    {
+        if (canRegisterDocuments)
+        {
+            return true;
+        }
+
+        workspace.StatusText = "채널 관리와 인수인계 확인 현황은 관리자/반장/조장 이상 권한에서 사용할 수 있습니다.";
         return false;
     }
 
@@ -787,22 +840,30 @@ public partial class MainWindow : Window
         return services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.DocumentsFolderName);
     }
 
-    private static (FlowNoteServerDocumentClient? Client, HttpClient? HttpClient) CreateServerDocumentClient(LoginResult currentUser)
+    private static (
+        FlowNoteServerDocumentClient? DocumentClient,
+        FlowNoteServerChannelClient? ChannelClient,
+        HttpClient? HttpClient) CreateServerClients(LoginResult currentUser)
     {
         var httpClient = FlowNoteServerApiEnvironment.CreateHttpClientFromEnvironment();
         if (httpClient is null || string.IsNullOrWhiteSpace(currentUser.AccessToken))
         {
             httpClient?.Dispose();
-            return (null, null);
+            return (null, null, null);
         }
 
         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", currentUser.AccessToken);
-        return (new FlowNoteServerDocumentClient(httpClient), httpClient);
+        return (new FlowNoteServerDocumentClient(httpClient), new FlowNoteServerChannelClient(httpClient), httpClient);
     }
 
     private string GetCurrentActorName()
     {
         return currentDisplayName;
+    }
+
+    private string GetCurrentUserId()
+    {
+        return currentUser.UserId ?? currentUser.LoginId ?? GetCurrentActorName();
     }
 
     private void RefreshNotificationButton()
