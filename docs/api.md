@@ -6,7 +6,7 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 
 | Method | Path | 설명 |
 | --- | --- | --- |
-| POST | `/api/v1/auth/login` | 사용자명/비밀번호 로그인, access token과 refresh token 발급 |
+| POST | `/api/v1/auth/login` | 사용자명/비밀번호 로그인, access token과 refresh token 발급. Android는 승인 단말 `deviceId`를 함께 전송 |
 | POST | `/api/v1/auth/refresh` | refresh token 검증 후 같은 세션의 access/refresh token 회전 |
 | POST | `/api/v1/auth/logout` | 현재 access token 세션을 `REVOKED`로 변경 |
 | GET | `/api/v1/auth/me` | 현재 Bearer token 사용자 정보 조회 |
@@ -18,11 +18,13 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 운영 기준:
 
 - 서버 로그인은 서버 `user_accounts`의 `is_active`와 `status = ACTIVE`를 모두 만족해야 한다.
+- Android 현장 단말 로그인은 `deviceId`가 `terminal_devices.device_id`에 존재하고 `status = ACTIVE`여야 한다. 승인되지 않았거나 비활성 단말이면 403을 반환한다.
 - 서버 로그인 성공 시 WPF는 서버 응답의 사용자 ID, 표시 이름, role을 현재 세션 기준으로 사용한다.
 - 서버가 로그인 요청에 401 또는 403을 반환하면 WPF는 로컬 계정 로그인으로 우회하지 않는다.
 - 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 WPF 로컬 계정 로그인을 사용한다.
 - 서버 계정 운영 스크립트의 `create`, `reset-password`, `set-status`, `set-role` 경로는 `services/api/tests/test_server_account_ops.py`로 검증한다.
 - refresh는 같은 `auth_sessions` row에서 access token ID와 refresh token hash를 회전한다. 이전 access token과 이전 refresh token은 거부된다.
+- Android가 `deviceId`로 로그인한 세션은 `auth_sessions.device_id`에 승인 단말 ID를 보존한다. refresh는 같은 세션의 단말 ID를 유지한다.
 - logout은 현재 세션을 `REVOKED`로 바꾸며 이후 같은 access token은 거부된다.
 - WPF 서버 동기화 중 인증 만료, 토큰 교체, logout 폐기가 확인되면 `로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인하세요. 로컬 데이터는 삭제되지 않습니다.` 문구를 표시하고 로컬 데이터와 동기화 큐를 삭제하지 않는다.
 

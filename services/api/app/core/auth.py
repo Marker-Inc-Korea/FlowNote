@@ -158,6 +158,7 @@ def create_auth_session(
     account: UserAccount,
     settings: Settings,
     db_session: Session,
+    device_id: str | None = None,
     now: datetime | None = None,
 ) -> tuple[AuthSession, IssuedAuthTokens]:
     issued_at = now or datetime.now(timezone.utc)
@@ -165,6 +166,7 @@ def create_auth_session(
     auth_session = AuthSession(
         session_id=tokens.session_id,
         user_id=account.user_id,
+        device_id=device_id,
         access_token_id=tokens.access_token_id,
         refresh_token_hash=hash_refresh_token(tokens.refresh_token),
         status="ACTIVE",

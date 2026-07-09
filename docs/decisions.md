@@ -167,3 +167,15 @@
 - 인수인계 receipt는 수신자별 `UNREAD`, `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`를 기록한다.
 - 서버 API는 채널 멤버 또는 `admin`, `system-admin`만 채널 메시지와 인수인계를 조회할 수 있게 한다.
 - 개인 DM, 개인 메신저 수집, GPS, 근태 기능은 서버 채널/인수인계 모델에 포함하지 않는다.
+
+## 2026-07-09. Android 현장 단말 최소 스캐폴딩
+
+- Android 현장 앱은 Java, Android 네이티브 View, Gradle Android plugin을 최소 기술 스택으로 시작한다.
+- 최소 OS는 Android 8.0(API 26)으로 둔다. 초기 현장 대상은 승인된 태블릿 또는 러기드 단말이며 개인 휴대폰 기본 배포는 제외한다.
+- 패키지는 `com.flownote.fieldapp`를 사용한다.
+- Android 로그인은 서버 `/api/v1/auth/login`에 `deviceId`를 보내며, 서버 `terminal_devices.status = ACTIVE`인 승인 단말만 세션을 받을 수 있다.
+- 서버 세션은 Android 승인 단말 ID를 `auth_sessions.device_id`에 보존한다.
+- Android 로컬 저장은 장기 원천 DB가 아니라 FieldComment와 사진 첨부 재전송용 outbox로 제한한다.
+- FieldComment 재전송은 `android:{deviceId}:{localId}` idempotency key를 사용해 서버 중복 생성을 막는다.
+- 채널 알림과 인수인계는 새 개인 메시지 체계가 아니라 서버 공통 채널/인수인계 API 조회, 읽음, 수신확인으로 붙인다.
+- GPS 추적, 근태 관리, 개인 메신저 수집, 사내 메신저 전체 대체는 Android 앱 초기 범위에 포함하지 않는다.

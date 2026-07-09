@@ -4,10 +4,11 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.core.config import Settings
 from app.db.init_db import hash_password_for_dev
-from app.db.models import UserAccount
+from app.db.models import AuthSession, TerminalDevice, UserAccount
 from app.main import create_app
 
 
@@ -54,6 +55,27 @@ def create_login_user(
     return account
 
 
+def create_terminal_device(
+    client: TestClient,
+    *,
+    status: str = "ACTIVE",
+    device_id: str | None = None,
+) -> TerminalDevice:
+    suffix = uuid4().hex
+    terminal = TerminalDevice(
+        device_id=device_id or f"android-terminal-{suffix}",
+        device_name=f"현장 단말 {suffix[:8]}",
+        device_mode="viewer",
+        location_code="line-a",
+        status=status,
+    )
+    with client.app.state.database.session() as session:
+        session.add(terminal)
+        session.commit()
+        session.refresh(terminal)
+    return terminal
+
+
 def test_login_returns_mvp_user_payload_with_access_token() -> None:
     with create_test_client() as client:
         account = create_login_user(client)
@@ -69,11 +91,68 @@ def test_login_returns_mvp_user_payload_with_access_token() -> None:
     assert payload["username"] == account.username
     assert payload["role"] == "viewer"
     assert payload["display_name"] == "Login Test User"
+    assert payload["device_id"] is None
     assert payload["token_type"] == "Bearer"
     assert payload["access_token"]
     assert payload["expires_at"]
     assert payload["refresh_token"]
     assert payload["refresh_expires_at"]
+
+
+def test_login_accepts_approved_android_terminal_device_and_stores_session_device() -> None:
+    with create_test_client() as client:
+        account = create_login_user(client)
+        terminal = create_terminal_device(client)
+
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": account.username,
+                "password": "correct-password",
+                "deviceId": terminal.device_id,
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["device_id"] == terminal.device_id
+        with client.app.state.database.session() as session:
+            terminal_row = session.scalar(
+                select(TerminalDevice).where(TerminalDevice.device_id == terminal.device_id)
+            )
+            assert terminal_row is not None
+            assert terminal_row.last_seen_at is not None
+            assert session.scalar(
+                select(AuthSession).where(AuthSession.device_id == terminal.device_id)
+            ) is not None
+
+
+def test_login_rejects_unknown_or_inactive_android_terminal_device() -> None:
+    with create_test_client() as client:
+        account = create_login_user(client)
+        inactive_terminal = create_terminal_device(client, status="INACTIVE")
+
+        unknown_response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": account.username,
+                "password": "correct-password",
+                "deviceId": f"missing-{uuid4().hex}",
+            },
+        )
+        inactive_response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": account.username,
+                "password": "correct-password",
+                "deviceId": inactive_terminal.device_id,
+            },
+        )
+
+    assert unknown_response.status_code == 403
+    assert unknown_response.json()["detail"] == "Terminal device is not approved or active."
+    assert inactive_response.status_code == 403
+    assert inactive_response.json()["detail"] == "Terminal device is not approved or active."
 
 
 def test_me_returns_current_user_for_bearer_token() -> None:
