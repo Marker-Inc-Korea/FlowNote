@@ -3172,6 +3172,346 @@ try
             Require(
                 serverReportCountAfterDuplicateRetry == serverReportCountBeforeDuplicateRetry,
                 "repeated report retry should not create a duplicate server report");
+
+            var aiServerEvidenceFile = Path.Combine(testDirectory, $"server-ai-quality-evidence-{runId}.txt");
+            File.WriteAllText(
+                aiServerEvidenceFile,
+                """
+                서버 AI 근거 후보 품질 스모크용 공개 문서입니다.
+                설비: line-a press
+                공정: mixed press alignment
+                검증 범위: 공개 문서, 검토 FieldComment, 작업순서 이력, 보고서 source
+                """,
+                Encoding.UTF8);
+            var aiServerDocument = await serverDocuments.RegisterDocumentAsync(
+                aiServerEvidenceFile,
+                $"서버 AI 근거 후보 스모크 작업표준 {runStamp}",
+                "work_instruction",
+                "서버 AI 후보 품질 스모크 문서 등록",
+                description: "서버 DB 기준 AI 후보 품질과 역추적성을 검증하는 공개 문서입니다.",
+                createdBy: serverLogin.UserId,
+                tags: ["ai-quality-smoke", "line-a", "field-comment", "work-sequence"]);
+            var aiServerPublishedDocument = await serverDocuments.PublishVersionAsync(
+                aiServerDocument.DocumentId,
+                aiServerDocument.LatestVersion!.VersionId,
+                "AI 근거 후보 품질 검증용 공개 버전 지정");
+            var aiServerPublishedVersion = aiServerPublishedDocument.PublishedVersion
+                ?? throw new InvalidOperationException("AI quality smoke document should have a published version");
+
+            var aiServerAnalyzedComment = await serverDocuments.RegisterFieldCommentAsync(
+                new ServerFieldCommentCreateRequest
+                {
+                    DocumentId = aiServerPublishedDocument.DocumentId,
+                    DocumentVersionId = aiServerPublishedVersion.VersionId,
+                    CommentType = "issue",
+                    InputMode = "free_text",
+                    SignalLevel = "yellow",
+                    RawContent = $"서버 AI 품질 스모크 분석완료 FieldComment run={runId}: 정렬 지연 2회 후 가이드핀 청소로 정상화.",
+                    AuthorId = serverLogin.UserId,
+                    ReportedBy = "서버 스모크 조장",
+                    OperatorId = "서버 스모크 작업조",
+                    EntrySource = "field_user",
+                    DeviceId = "server-smoke-ai-01",
+                    LocationCode = "line-a",
+                    Category = "alignment-delay",
+                    IdempotencyKey = $"wpf-smoke-ai-analyzed-{runId}"
+                });
+            aiServerAnalyzedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
+                aiServerAnalyzedComment.CommentId,
+                new ServerFieldCommentReviewRequest
+                {
+                    Status = "ANALYZED",
+                    NormalizedContent = "정렬 지연은 가이드핀 청소 후 정상화됨.",
+                    AnalysisContent = "공정 전 청소 기준을 공개 작업표준과 연결해 재발 여부를 추적한다.",
+                    AnalyzedBy = serverLogin.UserId
+                });
+
+            var aiServerReviewedComment = await serverDocuments.RegisterFieldCommentAsync(
+                new ServerFieldCommentCreateRequest
+                {
+                    DocumentId = aiServerPublishedDocument.DocumentId,
+                    DocumentVersionId = aiServerPublishedVersion.VersionId,
+                    CommentType = "experience",
+                    InputMode = "template_with_text",
+                    SignalLevel = "green",
+                    RawContent = $"서버 AI 품질 스모크 검토완료 FieldComment run={runId}: 소재 대기 중 보류 발생, 다음 조 인수인계 필요.",
+                    AuthorId = serverLogin.UserId,
+                    ReportedBy = "서버 스모크 조원",
+                    OperatorId = "서버 스모크 작업조",
+                    EntrySource = "field_user",
+                    DeviceId = "server-smoke-ai-02",
+                    LocationCode = "line-a",
+                    Category = "handover",
+                    IdempotencyKey = $"wpf-smoke-ai-reviewed-{runId}"
+                });
+            aiServerReviewedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
+                aiServerReviewedComment.CommentId,
+                new ServerFieldCommentReviewRequest
+                {
+                    Status = "REVIEWED",
+                    NormalizedContent = "보류 발생 사항은 다음 조 인수인계 대상으로 분류됨.",
+                    AnalysisContent = "보류 사유와 전달 누락 여부를 보고서 근거로 남긴다.",
+                    ReviewedBy = serverLogin.UserId,
+                    AnalyzedBy = serverLogin.UserId
+                });
+
+            var aiServerSelectedComment = await serverDocuments.RegisterFieldCommentAsync(
+                new ServerFieldCommentCreateRequest
+                {
+                    DocumentId = aiServerPublishedDocument.DocumentId,
+                    DocumentVersionId = aiServerPublishedVersion.VersionId,
+                    CommentType = "issue",
+                    InputMode = "free_text",
+                    SignalLevel = "red",
+                    RawContent = $"서버 AI 품질 스모크 선정 FieldComment run={runId}: 센서 재영점 절차 누락 위험.",
+                    AuthorId = serverLogin.UserId,
+                    ReportedBy = "서버 스모크 반장",
+                    OperatorId = "서버 스모크 작업조",
+                    EntrySource = "field_user",
+                    DeviceId = "server-smoke-ai-03",
+                    LocationCode = "line-a",
+                    Category = "sensor-zeroing",
+                    IdempotencyKey = $"wpf-smoke-ai-selected-{runId}"
+                });
+            aiServerSelectedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
+                aiServerSelectedComment.CommentId,
+                new ServerFieldCommentReviewRequest
+                {
+                    Status = "SELECTED",
+                    NormalizedContent = "센서 재영점 절차 누락 위험을 관리자 검토 대상으로 선정함.",
+                    AnalysisContent = "AI 검색 후보에서 절차 누락 위험 사례로 역추적 가능해야 한다.",
+                    ReviewedBy = serverLogin.UserId,
+                    AnalyzedBy = serverLogin.UserId
+                });
+
+            var aiServerExcludedComment = await serverDocuments.RegisterFieldCommentAsync(
+                new ServerFieldCommentCreateRequest
+                {
+                    DocumentId = aiServerPublishedDocument.DocumentId,
+                    DocumentVersionId = aiServerPublishedVersion.VersionId,
+                    CommentType = "issue",
+                    InputMode = "free_text",
+                    RawContent = $"서버 AI 품질 스모크 제외 FieldComment run={runId}",
+                    AuthorId = serverLogin.UserId,
+                    EntrySource = "field_user",
+                    IdempotencyKey = $"wpf-smoke-ai-excluded-{runId}"
+                });
+            _ = await serverDocuments.UpdateFieldCommentReviewAsync(
+                aiServerExcludedComment.CommentId,
+                new ServerFieldCommentReviewRequest
+                {
+                    Status = "EXCLUDED",
+                    NormalizedContent = "AI 후보 제외 사유 검증용 기록",
+                    AnalysisContent = "관리자가 보고서 근거로 사용하지 않기로 결정한 항목",
+                    ReviewedBy = serverLogin.UserId
+                });
+
+            var aiServerMesComment = await serverDocuments.RegisterFieldCommentAsync(
+                new ServerFieldCommentCreateRequest
+                {
+                    DocumentId = aiServerPublishedDocument.DocumentId,
+                    DocumentVersionId = aiServerPublishedVersion.VersionId,
+                    CommentType = "issue",
+                    InputMode = "mes_integration",
+                    RawContent = $"서버 AI 품질 스모크 MES 입력 제외 FieldComment run={runId}",
+                    AuthorId = serverLogin.UserId,
+                    EntrySource = "mes_integration",
+                    IdempotencyKey = $"wpf-smoke-ai-mes-{runId}"
+                });
+
+            var aiServerBoard = await serverDocuments.CreateWorkSequenceBoardAsync(
+                new ServerWorkSequenceBoardCreateRequest
+                {
+                    Title = $"서버 AI 후보 작업순서 {runStamp}",
+                    Description = "AI 후보 품질 검증용 작업순서 이력",
+                    LineCode = "line-a",
+                    BoardDate = DateOnly.FromDateTime(DateTime.Today),
+                    CreatedBy = serverLogin.UserId
+                });
+            var aiServerBoardWithFirstItem = await serverDocuments.AddWorkSequenceItemAsync(
+                aiServerBoard.BoardId,
+                new ServerWorkSequenceItemCreateRequest
+                {
+                    Title = $"가이드핀 청소 확인 {runStamp}",
+                    DocumentId = aiServerPublishedDocument.DocumentId,
+                    AssignedTo = "line-a",
+                    CreatedBy = serverLogin.UserId
+                });
+            var aiServerFirstItem = aiServerBoardWithFirstItem.Items.Single();
+            var aiServerBoardWithSecondItem = await serverDocuments.AddWorkSequenceItemAsync(
+                aiServerBoard.BoardId,
+                new ServerWorkSequenceItemCreateRequest
+                {
+                    Title = $"센서 재영점 확인 {runStamp}",
+                    DocumentId = aiServerPublishedDocument.DocumentId,
+                    AssignedTo = "line-a",
+                    CreatedBy = serverLogin.UserId
+                });
+            var aiServerSecondItem = aiServerBoardWithSecondItem.Items.Single(item => item.ItemId != aiServerFirstItem.ItemId);
+            _ = await serverDocuments.ReorderWorkSequenceItemsAsync(
+                aiServerBoard.BoardId,
+                new ServerWorkSequenceReorderRequest
+                {
+                    ItemIds = [aiServerSecondItem.ItemId, aiServerFirstItem.ItemId],
+                    ActorId = serverLogin.UserId,
+                    ChangeReason = "AI 후보 품질 스모크에서 작업 우선순위를 재정렬함."
+                });
+            _ = await serverDocuments.UpdateWorkSequenceItemStatusAsync(
+                aiServerBoard.BoardId,
+                aiServerSecondItem.ItemId,
+                new ServerWorkSequenceStatusUpdateRequest
+                {
+                    Status = "IN_PROGRESS",
+                    ActorId = serverLogin.UserId,
+                    ChangeReason = "AI 후보 품질 스모크에서 센서 재영점 확인을 착수함."
+                });
+            var aiServerHistory = await serverDocuments.ListWorkSequenceHistoryAsync(aiServerBoard.BoardId);
+            var aiServerTraceHistory = aiServerHistory.First(item =>
+                item.ChangeType == "STATUS_CHANGED" &&
+                item.ItemId == aiServerSecondItem.ItemId &&
+                !string.IsNullOrWhiteSpace(item.ChangeReason));
+
+            var aiServerReport = await serverDocuments.SaveReportAsync(
+                new ServerReportSaveRequest
+                {
+                    IdempotencyKey = $"wpf-smoke-ai-quality-report-{runId}",
+                    ReportType = "field_review",
+                    Title = $"서버 AI 근거 후보 품질 보고서 {runStamp}",
+                    Summary = "공개 문서, 검토 FieldComment, 작업순서 이력을 보고서 근거로 묶어 AI 후보 역추적성을 검증한다.",
+                    AnalysisContent = "외부 AI 호출 없이 서버 read model 후보 품질만 검증한다.",
+                    Conclusion = "후보 source_type과 trace 값이 모두 원천 row로 역추적 가능해야 한다.",
+                    ActionPlan = "품질 점검 화면에서 부족분과 제외 사유를 운영 조치로 확인한다.",
+                    Sources =
+                    [
+                        new ServerReportSourceRequest
+                        {
+                            SourceType = "FIELD_COMMENT",
+                            SourceId = aiServerSelectedComment.CommentId,
+                            RelationType = "primary"
+                        },
+                        new ServerReportSourceRequest
+                        {
+                            SourceType = "FIELD_COMMENT",
+                            SourceId = aiServerReviewedComment.CommentId,
+                            RelationType = "reviewed"
+                        },
+                        new ServerReportSourceRequest
+                        {
+                            SourceType = "DOCUMENT",
+                            SourceId = aiServerPublishedDocument.DocumentId,
+                            SourceVersionId = aiServerPublishedVersion.VersionId,
+                            RelationType = "published_document"
+                        },
+                        new ServerReportSourceRequest
+                        {
+                            SourceType = "WORK_SEQUENCE_HISTORY",
+                            SourceId = aiServerTraceHistory.ChangeId,
+                            RelationType = "work_sequence_history"
+                        }
+                    ],
+                    SaveAsDocument = true,
+                    DocumentTitle = $"서버 AI 근거 후보 품질 보고서 문서 {runStamp}",
+                    DocumentStatus = "PUBLISHED"
+                });
+            Require(aiServerReport.Sources.Count == 4, "AI quality report should save four report_sources rows");
+            Require(
+                aiServerReport.GeneratedDocument?.Status == "PUBLISHED",
+                "AI quality report generated document should be published for candidate quality");
+
+            var aiRebuild = await serverDocuments.RebuildAISearchCandidatesAsync();
+            foreach (var sourceType in new[]
+                     {
+                         "PUBLISHED_DOCUMENT_VERSION",
+                         "FIELD_COMMENT",
+                         "WORK_SEQUENCE_HISTORY",
+                         "REPORT_SOURCE"
+                     })
+            {
+                Require(
+                    aiRebuild.CountsBySourceType.TryGetValue(sourceType, out var count) && count > 0,
+                    $"AI search rebuild should include {sourceType} candidates");
+            }
+
+            Require(
+                aiRebuild.ExcludedCountsByReason.TryGetValue("field_comment_excluded_status", out var excludedCount) &&
+                excludedCount >= 1,
+                "AI search rebuild should count excluded FieldComments");
+            Require(
+                aiRebuild.ExcludedCountsByReason.TryGetValue("field_comment_mes_integration", out var mesCount) &&
+                mesCount >= 1,
+                "AI search rebuild should count MES integration FieldComments as excluded");
+            Require(
+                aiRebuild.ExcludedReasonGuidance.Values.All(item =>
+                    !string.IsNullOrWhiteSpace(item.Label) &&
+                    !string.IsNullOrWhiteSpace(item.OperatorAction)),
+                "AI search excluded reasons should include Korean operator guidance");
+
+            var aiQuality = await serverDocuments.GetAISearchQualityAsync();
+            var readiness = aiQuality.FieldCommentReviewReadiness;
+            Require(
+                CountOrZero(readiness.CountsByStatus, "ANALYZED") >= 1 &&
+                CountOrZero(readiness.CountsByStatus, "REVIEWED") >= 1 &&
+                CountOrZero(readiness.CountsByStatus, "SELECTED") >= 1,
+                "server FieldComment readiness should include ANALYZED, REVIEWED, and SELECTED rows");
+            Require(
+                readiness.MissingReviewedCount == Math.Max(readiness.RequiredReviewedCount - readiness.ReviewedStatusCount, 0),
+                "server FieldComment readiness gap should match the 100 reviewed comment threshold");
+            Require(
+                aiQuality.ExcludedReasonGuidance["field_comment_excluded_status"].OperatorAction.Contains("검토", StringComparison.Ordinal) &&
+                aiQuality.ExcludedReasonGuidance["field_comment_mes_integration"].OperatorAction.Contains("축적", StringComparison.Ordinal),
+                "AI quality guidance should present Korean operating actions");
+
+            var aiDocumentCandidates = await serverDocuments.ListAISearchCandidatesAsync(
+                "PUBLISHED_DOCUMENT_VERSION",
+                aiServerPublishedDocument.DocumentId,
+                limit: 500);
+            var aiDocumentCandidate = aiDocumentCandidates.Single(item =>
+                item.SourceId == aiServerPublishedDocument.DocumentId &&
+                item.SourceVersionId == aiServerPublishedVersion.VersionId);
+            Require(
+                aiDocumentCandidate.TraceTable == "document_versions" &&
+                aiDocumentCandidate.TraceId == aiServerPublishedDocument.DocumentId &&
+                aiDocumentCandidate.TraceVersionId == aiServerPublishedVersion.VersionId,
+                "published document candidate should trace to document_versions by document_id and version_id");
+
+            var aiCommentCandidates = await serverDocuments.ListAISearchCandidatesAsync("FIELD_COMMENT", limit: 500);
+            var analyzedCommentCandidate = aiCommentCandidates.Single(item => item.SourceId == aiServerAnalyzedComment.CommentId);
+            var reviewedCommentCandidate = aiCommentCandidates.Single(item => item.SourceId == aiServerReviewedComment.CommentId);
+            var selectedCommentCandidate = aiCommentCandidates.Single(item => item.SourceId == aiServerSelectedComment.CommentId);
+            Require(
+                analyzedCommentCandidate.TraceTable == "field_comments" &&
+                reviewedCommentCandidate.TraceTable == "field_comments" &&
+                selectedCommentCandidate.TraceTable == "field_comments",
+                "reviewed FieldComment candidates should trace to field_comments rows");
+            Require(
+                analyzedCommentCandidate.ReviewStatus == "ANALYZED" &&
+                reviewedCommentCandidate.ReviewStatus == "REVIEWED" &&
+                selectedCommentCandidate.ReviewStatus == "SELECTED",
+                "reviewed FieldComment candidates should preserve review statuses");
+            Require(
+                aiCommentCandidates.All(item => item.SourceId != aiServerExcludedComment.CommentId && item.SourceId != aiServerMesComment.CommentId),
+                "excluded and MES FieldComments should not become AI search candidates");
+
+            var aiHistoryCandidates = await serverDocuments.ListAISearchCandidatesAsync(
+                "WORK_SEQUENCE_HISTORY",
+                aiServerTraceHistory.ChangeId,
+                limit: 500);
+            var aiHistoryCandidate = aiHistoryCandidates.Single(item => item.SourceId == aiServerTraceHistory.ChangeId);
+            Require(
+                aiHistoryCandidate.TraceTable == "work_sequence_change_history" &&
+                aiHistoryCandidate.TraceId == aiServerTraceHistory.ChangeId,
+                "work sequence candidate should trace to work_sequence_change_history");
+
+            var aiReportSourceCandidates = await serverDocuments.ListAISearchCandidatesAsync("REPORT_SOURCE", limit: 500);
+            var aiReportSourceCandidate = aiReportSourceCandidates.First(item =>
+                item.ParentId == aiServerReport.ReportId &&
+                item.TraceTable == "report_sources");
+            Require(
+                aiReportSourceCandidate.SourceId == aiReportSourceCandidate.TraceId &&
+                int.TryParse(aiReportSourceCandidate.TraceId, out _),
+                "report source candidate should trace to a report_sources row id");
+            Console.WriteLine(
+                $"AI search quality server smoke: candidates={aiRebuild.CandidateCount}, reviewed={readiness.ReviewedStatusCount}, missing={readiness.MissingReviewedCount}, report={aiServerReport.ReportId}");
         }
 
         {
@@ -3344,6 +3684,11 @@ static void ExecuteNonQuery(SqliteConnection connection, string sql, params (str
     }
 
     command.ExecuteNonQuery();
+}
+
+static int CountOrZero(IReadOnlyDictionary<string, int> counts, string key)
+{
+    return counts.TryGetValue(key, out var count) ? count : 0;
 }
 
 static void AssertRolePolicy(string? role, RolePolicyExpectation expected, string context)
