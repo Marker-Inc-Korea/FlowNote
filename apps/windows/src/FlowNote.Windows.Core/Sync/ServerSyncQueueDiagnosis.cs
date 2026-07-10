@@ -25,6 +25,26 @@ public static class ServerSyncQueueDiagnostics
                 false);
         }
 
+        if (IsLegacyFieldNote(entityType, action, lastError ?? string.Empty))
+        {
+            return new ServerSyncQueueDiagnosis(
+                "구 FieldNote 큐",
+                80,
+                "80 별도 정리",
+                "구 FieldNote 큐는 현재 FieldComment 동기화 대상이 아닙니다. 관리자 검토 후 FieldComment 전환 또는 별도 마이그레이션으로 정리하세요.",
+                true);
+        }
+
+        if (IsLegacyCreateAction(action, lastError ?? string.Empty))
+        {
+            return new ServerSyncQueueDiagnosis(
+                "구 형식 큐",
+                81,
+                "81 별도 전환",
+                "현재 서버 동기화 action으로 자동 변환하지 않습니다. 원본 이력을 보존하고 관리자 검토 후 별도 마이그레이션하세요.",
+                true);
+        }
+
         if (string.IsNullOrWhiteSpace(lastError))
         {
             return new ServerSyncQueueDiagnosis(
@@ -33,16 +53,6 @@ public static class ServerSyncQueueDiagnostics
                 "50 재시도",
                 "서버 실행 상태와 로그인 상태를 확인한 뒤 재시도하세요.",
                 false);
-        }
-
-        if (IsLegacyFieldNote(entityType, action, lastError))
-        {
-            return new ServerSyncQueueDiagnosis(
-                "구 FieldNote 큐",
-                80,
-                "80 별도 정리",
-                "구 FieldNote 큐는 현재 FieldComment 동기화 대상이 아닙니다. 관리자 검토 후 FieldComment 전환 또는 별도 마이그레이션으로 정리하세요.",
-                true);
         }
 
         if (lastError.Contains("서버 URL", StringComparison.Ordinal))
@@ -131,7 +141,7 @@ public static class ServerSyncQueueDiagnostics
         }
 
         return new ServerSyncQueueDiagnosis(
-            "재시도 가능",
+            "실제 서버 오류",
             50,
             "50 재시도",
             "실패 사유를 확인하고 서버 실행 상태, 로그인 상태, 네트워크 상태를 조치한 뒤 재시도하세요.",
@@ -143,5 +153,11 @@ public static class ServerSyncQueueDiagnostics
         return entityType.Contains("field_note", StringComparison.OrdinalIgnoreCase) ||
             action.Contains("field_note", StringComparison.OrdinalIgnoreCase) ||
             lastError.Contains("register_field_note", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsLegacyCreateAction(string action, string lastError)
+    {
+        return string.Equals(action, "create", StringComparison.OrdinalIgnoreCase) ||
+            lastError.Contains("구 형식 create 큐", StringComparison.OrdinalIgnoreCase);
     }
 }

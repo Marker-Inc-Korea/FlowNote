@@ -67,6 +67,8 @@ data/local/Files/**
 !data/local/**/*.sqlite
 !services/api/data/*.sqlite
 !services/api/data/**/*.sqlite
+# Accidental/temporary API SQLite name; the maintained server DB uses .sqlite3.
+services/api/data/flownote.sqlite
 apps/windows/src/FlowNote.Windows.App/Data/*sample-registration.md
 apps/windows/src/FlowNote.Windows.App/Data/*test*.md
 apps/windows/src/FlowNote.Windows.App/Data/*smoke*.md

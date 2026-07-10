@@ -340,6 +340,37 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return records;
     }
 
+    public ServerSyncQueueSummary GetQueueSummary()
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT status, entity_type, action, last_error
+            FROM server_sync_queue;
+            """;
+
+        var pending = 0;
+        var failed = 0;
+        var synced = 0;
+        var held = 0;
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var status = reader.GetString(0);
+            var diagnosis = ServerSyncQueueDiagnostics.Classify(
+                status,
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.IsDBNull(3) ? null : TranslateFailureReason(reader.GetString(3)));
+            pending += string.Equals(status, Pending, StringComparison.Ordinal) ? 1 : 0;
+            failed += string.Equals(status, Failed, StringComparison.Ordinal) ? 1 : 0;
+            synced += string.Equals(status, Synced, StringComparison.Ordinal) ? 1 : 0;
+            held += diagnosis.IsDependencyHold && !string.Equals(status, Synced, StringComparison.Ordinal) ? 1 : 0;
+        }
+
+        return new ServerSyncQueueSummary(pending, failed, synced, held);
+    }
+
     public static string CreateDocumentIdempotencyKey(string documentId, int versionNo = 1)
     {
         return $"wpf:document:{documentId}:v{versionNo}";
@@ -2293,6 +2324,11 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             return SyncFailureMessages.LegacyFieldNoteUnsupported;
         }
 
+        if (message.Contains("Unsupported legacy create sync action", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.LegacyCreateActionUnsupported;
+        }
+
         if (message.Contains("Local document file not found", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("Local field comment attachment file not found", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("Local report document file not found", StringComparison.OrdinalIgnoreCase))
@@ -2327,10 +2363,16 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         public const string ReportSourceDependencyNotSynced = "보고서 근거 중 서버 ID가 확인되지 않은 항목이 있어 서버 보고서를 저장하지 못했습니다. 근거 문서, FieldComment, 작업순서 이력을 먼저 서버에 등록한 뒤 재시도하세요. 로컬 보고서 문서는 삭제되지 않습니다.";
         public const string LegacyFieldNoteUnsupported = "구 FieldNote 큐는 현재 FieldComment 동기화 대상이 아니어서 자동 전송하지 않았습니다. 관리자 검토 후 FieldComment 전환 또는 별도 마이그레이션으로 정리하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string LegacyFieldNoteAttachmentUnsupported = "구 FieldNote 첨부 큐는 현재 FieldComment 첨부 동기화 대상이 아니어서 자동 전송하지 않았습니다. 관리자 검토 후 FieldComment 첨부로 전환하거나 별도 마이그레이션으로 정리하세요. 로컬 데이터는 삭제되지 않습니다.";
+        public const string LegacyCreateActionUnsupported = "구 형식 create 큐는 현재 서버 동기화 계약의 자동 전송 대상이 아닙니다. 원본 이력은 보존하고 관리자 검토 후 현재 action으로 별도 마이그레이션하세요. 서버 호출과 시도 횟수 증가는 수행하지 않았으며 로컬 데이터는 삭제되지 않습니다.";
     }
 
     private string? GetDependencyHoldReason(QueueItem item)
     {
+        if (string.Equals(item.Action, "create", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncFailureMessages.LegacyCreateActionUnsupported;
+        }
+
         switch (item.Action)
         {
             case "register_document":
