@@ -210,7 +210,7 @@ public final class MainActivity extends Activity {
                 saveSettings();
                 postStatus("로그인 완료: " + payload.optString("display_name"));
             } catch (Exception exc) {
-                postStatus("로그인 실패: " + exc.getMessage());
+                postStatus("로그인 실패: " + UserErrorMessage.from(exc));
             }
         });
     }
@@ -224,7 +224,7 @@ public final class MainActivity extends Activity {
                 mainHandler.post(() -> showDocuments(documents));
                 postStatus("공개 문서 " + documents.length() + "건");
             } catch (Exception exc) {
-                postStatus("문서 조회 실패: " + exc.getMessage());
+                postStatus("문서 조회 실패: " + UserErrorMessage.from(exc));
             }
         });
     }
@@ -254,7 +254,7 @@ public final class MainActivity extends Activity {
                 mainHandler.post(() -> showDocumentDetail(document));
                 postStatus("문서 상세 조회 완료");
             } catch (Exception exc) {
-                postStatus("문서 상세 실패: " + exc.getMessage());
+                postStatus("문서 상세 실패: " + UserErrorMessage.from(exc));
             }
         });
     }
@@ -280,7 +280,7 @@ public final class MainActivity extends Activity {
                 mainHandler.post(() -> showNotifications(notifications));
                 postStatus("알림 " + notifications.length() + "건");
             } catch (Exception exc) {
-                postStatus("알림 조회 실패: " + exc.getMessage());
+                postStatus("알림 조회 실패: " + UserErrorMessage.from(exc));
             }
         });
     }
@@ -307,7 +307,7 @@ public final class MainActivity extends Activity {
                 apiClient.markNotificationRead(messageId);
                 postStatus("알림 읽음 처리 완료");
             } catch (Exception exc) {
-                postStatus("알림 읽음 실패: " + exc.getMessage());
+                postStatus("알림 읽음 실패: " + UserErrorMessage.from(exc));
             }
         });
     }
@@ -321,7 +321,7 @@ public final class MainActivity extends Activity {
                 mainHandler.post(() -> showHandovers(handovers));
                 postStatus("인수인계 " + handovers.length() + "건");
             } catch (Exception exc) {
-                postStatus("인수인계 조회 실패: " + exc.getMessage());
+                postStatus("인수인계 조회 실패: " + UserErrorMessage.from(exc));
             }
         });
     }
@@ -361,7 +361,7 @@ public final class MainActivity extends Activity {
                 apiClient.updateHandoverReceipt(handoverId, receiptId, receiptStatus, null);
                 postStatus("인수인계 상태 저장 완료");
             } catch (Exception exc) {
-                postStatus("인수인계 상태 저장 실패: " + exc.getMessage());
+                postStatus("인수인계 상태 저장 실패: " + UserErrorMessage.from(exc));
             }
         });
     }

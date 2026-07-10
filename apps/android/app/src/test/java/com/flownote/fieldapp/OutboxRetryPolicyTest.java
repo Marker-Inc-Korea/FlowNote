@@ -3,6 +3,7 @@ package com.flownote.fieldapp;
 import org.junit.Test;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public final class OutboxRetryPolicyTest {
@@ -16,7 +17,11 @@ public final class OutboxRetryPolicyTest {
         long now = 60_000L;
         assertFalse(OutboxRetryPolicy.shouldRetry("FAILED", 1, now, now - 10_000L));
         assertTrue(OutboxRetryPolicy.shouldRetry("FAILED", 1, now, now - 15_000L));
-        assertTrue(OutboxRetryPolicy.delayMillis(20) <= 15L * 60L * 1000L);
+        assertEquals(15_000L, OutboxRetryPolicy.delayMillis(1));
+        assertEquals(30_000L, OutboxRetryPolicy.delayMillis(2));
+        assertEquals(60_000L, OutboxRetryPolicy.delayMillis(3));
+        assertEquals(15L * 60L * 1000L, OutboxRetryPolicy.delayMillis(7));
+        assertEquals(15L * 60L * 1000L, OutboxRetryPolicy.delayMillis(20));
     }
 
     @Test
