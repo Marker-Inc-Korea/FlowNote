@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -63,7 +64,9 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
     archived_report_id = f"report-ai-archived-{suffix}"
     blank_report_id = f"report-ai-blank-source-{suffix}"
     missing_origin_report_id = f"report-ai-missing-source-{suffix}"
+    deleted_origin_report_id = f"report-ai-deleted-source-{suffix}"
     excluded_comment_report_id = f"report-ai-excluded-comment-source-{suffix}"
+    deleted_document_id = f"doc-ai-deleted-{suffix}"
 
     with client.app.state.database.session() as session:
         published_file = FileObject(
@@ -97,6 +100,16 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 status="PUBLISHED",
                 latest_version_id=published_version_id,
                 published_version_id=published_version_id,
+            )
+        )
+        session.add(
+            Document(
+                document_id=deleted_document_id,
+                title=f"AI search deleted source {suffix[:8]}",
+                document_type="work_instruction",
+                owner_id="user-admin",
+                status="DELETED",
+                deleted_at=datetime.now(timezone.utc),
             )
         )
         session.add(
@@ -339,6 +352,25 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
         )
         session.add(
             Report(
+                report_id=deleted_origin_report_id,
+                report_type="field_review",
+                title=f"AI search deleted source report {suffix[:8]}",
+                status="APPROVED",
+                ai_draft_used=False,
+                created_by="user-admin",
+            )
+        )
+        session.add(
+            ReportSource(
+                report_id=deleted_origin_report_id,
+                source_type="DOCUMENT",
+                source_id=deleted_document_id,
+                source_version_id=None,
+                relation_type="deleted-origin",
+            )
+        )
+        session.add(
+            Report(
                 report_id=excluded_comment_report_id,
                 report_type="field_review",
                 title=f"AI search excluded comment source {suffix[:8]}",
@@ -444,7 +476,7 @@ def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
         assert rebuild["excluded_counts_by_reason"]["work_sequence_history_without_trace_text"] >= 1
         assert rebuild["excluded_counts_by_reason"]["report_source_archived_report"] >= 1
         assert rebuild["excluded_counts_by_reason"]["report_source_without_trace_id"] >= 1
-        assert rebuild["excluded_counts_by_reason"]["report_source_missing_origin"] >= 1
+        assert rebuild["excluded_counts_by_reason"]["report_source_missing_origin"] >= 2
         assert rebuild["excluded_reason_guidance"]["document_version_not_published"]["label"]
         assert set(rebuild["counts_by_source_type"]) == {
             "PUBLISHED_DOCUMENT_VERSION",
@@ -618,6 +650,10 @@ def test_ai_search_rebuild_indexes_traceable_evidence_sources_only() -> None:
         )
         assert not any(
             item["source_type"] == "REPORT_SOURCE" and item["summary"] == "missing-origin"
+            for item in all_checked_candidates
+        )
+        assert not any(
+            item["source_type"] == "REPORT_SOURCE" and item["summary"] == "deleted-origin"
             for item in all_checked_candidates
         )
         assert not any(

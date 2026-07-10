@@ -263,14 +263,25 @@ def _report_source_origin_exists(session: Session, source: ReportSource) -> bool
             )
         ) > 0
     if source_type == "DOCUMENT":
-        statement = select(func.count()).select_from(Document).where(Document.document_id == source_id)
+        statement = (
+            select(func.count())
+            .select_from(Document)
+            .where(
+                Document.document_id == source_id,
+                Document.deleted_at.is_(None),
+                Document.status != "DELETED",
+            )
+        )
         if source.source_version_id:
             statement = (
                 select(func.count())
                 .select_from(DocumentVersion)
+                .join(Document, Document.document_id == DocumentVersion.document_id)
                 .where(
                     DocumentVersion.document_id == source_id,
                     DocumentVersion.version_id == source.source_version_id,
+                    Document.deleted_at.is_(None),
+                    Document.status != "DELETED",
                 )
             )
         return session.scalar(statement) > 0

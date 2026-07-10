@@ -30,7 +30,7 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 
 ## 승인 단말 관리
 
-아래 API는 `admin`, `system-admin`만 사용할 수 있다. 단말 상태는 `ACTIVE`, `INACTIVE`, `RETIRED`이며 `RETIRED` 단말은 다시 활성화할 수 없다.
+아래 API는 `admin`, `system-admin`만 사용할 수 있다. 단말 상태는 `ACTIVE`, `INACTIVE`, `RETIRED`이며 `RETIRED` 단말은 다시 활성화할 수 없다. 단말 용도 `device_mode`는 현장 열람용 `viewer`와 관리 지원용 `admin_support`를 사용한다.
 
 | Method | Path | 설명 |
 | --- | --- | --- |

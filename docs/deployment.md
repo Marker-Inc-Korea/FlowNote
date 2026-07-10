@@ -603,7 +603,7 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 
 Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영 DB, 운영 파일 저장소, 비밀값, 개인 로컬 경로, 빌드/배포 산출물은 Git에 올리지 않는다. 그러나 테스트 SQLite, 테스트 파일, 테스트 로그, 스모크 테스트 산출물, 렌더링 결과는 기능 검증 이력이므로 사용자가 명시적으로 삭제를 지시하지 않는 한 로컬에서 삭제하지 않는다.
 
-현재 `.gitignore`는 빌드 산출물, 로그, 일반 SQLite, 운영/고객 파일, 로컬 파일 저장소를 제외하되 `data/local/**/*.sqlite`와 `services/api/data/**/*.sqlite`는 테스트와 개발 검증 DB로 추적될 수 있게 예외를 둔다. 커밋 전에는 `git status`와 staged 목록을 확인해 SQLite를 제외한 PDF, 이미지, Excel, TXT, 렌더링 결과, 테스트 로그, `data/local/Files/`, `Data/Files/` 하위 파일이 포함되지 않았는지 확인한다.
+현재 `.gitignore`는 빌드 산출물, 로그, SQLite와 WAL/SHM 보조 파일, 운영/고객 파일, 로컬 파일 저장소를 Git에서 제외한다. 테스트와 개발 검증 SQLite도 누적 기록으로 로컬에 보존하지만 추적하거나 커밋하지 않는다. 커밋 전에는 `git status`와 staged 목록을 확인해 SQLite를 포함한 DB 파일, PDF, 이미지, Excel, TXT, 렌더링 결과, 테스트 로그, `data/local/Files/`, `Data/Files/` 하위 파일이 포함되지 않았는지 확인한다.
 
 ## 후속 배포 과제
 
