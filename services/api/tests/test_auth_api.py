@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -103,6 +104,15 @@ def test_login_accepts_approved_android_terminal_device_and_stores_session_devic
     with create_test_client() as client:
         account = create_login_user(client)
         terminal = create_terminal_device(client)
+        original_last_seen = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        with client.app.state.database.session() as session:
+            terminal_row = session.scalar(
+                select(TerminalDevice).where(TerminalDevice.device_id == terminal.device_id)
+            )
+            assert terminal_row is not None
+            terminal_row.last_seen_at = original_last_seen
+            session.add(terminal_row)
+            session.commit()
 
         response = client.post(
             "/api/v1/auth/login",
@@ -122,15 +132,36 @@ def test_login_accepts_approved_android_terminal_device_and_stores_session_devic
             )
             assert terminal_row is not None
             assert terminal_row.last_seen_at is not None
-            assert session.scalar(
+            assert terminal_row.last_seen_at.year > original_last_seen.year
+            first_last_seen = terminal_row.last_seen_at
+
+        second_response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": account.username,
+                "password": "correct-password",
+                "deviceId": terminal.device_id,
+            },
+        )
+        assert second_response.status_code == 200, second_response.text
+        with client.app.state.database.session() as session:
+            terminal_row = session.scalar(
+                select(TerminalDevice).where(TerminalDevice.device_id == terminal.device_id)
+            )
+            device_sessions = session.scalars(
                 select(AuthSession).where(AuthSession.device_id == terminal.device_id)
-            ) is not None
+            ).all()
+            assert terminal_row is not None
+            assert terminal_row.last_seen_at is not None
+            assert terminal_row.last_seen_at >= first_last_seen
+            assert len(device_sessions) == 2
 
 
 def test_login_rejects_unknown_or_inactive_android_terminal_device() -> None:
     with create_test_client() as client:
         account = create_login_user(client)
         inactive_terminal = create_terminal_device(client, status="INACTIVE")
+        retired_terminal = create_terminal_device(client, status="RETIRED")
 
         unknown_response = client.post(
             "/api/v1/auth/login",
@@ -148,11 +179,21 @@ def test_login_rejects_unknown_or_inactive_android_terminal_device() -> None:
                 "deviceId": inactive_terminal.device_id,
             },
         )
+        retired_response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": account.username,
+                "password": "correct-password",
+                "deviceId": retired_terminal.device_id,
+            },
+        )
 
     assert unknown_response.status_code == 403
     assert unknown_response.json()["detail"] == "Terminal device is not approved or active."
     assert inactive_response.status_code == 403
     assert inactive_response.json()["detail"] == "Terminal device is not approved or active."
+    assert retired_response.status_code == 403
+    assert retired_response.json()["detail"] == "Terminal device is not approved or active."
 
 
 def test_me_returns_current_user_for_bearer_token() -> None:

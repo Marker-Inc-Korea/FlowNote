@@ -179,3 +179,11 @@
 - FieldComment 재전송은 `android:{deviceId}:{localId}` idempotency key를 사용해 서버 중복 생성을 막는다.
 - 채널 알림과 인수인계는 새 개인 메시지 체계가 아니라 서버 공통 채널/인수인계 API 조회, 읽음, 수신확인으로 붙인다.
 - GPS 추적, 근태 관리, 개인 메신저 수집, 사내 메신저 전체 대체는 Android 앱 초기 범위에 포함하지 않는다.
+
+## 2026-07-10. 승인 단말 운영 상태와 교체 이력
+
+- 승인 단말 상태는 `ACTIVE`, `INACTIVE`, `RETIRED`로 통일한다. `RETIRED`는 폐기·교체 완료 상태이므로 재활성화하지 않는다.
+- 단말 관리 API와 WPF 운영 화면은 서버 계정 `admin`, `system-admin`만 사용한다.
+- 교체는 기존 단말을 `RETIRED`로 변경하고 새 단말을 등록하는 하나의 서버 트랜잭션으로 처리한다.
+- 단말 등록자, 마지막 변경자, 대체한 기존 device ID를 `terminal_devices`에 보존하고 등록·변경·상태·교체 이벤트는 `activity_history`에 남긴다.
+- Android 로그인 성공 때마다 `terminal_devices.last_seen_at`을 갱신하고 각 로그인 세션의 `auth_sessions.device_id`를 유지한다.

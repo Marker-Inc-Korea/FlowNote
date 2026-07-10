@@ -615,4 +615,4 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트에서 `.\scripts\verify-preserved-tests.ps1`을 실행하면 FastAPI pytest 53개 수집/실행, WPF build, WPF smoke, `.gitignore` 산출물 제외 규칙, 실행 전후 `git status` 금지 패턴을 함께 확인한다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 FastAPI pytest 수집/실행, WPF build, WPF smoke, `.gitignore` 산출물 제외 규칙, 실행 전후 `git status` 금지 패턴을 함께 확인한다. 다만 2026-07-10 현재 실제 FastAPI 테스트는 58개이고 스크립트의 고정 기대값은 53개이므로 수집 단계에서 실패한다. 기대값을 최신 테스트 수에 맞추기 전까지 이 스크립트의 전체 통과를 배포 검증 근거로 사용하지 않는다.

@@ -44,6 +44,12 @@
                             Margin="0,0,8,0"
                             Content="사용자 관리"
                             Click="UserManagementButton_Click" />
+                    <Button x:Name="TerminalDeviceManagementButton"
+                            Width="104"
+                            Height="34"
+                            Margin="0,0,8,0"
+                            Content="승인 단말"
+                            Click="TerminalDeviceManagementButton_Click" />
                     <Button x:Name="NotificationButton"
                             Width="104"
                             Height="34"
