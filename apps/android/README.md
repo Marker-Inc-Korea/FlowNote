@@ -26,7 +26,7 @@
 
 Android 로그인은 `/api/v1/auth/login`에 `deviceId`를 함께 보낸다. 서버는 `terminal_devices.device_id`가 존재하고 `status = ACTIVE`인 경우에만 로그인 세션을 발급한다. 승인되지 않은 단말 또는 비활성 단말은 403으로 거부된다.
 
-Android가 자동으로 개인 휴대폰을 등록하지 않는다. 단말 등록, 비활성화, 교체는 관리자 운영 절차 또는 후속 관리 화면에서 수행한다.
+Android가 자동으로 개인 휴대폰을 등록하지 않는다. 단말 등록, 정보/상태 변경, 비활성화, 교체는 `admin`, `system-admin`이 Windows WPF의 `승인 단말` 화면과 FastAPI 승인 단말 관리 API를 통해 수행한다. 현장별 등록·비활성화 절차, MDM, 운영 인증서 적용은 후속 운영 확정 범위다.
 
 ## 오프라인 임시 저장
 
@@ -56,3 +56,5 @@ cd apps/android
 ```
 
 JDK와 Android SDK가 필요하다. macOS 기본 SDK 경로 `$HOME/Library/Android/sdk`가 있으면 `gradlew`가 `ANDROID_HOME`을 자동 지정한다. 운영 배포 전에는 현장 서버 HTTPS, 사내 인증서, 단말별 `deviceId` 발급 절차를 확정해야 한다.
+
+현재 단위 테스트는 API 경로·로그인/FieldComment payload 계약과 outbox 재시도 횟수·지수 backoff 정책을 검증한다. 실제 단말의 사진 선택, SQLite 지속성, 사내망 통신과 승인 단말 로그인은 Android 실기 검증 대상이다.
