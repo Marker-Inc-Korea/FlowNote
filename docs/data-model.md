@@ -91,13 +91,30 @@ AI 자동 조언과 자동 의사결정은 아직 범위에 넣지 않는다. �
 | `PUBLISHED_DOCUMENT_VERSION` | `documents.status = PUBLISHED`, `documents.published_version_id = document_versions.version_id`, `document_versions.version_status = PUBLISHED`, `document_versions.is_published = true` | 공개되지 않은 문서/버전, 삭제된 문서 | `trace_table = document_versions`, `trace_id = document_id`, `trace_version_id = version_id` |
 | `FIELD_COMMENT` | `field_comments.status`가 `EXCLUDED`, `ARCHIVED`가 아니고 원문/정리/분석 내용 중 하나 이상이 있음 | `EXCLUDED`, `ARCHIVED`, 빈 내용, `input_mode = mes_integration` | `trace_table = field_comments`, `trace_id = comment_id`, `trace_version_id = document_version_id` |
 | `WORK_SEQUENCE_HISTORY` | `work_sequence_change_history`의 변경 유형, 이전 값, 이후 값, 변경 사유 중 하나 이상이 있음 | 역추적 텍스트가 모두 비어 있음 | `trace_table = work_sequence_change_history`, `trace_id = change_id` |
-| `REPORT_SOURCE` | `reports.status != ARCHIVED`인 보고서의 `report_sources` row | 보고서가 없거나 보관 상태인 source, 원천 식별자가 비어 있음 | `trace_table = report_sources`, `trace_id = report_sources.id`, `trace_version_id = source_version_id` |
+| `REPORT_SOURCE` | `reports.status != ARCHIVED`이고 실제 원천이 남아 있는 보고서의 `report_sources` row | 보고서가 없거나 보관 상태인 source, 원천 식별자가 비어 있음, 원천 row가 없거나 제외 상태임, `DOCUMENT` 원천이 삭제 상태임 | `trace_table = report_sources`, `trace_id = report_sources.id`, `trace_version_id = source_version_id` |
 
 `ai_search_candidates`의 `candidate_id`는 검색 후보 자체의 식별자이고, 원문 화면 이동은 `source_type`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `parent_type`, `parent_id`를 함께 사용한다. 보고서 source는 원천의 원천을 직접 후보 ID로 삼지 않고 `report_sources.id`를 후보 `source_id`로 삼아 보고서가 어떤 근거를 어떤 관계로 사용했는지 먼저 추적한다.
 
-품질 점검은 후보 수와 제외 사유를 함께 산출한다. FieldComment 검토 품질은 전체 상태별 개수, `ANALYZED`/`REVIEWED`/`SELECTED` 합계, AI 착수 최소 기준 100건 대비 부족분을 표시한다. FieldComment가 대부분 `NEW`라면 검색 후보에는 들어갈 수 있어도 요약 신뢰도와 AI 착수 기준은 부족한 것으로 본다.
+품질 점검은 후보 수와 제외 사유를 함께 산출한다. `REPORT_SOURCE`의 `DOCUMENT` 원천은 `documents.status != DELETED`와 `documents.deleted_at IS NULL`을 모두 만족해야 하며, 버전 ID가 있으면 그 버전이 같은 문서에 속하는지도 확인한다. 조건을 만족하지 않으면 `report_source_missing_origin`으로 집계한다. FieldComment 검토 품질은 전체 상태별 개수, `ANALYZED`/`REVIEWED`/`SELECTED` 합계, AI 착수 최소 기준 100건 대비 부족분을 표시한다. FieldComment가 대부분 `NEW`라면 검색 후보에는 들어갈 수 있어도 요약 신뢰도와 AI 착수 기준은 부족한 것으로 본다.
 
 MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_records.external_system`, `external_ref_id` 같은 외부 연동 필드를 사용하지 않는다. `mes_integration` 입력으로 들어온 FieldComment도 어댑터 정책이 정해지기 전에는 후보에서 제외한다.
+
+## 외부 AI 질의와 호출 로그 초안
+
+다음 모델은 외부 AI 1단계의 계약 초안이며 아직 마이그레이션이나 외부 호출 구현이 아니다. 기존 `ai_search_candidates`는 외부 AI 설정과 무관하게 재생성 가능한 read model로 유지한다.
+
+| 테이블 | 주요 필드 | 역할과 보존 기준 |
+| --- | --- | --- |
+| `ai_queries` | `query_id`, `requested_by`, `query_text`, `query_hash`, `purpose`, `status`, `prompt_version_id`, `response_storage_mode`, `response_text`, `response_hash`, `retention_until`, `regeneration_of_query_id`, `regenerable_until`, `created_at`, `completed_at` | 질의, 호출 사용자, 처리 상태와 응답 저장 여부의 기준 row. 질의 원문은 기본 90일, 응답은 기본 `DO_NOT_STORE`; 명시적 승인으로 저장하면 90일 후 삭제한다. 응답을 저장하지 않아도 hash와 상태는 남긴다. |
+| `ai_query_evidence_candidates` | `id`, `query_id`, `candidate_id`, `source_type`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `rank`, `selected_for_prompt`, `sent_externally`, `content_hash`, `eligibility_result`, `exclusion_reason` | 질의 시점 근거 후보 ID와 순위, 외부 전송 여부, 원천 식별자 스냅샷. 감사 메타데이터는 1년 보존하되 원문 본문을 복제하지 않는다. |
+| `ai_query_citations` | `citation_id`, `query_id`, `claim_key`, `candidate_id`, `source_type`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `internal_source_uri`, `content_hash`, `validated_at` | 반환한 각 사실 주장과 문서 버전, FieldComment, 작업순서 이력 또는 `report_sources.id`의 연결. 1년 보존한다. |
+| `ai_prompt_versions` | `prompt_version_id`, `name`, `version`, `template_hash`, `template_text`, `allowed_purpose`, `created_by`, `approved_by`, `approved_at`, `retired_at` | 재현 가능한 불변 프롬프트 버전. 승인 후 내용을 덮어쓰지 않고 새 버전을 만든다. |
+| `ai_call_attempts` | `attempt_id`, `query_id`, `provider`, `model`, `provider_request_id`, `status`, `started_at`, `finished_at`, `http_status`, `error_code`, `sanitized_error_message`, `input_units`, `output_units` | 호출 및 오류 로그. 일반 로그에는 원문 프롬프트, 근거 본문, 응답, 자격증명이나 provider raw body를 넣지 않고 정제한 메타데이터를 1년 보존한다. |
+| `ai_transfer_approvals` | `approval_id`, `customer_scope`, `site_scope`, `provider`, `model_scope`, `allowed_source_types`, `data_handling_policy_version`, `approved_by`, `approved_at`, `expires_at`, `revoked_at`, `reason` | 고객·현장별 외부 전송 승인. 만료·철회 시 새 호출을 즉시 차단하며 `admin` 또는 `system-admin`의 승인 주체와 근거를 보존한다. |
+
+`response_storage_mode`는 `DO_NOT_STORE`, `STORE_90_DAYS`만 허용한다. 기본값은 `DO_NOT_STORE`이며 이때 응답 본문은 요청 세션에 반환한 뒤 저장하지 않는다. 질의 원문이 만료된 뒤에는 후보·프롬프트·응답 hash를 감사에 사용할 수 있지만 재생성할 수 있다고 표시하지 않는다. `regenerable_until` 전에도 재생성은 같은 질의, 불변 프롬프트 버전, 근거 후보 ID와 content hash, provider/model을 다시 사용한다는 뜻이며, 확률적 모델의 동일 문구 재현을 보장하지 않는다. 원천의 권한·공개·외부 전송 승인 상태가 바뀌면 재생성을 거부하고 새 질의로 다시 평가한다.
+
+상태는 `RECEIVED`, `BLOCKED`, `CALLING`, `SUCCEEDED`, `INSUFFICIENT_EVIDENCE`, `CITATION_VALIDATION_FAILED`, `FAILED`를 사용한다. 응답의 사실 주장은 최소 한 개의 `ai_query_citations`와 연결되어야 한다. 허용되는 원천 식별자는 문서의 `document_id + version_id`, FieldComment의 `comment_id`와 연결된 `document_version_id`(있는 경우), 작업순서 이력의 `change_id`, 보고서 근거의 `report_sources.id + source_type + source_id + source_version_id`다. 후보가 0건이거나 인용이 누락·위조·권한 만료 상태이면 응답 본문을 보관하거나 사용자에게 노출하지 않는다.
 
 ## 작업지시와 후속 외부 연동 필드
 

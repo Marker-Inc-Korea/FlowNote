@@ -66,6 +66,12 @@ AISearchCandidate
   -> WorkSequenceChangeHistory
   -> ReportSource
 
+AIQuery (future, external call disabled by default)
+  -> AIQueryEvidenceCandidate -> AISearchCandidate snapshot
+  -> AIQueryCitation -> DocumentVersion | FieldComment | WorkSequenceChangeHistory | ReportSource
+  -> AICallAttempt -> immutable AIPromptVersion
+  -> AITransferApproval
+
 ServerSyncQueue
   -> server_id_mappings
 ```
@@ -112,4 +118,6 @@ MES/ERP는 후속 연동 대상이다. 현재 코드는 내부 작업순서와 �
 
 후속 어댑터가 도입되더라도 초기 수동 입력 데이터와 같은 연결점을 사용한다. 외부 작업지시는 `work_records.work_order_no`, `work_records.external_system`, `work_records.external_ref_id`, `work_sequence_items.work_order_no`로 연결하고, 작업지시 문서는 `work_records.work_instruction_document_id`와 `work_sequence_items.document_id`로 연결한다. FieldComment와 보고서는 `work_record_id`와 `report_sources`를 통해 작업내역과 근거를 추적한다.
 
-AI 관련 현재 구현은 외부 AI 호출이 아니라 서버 DB에서 `ai_search_candidates` 근거 후보를 재생성하고 목록/품질을 점검하는 read model이다. WPF `AI 근거 후보 운영 점검` 화면은 서버 후보 재생성, source별 후보 수, 제외 사유와 운영 조치, FieldComment 검토 준비도, 후보 목록, 원천 추적값 복사를 제공한다. 운영 점검 흐름은 후보 재생성, source별 후보 수 확인, 제외 사유와 운영 조치 확인, 후보 row에서 원천 문서 버전/FieldComment/작업순서 이력/보고서 source로 역추적하는 순서다. FieldComment 검토 준비도는 분석/검토/선정 상태 100건 기준의 부족분을 먼저 보여주며, 이 수치가 부족하면 AI 답변 생성보다 FieldComment 검토와 보고서 source 정리를 우선한다. 외부 AI 호출 기반 검색/작업 조언은 자동 의사결정 계층이 아니라 축적된 공개 문서, FieldComment, 작업순서 이력, 보고서 근거를 검색하고 요약하는 후속 계층부터 검토한다. 착수 기준은 [MVP 범위 문서](./mvp-scope.md#후속-계층-착수-기준)를 따른다.
+AI 관련 현재 구현은 외부 AI 호출이 아니라 서버 DB에서 `ai_search_candidates` 근거 후보를 재생성하고 목록/품질을 점검하는 read model이다. 공개 문서 후보는 삭제되지 않은 공개 문서 버전만 사용하고, 보고서 source도 실제 원천을 다시 확인한다. 특히 `DOCUMENT` 원천이 삭제 상태이거나 `deleted_at`이 설정되어 있으면 보고서가 남아 있어도 검색 후보로 만들지 않는다. WPF `AI 근거 후보 운영 점검` 화면은 서버 후보 재생성, source별 후보 수, 제외 사유와 운영 조치, FieldComment 검토 준비도, 후보 목록, 원천 추적값 복사를 제공한다. 운영 점검 흐름은 후보 재생성, source별 후보 수 확인, 제외 사유와 운영 조치 확인, 후보 row에서 원천 문서 버전/FieldComment/작업순서 이력/보고서 source로 역추적하는 순서다. FieldComment 검토 준비도는 분석/검토/선정 상태 100건 기준의 부족분을 먼저 보여주며, 이 수치가 부족하면 AI 답변 생성보다 FieldComment 검토와 보고서 source 정리를 우선한다.
+
+외부 AI 1단계는 위 read model과 분리된 후속 쓰기 흐름이다. `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`를 기본값으로 두고, 고객·현장별 `AITransferApproval`이 유효할 때만 질의 접수, 권한 필터, 민감정보/외부 전송 금지 검사, 근거 후보 스냅샷, 최소 근거 조각 전송, 응답 인용 검증 순서로 진행한다. 인용 검증을 통과한 검색·요약만 사용자에게 반환하고, 근거가 없거나 응답의 사실 주장과 원천 ID를 연결할 수 없으면 `INSUFFICIENT_EVIDENCE` 또는 `CITATION_VALIDATION_FAILED`로 종료한다. 결과는 작업순서·문서 상태·보고서 승인·설비를 변경하지 않는다. 데이터 초안은 [데이터 모델](./data-model.md#외부-ai-질의와-호출-로그-초안), API 계약과 테스트 기준은 [API 문서](./api.md#외부-ai-근거-검색과-요약-계약-초안), 전송 승인은 [보안 문서](./security.md#외부-ai-전송과-운영자-승인)를 따른다. 착수 기준은 [MVP 범위 문서](./mvp-scope.md#후속-계층-착수-기준)를 따른다.

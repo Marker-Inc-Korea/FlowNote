@@ -168,7 +168,7 @@
 - 서버 API는 채널 멤버 또는 `admin`, `system-admin`만 채널 메시지와 인수인계를 조회할 수 있게 한다.
 - 개인 DM, 개인 메신저 수집, GPS, 근태 기능은 서버 채널/인수인계 모델에 포함하지 않는다.
 
-## 2026-07-09. Android 현장 단말 최소 스캐폴딩
+## 2026-07-09. Android 현장 단말 최소 앱
 
 - Android 현장 앱은 Java, Android 네이티브 View, Gradle Android plugin을 최소 기술 스택으로 시작한다.
 - 최소 OS는 Android 8.0(API 26)으로 둔다. 초기 현장 대상은 승인된 태블릿 또는 러기드 단말이며 개인 휴대폰 기본 배포는 제외한다.
@@ -187,3 +187,13 @@
 - 교체는 기존 단말을 `RETIRED`로 변경하고 새 단말을 등록하는 하나의 서버 트랜잭션으로 처리한다.
 - 단말 등록자, 마지막 변경자, 대체한 기존 device ID를 `terminal_devices`에 보존하고 등록·변경·상태·교체 이벤트는 `activity_history`에 남긴다.
 - Android 로그인 성공 때마다 `terminal_devices.last_seen_at`을 갱신하고 각 로그인 세션의 `auth_sessions.device_id`를 유지한다.
+
+## 2026-07-10. 외부 AI 1단계 안전장치와 API 계약
+
+- 외부 AI 첫 범위는 `EVIDENCE_SEARCH`, `EVIDENCE_SUMMARY`로 제한한다. 자동 의사결정, 작업지시 생성·변경, 승인·공개 자동화, 설비 제어, 안전·품질 판정은 금지한다.
+- 외부 호출은 기본 비활성화하고 고객·현장별 운영자 승인과 기능 플래그를 모두 요구한다. 내부 `PUBLISHED` 상태를 외부 전송 동의로 해석하지 않는다.
+- 응답의 모든 사실 주장은 질의 시점 `ai_search_candidates` snapshot에 있는 문서 버전, FieldComment, 작업순서 이력 또는 `report_sources.id` 인용을 가져야 한다. 근거 부족이나 인용 검증 실패 시 답변 본문을 반환하지 않는다.
+- `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations`, `ai_prompt_versions`, `ai_call_attempts`, `ai_transfer_approvals`를 후속 데이터 모델 초안으로 둔다. 응답은 기본 미저장, 질의 원문과 승인 저장 응답은 90일, 근거·인용·호출·오류·승인 감사 메타데이터는 1년 보존한다.
+- 재생성은 보존 중인 질의, 불변 프롬프트 버전, 근거 snapshot과 provider/model을 다시 사용하되 동일 문구를 보장하지 않는다. 원천 권한·상태·승인이 바뀌면 재생성하지 않는다.
+- 민감정보와 고객 문서의 외부 전송 금지·최소화·승인·철회 절차는 [보안 문서](./security.md#외부-ai-전송과-운영자-승인)를 단일 운영 기준으로 사용한다.
+- 이 결정은 외부 호출 구현을 활성화하지 않는다. 기존 `ai_search_candidates` read model과 후보 API는 기능 플래그에 의존하지 않으며 현재 테스트 계약을 유지한다.

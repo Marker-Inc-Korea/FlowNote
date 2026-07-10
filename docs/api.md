@@ -171,7 +171,72 @@ AI 검색은 자동 조언이 아니라 “근거가 있는 검색과 요약”�
 
 WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidates/rebuild`로 후보를 재생성한 뒤 `GET /api/v1/ai-search/quality`의 `counts_by_source_type`, `excluded_counts_by_reason`, `excluded_reason_guidance`, `field_comment_review_readiness`를 표시한다. 원천별 후보 수는 네 source 타입을 항상 표시하고, FieldComment 검토 준비도는 `ANALYZED`, `REVIEWED`, `SELECTED` 상태 합계가 100건에 부족한 수를 보여준다. 후보 목록에서 운영자는 `trace_table`, `trace_id`, `trace_version_id`로 원문 문서 버전, FieldComment, 작업순서 이력, 보고서 source row로 이동해 근거를 확인하며 선택 후보의 추적값을 클립보드에 복사할 수 있다.
 
-후보 재생성의 제외 사유는 공개되지 않은 문서 버전, 제외/보관 FieldComment, MES 통합 입력 FieldComment, 내용 없는 FieldComment, 역추적 텍스트 없는 작업순서 이력, 누락/보관 보고서 source, 원천이 사라진 보고서 source를 구분해 반환한다. 각 제외 사유에는 운영자가 문서 공개, FieldComment 검토/분석, 보고서 source 정리 중 무엇을 해야 하는지 판단할 수 있는 `label`, `operator_action`, `source_type` 안내를 포함한다. `EXCLUDED`, `ARCHIVED` FieldComment는 AI 검색 후보와 보고서 초안 후보 양쪽에서 제외한다.
+후보 재생성의 제외 사유는 공개되지 않은 문서 버전, 제외/보관 FieldComment, MES 통합 입력 FieldComment, 내용 없는 FieldComment, 역추적 텍스트 없는 작업순서 이력, 누락/보관 보고서 source, 원천이 사라진 보고서 source를 구분해 반환한다. 보고서 source가 `DOCUMENT`를 가리키면 해당 문서와 선택한 버전의 존재 여부를 확인하며, 문서가 `status = DELETED`이거나 `deleted_at`이 설정된 경우도 `report_source_missing_origin`으로 분류해 후보에서 제외한다. 각 제외 사유에는 운영자가 문서 공개, FieldComment 검토/분석, 보고서 source 정리 중 무엇을 해야 하는지 판단할 수 있는 `label`, `operator_action`, `source_type` 안내를 포함한다. `EXCLUDED`, `ARCHIVED` FieldComment는 AI 검색 후보와 보고서 초안 후보 양쪽에서 제외한다.
+
+## 외부 AI 근거 검색과 요약 계약 초안
+
+이 절은 후속 1단계 API 계약이며 현재 라우터가 구현되었다는 뜻이 아니다. 외부 호출은 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=true`와 고객·현장별 운영자 승인이 모두 유효할 때만 `admin`, `system-admin`에게 허용한다. 허용 목적은 `EVIDENCE_SEARCH`, `EVIDENCE_SUMMARY`뿐이며 자동 의사결정, 작업지시 생성·변경, 승인·공개 자동화, 설비 제어, 안전·품질 판정 요청은 provider 호출 전에 `422 AI_SCOPE_NOT_ALLOWED`로 거부한다.
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| POST | `/api/v1/ai/queries` | 근거 검색·요약 질의 생성. 외부 호출이 꺼져 있으면 `503 AI_EXTERNAL_CALL_DISABLED`, 전송 승인이 없으면 `403 AI_TRANSFER_NOT_APPROVED` |
+| GET | `/api/v1/ai/queries/{query_id}` | 호출 사용자 또는 `admin`, `system-admin`이 질의 상태, 근거 ID, 인용, 응답 저장 여부 조회 |
+| POST | `/api/v1/ai/queries/{query_id}/regenerations` | 보존 기간 안의 질의·프롬프트·근거 snapshot으로 재생성. 권한이나 원천 적격성이 바뀌면 `409 AI_REGENERATION_NOT_ALLOWED` |
+
+`POST /api/v1/ai/queries` 요청 초안:
+
+```json
+{
+  "purpose": "EVIDENCE_SUMMARY",
+  "query": "프레스 A 금형 교환 중 반복된 문제를 근거와 함께 요약해 주세요.",
+  "candidateIds": ["candidate-..."],
+  "responseStorageMode": "DO_NOT_STORE"
+}
+```
+
+`candidateIds`는 선택 사항이지만 서버가 최종 후보를 현재 사용자의 원천 열람 권한, 공개/검토 상태, 외부 전송 승인 범위로 다시 검사한다. 외부 전송에는 공개 문서 버전, `ANALYZED`/`REVIEWED`/`SELECTED` FieldComment, 역추적 가능한 작업순서 이력, 실제 원천이 남은 비보관 보고서 source만 적격하다. 전체 파일이나 첨부를 기본 전송하지 않고 질의에 필요한 최소 텍스트 조각만 보낸다. 클라이언트가 provider, model, 시스템 프롬프트 또는 임의 원천 ID를 지정할 수 없으며 승인된 `ai_prompt_versions`와 서버 검색 결과만 사용한다.
+
+성공 응답의 `grounded`는 항상 `true`이고, `claims`의 모든 사실 주장에는 하나 이상의 `citations`가 있어야 한다. 최상위 `summary`는 검증된 claim을 표시용으로 결합한 값일 뿐 별도의 사실을 추가할 수 없다. 각 citation은 `candidateId`, `sourceType`, `sourceId`, `sourceVersionId`, `traceTable`, `traceId`, `traceVersionId`, `internalSourceUri`를 포함한다. 문서 인용은 `document_id + version_id`, FieldComment 인용은 `comment_id`와 연결된 `document_version_id`(있는 경우), 작업순서 이력 인용은 `change_id`, 보고서 근거 인용은 `report_sources.id`와 그 row의 `source_type + source_id + source_version_id`를 반환한다. `internalSourceUri`는 설치형 클라이언트가 권한을 다시 검사한 뒤 원천 화면을 여는 내부 링크이며 외부 공개 URL이 아니다.
+
+```json
+{
+  "queryId": "aiq-...",
+  "status": "SUCCEEDED",
+  "grounded": true,
+  "summary": "반복 문제를 확인했습니다.",
+  "claims": [
+    {
+      "claimKey": "claim-1",
+      "text": "금형 정렬 재확인이 반복되었습니다.",
+      "citations": [
+        {
+          "candidateId": "candidate-...",
+          "sourceType": "FIELD_COMMENT",
+          "sourceId": "comment-...",
+          "sourceVersionId": "version-...",
+          "traceTable": "field_comments",
+          "traceId": "comment-...",
+          "traceVersionId": "version-...",
+          "internalSourceUri": "flownote://field-comments/comment-..."
+        }
+      ]
+    }
+  ],
+  "responseStored": false,
+  "promptVersion": "evidence-summary/v1"
+}
+```
+
+검색 결과가 없거나 주장을 뒷받침할 수 없으면 HTTP 200으로 `status = INSUFFICIENT_EVIDENCE`, `grounded = false`, `summary = null`, `claims = []`, `reason`을 반환한다. provider 응답에 인용이 없거나 후보 snapshot에 없는 ID가 있거나 일부 사실 주장에 인용이 없으면 해당 본문 전체를 폐기하고 `502 CITATION_VALIDATION_FAILED`를 반환한다. 부분적으로 검증된 문장만 골라 답변처럼 노출하지 않는다. 오류 응답도 `queryId`, 안정된 `error.code`, 한글 `error.message`, `retryable`만 노출하고 provider raw body나 외부 전송 본문은 반환하지 않는다.
+
+검증 테스트 기준:
+
+- 기능 플래그가 꺼진 기본 상태에서 외부 provider client가 한 번도 호출되지 않고 기존 `/api/v1/ai-search/candidates/*`, `/api/v1/ai-search/quality` 테스트가 변경 없이 통과한다.
+- 금지 목적과 민감정보/외부 전송 금지 원천은 provider 호출 전에 차단되고 차단 상태와 사유만 감사 로그에 남는다.
+- 후보가 0건이면 `INSUFFICIENT_EVIDENCE`이고 조언·추정·작업 지시 문구가 반환되지 않는다.
+- 성공 응답의 모든 claim은 질의 시점 후보 snapshot에 있는 citation을 한 개 이상 가지며 원천 row와 version/content hash가 일치한다.
+- 인용 누락, 존재하지 않는 ID, 다른 사용자의 비인가 원천, 삭제·보관·비공개로 바뀐 원천은 응답 전체를 `CITATION_VALIDATION_FAILED`로 처리한다.
+- mock provider로 문서 버전, FieldComment, 작업순서 이력, `report_sources.id` 인용을 각각 검증하고 실제 외부 네트워크를 테스트에서 사용하지 않는다.
 
 ## 권한 요약
 
@@ -181,6 +246,7 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 | FieldComment 등록 | 위 role + `team-member`, `viewer` |
 | 접근 로그 조회 | `admin`, `system-admin` |
 | 보고서 작성 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
+| 외부 AI 근거 검색·요약(후속 1단계) | `admin`, `system-admin`. 기능 플래그와 고객·현장별 전송 승인도 필요 |
 | 채널 생성/멤버 관리 | 문서/작업순서 쓰기 role. 단, 채널 조회와 메시지/인수인계 조회는 채널 멤버 또는 `admin`, `system-admin` |
 
 WPF `RolePermissionPolicy`와의 대조:

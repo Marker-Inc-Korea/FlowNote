@@ -2,6 +2,8 @@
 
 `apps/windows/`는 FlowNote Windows WPF 클라이언트 영역이다. 현장/관리자 PC에 설치해 사용하는 네이티브 앱을 기준으로 한다.
 
+현재 프로젝트는 WPF UI `net10.0-windows`, Core와 스모크 테스트 `net10.0`을 대상으로 한다.
+
 ## 현재 구현
 
 - 로그인 화면과 메인 탐색기 화면
@@ -24,7 +26,7 @@
 - 채널함: 서버 내 채널, 채널 메시지/알림, 인수인계 조회, 읽음/수신 확인, 원천 링크 복사, 후속 FieldComment 생성
 - 채널 관리: 서버 채널 생성, 멤버 추가/제외
 - 인수인계 확인 현황: 수신자별 receipt 상태 변경, 후속 FieldComment 생성
-- FastAPI 서버 인증과 문서/FieldComment/첨부/접근 로그/보고서/작업순서 API 클라이언트
+- FastAPI 서버 인증과 승인 단말/문서/FieldComment/첨부/접근 로그/보고서/작업순서/채널·인수인계/AI 검색 근거 API 클라이언트
 - AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
 - 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장
 

@@ -6,6 +6,7 @@
 
 - FastAPI 서버는 SQLite 기반 MVP로 동작한다.
 - 인증은 사용자 로그인, Access Token, Refresh Token, 로그아웃 세션 폐기를 포함한다.
+- 승인 단말 등록·조회·상태 변경·교체와 Android 로그인 승인을 관리한다.
 - 문서는 등록, 목록, 상세, 버전, 상태, 공개 버전, 태그 기능을 제공한다.
 - FieldComment는 문서와 분리된 현장 원천 기록으로 관리한다.
 - 작업순서 보드와 항목, 변경 이력, 알림 후보를 관리한다.
@@ -25,3 +26,4 @@
 
 - 최신 구조는 `docs/product-overview.md`, `docs/system-map.md`, `docs/data-model.md`, `docs/api.md`를 기준으로 한다.
 - 이 파일은 작업 기록이며, 현재 동작 기준을 판단할 때는 상위 문서를 우선한다.
+- Android 현재 구현은 승인 단말 로그인, 공개 문서 조회, FieldComment/사진 outbox, 채널 알림과 인수인계 확인까지다.
