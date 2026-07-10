@@ -49,7 +49,7 @@ WPF 사용자 관리 화면은 이 로컬 SQLite 계정 전용이다. 창 제목
 
 구 FieldNote 큐는 동기화 실패 기록이 남아 있어도 FieldComment API로 자동 변환하지 않는다. 테스트/스모크 이력 보존 규칙에 따라 기존 SQLite row와 큐 기록은 삭제하지 않고, 이력 창의 분류와 조치 문구로 별도 정리 대상으로 표시한다.
 
-기존 공통 SQLite에는 초기 로컬 큐 형식의 `create` action이 `PENDING`으로 남아 있을 수 있다. 현재 서버 동기화 코드는 `register_document`, `register_document_version`, `publish_document_version`, `update_document_status`, `register_field_comment`, `update_field_comment_review`, `register_field_comment_attachment`, `register_access_log_*`, `register_report`만 서버 전송 action으로 처리한다. 따라서 `document/create`, `document_version/create`, `document_view_log/create`, `field_comment/create`, `field_comment_attachment/create`는 새 동기화 계약으로 재해석하지 않고 테스트 이력으로 보존한 뒤 별도 마이그레이션 검토 대상으로 둔다.
+기존 공통 SQLite에는 초기 로컬 큐 형식의 `create` action이 남아 있을 수 있다. 현재 서버 동기화 코드는 `register_document`, `register_document_version`, `publish_document_version`, `update_document_status`, `register_field_comment`, `update_field_comment_review`, `register_field_comment_attachment`, `register_access_log_*`, `register_report`만 서버 전송 action으로 처리한다. 따라서 `document/create`, `document_version/create`, `document_view_log/create`, `field_comment/create`, `field_comment_attachment/create`는 새 동기화 계약으로 재해석하지 않는다. 재시도 시 행과 원본 데이터를 삭제하지 않고 `FAILED`와 구 형식 보류 사유를 기록하며, 실제 서버 호출과 `attempt_count` 증가는 하지 않는다. 운영자는 원본 이력을 보존한 채 별도 마이그레이션 대상으로 검토한다.
 
 문서 최신 버전은 `documents.version_no`와 `document_versions.is_latest`를 기준으로 서버 최신 버전에 연결한다. 이미 서버에 같은 `version_no`가 있으면 중복 업로드하지 않고 매핑을 복구한다. 공개 버전은 `documents.published_version_no`와 `document_versions.is_published`를 기준으로 서버 publish API에 반영한다. 상태 변경은 현재 로컬 `documents.status`를 서버에 반영하며, `PUBLISHED` 상태는 공개 버전 동기화가 선행되어야 한다.
 

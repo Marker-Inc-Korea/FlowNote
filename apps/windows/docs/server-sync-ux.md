@@ -6,9 +6,11 @@
 
 `동기화 큐` 탭은 다음 컬럼을 표시한다.
 
+화면 상단 요약의 대기, 실패, 보류, 완료 수는 목록 표시 한도와 관계없이 SQLite 전체 큐를 집계한다. 목록에는 현재 최대 500건을 표시하며, 요약에 전체 건수와 실제 표시 건수를 함께 보여준다.
+
 - `상태`: `대기`, `실패`, `완료`
-- `우선순위`: 운영자가 먼저 확인할 순서. `10 설정 필요`, `11 로그인 필요`, `12 연결 확인`, `20 파일 확인`, `30 문서 먼저`, `31 버전 먼저`, `32 FieldComment 먼저`, `33 근거 먼저`, `50 재시도`, `80 별도 정리`, `90 완료`
-- `분류`: 서버 URL 미설정, 인증 만료, 네트워크 실패, 로컬 파일 누락, 선행 문서 미동기화, 선행 문서 버전 미동기화, 선행 FieldComment 미동기화, 보고서 근거 미동기화, 구 FieldNote 큐, 재시도 가능, 완료
+- `우선순위`: 운영자가 먼저 확인할 순서. `10 설정 필요`, `11 로그인 필요`, `12 연결 확인`, `20 파일 확인`, `30 문서 먼저`, `31 버전 먼저`, `32 FieldComment 먼저`, `33 근거 먼저`, `50 재시도`, `80 별도 정리`, `81 별도 전환`, `90 완료`
+- `분류`: 서버 URL 미설정, 인증 만료, 네트워크 실패, 로컬 파일 누락, 선행 문서 미동기화, 선행 문서 버전 미동기화, 선행 FieldComment 미동기화, 보고서 근거 미동기화, 구 FieldNote 큐, 구 형식 큐, 실제 서버 오류, 재시도 가능, 완료
 - `대상`: 문서, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 접근 로그, 보고서
 - `작업`: 문서 전송, 버전 전송, 공개 전송, 상태 전송, FieldComment 전송, 검토 변경 전송, 첨부 전송, 열람 시작/종료/자동 종료/다운로드 차단 전송, 보고서 서버 저장
 - `시도`: 서버 전송 시도 횟수
@@ -30,6 +32,7 @@
 - 선행 문서 버전 미동기화: `선행 문서 버전이 아직 서버에 전송되지 않았습니다. 문서 버전 동기화 후 다시 시도하세요.`
 - 선행 FieldComment 미동기화: `선행 FieldComment가 아직 서버에 전송되지 않았습니다. FieldComment 동기화 후 다시 시도하세요.`
 - 구 FieldNote 큐: `구 FieldNote 큐는 현재 FieldComment 동기화 대상이 아니어서 자동 전송하지 않았습니다. 관리자 검토 후 FieldComment 전환 또는 별도 마이그레이션으로 정리하세요. 로컬 데이터는 삭제되지 않습니다.`
+- 구 형식 create 큐: `구 형식 create 큐는 현재 서버 동기화 계약의 자동 전송 대상이 아닙니다. 원본 이력은 보존하고 관리자 검토 후 현재 action으로 별도 마이그레이션하세요. 서버 호출과 시도 횟수 증가는 수행하지 않았으며 로컬 데이터는 삭제되지 않습니다.`
 
 ## 문서 버전/공개/상태 우선순위
 
@@ -49,9 +52,9 @@
 
 알림함은 사용자 업무 알림을 우선하므로 자동 재시도 요약을 새 알림으로 만들지 않는다.
 
-## 2026-07-09 실패 큐 분류
+## 2026-07-10 실패 큐 분류와 잔여 PENDING 정리
 
-사용자 확인 기준으로 WPF 공통 SQLite에는 `SYNCED` 387건, `FAILED` 277건이 있었다. 서버 연결 스모크 테스트와 후속 로컬 검증까지 누적된 2026-07-09 KST 현재 재조회 기준은 `SYNCED` 520건, `FAILED` 293건, `PENDING` 150건이다. 테스트 이력 보존 규칙에 따라 기존 큐와 SQLite 기록은 삭제하지 않는다.
+정리 실행 전 WPF 공통 SQLite 기준은 `SYNCED` 520건, `FAILED` 293건, `PENDING` 300건이다. 기존 실패 293건은 아래 다섯 운영 분류로 나뉜다. 테스트 이력 보존 규칙에 따라 기존 큐와 SQLite 기록은 삭제하지 않는다.
 
 현재 `sqlite3 data/local/flownote.local.sqlite`에서 `server_sync_queue`를 `entity_type`, `action`, `status`, `last_error`로 묶으면 실패 큐는 다음 패턴으로 나뉜다.
 
@@ -60,11 +63,13 @@
 - 로컬 파일 누락 20건: `document/register_document`. 서버가 실행되어도 파일이 없으면 재시도할 수 없으므로 운영자가 원본 파일 위치를 복구해야 한다.
 - 선행 FieldComment 미동기화 20건: `field_comment_attachment/register_field_comment_attachment`. 첨부보다 FieldComment 서버 등록이 먼저다.
 - 구 FieldNote 큐 20건: `field_note/register_field_note` 10건, `field_note_attachment/register_field_note_attachment` 10건. 현재 명칭과 API는 FieldComment 기준이므로 자동 재전송 대상이 아니라 관리자 검토 후 전환 또는 별도 마이그레이션으로 정리한다.
-- 인증 만료, 네트워크 실패는 현재 실패 그룹에는 남아 있지 않지만 코드와 UI 분류에는 유지한다. 이 항목은 재로그인, 서버 PC/네트워크 확인 후 바로 재시도한다.
+- 실제 서버/설정 오류 9건: 현재는 모두 서버 URL 미설정이며 문서, 접근 로그 시작/종료/다운로드 차단, 문서 공개, 문서 상태, 문서 버전, FieldComment, FieldComment 첨부가 각 1건씩 남아 있다. 인증 만료, 네트워크 실패, 서버 응답 오류도 같은 운영 범주에서 원인을 조치한 뒤 재시도한다.
 
-현재 `PENDING` 큐 150건은 예전 로컬 큐 형식의 `create` action이다. `document/create` 30건, `document_version/create` 3건, `document_view_log/create` 36건, `field_comment/create` 72건, `field_comment_attachment/create` 9건이 남아 있다. 현재 서버 동기화 코드는 문서 전송, 버전 전송, 공개, 상태, FieldComment, 검토, 첨부, 접근 로그, 보고서 저장 action만 처리하므로 이 `create` 큐는 자동 서버 전송 계약으로 보지 않고 보존 이력으로 분리 검토한다.
+실행 전 `PENDING` 300건은 예전 로컬 큐 형식의 `create` action이다. `document/create` 60건, `document_version/create` 6건, `document_view_log/create` 72건, `field_comment/create` 144건, `field_comment_attachment/create` 18건이다. 2026-07-10 정리에서는 이 행을 삭제하거나 현재 action으로 임의 변환하지 않고 모두 `FAILED`와 구 형식 보류 사유로 분류했다. 정리 후 큐는 `SYNCED` 520건, `FAILED` 593건, `PENDING` 0건이며, 300건의 `attempt_count`는 모두 0으로 서버 호출이 없었음을 확인했다. 이후 재시도 코드도 `action = create`를 `MarkAttempt` 전에 보류하므로 서버 호출과 시도 횟수 증가 없이 같은 분류를 유지한다.
 
-현재 `server_id_mappings`는 648건이며 문서, 문서 버전, 공개, 상태, 접근 로그, FieldComment, FieldComment 검토, 첨부, 보고서 매핑이 남아 있고 중복 매핑 그룹은 0건이다. 이미 서버에 존재하는 문서 버전은 `document_versions.version_no`로 서버 버전을 찾아 `server_version_id`, `synced_at`, `server_id_mappings`를 복구하고 중복 업로드하지 않는다. 큐 재등록도 `idempotency_key` 유니크 제약과 `ON CONFLICT(idempotency_key)`로 중복 행을 만들지 않는다.
+후속 FastAPI 연동 스모크까지 실행한 최종 누적은 `SYNCED` 609건, `FAILED` 589건, `PENDING` 0건이다. 구 형식 create 300건은 모두 `attempt_count = 0`을 유지했고, `server_id_mappings` 767건의 중복 그룹은 0건이다.
+
+현재 `server_id_mappings`는 648건이며 문서, 문서 버전, 공개, 상태, 접근 로그, FieldComment, FieldComment 검토, 첨부, 보고서 매핑이 남아 있고 정리 후에도 `(entity_type, local_id, local_version_no)` 중복 그룹은 0건이다. 이미 서버에 존재하는 문서 버전은 `document_versions.version_no`로 서버 버전을 찾아 `server_version_id`, `synced_at`, `server_id_mappings`를 복구하고 중복 업로드하지 않는다. 큐 재등록도 `idempotency_key` 유니크 제약과 `ON CONFLICT(idempotency_key)`로 중복 행을 만들지 않는다.
 
 운영 우선순위는 다음 순서로 본다.
 

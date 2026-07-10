@@ -32,6 +32,30 @@ try
 {
     var services = new FlowNoteLocalServices(databasePath);
 
+    var legacyCreateDiagnosis = ServerSyncQueueDiagnostics.Classify(
+        "PENDING",
+        "document",
+        "create",
+        null);
+    Require(
+        legacyCreateDiagnosis.Category == "구 형식 큐" &&
+        legacyCreateDiagnosis.IsDependencyHold &&
+        legacyCreateDiagnosis.OperatorAction.Contains("별도 마이그레이션", StringComparison.Ordinal),
+        "legacy create queue should be shown as a Korean migration hold even without a prior error");
+    var unknownServerFailureDiagnosis = ServerSyncQueueDiagnostics.Classify(
+        "FAILED",
+        "document",
+        "register_document",
+        "HTTP 503 Service Unavailable");
+    Require(
+        unknownServerFailureDiagnosis.Category == "실제 서버 오류" &&
+        !unknownServerFailureDiagnosis.IsDependencyHold,
+        "unknown server failures should remain retryable and be classified as actual server errors");
+    var initialQueueSummary = services.ServerSync.GetQueueSummary();
+    Require(
+        initialQueueSummary.Total >= services.ServerSync.ListQueueItems().Count,
+        "sync queue summary should count the full database even when the visible list is limited");
+
     var login = services.Auth.Login("admin", "1234");
     Require(login.Success, "admin / 1234 login should succeed");
     Require(login.Role == "system-admin", "local admin account should keep the system-admin role");
@@ -156,29 +180,36 @@ try
 
         foreach (var group in workGroups)
         {
-            var memberCount = ScalarLong(
-                seedConnection,
-                "SELECT COUNT(*) FROM user_accounts WHERE group_id = $group_id;",
-                ("$group_id", group.GroupId));
+            var seededMembers = FlowNoteLocalDatabase.DefaultUserSeeds
+                .Where(user => user.GroupId == group.GroupId)
+                .ToList();
+            var memberCount = seededMembers.Count;
             Require(memberCount is >= 4 and <= 8, $"{group.GroupId} should contain 4 to 8 users");
 
-            var foremanCount = ScalarLong(
-                seedConnection,
-                "SELECT COUNT(*) FROM user_accounts WHERE group_id = $group_id AND role = 'line-foreman';",
-                ("$group_id", group.GroupId));
-            Require(foremanCount == 1, $"{group.GroupId} should contain one foreman");
-
-            var linkedCrewCount = ScalarLong(
+            var persistedSeedCount = seededMembers.Sum(user => ScalarLong(
                 seedConnection,
                 """
                 SELECT COUNT(*)
                 FROM user_accounts
-                WHERE group_id = $group_id
-                  AND user_id <> $leader_user_id
-                  AND supervisor_user_id = $leader_user_id;
+                WHERE user_id = $user_id
+                  AND group_id = $group_id
+                  AND role = $role
+                  AND supervisor_user_id IS $supervisor_user_id;
                 """,
+                ("$user_id", user.UserId),
                 ("$group_id", group.GroupId),
-                ("$leader_user_id", group.LeaderUserId ?? string.Empty));
+                ("$role", user.Role),
+                ("$supervisor_user_id", user.SupervisorUserId is null ? DBNull.Value : user.SupervisorUserId)));
+            Require(
+                persistedSeedCount == memberCount,
+                $"{group.GroupId} default seed users should remain linked without counting accumulated smoke users");
+
+            var foremanCount = seededMembers.Count(user => user.Role == "line-foreman");
+            Require(foremanCount == 1, $"{group.GroupId} should contain one foreman");
+
+            var linkedCrewCount = seededMembers.Count(user =>
+                user.UserId != group.LeaderUserId &&
+                user.SupervisorUserId == group.LeaderUserId);
             Require(linkedCrewCount == memberCount - 1, $"{group.GroupId} crew should be linked to its foreman");
         }
     }
@@ -1964,10 +1995,10 @@ try
                     ("$log_id", offlineAccessLogId.ToString())) == 8,
                 "queued retry should mark document, version, publish, status, field comment, attachment, and access log queue rows as synced");
             Require(
-                services.ServerSync.ListQueueItems().Count(item =>
+                services.ServerSync.ListQueueItems(services.ServerSync.GetQueueSummary().Total).Count(item =>
                     item.EntityId == uploadedDocument.DocumentId &&
                     item.Status == "SYNCED") >= 4,
-                "sync queue list should show document, version, publish, and status queue rows as synced after retry");
+                "full sync queue list should show document, version, publish, and status rows as synced after retry");
             Require(
                 ScalarLong(
                     syncConnection,
@@ -3339,9 +3370,7 @@ try
                     RawContent = $"서버 AI 품질 스모크 분석완료 FieldComment run={runId}: 정렬 지연 2회 후 가이드핀 청소로 정상화.",
                     AuthorId = serverLogin.UserId,
                     ReportedBy = "서버 스모크 조장",
-                    OperatorId = "서버 스모크 작업조",
                     EntrySource = "field_user",
-                    DeviceId = "server-smoke-ai-01",
                     LocationCode = "line-a",
                     Category = "alignment-delay",
                     IdempotencyKey = $"wpf-smoke-ai-analyzed-{runId}"
@@ -3367,9 +3396,7 @@ try
                     RawContent = $"서버 AI 품질 스모크 검토완료 FieldComment run={runId}: 소재 대기 중 보류 발생, 다음 조 인수인계 필요.",
                     AuthorId = serverLogin.UserId,
                     ReportedBy = "서버 스모크 조원",
-                    OperatorId = "서버 스모크 작업조",
                     EntrySource = "field_user",
-                    DeviceId = "server-smoke-ai-02",
                     LocationCode = "line-a",
                     Category = "handover",
                     IdempotencyKey = $"wpf-smoke-ai-reviewed-{runId}"
@@ -3396,9 +3423,7 @@ try
                     RawContent = $"서버 AI 품질 스모크 선정 FieldComment run={runId}: 센서 재영점 절차 누락 위험.",
                     AuthorId = serverLogin.UserId,
                     ReportedBy = "서버 스모크 반장",
-                    OperatorId = "서버 스모크 작업조",
                     EntrySource = "field_user",
-                    DeviceId = "server-smoke-ai-03",
                     LocationCode = "line-a",
                     Category = "sensor-zeroing",
                     IdempotencyKey = $"wpf-smoke-ai-selected-{runId}"

@@ -49,13 +49,10 @@ public partial class HistoryWindow : Window
             .ToList();
         SyncQueueGrid.ItemsSource = items;
 
-        var pendingCount = items.Count(item => item.Status == "PENDING");
-        var failedCount = items.Count(item => item.Status == "FAILED");
-        var syncedCount = items.Count(item => item.Status == "SYNCED");
-        var holdCount = items.Count(item => item.IsDependencyHold && item.Status != "SYNCED");
+        var summary = serverSync.GetQueueSummary();
         var firstAction = items.FirstOrDefault(item => item.Status != "SYNCED")?.OperatorAction ?? "조치할 항목이 없습니다.";
         SyncQueueSummaryTextBlock.Text =
-            $"대기 {pendingCount}건, 실패 {failedCount}건, 보류 {holdCount}건, 완료 {syncedCount}건. 먼저 처리: {firstAction} 로컬 데이터는 삭제되지 않습니다.";
+            $"전체 {summary.Total}건(목록 {items.Count}건 표시), 대기 {summary.Pending}건, 실패 {summary.Failed}건, 보류 {summary.Held}건, 완료 {summary.Synced}건. 먼저 처리: {firstAction} 로컬 데이터는 삭제되지 않습니다.";
     }
 
     private void RefreshButton_Click(object sender, RoutedEventArgs e)
@@ -153,6 +150,7 @@ public partial class HistoryWindow : Window
                 "report" => "보고서",
                 "field_note" => "구 FieldNote",
                 "field_note_attachment" => "구 FieldNote 첨부",
+                "document_view_log" => "구 문서 열람 로그",
                 _ => entityType
             };
         }
@@ -175,6 +173,7 @@ public partial class HistoryWindow : Window
                 "register_report" => "보고서 서버 저장",
                 "register_field_note" => "구 FieldNote 전송",
                 "register_field_note_attachment" => "구 FieldNote 첨부 전송",
+                "create" => "구 형식 생성 기록",
                 _ => action
             };
         }
