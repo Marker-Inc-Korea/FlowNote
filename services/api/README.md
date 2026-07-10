@@ -13,6 +13,13 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/auth/refresh` | Refresh token rotation |
 | POST | `/api/v1/auth/logout` | Revoke current session |
 | GET | `/api/v1/auth/me` | Current user lookup |
+| GET | `/api/v1/terminal-devices` | Approved terminal device list |
+| POST | `/api/v1/terminal-devices` | Register approved terminal device |
+| GET | `/api/v1/terminal-devices/{device_id}` | Terminal device detail |
+| GET | `/api/v1/terminal-devices/{device_id}/last-seen` | Terminal device last successful login |
+| PATCH | `/api/v1/terminal-devices/{device_id}` | Update terminal device metadata |
+| PATCH | `/api/v1/terminal-devices/{device_id}/status` | Change terminal device status |
+| POST | `/api/v1/terminal-devices/{device_id}/replace` | Retire and replace terminal device |
 | POST | `/api/v1/documents` | Register document and first version |
 | GET | `/api/v1/documents` | Document list |
 | GET | `/api/v1/documents/published` | Published document list |
@@ -105,6 +112,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The current collected FastAPI test count is 55.
+The current collected FastAPI test count is 58.
 
 Test SQLite DBs, logs, upload files, and generated sample files are preserved unless the user explicitly asks to delete them.

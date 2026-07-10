@@ -211,6 +211,84 @@ def _ensure_auth_session_device_column(database: Database) -> None:
         connection.execute(text("ALTER TABLE auth_sessions ADD COLUMN device_id VARCHAR(64)"))
 
 
+def _ensure_terminal_device_schema(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+
+    with database.engine.begin() as connection:
+        table_sql = connection.scalar(
+            text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'terminal_devices'")
+        )
+        if not table_sql:
+            return
+
+        existing_columns = {
+            row[1] for row in connection.execute(text("PRAGMA table_info(terminal_devices)"))
+        }
+        required_columns = {"registered_by", "updated_by", "replaced_device_id"}
+        if "RETIRED" in table_sql and required_columns.issubset(existing_columns):
+            return
+
+        connection.execute(text("PRAGMA foreign_keys=OFF"))
+        connection.execute(
+            text(
+                """
+                CREATE TABLE terminal_devices_new (
+                    id INTEGER NOT NULL,
+                    device_id VARCHAR(64) NOT NULL,
+                    device_name VARCHAR(120) NOT NULL,
+                    device_mode VARCHAR(30) NOT NULL,
+                    location_code VARCHAR(64),
+                    group_id VARCHAR(64),
+                    status VARCHAR(20) NOT NULL,
+                    last_seen_at DATETIME,
+                    registered_by VARCHAR(64),
+                    updated_by VARCHAR(64),
+                    replaced_device_id VARCHAR(64),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    PRIMARY KEY (id),
+                    CONSTRAINT ck_device_mode CHECK (device_mode IN ('viewer', 'admin_support')),
+                    CONSTRAINT ck_device_status CHECK (status IN ('ACTIVE', 'INACTIVE', 'RETIRED')),
+                    UNIQUE (device_id),
+                    FOREIGN KEY(registered_by) REFERENCES user_accounts (user_id),
+                    FOREIGN KEY(updated_by) REFERENCES user_accounts (user_id)
+                )
+                """
+            )
+        )
+        registered_by_sql = "registered_by" if "registered_by" in existing_columns else "NULL"
+        updated_by_sql = "updated_by" if "updated_by" in existing_columns else "NULL"
+        replaced_device_id_sql = (
+            "replaced_device_id" if "replaced_device_id" in existing_columns else "NULL"
+        )
+        connection.execute(
+            text(
+                f"""
+                INSERT INTO terminal_devices_new (
+                    id, device_id, device_name, device_mode, location_code, group_id,
+                    status, last_seen_at, registered_by, updated_by, replaced_device_id,
+                    created_at, updated_at
+                )
+                SELECT
+                    id, device_id, device_name, device_mode, location_code, group_id,
+                    status, last_seen_at, {registered_by_sql}, {updated_by_sql},
+                    {replaced_device_id_sql}, created_at, updated_at
+                FROM terminal_devices
+                """
+            )
+        )
+        connection.execute(text("DROP TABLE terminal_devices"))
+        connection.execute(text("ALTER TABLE terminal_devices_new RENAME TO terminal_devices"))
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_terminal_devices_device_id "
+                "ON terminal_devices (device_id)"
+            )
+        )
+        connection.execute(text("PRAGMA foreign_keys=ON"))
+
+
 def _ensure_work_sequence_columns(database: Database) -> None:
     if not database.database_url.startswith("sqlite"):
         return
@@ -269,6 +347,7 @@ def initialize_database(database: Database) -> None:
     _ensure_user_account_columns(database)
     _ensure_user_account_role_constraint(database)
     _ensure_idempotency_columns(database)
+    _ensure_terminal_device_schema(database)
     _ensure_auth_session_device_column(database)
     _ensure_work_sequence_columns(database)
     with database.session() as session:

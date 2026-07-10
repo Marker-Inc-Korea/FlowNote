@@ -28,6 +28,22 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 - logout은 현재 세션을 `REVOKED`로 바꾸며 이후 같은 access token은 거부된다.
 - WPF 서버 동기화 중 인증 만료, 토큰 교체, logout 폐기가 확인되면 `로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인하세요. 로컬 데이터는 삭제되지 않습니다.` 문구를 표시하고 로컬 데이터와 동기화 큐를 삭제하지 않는다.
 
+## 승인 단말 관리
+
+아래 API는 `admin`, `system-admin`만 사용할 수 있다. 단말 상태는 `ACTIVE`, `INACTIVE`, `RETIRED`이며 `RETIRED` 단말은 다시 활성화할 수 없다.
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/api/v1/terminal-devices` | 승인 단말 목록. 선택적으로 `status` 필터 사용 |
+| POST | `/api/v1/terminal-devices` | 승인 단말 등록 |
+| GET | `/api/v1/terminal-devices/{device_id}` | 승인 단말 상세 조회 |
+| GET | `/api/v1/terminal-devices/{device_id}/last-seen` | 상태와 마지막 로그인 성공 시각 조회 |
+| PATCH | `/api/v1/terminal-devices/{device_id}` | 단말명, 용도, 위치, 그룹 변경 |
+| PATCH | `/api/v1/terminal-devices/{device_id}/status` | 단말 활성·비활성·폐기 상태 변경 |
+| POST | `/api/v1/terminal-devices/{device_id}/replace` | 기존 단말을 `RETIRED`로 바꾸고 교체 단말 등록 |
+
+등록·정보 변경·상태 변경·교체는 `registered_by`, `updated_by`를 현재 서버 사용자 ID로 기록한다. 운영 변경은 `activity_history`에 `terminal_device.*` 이벤트, 변경 전후 JSON, 변경 사유로 남긴다. Android 로그인은 오직 `ACTIVE` 단말만 허용하고 성공할 때마다 `terminal_devices.last_seen_at`을 갱신하며 새 `auth_sessions.device_id`를 기록한다. 단말을 `INACTIVE` 또는 `RETIRED`로 바꾸거나 교체하면 해당 device ID의 기존 활성 세션도 같은 트랜잭션에서 `REVOKED`로 폐기한다.
+
 ## Health
 
 | Method | Path | 설명 |

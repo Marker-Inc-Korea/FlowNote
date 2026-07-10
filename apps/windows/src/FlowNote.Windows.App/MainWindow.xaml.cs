@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private readonly HttpClient? serverHttpClient;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly FlowNoteServerChannelClient? serverChannelClient;
+    private readonly FlowNoteServerTerminalDeviceClient? serverTerminalDeviceClient;
     private readonly bool canRegisterDocuments;
     private readonly bool canManageFileWatch;
     private readonly bool canWriteReports;
@@ -40,7 +41,8 @@ public partial class MainWindow : Window
         canWriteReports = RolePermissionPolicy.CanWriteReports(currentUser.Role);
         canManageUsers = RolePermissionPolicy.CanManageUsers(currentUser.Role);
         currentDisplayName = currentUser.DisplayName ?? currentUser.LoginId ?? "admin";
-        (serverDocumentClient, serverChannelClient, serverHttpClient) = CreateServerClients(currentUser);
+        (serverDocumentClient, serverChannelClient, serverTerminalDeviceClient, serverHttpClient) =
+            CreateServerClients(currentUser);
         SignedInUserTextBlock.Text = $"{currentDisplayName} ({FormatUserRole(currentUser.Role)})";
         DataContext = workspace;
         ApplyRolePermissions();
@@ -250,6 +252,20 @@ public partial class MainWindow : Window
             currentDisplayName = window.UpdatedDisplayName;
             SignedInUserTextBlock.Text = $"{window.UpdatedDisplayName} ({FormatUserRole(currentUser.Role)})";
         }
+    }
+
+    private void TerminalDeviceManagementButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureUserManagementAllowed())
+        {
+            return;
+        }
+
+        var window = new TerminalDeviceManagementWindow(serverTerminalDeviceClient)
+        {
+            Owner = this
+        };
+        window.ShowDialog();
     }
 
     private void WorkSequenceAdminButton_Click(object sender, RoutedEventArgs e)
@@ -688,6 +704,7 @@ public partial class MainWindow : Window
         FileListDropZone.AllowDrop = canRegisterDocuments;
         FileWatchButton.IsEnabled = canManageFileWatch;
         UserManagementButton.Visibility = canManageUsers ? Visibility.Visible : Visibility.Collapsed;
+        TerminalDeviceManagementButton.Visibility = canManageUsers ? Visibility.Visible : Visibility.Collapsed;
 
         if (!canRegisterDocuments)
         {
@@ -843,17 +860,22 @@ public partial class MainWindow : Window
     private static (
         FlowNoteServerDocumentClient? DocumentClient,
         FlowNoteServerChannelClient? ChannelClient,
+        FlowNoteServerTerminalDeviceClient? TerminalDeviceClient,
         HttpClient? HttpClient) CreateServerClients(LoginResult currentUser)
     {
         var httpClient = FlowNoteServerApiEnvironment.CreateHttpClientFromEnvironment();
         if (httpClient is null || string.IsNullOrWhiteSpace(currentUser.AccessToken))
         {
             httpClient?.Dispose();
-            return (null, null, null);
+            return (null, null, null, null);
         }
 
         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", currentUser.AccessToken);
-        return (new FlowNoteServerDocumentClient(httpClient), new FlowNoteServerChannelClient(httpClient), httpClient);
+        return (
+            new FlowNoteServerDocumentClient(httpClient),
+            new FlowNoteServerChannelClient(httpClient),
+            new FlowNoteServerTerminalDeviceClient(httpClient),
+            httpClient);
     }
 
     private string GetCurrentActorName()

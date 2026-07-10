@@ -10,6 +10,7 @@ from app.api.v1.field_comments import router as field_comments_router
 from app.api.v1.health import router as health_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.tags import router as tags_router
+from app.api.v1.terminal_devices import router as terminal_devices_router
 from app.api.v1.work_sequences import router as work_sequences_router
 
 api_v1_router = APIRouter()
@@ -20,6 +21,7 @@ api_v1_router.include_router(document_access_logs_router)
 api_v1_router.include_router(field_comments_router)
 api_v1_router.include_router(document_field_comments_router)
 api_v1_router.include_router(tags_router)
+api_v1_router.include_router(terminal_devices_router)
 api_v1_router.include_router(work_sequences_router)
 api_v1_router.include_router(reports_router)
 api_v1_router.include_router(ai_search_router)

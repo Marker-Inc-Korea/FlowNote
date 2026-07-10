@@ -246,7 +246,7 @@ class TerminalDevice(TimestampMixin, Base):
     __tablename__ = "terminal_devices"
     __table_args__ = (
         CheckConstraint("device_mode IN ('viewer', 'admin_support')", name="ck_device_mode"),
-        CheckConstraint("status IN ('ACTIVE', 'INACTIVE')", name="ck_device_status"),
+        CheckConstraint("status IN ('ACTIVE', 'INACTIVE', 'RETIRED')", name="ck_device_status"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -257,6 +257,9 @@ class TerminalDevice(TimestampMixin, Base):
     group_id: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    registered_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    updated_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    replaced_device_id: Mapped[str | None] = mapped_column(String(64))
 
 
 class FieldComment(TimestampMixin, Base):
