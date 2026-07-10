@@ -34,6 +34,12 @@ git status --short
 
 2026-07-10 현재 `python -m pytest --collect-only -q`의 실제 수집 결과는 58개다. 표준 PowerShell 스크립트의 `Expected 53 FastAPI pytest tests` 검사는 최신 테스트 모음과 일치하지 않는 알려진 검증 자동화 제한이며, 기대값을 갱신하기 전까지 표준 실행 전체 통과로 판정하지 않는다. 개별 pytest 58개 통과 기록과 WPF 검증 기록은 아래 실행별 기록을 따른다.
 
+## 2026-07-10 코드-문서 정합성 재점검
+
+현재 FastAPI 테스트를 다시 수집한 결과 58개가 정상 수집되었다. 이번 문서 갱신에서는 전체 pytest, WPF 빌드, WPF 스모크를 새로 실행하지 않았으며 기존 DB와 테스트 산출물도 삭제하거나 초기화하지 않았다.
+
+현재 코드의 라우터, 서버 ORM 모델, Windows 서버 API 클라이언트와 Android 최소 앱을 상위 문서와 대조했다. 승인 단말 관리, 채널/인수인계, Android outbox, AI 근거 후보 read model은 구현 범위로 유지한다. 반면 `/api/v1/ai/queries` 계열 외부 AI 질의 API, `ai_queries` 계열 모델, provider 호출과 외부 전송 승인 검사는 계약 초안으로만 유지하며 현재 검증 대상에 포함하지 않는다.
+
 ## WPF 스모크 필수 조건
 
 WPF 스모크 테스트는 기본적으로 저장소 루트의 `data/local/flownote.local.sqlite`를 사용한다. 표준 스크립트는 실행 중 `FLOWNOTE_LOCAL_DATA_DIR`와 `FLOWNOTE_LOCAL_DATABASE_PATH`를 비워 임시 SQLite가 아니라 공통 SQLite에 누적 기록되도록 한다.
@@ -440,3 +446,22 @@ Windows 실기 수동 검증에서는 서버 로그인 `admin`으로 `승인 단
 - 후보 재생성 응답과 품질 응답의 source별 후보 수, 제외 사유, 운영 안내가 일치한다.
 
 이번 문서 정합성 검증에서는 기존 SQLite와 테스트 산출물을 삭제하지 않았다.
+
+## 2026-07-10 Android 현장 단말 빌드·outbox·채널/인수인계 검증
+
+Android Studio 내장 JBR 21과 Android SDK를 사용해 `apps/android`에서 `./gradlew testDebugUnitTest`와 `./gradlew assembleDebug`를 실행했고 모두 통과했다. JDK 21이 Java 8 source/target 지원 폐기 예정 경고를 출력했지만 테스트와 debug APK 생성에는 오류가 없었다. 생성 APK와 Gradle 로그는 `apps/android/app/build/` 아래에 보존되며 `.gitignore`의 `build/`, `*.apk` 규칙으로 Git에서 제외된다.
+
+Android API 37.1 `Medium_Phone` AVD에 debug APK를 설치하고 로컬 FastAPI `http://10.0.2.2:5185` 및 보존 DB `services/api/data/flownote.android-verification.sqlite3`와 연결했다. 실행 식별자는 `20260710180354`이며, 승인 단말 `android-emulator-20260710180354` 로그인은 200, 미등록 단말과 `android-inactive-20260710180354` 로그인은 각각 403이었다. 비활성 단말은 앱 화면에서도 403을 확인했으며, 서버 영문 오류 본문이 노출되던 문제를 한글 현장 안내로 변환한 뒤 `요청이 거부되었습니다. 승인 단말 상태와 사용자 권한을 확인하세요. (HTTP 403)` 표시를 재확인했다.
+
+outbox 실기 검증은 공개 문서 `doc_5fd2fb924dfd448aa48199bf2b2b73de`와 Android 파일 선택기로 고른 PNG 사진을 사용했다. 서버 포트를 연결 불가능한 값으로 바꾼 첫 전송에서는 outbox row가 `FAILED`, `attempt_count = 1`, `server_id = NULL`로 남고 사진 URI와 오류가 보존되었다. 15초 backoff 이후 정상 서버 주소로 재전송하자 같은 row가 `SYNCED`, `attempt_count = 2`, `server_id = comment_a65715b28fb749df932c8bf803233a8f`로 전환됐다. 서버 DB에는 다음 연결이 남았다.
+
+- FieldComment: `comment_a65715b28fb749df932c8bf803233a8f`, `input_mode = signal`, `signal_level = yellow`, 승인 단말 ID와 Android idempotency key 기록
+- 첨부: `att_2e804d51c3d949278118eecb3198d84c`, 위 comment ID 참조, `attachment_type = photo`, 파일 크기 8,460 bytes
+- 보존 파일: `services/api/storage/android-verification/field-comments/comment_a65715b28fb749df932c8bf803233a8f/attachments/0e7916e07cf8416d8996df2aa4797362_field-photo.jpg`
+- 실패/성공 outbox 스냅샷: `services/api/data/test-artifacts/android-verification-2026-07-10/20260710180354/`
+
+채널 `channel_14090d18809d4668913f99fef315e743`의 Android 알림을 앱에서 읽음 처리한 뒤 `notification_channel_members.last_read_message_id`가 `chmsg_ad1b7d0deb0a47eea59f200f43bab271`로 저장된 것을 확인했다. 인수인계 `handover_97d53669291f4ec3a7d15471efeeafc3`의 receipt `hreceipt_e7e3ce69ab294532bae8376a6b9a330e`는 앱 버튼으로 `READ` → `ACKNOWLEDGED` → `FOLLOW_UP_REQUIRED`를 순서대로 변경했고, 각 단계 직후 서버 DB 상태를 대조했다. 최종 row에는 `read_at`, `acknowledged_at`, `follow_up_required_at`, `updated_by`가 모두 남았다.
+
+재시도 단위 테스트는 최대 자동 시도 12회와 `15초 → 30초 → 60초 → ... → 최대 15분` 지수 backoff 값을 명시적으로 검증하도록 보강했다. 한글 오류 안내 테스트를 포함한 Android 단위 테스트와 debug 빌드를 다시 통과했으며, FastAPI 관련 회귀 테스트 `test_auth_api.py`, `test_terminal_devices_api.py`, `test_field_comments_api.py`, `test_channels_api.py`는 25건 모두 통과했다.
+
+이번 결과는 에뮬레이터와 로컬 HTTP 서버를 사용한 개발 실기 검증이다. 운영 승인된 실제 태블릿 또는 러기드 단말의 카메라, 사내 Wi-Fi, HTTPS 인증서, MDM/운영 서명 APK 검증은 아직 대기 상태이며 운영 배포 확정 근거와 분리한다. SQLite, 업로드 사진, outbox 스냅샷, APK와 빌드 로그는 삭제하지 않았고 모두 Git 제외 경로에 보존했다.
