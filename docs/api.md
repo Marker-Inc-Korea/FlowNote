@@ -168,15 +168,20 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 
 ## AI 검색 근거 후보
 
-AI 검색은 자동 조언이 아니라 “근거가 있는 검색과 요약”을 위한 후보 read model 관리 범위로 둔다. 외부 AI API 호출, 자동 작업지시 변경, 자동 의사결정은 포함하지 않는다.
+AI 검색 후보 API는 자동 조언이 아닌 “근거가 있는 검색과 요약”의 read model 관리 범위다. 이 API는 외부 AI 기능 플래그와 독립적으로 재생성·조회·품질 점검을 계속한다. 실제 외부 provider 네트워크 호출, 자동 작업지시 변경, 자동 의사결정은 포함하지 않는다.
 
 | Method | Path | 설명 |
 | --- | --- | --- |
 | POST | `/api/v1/ai-search/candidates/rebuild` | 현재 DB 기준으로 검색 후보를 재생성하고 후보 수와 제외 사유를 반환 |
 | GET | `/api/v1/ai-search/candidates` | 검색 후보 목록 조회. `sourceType`, `sourceId`, `limit`으로 제한 가능 |
 | GET | `/api/v1/ai-search/quality` | 후보 수, 원천별 개수, 제외 사유, FieldComment 검토 상태 부족분 조회 |
+| POST | `/api/v1/ai-search/evaluations` | 외부 AI 호출 없이 질문별 기대 근거와 실제 후보를 비교하고 재현성 snapshot을 누적 저장 |
 
-검색 후보 원천은 `PUBLISHED_DOCUMENT_VERSION`, `FIELD_COMMENT`, `WORK_SEQUENCE_HISTORY`, `REPORT_SOURCE` 네 종류만 허용한다. 각 후보 응답은 `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `parent_type`, `parent_id`를 포함해 원문 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 근거 row로 역추적할 수 있어야 한다.
+검색 후보 원천은 `PUBLISHED_DOCUMENT_VERSION`, `FIELD_COMMENT`, `WORK_SEQUENCE_HISTORY`, `REPORT_SOURCE` 네 종류만 허용한다. 각 후보 응답은 안정된 `candidate_id`, `content_hash`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `parent_type`, `parent_id`를 포함해 원문 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 근거 row로 역추적할 수 있어야 한다. `candidate_id`는 source type/id/version 조합의 결정적 hash이며 원천 내용이 바뀌지 않으면 재생성 뒤에도 유지되고, 검색 본문 변경은 `content_hash`로 구분한다.
+
+평가 요청은 `runLabel`, 선택적 `evaluateAsUserId`, `cases[]`를 받는다. 각 case에는 `caseKey`, `question`, `expectedOutcome`, `expectedEvidence[]`, `expectedExcluded[]`, `limit`을 둔다. 서버는 후보를 두 번 재생성해 ID·content hash와 순위를 비교하고, 기대/실제 candidate·source·version·trace ID, 내부 원천 URI, 제외 사유, 순위 hash를 `ai_search_evaluation_runs`와 `ai_search_evaluation_cases`에 저장한다. 질문과 일치하는 적격 후보가 없으면 답변을 만들지 않고 `INSUFFICIENT_EVIDENCE`로 판정한다. 채널에 연결된 원천은 평가 사용자에게 활성 멤버십이 없으면 `CHANNEL_ACCESS_DENIED`로 제외한다. 이 API는 provider client를 호출하지 않는다.
+
+`GET /api/v1/ai-search/quality`의 `latest_evaluation`은 최근 실행의 통과 건수, 네 원천 커버, ID/hash·순위 안정성, 주요 제외 사유, FieldComment 검토 부족분과 `provider_start_ready`를 반환한다. 착수 가능은 모든 평가 통과, 네 원천 커버, 재현성 통과, 검토 완료 FieldComment 100건 충족을 모두 요구하며 외부 전송 승인이나 기능 플래그를 자동으로 켜지는 않는다.
 
 WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidates/rebuild`로 후보를 재생성한 뒤 `GET /api/v1/ai-search/quality`의 `counts_by_source_type`, `excluded_counts_by_reason`, `excluded_reason_guidance`, `field_comment_review_readiness`를 표시한다. 원천별 후보 수는 네 source 타입을 항상 표시하고, FieldComment 검토 준비도는 `ANALYZED`, `REVIEWED`, `SELECTED` 상태 합계가 100건에 부족한 수를 보여준다. 후보 목록에서 운영자는 `trace_table`, `trace_id`, `trace_version_id`로 원문 문서 버전, FieldComment, 작업순서 이력, 보고서 source row로 이동해 근거를 확인하며 선택 후보의 추적값을 클립보드에 복사할 수 있다.
 
@@ -189,10 +194,10 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 | Method | Path | 설명 |
 | --- | --- | --- |
 | POST | `/api/v1/ai/queries` | 근거 검색·요약 질의 생성. 외부 호출이 꺼져 있으면 `503 AI_EXTERNAL_CALL_DISABLED`, 전송 승인이 없으면 `403 AI_TRANSFER_NOT_APPROVED` |
-| GET | `/api/v1/ai/queries/{query_id}` | 호출 사용자 또는 `admin`, `system-admin`이 질의 상태, 근거 ID, 인용, 응답 저장 여부 조회 |
+| GET | `/api/v1/ai/queries/{query_id}` | `admin`, `system-admin`이 질의 상태, 응답 저장 여부/hash, 차단 코드, 적격 근거 snapshot 조회. 현재는 호출자 본인 제한이나 응답 본문·citation 목록 반환은 없음 |
 | POST | `/api/v1/ai/queries/{query_id}/regenerations` | 후속 계약. 보존 기간 안의 질의·프롬프트·근거 snapshot으로 재생성하며 현재는 미구현 |
 
-`POST /api/v1/ai/queries` 요청 초안:
+`POST /api/v1/ai/queries` 요청:
 
 ```json
 {
@@ -203,9 +208,11 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 }
 ```
 
-`candidateIds`는 선택 사항이지만 서버가 최종 후보를 현재 사용자의 원천 열람 권한, 공개/검토 상태, 외부 전송 승인 범위로 다시 검사한다. 외부 전송에는 공개 문서 버전, `ANALYZED`/`REVIEWED`/`SELECTED` FieldComment, 역추적 가능한 작업순서 이력, 실제 원천이 남은 비보관 보고서 source만 적격하다. 전체 파일이나 첨부를 기본 전송하지 않고 질의에 필요한 최소 텍스트 조각만 보낸다. 클라이언트가 provider, model, 시스템 프롬프트 또는 임의 원천 ID를 지정할 수 없으며 승인된 `ai_prompt_versions`와 서버 검색 결과만 사용한다.
+`candidateIds`는 선택 사항이며 생략하면 `ai_search_candidates` 정렬 순서의 최대 100건을 검사한다. 현재 서버는 후보의 source type이 전송 승인 범위인지 확인하고, 공개 문서·`ANALYZED`/`REVIEWED`/`SELECTED` FieldComment·존재하는 작업순서 이력·비보관 보고서 source만 적격 snapshot으로 저장한다. 부적격 후보는 snapshot row로 남기지 않는다. 현재 구현에는 원천별 호출 사용자의 열람 권한과 민감정보/외부 전송 금지 패턴 검사가 아직 없으므로 이 검사가 추가되기 전에는 운영 호출을 켜면 안 된다.
 
-성공 응답의 `grounded`는 항상 `true`이고, `claims`의 모든 사실 주장에는 하나 이상의 `citations`가 있어야 한다. 최상위 `summary`는 검증된 claim을 표시용으로 결합한 값일 뿐 별도의 사실을 추가할 수 없다. 각 citation은 `candidateId`, `sourceType`, `sourceId`, `sourceVersionId`, `traceTable`, `traceId`, `traceVersionId`, `internalSourceUri`를 포함한다. 문서 인용은 `document_id + version_id`, FieldComment 인용은 `comment_id`와 연결된 `document_version_id`(있는 경우), 작업순서 이력 인용은 `change_id`, 보고서 근거 인용은 `report_sources.id`와 그 row의 `source_type + source_id + source_version_id`를 반환한다. `internalSourceUri`는 설치형 클라이언트가 권한을 다시 검사한 뒤 원천 화면을 여는 내부 링크이며 외부 공개 URL이 아니다.
+클라이언트는 provider, model, 시스템 프롬프트를 지정할 수 없다. 서버는 설정의 provider/model과 해당 목적에 대해 최근 승인된 미폐기 `ai_prompt_versions`를 선택한다. 현재 주입형 provider 경계로 넘기는 payload는 `purpose`, `queryHash`, `promptVersionId`, `candidateIds`뿐이며, 질의·프롬프트·근거 본문을 넘기지 않는다. 따라서 이 경계는 mock 검증용이고 실제 요약을 수행하는 provider client가 아니다.
+
+성공 응답의 `grounded`는 `true`이고, `claims`의 모든 사실 주장에는 하나 이상의 `citations`가 있어야 한다. 현재 코드는 claim별 인용 ID를 snapshot과 대조하지만, 최상위 `summary`와 claim 텍스트의 의미적 일치를 따로 검증하지 않는다. 운영 provider 연동 전에 summary가 검증된 claim 밖의 사실을 추가하지 못하게 하는 계약과 테스트를 보강해야 한다. 각 citation은 `candidateId`, `sourceType`, `sourceId`, `sourceVersionId`, `traceTable`, `traceId`, `traceVersionId`, `internalSourceUri`를 포함한다. 문서 인용은 `document_id + version_id`, FieldComment 인용은 `comment_id`와 연결된 `document_version_id`(있는 경우), 작업순서 이력 인용은 `change_id`, 보고서 근거 인용은 `report_sources.id`와 그 row의 `source_type + source_id + source_version_id`를 반환한다. `internalSourceUri`는 외부 공개 URL이 아니며, 후속 클라이언트가 사용할 때 원천 권한을 다시 검사해야 한다.
 
 ```json
 {
@@ -238,14 +245,16 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 
 검색 결과가 없거나 주장을 뒷받침할 수 없으면 HTTP 200으로 `status = INSUFFICIENT_EVIDENCE`, `grounded = false`, `summary = null`, `claims = []`, `reason`을 반환한다. provider 응답에 인용이 없거나 후보 snapshot에 없는 ID가 있거나 일부 사실 주장에 인용이 없으면 해당 본문 전체를 폐기하고 `502 CITATION_VALIDATION_FAILED`를 반환한다. 부분적으로 검증된 문장만 골라 답변처럼 노출하지 않는다. 오류 응답도 `queryId`, 안정된 `error.code`, 한글 `error.message`, `retryable`만 노출하고 provider raw body나 외부 전송 본문은 반환하지 않는다.
 
+`responseStorageMode = DO_NOT_STORE`에서는 응답 본문을 저장하지 않고 SHA-256 hash만 남긴다. `STORE_90_DAYS`는 응답 본문을 저장한다. 두 모드 모두 질의 원문과 `retention_until`, `regenerable_until`을 90일 기준으로 저장하지만, 만료 데이터를 삭제하는 스케줄러는 아직 구현하지 않았다.
+
 검증 테스트 기준:
 
 - 기능 플래그가 꺼진 기본 상태에서 외부 provider client가 한 번도 호출되지 않고 기존 `/api/v1/ai-search/candidates/*`, `/api/v1/ai-search/quality` 테스트가 변경 없이 통과한다.
-- 금지 목적과 민감정보/외부 전송 금지 원천은 provider 호출 전에 차단되고 차단 상태와 사유만 감사 로그에 남는다.
+- 금지 목적은 provider 호출 전에 차단되고 차단 상태와 사유만 호출 시도 row에 남는다. 민감정보/외부 전송 금지 원천 필터는 후속 검증 항목이다.
 - 후보가 0건이면 `INSUFFICIENT_EVIDENCE`이고 조언·추정·작업 지시 문구가 반환되지 않는다.
 - 성공 응답의 모든 claim은 질의 시점 후보 snapshot에 있는 citation을 한 개 이상 가지며 원천 row와 version/content hash가 일치한다.
-- 인용 누락, 존재하지 않는 ID, 다른 사용자의 비인가 원천, 삭제·보관·비공개로 바뀐 원천은 응답 전체를 `CITATION_VALIDATION_FAILED`로 처리한다.
-- mock provider로 문서 버전, FieldComment, 작업순서 이력, `report_sources.id` 인용을 각각 검증하고 실제 외부 네트워크를 테스트에서 사용하지 않는다.
+- 인용 누락과 snapshot에 존재하지 않는 후보 ID는 응답 전체를 `CITATION_VALIDATION_FAILED`로 처리한다. 원천 상태는 provider 호출 전 snapshot 생성 시점에 재검사하며, 사용자별 원천 권한과 provider 호출 후 상태 재검사는 후속 범위다.
+- 현재 테스트는 mock provider로 선택 후보 snapshot과 인용 ID, 응답 미저장을 검증하고 실제 외부 네트워크를 사용하지 않는다. 네 source type별 인용과 인용 실패 경로의 독립 테스트는 후속 보강 항목이다.
 
 ## 권한 요약
 

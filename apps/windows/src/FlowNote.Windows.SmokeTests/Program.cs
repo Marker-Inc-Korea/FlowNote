@@ -1434,7 +1434,7 @@ try
         (Login: memberLogin, DeviceId: "device-line-a-02", Location: "line-a", Signal: "green", Memo: "조원 A-1 기록: 사진 기준 위치와 실제 클램프 방향 일치."),
         (Login: memberA2Login, DeviceId: "device-line-a-03", Location: "line-a", Signal: "yellow", Memo: "조원 A-2 기록: 소재 대기 중 짧은 보류 발생, 다음 조에 전달 필요."),
         (Login: leadB1Login, DeviceId: "device-line-b-lead-01", Location: "line-b", Signal: "red", Memo: "조장 B-1 확인: 동일 품목 전환 시 센서 재영점 절차 누락 위험."),
-        (Login: memberB1Login, DeviceId: "device-line-b-02", Location: "line-b", Signal: "green", Memo: "조원 B-1 기록: 재영점 후 첫 제품 외관 이상 없음.")
+        (Login: memberB1Login, DeviceId: "device-line-b-02", Location: "line-b", Signal: "green", Memo: "조원 B-1 기록: 재영점과 1회 재작업 후 첫 제품 외관 이상 없음.")
     };
     var humanLikeComments = new List<string>();
     foreach (var activity in humanActors)
@@ -1542,7 +1542,10 @@ try
     var aiFieldCommentSources = services.Reports.ListFieldCommentSources(limit: 500)
         .Where(source => humanLikeComments.Contains(source.SourceId))
         .ToList();
-    Require(aiFieldCommentSources.Count == humanLikeComments.Count, "AI readiness report sources should include all human-like field comments");
+    Require(
+        new[] { humanLikeComments[1], humanLikeComments[3], humanLikeComments[4] }
+            .All(commentId => aiFieldCommentSources.Any(source => source.SourceId == commentId)),
+        "AI readiness report sources should include this run's ANALYZED, REVIEWED, and SELECTED FieldComments even when accumulated NEW rows exceed the list limit");
     Require(
         aiFieldCommentSources.Take(3).Select(source => source.SourceId).SequenceEqual(new[]
         {
@@ -3360,6 +3363,7 @@ try
                 serverReportCountAfterDuplicateRetry == serverReportCountBeforeDuplicateRetry,
                 "repeated report retry should not create a duplicate server report");
 
+            var aiEvaluationToken = $"ai-eval-{runId}-line-a-press-sensor-composite";
             var aiServerEvidenceFile = Path.Combine(testDirectory, $"server-ai-quality-evidence-{runId}.txt");
             File.WriteAllText(
                 aiServerEvidenceFile,
@@ -3375,7 +3379,7 @@ try
                 $"서버 AI 근거 후보 스모크 작업표준 {runStamp}",
                 "work_instruction",
                 "서버 AI 후보 품질 스모크 문서 등록",
-                description: "서버 DB 기준 AI 후보 품질과 역추적성을 검증하는 공개 문서입니다.",
+                description: $"서버 DB 기준 AI 후보 품질과 역추적성을 검증하는 공개 문서입니다. {aiEvaluationToken}",
                 createdBy: serverLogin.UserId,
                 tags: ["ai-quality-smoke", "line-a", "field-comment", "work-sequence"]);
             var aiServerPublishedDocument = await serverDocuments.PublishVersionAsync(
@@ -3446,7 +3450,7 @@ try
                     CommentType = "issue",
                     InputMode = "free_text",
                     SignalLevel = "red",
-                    RawContent = $"서버 AI 품질 스모크 선정 FieldComment run={runId}: 센서 재영점 절차 누락 위험.",
+                    RawContent = $"서버 AI 품질 스모크 선정 FieldComment run={runId}: 센서 재영점 절차 누락 위험. {aiEvaluationToken}",
                     AuthorId = serverLogin.UserId,
                     ReportedBy = "서버 스모크 반장",
                     EntrySource = "field_user",
@@ -3544,7 +3548,7 @@ try
                 {
                     Status = "IN_PROGRESS",
                     ActorId = serverLogin.UserId,
-                    ChangeReason = "AI 후보 품질 스모크에서 센서 재영점 확인을 착수함."
+                    ChangeReason = $"AI 후보 품질 스모크에서 센서 재영점 확인을 착수함. {aiEvaluationToken}"
                 });
             var aiServerHistory = await serverDocuments.ListWorkSequenceHistoryAsync(aiServerBoard.BoardId);
             var aiServerTraceHistory = aiServerHistory.First(item =>
@@ -3558,7 +3562,7 @@ try
                     IdempotencyKey = $"wpf-smoke-ai-quality-report-{runId}",
                     ReportType = "field_review",
                     Title = $"서버 AI 근거 후보 품질 보고서 {runStamp}",
-                    Summary = "공개 문서, 검토 FieldComment, 작업순서 이력을 보고서 근거로 묶어 AI 후보 역추적성을 검증한다.",
+                    Summary = $"공개 문서, 검토 FieldComment, 작업순서 이력을 보고서 근거로 묶어 AI 후보 역추적성을 검증한다. {aiEvaluationToken}",
                     AnalysisContent = "외부 AI 호출 없이 서버 read model 후보 품질만 검증한다.",
                     Conclusion = "후보 source_type과 trace 값이 모두 원천 row로 역추적 가능해야 한다.",
                     ActionPlan = "품질 점검 화면에서 부족분과 제외 사유를 운영 조치로 확인한다.",
@@ -3691,8 +3695,93 @@ try
                 aiReportSourceCandidate.SourceId == aiReportSourceCandidate.TraceId &&
                 int.TryParse(aiReportSourceCandidate.TraceId, out _),
                 "report source candidate should trace to a report_sources row id");
+            var aiReportEvidenceCandidates = aiReportSourceCandidates
+                .Where(item => item.ParentId == aiServerReport.ReportId)
+                .ToArray();
+            var expectedCompositeEvidence = new List<ServerAISearchEvidenceReferenceRequest>
+            {
+                new()
+                {
+                    CandidateId = aiDocumentCandidate.CandidateId,
+                    SourceType = aiDocumentCandidate.SourceType,
+                    SourceId = aiDocumentCandidate.SourceId,
+                    SourceVersionId = aiDocumentCandidate.SourceVersionId,
+                    TraceId = aiDocumentCandidate.TraceId,
+                    TraceVersionId = aiDocumentCandidate.TraceVersionId
+                },
+                new()
+                {
+                    CandidateId = selectedCommentCandidate.CandidateId,
+                    SourceType = selectedCommentCandidate.SourceType,
+                    SourceId = selectedCommentCandidate.SourceId,
+                    SourceVersionId = selectedCommentCandidate.SourceVersionId,
+                    TraceId = selectedCommentCandidate.TraceId,
+                    TraceVersionId = selectedCommentCandidate.TraceVersionId
+                },
+                new()
+                {
+                    CandidateId = aiHistoryCandidate.CandidateId,
+                    SourceType = aiHistoryCandidate.SourceType,
+                    SourceId = aiHistoryCandidate.SourceId,
+                    TraceId = aiHistoryCandidate.TraceId
+                }
+            };
+            expectedCompositeEvidence.AddRange(aiReportEvidenceCandidates.Select(item =>
+                new ServerAISearchEvidenceReferenceRequest
+                {
+                    CandidateId = item.CandidateId,
+                    SourceType = item.SourceType,
+                    SourceId = item.SourceId,
+                    SourceVersionId = item.SourceVersionId,
+                    TraceId = item.TraceId,
+                    TraceVersionId = item.TraceVersionId
+                }));
+            var aiEvaluation = await serverDocuments.RunAISearchEvaluationAsync(
+                new ServerAISearchEvaluationRequest
+                {
+                    RunLabel = $"Windows 사람형 AI 근거 회귀 {runStamp}",
+                    Cases =
+                    [
+                        new ServerAISearchEvaluationCaseRequest
+                        {
+                            CaseKey = "line-a-press-composite-evidence",
+                            Question = aiEvaluationToken,
+                            ExpectedOutcome = "SUFFICIENT",
+                            ExpectedEvidence = expectedCompositeEvidence,
+                            Limit = expectedCompositeEvidence.Count
+                        },
+                        new ServerAISearchEvaluationCaseRequest
+                        {
+                            CaseKey = "insufficient-evidence-and-excluded-comments",
+                            Question = $"no-evidence-{Guid.NewGuid():N}",
+                            ExpectedOutcome = "INSUFFICIENT_EVIDENCE",
+                            ExpectedExcluded =
+                            [
+                                new ServerAISearchEvidenceReferenceRequest
+                                {
+                                    SourceType = "FIELD_COMMENT",
+                                    SourceId = aiServerExcludedComment.CommentId,
+                                    ExclusionReason = "field_comment_excluded_status"
+                                },
+                                new ServerAISearchEvidenceReferenceRequest
+                                {
+                                    SourceType = "FIELD_COMMENT",
+                                    SourceId = aiServerMesComment.CommentId,
+                                    ExclusionReason = "field_comment_mes_integration"
+                                }
+                            ]
+                        }
+                    ]
+                });
+            Require(
+                aiEvaluation.Status == "PASSED" &&
+                aiEvaluation.CandidateIdentityStable &&
+                aiEvaluation.RankingStable &&
+                aiEvaluation.SourceCoverageComplete &&
+                aiEvaluation.Cases.All(item => item.Passed),
+                "AI ground-truth evaluation should preserve candidate identity, ranking, four-source coverage, and insufficient evidence classification");
             Console.WriteLine(
-                $"AI search quality server smoke: candidates={aiRebuild.CandidateCount}, reviewed={readiness.ReviewedStatusCount}, missing={readiness.MissingReviewedCount}, report={aiServerReport.ReportId}");
+                $"AI search quality server smoke: candidates={aiRebuild.CandidateCount}, reviewed={readiness.ReviewedStatusCount}, missing={readiness.MissingReviewedCount}, report={aiServerReport.ReportId}, evaluation={aiEvaluation.RunId}, providerReady={aiEvaluation.ProviderStartReady}");
         }
 
         {

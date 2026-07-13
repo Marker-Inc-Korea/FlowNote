@@ -207,3 +207,10 @@
 - 재생성은 보존 중인 질의, 불변 프롬프트 버전, 근거 snapshot과 provider/model을 다시 사용하되 동일 문구를 보장하지 않는다. 원천 권한·상태·승인이 바뀌면 재생성하지 않는다.
 - 민감정보와 고객 문서의 외부 전송 금지·최소화·승인·철회 절차는 [보안 문서](./security.md#외부-ai-전송과-운영자-승인)를 단일 운영 기준으로 사용한다.
 - 이 결정은 운영 provider client나 네트워크 호출을 활성화하지 않는다. 주입 가능한 테스트 경계만 두며 기존 `ai_search_candidates` read model과 후보 API는 기능 플래그에 의존하지 않고 현재 테스트 계약을 유지한다.
+
+## 2026-07-13. 외부 AI 착수 전 ground-truth 회귀 게이트
+
+- 후보 ID는 source type/id/version의 결정적 hash로 만들고 검색 본문의 별도 `content_hash`를 둬 재생성 전후 동일 원천을 비교한다.
+- 사람형 스모크와 API 테스트는 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source가 함께 필요한 질문과 기대 candidate/source/version/trace ID를 저장한다.
+- 삭제·비공개 문서, 제외/보관 FieldComment, 사라진 보고서 원천, 권한 없는 채널, 근거 부족 질문을 부정 사례로 유지하며 근거 부족은 `INSUFFICIENT_EVIDENCE`로 판정한다.
+- provider 착수 지표는 평가 전건 통과, 네 원천 유형 커버, candidate ID/content hash와 순위 재현성, 검토 완료 FieldComment 100건 충족을 모두 요구한다. 이 지표는 운영 승인과 기능 플래그를 대신하지 않으며 외부 호출을 자동 활성화하지 않는다.

@@ -34,6 +34,8 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `handovers`, `handover_receipts` | Handover records and recipient status |
 | `reports`, `report_sources` | Reports and traceable sources |
 | `ai_search_candidates` | Traceable evidence candidates for search and summary before AI advice |
+| `ai_search_evaluation_runs` | Offline ground-truth regression run and provider-start metrics |
+| `ai_search_evaluation_cases` | Expected/actual evidence snapshots, exclusions, and ranking hashes by question |
 | `document_access_logs` | Document view/download/auto-close access logs |
 | `activity_history` | Server activity history |
 

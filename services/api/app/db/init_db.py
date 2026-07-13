@@ -367,6 +367,24 @@ def _ensure_ai_evidence_snapshot_has_no_candidate_fk(database: Database) -> None
         connection.exec_driver_sql("PRAGMA foreign_keys=ON")
 
 
+def _ensure_ai_search_candidate_content_hash(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+    with database.engine.begin() as connection:
+        columns = {row[1] for row in connection.execute(text("PRAGMA table_info(ai_search_candidates)"))}
+        if columns and "content_hash" not in columns:
+            connection.execute(text("ALTER TABLE ai_search_candidates ADD COLUMN content_hash VARCHAR(64)"))
+            connection.execute(
+                text(
+                    "UPDATE ai_search_candidates SET content_hash = lower(hex(randomblob(32))) "
+                    "WHERE content_hash IS NULL"
+                )
+            )
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_ai_search_candidates_content_hash ON ai_search_candidates (content_hash)")
+            )
+
+
 def _seed_default_admin_account(database: Database) -> None:
     with database.session() as session:
         existing = session.scalar(
@@ -405,6 +423,7 @@ def initialize_database(database: Database) -> None:
     _ensure_auth_session_device_column(database)
     _ensure_work_sequence_columns(database)
     _ensure_ai_evidence_snapshot_has_no_candidate_fk(database)
+    _ensure_ai_search_candidate_content_hash(database)
     with database.session() as session:
         existing = session.scalar(
             select(SchemaMigration).where(SchemaMigration.version == INITIAL_SCHEMA_VERSION)

@@ -17,6 +17,7 @@
 - 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도
 - 관리자 파일 감시 후보와 버전 확정
 - AI 자동 조언 전 단계의 `ai_search_candidates` 근거 후보 재생성, 목록, 품질 점검 API와 WPF 운영 점검 화면
+- FastAPI `/api/v1/ai/queries` 질의 생성·조회와 기본 비활성, role, 목적, 외부 전송 승인, 프롬프트, 근거 snapshot, 인용 검증 및 감사 모델 골격
 - FastAPI 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
 - Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 조회/상세, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인
@@ -32,7 +33,7 @@ MVP의 성공 기준은 AI가 답변하는 것이 아니라 현장 문서와 현
 
 ## 현재 제외 범위
 
-- 외부 AI 호출 기반 검색/작업 조언과 자동 의사결정
+- 운영 provider client를 통한 실제 외부 AI 검색/요약, 작업 조언과 자동 의사결정
 - MES/ERP 자동 수신 어댑터
 - 현장별 설치 검증, 코드 서명, self-contained 설치 패키지
 - 클라우드 배포
@@ -48,7 +49,7 @@ Windows와 Android의 업무 채널 알림, 인수인계 확인, FieldComment/�
 
 ## 후속 계층 착수 기준
 
-외부 AI 호출 기반 검색/작업 조언과 MES/ERP 자동 수신 어댑터는 현재 MVP 구현 대상이 아니다. 다음 조건은 구현 착수 여부를 판단하기 위한 운영 기준이며, 조건을 만족하기 전에는 문서 등록, FieldComment, 작업순서, 보고서 근거 축적을 우선한다.
+운영 provider client를 통한 실제 외부 AI 검색/작업 조언과 MES/ERP 자동 수신 어댑터는 현재 MVP 완료 범위가 아니다. 외부 AI는 안전장치를 먼저 검증하기 위한 질의·감사 골격만 부분 구현했다. 다음 조건은 운영 연동 착수 여부를 판단하기 위한 기준이며, 조건을 만족하기 전에는 문서 등록, FieldComment, 작업순서, 보고서 근거 축적을 우선한다.
 
 ### AI 검색/작업 조언
 
@@ -65,7 +66,7 @@ Windows와 Android의 업무 채널 알림, 인수인계 확인, FieldComment/�
 
 AI 계층의 첫 착수 범위는 “근거가 있는 검색과 요약”까지로 제한한다. 자동 의사결정, 작업 지시 자동 변경, 현장 조치 승인 자동화는 별도 보안/책임 기준이 정해지기 전까지 포함하지 않는다.
 
-현재 구현 착수 범위는 외부 AI API 호출이 아니라 `ai_search_candidates` read model의 재생성, 목록 조회, 품질 점검 API와 WPF 운영 점검 화면이다. 검색 후보는 `PUBLISHED` 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source로 제한하고, 후보마다 원문 ID와 version ID를 유지한다. FieldComment 관리자 검토 상태가 `ANALYZED`, `REVIEWED`, `SELECTED`로 충분히 쌓이기 전에는 답변 자동화보다 관리자 검토/분석/선정 운영 흐름을 먼저 보강한다.
+현재 구현 착수 범위는 `ai_search_candidates` read model의 재생성·목록·품질 API, WPF 운영 점검 화면, 그리고 `/api/v1/ai/queries` 생성·조회와 차단/감사 골격이다. 검색 후보는 `PUBLISHED` 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source로 제한하고 원문 ID와 version ID를 유지한다. 질의 시점에는 이 후보의 원천 상태와 승인된 source type을 다시 검사하지만, 원천별 사용자 열람 권한·민감정보 필터·운영 provider 네트워크 client는 아직 없다. FieldComment 관리자 검토 상태가 `ANALYZED`, `REVIEWED`, `SELECTED`로 충분히 쌓이기 전에는 답변 자동화보다 관리자 검토/분석/선정 운영 흐름을 먼저 보강한다.
 
 ### MES/ERP 어댑터
 

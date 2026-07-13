@@ -130,7 +130,14 @@ FLOWNOTE_ACCESS_TOKEN_SECRET=<현장별 긴 비밀값>
 FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES=480
 FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS=14
 FLOWNOTE_SESSION_COOKIE_NAME=flownote_session
+FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false
+FLOWNOTE_AI_PROVIDER=UNCONFIGURED
+FLOWNOTE_AI_MODEL=UNCONFIGURED
+FLOWNOTE_AI_CUSTOMER_SCOPE=DEFAULT
+FLOWNOTE_AI_SITE_SCOPE=DEFAULT
 ```
+
+AI 항목은 현재 안전장치 골격의 설정이다. 저장소에 운영 provider 네트워크 client, 원천별 사용자 권한 검사, 민감정보/전송 금지 필터가 없으므로 운영 `.env`에서 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`를 유지한다. provider/model/scope 값은 기능 활성 허가가 아니며, 후보 read model API는 이 플래그와 무관하게 동작한다.
 
 5. 서버 실행 래퍼를 저장소에서 운영 폴더로 복사하고 작업 스케줄러에 등록한다. 등록 명령은 관리자 PowerShell에서 실행한다.
 
@@ -411,6 +418,9 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | 서버 | `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES` | 기본 480분. 현장 보안 정책에 따라 조정 |
 | 서버 | `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS` | 기본 14일. 현장 보안 정책에 따라 조정 |
 | 서버 | `FLOWNOTE_FIELD_COMMENT_ATTACHMENT_MAX_BYTES` | 기본 20971520 바이트 |
+| 서버 | `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED` | 기본 `false`. 현재 운영에서는 `true` 설정 금지 |
+| 서버 | `FLOWNOTE_AI_PROVIDER`, `FLOWNOTE_AI_MODEL` | 승인 row 선택에 사용하는 provider/model scope. 기본 `UNCONFIGURED` |
+| 서버 | `FLOWNOTE_AI_CUSTOMER_SCOPE`, `FLOWNOTE_AI_SITE_SCOPE` | 외부 전송 승인을 찾는 고객/현장 scope. 기본 `DEFAULT` |
 | WPF | `FLOWNOTE_LOCAL_DATA_DIR` | `C:\FlowNote\LocalData`처럼 DB와 `Files\`를 함께 둘 폴더 |
 | WPF | `FLOWNOTE_LOCAL_DATABASE_PATH` | 특정 DB 파일을 직접 지정할 때만 사용. 지정 시 `FLOWNOTE_LOCAL_DATA_DIR`보다 DB 경로 우선 |
 | WPF | `FLOWNOTE_API_BASE_URL` | 서버 PC 주소. 예: `http://192.168.0.10:5184` |
@@ -426,6 +436,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - Python 3.11 이상 설치 여부를 확인한다.
 - `C:\FlowNote\Server\api`, `data`, `storage`, `logs` 폴더가 있고 서버 실행 계정에 읽기/쓰기 권한이 있는지 확인한다.
 - `C:\FlowNote\Server\.env`에 운영 DB 경로, storage 경로, 토큰 비밀값이 들어 있고 기본 개발 비밀값이 남아 있지 않은지 확인한다.
+- `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`인지 확인한다. 현재 코드는 운영 provider 연동 완료 상태가 아니다.
 - Windows 방화벽에서 클라이언트 PC가 접근할 포트 `5184`만 허용한다.
 - 실제 고객 파일, 운영 DB, 운영 비밀값을 Git 저장소 또는 배포 준비 폴더에 섞어 두지 않는다.
 
