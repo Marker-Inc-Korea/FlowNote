@@ -11,15 +11,15 @@
 
 ## 현재 코드 반영 상태
 
-- 서버 API는 `/api/v1` 경로 아래 인증, 문서, FieldComment, 태그, 작업순서, 채널/인수인계, 보고서 기능을 구현한다.
+- 서버 API는 `/api/v1` 경로 아래 인증, 승인 단말, 문서와 controlled copy, FieldComment, 태그, 작업순서, 채널/인수인계, 보고서, AI 근거 후보·회귀 평가와 외부 AI 질의 안전장치 기능을 구현한다.
 - Windows 앱은 공통 로컬 SQLite `data/local/flownote.local.sqlite`를 사용하며, 환경 변수로 위치를 바꿀 수 있다.
 - 현장 기록 명칭은 코드, DB, API, 문서에서 `FieldComment` / `field_comments` / `field-comments`를 사용한다.
 
 ## 남은 후속 범위
 
-- 외부 AI 호출 기반 검색과 조언
+- 운영 provider를 통한 실제 외부 AI 검색·요약과 조언
 - MES/ERP 자동 연동
 - 외부 접근이나 클라우드 운영
 - Android 운영 배포 서명·MDM·인증서와 추가 클라이언트 플랫폼
 
-현재 서버에는 외부 AI 호출 없이 DB 원천에서 재생성하는 `ai_search_candidates` 근거 후보 재생성, 목록 조회, 품질 점검 API가 구현되어 있고, WPF에는 이를 조회하는 운영 점검 화면이 있다.
+현재 서버에는 외부 AI 호출 없이 DB 원천에서 재생성하는 `ai_search_candidates` 근거 후보 재생성·목록·품질·오프라인 회귀 평가와 `/api/v1/ai/queries` 기본 비활성 안전장치·감사 골격이 구현되어 있고, WPF에는 근거 후보 운영 점검 화면이 있다. 운영 provider 네트워크 client는 없다.

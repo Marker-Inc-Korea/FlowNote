@@ -16,6 +16,9 @@
 - 작업순서 항목 상태: `WAITING`, `IN_PROGRESS`, `HOLD`, `COMPLETED`
 - 작업순서 보드 상태: `ACTIVE`, `ARCHIVED`
 - 알림 후보 상태: `CANDIDATE`, `SENT`, `DISMISSED`
+- 승인 단말 상태: `ACTIVE`, `INACTIVE`, `RETIRED`
+- controlled copy grant 상태: `ISSUED`, `CONSUMED`, `EXPIRED`, `FAILED`
+- 외부 AI 질의의 주요 종료 상태: `BLOCKED`, `INSUFFICIENT_EVIDENCE`, `CITATION_VALIDATION_FAILED`, `SUCCEEDED`
 
 ## 명칭 기준
 

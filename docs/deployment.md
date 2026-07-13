@@ -126,6 +126,8 @@ FLOWNOTE_DATABASE_URL=sqlite:///C:/FlowNote/Server/data/flownote.sqlite3
 FLOWNOTE_DATABASE_ECHO=false
 FLOWNOTE_STORAGE_ROOT=C:/FlowNote/Server/storage
 FLOWNOTE_FIELD_COMMENT_ATTACHMENT_MAX_BYTES=20971520
+FLOWNOTE_CONTROLLED_COPY_MAX_BYTES=524288000
+FLOWNOTE_CONTROLLED_COPY_TICKET_EXPIRES_SECONDS=60
 FLOWNOTE_ACCESS_TOKEN_SECRET=<현장별 긴 비밀값>
 FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES=480
 FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS=14
@@ -418,6 +420,8 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | 서버 | `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES` | 기본 480분. 현장 보안 정책에 따라 조정 |
 | 서버 | `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS` | 기본 14일. 현장 보안 정책에 따라 조정 |
 | 서버 | `FLOWNOTE_FIELD_COMMENT_ATTACHMENT_MAX_BYTES` | 기본 20971520 바이트 |
+| 서버 | `FLOWNOTE_CONTROLLED_COPY_MAX_BYTES` | controlled copy 한 건의 최대 크기. 기본 524288000 바이트 |
+| 서버 | `FLOWNOTE_CONTROLLED_COPY_TICKET_EXPIRES_SECONDS` | 1회성 티켓 만료 시간. 기본 60초, 서버에서 5~300초로 정규화 |
 | 서버 | `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED` | 기본 `false`. 현재 운영에서는 `true` 설정 금지 |
 | 서버 | `FLOWNOTE_AI_PROVIDER`, `FLOWNOTE_AI_MODEL` | 승인 row 선택에 사용하는 provider/model scope. 기본 `UNCONFIGURED` |
 | 서버 | `FLOWNOTE_AI_CUSTOMER_SCOPE`, `FLOWNOTE_AI_SITE_SCOPE` | 외부 전송 승인을 찾는 고객/현장 scope. 기본 `DEFAULT` |
@@ -626,4 +630,4 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 FastAPI pytest 수집/실행, WPF build, WPF smoke, `.gitignore` 산출물 제외 규칙, 실행 전후 `git status` 금지 패턴을 함께 확인한다. 2026-07-13 현재 FastAPI 수집 기준선과 스크립트의 고정 기대값은 모두 58개다. 이 기준선 일치만으로 배포 검증을 통과한 것은 아니며, 실제 배포 근거로 사용하려면 해당 환경에서 스크립트 전체 실행과 사후 점검이 통과해야 한다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 FastAPI pytest 수집/실행, WPF build, WPF smoke, `.gitignore` 산출물 제외 규칙, 실행 전후 `git status` 금지 패턴을 함께 확인한다. 2026-07-13 현재 FastAPI 수집 기준선과 스크립트의 고정 기대값은 모두 75개다. 이 기준선 일치만으로 배포 검증을 통과한 것은 아니며, 실제 배포 근거로 사용하려면 해당 환경에서 스크립트 전체 실행과 사후 점검이 통과해야 한다.

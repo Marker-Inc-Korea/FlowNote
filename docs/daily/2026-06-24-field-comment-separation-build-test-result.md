@@ -15,6 +15,7 @@
 - `GET /api/v1/field-comments`와 `GET /api/v1/documents/{document_id}/field-comments`로 목록을 조회한다.
 - `PATCH /api/v1/field-comments/{comment_id}`로 관리자 검토와 분석 상태를 갱신한다.
 - 첨부는 `POST /api/v1/field-comments/{comment_id}/attachments`와 목록 조회 API로 관리한다.
+- AI 근거 후보와 외부 AI 질의 snapshot에는 관리자 검토 상태가 `ANALYZED`, `REVIEWED`, `SELECTED`인 FieldComment만 적격 원천으로 사용한다.
 
 ## Windows 구현
 

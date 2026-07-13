@@ -55,6 +55,8 @@ WPF 사용자 관리 화면은 이 로컬 SQLite 계정 전용이다. 창 제목
 
 보고서는 로컬 보고서 문서와 `report_sources`를 먼저 만든 뒤 서버 저장을 시도한다. 서버 저장이 성공하면 `server_report_id`, `server_document_id`, `server_version_id`, `server_id_mappings`를 함께 남기고, 실패하면 `server_sync_queue`에 `report/register_report` 재시도 항목을 보존한다. 작업순서 보드/항목/이력은 현재 단계에서 로컬 큐 대상이 아니라 로컬 기록과 서버 직접 API 검증, 보고서 근거 source 연결 범위로 둔다.
 
+controlled copy grant는 FastAPI 서버의 `controlled_copy_grants`에만 저장한다. WPF 로컬 SQLite에는 grant 토큰을 보존하지 않고 `server_id_mappings`로 서버 문서/버전을 찾은 뒤 즉시 발급·다운로드·SHA-256 검증하며, 실패를 `server_sync_queue`에 넣지 않는다.
+
 ## 검증
 
 ```powershell

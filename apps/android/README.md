@@ -1,6 +1,6 @@
 # Android App
 
-`apps/android/`는 FlowNote Android 현장 단말 클라이언트이다. 승인된 현장 태블릿 또는 러기드 단말에서 공개 문서 열람, FieldComment, 사진 기록, 신호등식 기록, 채널 알림 확인, 인수인계 확인을 수행한다.
+`apps/android/`는 FlowNote Android 현장 단말 클라이언트이다. 승인된 현장 태블릿 또는 러기드 단말에서 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 기록, 신호등식 기록, 채널 알림 확인, 인수인계 확인을 수행한다. 현재 코드는 문서 파일 본문 다운로드나 미리보기를 제공하지 않는다.
 
 ## 기술 기준
 
@@ -15,7 +15,7 @@
 
 - 서버 주소, 승인 단말 ID, 사용자 ID, 비밀번호 설정
 - `deviceId` 포함 서버 로그인
-- 공개 문서 목록과 문서 상세 조회
+- 공개 문서 목록과 문서 상세 메타데이터 조회. 상세 선택 시 문서/공개 버전 ID를 FieldComment 입력란에 연결
 - FieldComment 작성
 - 사진 선택과 FieldComment 첨부 재전송
 - 신호등식 입력: `green`, `yellow`, `red`
@@ -46,6 +46,8 @@ Android가 자동으로 개인 휴대폰을 등록하지 않는다. 단말 등�
 - 근태 관리
 - 개인 메신저 수집
 - 사내 메신저 전체 대체
+- 문서 파일 본문 다운로드·미리보기
+- 인수인계 신규 작성
 
 ## 빌드와 테스트
 
@@ -57,4 +59,4 @@ cd apps/android
 
 JDK와 Android SDK가 필요하다. macOS 기본 SDK 경로 `$HOME/Library/Android/sdk`가 있으면 `gradlew`가 `ANDROID_HOME`을 자동 지정한다. 운영 배포 전에는 현장 서버 HTTPS, 사내 인증서, 단말별 `deviceId` 발급 절차를 확정해야 한다.
 
-현재 단위 테스트는 API 경로·로그인/FieldComment payload 계약과 outbox 재시도 횟수·지수 backoff 정책을 검증한다. 실제 단말의 사진 선택, SQLite 지속성, 사내망 통신과 승인 단말 로그인은 Android 실기 검증 대상이다.
+현재 단위 테스트는 API 경로·로그인/FieldComment payload 계약, 사용자 오류 문구와 outbox 재시도 횟수·지수 backoff 정책을 검증한다. 실제 단말의 사진 선택, SQLite 지속성, 사내망 통신과 승인 단말 로그인은 Android 실기 검증 대상이다.

@@ -18,7 +18,7 @@
 ## 현재 코드 기준
 
 - Windows WPF 앱은 로컬 SQLite를 기본 저장소로 사용한다.
-- Android 현장 단말 앱은 Java/Android 네이티브 View 기반 최소 앱으로 구현되어 있다. 승인 단말 `deviceId` 로그인, 공개 문서 조회/상세, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인을 제공한다.
+- Android 현장 단말 앱은 Java/Android 네이티브 View 기반 최소 앱으로 구현되어 있다. 승인 단말 `deviceId` 로그인, 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인을 제공한다. 문서 파일 본문 다운로드·미리보기는 아직 없다.
 - Windows에는 `admin`, `system-admin`용 승인 단말 관리 화면이 구현되어 있다. FastAPI 단말 API를 통해 목록·상세·마지막 접속 조회, 등록, 정보/상태 변경, 교체를 수행한다.
 - Windows에는 채널함, 채널 관리, 인수인계 확인 현황 화면이 구현되어 있고 FastAPI 채널/인수인계 API를 직접 호출한다. 서버 미연결 시 로컬 데이터와 동기화 큐를 삭제하지 않고 서버 설정 확인 문구를 표시한다.
 - FastAPI 서버는 `/api/v1` REST API와 SQLite, 로컬 `storage/` 파일 저장소를 사용한다.
@@ -26,6 +26,7 @@
 - WPF와 스모크 테스트는 기본적으로 `data/local/flownote.local.sqlite`를 함께 사용한다.
 - 테스트와 개발 SQLite는 누적 검증 기록으로 로컬에 보존하지만 Git으로 추적하거나 커밋하지 않는다.
 - 문서 등록은 즉시 공개가 아니다. 등록된 문서는 `WORKING` 상태와 최신 버전으로 저장되고, 공개 버전은 별도 publish 절차로 지정한다.
+- WPF 다운로드 허용 role의 파일 저장은 로컬 원본 복사가 아니라 서버의 세션 바인딩 1회성 controlled copy와 저장 후 SHA-256 검증을 사용한다.
 - FieldComment는 문서 버전이 아니라 현장 원천 기록이다.
 - WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다.
 - WPF에는 AI 근거 후보 운영 점검 화면이 있으며, 서버의 `ai_search_candidates` 재생성/품질/목록 API를 직접 조회한다. WPF 서버 클라이언트와 스모크 테스트는 오프라인 ground-truth 회귀 평가 API도 호출해 후보 ID·내용 hash·순위·원천 커버의 재현성을 검증한다.
@@ -35,7 +36,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전 안전장치·감사 골격을 다루고, WPF UI는 근거 후보 운영 점검 화면까지만 제공한다.
 - MES/ERP 연동과 서버 계정 관리 UI는 후속 계층이다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-13 현재 pytest 69건이 수집된다. 기존 68건 통과 기록 이후 AI 근거 검색 ground-truth 회귀 평가 1건이 추가되었다. `scripts/verify-preserved-tests.ps1`의 수집 기준선은 아직 68건이므로 다음 코드 작업에서 69건으로 맞춰야 하며, 69건 전체 통과와 WPF 빌드·WPF 스모크를 포함한 표준 검증 결과는 아직 별도로 남겨야 한다.
+- FastAPI 코드는 2026-07-13 현재 pytest 75건이 수집되며 `scripts/verify-preserved-tests.ps1`도 같은 75건을 기준선으로 사용한다. AI 근거 검색 ground-truth 회귀 평가와 controlled copy의 권한·무결성·1회성·감사 회귀가 포함된다. FastAPI 75건 전체 통과는 확인했으며, WPF 빌드·WPF 스모크와 Git 산출물 사후 점검을 포함한 전체 표준 검증은 Windows 환경에서 별도로 실행해야 한다.
 
 ## 일일 기록
 

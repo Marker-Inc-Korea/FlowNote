@@ -4,7 +4,7 @@
 
 ## 현재 서버 기준
 
-- FastAPI 앱은 `/api/v1` 아래에 인증, 승인 단말, 문서, FieldComment, 태그, 접근 로그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보 라우터를 제공한다.
+- FastAPI 앱은 `/api/v1` 아래에 인증, 승인 단말, 문서와 controlled copy, FieldComment, 태그, 접근 로그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가와 외부 AI 질의 안전장치 라우터를 제공한다.
 - 기본 DB URL은 `sqlite:///./data/flownote.sqlite3`이다.
 - 테스트 DB 기본값은 `sqlite:///./data/flownote.test.sqlite3`이다.
 - 파일 저장소 기본값은 `./storage`이다.
@@ -22,7 +22,9 @@
 - 작업순서: `work_sequence_boards`, `work_sequence_items`, `work_sequence_change_history`, `work_sequence_notification_candidates`
 - 채널/인수인계: `notification_channels`, `notification_channel_members`, `channel_messages`, `handovers`, `handover_receipts`
 - 보고서: `reports`, `report_sources`
-- AI 검색 후보: `ai_search_candidates`
+- AI 검색 후보·평가: `ai_search_candidates`, `ai_search_evaluation_runs`, `ai_search_evaluation_cases`
+- 외부 AI 안전장치·감사: `ai_prompt_versions`, `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations`, `ai_call_attempts`, `ai_transfer_approvals`
+- 제한 다운로드: `controlled_copy_grants`
 - 마이그레이션 기록: `schema_migrations`
 
 ## 구현된 주요 흐름
@@ -32,4 +34,5 @@
 - 문서 등록 시 파일을 서버 로컬 저장소에 저장하고 SHA-256, 크기, MIME/확장자를 기록한다.
 - 새 문서 버전 등록 시 이전 최신 버전은 `SUPERSEDED`로 바뀐다.
 - 공개 문서는 명시적으로 공개 버전을 지정해야 조회할 수 있다.
+- controlled copy는 현재 공개 버전에만 발급되며 사용자·세션에 묶인 짧은 만료의 1회성 티켓과 SHA-256 검증을 사용한다.
 - AI 검색 근거 후보는 공개 문서 버전, FieldComment, 작업순서 이력, 보고서 source에서 재생성한다.

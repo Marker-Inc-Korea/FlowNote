@@ -2,6 +2,8 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
+이 목록은 현재 `app/api/v1/router.py`에 등록된 라우터 기준이다. 외부 AI API는 운영 provider 구현이 아니라 기본 비활성 안전장치·감사 경계이며, controlled copy는 서버에 저장된 현재 공개 버전만 1회 스트리밍한다.
+
 ## Current API
 
 | Method | Path | Purpose |
@@ -31,6 +33,8 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/documents/{document_id}/versions` | Register new version |
 | PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | Change version status |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | Publish selected version |
+| POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | Issue one-time controlled copy grant for the current published version |
+| GET | `/api/v1/controlled-copies/{token}` | Stream the session-bound controlled copy once |
 | POST | `/api/v1/documents/{document_id}/access-logs` | Register access log |
 | GET | `/api/v1/documents/{document_id}/access-logs` | Access log list |
 | GET | `/api/v1/tags` | Tag list |
@@ -73,6 +77,8 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/ai-search/candidates` | List AI search evidence candidates |
 | GET | `/api/v1/ai-search/quality` | Candidate counts, exclusion reasons, and FieldComment review readiness |
 | POST | `/api/v1/ai-search/evaluations` | Persist offline ground-truth evidence, exclusion, and ranking regression results |
+| POST | `/api/v1/ai/queries` | Create an evidence search/summary request through the disabled-by-default safety boundary |
+| GET | `/api/v1/ai/queries/{query_id}` | Read sanitized AI query status and evidence snapshot |
 
 ## Auth
 
@@ -101,10 +107,17 @@ Useful settings:
 - `FLOWNOTE_DATABASE_ECHO`: default `false`
 - `FLOWNOTE_STORAGE_ROOT`: default `./storage`
 - `FLOWNOTE_FIELD_COMMENT_ATTACHMENT_MAX_BYTES`: default `20971520`
+- `FLOWNOTE_CONTROLLED_COPY_MAX_BYTES`: default `524288000`
+- `FLOWNOTE_CONTROLLED_COPY_TICKET_EXPIRES_SECONDS`: default `60`, normalized to `5`-`300`
 - `FLOWNOTE_SESSION_COOKIE_NAME`: default `flownote_session`
 - `FLOWNOTE_ACCESS_TOKEN_SECRET`
 - `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES`: default `480`
 - `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS`: default `14`
+- `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED`: default `false`
+- `FLOWNOTE_AI_PROVIDER`: default `UNCONFIGURED`
+- `FLOWNOTE_AI_MODEL`: default `UNCONFIGURED`
+- `FLOWNOTE_AI_CUSTOMER_SCOPE`: default `DEFAULT`
+- `FLOWNOTE_AI_SITE_SCOPE`: default `DEFAULT`
 
 ## Verification
 
@@ -113,6 +126,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The current collected FastAPI test count is 58.
+The current collected FastAPI test count is 75. The fixed collection baseline in `scripts/verify-preserved-tests.ps1` is also 75.
 
 Test SQLite DBs, logs, upload files, and generated sample files are preserved unless the user explicitly asks to delete them.

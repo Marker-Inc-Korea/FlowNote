@@ -11,4 +11,4 @@
 
 ## 현재 기준
 
-Windows 앱은 로컬 SQLite 저장을 기본으로 하고, `FLOWNOTE_API_BASE_URL`이 설정되면 FastAPI 서버 API 호출을 시도한다. 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장 실패는 로컬 저장을 되돌리지 않고 동기화 큐와 이력으로 남긴다. 채널함, 채널 관리, 인수인계 확인 현황, AI 근거 후보 운영 점검 화면은 서버 API를 직접 조회하며 로컬 동기화 큐 대상은 아니다.
+Windows 앱은 로컬 SQLite 저장을 기본으로 하고, `FLOWNOTE_API_BASE_URL`이 설정되면 FastAPI 서버 API 호출을 시도한다. 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장 실패는 로컬 저장을 되돌리지 않고 동기화 큐와 이력으로 남긴다. 채널함, 채널 관리, 인수인계 확인 현황, AI 근거 후보 운영 점검과 controlled copy는 서버 API를 직접 사용하며 로컬 동기화 큐 대상은 아니다.
