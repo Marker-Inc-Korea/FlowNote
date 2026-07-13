@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.core.config import Settings
 from app.db.init_db import hash_password_for_dev
 from app.db.models import (
+    ActivityHistory,
     ChannelMessage,
     Handover,
     HandoverReceipt,
@@ -182,6 +183,67 @@ def test_channel_members_messages_notifications_and_read_status() -> None:
             assert saved_message.source_id == f"comment-{suffix}"
             assert saved_member is not None
             assert saved_member.last_read_message_id == message["message_id"]
+
+
+def test_notification_polling_cursor_is_stable_scoped_and_idempotent() -> None:
+    suffix = uuid4().hex[:8]
+    with create_test_client() as client:
+        admin = create_user(client, "admin", f"poll-admin-{suffix}")
+        member = create_user(client, "team-member", f"poll-member-{suffix}")
+        outsider = create_user(client, "team-member", f"poll-outsider-{suffix}")
+        admin_headers = auth_headers(client, admin)
+        member_headers = auth_headers(client, member)
+        outsider_headers = auth_headers(client, outsider)
+        channel = create_channel(client, admin_headers, suffix)
+        add_member(client, admin_headers, channel["channel_id"], member)
+
+        message_ids = []
+        for index in range(3):
+            response = client.post(
+                f"/api/v1/notification-channels/{channel['channel_id']}/messages",
+                headers=admin_headers,
+                json={
+                    "messageType": "NOTICE",
+                    "sourceType": "SYSTEM",
+                    "sourceId": f"poll-{suffix}-{index}",
+                    "title": f"연속 알림 {index}",
+                },
+            )
+            assert response.status_code == 201, response.text
+            message_ids.append(response.json()["message_id"])
+
+        first_page = client.get(
+            "/api/v1/notifications?afterId=0&limit=2",
+            headers=member_headers,
+        )
+        assert first_page.status_code == 200, first_page.text
+        first_items = first_page.json()
+        assert [item["message_id"] for item in first_items] == message_ids[:2]
+        assert first_items[0]["cursor"] < first_items[1]["cursor"]
+
+        second_page = client.get(
+            f"/api/v1/notifications?afterId={first_items[-1]['cursor']}&limit=2",
+            headers=member_headers,
+        )
+        assert [item["message_id"] for item in second_page.json()] == message_ids[2:]
+        assert client.get(
+            f"/api/v1/notifications?afterId={second_page.json()[-1]['cursor']}",
+            headers=member_headers,
+        ).json() == []
+        assert client.get("/api/v1/notifications?afterId=0", headers=outsider_headers).json() == []
+
+        for _ in range(2):
+            read = client.patch(f"/api/v1/notifications/{message_ids[0]}/read", headers=member_headers)
+            assert read.status_code == 200, read.text
+        with client.app.state.database.session() as session:
+            read_events = session.scalars(
+                select(ActivityHistory).where(
+                    ActivityHistory.event_type == "channel_message.read",
+                    ActivityHistory.target_id == message_ids[0],
+                    ActivityHistory.actor_id == member.user_id,
+                )
+            ).all()
+            assert len(read_events) == 1
 
 
 def test_handover_receipts_record_read_acknowledged_and_follow_up_required() -> None:

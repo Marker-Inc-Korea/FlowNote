@@ -36,7 +36,7 @@
 
 ## 다음 우선순위
 
-1. `scripts/verify-preserved-tests.ps1`의 FastAPI 수집 기대값 53개를 현재 58개에 맞추고 전체 표준 검증을 다시 통과시킨다.
+1. 58개 FastAPI 수집 기준으로 `scripts/verify-preserved-tests.ps1`의 전체 pytest, WPF 빌드, WPF 스모크, Git 산출물 사후 점검을 통과시키고 결과를 남긴다.
 2. 현장별 MSI 설치 검증, 코드 서명, self-contained 패키징 조건 정리
 3. Android 운영 배포 서명, MDM/인증서, 단말 등록/비활성화 절차 확정
 4. Windows/Android 채널 알림 전달 방식 확정. 현재 클라이언트는 서버 API 수동 조회와 읽음/수신 확인을 기준으로 한다.

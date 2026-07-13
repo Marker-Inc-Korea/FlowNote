@@ -130,6 +130,7 @@ class ChannelMessageResponse(BaseModel):
 
 
 class UserNotificationResponse(ChannelMessageResponse):
+    cursor: int
     channel_name: str
     read: bool
     read_at: datetime | None
@@ -627,9 +628,10 @@ def list_my_notifications(
     current_user: CurrentUser,
     session: Annotated[Session, Depends(get_db_session)],
     unread_only: Annotated[bool, Query(alias="unreadOnly")] = False,
+    after_id: Annotated[int | None, Query(alias="afterId", ge=0)] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[UserNotificationResponse]:
-    rows = session.execute(
+    statement = (
         select(ChannelMessage, NotificationChannel, NotificationChannelMember)
         .join(NotificationChannel, NotificationChannel.channel_id == ChannelMessage.channel_id)
         .join(
@@ -640,9 +642,14 @@ def list_my_notifications(
             NotificationChannelMember.user_id == current_user.user_id,
             NotificationChannelMember.status == "ACTIVE",
         )
-        .order_by(desc(ChannelMessage.created_at), desc(ChannelMessage.id))
-        .limit(limit)
-    ).all()
+    )
+    if after_id is not None:
+        statement = statement.where(ChannelMessage.id > after_id).order_by(ChannelMessage.id)
+    else:
+        statement = statement.order_by(desc(ChannelMessage.id))
+    # unreadOnly is derived from the channel member read watermark, so apply the
+    # limit after filtering to avoid returning a short or empty page incorrectly.
+    rows = session.execute(statement).all()
     notifications: list[UserNotificationResponse] = []
     for message, channel, member in rows:
         read = member.last_read_at is not None and (
@@ -653,11 +660,14 @@ def list_my_notifications(
         notifications.append(
             UserNotificationResponse(
                 **_message_response(message).model_dump(),
+                cursor=message.id,
                 channel_name=channel.name,
                 read=read,
                 read_at=member.last_read_at if read else None,
             )
         )
+        if len(notifications) >= limit:
+            break
     return notifications
 
 
@@ -683,12 +693,32 @@ def mark_notification_read(
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification message not found.")
     message, channel, member = row
+    if member.last_read_message_id == message.message_id:
+        return UserNotificationResponse(
+            **_message_response(message).model_dump(),
+            cursor=message.id,
+            channel_name=channel.name,
+            read=True,
+            read_at=member.last_read_at,
+        )
     member.last_read_message_id = message.message_id
     member.last_read_at = datetime.now(timezone.utc)
+    session.add(
+        ActivityHistory(
+            history_id=_new_public_id("hist"),
+            event_type="channel_message.read",
+            actor_id=current_user.user_id,
+            target_type="channel_message",
+            target_id=message.message_id,
+            target_title=message.title,
+            message=f"Channel message read: {message.title}.",
+        )
+    )
     session.commit()
     session.refresh(member)
     return UserNotificationResponse(
         **_message_response(message).model_dump(),
+        cursor=message.id,
         channel_name=channel.name,
         read=True,
         read_at=member.last_read_at,
@@ -834,9 +864,12 @@ def update_handover_receipt(
         )
 
     target_status = _normalize_choice(request.receipt_status, RECEIPT_STATUSES, "receiptStatus")
+    target_note = _clean_optional(request.note)
+    if receipt.receipt_status == target_status and receipt.note == target_note:
+        return _handover_response(session, handover)
     now = datetime.now(timezone.utc)
     receipt.receipt_status = target_status
-    receipt.note = _clean_optional(request.note)
+    receipt.note = target_note
     receipt.updated_by = current_user.user_id
     if target_status in {"READ", "ACKNOWLEDGED", "FOLLOW_UP_REQUIRED"} and receipt.read_at is None:
         receipt.read_at = now

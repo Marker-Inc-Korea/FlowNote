@@ -182,6 +182,9 @@ public record ServerChannelMessageResponse
 
 public sealed record ServerUserNotificationResponse : ServerChannelMessageResponse
 {
+    [JsonPropertyName("cursor")]
+    public long Cursor { get; init; }
+
     [JsonPropertyName("channel_name")]
     public string ChannelName { get; init; } = string.Empty;
 

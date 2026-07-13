@@ -109,10 +109,12 @@ public sealed class FlowNoteServerChannelClient
     public async Task<IReadOnlyList<ServerUserNotificationResponse>> ListMyNotificationsAsync(
         bool unreadOnly = false,
         int limit = 100,
+        long? afterId = null,
         CancellationToken cancellationToken = default)
     {
+        var afterQuery = afterId.HasValue ? $"&afterId={Math.Max(0, afterId.Value)}" : string.Empty;
         using var response = await httpClient.GetAsync(
-            $"api/v1/notifications?unreadOnly={unreadOnly.ToString().ToLowerInvariant()}&limit={Math.Clamp(limit, 1, 500)}",
+            $"api/v1/notifications?unreadOnly={unreadOnly.ToString().ToLowerInvariant()}&limit={Math.Clamp(limit, 1, 500)}{afterQuery}",
             cancellationToken);
         var notifications = await ReadJsonResponse<List<ServerUserNotificationResponse>>(response, cancellationToken);
         return notifications;
