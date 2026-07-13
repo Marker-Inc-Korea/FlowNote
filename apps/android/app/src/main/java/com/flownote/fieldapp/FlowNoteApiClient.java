@@ -18,9 +18,14 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 public final class FlowNoteApiClient {
+    public interface AuthenticationFailureListener {
+        void onAuthenticationRejected();
+    }
+
     private final String baseUrl;
     private final ContentResolver contentResolver;
     private String accessToken;
+    private AuthenticationFailureListener authenticationFailureListener;
 
     public FlowNoteApiClient(String baseUrl, ContentResolver contentResolver) {
         String cleaned = baseUrl == null ? "" : baseUrl.trim();
@@ -33,6 +38,14 @@ public final class FlowNoteApiClient {
 
     public void setAccessToken(String accessToken) {
         this.accessToken = accessToken;
+    }
+
+    public void setAuthenticationFailureListener(AuthenticationFailureListener listener) {
+        this.authenticationFailureListener = listener;
+    }
+
+    static boolean shouldDiscardStoredSession(int httpStatus) {
+        return httpStatus == HttpURLConnection.HTTP_UNAUTHORIZED;
     }
 
     public JSONObject login(String username, String password, String deviceId) throws IOException, JSONException {
@@ -204,6 +217,9 @@ public final class FlowNoteApiClient {
         InputStream stream = code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream();
         String body = readFully(stream);
         if (code < 200 || code >= 300) {
+            if (shouldDiscardStoredSession(code) && authenticationFailureListener != null) {
+                authenticationFailureListener.onAuthenticationRejected();
+            }
             throw new IOException("HTTP " + code + ": " + body);
         }
         return body;

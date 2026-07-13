@@ -23,6 +23,24 @@ public final class ApiContractTest {
     }
 
     @Test
+    public void approvedTerminalLoginUsesFixedVirtualDeviceIdContract() {
+        String virtualDeviceId = "test-android-virtual-terminal-001";
+        StringBuilder body = new StringBuilder("{");
+        JsonEscaper.appendStringField(body, "username", "test-viewer", true);
+        JsonEscaper.appendStringField(body, "password", "test-password", true);
+        JsonEscaper.appendStringField(body, "deviceId", virtualDeviceId, false);
+        body.append('}');
+
+        assertTrue(body.toString().contains("\"deviceId\":\"test-android-virtual-terminal-001\""));
+        assertTrue(UserErrorMessage.from(new java.io.IOException("HTTP 403: rejected"))
+                .contains("승인 단말 상태"));
+        assertTrue(UserErrorMessage.from(new java.io.IOException("HTTP 401: revoked"))
+                .contains("다시 로그인"));
+        assertTrue(FlowNoteApiClient.shouldDiscardStoredSession(401));
+        assertTrue(!FlowNoteApiClient.shouldDiscardStoredSession(403));
+    }
+
+    @Test
     public void jsonEscaperKeepsDeviceIdAndKoreanTextValid() {
         String escaped = JsonEscaper.quote("단말 \"A\"\\라인\n");
         assertEquals("\"단말 \\\"A\\\"\\\\라인\\n\"", escaped);
