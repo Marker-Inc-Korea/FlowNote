@@ -948,6 +948,44 @@ class DocumentAccessLog(Base):
     device_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("terminal_devices.device_id"))
     client_ip: Mapped[str | None] = mapped_column(String(64))
     user_agent: Mapped[str | None] = mapped_column(String(255))
+    reason: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ControlledCopyGrant(Base):
+    __tablename__ = "controlled_copy_grants"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ISSUED', 'CONSUMED', 'EXPIRED', 'FAILED')",
+            name="ck_controlled_copy_grant_status",
+        ),
+        Index("ix_controlled_copy_grants_expiry_status", "expires_at", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    grant_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    document_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("documents.document_id"), nullable=False, index=True
+    )
+    document_version_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("document_versions.version_id"), nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id"), nullable=False, index=True
+    )
+    session_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("auth_sessions.session_id"), nullable=False, index=True
+    )
+    device_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("terminal_devices.device_id"))
+    expected_hash_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    expected_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ISSUED")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_reason: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -19,7 +19,17 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 
-ACTIONS = {"view_started", "view_closed", "download_blocked", "auto_closed"}
+ACTIONS = {
+    "view_started",
+    "view_closed",
+    "download_blocked",
+    "auto_closed",
+    "controlled_copy_requested",
+    "controlled_copy_allowed",
+    "controlled_copy_completed",
+    "controlled_copy_failed",
+    "controlled_copy_blocked",
+}
 
 
 class DocumentAccessLogCreateRequest(BaseModel):
@@ -32,6 +42,7 @@ class DocumentAccessLogCreateRequest(BaseModel):
     client_ip: str | None = Field(default=None, alias="clientIp")
     user_agent: str | None = Field(default=None, alias="userAgent")
     idempotency_key: str | None = Field(default=None, alias="idempotencyKey")
+    reason: str | None = None
 
 
 class DocumentAccessLogResponse(BaseModel):
@@ -43,6 +54,7 @@ class DocumentAccessLogResponse(BaseModel):
     device_id: str | None
     client_ip: str | None
     user_agent: str | None
+    reason: str | None
     created_at: datetime
 
 
@@ -126,6 +138,7 @@ def _response(log: DocumentAccessLog) -> DocumentAccessLogResponse:
         device_id=log.device_id,
         client_ip=log.client_ip,
         user_agent=log.user_agent,
+        reason=log.reason,
         created_at=log.created_at,
     )
 
@@ -164,6 +177,7 @@ def create_document_access_log(
         client_ip=_clean_optional(payload.client_ip)
         or (request.client.host if request.client else None),
         user_agent=_clean_optional(payload.user_agent) or request.headers.get("user-agent"),
+        reason=_clean_optional(payload.reason),
     )
     session.add(log)
     try:

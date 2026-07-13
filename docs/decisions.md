@@ -214,3 +214,11 @@
 - 사람형 스모크와 API 테스트는 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source가 함께 필요한 질문과 기대 candidate/source/version/trace ID를 저장한다.
 - 삭제·비공개 문서, 제외/보관 FieldComment, 사라진 보고서 원천, 권한 없는 채널, 근거 부족 질문을 부정 사례로 유지하며 근거 부족은 `INSUFFICIENT_EVIDENCE`로 판정한다.
 - provider 착수 지표는 평가 전건 통과, 네 원천 유형 커버, candidate ID/content hash와 순위 재현성, 검토 완료 FieldComment 100건 충족을 모두 요구한다. 이 지표는 운영 승인과 기능 플래그를 대신하지 않으며 외부 호출을 자동 활성화하지 않는다.
+
+## 2026-07-13. controlled copy는 짧은 만료의 1회성 인증 스트리밍 사용
+
+- 사내 서버 운영의 controlled copy는 일반 정적 파일 URL이나 로컬 원본 복사가 아니라 기본 60초의 1회성 티켓 발급 후 인증 스트리밍으로 제공한다.
+- 티켓은 사용자와 로그인 세션, 선택한 문서/버전에 묶고 원문 대신 SHA-256만 DB에 저장한다. 다른 사용자·세션, 만료, 재사용, Range 요청은 차단한다.
+- controlled copy 대상은 삭제되지 않은 현재 `PUBLISHED` 문서의 정확한 공개 버전 하나로 제한한다. 저장 경로 경계, 크기 제한, 파일 SHA-256은 발급과 전송 시점에 다시 검사한다.
+- 요청·허용·완료·실패·차단은 `document_access_logs`와 `activity_history`에 사용자, 세션 단말, 문서 버전, 접속 정보, 사유와 함께 남긴다. 존재하지 않는 문서 요청은 문서 외래키가 없으므로 `activity_history`에 남긴다.
+- WPF 허용 role 버튼은 서버 API와 서버 ID 매핑을 사용하고 비허용 role은 기존 로컬 차단 안내와 접근 로그 흐름을 유지한다.

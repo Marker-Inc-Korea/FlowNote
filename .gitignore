@@ -144,6 +144,7 @@ smoke-results/
 test-output/
 test-results/
 *.tmp
+*.flownote-partial
 *.bak
 *.orig
 

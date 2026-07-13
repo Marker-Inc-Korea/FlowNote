@@ -23,6 +23,7 @@
 - FastAPI 작업 스케줄러 등록/관리 스크립트
 - 운영 관리자 계정 발급, 최초 비밀번호 변경, 비밀번호 재설정 절차 문서화
 - AI 검색 근거 후보 read model의 재생성, 목록 조회, 품질 점검 API
+- 안정 후보 ID·내용 hash와 오프라인 ground-truth 근거/제외/순위 회귀 평가 API 및 결과 누적
 - WPF AI 근거 후보 운영 점검 화면과 서버 API 클라이언트
 - FastAPI 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인 API
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면과 서버 API 클라이언트
@@ -33,7 +34,7 @@
 ## 설계 완료, 부분 구현
 
 - 외부 AI 1단계의 범위, 데이터 모델, API, 보안·보존 계약을 정리하고 질의 생성·조회 라우터, ORM 테이블, 기능 플래그와 전송 승인 검사를 구현했다. 허용 범위는 근거 검색과 요약이며, 운영 provider client와 네트워크 호출은 아직 구현하지 않았다.
-- 현재 동작하는 AI 기능은 `ai_search_candidates` 재생성·목록·품질 API, WPF 운영 점검 화면, 외부 질의의 비활성 기본값·승인·목적·근거 snapshot·감사 차단 골격이다. 운영 provider client와 네트워크 호출은 완료된 코드로 간주하지 않는다.
+- 현재 동작하는 AI 기능은 `ai_search_candidates` 재생성·목록·품질 API, 오프라인 ground-truth 회귀 평가와 결과 누적, WPF 운영 점검 화면, 외부 질의의 비활성 기본값·승인·목적·근거 snapshot·감사 차단 골격이다. 운영 provider client와 네트워크 호출은 완료된 코드로 간주하지 않는다.
 
 ## 개발 우선순위 원칙
 
@@ -51,14 +52,14 @@
 
 ## 다음 우선순위
 
-1. 68개 FastAPI 수집 기준으로 `scripts/verify-preserved-tests.ps1`의 전체 pytest, WPF 빌드, WPF 스모크, Git 산출물 사후 점검을 통과시키고 결과를 남긴다.
+1. 현재 코드에서 수집되는 FastAPI 69건에 맞게 `scripts/verify-preserved-tests.ps1`의 68건 기준선을 갱신한 뒤 전체 pytest, WPF 빌드, WPF 스모크, Git 산출물 사후 점검을 통과시키고 결과를 남긴다.
 2. 현장별 MSI 설치 검증, 코드 서명, self-contained 패키징 조건 정리
 3. Android 운영 배포 서명, MDM/인증서, 단말 등록/비활성화 절차 확정
 4. Android 백그라운드 알림 정책, WPF 사용자별 cursor 영구 보존과 Windows/Android 채널 polling 운영 UX 검증. 전경 polling과 읽음/수신 확인은 구현되어 있다.
 5. 사용자/역할 UI와 서버 계정 정책 정합성 강화
 6. 문서 버전/상태/공개 상태의 서버-WPF 동기화 정책 고도화
 7. FieldComment 관리자 검토/분석/선정 운영 화면 보강
-8. AI 근거 후보 운영 점검을 실제 축적 데이터 기준으로 반복 검증
+8. AI 근거 후보 운영 점검과 ground-truth 회귀 평가를 실제 축적 데이터 기준으로 반복 검증
 9. 현장 익명 샘플 기준에 맞춘 미리보기 예외 케이스 보강
 
 ## 후속 단계

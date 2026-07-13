@@ -823,7 +823,7 @@ public partial class DocumentViewWindow : Window
             : $"{selectedAttachmentPaths.Count}개 첨부: {string.Join(", ", selectedAttachmentPaths.Select(Path.GetFileName))}";
     }
 
-    private void DownloadCopyButton_Click(object sender, RoutedEventArgs e)
+    private async void DownloadCopyButton_Click(object sender, RoutedEventArgs e)
     {
         if (!canDownloadDocument)
         {
@@ -832,9 +832,16 @@ public partial class DocumentViewWindow : Window
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(currentResolvedPath) || !File.Exists(currentResolvedPath))
+        if (serverDocumentClient is null || serverSyncService is null)
         {
-            MessageBox.Show("복사할 수 있는 로컬 파일이 없습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("서버 연결이 설정되지 않아 통제된 복사본을 받을 수 없습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var mapping = serverSyncService.GetControlledCopyServerMapping(document.DocumentId, document.VersionNo);
+        if (mapping is null)
+        {
+            MessageBox.Show("현재 문서 버전의 서버 동기화 정보가 없습니다. 문서와 공개 버전을 먼저 서버에 동기화하세요.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -850,15 +857,37 @@ public partial class DocumentViewWindow : Window
             return;
         }
 
-        File.Copy(currentResolvedPath, dialog.FileName, overwrite: true);
-        historyService?.Record(
-            "document.downloaded",
-            actorName,
-            "document",
-            document.DocumentId,
-            document.FileName,
-            $"통제된 문서 복사본 저장: {document.FileName}");
-        MessageBox.Show("문서 복사본을 저장하고 이력에 기록했습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
+        DownloadCopyButton.IsEnabled = false;
+        try
+        {
+            var result = await serverDocumentClient.DownloadControlledCopyAsync(
+                mapping.ServerDocumentId,
+                mapping.ServerVersionId,
+                dialog.FileName);
+            historyService?.Record(
+                "document.downloaded",
+                actorName,
+                "document",
+                document.DocumentId,
+                document.FileName,
+                $"서버 통제 문서 복사본 저장: {document.FileName} / SHA-256 {result.HashSha256}");
+            MessageBox.Show("서버가 승인한 문서 복사본을 저장하고 해시를 검증했습니다.", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or IOException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            historyService?.Record(
+                "document.download_failed",
+                actorName,
+                "document",
+                document.DocumentId,
+                document.FileName,
+                $"서버 통제 문서 복사본 저장 실패: {ex.Message}");
+            MessageBox.Show($"통제된 문서 복사본을 저장하지 못했습니다.\n\n{ex.Message}", "FlowNote", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            DownloadCopyButton.IsEnabled = true;
+        }
     }
 
     private void RecordDownloadBlocked(string reason)

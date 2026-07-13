@@ -66,6 +66,11 @@ AISearchCandidate
   -> WorkSequenceChangeHistory
   -> ReportSource
 
+AISearchEvaluationRun
+  -> AISearchEvaluationCase
+  -> expected/actual AISearchCandidate snapshot
+  -> excluded source and ranking snapshot
+
 AIQuery (safety/audit skeleton, external call disabled by default)
   -> AIQueryEvidenceCandidate -> AISearchCandidate snapshot
   -> AIQueryCitation -> DocumentVersion | FieldComment | WorkSequenceChangeHistory | ReportSource

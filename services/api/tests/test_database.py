@@ -40,6 +40,7 @@ def test_app_startup_creates_mvp_schema() -> None:
         "ai_call_attempts",
         "ai_transfer_approvals",
         "comment_templates",
+        "controlled_copy_grants",
         "document_access_logs",
         "document_tags",
         "document_versions",

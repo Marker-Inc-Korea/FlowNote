@@ -66,8 +66,14 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 | POST | `/api/v1/documents/{document_id}/versions` | 새 파일 버전 등록 |
 | PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | 버전 상태 변경 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | 특정 버전을 공개 버전으로 지정 |
+| POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | 현재 공개 버전의 1회성 controlled copy 티켓 발급 |
+| GET | `/api/v1/controlled-copies/{token}` | 발급 사용자·로그인 세션에 묶인 controlled copy 1회 스트리밍 |
 
 문서 생성 시 허용되는 상태는 `WORKING`, `IN_REVIEW`, `ARCHIVED`이다. `PUBLISHED`는 publish 엔드포인트로만 만든다.
+
+controlled copy는 `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`만 요청할 수 있다. 서버는 요청 시점과 전송 시점에 문서가 삭제되지 않은 `PUBLISHED` 상태인지, 요청 버전이 `published_version_id`와 일치하고 `version_status = PUBLISHED`, `is_published = true`인지 다시 검사한다. 티켓은 기본 60초, 최대 300초이며 발급 사용자와 `auth_sessions.session_id`에 묶이고 첫 전송 시 소비된다. 다른 사용자·다른 로그인 세션, 만료, 재사용은 거부한다.
+
+응답은 상대 `download_url`, 파일명, MIME type, 크기, SHA-256만 포함하며 `storage_key`와 로컬 원본 경로를 포함하지 않는다. 스트리밍 응답은 `Content-Disposition: attachment`, `Content-Length`, `X-Content-SHA256`, `Cache-Control: no-store`, `Accept-Ranges: none`을 사용한다. Range 요청은 티켓을 소비하고 416으로 거부한다. 서버는 저장 키가 절대 경로나 `..`를 포함하지 않고 설정된 `storage_root` 아래로 해석되는지 검사하며, 기본 500 MiB 크기 제한과 등록 SHA-256을 발급 전·전송 전에 확인한다.
 
 ## 접근 로그
 
@@ -76,7 +82,7 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 | POST | `/api/v1/documents/{document_id}/access-logs` | 문서 접근 로그 등록 |
 | GET | `/api/v1/documents/{document_id}/access-logs` | 문서 접근 로그 조회 |
 
-`action` 값은 `view_started`, `view_closed`, `download_blocked`, `auto_closed`를 사용한다. 조회는 `admin`, `system-admin`만 가능하다.
+`action` 값은 `view_started`, `view_closed`, `download_blocked`, `auto_closed`와 controlled copy의 `controlled_copy_requested`, `controlled_copy_allowed`, `controlled_copy_completed`, `controlled_copy_failed`, `controlled_copy_blocked`를 사용한다. controlled copy 이벤트는 사용자, 세션에 연결된 단말, 문서 버전, IP, user agent, 사유를 `document_access_logs`와 `activity_history`에 함께 남긴다. 존재하지 않는 문서는 외래키로 문서 접근 로그를 만들 수 없으므로 요청 ID와 사유를 `activity_history`에 남긴다. 조회는 `admin`, `system-admin`만 가능하다.
 
 ## FieldComment
 
@@ -174,7 +180,7 @@ AI 검색 후보 API는 자동 조언이 아닌 “근거가 있는 검색과 �
 | --- | --- | --- |
 | POST | `/api/v1/ai-search/candidates/rebuild` | 현재 DB 기준으로 검색 후보를 재생성하고 후보 수와 제외 사유를 반환 |
 | GET | `/api/v1/ai-search/candidates` | 검색 후보 목록 조회. `sourceType`, `sourceId`, `limit`으로 제한 가능 |
-| GET | `/api/v1/ai-search/quality` | 후보 수, 원천별 개수, 제외 사유, FieldComment 검토 상태 부족분 조회 |
+| GET | `/api/v1/ai-search/quality` | 후보 수, 원천별 개수, 제외 사유, FieldComment 검토 상태 부족분과 최근 회귀 평가 요약 조회 |
 | POST | `/api/v1/ai-search/evaluations` | 외부 AI 호출 없이 질문별 기대 근거와 실제 후보를 비교하고 재현성 snapshot을 누적 저장 |
 
 검색 후보 원천은 `PUBLISHED_DOCUMENT_VERSION`, `FIELD_COMMENT`, `WORK_SEQUENCE_HISTORY`, `REPORT_SOURCE` 네 종류만 허용한다. 각 후보 응답은 안정된 `candidate_id`, `content_hash`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `parent_type`, `parent_id`를 포함해 원문 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 근거 row로 역추적할 수 있어야 한다. `candidate_id`는 source type/id/version 조합의 결정적 hash이며 원천 내용이 바뀌지 않으면 재생성 뒤에도 유지되고, 검색 본문 변경은 `content_hash`로 구분한다.
@@ -277,13 +283,13 @@ WPF `RolePermissionPolicy`와의 대조:
 | 채널 관리/인수인계 확인 현황 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead` | 채널 생성은 `DocumentWriteUser`, 조회/읽음/수신확인은 채널 멤버십 또는 `admin`, `system-admin` |
 | 파일 감시 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | WPF 로컬 기능 |
 | 사용자 관리 | `admin`, `system-admin` | 서버 계정 관리 API는 후속 범위 |
-| controlled copy 다운로드 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | 서버 다운로드 API는 후속 범위 |
+| controlled copy 다운로드 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | 공개 버전 대상 60초 1회성 서버 티켓과 스트리밍 사용 |
 
 정합성 검증 기준:
 
 - FastAPI `app/core/auth.py`는 `DOCUMENT_WRITE_ROLES`, `FIELD_COMMENT_CREATE_ROLES`, `ACCESS_LOG_READ_ROLES`, `REPORT_WRITE_ROLES`, `USER_MANAGEMENT_ROLES`, `CONTROLLED_COPY_DOWNLOAD_ROLES`를 권한 표의 기준으로 둔다.
 - WPF `RolePermissionPolicy`는 같은 role 집합을 문서 등록, FieldComment 작성, 보고서 작성, 접근 로그 조회, 사용자 관리, controlled copy 다운로드 정책으로 검증한다.
-- controlled copy 다운로드는 서버 다운로드 API가 아직 없지만, 서버와 WPF 정책 집합은 `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`로 고정한다.
+- controlled copy 다운로드는 서버와 WPF 모두 `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`로 고정하며 WPF는 로컬 원본 복사 대신 서버 티켓 API를 호출한다.
 - 서버 로그인 성공 시 WPF 현재 세션의 role은 서버 응답 role을 우선하며, 같은 로그인 ID의 로컬 role과 달라도 화면 권한은 서버 role 기준으로 계산한다.
 - 서버 401/403 로그인 실패는 WPF 로컬 계정 fallback 금지 대상으로 유지하며 WPF 스모크 테스트에서 확인한다.
 

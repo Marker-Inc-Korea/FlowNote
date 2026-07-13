@@ -16,6 +16,14 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
     private const string Failed = "FAILED";
     private const string Synced = "SYNCED";
 
+    public ControlledCopyServerMapping? GetControlledCopyServerMapping(string documentId, int versionNo)
+    {
+        var mapping = TryGetDocumentVersionServerMapping(documentId, versionNo);
+        return string.IsNullOrWhiteSpace(mapping?.ServerDocumentId) || string.IsNullOrWhiteSpace(mapping.ServerVersionId)
+            ? null
+            : new ControlledCopyServerMapping(mapping.ServerDocumentId, mapping.ServerVersionId);
+    }
+
     public async Task<ServerSyncResult> QueueAndTrySyncDocumentAsync(
         DocumentRecord document,
         FlowNoteServerDocumentClient? serverClient,

@@ -14,7 +14,7 @@
 
 1. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 2. 실행 전 `git status --porcelain=v1 --untracked-files=all`에서 SQLite 예외 외 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-3. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 68개인지 확인한다.
+3. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 75개인지 확인한다.
 4. `services/api`에서 FastAPI pytest를 실행한다.
 5. WPF 앱을 빌드한다.
 6. WPF 스모크 테스트를 실행한다.
@@ -32,7 +32,13 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Win
 git status --short
 ```
 
-2026-07-13 기준 FastAPI 수집 기대값은 68개다. 승인 Android 단말과 승인 단말 관리 기준선 이후 AI 근거 검색 2개와 외부 AI 질의 안전장치 8개가 추가되었으며, 모두 구현에 대응하는 의도된 테스트다. 표준 PowerShell 스크립트도 같은 기준선을 사용한다.
+2026-07-13 현재 FastAPI 코드는 75건이 수집된다. 기존 68건 기준선에 AI 근거 검색 ground-truth 회귀 평가 1건과 controlled copy 보안·감사 회귀 6건이 추가된 결과다. 표준 PowerShell 스크립트도 같은 75건을 요구한다.
+
+## 2026-07-13 AI 근거 검색 회귀 평가 반영
+
+문서 갱신 과정에서 추가된 `test_ai_search_ground_truth_evaluation_is_reproducible_and_persisted`는 안정 candidate ID와 content hash, 재생성 전후 순위, 네 원천 커버, 제외 근거, `INSUFFICIENT_EVIDENCE`, 평가 실행·케이스 SQLite 누적을 검증한다.
+
+controlled copy 구현 후 `services/api`의 `pytest --collect-only -q`와 전체 pytest에서 75건 수집·통과를 확인했다. 이 환경에는 `dotnet` 명령이 없어 WPF 빌드와 WPF 스모크는 실행하지 못했다. 기존 DB, 로그, 테스트 산출물과 pytest cache는 삭제하지 않았다.
 
 ## 2026-07-13 외부 AI 질의 안전장치 검증
 
@@ -70,6 +76,8 @@ WPF 스모크 테스트는 기본적으로 저장소 루트의 `data/local/flown
 - `FLOWNOTE_API_BASE_URL`이 없더라도 `http://127.0.0.1:5184` 로컬 FastAPI 서버가 실행 중이면 서버 로그인, 문서 등록, 버전, 공개 조회를 검증한다.
 - 서버 URL이 없으면 WPF 로컬 계정 fallback이 허용되는지 확인한다.
 - 서버 로그인 응답이 401 또는 403이면 같은 로그인 ID의 WPF 로컬 계정으로 우회하지 않는지 확인한다.
+
+controlled copy API 회귀는 `tests/test_controlled_copy_api.py`에서 전체 기본 role의 허용·거부, 정확한 공개 버전, SHA-256 일치, 만료·재사용·다른 사용자/세션·문서/버전 불일치·Range·경로 순회·전송 전 파일 변경을 검증한다. WPF 수동 확인에서는 허용 role의 서버 저장과 해시 검증 안내, 비허용 role의 기존 차단 안내를 확인하고 `document_access_logs`와 `activity_history`의 사용자·단말·버전·사유를 대조한다.
 
 과거 날짜 후보가 하나도 없으면 스모크 테스트는 실패한다. 이 경우 DB를 삭제하지 말고 누적 데이터 상태를 확인해 다음 분석에 사용한다.
 
