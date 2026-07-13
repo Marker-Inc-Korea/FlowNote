@@ -70,6 +70,7 @@
 | `ai_search_evaluation_runs` | 외부 AI 없는 ground-truth 회귀 실행과 provider 착수 판단 지표 |
 | `ai_search_evaluation_cases` | 질문별 기대/실제 근거, 제외 사유, 순위 hash와 통과 여부 |
 | `document_access_logs` | 서버 문서 접근 로그 |
+| `controlled_copy_grants` | SHA-256으로 저장한 1회성 토큰, 사용자·세션·단말·문서 버전, 만료·소비·실패 상태 |
 | `activity_history` | 서버 활동 이력 |
 
 채널 메시지는 별도 개인 DM이나 개인 메신저 수집이 아니라 업무 채널 멤버십 기준으로 조회된다. 사용자별 알림 목록과 읽음 처리는 `channel_messages`와 `notification_channel_members.last_read_message_id`, `last_read_at`를 함께 사용한다.
@@ -271,7 +272,7 @@ FastAPI 서버의 `app/core/auth.py`와 WPF `RolePermissionPolicy`는 다음 기
 | 보고서 작성 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | 보고서 버튼 활성 |
 | 채널 관리/인수인계 확인 현황 | 채널 생성은 문서/작업순서 쓰기 role, 조회와 수신확인은 채널 멤버십 또는 `admin`, `system-admin` 기준 | 채널 관리와 인수인계 확인 현황 버튼은 문서 등록 권한과 같은 role에서 활성 |
 | 파일 감시 | 서버 전용 권한 그룹은 아직 없음 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
-| controlled copy 다운로드 | 서버 다운로드 API는 아직 없음 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
+| controlled copy 다운로드 | 현재 공개 버전, 1회성 티켓, 사용자·세션 일치, 경로·크기·SHA-256 재검증 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
 | 사용자 관리 | 서버 계정 관리 API는 아직 없음 | `admin`, `system-admin` |
 
 ### 로컬 계정과 서버 계정 운영 기준

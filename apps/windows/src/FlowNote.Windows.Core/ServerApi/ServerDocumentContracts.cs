@@ -164,6 +164,45 @@ public sealed record ServerDocumentStatusUpdateRequest
     public string? ChangeReason { get; init; }
 }
 
+public sealed record ServerControlledCopyGrantResponse
+{
+    [JsonPropertyName("grant_id")]
+    public string GrantId { get; init; } = string.Empty;
+
+    [JsonPropertyName("document_id")]
+    public string DocumentId { get; init; } = string.Empty;
+
+    [JsonPropertyName("document_version_id")]
+    public string DocumentVersionId { get; init; } = string.Empty;
+
+    [JsonPropertyName("download_url")]
+    public string DownloadUrl { get; init; } = string.Empty;
+
+    [JsonPropertyName("expires_at")]
+    public DateTime ExpiresAt { get; init; }
+
+    [JsonPropertyName("filename")]
+    public string Filename { get; init; } = string.Empty;
+
+    [JsonPropertyName("mime_type")]
+    public string MimeType { get; init; } = string.Empty;
+
+    [JsonPropertyName("size_bytes")]
+    public long SizeBytes { get; init; }
+
+    [JsonPropertyName("hash_sha256")]
+    public string HashSha256 { get; init; } = string.Empty;
+
+    [JsonPropertyName("range_requests_supported")]
+    public bool RangeRequestsSupported { get; init; }
+}
+
+public sealed record ServerControlledCopyDownloadResult(
+    string GrantId,
+    string Filename,
+    long SizeBytes,
+    string HashSha256);
+
 public sealed record ServerDocumentAccessLogCreateRequest
 {
     [JsonPropertyName("documentVersionId")]

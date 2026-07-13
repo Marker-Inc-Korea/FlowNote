@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net;
+using System.Security.Cryptography;
 using FlowNote.Windows.Core.FieldComments;
 
 namespace FlowNote.Windows.Core.ServerApi;
@@ -134,6 +135,75 @@ public sealed class FlowNoteServerDocumentClient
             $"api/v1/documents/{documentId}/published",
             cancellationToken);
         return await ReadJsonResponse<ServerDocumentVersionResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerControlledCopyDownloadResult> DownloadControlledCopyAsync(
+        string documentId,
+        string versionId,
+        string destinationPath,
+        CancellationToken cancellationToken = default)
+    {
+        using var grantResponse = await httpClient.PostAsync(
+            $"api/v1/documents/{Uri.EscapeDataString(documentId)}/versions/{Uri.EscapeDataString(versionId)}/controlled-copy",
+            null,
+            cancellationToken);
+        var grant = await ReadJsonResponse<ServerControlledCopyGrantResponse>(grantResponse, cancellationToken);
+        if (string.IsNullOrWhiteSpace(grant.DownloadUrl) ||
+            !string.Equals(grant.DocumentId, documentId, StringComparison.Ordinal) ||
+            !string.Equals(grant.DocumentVersionId, versionId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("서버 controlled copy 승인 응답의 문서 또는 버전이 요청과 일치하지 않습니다.");
+        }
+
+        using var response = await httpClient.GetAsync(
+            grant.DownloadUrl.TrimStart('/'),
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            await ReadJsonResponse<object>(response, cancellationToken);
+        }
+
+        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var partialPath = $"{destinationPath}.{grant.GrantId}.flownote-partial";
+        await using var destination = new FileStream(
+            partialPath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            1024 * 1024,
+            useAsync: true);
+        using var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[1024 * 1024];
+        long size = 0;
+        int read;
+        while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+        {
+            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            digest.AppendData(buffer, 0, read);
+            size += read;
+        }
+        await destination.FlushAsync(cancellationToken);
+        var actualHash = Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant();
+        var responseHash = response.Headers.TryGetValues("X-Content-SHA256", out var hashValues)
+            ? hashValues.SingleOrDefault()
+            : null;
+        if (size != grant.SizeBytes ||
+            !string.Equals(actualHash, grant.HashSha256, StringComparison.OrdinalIgnoreCase) ||
+            (!string.IsNullOrWhiteSpace(responseHash) &&
+             !string.Equals(actualHash, responseHash, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("다운로드 파일의 크기 또는 SHA-256 해시가 서버 승인 버전과 일치하지 않습니다.");
+        }
+
+        destination.Close();
+        File.Move(partialPath, destinationPath, overwrite: true);
+
+        return new ServerControlledCopyDownloadResult(
+            grant.GrantId,
+            grant.Filename,
+            size,
+            actualHash);
     }
 
     public async Task<ServerFieldCommentResponse> RegisterFieldCommentAsync(

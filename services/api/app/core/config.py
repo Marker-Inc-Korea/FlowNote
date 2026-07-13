@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     database_echo: bool = False
     storage_root: str = "./storage"
     field_comment_attachment_max_bytes: int = 20 * 1024 * 1024
+    controlled_copy_max_bytes: int = 500 * 1024 * 1024
+    controlled_copy_ticket_expires_seconds: int = 60
     session_cookie_name: str = "flownote_session"
     access_token_secret: str = "flownote-local-dev-token-secret-change-before-operation"
     access_token_expires_minutes: int = 480

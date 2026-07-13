@@ -18,6 +18,7 @@
 - TXT, PDF, XLSX, 이미지 미리보기
 - 문서 열람 시작/종료 로그
 - viewer 자동 닫힘과 다운로드 차단 로그
+- 허용 role의 서버 1회성 controlled copy 저장과 SHA-256 검증, 비허용 role의 기존 차단 안내·이력
 - FieldComment 작성과 첨부 저장
 - 알림, 전체 이력
 - 관리자 파일 감시 후보 처리
@@ -26,11 +27,11 @@
 - 채널함: 서버 내 채널, 채널 메시지/알림, 인수인계 조회, 읽음/수신 확인, 원천 링크 복사, 후속 FieldComment 생성
 - 채널 관리: 서버 채널 생성, 멤버 추가/제외
 - 인수인계 확인 현황: 수신자별 receipt 상태 변경, 후속 FieldComment 생성
-- FastAPI 서버 인증과 승인 단말/문서/FieldComment/첨부/접근 로그/보고서/작업순서/채널·인수인계/AI 검색 근거 API 클라이언트
+- FastAPI 서버 인증과 승인 단말/문서/controlled copy/FieldComment/첨부/접근 로그/보고서/작업순서/채널·인수인계/AI 검색 근거·회귀 평가 API 클라이언트
 - AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
 - 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장
 
-AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트, `AI 근거 후보 운영 점검` 화면에 구현되어 있다. 이 화면은 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`를 호출해 외부 AI 호출 전 데이터 품질과 원천 추적 가능성을 확인한다.
+AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트, `AI 근거 후보 운영 점검` 화면에 구현되어 있다. 이 화면은 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`를 호출해 외부 AI 호출 전 데이터 품질과 원천 추적 가능성을 확인한다. WPF 서버 클라이언트는 `/api/v1/ai-search/evaluations` 계약도 구현하며, 스모크 테스트가 기대 근거·제외 근거와 재생성 전후 candidate ID/content hash/순위 안정성을 검증한다. 회귀 평가를 직접 구성·실행하는 WPF 운영 UI는 아직 없다.
 
 ## 후속 제품 방향
 

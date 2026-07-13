@@ -211,6 +211,18 @@ def _ensure_auth_session_device_column(database: Database) -> None:
         connection.execute(text("ALTER TABLE auth_sessions ADD COLUMN device_id VARCHAR(64)"))
 
 
+def _ensure_document_access_log_reason_column(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+
+    with database.engine.begin() as connection:
+        existing_columns = {
+            row[1] for row in connection.execute(text("PRAGMA table_info(document_access_logs)"))
+        }
+        if existing_columns and "reason" not in existing_columns:
+            connection.execute(text("ALTER TABLE document_access_logs ADD COLUMN reason VARCHAR(255)"))
+
+
 def _ensure_terminal_device_schema(database: Database) -> None:
     if not database.database_url.startswith("sqlite"):
         return
@@ -421,6 +433,7 @@ def initialize_database(database: Database) -> None:
     _ensure_idempotency_columns(database)
     _ensure_terminal_device_schema(database)
     _ensure_auth_session_device_column(database)
+    _ensure_document_access_log_reason_column(database)
     _ensure_work_sequence_columns(database)
     _ensure_ai_evidence_snapshot_has_no_candidate_fk(database)
     _ensure_ai_search_candidate_content_hash(database)

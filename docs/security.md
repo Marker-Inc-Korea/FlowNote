@@ -12,6 +12,7 @@
 - FastAPI 로그인, access token, refresh token, logout
 - FastAPI `auth_sessions` 기반 세션 폐기와 token 교체 검증
 - FastAPI role 기반 문서 쓰기, 태그 생성, FieldComment 작성, 접근 로그 조회, 보고서 작성 권한
+- FastAPI 공개 문서 버전 controlled copy 1회성 티켓, 사용자·세션 바인딩, 만료·재사용 차단, 경로·크기·SHA-256 검증과 전체 감사
 - FastAPI 채널 멤버십 기반 채널 메시지 조회, 사용자별 알림 읽음, 인수인계 수신 확인 권한
 - Android 승인 단말 `deviceId` 로그인 검증과 `auth_sessions.device_id` 기록
 - FastAPI 관리자 승인 단말 등록·상태·교체 API와 WPF 승인 단말 운영 화면
@@ -84,6 +85,8 @@ WPF 문서 뷰어는 로컬 앱 계층에서 보호한다.
 - PDF는 WebView2 기반 표시를 우선하고 저장/다운로드 이벤트를 차단한다.
 - 텍스트, 이미지, Excel은 앱 내부 읽기 전용 미리보기로 표시한다.
 - TXT/PDF/XLSX/이미지의 정상, 비정상, 한글 파일명, 큰 파일 기준과 CAD/HWP 제외 범위는 [문서 미리보기 안정화 기준](../apps/windows/docs/document-preview-stability.md)을 따른다.
+
+허용 role의 controlled copy도 로컬 원본을 직접 복사하지 않는다. WPF는 서버에 현재 문서/버전의 티켓을 요청하고 같은 Bearer 사용자·로그인 세션으로 한 번만 스트리밍한다. 서버는 공개 상태와 정확한 공개 버전, 저장소 경계, 파일 크기, 등록 SHA-256을 발급 전과 전송 전에 검사한다. 티켓 원문은 DB에 저장하지 않고 SHA-256만 보존하며 기본 60초 후 만료된다. Range 요청, 다른 사용자·세션, 재사용과 만료 후 요청은 거부되고 성공·실패·차단을 모두 감사한다. 응답은 서버 로컬 경로나 `storage_key`를 노출하지 않는다.
 
 ## 운영 데이터 보호
 
