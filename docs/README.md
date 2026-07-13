@@ -18,11 +18,11 @@
 ## 현재 코드 기준
 
 - Windows WPF 앱은 로컬 SQLite를 기본 저장소로 사용한다.
-- Android 현장 단말 앱은 Java/Android 네이티브 View 기반 최소 앱으로 구현되어 있다. 승인 단말 `deviceId` 로그인, 공개 문서 조회/상세, FieldComment, 사진 첨부 outbox, 신호등식 기록, 채널 알림 읽음, 인수인계 확인을 제공한다.
+- Android 현장 단말 앱은 Java/Android 네이티브 View 기반 최소 앱으로 구현되어 있다. 승인 단말 `deviceId` 로그인, 공개 문서 조회/상세, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인을 제공한다.
 - Windows에는 `admin`, `system-admin`용 승인 단말 관리 화면이 구현되어 있다. FastAPI 단말 API를 통해 목록·상세·마지막 접속 조회, 등록, 정보/상태 변경, 교체를 수행한다.
 - Windows에는 채널함, 채널 관리, 인수인계 확인 현황 화면이 구현되어 있고 FastAPI 채널/인수인계 API를 직접 호출한다. 서버 미연결 시 로컬 데이터와 동기화 큐를 삭제하지 않고 서버 설정 확인 문구를 표시한다.
 - FastAPI 서버는 `/api/v1` REST API와 SQLite, 로컬 `storage/` 파일 저장소를 사용한다.
-- FastAPI 서버에는 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인 API가 있다.
+- FastAPI 서버에는 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API가 있다.
 - WPF와 스모크 테스트는 기본적으로 `data/local/flownote.local.sqlite`를 함께 사용한다.
 - 테스트와 개발 SQLite는 누적 검증 기록으로 로컬에 보존하지만 Git으로 추적하거나 커밋하지 않는다.
 - 문서 등록은 즉시 공개가 아니다. 등록된 문서는 `WORKING` 상태와 최신 버전으로 저장되고, 공개 버전은 별도 publish 절차로 지정한다.

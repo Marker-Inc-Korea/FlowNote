@@ -48,6 +48,7 @@ public final class MainActivity extends Activity {
     private LinearLayout contentArea;
     private Uri selectedPhotoUri;
     private String accessToken;
+    private String refreshToken;
     private String currentUserId;
     private boolean pollingActive;
     private long pollingDelayMs = FOREGROUND_POLL_INTERVAL_MS;
@@ -195,6 +196,7 @@ public final class MainActivity extends Activity {
         deviceIdInput.setText(preferences.getString("device_id", ""));
         usernameInput.setText(preferences.getString("username", ""));
         accessToken = preferences.getString("access_token", null);
+        refreshToken = preferences.getString("refresh_token", null);
         currentUserId = preferences.getString("user_id", null);
     }
 
@@ -204,6 +206,7 @@ public final class MainActivity extends Activity {
                 .putString("device_id", deviceIdInput.getText().toString().trim())
                 .putString("username", usernameInput.getText().toString().trim())
                 .putString("access_token", accessToken)
+                .putString("refresh_token", refreshToken)
                 .putString("user_id", currentUserId)
                 .apply();
     }
@@ -211,6 +214,7 @@ public final class MainActivity extends Activity {
     private void rebuildApiClient() {
         apiClient = new FlowNoteApiClient(serverUrlInput.getText().toString(), getContentResolver());
         apiClient.setAccessToken(accessToken);
+        apiClient.setAuthenticationFailureListener(this::clearRejectedSession);
     }
 
     private void login() {
@@ -224,6 +228,7 @@ public final class MainActivity extends Activity {
                         deviceIdInput.getText().toString()
                 );
                 accessToken = payload.getString("access_token");
+                refreshToken = payload.getString("refresh_token");
                 currentUserId = payload.getString("user_id");
                 saveSettings();
                 postStatus("로그인 완료: " + payload.optString("display_name"));
@@ -291,8 +296,6 @@ public final class MainActivity extends Activity {
             } catch (Exception exc) {
                 String message = exc.getMessage();
                 if (message != null && message.startsWith("HTTP 401")) {
-                    accessToken = null;
-                    preferences.edit().remove("access_token").apply();
                     pollingActive = false;
                     postStatus("로그인이 만료되었습니다. 다시 로그인하세요.");
                     return;
@@ -307,6 +310,17 @@ public final class MainActivity extends Activity {
                 }
             });
         });
+    }
+
+    private void clearRejectedSession() {
+        accessToken = null;
+        refreshToken = null;
+        currentUserId = null;
+        preferences.edit()
+                .remove("access_token")
+                .remove("refresh_token")
+                .remove("user_id")
+                .apply();
     }
 
     private void loadPublishedDocuments() {

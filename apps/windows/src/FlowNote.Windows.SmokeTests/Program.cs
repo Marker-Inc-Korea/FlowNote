@@ -32,6 +32,32 @@ try
 {
     var services = new FlowNoteLocalServices(databasePath);
 
+    var terminalStatusLabels = new Dictionary<string, string>
+    {
+        ["ACTIVE"] = "사용",
+        ["INACTIVE"] = "비활성",
+        ["RETIRED"] = "폐기"
+    };
+    foreach (var expected in terminalStatusLabels)
+    {
+        var terminal = new ServerTerminalDeviceResponse
+        {
+            DeviceId = "test-wpf-virtual-terminal-001",
+            DeviceName = "WPF 가상 승인 단말",
+            Status = expected.Key,
+            RegisteredBy = "test-admin",
+            UpdatedBy = "test-admin",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        Require(
+            terminal.StatusLabel == expected.Value,
+            $"terminal status {expected.Key} should use the Korean label {expected.Value}");
+        Require(
+            terminal.LastSeenLabel == "접속 기록 없음",
+            "terminal without a successful Android login should show the Korean empty last-seen label");
+    }
+
     var legacyCreateDiagnosis = ServerSyncQueueDiagnostics.Classify(
         "PENDING",
         "document",
