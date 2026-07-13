@@ -14,7 +14,7 @@
 
 1. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 2. 실행 전 `git status --porcelain=v1 --untracked-files=all`에서 SQLite 예외 외 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-3. `services/api`에서 FastAPI pytest 수집 개수를 확인한다. 현재 테스트 모음은 58개지만 `scripts/verify-preserved-tests.ps1`의 고정 기대값은 아직 53개이므로, 스크립트를 그대로 실행하면 이 단계에서 실패한다.
+3. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 58개인지 확인한다.
 4. `services/api`에서 FastAPI pytest를 실행한다.
 5. WPF 앱을 빌드한다.
 6. WPF 스모크 테스트를 실행한다.
@@ -32,7 +32,18 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Win
 git status --short
 ```
 
-2026-07-10 현재 `python -m pytest --collect-only -q`의 실제 수집 결과는 58개다. 표준 PowerShell 스크립트의 `Expected 53 FastAPI pytest tests` 검사는 최신 테스트 모음과 일치하지 않는 알려진 검증 자동화 제한이며, 기대값을 갱신하기 전까지 표준 실행 전체 통과로 판정하지 않는다. 개별 pytest 58개 통과 기록과 WPF 검증 기록은 아래 실행별 기록을 따른다.
+2026-07-13 기준 FastAPI 수집 기대값은 58개다. 기존 53개에서 증가한 5개는 승인 Android 단말 로그인 2개와 승인 단말 관리 3개이며, 모두 최근 구현에 대응하는 의도된 테스트다. 표준 PowerShell 스크립트도 같은 기준선을 사용한다.
+
+## 2026-07-13 표준 보존형 검증 기준 갱신
+
+`scripts/verify-preserved-tests.ps1`의 FastAPI 수집 기대값을 53개에서 58개로 갱신했다. 테스트 파일의 최상위 `test_*` 함수를 파일별로 확인한 결과 합계는 58개였고, 기존 기준선 이후 추가된 테스트는 다음 5개다.
+
+- `tests/test_auth_api.py`: 승인된 Android 단말 로그인과 미승인·비활성 단말 로그인 거부 2개
+- `tests/test_terminal_devices_api.py`: 관리자 단말 등록·조회·변경·비활성화, 단말 교체·폐기 상태 불변식, 비관리자 접근 거부 3개
+
+이번에는 테스트 수집 개수와 보존 상태만 점검했으므로 전체 회귀 통과 기록으로 판정하지 않는다. 표준 검증이 가능한 환경에서 `.\scripts\verify-preserved-tests.ps1`의 시작부터 Git 사후 점검까지 통과한 결과를 추가로 남겨야 한다.
+
+실행 가능한 보존 점검에서는 공통 SQLite `data/local/flownote.local.sqlite`의 `PRAGMA quick_check`가 `ok`, `PRAGMA foreign_key_check` 결과가 0건이었다. `data/local/flownote.local.sqlite`, `data/local/Files/`, WPF `bin/`과 `obj/` probe 경로에 Git 제외 규칙이 적용됨을 확인했다. `git status --short --untracked-files=all`에는 이번 문서와 표준 스크립트 변경만 표시되었고, `git diff --cached --name-only`는 비어 있었다. 기존 DB, 로그, 파일과 실패 흔적은 삭제하지 않았다.
 
 ## 2026-07-10 코드-문서 정합성 재점검
 
