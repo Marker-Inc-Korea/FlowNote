@@ -59,6 +59,12 @@ public final class FlowNoteApiClient {
         return getArray(path);
     }
 
+    public JSONArray pollNotifications(long afterId, int limit) throws IOException, JSONException {
+        int safeLimit = Math.max(1, Math.min(500, limit));
+        return getArray(ApiPaths.NOTIFICATIONS + "?afterId=" + Math.max(0, afterId)
+                + "&limit=" + safeLimit + "&unreadOnly=false");
+    }
+
     public JSONObject markNotificationRead(String messageId) throws IOException, JSONException {
         return patchJson(ApiPaths.notificationRead(messageId), "{}");
     }

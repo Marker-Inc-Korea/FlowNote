@@ -26,6 +26,8 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     private static final int REQUEST_PICK_PHOTO = 1001;
+    private static final long FOREGROUND_POLL_INTERVAL_MS = 15_000L;
+    private static final long MAX_POLL_BACKOFF_MS = 120_000L;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -47,6 +49,9 @@ public final class MainActivity extends Activity {
     private Uri selectedPhotoUri;
     private String accessToken;
     private String currentUserId;
+    private boolean pollingActive;
+    private long pollingDelayMs = FOREGROUND_POLL_INTERVAL_MS;
+    private final Runnable notificationPoll = this::pollNotifications;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,9 +66,22 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        stopPolling();
         executor.shutdownNow();
         outbox.close();
         super.onDestroy();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        startPolling();
+    }
+
+    @Override
+    protected void onPause() {
+        stopPolling();
+        super.onPause();
     }
 
     private void buildUi() {
@@ -209,9 +227,85 @@ public final class MainActivity extends Activity {
                 currentUserId = payload.getString("user_id");
                 saveSettings();
                 postStatus("로그인 완료: " + payload.optString("display_name"));
+                mainHandler.post(this::startPolling);
             } catch (Exception exc) {
                 postStatus("로그인 실패: " + UserErrorMessage.from(exc));
             }
+        });
+    }
+
+    private void startPolling() {
+        if (accessToken == null || accessToken.trim().isEmpty() || pollingActive) {
+            return;
+        }
+        pollingActive = true;
+        pollingDelayMs = FOREGROUND_POLL_INTERVAL_MS;
+        mainHandler.post(notificationPoll);
+    }
+
+    private void stopPolling() {
+        pollingActive = false;
+        mainHandler.removeCallbacks(notificationPoll);
+    }
+
+    private void pollNotifications() {
+        if (!pollingActive) {
+            return;
+        }
+        rebuildApiClient();
+        final String cursorKey = "notification_cursor_" + (currentUserId == null ? "anonymous" : currentUserId);
+        final String caughtUpKey = cursorKey + "_caught_up";
+        final long afterId = preferences.getLong(cursorKey, 0L);
+        executor.execute(() -> {
+            long nextDelay = FOREGROUND_POLL_INTERVAL_MS;
+            try {
+                JSONArray items = apiClient.pollNotifications(afterId, 100);
+                long nextCursor = afterId;
+                int newCount = 0;
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject item = items.optJSONObject(i);
+                    if (item == null) {
+                        continue;
+                    }
+                    long cursor = item.optLong("cursor", 0L);
+                    if (cursor > nextCursor) {
+                        nextCursor = cursor;
+                        newCount++;
+                    }
+                }
+                boolean wasCaughtUp = preferences.getBoolean(caughtUpKey, false);
+                boolean caughtUp = wasCaughtUp;
+                SharedPreferences.Editor cursorEditor = preferences.edit().putLong(cursorKey, nextCursor);
+                if (!caughtUp && items.length() < 100) {
+                    caughtUp = true;
+                    cursorEditor.putBoolean(caughtUpKey, true);
+                }
+                cursorEditor.apply();
+                pollingDelayMs = FOREGROUND_POLL_INTERVAL_MS;
+                if (wasCaughtUp && newCount > 0) {
+                    postStatus("새 채널·인수인계 알림 " + newCount + "건이 도착했습니다.");
+                }
+                if (!caughtUp || items.length() >= 100) {
+                    nextDelay = 100L;
+                }
+            } catch (Exception exc) {
+                String message = exc.getMessage();
+                if (message != null && message.startsWith("HTTP 401")) {
+                    accessToken = null;
+                    preferences.edit().remove("access_token").apply();
+                    pollingActive = false;
+                    postStatus("로그인이 만료되었습니다. 다시 로그인하세요.");
+                    return;
+                }
+                pollingDelayMs = Math.min(MAX_POLL_BACKOFF_MS, Math.max(FOREGROUND_POLL_INTERVAL_MS, pollingDelayMs * 2));
+                nextDelay = pollingDelayMs;
+            }
+            final long delay = nextDelay;
+            mainHandler.post(() -> {
+                if (pollingActive) {
+                    mainHandler.postDelayed(notificationPoll, delay);
+                }
+            });
         });
     }
 

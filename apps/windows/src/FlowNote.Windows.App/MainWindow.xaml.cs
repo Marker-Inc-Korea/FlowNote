@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using FlowNote.Windows.Core.Auth;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
@@ -30,6 +31,11 @@ public partial class MainWindow : Window
     private readonly ExplorerWorkspace workspace = new();
     private ExplorerFolder? selectedFolder;
     private string currentDisplayName;
+    private readonly DispatcherTimer notificationPollingTimer = new() { Interval = TimeSpan.FromSeconds(15) };
+    private bool notificationPolling;
+    private bool notificationCursorInitialized;
+    private long notificationCursor;
+    private int notificationPollFailures;
 
     public MainWindow(FlowNoteLocalServices services, LoginResult currentUser)
     {
@@ -47,6 +53,7 @@ public partial class MainWindow : Window
         DataContext = workspace;
         ApplyRolePermissions();
         Loaded += MainWindow_Loaded;
+        notificationPollingTimer.Tick += NotificationPollingTimer_Tick;
         RefreshWorkspace("로컬 작업 공간을 열었습니다.", services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.DocumentsFolderName).Id);
         RefreshNotificationButton();
     }
@@ -54,6 +61,8 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         Loaded -= MainWindow_Loaded;
+        notificationPollingTimer.Stop();
+        notificationPollingTimer.Tick -= NotificationPollingTimer_Tick;
         services.FileWatch.Dispose();
         serverHttpClient?.Dispose();
         base.OnClosed(e);
@@ -66,10 +75,71 @@ public partial class MainWindow : Window
             return;
         }
 
+        notificationPollingTimer.Start();
+        await PollServerNotificationsAsync();
+
         var result = await services.ServerSync.RetryPendingAsync(serverDocumentClient, currentUser.UserId);
         if (result.Attempted > 0 || result.Skipped > 0)
         {
             workspace.StatusText = $"{workspace.StatusText}  {result.Message}";
+        }
+    }
+
+    private async void NotificationPollingTimer_Tick(object? sender, EventArgs e)
+    {
+        await PollServerNotificationsAsync();
+    }
+
+    private async Task PollServerNotificationsAsync()
+    {
+        if (serverChannelClient is null || notificationPolling)
+        {
+            return;
+        }
+
+        notificationPolling = true;
+        try
+        {
+            var notifications = await serverChannelClient.ListMyNotificationsAsync(
+                unreadOnly: false,
+                limit: 100,
+                afterId: notificationCursorInitialized ? notificationCursor : 0);
+            var previousCursor = notificationCursor;
+            foreach (var notification in notifications)
+            {
+                notificationCursor = Math.Max(notificationCursor, notification.Cursor);
+            }
+
+            notificationPollFailures = 0;
+            if (notificationCursorInitialized && notificationCursor > previousCursor)
+            {
+                workspace.StatusText = $"새 채널·인수인계 알림 {notifications.Count}건이 도착했습니다.";
+            }
+            if (!notificationCursorInitialized && notifications.Count >= 100)
+            {
+                notificationPollingTimer.Interval = TimeSpan.FromMilliseconds(100);
+            }
+            else
+            {
+                notificationCursorInitialized = true;
+                notificationPollingTimer.Interval = TimeSpan.FromSeconds(15);
+            }
+        }
+        catch (FlowNoteServerAuthenticationException)
+        {
+            notificationPollingTimer.Stop();
+            workspace.StatusText = "로그인이 만료되었습니다. 다시 로그인하면 채널·인수인계 알림 확인을 재개합니다.";
+        }
+        catch (Exception)
+        {
+            notificationPollFailures++;
+            var seconds = Math.Min(120, 15 * (1 << Math.Min(notificationPollFailures, 3)));
+            notificationPollingTimer.Interval = TimeSpan.FromSeconds(seconds);
+            workspace.StatusText = "서버 연결이 끊겨 알림 확인을 재시도합니다. 연결 복구 후 마지막 위치부터 이어집니다.";
+        }
+        finally
+        {
+            notificationPolling = false;
         }
     }
 
