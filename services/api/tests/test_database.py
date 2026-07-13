@@ -31,6 +31,8 @@ def create_test_client() -> TestClient:
 def test_app_startup_creates_mvp_schema() -> None:
     expected_tables = {
         "ai_search_candidates",
+        "ai_search_evaluation_runs",
+        "ai_search_evaluation_cases",
         "ai_queries",
         "ai_query_evidence_candidates",
         "ai_query_citations",

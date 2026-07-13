@@ -10,6 +10,8 @@ from sqlalchemy import select
 from app.core.config import Settings
 from app.db.models import (
     AISearchCandidate,
+    AISearchEvaluationCase,
+    AISearchEvaluationRun,
     Document,
     DocumentVersion,
     FieldComment,
@@ -18,7 +20,10 @@ from app.db.models import (
     ReportSource,
     WorkSequenceBoard,
     WorkSequenceChangeHistory,
+    NotificationChannel,
+    UserAccount,
 )
+from app.db.init_db import hash_password_for_dev
 from app.main import create_app
 
 
@@ -47,6 +52,7 @@ def auth_headers(client: TestClient) -> dict[str, str]:
 
 def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
     suffix = uuid4().hex
+    ground_truth_token = f"groundtruth-{suffix}"
     published_document_id = f"doc-ai-published-{suffix}"
     published_version_id = f"ver-ai-published-{suffix}"
     draft_document_id = f"doc-ai-draft-{suffix}"
@@ -94,7 +100,7 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
             Document(
                 document_id=published_document_id,
                 title=f"AI search published source {suffix[:8]}",
-                description="Published document version should be indexed as evidence.",
+                description=f"Published document version should be indexed as evidence. {ground_truth_token}",
                 document_type="work_instruction",
                 owner_id="user-admin",
                 status="PUBLISHED",
@@ -157,7 +163,7 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 document_version_id=published_version_id,
                 comment_type="issue",
                 input_mode="free_text",
-                raw_content="Analyzed field comment for evidence search.",
+                raw_content=f"Analyzed field comment for evidence search. {ground_truth_token}",
                 normalized_content="Manager normalized the field issue.",
                 analysis_content="This is ready to support summary evidence.",
                 author_id="user-admin",
@@ -174,7 +180,7 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 comment_type="issue",
                 input_mode="template_with_text",
                 signal_level="red",
-                raw_content="Selected field comment for report evidence.",
+                raw_content=f"Selected field comment for report evidence. {ground_truth_token}",
                 normalized_content="Manager selected the sensor reset issue.",
                 analysis_content="This selected comment should remain traceable as AI evidence.",
                 author_id="user-admin",
@@ -257,7 +263,7 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 actor_id="user-admin",
                 before_value="step-a, step-b",
                 after_value="step-b, step-a",
-                change_reason="Priority changed after line review.",
+                change_reason=f"Priority changed after line review. {ground_truth_token}",
             )
         )
         session.add(
@@ -277,7 +283,7 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 report_id=report_id,
                 report_type="field_review",
                 title=f"AI search report source {suffix[:8]}",
-                summary="Report source should be indexed with trace to report_sources.",
+                summary=f"Report source should be indexed with trace to report_sources. {ground_truth_token}",
                 analysis_content="Manual report, not AI decision output.",
                 status="APPROVED",
                 ai_draft_used=False,
@@ -397,6 +403,10 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
             )
         )
         assert active_report_source is not None
+        missing_origin_report_source = session.scalar(
+            select(ReportSource).where(ReportSource.report_id == missing_origin_report_id)
+        )
+        assert missing_origin_report_source is not None
 
     return {
         "published_document_id": published_document_id,
@@ -411,7 +421,129 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
         "history_id": history_id,
         "empty_history_id": empty_history_id,
         "report_source_row_id": str(active_report_source.id),
+        "ground_truth_token": ground_truth_token,
+        "deleted_document_id": deleted_document_id,
+        "report_id": report_id,
+        "missing_origin_report_source_row_id": str(missing_origin_report_source.id),
     }
+
+
+def test_ai_search_ground_truth_evaluation_is_reproducible_and_persisted() -> None:
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        seeded = seed_ai_search_sources(client)
+        suffix = uuid4().hex
+        viewer_id = f"user-ai-eval-viewer-{suffix}"
+        with client.app.state.database.session() as session:
+            session.add(
+                UserAccount(
+                    user_id=viewer_id,
+                    username=f"ai-eval-viewer-{suffix}",
+                    login_id=f"ai-eval-viewer-{suffix}",
+                    display_name="AI 근거 회귀 조회자",
+                    role="viewer",
+                    password_hash=hash_password_for_dev("1234"),
+                    is_active=True,
+                    status="ACTIVE",
+                )
+            )
+            session.add(
+                NotificationChannel(
+                    channel_id=f"channel-ai-private-{suffix}",
+                    name="권한 없는 AI 근거 채널",
+                    channel_type="CUSTOM",
+                    source_type="FIELD_COMMENT",
+                    source_id=seeded["analyzed_comment_id"],
+                    status="ACTIVE",
+                    created_by="user-admin",
+                )
+            )
+            session.commit()
+
+        payload = {
+            "runLabel": f"candidate-5-{suffix}",
+            "evaluateAsUserId": viewer_id,
+            "cases": [
+                {
+                    "caseKey": "complex-four-source-ground-truth",
+                    "question": f"{seeded['ground_truth_token']} 복합 근거를 찾아주세요",
+                    "expectedOutcome": "SUFFICIENT",
+                    "expectedEvidence": [
+                        {
+                            "sourceType": "PUBLISHED_DOCUMENT_VERSION",
+                            "sourceId": seeded["published_document_id"],
+                            "sourceVersionId": seeded["published_version_id"],
+                            "traceId": seeded["published_document_id"],
+                            "traceVersionId": seeded["published_version_id"],
+                        },
+                        {"sourceType": "FIELD_COMMENT", "sourceId": seeded["selected_comment_id"]},
+                        {"sourceType": "WORK_SEQUENCE_HISTORY", "sourceId": seeded["history_id"]},
+                        {"sourceType": "REPORT_SOURCE", "sourceId": seeded["report_source_row_id"]},
+                    ],
+                    "expectedExcluded": [
+                        {
+                            "sourceType": "FIELD_COMMENT",
+                            "sourceId": seeded["analyzed_comment_id"],
+                            "exclusionReason": "CHANNEL_ACCESS_DENIED",
+                        }
+                    ],
+                    "limit": 4,
+                },
+                {
+                    "caseKey": "insufficient-and-ineligible-sources",
+                    "question": f"no-evidence-{uuid4().hex}",
+                    "expectedOutcome": "INSUFFICIENT_EVIDENCE",
+                    "expectedEvidence": [],
+                    "expectedExcluded": [
+                        {
+                            "sourceType": "FIELD_COMMENT",
+                            "sourceId": seeded["archived_comment_id"],
+                            "exclusionReason": "field_comment_excluded_status",
+                        },
+                        {
+                            "sourceType": "PUBLISHED_DOCUMENT_VERSION",
+                            "sourceId": seeded["deleted_document_id"],
+                            "exclusionReason": "document_version_not_published",
+                        },
+                        {
+                            "sourceType": "REPORT_SOURCE",
+                            "sourceId": seeded["missing_origin_report_source_row_id"],
+                            "exclusionReason": "report_source_missing_origin",
+                        },
+                    ],
+                },
+            ],
+        }
+        response = client.post("/api/v1/ai-search/evaluations", headers=headers, json=payload)
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert result["status"] == "PASSED"
+        assert result["candidate_identity_stable"] is True
+        assert result["ranking_stable"] is True
+        assert result["passed_count"] == 2
+        assert result["source_coverage_complete"] is True
+        assert result["provider_start_ready"] is (result["field_comment_missing_reviewed_count"] == 0)
+        complex_case = result["cases"][0]
+        assert len(complex_case["actual_evidence"]) == 4
+        assert all(item["candidate_id"] and item["content_hash"] for item in complex_case["actual_evidence"])
+        assert all(item["internal_source_uri"].startswith("flownote://") for item in complex_case["actual_evidence"])
+        assert complex_case["excluded_evidence"][0]["actual_reason"] == "CHANNEL_ACCESS_DENIED"
+        insufficient = result["cases"][1]
+        assert insufficient["actual_outcome"] == "INSUFFICIENT_EVIDENCE"
+        assert insufficient["actual_evidence"] == []
+
+        quality = client.get("/api/v1/ai-search/quality", headers=headers).json()
+        assert quality["latest_evaluation"]["run_id"] == result["run_id"]
+        assert quality["latest_evaluation"]["provider_start_ready"] is result["provider_start_ready"]
+        with client.app.state.database.session() as session:
+            run = session.scalar(
+                select(AISearchEvaluationRun).where(AISearchEvaluationRun.run_id == result["run_id"])
+            )
+            cases = session.scalars(
+                select(AISearchEvaluationCase).where(AISearchEvaluationCase.run_id == result["run_id"])
+            ).all()
+            assert run is not None and run.status == "PASSED"
+            assert len(cases) == 2 and all(item.passed for item in cases)
 
 
 def assert_candidate_trace_row_exists(client: TestClient, candidate: dict[str, object]) -> None:

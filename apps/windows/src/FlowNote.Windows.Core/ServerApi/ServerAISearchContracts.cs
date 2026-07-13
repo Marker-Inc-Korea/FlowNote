@@ -40,6 +40,9 @@ public sealed record ServerAISearchCandidateResponse
     [JsonPropertyName("review_status")]
     public string? ReviewStatus { get; init; }
 
+    [JsonPropertyName("content_hash")]
+    public string ContentHash { get; init; } = string.Empty;
+
     [JsonPropertyName("refreshed_at")]
     public DateTime RefreshedAt { get; init; }
 }
@@ -113,4 +116,103 @@ public sealed record ServerAISearchQualityResponse
 
     [JsonPropertyName("field_comment_review_readiness")]
     public ServerFieldCommentReviewReadinessResponse FieldCommentReviewReadiness { get; init; } = new();
+}
+
+public sealed record ServerAISearchEvidenceReferenceRequest
+{
+    [JsonPropertyName("candidateId")]
+    public string? CandidateId { get; init; }
+
+    [JsonPropertyName("sourceType")]
+    public string SourceType { get; init; } = string.Empty;
+
+    [JsonPropertyName("sourceId")]
+    public string SourceId { get; init; } = string.Empty;
+
+    [JsonPropertyName("sourceVersionId")]
+    public string? SourceVersionId { get; init; }
+
+    [JsonPropertyName("traceId")]
+    public string? TraceId { get; init; }
+
+    [JsonPropertyName("traceVersionId")]
+    public string? TraceVersionId { get; init; }
+
+    [JsonPropertyName("exclusionReason")]
+    public string? ExclusionReason { get; init; }
+}
+
+public sealed record ServerAISearchEvaluationCaseRequest
+{
+    [JsonPropertyName("caseKey")]
+    public string CaseKey { get; init; } = string.Empty;
+
+    [JsonPropertyName("question")]
+    public string Question { get; init; } = string.Empty;
+
+    [JsonPropertyName("expectedOutcome")]
+    public string ExpectedOutcome { get; init; } = string.Empty;
+
+    [JsonPropertyName("expectedEvidence")]
+    public IReadOnlyList<ServerAISearchEvidenceReferenceRequest> ExpectedEvidence { get; init; } = [];
+
+    [JsonPropertyName("expectedExcluded")]
+    public IReadOnlyList<ServerAISearchEvidenceReferenceRequest> ExpectedExcluded { get; init; } = [];
+
+    [JsonPropertyName("limit")]
+    public int Limit { get; init; } = 20;
+}
+
+public sealed record ServerAISearchEvaluationRequest
+{
+    [JsonPropertyName("runLabel")]
+    public string RunLabel { get; init; } = string.Empty;
+
+    [JsonPropertyName("evaluateAsUserId")]
+    public string? EvaluateAsUserId { get; init; }
+
+    [JsonPropertyName("cases")]
+    public IReadOnlyList<ServerAISearchEvaluationCaseRequest> Cases { get; init; } = [];
+}
+
+public sealed record ServerAISearchEvaluationCaseResponse
+{
+    [JsonPropertyName("case_key")]
+    public string CaseKey { get; init; } = string.Empty;
+
+    [JsonPropertyName("actual_outcome")]
+    public string ActualOutcome { get; init; } = string.Empty;
+
+    [JsonPropertyName("ranking_hash")]
+    public string RankingHash { get; init; } = string.Empty;
+
+    [JsonPropertyName("ranking_stable")]
+    public bool RankingStable { get; init; }
+
+    [JsonPropertyName("passed")]
+    public bool Passed { get; init; }
+}
+
+public sealed record ServerAISearchEvaluationResponse
+{
+    [JsonPropertyName("run_id")]
+    public string RunId { get; init; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("candidate_identity_stable")]
+    public bool CandidateIdentityStable { get; init; }
+
+    [JsonPropertyName("ranking_stable")]
+    public bool RankingStable { get; init; }
+
+    [JsonPropertyName("source_coverage_complete")]
+    public bool SourceCoverageComplete { get; init; }
+
+    [JsonPropertyName("provider_start_ready")]
+    public bool ProviderStartReady { get; init; }
+
+    [JsonPropertyName("cases")]
+    public IReadOnlyList<ServerAISearchEvaluationCaseResponse> Cases { get; init; } = [];
 }

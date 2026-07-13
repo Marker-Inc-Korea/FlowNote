@@ -401,6 +401,17 @@ public sealed class FlowNoteServerDocumentClient
         return candidates;
     }
 
+    public async Task<ServerAISearchEvaluationResponse> RunAISearchEvaluationAsync(
+        ServerAISearchEvaluationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            "api/v1/ai-search/evaluations",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerAISearchEvaluationResponse>(response, cancellationToken);
+    }
+
     private static void AddString(MultipartFormDataContent form, string name, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))

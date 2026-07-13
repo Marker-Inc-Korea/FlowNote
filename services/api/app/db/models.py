@@ -730,11 +730,61 @@ class AISearchCandidate(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     summary: Mapped[str | None] = mapped_column(Text)
     search_text: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     review_status: Mapped[str | None] = mapped_column(String(30))
     metadata_json: Mapped[str | None] = mapped_column(Text)
     refreshed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class AISearchEvaluationRun(Base):
+    __tablename__ = "ai_search_evaluation_runs"
+    __table_args__ = (
+        CheckConstraint("status IN ('PASSED', 'FAILED')", name="ck_ai_search_evaluation_run_status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    run_label: Mapped[str] = mapped_column(String(160), nullable=False)
+    requested_by: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
+    evaluated_as_user_id: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    candidate_identity_stable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    ranking_stable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    metrics_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AISearchEvaluationCase(Base):
+    __tablename__ = "ai_search_evaluation_cases"
+    __table_args__ = (
+        UniqueConstraint("run_id", "case_key", name="uq_ai_search_evaluation_case"),
+        CheckConstraint(
+            "expected_outcome IN ('SUFFICIENT', 'INSUFFICIENT_EVIDENCE')",
+            name="ck_ai_search_evaluation_expected_outcome",
+        ),
+        CheckConstraint(
+            "actual_outcome IN ('SUFFICIENT', 'INSUFFICIENT_EVIDENCE')",
+            name="ck_ai_search_evaluation_actual_outcome",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    evaluation_case_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_search_evaluation_runs.run_id"), nullable=False, index=True
+    )
+    case_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_outcome: Mapped[str] = mapped_column(String(30), nullable=False)
+    actual_outcome: Mapped[str] = mapped_column(String(30), nullable=False)
+    expected_evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    actual_evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    excluded_evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    ranking_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class AIPromptVersion(Base):

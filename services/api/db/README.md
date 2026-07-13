@@ -30,6 +30,8 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 - `handovers`, `handover_receipts`
 - `reports`, `report_sources`
 - `ai_search_candidates`
+- `ai_search_evaluation_runs`
+- `ai_search_evaluation_cases`
 - `document_access_logs`
 - `activity_history`
 

@@ -72,6 +72,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/ai-search/candidates/rebuild` | Rebuild traceable AI search evidence candidates |
 | GET | `/api/v1/ai-search/candidates` | List AI search evidence candidates |
 | GET | `/api/v1/ai-search/quality` | Candidate counts, exclusion reasons, and FieldComment review readiness |
+| POST | `/api/v1/ai-search/evaluations` | Persist offline ground-truth evidence, exclusion, and ranking regression results |
 
 ## Auth
 
