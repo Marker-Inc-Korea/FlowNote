@@ -10,6 +10,7 @@
 - 문서 등록, 버전 추가, 상태 변경, 공개 버전 지정
 - 문서 태그
 - 문서 미리보기, 열람 로그, 자동 닫힘, 다운로드 차단
+- WPF 허용 role의 공개 버전 controlled copy 1회성 저장과 SHA-256 검증
 - FieldComment 원천 기록과 첨부
 - 알림과 활동 이력
 - 사용자 추가/수정/역할 변경/비밀번호 변경
@@ -20,7 +21,7 @@
 - FastAPI `/api/v1/ai/queries` 질의 생성·조회와 기본 비활성, role, 목적, 외부 전송 승인, 프롬프트, 근거 snapshot, 인용 검증 및 감사 모델 골격
 - FastAPI 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 조회/상세, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인
+- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
 - WPF 로컬 저장 후 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장 큐와 서버 ID 매핑
 - WPF MSI 패키징 스크립트와 FastAPI 작업 스케줄러 등록/관리 스크립트
@@ -44,6 +45,7 @@ MVP의 성공 기준은 AI가 답변하는 것이 아니라 현장 문서와 현
 - 근태 관리
 - 개인 휴대폰 기본 배포
 - CAD 원본 직접 뷰어와 HWP 고급 미리보기
+- Android 문서 파일 본문 다운로드·미리보기와 인수인계 신규 작성 화면
 
 Windows와 Android의 업무 채널 알림, 인수인계 확인, FieldComment/작업순서 이벤트 알림은 제외 범위가 아니다. 현재 코드는 서버 API, 기본 클라이언트 화면, 15초 전경 polling, 최대 120초 연결 실패 backoff와 읽음/수신 확인까지 구현되어 있다. Android는 사용자별 cursor를 보존하고 WPF는 열린 주 창 세션에서만 cursor를 유지한다. WPF cursor 영구 보존, 백그라운드 전달과 현장별 단말 운영 정책은 후속 고도화 대상이다.
 

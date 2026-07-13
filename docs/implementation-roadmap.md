@@ -27,9 +27,10 @@
 - WPF AI 근거 후보 운영 점검 화면과 서버 API 클라이언트
 - FastAPI 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인 API
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면과 서버 API 클라이언트
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 조회, FieldComment, 사진 첨부 outbox, 신호등식 기록, 채널 알림, 인수인계 확인
+- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 첨부 outbox, 신호등식 기록, 채널 알림, 인수인계 확인. 문서 파일 본문 뷰어는 미구현
 - Windows/Android 사내망 HTTPS 전경 polling, cursor 기반 증분 조회와 연결 실패 backoff
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
+- 공개 문서 버전의 60초 1회성 controlled copy 발급·스트리밍, 서버 무결성 재검사, 감사 로그와 WPF 저장·SHA-256 검증
 
 ## 설계 완료, 부분 구현
 
@@ -52,7 +53,7 @@
 
 ## 다음 우선순위
 
-1. 현재 코드에서 수집되는 FastAPI 69건에 맞게 `scripts/verify-preserved-tests.ps1`의 68건 기준선을 갱신한 뒤 전체 pytest, WPF 빌드, WPF 스모크, Git 산출물 사후 점검을 통과시키고 결과를 남긴다.
+1. FastAPI 75건 기준선과 전체 pytest 통과에 이어 Windows 환경에서 WPF 빌드, WPF 스모크, Git 산출물 사후 점검을 포함한 표준 검증을 실행하고 결과를 남긴다.
 2. 현장별 MSI 설치 검증, 코드 서명, self-contained 패키징 조건 정리
 3. Android 운영 배포 서명, MDM/인증서, 단말 등록/비활성화 절차 확정
 4. Android 백그라운드 알림 정책, WPF 사용자별 cursor 영구 보존과 Windows/Android 채널 polling 운영 UX 검증. 전경 polling과 읽음/수신 확인은 구현되어 있다.

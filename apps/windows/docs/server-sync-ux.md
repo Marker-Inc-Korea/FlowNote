@@ -67,9 +67,11 @@
 
 실행 전 `PENDING` 300건은 예전 로컬 큐 형식의 `create` action이다. `document/create` 60건, `document_version/create` 6건, `document_view_log/create` 72건, `field_comment/create` 144건, `field_comment_attachment/create` 18건이다. 2026-07-10 정리에서는 이 행을 삭제하거나 현재 action으로 임의 변환하지 않고 모두 `FAILED`와 구 형식 보류 사유로 분류했다. 정리 후 큐는 `SYNCED` 520건, `FAILED` 593건, `PENDING` 0건이며, 300건의 `attempt_count`는 모두 0으로 서버 호출이 없었음을 확인했다. 이후 재시도 코드도 `action = create`를 `MarkAttempt` 전에 보류하므로 서버 호출과 시도 횟수 증가 없이 같은 분류를 유지한다.
 
-후속 FastAPI 연동 스모크까지 실행한 최종 누적은 `SYNCED` 609건, `FAILED` 589건, `PENDING` 0건이다. 구 형식 create 300건은 모두 `attempt_count = 0`을 유지했고, `server_id_mappings` 767건의 중복 그룹은 0건이다.
+후속 FastAPI 연동 스모크까지 실행한 2026-07-10 기록은 `SYNCED` 609건, `FAILED` 589건, `PENDING` 0건이다. 구 형식 create 300건은 모두 `attempt_count = 0`을 유지했고, `server_id_mappings` 767건의 중복 그룹은 0건이었다. 이 수치는 당시 공통 SQLite의 누적 기록이며 현재 코드의 고정 기대값이 아니다.
 
-현재 `server_id_mappings`는 648건이며 문서, 문서 버전, 공개, 상태, 접근 로그, FieldComment, FieldComment 검토, 첨부, 보고서 매핑이 남아 있고 정리 후에도 `(entity_type, local_id, local_version_no)` 중복 그룹은 0건이다. 이미 서버에 존재하는 문서 버전은 `document_versions.version_no`로 서버 버전을 찾아 `server_version_id`, `synced_at`, `server_id_mappings`를 복구하고 중복 업로드하지 않는다. 큐 재등록도 `idempotency_key` 유니크 제약과 `ON CONFLICT(idempotency_key)`로 중복 행을 만들지 않는다.
+정리 도중의 중간 snapshot에는 `server_id_mappings` 648건이 기록되어 있었다. 이후 누적 실행으로 건수가 증가했으므로 648건을 현재 수치로 사용하지 않는다. 현재 코드 동작은 이미 서버에 존재하는 문서 버전을 `document_versions.version_no`로 찾아 `server_version_id`, `synced_at`, `server_id_mappings`를 복구하고 중복 업로드하지 않는 것이다. 큐 재등록도 `idempotency_key` 유니크 제약과 `ON CONFLICT(idempotency_key)`로 중복 행을 만들지 않는다.
+
+controlled copy는 사용자가 즉시 수행하는 서버 발급·스트리밍 흐름이므로 이 큐의 대상이 아니다. 실패한 티켓을 재사용하거나 동기화 큐에 넣지 않고 새 요청에서 공개 상태와 권한을 다시 검사한다.
 
 운영 우선순위는 다음 순서로 본다.
 

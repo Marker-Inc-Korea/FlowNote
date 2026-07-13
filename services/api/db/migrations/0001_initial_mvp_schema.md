@@ -5,7 +5,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 ## Version
 
 - `schema_migrations.version`: `0001_initial_mvp_schema`
-- 목적: 문서, 파일 객체, 버전, 사용자/권한, 인증 세션, 태그, FieldComment, 첨부, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보, 접근 로그, 활동 이력을 위한 서버 메타데이터 테이블 생성
+- 목적: 문서, 파일 객체, 버전, 사용자/권한, 인증 세션, 태그, FieldComment, 첨부, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가, 외부 AI 안전장치·감사, controlled copy, 접근 로그, 활동 이력을 위한 서버 메타데이터 테이블 생성
 
 ## Tables
 
@@ -36,12 +36,21 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `ai_search_candidates` | Traceable evidence candidates for search and summary before AI advice |
 | `ai_search_evaluation_runs` | Offline ground-truth regression run and provider-start metrics |
 | `ai_search_evaluation_cases` | Expected/actual evidence snapshots, exclusions, and ranking hashes by question |
+| `ai_prompt_versions` | Approved immutable prompt versions by allowed purpose |
+| `ai_queries` | AI query text/hash, purpose, status, response storage policy, and retention metadata |
+| `ai_query_evidence_candidates` | Query-time evidence snapshots independent of later candidate rebuilds |
+| `ai_query_citations` | Validated claim-to-evidence citation records |
+| `ai_call_attempts` | Sanitized provider/model attempt status and error audit |
+| `ai_transfer_approvals` | Customer/site/provider/model scoped external transfer approvals |
 | `document_access_logs` | Document view/download/auto-close access logs |
+| `controlled_copy_grants` | Hashed one-time token bound to a published version, user, auth session, expiry, size, and hash |
 | `activity_history` | Server activity history |
 
 ## Notes
 
 - Uploaded files are stored under `storage/`; the DB stores metadata and storage keys.
 - Creating or uploading a version does not automatically publish the document.
+- Controlled copy can only target the current published version; grants expire quickly and are consumed once.
 - FieldComment must reference at least one of document, structure item, or work record.
+- External AI calls are disabled by default, and the repository contains no network provider client.
 - Current server role values are `admin`, `manager`, `viewer`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`.

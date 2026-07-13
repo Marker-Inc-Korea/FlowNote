@@ -12,7 +12,7 @@ Windows WPF App
 Android Field App
   -> approved shop-floor tablet or rugged device
   -> device_id approved server login
-  -> published document viewing, FieldComment, photos, signal input
+  -> published document list/detail metadata, FieldComment, photos, signal input
   -> foreground channel notification polling and handover receipts
   -> local SQLite outbox for unstable network retry
   -> FastAPI sync through configured server URL
@@ -27,7 +27,7 @@ WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으�
 
 WPF 앱은 로컬 `notifications` 테이블과 알림 창으로 문서, FieldComment, 작업순서 이벤트 알림을 확인하고 읽음 처리한다. 서버 URL과 로그인이 있으면 `채널함`, `채널 관리`, `인수인계 확인 현황` 화면에서 FastAPI 채널/인수인계 API를 직접 호출한다. 채널함은 내 채널, 사용자별 알림, 인수인계 목록을 조회하고 메시지 읽음, 내 receipt 상태 변경, 원천 링크 복사, 후속 FieldComment 생성을 수행한다. 주 창이 열려 있는 동안 세션 메모리의 마지막 cursor 다음 알림을 기본 15초 간격으로 조회하고, 연결 실패 시 최대 120초까지 backoff하며 401이면 중단한다. 새 주 창 세션은 cursor 0부터 최대 100건씩 빠르게 따라잡는다. 채널 관리는 채널 생성, 멤버 추가/제외를 제공하고, 인수인계 확인 현황은 수신자별 receipt 상태 변경과 후속 FieldComment 생성을 제공한다. `admin`, `system-admin`은 `승인 단말` 화면에서 서버 단말 목록·상세·마지막 접속을 조회하고 등록, 정보/상태 변경, 교체를 수행한다.
 
-Android 앱은 현장 단말 입력을 우선한다. 현장 작업자는 승인된 `deviceId`로 로그인하고 공개 문서 목록/상세 조회, FieldComment와 사진 기록, 신호등식 상태 기록을 수행한다. Activity가 전경인 동안 채널 알림을 기본 15초 간격으로 polling하고, 연결 실패 시 최대 120초까지 backoff한 뒤 사용자별 마지막 cursor부터 재개한다. 인수인계는 같은 알림 스트림과 서버 인수인계 API에서 조회하고 읽음 또는 수신확인을 남긴다. Android의 로컬 저장은 네트워크 불안정 구간의 FieldComment와 사진 첨부 임시 보관, 재전송, 서버 원천 ID 연결 범위로 제한하고, 장기 기준 데이터는 FastAPI 서버에 남긴다. outbox는 `PENDING`, `FAILED` 항목을 최대 12회 자동 시도하며 15초부터 지수 backoff를 적용해 최대 15분 간격으로 재전송한다. 로그인, 문서, 알림, 인수인계 API 실패는 서버 원문을 화면에 직접 표시하지 않고 연결 실패·시간 초과와 HTTP 상태를 현장 사용자가 조치할 수 있는 한글 안내로 변환한다.
+Android 앱은 현장 단말 입력을 우선한다. 현장 작업자는 승인된 `deviceId`로 로그인하고 공개 문서 목록/상세 메타데이터 조회, FieldComment와 사진 기록, 신호등식 상태 기록을 수행한다. 상세 화면은 제목·설명·상태·공개 버전 ID를 표시하고 FieldComment 입력에 문서/버전 ID를 연결하며, 문서 파일 본문을 내려받거나 렌더링하지 않는다. Activity가 전경인 동안 채널 알림을 기본 15초 간격으로 polling하고, 연결 실패 시 최대 120초까지 backoff한 뒤 사용자별 마지막 cursor부터 재개한다. 인수인계는 같은 알림 스트림과 서버 인수인계 API에서 조회하고 읽음 또는 수신확인을 남긴다. Android의 로컬 저장은 네트워크 불안정 구간의 FieldComment와 사진 첨부 임시 보관, 재전송, 서버 원천 ID 연결 범위로 제한하고, 장기 기준 데이터는 FastAPI 서버에 남긴다. outbox는 `PENDING`, `FAILED` 항목을 최대 12회 자동 시도하며 15초부터 지수 backoff를 적용해 최대 15분 간격으로 재전송한다. 로그인, 문서, 알림, 인수인계 API 실패는 서버 원문을 화면에 직접 표시하지 않고 연결 실패·시간 초과와 HTTP 상태를 현장 사용자가 조치할 수 있는 한글 안내로 변환한다.
 
 ## 주요 도메인
 
@@ -41,6 +41,7 @@ UserAccount
 DocumentFolder
   -> Document
       -> DocumentVersion
+      -> ControlledCopyGrant -> AuthSession + UserAccount + optional TerminalDevice
       -> DocumentTag
       -> FieldComment
       -> DocumentViewLog
@@ -88,6 +89,8 @@ ServerSyncQueue
 `Document`는 문서 메타데이터이고 `DocumentVersion`은 파일 개정 단위이다. 등록 직후 문서는 `WORKING` 상태이며, 공개하려면 특정 버전을 명시적으로 publish해야 한다.
 
 WPF 로컬 DB는 공개 버전을 `documents.published_version_no`와 `document_versions.is_published`로 관리한다. FastAPI 서버는 `documents.published_version_id`와 `document_versions.is_published`로 관리한다.
+
+허용 role의 제한 다운로드는 WPF 로컬 원본 복사가 아니라 서버 controlled copy를 사용한다. WPF가 현재 공개 버전의 티켓을 요청하면 서버는 공개 상태, 저장소 경계, 크기와 SHA-256을 검사하고 사용자·로그인 세션에 묶인 기본 60초 1회성 grant를 발급한다. 같은 Bearer 세션으로 한 번만 스트리밍하며 WPF는 저장 뒤 응답 SHA-256과 실제 파일을 다시 대조한다. 발급·허용·완료·실패·차단은 문서 접근 로그와 활동 이력으로 추적한다.
 
 서버-WPF 동기화에서는 같은 문서의 서버 ID 선행 조건을 우선한다. 재시도 큐는 문서 등록, 문서 버전, 공개, 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 순서로 처리한다. 문서 최초 등록이 서버 ID를 받아야 문서 버전, FieldComment, 접근 로그가 후속 서버 ID에 연결된다. 공개는 해당 버전의 서버 버전 ID가 있어야 실행하고, `PUBLISHED` 상태 변경은 공개 버전 매핑이 있어야 서버에 반영한다.
 
