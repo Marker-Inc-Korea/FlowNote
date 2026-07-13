@@ -313,6 +313,60 @@ def _ensure_work_sequence_columns(database: Database) -> None:
                     )
 
 
+def _ensure_ai_evidence_snapshot_has_no_candidate_fk(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+    with database.engine.connect() as connection:
+        foreign_keys = connection.execute(
+            text("PRAGMA foreign_key_list(ai_query_evidence_candidates)")
+        ).fetchall()
+        if not any(row[2] == "ai_search_candidates" for row in foreign_keys):
+            return
+        connection.commit()
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE ai_query_evidence_candidates_new (
+                id INTEGER NOT NULL PRIMARY KEY,
+                query_id VARCHAR(64) NOT NULL REFERENCES ai_queries(query_id),
+                candidate_id VARCHAR(64) NOT NULL,
+                source_type VARCHAR(50) NOT NULL,
+                source_id VARCHAR(64) NOT NULL,
+                source_version_id VARCHAR(64),
+                trace_table VARCHAR(80) NOT NULL,
+                trace_id VARCHAR(64) NOT NULL,
+                trace_version_id VARCHAR(64),
+                rank INTEGER NOT NULL,
+                selected_for_prompt BOOLEAN NOT NULL,
+                sent_externally BOOLEAN NOT NULL,
+                content_hash VARCHAR(64) NOT NULL,
+                eligibility_result VARCHAR(30) NOT NULL,
+                exclusion_reason VARCHAR(80),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                CONSTRAINT uq_ai_query_evidence UNIQUE (query_id, candidate_id)
+            )
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            INSERT INTO ai_query_evidence_candidates_new
+            SELECT id, query_id, candidate_id, source_type, source_id, source_version_id,
+                   trace_table, trace_id, trace_version_id, rank, selected_for_prompt,
+                   sent_externally, content_hash, eligibility_result, exclusion_reason, created_at
+            FROM ai_query_evidence_candidates
+            """
+        )
+        connection.exec_driver_sql("DROP TABLE ai_query_evidence_candidates")
+        connection.exec_driver_sql(
+            "ALTER TABLE ai_query_evidence_candidates_new RENAME TO ai_query_evidence_candidates"
+        )
+        connection.exec_driver_sql(
+            "CREATE INDEX ix_ai_query_evidence_candidates_query_id ON ai_query_evidence_candidates (query_id)"
+        )
+        connection.commit()
+        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+
+
 def _seed_default_admin_account(database: Database) -> None:
     with database.session() as session:
         existing = session.scalar(
@@ -350,6 +404,7 @@ def initialize_database(database: Database) -> None:
     _ensure_terminal_device_schema(database)
     _ensure_auth_session_device_column(database)
     _ensure_work_sequence_columns(database)
+    _ensure_ai_evidence_snapshot_has_no_candidate_fk(database)
     with database.session() as session:
         existing = session.scalar(
             select(SchemaMigration).where(SchemaMigration.version == INITIAL_SCHEMA_VERSION)

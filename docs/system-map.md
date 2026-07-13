@@ -66,7 +66,7 @@ AISearchCandidate
   -> WorkSequenceChangeHistory
   -> ReportSource
 
-AIQuery (future, external call disabled by default)
+AIQuery (safety/audit skeleton, external call disabled by default)
   -> AIQueryEvidenceCandidate -> AISearchCandidate snapshot
   -> AIQueryCitation -> DocumentVersion | FieldComment | WorkSequenceChangeHistory | ReportSource
   -> AICallAttempt -> immutable AIPromptVersion

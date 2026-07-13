@@ -29,13 +29,13 @@
 - FieldComment는 문서 버전이 아니라 현장 원천 기록이다.
 - WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다.
 - WPF에는 AI 근거 후보 운영 점검 화면이 있으며, 서버의 `ai_search_candidates` 재생성/품질/목록 API를 직접 조회한다.
-- 외부 AI 질의·요약 API와 호출 로그 모델은 현재 계약 초안이며 라우터·ORM·provider 호출 코드는 아직 없다. 현재 구현된 AI 범위는 `/api/v1/ai-search/candidates/*`, `/api/v1/ai-search/quality`와 WPF 운영 점검 화면까지다.
+- 외부 AI 질의·요약은 `/api/v1/ai/queries` 생성·조회, 호출 로그 모델, 기능 플래그·승인·목적·근거 snapshot 차단 골격까지 구현되었다. 운영 provider client와 네트워크 호출은 아직 없으며 기본값은 비활성이다.
 - WPF MSI 패키징과 FastAPI 작업 스케줄러 등록/관리는 `scripts/`의 PowerShell 스크립트로 문서화되어 있다.
 - 사용자 역할은 코드와 DB에서 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`, `viewer`를 사용한다.
-- AI 자동 조언은 후속 계층이며, 현재 서버와 WPF는 근거 검색 후보 재생성/목록/품질 점검용 `ai_search_candidates` read model과 운영 점검 화면까지만 다룬다.
+- AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검과 외부 호출 전 안전장치·감사 골격을 다루고, WPF는 근거 후보 운영 점검 화면까지만 제공한다.
 - MES/ERP 연동과 서버 계정 관리 UI는 후속 계층이다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 테스트 수집 기준은 2026-07-13 현재 58개이며, 표준 PowerShell 검증 스크립트도 같은 기준선을 사용한다. 이 기준 갱신은 전체 pytest, WPF 빌드, WPF 스모크까지 통과했다는 의미는 아니며 전체 표준 검증 결과는 별도로 남긴다.
+- FastAPI 테스트 수집 기준은 2026-07-13 현재 68개이며, 표준 PowerShell 검증 스크립트도 같은 기준선을 사용한다. FastAPI 전체 pytest 68건은 통과했으며 WPF 빌드와 WPF 스모크를 포함한 전체 표준 검증 결과는 별도로 남긴다.
 
 ## 일일 기록
 

@@ -139,7 +139,7 @@
 - 서버 DB와 서버 `storage`는 같은 시점의 백업을 정상 복구 기준으로 삼는다. DB만 또는 `storage`만 복원한 상태는 정상 운영 재개가 아니라 장애 대응 상태다.
 - 복구 검증은 서버 health, DB health, WPF 로그인, 문서 목록, 문서 열람, FieldComment, 보고서 근거 조회를 포함한다.
 - 복구 후 가능한 환경에서는 `.\scripts\verify-preserved-tests.ps1` 또는 동등 운영 점검을 실행한다.
-- 외부 AI 호출 기반 검색/작업 조언은 공개 문서, FieldComment, 보고서, 작업순서 이력이 충분히 축적되고 근거 역추적이 가능해진 뒤 후속 계층으로 착수한다. 현재 구현은 `ai_search_candidates` 근거 후보 read model의 재생성, 목록 조회, 품질 점검 API와 WPF 운영 점검 화면까지다.
+- 외부 AI 호출 기반 검색/작업 조언은 공개 문서, FieldComment, 보고서, 작업순서 이력이 충분히 축적되고 근거 역추적이 가능해진 뒤 후속 계층으로 착수한다. 현재 구현은 `ai_search_candidates` 근거 후보 운영과 외부 호출 전 비활성·승인·목적·snapshot·감사 차단 골격까지이며 운영 provider 연동은 하지 않는다.
 - MES/ERP 어댑터는 후속 연동 대상이며, 초기 수동 작업지시의 `work_order_no`, 문서 연결, 작업순서, FieldComment, 보고서 근거와 연결되는 방식으로 설계한다.
 
 ## 제품 범위 결정
@@ -203,7 +203,7 @@
 - 외부 AI 첫 범위는 `EVIDENCE_SEARCH`, `EVIDENCE_SUMMARY`로 제한한다. 자동 의사결정, 작업지시 생성·변경, 승인·공개 자동화, 설비 제어, 안전·품질 판정은 금지한다.
 - 외부 호출은 기본 비활성화하고 고객·현장별 운영자 승인과 기능 플래그를 모두 요구한다. 내부 `PUBLISHED` 상태를 외부 전송 동의로 해석하지 않는다.
 - 응답의 모든 사실 주장은 질의 시점 `ai_search_candidates` snapshot에 있는 문서 버전, FieldComment, 작업순서 이력 또는 `report_sources.id` 인용을 가져야 한다. 근거 부족이나 인용 검증 실패 시 답변 본문을 반환하지 않는다.
-- `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations`, `ai_prompt_versions`, `ai_call_attempts`, `ai_transfer_approvals`를 후속 데이터 모델 초안으로 둔다. 응답은 기본 미저장, 질의 원문과 승인 저장 응답은 90일, 근거·인용·호출·오류·승인 감사 메타데이터는 1년 보존한다.
+- `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations`, `ai_prompt_versions`, `ai_call_attempts`, `ai_transfer_approvals` 안전장치 골격을 구현한다. 응답은 기본 미저장, 질의 원문과 승인 저장 응답은 90일, 근거·인용·호출·오류·승인 감사 메타데이터는 1년 보존한다.
 - 재생성은 보존 중인 질의, 불변 프롬프트 버전, 근거 snapshot과 provider/model을 다시 사용하되 동일 문구를 보장하지 않는다. 원천 권한·상태·승인이 바뀌면 재생성하지 않는다.
 - 민감정보와 고객 문서의 외부 전송 금지·최소화·승인·철회 절차는 [보안 문서](./security.md#외부-ai-전송과-운영자-승인)를 단일 운영 기준으로 사용한다.
-- 이 결정은 외부 호출 구현을 활성화하지 않는다. 기존 `ai_search_candidates` read model과 후보 API는 기능 플래그에 의존하지 않으며 현재 테스트 계약을 유지한다.
+- 이 결정은 운영 provider client나 네트워크 호출을 활성화하지 않는다. 주입 가능한 테스트 경계만 두며 기존 `ai_search_candidates` read model과 후보 API는 기능 플래그에 의존하지 않고 현재 테스트 계약을 유지한다.
