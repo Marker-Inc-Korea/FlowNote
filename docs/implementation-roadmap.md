@@ -30,10 +30,10 @@
 - Windows/Android 사내망 HTTPS 전경 polling, cursor 기반 증분 조회와 연결 실패 backoff
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
 
-## 설계 완료, 구현 전
+## 설계 완료, 부분 구현
 
-- 외부 AI 1단계의 범위, 데이터 모델, API, 보안·보존 계약은 문서 초안으로 정리되어 있다. 허용 범위는 근거 검색과 요약이며, 외부 호출 라우터, ORM 테이블, provider client, 기능 플래그와 전송 승인 검사는 아직 코드에 없다.
-- 현재 동작하는 AI 기능은 `ai_search_candidates` 재생성·목록·품질 API와 WPF 운영 점검 화면뿐이다. 외부 AI 계약 초안을 완료된 코드로 간주하지 않는다.
+- 외부 AI 1단계의 범위, 데이터 모델, API, 보안·보존 계약을 정리하고 질의 생성·조회 라우터, ORM 테이블, 기능 플래그와 전송 승인 검사를 구현했다. 허용 범위는 근거 검색과 요약이며, 운영 provider client와 네트워크 호출은 아직 구현하지 않았다.
+- 현재 동작하는 AI 기능은 `ai_search_candidates` 재생성·목록·품질 API, WPF 운영 점검 화면, 외부 질의의 비활성 기본값·승인·목적·근거 snapshot·감사 차단 골격이다. 운영 provider client와 네트워크 호출은 완료된 코드로 간주하지 않는다.
 
 ## 개발 우선순위 원칙
 
@@ -51,7 +51,7 @@
 
 ## 다음 우선순위
 
-1. 58개 FastAPI 수집 기준으로 `scripts/verify-preserved-tests.ps1`의 전체 pytest, WPF 빌드, WPF 스모크, Git 산출물 사후 점검을 통과시키고 결과를 남긴다.
+1. 68개 FastAPI 수집 기준으로 `scripts/verify-preserved-tests.ps1`의 전체 pytest, WPF 빌드, WPF 스모크, Git 산출물 사후 점검을 통과시키고 결과를 남긴다.
 2. 현장별 MSI 설치 검증, 코드 서명, self-contained 패키징 조건 정리
 3. Android 운영 배포 서명, MDM/인증서, 단말 등록/비활성화 절차 확정
 4. Android 백그라운드 알림 정책, WPF 사용자별 cursor 영구 보존과 Windows/Android 채널 polling 운영 UX 검증. 전경 polling과 읽음/수신 확인은 구현되어 있다.

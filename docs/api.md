@@ -182,15 +182,15 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 
 후보 재생성의 제외 사유는 공개되지 않은 문서 버전, 제외/보관 FieldComment, MES 통합 입력 FieldComment, 내용 없는 FieldComment, 역추적 텍스트 없는 작업순서 이력, 누락/보관 보고서 source, 원천이 사라진 보고서 source를 구분해 반환한다. 보고서 source가 `DOCUMENT`를 가리키면 해당 문서와 선택한 버전의 존재 여부를 확인하며, 문서가 `status = DELETED`이거나 `deleted_at`이 설정된 경우도 `report_source_missing_origin`으로 분류해 후보에서 제외한다. 각 제외 사유에는 운영자가 문서 공개, FieldComment 검토/분석, 보고서 source 정리 중 무엇을 해야 하는지 판단할 수 있는 `label`, `operator_action`, `source_type` 안내를 포함한다. `EXCLUDED`, `ARCHIVED` FieldComment는 AI 검색 후보와 보고서 초안 후보 양쪽에서 제외한다.
 
-## 외부 AI 근거 검색과 요약 계약 초안
+## 외부 AI 근거 검색과 요약 안전장치 골격
 
-이 절은 후속 1단계 API 계약이며 현재 라우터가 구현되었다는 뜻이 아니다. 외부 호출은 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=true`와 고객·현장별 운영자 승인이 모두 유효할 때만 `admin`, `system-admin`에게 허용한다. 허용 목적은 `EVIDENCE_SEARCH`, `EVIDENCE_SUMMARY`뿐이며 자동 의사결정, 작업지시 생성·변경, 승인·공개 자동화, 설비 제어, 안전·품질 판정 요청은 provider 호출 전에 `422 AI_SCOPE_NOT_ALLOWED`로 거부한다.
+이 절의 질의 생성·조회 라우터와 차단/감사 골격은 구현되었다. 운영 provider client와 네트워크 호출, 재생성 라우터는 아직 구현하지 않는다. 외부 호출은 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=true`와 고객·현장별 운영자 승인이 모두 유효할 때만 `admin`, `system-admin`에게 허용한다. 허용 목적은 `EVIDENCE_SEARCH`, `EVIDENCE_SUMMARY`뿐이며 자동 의사결정, 작업지시 생성·변경, 승인·공개 자동화, 설비 제어, 안전·품질 판정 요청은 provider 호출 전에 `422 AI_SCOPE_NOT_ALLOWED`로 거부한다.
 
 | Method | Path | 설명 |
 | --- | --- | --- |
 | POST | `/api/v1/ai/queries` | 근거 검색·요약 질의 생성. 외부 호출이 꺼져 있으면 `503 AI_EXTERNAL_CALL_DISABLED`, 전송 승인이 없으면 `403 AI_TRANSFER_NOT_APPROVED` |
 | GET | `/api/v1/ai/queries/{query_id}` | 호출 사용자 또는 `admin`, `system-admin`이 질의 상태, 근거 ID, 인용, 응답 저장 여부 조회 |
-| POST | `/api/v1/ai/queries/{query_id}/regenerations` | 보존 기간 안의 질의·프롬프트·근거 snapshot으로 재생성. 권한이나 원천 적격성이 바뀌면 `409 AI_REGENERATION_NOT_ALLOWED` |
+| POST | `/api/v1/ai/queries/{query_id}/regenerations` | 후속 계약. 보존 기간 안의 질의·프롬프트·근거 snapshot으로 재생성하며 현재는 미구현 |
 
 `POST /api/v1/ai/queries` 요청 초안:
 

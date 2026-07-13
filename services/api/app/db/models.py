@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, event, inspect
 from sqlalchemy import String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -735,6 +735,152 @@ class AISearchCandidate(Base):
     refreshed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class AIPromptVersion(Base):
+    __tablename__ = "ai_prompt_versions"
+    __table_args__ = (
+        UniqueConstraint("name", "version", name="uq_ai_prompt_versions_name_version"),
+        CheckConstraint(
+            "allowed_purpose IN ('EVIDENCE_SEARCH', 'EVIDENCE_SUMMARY')",
+            name="ck_ai_prompt_version_purpose",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    prompt_version_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    version: Mapped[str] = mapped_column(String(40), nullable=False)
+    template_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    template_text: Mapped[str] = mapped_column(Text, nullable=False)
+    allowed_purpose: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIQuery(Base):
+    __tablename__ = "ai_queries"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('RECEIVED', 'BLOCKED', 'CALLING', 'SUCCEEDED', "
+            "'INSUFFICIENT_EVIDENCE', 'CITATION_VALIDATION_FAILED', 'FAILED')",
+            name="ck_ai_query_status",
+        ),
+        CheckConstraint(
+            "response_storage_mode IN ('DO_NOT_STORE', 'STORE_90_DAYS')",
+            name="ck_ai_query_response_storage_mode",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    query_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    requested_by: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
+    query_text: Mapped[str] = mapped_column(Text, nullable=False)
+    query_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="RECEIVED")
+    prompt_version_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("ai_prompt_versions.prompt_version_id"))
+    response_storage_mode: Mapped[str] = mapped_column(String(30), nullable=False, default="DO_NOT_STORE")
+    response_text: Mapped[str | None] = mapped_column(Text)
+    response_hash: Mapped[str | None] = mapped_column(String(64))
+    retention_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    regeneration_of_query_id: Mapped[str | None] = mapped_column(String(64))
+    regenerable_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    block_code: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AIQueryEvidenceCandidate(Base):
+    __tablename__ = "ai_query_evidence_candidates"
+    __table_args__ = (UniqueConstraint("query_id", "candidate_id", name="uq_ai_query_evidence"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    query_id: Mapped[str] = mapped_column(String(64), ForeignKey("ai_queries.query_id"), nullable=False, index=True)
+    candidate_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_version_id: Mapped[str | None] = mapped_column(String(64))
+    trace_table: Mapped[str] = mapped_column(String(80), nullable=False)
+    trace_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    trace_version_id: Mapped[str | None] = mapped_column(String(64))
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    selected_for_prompt: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sent_externally: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    eligibility_result: Mapped[str] = mapped_column(String(30), nullable=False)
+    exclusion_reason: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIQueryCitation(Base):
+    __tablename__ = "ai_query_citations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    citation_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    query_id: Mapped[str] = mapped_column(String(64), ForeignKey("ai_queries.query_id"), nullable=False, index=True)
+    claim_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    candidate_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_version_id: Mapped[str | None] = mapped_column(String(64))
+    trace_table: Mapped[str] = mapped_column(String(80), nullable=False)
+    trace_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    trace_version_id: Mapped[str | None] = mapped_column(String(64))
+    internal_source_uri: Mapped[str] = mapped_column(String(500), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    validated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AICallAttempt(Base):
+    __tablename__ = "ai_call_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    attempt_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    query_id: Mapped[str] = mapped_column(String(64), ForeignKey("ai_queries.query_id"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(80), nullable=False)
+    model: Mapped[str] = mapped_column(String(120), nullable=False)
+    provider_request_id: Mapped[str | None] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    sanitized_error_message: Mapped[str | None] = mapped_column(String(255))
+    input_units: Mapped[int | None] = mapped_column(Integer)
+    output_units: Mapped[int | None] = mapped_column(Integer)
+
+
+class AITransferApproval(Base):
+    __tablename__ = "ai_transfer_approvals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    approval_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    customer_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    site_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    provider: Mapped[str] = mapped_column(String(80), nullable=False)
+    model_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    allowed_source_types: Mapped[str] = mapped_column(Text, nullable=False)
+    data_handling_policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    approved_by: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+@event.listens_for(AIPromptVersion, "before_update")
+def prevent_approved_prompt_content_update(_mapper: object, _connection: object, target: AIPromptVersion) -> None:
+    """Approved prompt content is immutable; retirement metadata may still be updated."""
+    if target.approved_at is None:
+        return
+    state = inspect(target)
+    immutable_fields = ("name", "version", "template_hash", "template_text", "allowed_purpose")
+    if any(state.attrs[field].history.has_changes() for field in immutable_fields):
+        raise ValueError("Approved AI prompt versions are immutable; create a new version.")
 
 
 class DocumentAccessLog(Base):

@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     access_token_secret: str = "flownote-local-dev-token-secret-change-before-operation"
     access_token_expires_minutes: int = 480
     refresh_token_expires_days: int = 14
+    ai_external_call_enabled: bool = False
+    ai_provider: str = "UNCONFIGURED"
+    ai_model: str = "UNCONFIGURED"
+    ai_customer_scope: str = "DEFAULT"
+    ai_site_scope: str = "DEFAULT"
 
 
 settings = Settings()

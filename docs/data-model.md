@@ -99,9 +99,9 @@ AI 자동 조언과 자동 의사결정은 아직 범위에 넣지 않는다. �
 
 MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_records.external_system`, `external_ref_id` 같은 외부 연동 필드를 사용하지 않는다. `mes_integration` 입력으로 들어온 FieldComment도 어댑터 정책이 정해지기 전에는 후보에서 제외한다.
 
-## 외부 AI 질의와 호출 로그 초안
+## 외부 AI 질의와 호출 로그 골격
 
-다음 모델은 외부 AI 1단계의 계약 초안이며 아직 마이그레이션이나 외부 호출 구현이 아니다. 기존 `ai_search_candidates`는 외부 AI 설정과 무관하게 재생성 가능한 read model로 유지한다.
+다음 모델은 외부 AI 1단계의 안전장치와 감사 골격으로 구현되었다. 운영 provider client와 네트워크 호출은 구현하지 않았으며 기본 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`에서 모든 외부 호출 시도를 차단한다. 기존 `ai_search_candidates`는 외부 AI 설정과 무관하게 재생성 가능한 read model로 유지한다.
 
 | 테이블 | 주요 필드 | 역할과 보존 기준 |
 | --- | --- | --- |
@@ -113,6 +113,8 @@ MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_record
 | `ai_transfer_approvals` | `approval_id`, `customer_scope`, `site_scope`, `provider`, `model_scope`, `allowed_source_types`, `data_handling_policy_version`, `approved_by`, `approved_at`, `expires_at`, `revoked_at`, `reason` | 고객·현장별 외부 전송 승인. 만료·철회 시 새 호출을 즉시 차단하며 `admin` 또는 `system-admin`의 승인 주체와 근거를 보존한다. |
 
 `response_storage_mode`는 `DO_NOT_STORE`, `STORE_90_DAYS`만 허용한다. 기본값은 `DO_NOT_STORE`이며 이때 응답 본문은 요청 세션에 반환한 뒤 저장하지 않는다. 질의 원문이 만료된 뒤에는 후보·프롬프트·응답 hash를 감사에 사용할 수 있지만 재생성할 수 있다고 표시하지 않는다. `regenerable_until` 전에도 재생성은 같은 질의, 불변 프롬프트 버전, 근거 후보 ID와 content hash, provider/model을 다시 사용한다는 뜻이며, 확률적 모델의 동일 문구 재현을 보장하지 않는다. 원천의 권한·공개·외부 전송 승인 상태가 바뀌면 재생성을 거부하고 새 질의로 다시 평가한다.
+
+`ai_query_evidence_candidates.candidate_id`는 재생성 가능한 read model에 대한 논리적 역추적 키이며 물리 FK로 묶지 않는다. `ai_search_candidates` 재생성 뒤에도 질의 시점의 source/version/trace ID와 content hash snapshot을 보존하기 위한 결정이다.
 
 상태는 `RECEIVED`, `BLOCKED`, `CALLING`, `SUCCEEDED`, `INSUFFICIENT_EVIDENCE`, `CITATION_VALIDATION_FAILED`, `FAILED`를 사용한다. 응답의 사실 주장은 최소 한 개의 `ai_query_citations`와 연결되어야 한다. 허용되는 원천 식별자는 문서의 `document_id + version_id`, FieldComment의 `comment_id`와 연결된 `document_version_id`(있는 경우), 작업순서 이력의 `change_id`, 보고서 근거의 `report_sources.id + source_type + source_id + source_version_id`다. 후보가 0건이거나 인용이 누락·위조·권한 만료 상태이면 응답 본문을 보관하거나 사용자에게 노출하지 않는다.
 

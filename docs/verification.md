@@ -14,7 +14,7 @@
 
 1. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 2. 실행 전 `git status --porcelain=v1 --untracked-files=all`에서 SQLite 예외 외 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-3. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 58개인지 확인한다.
+3. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 68개인지 확인한다.
 4. `services/api`에서 FastAPI pytest를 실행한다.
 5. WPF 앱을 빌드한다.
 6. WPF 스모크 테스트를 실행한다.
@@ -32,7 +32,11 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Win
 git status --short
 ```
 
-2026-07-13 기준 FastAPI 수집 기대값은 58개다. 기존 53개에서 증가한 5개는 승인 Android 단말 로그인 2개와 승인 단말 관리 3개이며, 모두 최근 구현에 대응하는 의도된 테스트다. 표준 PowerShell 스크립트도 같은 기준선을 사용한다.
+2026-07-13 기준 FastAPI 수집 기대값은 68개다. 승인 Android 단말과 승인 단말 관리 기준선 이후 AI 근거 검색 2개와 외부 AI 질의 안전장치 8개가 추가되었으며, 모두 구현에 대응하는 의도된 테스트다. 표준 PowerShell 스크립트도 같은 기준선을 사용한다.
+
+## 2026-07-13 외부 AI 질의 안전장치 검증
+
+`scripts/verify-preserved-tests.ps1`의 FastAPI 수집 기대값을 58개에서 68개로 갱신했다. `services/api`에서 테스트를 다시 수집해 68개를 확인했고 전체 pytest 68건이 통과했다. 추가 기준에는 AI 근거 검색 2개와 외부 AI 질의의 비활성 기본값, 금지 목적, 전송 승인, 근거 snapshot, 응답 미저장, 권한, 프롬프트 불변성 검증 8개가 포함된다. 이번 실행에서는 WPF 빌드와 WPF 스모크를 실행하지 않았고 기존 DB, 로그, 파일과 실패 흔적은 삭제하지 않았다.
 
 ## 2026-07-13 표준 보존형 검증 기준 갱신
 
@@ -49,7 +53,7 @@ git status --short
 
 현재 FastAPI 테스트를 다시 수집한 결과 58개가 정상 수집되었다. 이번 문서 갱신에서는 전체 pytest, WPF 빌드, WPF 스모크를 새로 실행하지 않았으며 기존 DB와 테스트 산출물도 삭제하거나 초기화하지 않았다.
 
-현재 코드의 라우터, 서버 ORM 모델, Windows 서버 API 클라이언트와 Android 최소 앱을 상위 문서와 대조했다. 승인 단말 관리, 채널/인수인계, Android outbox, AI 근거 후보 read model은 구현 범위로 유지한다. 반면 `/api/v1/ai/queries` 계열 외부 AI 질의 API, `ai_queries` 계열 모델, provider 호출과 외부 전송 승인 검사는 계약 초안으로만 유지하며 현재 검증 대상에 포함하지 않는다.
+현재 코드의 라우터, 서버 ORM 모델, Windows 서버 API 클라이언트와 Android 최소 앱을 상위 문서와 대조했다. 승인 단말 관리, 채널/인수인계, Android outbox, AI 근거 후보 read model은 구현 범위로 유지한다. `/api/v1/ai/queries` 생성·조회, `ai_queries` 계열 모델, 기능 플래그·목적·외부 전송 승인·근거 snapshot 검사는 안전장치 골격으로 검증한다. 운영 provider client, 네트워크 호출과 질의 재생성은 아직 검증 범위가 아니다.
 
 ## WPF 스모크 필수 조건
 
