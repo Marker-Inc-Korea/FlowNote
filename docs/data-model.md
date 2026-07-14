@@ -1,5 +1,7 @@
 # FlowNote 데이터 모델
 
+이 문서는 2026-07-14 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 구현 전 모델은 “후속 외부 연동” 절에서만 예외로 다룬다.
+
 ## WPF 로컬 SQLite
 
 기본 경로는 저장소 루트의 `data/local/flownote.local.sqlite`이다. `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`가 설정되면 해당 위치를 우선한다.
@@ -74,6 +76,7 @@
 | `ai_search_evaluation_cases` | 질문별 기대/실제 근거, 제외 사유, 순위 hash와 통과 여부 |
 | `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations` | 외부 AI 질의 상태와 질의 시점 근거 snapshot, 검증된 주장별 인용 연결 |
 | `ai_prompt_versions`, `ai_call_attempts`, `ai_transfer_approvals` | 승인 프롬프트 버전, 정제된 호출 시도 감사, 고객·현장별 외부 전송 승인 |
+| `ai_sensitive_data_policies` | 고객·현장별 활성 금칙어와 고객 식별자 정책 버전 |
 | `document_access_logs` | 서버 문서 접근 로그 |
 | `controlled_copy_grants` | SHA-256으로 저장한 1회성 토큰, 사용자·세션·단말·문서 버전, 만료·소비·실패 상태 |
 | `activity_history` | 서버 활동 이력 |
@@ -111,7 +114,7 @@ AI 자동 조언과 자동 의사결정은 아직 범위에 넣지 않는다. �
 
 MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_records.external_system`, `external_ref_id` 같은 외부 연동 필드를 사용하지 않는다. `mes_integration` 입력으로 들어온 FieldComment도 어댑터 정책이 정해지기 전에는 후보에서 제외한다.
 
-## 외부 AI 질의와 호출 로그 골격
+## 외부 AI 질의와 호출 로그 안전장치
 
 다음 모델은 외부 AI 1단계의 안전장치와 감사 골격으로 구현되었다. 운영 provider client와 네트워크 호출은 구현하지 않았으며 기본 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`에서 모든 외부 호출 시도를 차단한다. 기존 `ai_search_candidates`는 외부 AI 설정과 무관하게 재생성 가능한 read model로 유지한다.
 

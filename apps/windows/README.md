@@ -4,6 +4,8 @@
 
 현재 프로젝트는 WPF UI `net10.0-windows`, Core와 스모크 테스트 `net10.0`을 대상으로 한다. 현재 기능 목록은 `FlowNote.Windows.App`, `FlowNote.Windows.Core`, `FlowNote.Windows.SmokeTests` 코드에 실제 연결된 범위만 포함한다.
 
+이 문서는 2026-07-14 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
+
 ## 현재 구현
 
 - 로그인 화면과 메인 탐색기 화면
@@ -31,6 +33,8 @@
 - AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
 - 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장
 - 보존 동기화 실패 전환 CLI: FAILED 큐를 읽기 전용 dry-run으로 분류하고, plan hash와 row별 운영자 승인을 받은 구 `create`/FieldNote 항목만 현재 action의 별도 큐로 무손실 전환
+
+WPF에는 `/api/v1/ai/queries`를 호출하는 운영 AI 질의 화면이나 운영 provider client가 없다. 현재 AI 화면은 외부 호출 없는 근거 후보 운영 점검 전용이다.
 
 AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트, `AI 근거 후보 운영 점검` 화면에 구현되어 있다. 이 화면은 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`를 호출해 외부 AI 호출 전 데이터 품질과 원천 추적 가능성을 확인한다. WPF 서버 클라이언트는 `/api/v1/ai-search/evaluations` 계약도 구현하며, 스모크 테스트가 기대 근거·제외 근거와 재생성 전후 candidate ID/content hash/순위 안정성을 검증한다. 회귀 평가를 직접 구성·실행하는 WPF 운영 UI는 아직 없다.
 

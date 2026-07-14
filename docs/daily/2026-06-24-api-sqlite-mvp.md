@@ -23,9 +23,10 @@
 - 채널/인수인계: `notification_channels`, `notification_channel_members`, `channel_messages`, `handovers`, `handover_receipts`
 - 보고서: `reports`, `report_sources`
 - AI 검색 후보·평가: `ai_search_candidates`, `ai_search_evaluation_runs`, `ai_search_evaluation_cases`
-- 외부 AI 안전장치·감사: `ai_prompt_versions`, `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations`, `ai_call_attempts`, `ai_transfer_approvals`
+- 외부 AI 안전장치·감사: `ai_prompt_versions`, `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations`, `ai_call_attempts`, `ai_transfer_approvals`, `ai_sensitive_data_policies`
 - 제한 다운로드: `controlled_copy_grants`
 - 마이그레이션 기록: `schema_migrations`
+- 공통 감사: `activity_history`
 
 ## 구현된 주요 흐름
 
@@ -36,3 +37,4 @@
 - 공개 문서는 명시적으로 공개 버전을 지정해야 조회할 수 있다.
 - controlled copy는 현재 공개 버전에만 발급되며 사용자·세션에 묶인 짧은 만료의 1회성 티켓과 SHA-256 검증을 사용한다.
 - AI 검색 근거 후보는 공개 문서 버전, FieldComment, 작업순서 이력, 보고서 source에서 재생성한다.
+- 외부 AI provider 직전 경계는 활성 고객·현장 민감정보 정책, 원천 권한, 최소 발췌·최대 원천 수와 인용 ID를 검사하며 운영 네트워크 provider client는 없다.

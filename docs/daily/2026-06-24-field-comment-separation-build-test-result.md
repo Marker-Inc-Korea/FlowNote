@@ -16,6 +16,7 @@
 - `PATCH /api/v1/field-comments/{comment_id}`로 관리자 검토와 분석 상태를 갱신한다.
 - 첨부는 `POST /api/v1/field-comments/{comment_id}/attachments`와 목록 조회 API로 관리한다.
 - AI 근거 후보와 외부 AI 질의 snapshot에는 관리자 검토 상태가 `ANALYZED`, `REVIEWED`, `SELECTED`인 FieldComment만 적격 원천으로 사용한다.
+- 외부 AI 질의 시에는 작성자 계정·role, 연결 채널 멤버십과 활성 고객·현장 민감정보 정책도 다시 검사한다.
 
 ## Windows 구현
 

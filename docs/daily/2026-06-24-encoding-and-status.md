@@ -19,6 +19,8 @@
 - 승인 단말 상태: `ACTIVE`, `INACTIVE`, `RETIRED`
 - controlled copy grant 상태: `ISSUED`, `CONSUMED`, `EXPIRED`, `FAILED`
 - 외부 AI 질의의 주요 종료 상태: `BLOCKED`, `INSUFFICIENT_EVIDENCE`, `CITATION_VALIDATION_FAILED`, `SUCCEEDED`
+- 서버 계정 상태: `ACTIVE`, `LOCKED`, `DISABLED`
+- 인수인계 수신 상태: `UNREAD`, `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`
 
 ## 명칭 기준
 

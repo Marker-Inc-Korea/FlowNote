@@ -1,5 +1,7 @@
 # FlowNote 배포
 
+이 문서는 2026-07-14 현재 저장소의 실행 코드와 배포 스크립트 기준이다. 서명, MDM, 현장 인증서처럼 실제 운영 환경에서만 확정 가능한 내용은 후속 점검 항목으로 구분한다.
+
 ## 기준
 
 FlowNote의 기본 배포 형태는 사내 단일 서버 PC 운영과 승인된 설치형 클라이언트 배포이다. Windows WPF는 관리자/현장 PC용 기본 클라이언트이고, Android는 승인된 현장 태블릿 또는 러기드 단말용 현장 입력 클라이언트로 추가한다. 클라우드, 외부 접근, 일반 브라우저 직접 사용은 초기 기준이 아니며 별도 협의가 필요한 후속 선택지다.
@@ -17,13 +19,13 @@ Client PCs
 
 Approved Android field devices
   -> Android installed app
-  -> document viewing, FieldComment, photos, handover, channel notifications
+  -> published document metadata, FieldComment, photos, handover receipts, channel notifications
   -> API connection to Server PC through configured server URL
 ```
 
 WPF 앱은 로컬 SQLite에 먼저 기록하고 서버 URL이 설정되어 있으면 서버 동기화를 시도한다. 서버 호출 실패는 로컬 저장을 되돌리지 않고 동기화 큐와 이력으로 남긴다.
 
-Android 앱은 현장 입력과 알림 확인을 서버 기준으로 처리한다. 네트워크가 불안정한 구간의 임시 저장은 허용하되, 장기 원천 데이터는 서버 SQLite와 `storage/`에 남기는 것을 기준으로 한다. Android 배포는 개인 휴대폰 기본 배포가 아니라 현장 승인 단말 배포를 기준으로 하며, MDM, APK/AAB 배포 방식, 사내 Wi-Fi, 백그라운드 알림 정책은 구현 단계에서 현장 보안 정책과 함께 확정한다. 초기 채널 알림은 Activity가 전경인 동안 사내망 HTTPS polling으로 전달한다.
+Android 앱은 현장 입력과 알림 확인을 서버 기준으로 처리한다. 네트워크가 불안정할 때 FieldComment와 사진 첨부만 전용 SQLite outbox에 임시 저장하며, 채널 메시지·인수인계·문서 메타데이터는 outbox 대상이 아니다. 장기 원천 데이터는 서버 SQLite와 `storage/`에 남기는 것을 기준으로 한다. Android 배포는 개인 휴대폰 기본 배포가 아니라 현장 승인 단말 배포를 기준으로 하며, MDM, APK/AAB 배포 방식, 사내 Wi-Fi, 백그라운드 알림 정책은 현장 보안 정책에 맞춰 후속 확정한다. 초기 채널 알림은 Activity가 전경인 동안 사내망 HTTPS polling으로 전달한다.
 
 ## 운영 설치 경로
 

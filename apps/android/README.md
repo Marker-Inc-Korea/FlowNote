@@ -2,6 +2,8 @@
 
 `apps/android/`는 FlowNote Android 현장 단말 클라이언트이다. 승인된 현장 태블릿 또는 러기드 단말에서 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 기록, 신호등식 기록, 채널 알림 확인, 인수인계 확인을 수행한다. 현재 코드는 문서 파일 본문 다운로드나 미리보기를 제공하지 않는다.
 
+기능 목록은 2026-07-14 현재 `app/src/main` 코드 기준이며, 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
+
 ## 기술 기준
 
 - 언어/UI: Java, Android 네이티브 View
@@ -21,6 +23,8 @@
 - 신호등식 입력: `green`, `yellow`, `red`
 - 채널 알림 조회와 읽음 처리
 - 인수인계 조회와 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 확인
+
+알림은 Activity가 전경일 때 기본 15초 간격으로 조회하고 연결 실패 시 최대 120초까지 backoff한다. 마지막 cursor는 서버 주소와 사용자별로 `SharedPreferences`에 보존한다. Android는 채널 메시지나 인수인계를 outbox에 저장하지 않는다.
 
 ## 승인 단말 정책
 

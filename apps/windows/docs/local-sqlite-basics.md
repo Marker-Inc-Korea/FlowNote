@@ -4,6 +4,8 @@
 
 Windows WPF 앱은 서버 연결 여부와 관계없이 현장 문서와 기록을 로컬 SQLite에 먼저 남긴다. 서버가 설정되어 있으면 이후 동기화를 시도한다.
 
+테이블과 동기화 설명은 2026-07-14 현재 `FlowNoteLocalDatabase`와 연결 서비스 코드 기준이다.
+
 ## 경로
 
 - DB 파일명: `flownote.local.sqlite`

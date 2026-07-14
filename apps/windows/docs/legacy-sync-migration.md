@@ -4,6 +4,8 @@
 
 `server_sync_queue.status = FAILED`인 누적 행을 정상 신규 흐름과 분리해 진단하고, 운영자가 승인한 행만 현재 action의 별도 큐로 전환한다. 기존 큐 행, 구 원천 행, 첨부와 로컬 파일은 수정하거나 삭제하지 않는다.
 
+이 계약은 2026-07-14 현재 `LegacySyncMigrationService`와 `FlowNote.Windows.SyncMigrationTool` 구현 기준이다.
+
 ## 읽기 전용 분류
 
 분류 우선순위는 아래 순서로 고정한다. 먼저 일치한 한 분류만 사용하므로 모든 FAILED 행은 중복 없이 정확히 하나의 분류에 속한다.

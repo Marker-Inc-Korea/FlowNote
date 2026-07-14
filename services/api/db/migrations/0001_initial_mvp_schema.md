@@ -1,6 +1,6 @@
 # 0001 Initial FlowNote API Schema
 
-FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기준은 `services/api/app/db/models.py`이며, 앱 시작 시 `services/api/app/db/init_db.py`가 `Base.metadata.create_all()`로 테이블을 보장한다.
+FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기준은 2026-07-14 현재 `services/api/app/db/models.py`이며, 앱 시작 시 `services/api/app/db/init_db.py`가 `Base.metadata.create_all()`로 테이블을 보장한다.
 
 ## Version
 
@@ -42,6 +42,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `ai_query_citations` | Validated claim-to-evidence citation records |
 | `ai_call_attempts` | Sanitized provider/model attempt status and error audit |
 | `ai_transfer_approvals` | Customer/site/provider/model scoped external transfer approvals |
+| `ai_sensitive_data_policies` | Versioned customer/site deny terms and customer identifiers applied before provider payload creation |
 | `document_access_logs` | Document view/download/auto-close access logs |
 | `controlled_copy_grants` | Hashed one-time token bound to a published version, user, auth session, expiry, size, and hash |
 | `activity_history` | Server activity history |
@@ -53,4 +54,5 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 - Controlled copy can only target the current published version; grants expire quickly and are consumed once.
 - FieldComment must reference at least one of document, structure item, or work record.
 - External AI calls are disabled by default, and the repository contains no network provider client.
+- The active `ai_sensitive_data_policies` row for a customer/site scope adds deny terms and customer identifiers to the provider-boundary content filter.
 - Current server role values are `admin`, `manager`, `viewer`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`.
