@@ -30,6 +30,7 @@
 - FastAPI 서버 인증과 승인 단말/문서/controlled copy/FieldComment/첨부/접근 로그/보고서/작업순서/채널·인수인계/AI 검색 근거·회귀 평가 API 클라이언트
 - AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
 - 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장
+- 보존 동기화 실패 전환 CLI: FAILED 큐를 읽기 전용 dry-run으로 분류하고, plan hash와 row별 운영자 승인을 받은 구 `create`/FieldNote 항목만 현재 action의 별도 큐로 무손실 전환
 
 AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트, `AI 근거 후보 운영 점검` 화면에 구현되어 있다. 이 화면은 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`를 호출해 외부 AI 호출 전 데이터 품질과 원천 추적 가능성을 확인한다. WPF 서버 클라이언트는 `/api/v1/ai-search/evaluations` 계약도 구현하며, 스모크 테스트가 기대 근거·제외 근거와 재생성 전후 candidate ID/content hash/순위 안정성을 검증한다. 회귀 평가를 직접 구성·실행하는 WPF 운영 UI는 아직 없다.
 
@@ -38,9 +39,9 @@ AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트
 - 채널/인수인계 화면의 운영 UX 고도화와 현장별 권한 세분화
 - 인수인계 등록 작성 화면과 템플릿 보강
 - 채널 메시지와 인수인계를 문서, FieldComment, 작업순서, 작업내역, 보고서 근거로 더 쉽게 연결하는 운영 흐름
-- WPF 사용자별 polling cursor 영구 보존, 백그라운드 알림 정책과 현장별 polling 운영 UX 검증
+- 백그라운드 알림 정책과 현장별 polling 운영 UX 검증
 
-초기 알림 전달 방식은 사내망 REST API 전경 polling으로 구현·확정되어 있다. WPF는 기본 15초 간격으로 `/api/v1/notifications?afterId={cursor}`를 조회하고 연결 실패 시 최대 120초까지 backoff하며, 응답 처리가 끝난 뒤에만 cursor를 전진시킨다. 현재 cursor는 열린 주 창 세션의 메모리에만 유지되므로 앱 재시작 뒤 사용자별 마지막 위치를 복구하는 기능은 후속 범위다. 외부 push나 WebSocket은 초기 구현의 대안이 아니라 현장 네트워크 정책과 백그라운드 알림 요구가 확인될 때 검토하는 확장 선택지다.
+초기 알림 전달 방식은 사내망 REST API 전경 polling으로 구현·확정되어 있다. WPF는 기본 15초 간격으로 `/api/v1/notifications?afterId={cursor}`를 조회하고 연결 실패 시 최대 120초까지 backoff한다. 서버 scope와 사용자 ID별 cursor 및 처리한 `message_id`를 로컬 SQLite에 보존하고, 응답 처리가 끝난 뒤 같은 트랜잭션에서만 cursor를 전진시킨다. 서버 cursor 역행은 자동 초기화하지 않고 polling을 중지하며 관리자 확인 동작만 초기화를 허용한다. 상세 정책은 [WPF 사용자별 알림 cursor 보존 정책](./docs/notification-cursor.md)을 따른다. 외부 push나 WebSocket은 초기 구현의 대안이 아니라 현장 네트워크 정책과 백그라운드 알림 요구가 확인될 때 검토하는 확장 선택지다.
 
 이 기능은 개인 메신저나 사내 메신저 전체 대체가 아니라, 현장 기록과 관리자 검토 흐름을 이어주는 업무 채널 기능이다.
 
@@ -52,6 +53,7 @@ apps/windows/
   src/FlowNote.Windows.App/     WPF UI
   src/FlowNote.Windows.Core/    로컬 DB, 서비스, 정책, 서버 API 클라이언트
   src/FlowNote.Windows.SmokeTests/  콘솔 스모크 테스트
+  src/FlowNote.Windows.SyncMigrationTool/  보존 FAILED 큐 진단·승인 전환 CLI
 ```
 
 ## 로컬 데이터
@@ -98,3 +100,4 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Win
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 
 파일 유형별 미리보기 샘플과 실패 안내 기준은 [문서 미리보기 안정화 기준](./docs/document-preview-stability.md)을 따른다.
+보존 FAILED 큐의 dry-run, 승인 전환과 무손실 검증 기준은 [보존 동기화 실패 무손실 전환](./docs/legacy-sync-migration.md)을 따른다.

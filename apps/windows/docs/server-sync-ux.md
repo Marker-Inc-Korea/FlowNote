@@ -80,7 +80,9 @@ controlled copy는 사용자가 즉시 수행하는 서버 발급·스트리밍 
 3. 같은 문서의 `document/register_document`를 먼저 동기화한다.
 4. 같은 문서의 `document_version/register_document_version`과 `document_publish/publish_document_version`을 처리한다.
 5. FieldComment를 먼저 동기화한 뒤 첨부, 검토 변경, 접근 로그를 재시도한다.
-6. 구 FieldNote 큐는 자동 재시도 대상에서 분리해 관리자 전환 작업으로 다룬다.
+6. 구 FieldNote와 구 `create` 큐는 자동 재시도 대상에서 분리한다. 별도 전환 CLI의 읽기 전용 dry-run으로 원천·파일·대상 action을 확인하고, 운영자가 승인한 row만 신규 큐로 전환한다.
+
+별도 전환은 기존 FAILED 큐의 상태·시도 횟수·오류를 바꾸는 재시도가 아니다. 승인 실행은 현재 action의 `PENDING` 큐와 감사 행을 추가하고 기존 큐와 파일을 계속 보존한다. 상세 분류, 명령과 검증 SQL은 [보존 동기화 실패 무손실 전환](./legacy-sync-migration.md)을 따른다.
 
 ## 검증 시나리오
 

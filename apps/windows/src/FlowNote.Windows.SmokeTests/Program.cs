@@ -32,6 +32,99 @@ try
 {
     var services = new FlowNoteLocalServices(databasePath);
 
+    var cursorSmokeScopeA = $"https://cursor-a-{runId}.example/api/";
+    var cursorSmokeScopeB = $"https://cursor-b-{runId}.example/api/";
+    var cursorSmokeUserA = $"cursor-user-a-{runId}";
+    var cursorSmokeUserB = $"cursor-user-b-{runId}";
+    var cursorSmokeMessage = new ServerUserNotificationResponse
+    {
+        MessageId = $"cursor-message-{runId}",
+        ChannelId = "cursor-smoke-channel",
+        MessageType = "NOTICE",
+        SourceType = "SYSTEM",
+        SourceId = $"cursor-source-{runId}",
+        Title = "WPF cursor 스모크",
+        ChannelName = "cursor 스모크 채널",
+        Cursor = 11,
+        CreatedAt = DateTime.UtcNow
+    };
+    services.ServerNotificationCursors.ProcessBatch(
+        cursorSmokeScopeA,
+        cursorSmokeUserA,
+        new ServerNotificationPage([cursorSmokeMessage], 11),
+        reachedServerCursor: true);
+    services.ServerNotificationCursors.ProcessBatch(
+        cursorSmokeScopeA,
+        cursorSmokeUserB,
+        new ServerNotificationPage([], 4),
+        reachedServerCursor: true);
+    services.ServerNotificationCursors.ProcessBatch(
+        cursorSmokeScopeB,
+        cursorSmokeUserA,
+        new ServerNotificationPage([], 7),
+        reachedServerCursor: true);
+    Require(
+        services.ServerNotificationCursors.Get(cursorSmokeScopeA, cursorSmokeUserA).LastSuccessCursor == 11 &&
+        services.ServerNotificationCursors.Get(cursorSmokeScopeA, cursorSmokeUserB).LastSuccessCursor == 4 &&
+        services.ServerNotificationCursors.Get(cursorSmokeScopeB, cursorSmokeUserA).LastSuccessCursor == 7,
+        "WPF cursor should be isolated by two users and two server scopes");
+
+    var cursorFailureScope = $"https://cursor-failure-{runId}.example/";
+    var cursorFailureUser = $"cursor-failure-user-{runId}";
+    try
+    {
+        services.ServerNotificationCursors.ProcessBatch(
+            cursorFailureScope,
+            cursorFailureUser,
+            new ServerNotificationPage([cursorSmokeMessage with { MessageId = $"failure-{runId}" }], 11),
+            reachedServerCursor: true,
+            _ => throw new InvalidOperationException("cursor smoke forced failure"));
+        throw new InvalidOperationException("cursor smoke forced failure should escape processing");
+    }
+    catch (InvalidOperationException exception) when (exception.Message == "cursor smoke forced failure")
+    {
+        Require(
+            !services.ServerNotificationCursors.Get(cursorFailureScope, cursorFailureUser).Exists,
+            "failed WPF notification processing should roll back cursor and message id");
+    }
+
+    var cursorReplay = services.ServerNotificationCursors.ProcessBatch(
+        cursorFailureScope,
+        cursorFailureUser,
+        new ServerNotificationPage([cursorSmokeMessage with { MessageId = $"failure-{runId}" }], 11),
+        reachedServerCursor: true);
+    Require(
+        cursorReplay.ProcessedCount == 1 && cursorReplay.State.LastSuccessCursor == 11,
+        "WPF notification should replay without loss after processing failure");
+    var cursorDuplicate = services.ServerNotificationCursors.ProcessBatch(
+        cursorFailureScope,
+        cursorFailureUser,
+        new ServerNotificationPage([cursorSmokeMessage with { MessageId = $"failure-{runId}" }], 11),
+        reachedServerCursor: true);
+    Require(
+        cursorDuplicate.ProcessedCount == 0 && cursorDuplicate.DuplicateCount == 1,
+        "WPF notification message_id should prevent duplicate processing side effects");
+
+    var cursorRestartedService = new FlowNote.Windows.Core.Notifications.ServerNotificationCursorService(services.Database);
+    Require(
+        cursorRestartedService.Get(cursorSmokeScopeA, cursorSmokeUserA).LastSuccessCursor == 11,
+        "WPF app restart and logout/relogin should resume from the persisted cursor");
+    var cursorRewind = cursorRestartedService.ProcessBatch(
+        cursorSmokeScopeA,
+        cursorSmokeUserA,
+        new ServerNotificationPage([], 2),
+        reachedServerCursor: true);
+    Require(
+        cursorRewind.ResetRequired && cursorRewind.State.LastSuccessCursor == 11,
+        "server DB recovery with a lower cursor should stop without advancing or resetting automatically");
+    var cursorReset = cursorRestartedService.ResetAfterAdministratorConfirmation(
+        cursorSmokeScopeA,
+        cursorSmokeUserA,
+        "smoke-system-admin");
+    Require(
+        cursorReset.LastSuccessCursor == 0 && cursorReset.ResetConfirmedBy == "smoke-system-admin",
+        "cursor reset should require and record administrator confirmation");
+
     var terminalStatusLabels = new Dictionary<string, string>
     {
         ["ACTIVE"] = "사용",
@@ -1826,6 +1919,68 @@ try
             Require(message.SourceType == "WORK_SEQUENCE_ITEM", "channel message should keep the source type");
             Require(message.SourceLinkText.Contains($"wseqitem-{runId}", StringComparison.Ordinal), "channel message should expose the source link text");
 
+            var serverCursorScope = FlowNote.Windows.Core.Notifications.ServerNotificationCursorService
+                .NormalizeServerScope(serverHttpClient.BaseAddress!);
+            var serverCursorState = services.ServerNotificationCursors.Get(serverCursorScope, serverLogin.UserId);
+            var cursorCatchupCompleted = false;
+            for (var cursorPageIndex = 0; cursorPageIndex < 100 && !cursorCatchupCompleted; cursorPageIndex++)
+            {
+                var cursorPage = await serverChannels.PollMyNotificationsAsync(
+                    unreadOnly: false,
+                    limit: 100,
+                    afterId: serverCursorState.LastSuccessCursor);
+                var completed = cursorPage.Items.Count < 100 ||
+                    cursorPage.Items.Max(item => item.Cursor) >= cursorPage.ServerCursor;
+                var cursorResult = services.ServerNotificationCursors.ProcessBatch(
+                    serverCursorScope,
+                    serverLogin.UserId,
+                    cursorPage,
+                    completed);
+                if (cursorResult.ResetRequired)
+                {
+                    services.ServerNotificationCursors.ResetAfterAdministratorConfirmation(
+                        serverCursorScope,
+                        serverLogin.UserId,
+                        serverLogin.UserId);
+                }
+                else
+                {
+                    cursorCatchupCompleted = completed;
+                }
+                serverCursorState = services.ServerNotificationCursors.Get(serverCursorScope, serverLogin.UserId);
+            }
+            Require(
+                cursorCatchupCompleted && serverCursorState.InitialSyncCompleted,
+                "WPF server cursor smoke should finish the initial catch-up");
+            using (var cursorConnection = services.Database.OpenConnection())
+            {
+                Require(
+                    ScalarLong(
+                        cursorConnection,
+                        """
+                        SELECT COUNT(*)
+                        FROM server_notification_messages
+                        WHERE server_scope = $server_scope
+                          AND user_id = $user_id
+                          AND message_id = $message_id;
+                        """,
+                        ("$server_scope", serverCursorScope),
+                        ("$user_id", serverLogin.UserId),
+                        ("$message_id", message.MessageId)) == 1,
+                    "WPF cursor SQLite should persist the server message_id exactly once");
+                Require(
+                    ScalarLong(
+                        cursorConnection,
+                        """
+                        SELECT last_success_cursor
+                        FROM server_notification_cursors
+                        WHERE server_scope = $server_scope AND user_id = $user_id;
+                        """,
+                        ("$server_scope", serverCursorScope),
+                        ("$user_id", serverLogin.UserId)) == serverCursorState.LastSuccessCursor,
+                    "WPF cursor SQLite row should match the in-memory server polling state");
+            }
+
             var inboxNotifications = await serverChannels.ListMyNotificationsAsync();
             Require(
                 inboxNotifications.Any(item => item.MessageId == message.MessageId && !item.Read),
@@ -1833,6 +1988,10 @@ try
 
             var readNotification = await serverChannels.MarkNotificationReadAsync(message.MessageId);
             Require(readNotification.Read, "Windows channel inbox should mark a selected channel message as read");
+            var membersAfterRead = await serverChannels.ListChannelMembersAsync(channel.ChannelId);
+            Require(
+                membersAfterRead.Single(item => item.UserId == serverLogin.UserId).LastReadMessageId == message.MessageId,
+                "server last_read_message_id should match the message persisted by the WPF cursor smoke");
 
             var handover = await serverChannels.CreateHandoverAsync(
                 new ServerHandoverCreateRequest
@@ -1898,6 +2057,11 @@ try
             Require(
                 followUpHandover.Receipts.Single().ReceiptStatus == "FOLLOW_UP_REQUIRED",
                 "Windows handover status screen should change a receipt to follow-up required");
+            var persistedHandover = await serverChannels.GetHandoverAsync(handover.HandoverId);
+            Require(
+                persistedHandover.Receipts.Single(item => item.ReceiptId == receipt.ReceiptId).ReceiptStatus ==
+                    "FOLLOW_UP_REQUIRED",
+                "server receipt state should be reloaded together with the persisted WPF cursor evidence");
 
             var followUpFieldComment = await serverChannels.CreateHandoverFollowUpFieldCommentAsync(
                 followUpHandover,
@@ -3659,7 +3823,19 @@ try
                 aiDocumentCandidate.TraceVersionId == aiServerPublishedVersion.VersionId,
                 "published document candidate should trace to document_versions by document_id and version_id");
 
-            var aiCommentCandidates = await serverDocuments.ListAISearchCandidatesAsync("FIELD_COMMENT", limit: 500);
+            var aiCommentCandidates = new List<ServerAISearchCandidateResponse>();
+            aiCommentCandidates.AddRange(await serverDocuments.ListAISearchCandidatesAsync(
+                "FIELD_COMMENT",
+                aiServerAnalyzedComment.CommentId,
+                limit: 10));
+            aiCommentCandidates.AddRange(await serverDocuments.ListAISearchCandidatesAsync(
+                "FIELD_COMMENT",
+                aiServerReviewedComment.CommentId,
+                limit: 10));
+            aiCommentCandidates.AddRange(await serverDocuments.ListAISearchCandidatesAsync(
+                "FIELD_COMMENT",
+                aiServerSelectedComment.CommentId,
+                limit: 10));
             var analyzedCommentCandidate = aiCommentCandidates.Single(item => item.SourceId == aiServerAnalyzedComment.CommentId);
             var reviewedCommentCandidate = aiCommentCandidates.Single(item => item.SourceId == aiServerReviewedComment.CommentId);
             var selectedCommentCandidate = aiCommentCandidates.Single(item => item.SourceId == aiServerSelectedComment.CommentId);

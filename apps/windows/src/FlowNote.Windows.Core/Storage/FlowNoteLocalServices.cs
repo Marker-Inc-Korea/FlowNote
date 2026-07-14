@@ -27,6 +27,7 @@ public sealed class FlowNoteLocalServices
         FieldComments = new FieldCommentService(Database);
         History = new HistoryService(Database);
         Notifications = new NotificationService(Database);
+        ServerNotificationCursors = new ServerNotificationCursorService(Database);
         ServerSync = new ServerSyncService(Database);
         Reports = new ReportDraftService(Database, Documents, ServerSync);
         Tags = new TagService(Database);
@@ -52,6 +53,8 @@ public sealed class FlowNoteLocalServices
     public HistoryService History { get; }
 
     public NotificationService Notifications { get; }
+
+    public ServerNotificationCursorService ServerNotificationCursors { get; }
 
     public ReportDraftService Reports { get; }
 

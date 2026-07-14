@@ -16,6 +16,7 @@
 - 서버 인증 세션과 refresh/logout
 - WPF 서버 전송 큐와 서버 ID 매핑
 - 서버 동기화 실패/재시도 UX
+- 보존 FAILED 큐의 읽기 전용 분류, plan hash·row별 승인, 구 `create`/FieldNote 무손실 전환 CLI와 감사 이력
 - TXT/PDF/XLSX/이미지 미리보기 안정화 기준과 스모크 검증
 - 테스트 DB와 산출물 보존 규칙에 맞춘 검증 자동화
 - 운영 백업/복구 세트와 복구 점검 기준 문서화
@@ -56,7 +57,7 @@
 1. FastAPI 75건 기준선과 전체 pytest 통과에 이어 Windows 환경에서 WPF 빌드, WPF 스모크, Git 산출물 사후 점검을 포함한 표준 검증을 실행하고 결과를 남긴다.
 2. 현장별 MSI 설치 검증, 코드 서명, self-contained 패키징 조건 정리
 3. Android 운영 배포 서명, MDM/인증서, 단말 등록/비활성화 절차 확정
-4. Android 백그라운드 알림 정책, WPF 사용자별 cursor 영구 보존과 Windows/Android 채널 polling 운영 UX 검증. 전경 polling과 읽음/수신 확인은 구현되어 있다.
+4. Android 백그라운드 알림 정책과 Windows/Android 채널 polling 운영 UX 검증. WPF 서버 scope·사용자별 cursor 영구 보존, 전경 polling과 읽음/수신 확인은 구현되어 있다.
 5. 사용자/역할 UI와 서버 계정 정책 정합성 강화
 6. 문서 버전/상태/공개 상태의 서버-WPF 동기화 정책 고도화
 7. FieldComment 관리자 검토/분석/선정 운영 화면 보강

@@ -25,7 +25,9 @@ FastAPI Server
 
 WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 보고서는 로컬 보고서 문서와 `report_sources`를 먼저 남긴 뒤 `server_sync_queue`의 `register_report` 항목으로 서버 `/api/v1/reports` 저장을 재시도한다. 큐 재시도는 단순 생성 순서가 아니라 같은 문서 또는 보고서 근거 단위로 묶고, 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다.
 
-WPF 앱은 로컬 `notifications` 테이블과 알림 창으로 문서, FieldComment, 작업순서 이벤트 알림을 확인하고 읽음 처리한다. 서버 URL과 로그인이 있으면 `채널함`, `채널 관리`, `인수인계 확인 현황` 화면에서 FastAPI 채널/인수인계 API를 직접 호출한다. 채널함은 내 채널, 사용자별 알림, 인수인계 목록을 조회하고 메시지 읽음, 내 receipt 상태 변경, 원천 링크 복사, 후속 FieldComment 생성을 수행한다. 주 창이 열려 있는 동안 세션 메모리의 마지막 cursor 다음 알림을 기본 15초 간격으로 조회하고, 연결 실패 시 최대 120초까지 backoff하며 401이면 중단한다. 새 주 창 세션은 cursor 0부터 최대 100건씩 빠르게 따라잡는다. 채널 관리는 채널 생성, 멤버 추가/제외를 제공하고, 인수인계 확인 현황은 수신자별 receipt 상태 변경과 후속 FieldComment 생성을 제공한다. `admin`, `system-admin`은 `승인 단말` 화면에서 서버 단말 목록·상세·마지막 접속을 조회하고 등록, 정보/상태 변경, 교체를 수행한다.
+과거 구 `create` action과 FieldNote/첨부가 남은 FAILED 큐는 일반 재시도가 현재 계약으로 자동 해석하지 않는다. `FlowNote.Windows.SyncMigrationTool`이 먼저 SQLite read-only dry-run으로 전체 FAILED 큐를 배타적으로 분류하고 안정된 plan hash를 만든다. 운영자가 plan hash와 row ID를 명시해 승인하면 전환 가능한 항목만 현재 action의 별도 `PENDING` 큐로 만들고 `server_sync_migration_audit`에 원천 snapshot과 연결을 남긴다. 기존 큐, 원천 행과 파일은 수정·삭제하지 않는다.
+
+WPF 앱은 로컬 `notifications` 테이블과 알림 창으로 문서, FieldComment, 작업순서 이벤트 알림을 확인하고 읽음 처리한다. 서버 URL과 로그인이 있으면 `채널함`, `채널 관리`, `인수인계 확인 현황` 화면에서 FastAPI 채널/인수인계 API를 직접 호출한다. 채널함은 내 채널, 사용자별 알림, 인수인계 목록을 조회하고 메시지 읽음, 내 receipt 상태 변경, 원천 링크 복사, 후속 FieldComment 생성을 수행한다. 주 창이 열려 있는 동안 `server_notification_cursors`의 서버 scope·사용자별 마지막 성공 cursor 다음 알림을 기본 15초 간격으로 조회하고, `server_notification_messages`의 `message_id`로 멱등 처리한 뒤 같은 트랜잭션에서 cursor를 전진시킨다. 연결 실패 시 최대 120초까지 backoff하며 401이면 cursor를 유지한 채 중단한다. 저장 row가 없는 사용자는 cursor 0부터 최대 100건씩 빠르게 따라잡고 한글 진행 상태를 표시한다. 서버 cursor 역행은 자동 복구하지 않고 polling을 중지하며 `admin`, `system-admin`의 확인 동작만 현재 scope·사용자의 cursor 초기화를 허용한다. 채널 관리는 채널 생성, 멤버 추가/제외를 제공하고, 인수인계 확인 현황은 수신자별 receipt 상태 변경과 후속 FieldComment 생성을 제공한다. `admin`, `system-admin`은 `승인 단말` 화면에서 서버 단말 목록·상세·마지막 접속을 조회하고 등록, 정보/상태 변경, 교체를 수행한다.
 
 Android 앱은 현장 단말 입력을 우선한다. 현장 작업자는 승인된 `deviceId`로 로그인하고 공개 문서 목록/상세 메타데이터 조회, FieldComment와 사진 기록, 신호등식 상태 기록을 수행한다. 상세 화면은 제목·설명·상태·공개 버전 ID를 표시하고 FieldComment 입력에 문서/버전 ID를 연결하며, 문서 파일 본문을 내려받거나 렌더링하지 않는다. Activity가 전경인 동안 채널 알림을 기본 15초 간격으로 polling하고, 연결 실패 시 최대 120초까지 backoff한 뒤 사용자별 마지막 cursor부터 재개한다. 인수인계는 같은 알림 스트림과 서버 인수인계 API에서 조회하고 읽음 또는 수신확인을 남긴다. Android의 로컬 저장은 네트워크 불안정 구간의 FieldComment와 사진 첨부 임시 보관, 재전송, 서버 원천 ID 연결 범위로 제한하고, 장기 기준 데이터는 FastAPI 서버에 남긴다. outbox는 `PENDING`, `FAILED` 항목을 최대 12회 자동 시도하며 15초부터 지수 backoff를 적용해 최대 15분 간격으로 재전송한다. 로그인, 문서, 알림, 인수인계 API 실패는 서버 원문을 화면에 직접 표시하지 않고 연결 실패·시간 초과와 HTTP 상태를 현장 사용자가 조치할 수 있는 한글 안내로 변환한다.
 
@@ -80,6 +82,7 @@ AIQuery (safety/audit skeleton, external call disabled by default)
 
 ServerSyncQueue
   -> server_id_mappings
+  -> ServerSyncMigrationAudit -> approved replacement ServerSyncQueue
 ```
 
 `TerminalDevice`는 Android 현장 단말 승인 기준이며 `ACTIVE`, `INACTIVE`, `RETIRED` 상태를 갖는다. Android 로그인은 `ACTIVE` 단말만 허용하고 성공 시 마지막 접속 시각과 세션의 단말 ID를 남긴다. 비활성화, 폐기, 교체는 기존 활성 세션을 폐기하며 운영 변경은 `activity_history`로 추적한다.
@@ -110,7 +113,7 @@ FieldComment는 문서 파일 개정이 아니라 현장 원천 기록이다. �
 
 Windows와 Android의 알림은 장기적으로 개인 메신저가 아니라 업무 채널 모델로 다룬다. 채널은 라인, 설비, 공정, 작업조, 작업내역, 인수인계 같은 운영 단위에 연결된다. 사용자는 자신이 속한 채널의 문서 공개/변경, FieldComment 등록/검토 요청, 작업순서 변경, 인수인계 등록/확인 요청 알림을 받는다.
 
-현재 구현된 알림은 WPF 로컬 `notifications`, 서버 작업순서 알림 후보(`work_sequence_notification_candidates`), FastAPI 공통 채널 모델(`notification_channels`, `notification_channel_members`, `channel_messages`)이다. WPF는 문서, FieldComment, 작업순서 이벤트 알림을 로컬 DB에 저장하고 읽음 처리하며, 서버 채널 화면에서는 내 채널/메시지/인수인계를 조회하고 읽음/수신 확인을 남긴다. Windows와 Android는 전경에서 `/api/v1/notifications?afterId={cursor}`를 polling하고 응답 처리가 끝난 뒤에만 cursor를 전진시킨다. Android는 사용자별 cursor를 `SharedPreferences`에 보존하고 현재 사용자 receipt를 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`로 변경한다. WPF의 polling cursor는 현재 주 창 세션 메모리에만 있다. FastAPI는 채널 멤버십, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음 처리, 인수인계와 수신 확인 API를 제공한다.
+현재 구현된 알림은 WPF 로컬 `notifications`, `server_notification_cursors`, `server_notification_messages`, 서버 작업순서 알림 후보(`work_sequence_notification_candidates`), FastAPI 공통 채널 모델(`notification_channels`, `notification_channel_members`, `channel_messages`)이다. WPF는 문서, FieldComment, 작업순서 이벤트 알림을 로컬 DB에 저장하고 읽음 처리하며, 서버 채널 화면에서는 내 채널/메시지/인수인계를 조회하고 읽음/수신 확인을 남긴다. Windows와 Android는 전경에서 `/api/v1/notifications?afterId={cursor}`를 polling하고 응답 처리가 끝난 뒤에만 cursor를 전진시킨다. Android는 사용자별 cursor를 `SharedPreferences`에 보존하고 현재 사용자 receipt를 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`로 변경한다. WPF는 서버 scope·사용자별 cursor와 처리한 `message_id`를 SQLite에 영구 보존한다. FastAPI는 채널 멤버십, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음 처리, 인수인계와 수신 확인 API를 제공한다.
 
 채널 메시지는 자유 대화를 무제한 보관하는 기능이 아니다. 각 메시지는 가능한 한 `document_id`, `field_comment_id`, `work_record_id`, `work_sequence_item_id`, `handover_id` 같은 원천 ID를 가져야 하며, 이후 보고서와 AI 검색 후보가 원문 근거로 역추적할 수 있어야 한다. 인수인계는 채널에 등록되는 업무 이벤트이며, 수신자는 확인, 보류, 후속 FieldComment 작성 같은 상태를 남길 수 있다.
 

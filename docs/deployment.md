@@ -68,7 +68,7 @@ C:\FlowNote\
 - WPF 앱은 MSI를 기준 패키징 방식으로 사용한다. MSIX는 서명, 패키지 아이덴티티, 앱 컨테이너 제약을 현장별로 더 검토해야 하므로 초기 운영 배포 기준에서 제외한다.
 - MSI는 WPF 실행에 필요한 앱 파일만 설치한다. 로컬 SQLite와 `Files\`는 설치 폴더 아래에 두지 않고 `FLOWNOTE_LOCAL_DATA_DIR`가 가리키는 폴더에 둔다.
 - Android 앱은 승인된 현장 단말용 설치 패키지로 배포한다. 개인 휴대폰 기본 배포와 일반 웹 브라우저 접속은 기준이 아니다.
-- Windows와 Android의 채널 알림과 인수인계 확인은 사내망 HTTPS 전경 polling을 초기 전달 방식으로 사용한다. 기본 주기는 15초이며 연결 실패 시 최대 120초까지 backoff한다. Android는 사용자별 cursor를 로컬 설정에 보존하고, WPF는 열린 주 창 세션의 cursor에서 재개하되 새 창 세션은 0부터 따라잡는다. HTTP 401이면 polling을 중단하고 재로그인을 안내한다. Android 백그라운드 전달은 운영 단말의 Doze·배터리·네트워크 정책 검증 후 별도로 결정한다.
+- Windows와 Android의 채널 알림과 인수인계 확인은 사내망 HTTPS 전경 polling을 초기 전달 방식으로 사용한다. 기본 주기는 15초이며 연결 실패 시 최대 120초까지 backoff한다. Android는 사용자별 cursor를 로컬 설정에 보존하고, WPF는 서버 scope·사용자별 마지막 성공 cursor와 처리한 `message_id`를 로컬 SQLite에 보존해 앱 재시작 후 이어간다. HTTP 401이면 polling을 중단하고 cursor를 전진시키지 않은 채 재로그인을 안내한다. Android 백그라운드 전달은 운영 단말의 Doze·배터리·네트워크 정책 검증 후 별도로 결정한다.
 - FastAPI 서버는 Windows 작업 스케줄러의 부팅 시 자동 실행 작업으로 등록한다. Python/FastAPI 프로세스를 Windows 서비스로 직접 등록하려면 별도 서비스 래퍼가 필요하므로, 초기 기준은 Windows 기본 기능만 사용하는 작업 스케줄러 방식으로 고정한다.
 - 서버 작업 이름은 기본 `\FlowNote\FlowNoteApi`다. 실행 래퍼는 `C:\FlowNote\Server\scripts\run-flownote-server.ps1`, 로그는 `C:\FlowNote\Server\logs`에 둔다.
 

@@ -197,6 +197,10 @@ public sealed record ServerUserNotificationResponse : ServerChannelMessageRespon
     public string ReadLabel => Read ? "읽음" : "읽지 않음";
 }
 
+public sealed record ServerNotificationPage(
+    IReadOnlyList<ServerUserNotificationResponse> Items,
+    long ServerCursor);
+
 public sealed record ServerHandoverCreateRequest
 {
     [JsonPropertyName("channelId")]

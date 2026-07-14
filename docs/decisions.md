@@ -182,10 +182,19 @@
 - 서버 PC와 승인된 설치형 단말이 같은 사내망에서 동작하는 초기 배포는 HTTP polling을 1차 알림 전달 방식으로 사용한다.
 - `/api/v1/notifications`의 단조 증가 `cursor`와 `afterId`를 사용해 마지막 성공 위치 다음부터 오름차순으로 조회한다. 클라이언트는 `message_id`와 cursor를 멱등 키로 사용하며, cursor는 응답을 처리한 뒤에만 전진시킨다.
 - Windows와 Android 전경 상태는 기본 15초 주기로 확인한다. 연결 실패 시 30초, 60초, 최대 120초까지 지수 백오프하고 성공 즉시 15초로 복귀한다. 서버 또는 네트워크 복구 뒤에는 현재 보유한 마지막 cursor부터 재개한다.
-- HTTP 401이면 polling을 중지하고 재로그인을 요구한다. Android는 사용자별 cursor를 `SharedPreferences`에 보존해 다른 사용자와 공유하지 않는다. 현재 WPF는 주 창 세션 메모리에만 cursor를 유지하므로 새 창 세션은 0부터 다시 따라잡으며, 사용자별 영구 보존은 후속 보강 대상이다.
+- HTTP 401이면 polling을 중지하고 재로그인을 요구한다. Android는 사용자별 cursor를 `SharedPreferences`에 보존해 다른 사용자와 공유하지 않는다. WPF 영구 보존 정책은 아래 2026-07-14 결정을 따른다.
 - Windows는 창이 열린 동안만, Android는 Activity가 전경인 동안만 15초 polling한다. 비활성·종료 상태에는 즉시 polling을 중단한다.
 - Android 백그라운드 확인은 1차 구현에 상시 서비스를 두지 않는다. WorkManager를 도입하더라도 현장 단말 정책이 허용하는 네트워크 연결 조건의 제한된 주기 작업으로만 사용하며, Android 최소 주기·Doze·배터리 최적화로 즉시성이 보장되지 않음을 운영 문서에 표시한다.
 - WebSocket은 프록시, 재연결, 서버 fan-out 운영 기준이 마련된 뒤의 사내망 저지연 선택지다. FCM 등 외부 push는 인터넷 연결과 외부 전송 보안 정책을 별도 승인한 현장의 후속 선택지다.
+
+## 2026-07-14. WPF 서버 scope·사용자별 알림 cursor 영구 보존
+
+- WPF는 정규화한 서버 base URL과 서버 `user_id` 조합을 키로 `server_notification_cursors`에 마지막 성공 cursor와 갱신 시각을 저장한다. 사용자 전환과 다른 서버 URL은 cursor를 공유하지 않으며 로그아웃은 row를 삭제하지 않는다.
+- 처리한 공개 `message_id`는 `server_notification_messages`에 같은 scope와 사용자별로 유일하게 저장한다. 응답 항목 처리, `message_id` 기록과 cursor 전진은 한 SQLite 트랜잭션으로 완료하며 실패하면 모두 rollback한다.
+- FastAPI는 `X-FlowNote-Notification-Cursor`에 서버 high-water cursor를 반환한다. 이 값이 로컬 성공 cursor보다 낮으면 서버 DB 복구/초기화 의심 상태로 보고 polling을 중단하며 자동으로 cursor를 낮추지 않는다.
+- cursor 0 초기화는 서버 복구를 확인한 `admin`, `system-admin`이 WPF 경고 창에서 명시적으로 확인한 현재 서버 scope·현재 사용자에만 적용한다. 확인 관리자와 시각을 남기고 다른 사용자·서버 row는 유지한다.
+- 로컬 DB 복구 후 row가 없거나 신규 사용자인 경우 0부터 따라잡는다. 이 과정은 새 알림으로 중복 표시하지 않고 `이전 알림을 재확인 중입니다`와 cursor 진행 위치를 한글로 안내한다.
+- 401은 polling 중지와 재로그인 요구를 유지하며 cursor를 전진시키지 않는다.
 
 ## 2026-07-09. Android 현장 단말 최소 앱
 

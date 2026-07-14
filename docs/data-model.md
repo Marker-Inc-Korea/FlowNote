@@ -21,6 +21,8 @@
 | `tag_definitions` | 태그 사전 |
 | `document_tags` | 문서-태그 연결 |
 | `notifications` | 문서/FieldComment/작업순서 알림 |
+| `server_notification_cursors` | WPF 서버 scope·사용자별 마지막 성공 알림 cursor, 서버 관측 cursor, 초기 따라잡기/역행 상태, 갱신·관리자 초기화 정보 |
+| `server_notification_messages` | WPF 서버 scope·사용자별 처리 완료 `message_id` 멱등 이력 |
 | `work_sequence_boards` | 작업순서 보드 |
 | `work_sequence_items` | 작업순서 항목과 상태 |
 | `work_sequence_change_history` | 작업순서 변경 이력 |
@@ -28,7 +30,7 @@
 | `report_sources` | 로컬 보고서 문서가 근거로 삼은 FieldComment, 문서, 작업순서 항목/이력 |
 | `server_sync_queue` | 서버 전송 대기/실패/성공 상태 |
 | `server_id_mappings` | 로컬 ID와 서버 ID 매핑 |
-| `server_sync_migration_audit` | 보존 FAILED 큐의 승인 전환 감사. 원천 큐/ID/action/idempotency key와 신규 큐/ID/action/idempotency key, 승인자, plan hash, 원천 JSON snapshot, 구 명칭을 무손실 연결 |
+| `server_sync_migration_audit` | 보존 FAILED 큐의 승인 전환 감사. 원천 큐/ID/action/idempotency key와 신규 큐/ID/action/idempotency key, 승인자, plan hash, 원천 JSON snapshot, 구 명칭을 무손실 연결. dry-run이나 일반 앱 초기화에서는 만들지 않고 승인 실행 시 필요한 경우 생성 |
 
 기존 공통 SQLite에는 FieldComment 명칭 전환 전에 만들어진 호환/잔존 테이블도 남아 있을 수 있다.
 

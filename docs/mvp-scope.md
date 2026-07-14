@@ -47,7 +47,7 @@ MVP의 성공 기준은 AI가 답변하는 것이 아니라 현장 문서와 현
 - CAD 원본 직접 뷰어와 HWP 고급 미리보기
 - Android 문서 파일 본문 다운로드·미리보기와 인수인계 신규 작성 화면
 
-Windows와 Android의 업무 채널 알림, 인수인계 확인, FieldComment/작업순서 이벤트 알림은 제외 범위가 아니다. 현재 코드는 서버 API, 기본 클라이언트 화면, 15초 전경 polling, 최대 120초 연결 실패 backoff와 읽음/수신 확인까지 구현되어 있다. Android는 사용자별 cursor를 보존하고 WPF는 열린 주 창 세션에서만 cursor를 유지한다. WPF cursor 영구 보존, 백그라운드 전달과 현장별 단말 운영 정책은 후속 고도화 대상이다.
+Windows와 Android의 업무 채널 알림, 인수인계 확인, FieldComment/작업순서 이벤트 알림은 제외 범위가 아니다. 현재 코드는 서버 API, 기본 클라이언트 화면, 15초 전경 polling, 최대 120초 연결 실패 backoff와 읽음/수신 확인까지 구현되어 있다. Android는 사용자별 cursor를 보존하고 WPF는 서버 scope·사용자별 cursor와 처리한 `message_id`를 로컬 SQLite에 보존한다. 백그라운드 전달과 현장별 단말 운영 정책은 후속 고도화 대상이다.
 
 ## 후속 계층 착수 기준
 

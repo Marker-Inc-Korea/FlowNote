@@ -155,6 +155,7 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 - `afterId`는 마지막으로 처리 완료한 응답 항목의 정수 `cursor`다. 생략하면 최신순 목록, 지정하면 `cursor > afterId`인 항목을 cursor 오름차순으로 반환한다.
 - `limit`은 1~500이고 기본값은 100이다. `unreadOnly` 기본값은 `false`이며 필터 적용 후 limit을 계산한다.
 - 응답의 `cursor`는 서버 `channel_messages`의 단조 증가 식별자이고 `message_id`는 사용자 표시와 읽음 처리의 공개 멱등 키다. 생성 시각은 cursor 경계로 사용하지 않는다.
+- 응답 헤더 `X-FlowNote-Notification-Cursor`는 서버 `channel_messages` 전체의 현재 high-water cursor이며 메시지가 없으면 `0`이다. 클라이언트는 마지막 page를 모두 처리한 뒤 이 위치까지 전진하고, 저장값보다 낮은 헤더는 서버 DB 복구/초기화 의심 상태로 다룬다.
 - 응답을 모두 로컬 처리한 뒤 마지막 cursor를 저장한다. 응답 도중 실패하면 기존 cursor로 다시 조회하고 `message_id`로 이미 표시한 항목을 제거한다.
 - 인수인계 등록은 `message_type = HANDOVER`, `source_id = handover_id`인 채널 메시지를 함께 만들므로 같은 알림 증분 스트림으로 전달된다. receipt 갱신은 동일 상태와 note를 반복 요청해도 추가 상태 변경 이력을 만들지 않는다.
 - 멤버십이 `ACTIVE`인 현재 사용자 채널만 반환한다. 권한 없는 채널 및 다른 사용자의 알림은 cursor 범위에 있어도 반환하지 않는다.
