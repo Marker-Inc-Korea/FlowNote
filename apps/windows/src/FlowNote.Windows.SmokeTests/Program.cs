@@ -15,7 +15,9 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using Microsoft.Data.Sqlite;
 
@@ -26,7 +28,10 @@ var databasePath = FlowNoteLocalDatabase.DefaultDatabasePath;
 Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
 var runStartedAt = DateTime.Now;
 var runStamp = runStartedAt.ToString("HHmmssfff");
-var runId = runStartedAt.ToString("yyyyMMddHHmmssfff");
+var requestedRunId = Environment.GetEnvironmentVariable("FLOWNOTE_SMOKE_RUN_ID");
+var runId = NormalizeRunId(requestedRunId, runStartedAt.ToString("yyyyMMddHHmmssfff"));
+
+Console.WriteLine($"Integrated smoke run: id={runId}, startedAt={runStartedAt:O}, database={databasePath}");
 
 try
 {
@@ -754,6 +759,70 @@ try
         "today photo document must be registered and listed");
     Console.WriteLine(
         $"Today document test: folder={todayFolderName}, handover={todayHandoverFile}, photo={todayPhotoFile}");
+
+    var legacyMigrationSyncId = $"sync-legacy-smoke-{runId}";
+    using (var migrationSeedConnection = services.Database.OpenConnection())
+    {
+        ExecuteNonQuery(
+            migrationSeedConnection,
+            """
+            INSERT INTO server_sync_queue (
+                sync_id, entity_type, entity_id, action, local_document_id, local_version_no,
+                idempotency_key, status, attempt_count, last_error, created_at
+            )
+            VALUES (
+                $sync_id, 'document', $document_id, 'create', $document_id, 1,
+                $legacy_key, 'FAILED', 1, '통합 사람형 스모크 구 큐 전환 대상', $created_at
+            )
+            ON CONFLICT(sync_id) DO NOTHING;
+            """,
+            ("$sync_id", legacyMigrationSyncId),
+            ("$document_id", todayHandoverDocument.DocumentId),
+            ("$legacy_key", $"legacy-smoke:{runId}"),
+            ("$created_at", DateTime.UtcNow.ToString("O")));
+    }
+    var migrationService = new LegacySyncMigrationService(databasePath);
+    var migrationPlan = migrationService.CreateDryRunPlan();
+    var migrationPlanItem = migrationPlan.Items.Single(item => item.SourceSyncId == legacyMigrationSyncId);
+    Require(
+        migrationPlanItem.Category == LegacySyncMigrationCategories.LegacyCreate &&
+        migrationPlanItem.MigrationState == LegacySyncMigrationStates.AutomaticallyConvertible,
+        "integrated legacy queue dry-run should classify this run's document create row as automatically convertible");
+    var migrationResult = migrationService.ExecuteApproved(
+        [migrationPlanItem.SourceRowId],
+        $"system-admin:{runId}",
+        migrationPlan.PlanHash);
+    Require(
+        migrationResult.ApprovedCount == 1 &&
+        ((migrationResult.CreatedQueueCount == 1 && migrationResult.CreatedAuditCount == 1) ||
+         (migrationResult.AlreadyMigratedCount == 1 && migrationResult.CreatedQueueCount == 0 && migrationResult.CreatedAuditCount == 0)),
+        "approved legacy queue transition should create one target/audit pair or resume the same run idempotently");
+    var migrationReplayPlan = migrationService.CreateDryRunPlan();
+    var migrationReplay = migrationService.ExecuteApproved(
+        [migrationPlanItem.SourceRowId],
+        $"system-admin:{runId}",
+        migrationReplayPlan.PlanHash);
+    Require(
+        migrationReplay.ApprovedCount == 1 && migrationReplay.AlreadyMigratedCount == 1 &&
+        migrationReplay.CreatedQueueCount == 0 && migrationReplay.CreatedAuditCount == 0,
+        "repeating an approved legacy queue transition should be idempotent without deleting the FAILED source row");
+    using (var migrationVerificationConnection = services.Database.OpenConnection())
+    {
+        Require(
+            ScalarLong(
+                migrationVerificationConnection,
+                "SELECT COUNT(*) FROM server_sync_queue WHERE sync_id = $sync_id AND status = 'FAILED';",
+                ("$sync_id", legacyMigrationSyncId)) == 1,
+            "legacy migration should preserve this run's FAILED source queue row");
+        Require(
+            ScalarLong(
+                migrationVerificationConnection,
+                "SELECT COUNT(*) FROM server_sync_migration_audit WHERE source_queue_id = $source_queue_id;",
+                ("$source_queue_id", migrationPlanItem.SourceRowId)) == 1,
+            "legacy migration should preserve exactly one audit row for this run's source queue");
+    }
+    Console.WriteLine(
+        $"Legacy queue migration smoke: run={runId}, sourceSync={legacyMigrationSyncId}, planHash={migrationPlan.PlanHash}, replay={migrationReplay.AlreadyMigratedCount}");
 
     var existingPastDateDocuments = ListExistingPastDateDocuments(
         services,
@@ -1751,6 +1820,8 @@ try
         var serverAuth = new FlowNoteServerAuthClient(serverHttpClient);
         var serverDocuments = new FlowNoteServerDocumentClient(serverHttpClient);
         var serverChannels = new FlowNoteServerChannelClient(serverHttpClient);
+        var serverAccounts = new FlowNoteServerAccountClient(serverHttpClient);
+        var serverTerminals = new FlowNoteServerTerminalDeviceClient(serverHttpClient);
 
         ServerLoginResponse serverLogin;
         {
@@ -1773,6 +1844,94 @@ try
             ?? throw new InvalidOperationException("server /auth/me should accept the login bearer token");
         Require(currentServerUser.UserId == serverLogin.UserId, "server /auth/me should return the authenticated user id");
         Require(currentServerUser.Username == serverLogin.Username, "server /auth/me should return the authenticated username");
+
+        {
+            var accountSuffix = runStartedAt.ToString("yyyyMMddHHmmssfff");
+            var viewerUsername = $"smoke-viewer-{accountSuffix}";
+            var temporaryViewerPassword = $"Temporary-{accountSuffix}!";
+            var changedViewerPassword = $"Changed-{accountSuffix}!";
+            var createdViewer = await serverAccounts.CreateAsync(
+                new ServerAccountCreateRequest(
+                    viewerUsername,
+                    $"통합 스모크 viewer {runId}",
+                    "viewer",
+                    temporaryViewerPassword,
+                    $"통합 사람형 스모크 계정 발급 run={runId}"));
+            Require(
+                createdViewer.Account.MustChangePassword && createdViewer.Account.Role == "viewer",
+                "server account lifecycle smoke should create a viewer with forced password change");
+
+            using var viewerHttpClient = FlowNoteServerApiEnvironment.CreateHttpClient(
+                serverSmokeBaseUrl,
+                TimeSpan.FromSeconds(20))
+                ?? throw new InvalidOperationException("viewer lifecycle smoke requires the configured server URL");
+            var viewerAuth = new FlowNoteServerAuthClient(viewerHttpClient);
+            var firstViewerLogin = await viewerAuth.TryLoginAsync(viewerUsername, temporaryViewerPassword)
+                ?? throw new InvalidOperationException("new viewer should log in with the temporary password");
+            Require(firstViewerLogin.MustChangePassword, "new viewer login should require password change");
+            viewerHttpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", firstViewerLogin.AccessToken);
+            Require(
+                await viewerAuth.TryGetCurrentUserAsync() is null,
+                "temporary-password viewer session should be blocked from normal API use");
+            Require(
+                await viewerAuth.TryChangePasswordAsync(temporaryViewerPassword, changedViewerPassword),
+                "temporary-password viewer should be able to change the password");
+            Require(
+                await viewerAuth.TryGetCurrentUserAsync() is null,
+                "password change should revoke the temporary-password viewer session");
+
+            viewerHttpClient.DefaultRequestHeaders.Authorization = null;
+            var activeViewerLogin = await viewerAuth.TryLoginAsync(viewerUsername, changedViewerPassword)
+                ?? throw new InvalidOperationException("viewer should log in again with the changed password");
+            Require(!activeViewerLogin.MustChangePassword, "changed viewer password should clear the forced-change state");
+
+            var androidDeviceId = $"android-smoke-{accountSuffix}";
+            var approvedAndroid = await serverTerminals.CreateAsync(new ServerTerminalDeviceCreateRequest
+            {
+                DeviceId = androidDeviceId,
+                DeviceName = $"승인 Android 통합 스모크 {runId}",
+                DeviceMode = "field",
+                LocationCode = "line-a",
+                GroupId = "group-line-a",
+                Status = "ACTIVE"
+            });
+            Require(approvedAndroid.Status == "ACTIVE", "integrated smoke Android terminal should be explicitly approved");
+            viewerHttpClient.DefaultRequestHeaders.Authorization = null;
+            using var androidLoginResponse = await viewerHttpClient.PostAsJsonAsync(
+                "api/v1/auth/login",
+                new { username = viewerUsername, password = changedViewerPassword, deviceId = androidDeviceId });
+            Require(androidLoginResponse.IsSuccessStatusCode, "approved Android terminal should receive a server session");
+            var androidLogin = await androidLoginResponse.Content.ReadFromJsonAsync<ServerLoginResponse>()
+                ?? throw new InvalidOperationException("approved Android terminal login should return tokens");
+
+            viewerHttpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", activeViewerLogin.AccessToken);
+            Require(
+                await viewerAuth.TryGetCurrentUserAsync() is not null,
+                "active viewer session should work before account deactivation");
+            var disabledViewer = await serverAccounts.UpdateAsync(
+                createdViewer.Account.UserId,
+                new ServerAccountUpdateRequest(
+                    createdViewer.Account.DisplayName,
+                    createdViewer.Account.Role,
+                    "DISABLED",
+                    $"통합 사람형 스모크 세션 차단 run={runId}"));
+            Require(
+                disabledViewer.Account.Status == "DISABLED" && disabledViewer.SessionsRevoked >= 2,
+                "disabling the viewer should revoke Windows and approved Android sessions in one lifecycle flow");
+            Require(
+                await viewerAuth.TryGetCurrentUserAsync() is null &&
+                await viewerAuth.TryRefreshAsync(activeViewerLogin.RefreshToken) is null,
+                "disabled viewer access and refresh tokens should be rejected immediately");
+            viewerHttpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", androidLogin.AccessToken);
+            Require(
+                await viewerAuth.TryGetCurrentUserAsync() is null,
+                "disabled viewer's approved Android session should also be rejected immediately");
+            Console.WriteLine(
+                $"Server account/device lifecycle smoke: run={runId}, actor={serverLogin.UserId}, viewer={createdViewer.Account.UserId}, device={androidDeviceId}, revoked={disabledViewer.SessionsRevoked}");
+        }
 
         var authExpiredDocument = services.Documents.RegisterDocument(
             currentDocumentFolder.Id,
@@ -3975,8 +4134,24 @@ try
                 aiEvaluation.SourceCoverageComplete &&
                 aiEvaluation.Cases.All(item => item.Passed),
                 "AI ground-truth evaluation should preserve candidate identity, ranking, four-source coverage, and insufficient evidence classification");
+            using var blockedAiResponse = await serverHttpClient.PostAsJsonAsync(
+                "api/v1/ai/queries",
+                new
+                {
+                    purpose = "EVIDENCE_SUMMARY",
+                    query = $"통합 사람형 스모크 외부 전송 차단 확인 run={runId}",
+                    candidateIds = expectedCompositeEvidence.Select(item => item.CandidateId).ToArray(),
+                    responseStorageMode = "DO_NOT_STORE"
+                });
+            Require(
+                blockedAiResponse.StatusCode == HttpStatusCode.ServiceUnavailable,
+                "default-disabled external AI call should be blocked after ground-truth evaluation remains available");
+            using var blockedAiPayload = JsonDocument.Parse(await blockedAiResponse.Content.ReadAsStringAsync());
+            Require(
+                blockedAiPayload.RootElement.GetProperty("error").GetProperty("code").GetString() == "AI_EXTERNAL_CALL_DISABLED",
+                "AI provider gate should expose the default-disabled ground truth code without calling a provider");
             Console.WriteLine(
-                $"AI search quality server smoke: candidates={aiRebuild.CandidateCount}, reviewed={readiness.ReviewedStatusCount}, missing={readiness.MissingReviewedCount}, report={aiServerReport.ReportId}, evaluation={aiEvaluation.RunId}, providerReady={aiEvaluation.ProviderStartReady}");
+                $"AI search quality server smoke: run={runId}, candidates={aiRebuild.CandidateCount}, reviewed={readiness.ReviewedStatusCount}, missing={readiness.MissingReviewedCount}, report={aiServerReport.ReportId}, evaluation={aiEvaluation.RunId}, providerReady={aiEvaluation.ProviderStartReady}, providerGate=AI_EXTERNAL_CALL_DISABLED");
         }
 
         {
@@ -4057,7 +4232,37 @@ try
     var deleted = services.Folders.DeleteFolder(currentDocumentFolder.Id);
     Require(!deleted, "current system document folder should not be deleted");
 
-    Console.WriteLine("FlowNote Windows smoke tests passed.");
+    using (var integrityConnection = services.Database.OpenConnection())
+    {
+        Require(
+            ScalarString(integrityConnection, "PRAGMA quick_check;") == "ok",
+            "shared WPF SQLite quick_check should be ok after the integrated smoke");
+        Require(
+            ScalarLong(integrityConnection, "SELECT COUNT(*) FROM pragma_foreign_key_check;") == 0,
+            "shared WPF SQLite foreign_key_check should return zero rows after the integrated smoke");
+        Require(
+            ScalarLong(
+                integrityConnection,
+                """
+                SELECT COUNT(*) FROM (
+                    SELECT idempotency_key FROM server_sync_queue
+                    GROUP BY idempotency_key HAVING COUNT(*) > 1
+                );
+                """) == 0,
+            "shared WPF SQLite should have no duplicate sync idempotency keys");
+        Require(
+            ScalarLong(
+                integrityConnection,
+                """
+                SELECT COUNT(*) FROM (
+                    SELECT entity_type, local_id, local_version_no FROM server_id_mappings
+                    GROUP BY entity_type, local_id, local_version_no HAVING COUNT(*) > 1
+                );
+                """) == 0,
+            "shared WPF SQLite should have no duplicate server id mappings");
+    }
+
+    Console.WriteLine($"FlowNote Windows integrated smoke tests passed: run={runId}, quick_check=ok, foreign_key_check=0, mapping_duplicates=0, idempotency_duplicates=0");
     Console.WriteLine($"Smoke test SQLite DB kept at: {databasePath}");
     Console.WriteLine($"Smoke test Korean PDF kept at: {koreanPdfPath}");
 }
@@ -4112,6 +4317,18 @@ static async Task<bool> IsServerAvailableAsync(HttpClient httpClient)
     {
         return false;
     }
+}
+
+static string NormalizeRunId(string? requestedRunId, string fallback)
+{
+    if (string.IsNullOrWhiteSpace(requestedRunId))
+    {
+        return fallback;
+    }
+
+    var normalized = new string(requestedRunId.Trim().Where(character =>
+        char.IsLetterOrDigit(character) || character is '-' or '_' or '.').ToArray());
+    return string.IsNullOrWhiteSpace(normalized) ? fallback : normalized[..Math.Min(normalized.Length, 96)];
 }
 
 static long ScalarLong(SqliteConnection connection, string sql, params (string Name, object Value)[] parameters)

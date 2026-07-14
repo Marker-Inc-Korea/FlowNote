@@ -126,6 +126,8 @@ Useful settings:
 - `FLOWNOTE_AI_MODEL`: default `UNCONFIGURED`
 - `FLOWNOTE_AI_CUSTOMER_SCOPE`: default `DEFAULT`
 - `FLOWNOTE_AI_SITE_SCOPE`: default `DEFAULT`
+- `FLOWNOTE_AI_PROVIDER_EXCERPT_MAX_CHARS`: default `600`, constrained to `100`-`4000`
+- `FLOWNOTE_AI_PROVIDER_MAX_SOURCES`: default `12`, constrained to `1`-`100`
 
 ## Verification
 
@@ -134,6 +136,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The current collected FastAPI test count is 92. The fixed collection baseline in `scripts/verify-preserved-tests.ps1` is also 92.
+The current collected FastAPI test count is 96. The fixed collection baseline in `scripts/verify-preserved-tests.ps1` is also 96.
 
 Test SQLite DBs, logs, upload files, and generated sample files are preserved unless the user explicitly asks to delete them.

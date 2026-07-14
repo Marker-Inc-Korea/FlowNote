@@ -10,15 +10,17 @@
 .\scripts\verify-preserved-tests.ps1
 ```
 
-스크립트는 다음 순서로 실행한다.
+스크립트는 기본 `integrated-smoke-yyyyMMdd-HHmmss` 실행 ID를 만들며 `-RunId <값>`으로 현장 실행 ID를 지정할 수 있다. JUnit, 관리형 FastAPI, WPF, Android 로그는 Git 제외 경로 `data/local/integrated-smoke/<run-id>/`에 보존한다. 스크립트는 다음 순서로 실행한다.
 
 1. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 2. 실행 전 `git status --porcelain=v1 --untracked-files=all`에서 SQLite 예외 외 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
 3. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 96개인지 확인한다.
-4. `services/api`에서 FastAPI pytest를 실행한다.
+4. `services/api`에서 FastAPI pytest를 실행하고 실행 ID별 JUnit을 보존한다.
 5. WPF 앱을 빌드한다.
-6. WPF 스모크 테스트를 실행한다.
-7. 실행 후 `git status`를 다시 점검한다.
+6. `5184` 포트에 서버가 없으면 누적 `flownote.windows-smoke.sqlite3`와 `storage/windows-smoke`를 쓰는 FastAPI를 시작하고, 같은 실행 ID로 WPF 통합 스모크를 실행한다.
+7. Android `testDebugUnitTest`와 `assembleDebug`를 실행한다.
+8. `-RunAndroidDeviceSmoke`를 지정하면 연결된 승인 실단말이 정확히 1대인지 확인하고 `connectedDebugAndroidTest`를 실행한다.
+9. 실행 후 `git status`를 다시 점검한다.
 
 개별 명령은 다음과 같다.
 
@@ -29,8 +31,33 @@ cd services\api
 cd ..\..
 dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Windows.SmokeTests.csproj
+cd apps\android
+.\gradlew.bat testDebugUnitTest assembleDebug
+cd ..\..
 git status --short
 ```
+
+WPF 통합 스모크는 같은 실행 ID로 반장·조장·조원·문서관리자·system-admin·viewer와 승인 Android 단말을 추적한다. 오늘 사진/인수인계, 기존 과거 날짜 문서 버전 증가, FieldComment 검토 상태와 보고서 source, 채널 알림·receipt, 사용자별 cursor 재시작 복구를 연결한다. 또한 이번 실행에서 만든 구 `create` FAILED 큐를 dry-run하고 plan hash로 승인한 뒤 같은 row를 다시 승인해 target 큐·감사 중복이 생기지 않는지 확인한다. 서버 viewer는 임시 비밀번호 변경 후 Windows/승인 Android 세션을 만들고 `DISABLED` 전환 직후 access/refresh가 모두 차단되는지 확인한다. AI ground-truth 평가는 계속 통과하면서 외부 provider 호출은 `AI_EXTERNAL_CALL_DISABLED`로 차단되는지를 같은 흐름에서 검증한다.
+
+마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. 이미 실행 중인 `5184` 서버를 재사용하면 그 서버도 외부 AI 비활성·테스트 데이터 보존 설정이어야 한다. 통제된 기준선 실행은 해당 포트를 비운 상태에서 스크립트가 관리형 FastAPI를 시작하게 한다.
+
+## 2026-07-14 작업 6 통합 사람형 스모크 기준선
+
+실행 ID `integrated-smoke-20260714-agent6`으로 이 macOS 환경에서 FastAPI pytest를 최종 재실행해 96건 전체 통과를 확인했다. 정상 JUnit과 로그는 `data/local/integrated-smoke/integrated-smoke-20260714-agent6/`에 보존했다. 앞선 두 번의 로그 경로 계산 실패도 삭제하지 않았다. 그중 첫 JUnit은 저장소 한 단계 위의 로컬 `data/local`에, 두 번째 JUnit은 정상 실행 ID 폴더에 남아 있으며 최종 판정은 `fastapi-pytest-final.xml`과 `fastapi-pytest-final.log`를 기준으로 한다.
+
+공통 WPF SQLite, FastAPI 테스트 SQLite, FastAPI Windows 스모크 SQLite는 모두 `quick_check=ok`, `foreign_key_check=0`이었다. 공통 WPF SQLite의 idempotency 중복과 서버 ID 매핑 중복은 각각 0건이었다. Git 상태에는 코드·문서 변경만 표시됐고 추적 중인 금지 산출물은 0건이었다.
+
+현재 머신에는 `dotnet`, 실제 Java runtime, Android SDK/`adb`, Windows 설치 PC와 승인 Android 실단말이 없다. 따라서 새 WPF 통합 코드의 build/smoke와 Android unit/build/실단말은 이 실행에서 통과 판정을 내리지 않는다. WPF 빌드 시도는 `command not found: dotnet`, Android 시도는 `Unable to locate a Java Runtime`으로 종료됐으며 로그를 실행 ID 폴더에 보존했다.
+
+| 영역 | 이번 실행 증거 완료도 | 판정 | 남은 필수 근거 |
+| --- | ---: | --- | --- |
+| FastAPI 기준선 | 96/96 (100%) | 조건부 가능 | 운영 서버 PC의 HTTPS·인증서·백업/복구 리허설 |
+| WPF 최신 build + 통합 스모크 | 0/2 (0%) | 대기 | Windows에서 build와 관리형 FastAPI 연동 스모크 통과 |
+| Android unit + build + 실단말 | 0/3 (0%) | 대기 | JDK/SDK 환경의 unit/build와 승인 실단말 시나리오 |
+| SQLite·매핑·idempotency·Git | 4/4 (100%) | 가능 | Windows/Android 통합 실행 뒤 같은 검사 재확인 |
+| 설치 PC·실단말 교차 검증 | 0/6 (0%) | 대기 | HTTPS, 인증서, 카메라, outbox 재시도, controlled copy, 전경 polling |
+
+전체 운영 배포 판정은 **대기**다. 서버 API 코드 기준선과 현재 누적 DB 무결성은 통과했지만, 완료 기준의 독립 환경 3개 중 FastAPI만 최신 실행 증거가 있고 WPF·Android 및 실제 설치/단말 교차 근거가 없다. Windows와 Android 각 환경의 자동 검증이 통과하면 `조건부 가능`, 설치 PC와 승인 실단말의 6개 교차 항목까지 실행 ID로 대조되면 `가능`으로 올린다.
 
 2026-07-14 현재 FastAPI 코드는 96건이 수집된다. 서버 계정 수명주기 회귀에 AI provider 직전 권한·민감정보·최소 payload 게이트 회귀 4건을 추가한 결과다. 표준 PowerShell 스크립트도 같은 96건을 요구한다.
 
@@ -46,7 +73,9 @@ WPF 로컬 SQLite에 `server_notification_cursors`, `server_notification_message
 
 작업 시작 시 Git 작업 트리는 깨끗했으므로 미커밋 변경을 추정 반영하지 않고 현재 FastAPI, Windows WPF, Android 코드와 상위 제품 문서의 구현 범위를 다시 대조했다. Android 문서 본문 뷰어 미구현, WPF controlled copy 저장·SHA-256 검증, AI 근거 평가와 외부 호출 전 안전장치 골격 등 기존 구현 설명은 코드와 일치한다. 최신 Windows 코드의 보존 FAILED 큐 전환 기능은 독립 운영 문서와 데이터 모델·결정 기록에는 있었지만 Windows 문서 색인, 구현 목록, 로컬 SQLite 설명, 시스템 맵과 로드맵 연결이 부족해 해당 문서를 보강했다.
 
-이후 서버 계정 수명주기 API와 WPF 운영 화면, 강제 비밀번호 변경, 세션 폐기 코드가 추가되어 상위 제품·시스템·보안·배포·로드맵 문서를 다시 갱신했다. `services/api`에서 `pytest --collect-only -q`를 실행해 현재 코드가 92건을 수집하는 것을 확인했으며 `scripts/verify-preserved-tests.ps1`의 기준선도 92건이다. 아래 2026-07-13의 75건 수집·통과 문장은 당시 실행 기록으로 보존한다. 이번 문서 갱신에서는 전체 pytest, WPF 빌드·스모크와 Android 빌드·단위 테스트를 새로 실행하지 않았고 기존 테스트 데이터와 산출물은 삭제하지 않았다.
+이후 서버 계정 수명주기 API와 WPF 운영 화면, 강제 비밀번호 변경, 세션 폐기 코드가 추가되어 상위 제품·시스템·보안·배포·로드맵 문서를 다시 갱신했다. 그 중간 시점에는 `services/api`의 `pytest --collect-only -q`와 `scripts/verify-preserved-tests.ps1` 기준선이 92건이었다. 같은 날 AI provider 직전 권한·민감정보·최소 payload 게이트 회귀가 추가된 현재 기준선은 이 문서 상단에 적은 96건이다. 아래 2026-07-13의 75건 수집·통과 문장도 당시 실행 기록으로 보존한다. 이 중간 문서 갱신에서는 전체 pytest, WPF 빌드·스모크와 Android 빌드·단위 테스트를 새로 실행하지 않았고 기존 테스트 데이터와 산출물은 삭제하지 않았다.
+
+이번 재대조에서는 현재 코드의 설정 모델과 `.env.example`에 있는 `FLOWNOTE_AI_PROVIDER_EXCERPT_MAX_CHARS`, `FLOWNOTE_AI_PROVIDER_MAX_SOURCES`를 API 설정 목록에 반영했다. 이미 구현된 서버 계정·세션 운영 UI는 MVP 후속 후보에서 현재 구현 범위로 옮기고, 후속 항목은 실제 현장 권한·발급 절차 검증으로 좁혔다. `services/api`에서 `pytest --collect-only -q`를 다시 실행해 96건 수집을 확인했으며 전체 pytest, WPF/Android 빌드와 스모크 테스트는 새로 실행하지 않았다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
 
 ## 2026-07-14 외부 AI provider 직전 게이트 검증
 

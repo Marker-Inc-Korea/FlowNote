@@ -76,6 +76,8 @@ C:\FlowNote\
 
 WPF MSI는 Windows 배포 준비 PC와 최소 1대 이상의 설치 대상 Windows PC에서 실기 검증을 통과하기 전까지 운영 배포 확정 상태로 보지 않는다. macOS 또는 비Windows 개발 환경의 publish 성공은 사전 점검일 뿐이며, `wix`, `msiexec`, `signtool`, WebView2 Runtime, .NET Windows Desktop Runtime 조합은 Windows PC에서 별도 확인한다.
 
+2026-07-14 작업 6의 최신 통합 판정은 `대기`다. FastAPI 96건과 SQLite/Git 무결성은 통과했지만 새 WPF 통합 스모크, Android unit/build/실단말, Windows 설치 PC의 HTTPS·인증서·controlled copy가 같은 실행 ID로 아직 통과하지 않았다. 상세 수치와 증거 위치는 [검증 자동화 문서의 작업 6 기준선](./verification.md#2026-07-14-작업-6-통합-사람형-스모크-기준선)을 따른다.
+
 운영 배포 확정 전에는 다음 결과를 [검증 자동화 문서](./verification.md)에 기록한다.
 
 - framework-dependent MSI와 self-contained MSI가 모두 생성된다.
