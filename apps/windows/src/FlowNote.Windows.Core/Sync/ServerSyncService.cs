@@ -2341,7 +2341,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             message.Contains("Local field comment attachment file not found", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("Local report document file not found", StringComparison.OrdinalIgnoreCase))
         {
-            return "로컬 파일을 찾을 수 없어 서버로 전송하지 못했습니다. 문서 파일 위치를 확인한 뒤 재시도하세요.";
+            return SyncFailureMessages.LocalFileMissing;
         }
 
         return message.Replace(Environment.NewLine, " ").Trim();
@@ -2369,6 +2369,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         public const string PublishedStatusPublishMappingNotSynced = "문서 상태가 PUBLISHED이지만 공개 버전의 서버 매핑이 없습니다. 공개 큐가 SYNCED가 된 뒤 상태 변경 큐를 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string FieldCommentDependencyNotSynced = "선행 FieldComment가 아직 서버에 전송되지 않았습니다. FieldComment 항목을 먼저 동기화한 뒤 첨부 전송을 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string ReportSourceDependencyNotSynced = "보고서 근거 중 서버 ID가 확인되지 않은 항목이 있어 서버 보고서를 저장하지 못했습니다. 근거 문서, FieldComment, 작업순서 이력을 먼저 서버에 등록한 뒤 재시도하세요. 로컬 보고서 문서는 삭제되지 않습니다.";
+        public const string LocalFileMissing = "로컬 파일을 찾을 수 없어 서버로 전송하지 못했습니다. 문서 파일 위치를 확인한 뒤 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string LegacyFieldNoteUnsupported = "구 FieldNote 큐는 현재 FieldComment 동기화 대상이 아니어서 자동 전송하지 않았습니다. 관리자 검토 후 FieldComment 전환 또는 별도 마이그레이션으로 정리하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string LegacyFieldNoteAttachmentUnsupported = "구 FieldNote 첨부 큐는 현재 FieldComment 첨부 동기화 대상이 아니어서 자동 전송하지 않았습니다. 관리자 검토 후 FieldComment 첨부로 전환하거나 별도 마이그레이션으로 정리하세요. 로컬 데이터는 삭제되지 않습니다.";
         public const string LegacyCreateActionUnsupported = "구 형식 create 큐는 현재 서버 동기화 계약의 자동 전송 대상이 아닙니다. 원본 이력은 보존하고 관리자 검토 후 현재 action으로 별도 마이그레이션하세요. 서버 호출과 시도 횟수 증가는 수행하지 않았으며 로컬 데이터는 삭제되지 않습니다.";
@@ -2384,12 +2385,15 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         switch (item.Action)
         {
             case "register_document":
-                return null;
+                return GetDocumentFileHoldReason(item.EntityId, null);
 
             case "register_document_version":
-                return TryGetDocumentServerMapping(item.EntityId)?.ServerDocumentId is null
-                    ? SyncFailureMessages.DocumentDependencyNotSynced
-                    : null;
+                if (TryGetDocumentServerMapping(item.EntityId)?.ServerDocumentId is null)
+                {
+                    return SyncFailureMessages.DocumentDependencyNotSynced;
+                }
+
+                return GetDocumentFileHoldReason(item.EntityId, item.LocalVersionNo);
 
             case "publish_document_version":
                 if (TryGetDocumentServerMapping(item.EntityId)?.ServerDocumentId is null)
@@ -2450,8 +2454,13 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
             case "register_field_comment_attachment":
                 var attachment = LoadFieldCommentAttachment(item.EntityId);
-                return attachment is not null && string.IsNullOrWhiteSpace(TryGetFieldCommentServerId(attachment.CommentId))
-                    ? SyncFailureMessages.FieldCommentDependencyNotSynced
+                if (attachment is not null && string.IsNullOrWhiteSpace(TryGetFieldCommentServerId(attachment.CommentId)))
+                {
+                    return SyncFailureMessages.FieldCommentDependencyNotSynced;
+                }
+
+                return attachment is not null && !File.Exists(FlowNoteLocalDatabase.ResolveLocalContentPath(attachment.LocalPath))
+                    ? SyncFailureMessages.LocalFileMissing
                     : null;
 
             case "register_access_log_started":
@@ -2477,9 +2486,12 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                     return SyncFailureMessages.ReportSourceDependencyNotSynced;
                 }
 
-                return MapQueuedReportSources(item.EntityId).Count < reportSourceCount
-                    ? SyncFailureMessages.ReportSourceDependencyNotSynced
-                    : null;
+                if (MapQueuedReportSources(item.EntityId).Count < reportSourceCount)
+                {
+                    return SyncFailureMessages.ReportSourceDependencyNotSynced;
+                }
+
+                return GetDocumentFileHoldReason(item.EntityId, null);
 
             case "register_field_note":
                 return SyncFailureMessages.LegacyFieldNoteUnsupported;
@@ -2490,6 +2502,21 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             default:
                 return null;
         }
+    }
+
+    private string? GetDocumentFileHoldReason(string documentId, int? versionNo)
+    {
+        var storedPath = versionNo is null
+            ? LoadDocument(documentId)?.LocalPath
+            : LoadDocumentVersion(documentId, versionNo.Value)?.LocalPath;
+        if (string.IsNullOrWhiteSpace(storedPath))
+        {
+            return SyncFailureMessages.LocalFileMissing;
+        }
+
+        return File.Exists(FlowNoteLocalDatabase.ResolveLocalContentPath(storedPath))
+            ? null
+            : SyncFailureMessages.LocalFileMissing;
     }
 
     private static string? Clean(string? value)

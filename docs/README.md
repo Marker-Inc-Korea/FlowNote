@@ -1,6 +1,6 @@
 # FlowNote 문서
 
-이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-13 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
+이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-14 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
 
 ## 읽는 순서
 
@@ -36,7 +36,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전 안전장치·감사 골격을 다루고, WPF UI는 근거 후보 운영 점검 화면까지만 제공한다.
 - MES/ERP 연동과 서버 계정 관리 UI는 후속 계층이다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-13 현재 pytest 75건이 수집되며 `scripts/verify-preserved-tests.ps1`도 같은 75건을 기준선으로 사용한다. AI 근거 검색 ground-truth 회귀 평가와 controlled copy의 권한·무결성·1회성·감사 회귀가 포함된다. FastAPI 75건 전체 통과는 확인했으며, WPF 빌드·WPF 스모크와 Git 산출물 사후 점검을 포함한 전체 표준 검증은 Windows 환경에서 별도로 실행해야 한다.
+- FastAPI 코드는 2026-07-14 현재 pytest 75건이 수집되며 `scripts/verify-preserved-tests.ps1`도 같은 75건을 기준선으로 사용한다. AI 근거 검색 ground-truth 회귀 평가와 controlled copy의 권한·무결성·1회성·감사 회귀가 포함된다. FastAPI 75건 전체 통과 기록은 유지되며, 이번 문서 재대조에서는 75건 수집을 다시 확인했다. WPF 빌드·WPF 스모크와 Git 산출물 사후 점검을 포함한 전체 표준 검증은 Windows 환경에서 별도로 실행해야 한다.
 
 ## 일일 기록
 

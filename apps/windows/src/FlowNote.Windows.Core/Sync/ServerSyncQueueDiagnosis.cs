@@ -94,7 +94,7 @@ public static class ServerSyncQueueDiagnostics
                 20,
                 "20 파일 확인",
                 "문서 또는 첨부 원본 파일 위치를 복구한 뒤 재시도하세요.",
-                false);
+                true);
         }
 
         if (lastError.Contains("선행 문서 버전", StringComparison.Ordinal) ||

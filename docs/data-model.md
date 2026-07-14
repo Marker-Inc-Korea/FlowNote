@@ -28,6 +28,7 @@
 | `report_sources` | 로컬 보고서 문서가 근거로 삼은 FieldComment, 문서, 작업순서 항목/이력 |
 | `server_sync_queue` | 서버 전송 대기/실패/성공 상태 |
 | `server_id_mappings` | 로컬 ID와 서버 ID 매핑 |
+| `server_sync_migration_audit` | 보존 FAILED 큐의 승인 전환 감사. 원천 큐/ID/action/idempotency key와 신규 큐/ID/action/idempotency key, 승인자, plan hash, 원천 JSON snapshot, 구 명칭을 무손실 연결 |
 
 기존 공통 SQLite에는 FieldComment 명칭 전환 전에 만들어진 호환/잔존 테이블도 남아 있을 수 있다.
 
