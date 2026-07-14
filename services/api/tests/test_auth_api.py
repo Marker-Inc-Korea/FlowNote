@@ -216,6 +216,7 @@ def test_me_returns_current_user_for_bearer_token() -> None:
         "username": account.username,
         "role": "viewer",
         "display_name": "Login Test User",
+        "must_change_password": False,
     }
 
 

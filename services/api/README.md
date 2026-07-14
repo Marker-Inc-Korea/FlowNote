@@ -15,6 +15,13 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/auth/refresh` | Refresh token rotation |
 | POST | `/api/v1/auth/logout` | Revoke current session |
 | GET | `/api/v1/auth/me` | Current user lookup |
+| POST | `/api/v1/auth/change-password` | Required/self password change and session revocation |
+| GET | `/api/v1/server-accounts` | Server account list |
+| POST | `/api/v1/server-accounts` | Create server account with one-time temporary password input |
+| PATCH | `/api/v1/server-accounts/{user_id}` | Change display name, role, or status |
+| POST | `/api/v1/server-accounts/{user_id}/password-reset` | Reset temporary password and revoke sessions |
+| GET | `/api/v1/server-accounts/{user_id}/sessions` | Active account sessions |
+| POST | `/api/v1/server-accounts/{user_id}/sessions/revoke` | Revoke active account sessions |
 | GET | `/api/v1/terminal-devices` | Approved terminal device list |
 | POST | `/api/v1/terminal-devices` | Register approved terminal device |
 | GET | `/api/v1/terminal-devices/{device_id}` | Terminal device detail |
@@ -63,7 +70,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | PATCH | `/api/v1/notification-channels/{channel_id}/members/{member_id}` | Change member role or status |
 | POST | `/api/v1/notification-channels/{channel_id}/messages` | Create channel message |
 | GET | `/api/v1/notification-channels/{channel_id}/messages` | Channel message list |
-| GET | `/api/v1/notifications` | Current user notification list |
+| GET | `/api/v1/notifications` | Current user notification list; `X-FlowNote-Notification-Cursor` server high-water header |
 | PATCH | `/api/v1/notifications/{message_id}/read` | Mark channel message as read |
 | POST | `/api/v1/handovers` | Create handover and receipts |
 | GET | `/api/v1/handovers` | List visible handovers |
@@ -86,7 +93,7 @@ The server uses HMAC-signed Bearer access tokens plus the `auth_sessions` table.
 
 Development defaults such as `admin / 1234` and the default token secret are local development values only.
 
-Server account operations are handled by `python -m app.ops.server_accounts` for the current implementation. It supports `create`, `reset-password`, `set-status`, and `set-role`; WPF user management is local SQLite only and does not create or modify server accounts. Password entry is interactive and the current script rejects passwords shorter than 8 characters.
+Server account lifecycle APIs require `admin` or `system-admin`. Temporary passwords are request-only sensitive values, force a password change after first login, and are never returned. The `python -m app.ops.server_accounts` command remains an emergency/server-console path.
 
 `GET /api/v1/tags` is currently readable without authentication. Creating tags and all document, FieldComment, access log, work sequence, report, and AI search candidate endpoints use the authentication and role policies described in [docs/api.md](../../docs/api.md).
 
@@ -126,6 +133,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The current collected FastAPI test count is 75. The fixed collection baseline in `scripts/verify-preserved-tests.ps1` is also 75.
+The current collected FastAPI test count is 92. The fixed collection baseline in `scripts/verify-preserved-tests.ps1` is also 92.
 
 Test SQLite DBs, logs, upload files, and generated sample files are preserved unless the user explicitly asks to delete them.

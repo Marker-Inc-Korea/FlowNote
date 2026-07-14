@@ -118,29 +118,22 @@ public sealed class ServerNotificationCursorService(FlowNoteLocalDatabase databa
     public ServerNotificationCursorRecord ResetAfterAdministratorConfirmation(
         string serverScope,
         string userId,
-        string administratorUserId)
+        string administratorUserId,
+        string? administratorRole)
     {
         var key = ValidateKey(serverScope, userId);
         if (string.IsNullOrWhiteSpace(administratorUserId))
         {
             throw new ArgumentException("확인한 관리자 ID가 필요합니다.", nameof(administratorUserId));
         }
+        if (administratorRole is not ("admin" or "system-admin"))
+        {
+            throw new UnauthorizedAccessException("알림 위치 초기화는 관리자 확인이 필요합니다.");
+        }
 
         var now = DateTimeOffset.UtcNow;
         using var connection = database.OpenConnection();
         using var transaction = connection.BeginTransaction();
-        using (var delete = connection.CreateCommand())
-        {
-            delete.Transaction = transaction;
-            delete.CommandText = """
-                DELETE FROM server_notification_messages
-                WHERE server_scope = $server_scope AND user_id = $user_id;
-                """;
-            delete.Parameters.AddWithValue("$server_scope", key.ServerScope);
-            delete.Parameters.AddWithValue("$user_id", key.UserId);
-            delete.ExecuteNonQuery();
-        }
-
         using (var upsert = connection.CreateCommand())
         {
             upsert.Transaction = transaction;

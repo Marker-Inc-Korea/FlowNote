@@ -11,7 +11,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.db.init_db import ALLOWED_USER_ROLES, hash_password_for_dev
+from app.db.init_db import ALLOWED_USER_ROLES, hash_password
 from app.db.models import AuthSession, UserAccount
 from app.db.session import Database
 
@@ -63,7 +63,7 @@ def create_account(
                 login_id=login_id,
                 display_name=display_name,
                 role=role,
-                password_hash=hash_password_for_dev(password),
+                password_hash=hash_password(password),
                 is_active=True,
                 status="ACTIVE",
             )
@@ -93,7 +93,7 @@ def reset_password(
     try:
         with database.session() as session:
             account = _require_account(session, username)
-            account.password_hash = hash_password_for_dev(password)
+            account.password_hash = hash_password(password)
             if activate:
                 account.is_active = True
                 account.status = "ACTIVE"

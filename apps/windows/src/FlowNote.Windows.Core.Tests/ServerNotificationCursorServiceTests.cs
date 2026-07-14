@@ -85,7 +85,13 @@ public sealed class ServerNotificationCursorServiceTests
         Assert.Equal(50, rewind.State.LastSuccessCursor);
         Assert.Equal(3, rewind.State.ObservedServerCursor);
 
-        var reset = afterLogoutAndRelogin.ResetAfterAdministratorConfirmation(scope, user, "system-admin");
+        Assert.Throws<UnauthorizedAccessException>(() =>
+            afterLogoutAndRelogin.ResetAfterAdministratorConfirmation(scope, user, "team-member", "team-member"));
+        var reset = afterLogoutAndRelogin.ResetAfterAdministratorConfirmation(
+            scope,
+            user,
+            "system-admin",
+            "system-admin");
         Assert.Equal(0, reset.LastSuccessCursor);
         Assert.False(reset.InitialSyncCompleted);
         Assert.Equal("system-admin", reset.ResetConfirmedBy);
@@ -96,6 +102,13 @@ public sealed class ServerNotificationCursorServiceTests
             Page(3, Message("restored-message", 3)),
             true);
         Assert.Equal(3, caughtUp.State.LastSuccessCursor);
+        var preservedMessageId = afterLogoutAndRelogin.ProcessBatch(
+            scope,
+            user,
+            Page(50, Message("message-50", 50)),
+            true);
+        Assert.Equal(0, preservedMessageId.ProcessedCount);
+        Assert.Equal(1, preservedMessageId.DuplicateCount);
     }
 
     [Fact]

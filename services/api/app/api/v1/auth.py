@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from hmac import compare_digest
 from typing import Annotated
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -11,14 +11,15 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import (
     CurrentUser,
+    PasswordChangeUser,
     _as_utc,
     create_auth_session,
     hash_refresh_token,
     rotate_auth_session_tokens,
 )
 from app.core.config import Settings, get_settings
-from app.db.init_db import hash_password_for_dev
-from app.db.models import AuthSession, TerminalDevice, UserAccount
+from app.db.init_db import hash_password, verify_password
+from app.db.models import ActivityHistory, AuthSession, TerminalDevice, UserAccount
 from app.db.session import get_db_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -43,6 +44,7 @@ class LoginResponse(BaseModel):
     expires_at: datetime
     refresh_token: str
     refresh_expires_at: datetime
+    must_change_password: bool
 
 
 class RefreshRequest(BaseModel):
@@ -58,10 +60,21 @@ class CurrentUserResponse(BaseModel):
     username: str
     role: str
     display_name: str
+    must_change_password: bool
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8)
+
+
+class ChangePasswordResponse(BaseModel):
+    changed: bool
+    sessions_revoked: int
 
 
 def _password_matches(password: str, stored_password_hash: str) -> bool:
-    return compare_digest(hash_password_for_dev(password), stored_password_hash)
+    return verify_password(password, stored_password_hash)
 
 
 def _clean_device_id(device_id: str | None) -> str | None:
@@ -119,6 +132,7 @@ def login(
         expires_at=tokens.access_expires_at,
         refresh_token=tokens.refresh_token,
         refresh_expires_at=tokens.refresh_expires_at,
+        must_change_password=account.must_change_password,
     )
 
 
@@ -150,6 +164,11 @@ def refresh(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token is invalid or expired.",
         )
+    if account.must_change_password:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password change is required before refreshing this session.",
+        )
 
     tokens = rotate_auth_session_tokens(auth_session, account, app_settings, session, now)
     return LoginResponse(
@@ -162,6 +181,7 @@ def refresh(
         expires_at=tokens.access_expires_at,
         refresh_token=tokens.refresh_token,
         refresh_expires_at=tokens.refresh_expires_at,
+        must_change_password=account.must_change_password,
     )
 
 
@@ -189,4 +209,65 @@ def read_current_user(current_user: CurrentUser) -> CurrentUserResponse:
         username=current_user.username,
         role=current_user.role,
         display_name=current_user.display_name,
+        must_change_password=current_user.must_change_password,
     )
+
+
+@router.post("/change-password", response_model=ChangePasswordResponse)
+def change_password(
+    request: ChangePasswordRequest,
+    current_user: PasswordChangeUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> ChangePasswordResponse:
+    account = session.scalar(
+        select(UserAccount).where(UserAccount.user_id == current_user.user_id)
+    )
+    if account is None or not _password_matches(request.current_password, account.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current password is invalid.",
+        )
+    if _password_matches(request.new_password, account.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from the current password.",
+        )
+
+    now = datetime.now(timezone.utc)
+    before_must_change_password = account.must_change_password
+    account.password_hash = hash_password(request.new_password)
+    account.must_change_password = False
+    account.password_changed_at = now
+    active_sessions = session.scalars(
+        select(AuthSession).where(
+            AuthSession.user_id == account.user_id,
+            AuthSession.status == "ACTIVE",
+        )
+    ).all()
+    for auth_session in active_sessions:
+        auth_session.status = "REVOKED"
+        auth_session.revoked_at = now
+        auth_session.revoked_reason = "password_changed"
+        session.add(auth_session)
+    session.add(account)
+    session.add(
+        ActivityHistory(
+            history_id=f"history-{uuid4().hex}",
+            event_type="user.password_changed",
+            actor_id=account.user_id,
+            target_type="user_account",
+            target_id=account.user_id,
+            target_title=account.display_name,
+            message="사용자가 비밀번호를 변경했습니다.",
+            before_value=(
+                f'{{"active_sessions":{len(active_sessions)},'
+                f'"must_change_password":{str(before_must_change_password).lower()}}}'
+            ),
+            after_value=(
+                f'{{"must_change_password":false,"sessions_revoked":{len(active_sessions)}}}'
+            ),
+            change_reason="사용자 본인 비밀번호 변경",
+        )
+    )
+    session.commit()
+    return ChangePasswordResponse(changed=True, sessions_revoked=len(active_sessions))

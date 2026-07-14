@@ -31,6 +31,22 @@ public partial class LoginWindow : Window
             return;
         }
 
+        if (result.MustChangePassword &&
+            httpClient is not null &&
+            !string.IsNullOrWhiteSpace(result.AccessToken))
+        {
+            var passwordChangeWindow = new PasswordChangeWindow(httpClient, result.AccessToken, password)
+            {
+                Owner = this
+            };
+            if (passwordChangeWindow.ShowDialog() == true)
+            {
+                PasswordBox.Clear();
+                ErrorTextBlock.Text = "비밀번호를 변경했습니다. 새 비밀번호로 다시 로그인하세요.";
+            }
+            return;
+        }
+
         var mainWindow = new MainWindow(services, result);
         mainWindow.Show();
         Close();

@@ -52,6 +52,8 @@ class UserAccount(TimestampMixin, Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Role(Base):

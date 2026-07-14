@@ -8,7 +8,7 @@
 
 - 로그인 화면과 메인 탐색기 화면
 - 로컬 SQLite 초기화와 기본 계정/그룹/폴더 시드
-- 사용자 관리: 사용자 추가, 이름/역할/비밀번호 변경
+- 사용자 관리: 서버 로그인 시 서버 계정 생성, 이름/역할/상태 변경, 임시 비밀번호 재설정, 활성 세션 조회/폐기. 서버 미연결 로컬 로그인 시 로컬 계정 관리
 - 승인 단말 관리: 서버 단말 목록·상세·마지막 접속 조회, 등록, 정보/상태 변경, 교체
 - 폴더 트리와 문서 목록. 기본 폴더는 `문서`, `인수인계`, `작업순서`, `사진`이다.
 - 새 폴더 생성
@@ -41,7 +41,7 @@ AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트
 - 채널 메시지와 인수인계를 문서, FieldComment, 작업순서, 작업내역, 보고서 근거로 더 쉽게 연결하는 운영 흐름
 - 백그라운드 알림 정책과 현장별 polling 운영 UX 검증
 
-초기 알림 전달 방식은 사내망 REST API 전경 polling으로 구현·확정되어 있다. WPF는 기본 15초 간격으로 `/api/v1/notifications?afterId={cursor}`를 조회하고 연결 실패 시 최대 120초까지 backoff한다. 서버 scope와 사용자 ID별 cursor 및 처리한 `message_id`를 로컬 SQLite에 보존하고, 응답 처리가 끝난 뒤 같은 트랜잭션에서만 cursor를 전진시킨다. 서버 cursor 역행은 자동 초기화하지 않고 polling을 중지하며 관리자 확인 동작만 초기화를 허용한다. 상세 정책은 [WPF 사용자별 알림 cursor 보존 정책](./docs/notification-cursor.md)을 따른다. 외부 push나 WebSocket은 초기 구현의 대안이 아니라 현장 네트워크 정책과 백그라운드 알림 요구가 확인될 때 검토하는 확장 선택지다.
+초기 알림 전달 방식은 사내망 REST API 전경 polling으로 구현·확정되어 있다. WPF는 기본 15초 간격으로 `/api/v1/notifications?afterId={cursor}`를 조회하고 연결 실패 시 최대 120초까지 backoff한다. 서버 scope와 사용자 ID별 cursor 및 처리한 `message_id`를 로컬 SQLite에 보존하고, 응답 처리가 끝난 뒤 같은 트랜잭션에서만 cursor를 전진시킨다. 서버 cursor 역행은 자동 초기화하지 않고 polling을 중지하며 Core 서비스가 `admin`, `system-admin` role을 확인한 관리자 동작만 cursor를 초기화한다. 초기화해도 기존 처리 `message_id`는 재조회 멱등 근거로 보존한다. 상세 정책은 [WPF 사용자별 알림 cursor 보존 정책](./docs/notification-cursor.md)을 따른다. 외부 push나 WebSocket은 초기 구현의 대안이 아니라 현장 네트워크 정책과 백그라운드 알림 요구가 확인될 때 검토하는 확장 선택지다.
 
 이 기능은 개인 메신저나 사내 메신저 전체 대체가 아니라, 현장 기록과 관리자 검토 흐름을 이어주는 업무 채널 기능이다.
 
@@ -52,6 +52,7 @@ apps/windows/
   docs/                         Windows 앱 구현 문서
   src/FlowNote.Windows.App/     WPF UI
   src/FlowNote.Windows.Core/    로컬 DB, 서비스, 정책, 서버 API 클라이언트
+  src/FlowNote.Windows.Core.Tests/  서버 알림 cursor 등 Core 단위 테스트
   src/FlowNote.Windows.SmokeTests/  콘솔 스모크 테스트
   src/FlowNote.Windows.SyncMigrationTool/  보존 FAILED 큐 진단·승인 전환 CLI
 ```
@@ -87,6 +88,7 @@ apps/windows/
 
 서버 URL이 설정된 상태에서 서버가 401 또는 403으로 로그인 실패를 응답하면 로컬 계정으로 우회하지 않는다. 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 로컬 계정 로그인을 사용한다.
 서버 로그인 성공 시에는 같은 로그인 ID의 로컬 role과 다르더라도 서버 응답 role이 화면 버튼과 정책 결과의 기준이다.
+임시 비밀번호 서버 로그인은 메인 화면보다 비밀번호 변경 창을 먼저 표시하며, 변경 성공 후 새 비밀번호 재로그인을 요구한다. 서버 계정 화면의 401은 재로그인, 403은 권한 부족으로 안내하고 작업 버튼을 비활성화한다. 서버 연결이 끊겨도 열린 서버 계정 화면을 로컬 계정 화면으로 자동 전환하지 않는다.
 
 ## 검증
 

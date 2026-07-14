@@ -32,7 +32,15 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Win
 git status --short
 ```
 
-2026-07-14 현재 FastAPI 코드는 75건이 수집된다. 기존 68건 기준선에 AI 근거 검색 ground-truth 회귀 평가 1건과 controlled copy 보안·감사 회귀 6건이 추가된 결과다. 표준 PowerShell 스크립트도 같은 75건을 요구한다.
+2026-07-14 현재 FastAPI 코드는 92건이 수집된다. 기존 75건 기준선에 서버 계정 수명주기·권한·세션·감사 회귀 17건이 추가된 결과다. 표준 PowerShell 스크립트도 같은 92건을 요구한다.
+
+## 2026-07-14 WPF 사용자별 알림 cursor 영구 보존
+
+WPF 로컬 SQLite에 `server_notification_cursors`, `server_notification_messages`를 추가하고 서버 scope·사용자별 마지막 성공 cursor와 처리한 `message_id`를 한 트랜잭션으로 보존하도록 구현했다. FastAPI `/api/v1/notifications`는 서버 DB 복구에 따른 cursor 역행을 감지할 수 있도록 `X-FlowNote-Notification-Cursor` high-water 헤더를 반환한다. WPF는 역행 시 `RESET_REQUIRED`로 polling을 멈추며 Core 서비스가 `admin`, `system-admin` role을 다시 검사한 한글 확인 동작만 현재 scope·사용자 cursor를 초기화한다. 초기화해도 기존 처리 `message_id`는 삭제하지 않는다.
+
+`FlowNote.Windows.Core.Tests` 5건은 두 사용자·두 서버 URL 격리, 처리 예외 rollback과 재처리 멱등성, 서비스 재생성에 따른 앱 재시작, 로그아웃/재로그인 보존, 로컬 DB 복구 row 부재, 서버 cursor 역행, 일반 사용자 초기화 거부, 관리자 초기화 뒤 기존 `message_id` 멱등 보존, HTTP 401 cursor 불변을 검증해 모두 통과했다. FastAPI 채널 API 테스트 3건은 여러 page에서 high-water 헤더가 안정적으로 유지되는 조건까지 통과했고 WPF 앱과 스모크 프로젝트 빌드에 성공했다.
+
+서버 없이 실행한 WPF 전체 스모크는 통과했다. 테스트 FastAPI를 연결한 실행에서는 cursor/읽음/receipt 대조 구간을 통과했으며 로컬 row는 `server_scope = http://127.0.0.1:5184/`, `user_id = user-admin`, `last_success_cursor = observed_server_cursor = 149`, 처리 메시지는 `chmsg_0b7e7c166b744a7cbf7ded4d2879dbd4`였다. 같은 메시지가 서버 `notification_channel_members.last_read_message_id`에 저장되었고 인수인계 receipt `hreceipt_6a97fe1a089e4160912780f0701914a2`는 `FOLLOW_UP_REQUIRED` 및 읽음·확인·후속 필요 시각을 보존했다. 이후 기존 AI `REPORT_SOURCE` 후보 스모크가 누적 후보 500건 제한으로 이번 실행 row를 찾지 못해 전체 프로세스는 종료 코드 134로 끝났다. 이 후반 실패는 알림 cursor 대조 이후 발생했으며 테스트 DB와 모든 산출물은 삭제하지 않고 보존했다.
 
 ## 2026-07-14 작업 102 현재 코드 재대조
 

@@ -1,4 +1,6 @@
 from hashlib import pbkdf2_hmac
+from hmac import compare_digest
+import secrets
 
 from sqlalchemy import or_, select, text
 
@@ -41,6 +43,36 @@ def hash_password_for_dev(password: str) -> str:
     )
 
 
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    digest = pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        DEFAULT_ADMIN_PASSWORD_ITERATIONS,
+    ).hex()
+    return f"pbkdf2_sha256${DEFAULT_ADMIN_PASSWORD_ITERATIONS}${salt}${digest}"
+
+
+def verify_password(password: str, stored_password_hash: str) -> bool:
+    try:
+        algorithm, iterations_text, salt, expected_digest = stored_password_hash.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        iterations = int(iterations_text)
+        if iterations <= 0 or iterations > 1_000_000:
+            return False
+    except (TypeError, ValueError):
+        return False
+    actual_digest = pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        iterations,
+    ).hex()
+    return compare_digest(actual_digest, expected_digest)
+
+
 def _ensure_user_account_columns(database: Database) -> None:
     if not database.database_url.startswith("sqlite"):
         return
@@ -73,6 +105,20 @@ def _ensure_user_account_columns(database: Database) -> None:
                 text("ALTER TABLE user_accounts ADD COLUMN is_active BOOLEAN DEFAULT 1")
             )
             connection.execute(text("UPDATE user_accounts SET is_active = 1 WHERE is_active IS NULL"))
+        if "must_change_password" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE user_accounts ADD COLUMN must_change_password BOOLEAN DEFAULT 0")
+            )
+            connection.execute(
+                text(
+                    "UPDATE user_accounts SET must_change_password = 0 "
+                    "WHERE must_change_password IS NULL"
+                )
+            )
+        if "password_changed_at" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE user_accounts ADD COLUMN password_changed_at DATETIME")
+            )
 
         connection.execute(
             text(
@@ -108,6 +154,8 @@ def _ensure_user_account_role_constraint(database: Database) -> None:
                     password_hash VARCHAR(255) NOT NULL,
                     is_active BOOLEAN NOT NULL,
                     status VARCHAR(20) NOT NULL,
+                    must_change_password BOOLEAN DEFAULT 0 NOT NULL,
+                    password_changed_at DATETIME,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
                     PRIMARY KEY (id),
@@ -133,6 +181,8 @@ def _ensure_user_account_role_constraint(database: Database) -> None:
                     password_hash,
                     is_active,
                     status,
+                    must_change_password,
+                    password_changed_at,
                     created_at,
                     updated_at
                 )
@@ -149,6 +199,8 @@ def _ensure_user_account_role_constraint(database: Database) -> None:
                     password_hash,
                     COALESCE(is_active, 1),
                     COALESCE(NULLIF(status, ''), 'ACTIVE'),
+                    COALESCE(must_change_password, 0),
+                    password_changed_at,
                     COALESCE(created_at, CURRENT_TIMESTAMP),
                     COALESCE(updated_at, CURRENT_TIMESTAMP)
                 FROM user_accounts

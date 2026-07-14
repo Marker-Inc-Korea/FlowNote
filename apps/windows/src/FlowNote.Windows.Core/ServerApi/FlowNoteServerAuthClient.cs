@@ -57,4 +57,16 @@ public sealed class FlowNoteServerAuthClient
         using var response = await httpClient.PostAsync("api/v1/auth/logout", null, cancellationToken);
         return response.IsSuccessStatusCode;
     }
+
+    public async Task<bool> TryChangePasswordAsync(
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            "api/v1/auth/change-password",
+            new ServerChangePasswordRequest(currentPassword, newPassword),
+            cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
 }
