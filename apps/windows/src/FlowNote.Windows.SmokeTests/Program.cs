@@ -120,7 +120,8 @@ try
     var cursorReset = cursorRestartedService.ResetAfterAdministratorConfirmation(
         cursorSmokeScopeA,
         cursorSmokeUserA,
-        "smoke-system-admin");
+        "smoke-system-admin",
+        "system-admin");
     Require(
         cursorReset.LastSuccessCursor == 0 && cursorReset.ResetConfirmedBy == "smoke-system-admin",
         "cursor reset should require and record administrator confirmation");
@@ -186,6 +187,23 @@ try
     var localFallbackAuth = new ServerAwareAuthService(services.Auth, null);
     var localFallbackLogin = await localFallbackAuth.LoginAsync("admin", "1234");
     Require(localFallbackLogin.Success, "missing server URL should allow local account login fallback");
+    Require(
+        ServerAccountUiPolicy.LocalMessage.Contains("로컬", StringComparison.Ordinal),
+        "server-disconnected user management should explicitly identify local account mode in Korean");
+    Require(
+        ServerAccountUiPolicy.ConnectedMessage.Contains("서버", StringComparison.Ordinal),
+        "server-connected user management should explicitly identify server account mode in Korean");
+    Require(
+        ServerAccountUiPolicy.ErrorMessage(HttpStatusCode.Unauthorized).Contains("다시 로그인", StringComparison.Ordinal),
+        "server account 401 should show Korean relogin guidance");
+    Require(
+        ServerAccountUiPolicy.ErrorMessage(HttpStatusCode.Forbidden).Contains("권한", StringComparison.Ordinal),
+        "server account 403 should show Korean permission guidance");
+    Require(
+        ServerAccountUiPolicy.CanManageAccounts("admin") &&
+        ServerAccountUiPolicy.CanManageAccounts("system-admin") &&
+        !ServerAccountUiPolicy.CanManageAccounts("team-member"),
+        "server account operation buttons should only be available to admin and system-admin roles");
 
     using (var unauthorizedServerClient = CreateStaticStatusClient(HttpStatusCode.Unauthorized))
     {
@@ -1941,7 +1959,8 @@ try
                     services.ServerNotificationCursors.ResetAfterAdministratorConfirmation(
                         serverCursorScope,
                         serverLogin.UserId,
-                        serverLogin.UserId);
+                        serverLogin.UserId,
+                        serverLogin.Role);
                 }
                 else
                 {

@@ -280,13 +280,15 @@ FastAPI 서버의 `app/core/auth.py`와 WPF `RolePermissionPolicy`는 다음 기
 | 채널 관리/인수인계 확인 현황 | 채널 생성은 문서/작업순서 쓰기 role, 조회와 수신확인은 채널 멤버십 또는 `admin`, `system-admin` 기준 | 채널 관리와 인수인계 확인 현황 버튼은 문서 등록 권한과 같은 role에서 활성 |
 | 파일 감시 | 서버 전용 권한 그룹은 아직 없음 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
 | controlled copy 다운로드 | 현재 공개 버전, 1회성 티켓, 사용자·세션 일치, 경로·크기·SHA-256 재검증 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
-| 사용자 관리 | 서버 계정 관리 API는 아직 없음 | `admin`, `system-admin` |
+| 사용자 관리 | 계정 생성·role/상태 변경·비밀번호 재설정·세션 조회/폐기 | `admin`, `system-admin` |
 
 ### 로컬 계정과 서버 계정 운영 기준
 
 WPF 사용자 관리는 위 role 중 하나만 선택할 수 있다. 새 사용자 ID는 `user-{loginId}` 형식으로 자동 생성된다.
 
-현재 WPF의 사용자 추가, 역할 변경, 비밀번호 변경은 로컬 SQLite 계정 전용이다. 서버 계정 발급과 변경은 서버 DB 운영 절차에서 관리하며, WPF 사용자 관리 화면이 서버 계정을 생성하거나 수정하지 않는다. 서버 계정 관리 API와 WPF 연동은 후속 범위로 둔다.
+`user_accounts.must_change_password`는 임시 비밀번호 로그인 후 정상 API 사용을 막는 서버 기준 값이고 `password_changed_at`은 본인 비밀번호 변경 완료 시각이다. 계정 생성과 관리자 비밀번호 재설정은 `must_change_password = true`, 본인 변경 성공은 `false`로 바꾸며 모든 기존 세션을 폐기한다. `auth_sessions`에는 원문 refresh token이 아니라 hash만 저장하고, 계정 잠금·비활성화·role 변경·비밀번호 변경/재설정·관리자 폐기 시 즉시 `REVOKED`로 전환한다.
+
+WPF 사용자 관리는 서버 로그인 세션이 있으면 서버 계정 운영 화면, 서버 URL 미설정 또는 연결 실패로 로컬 로그인한 경우에는 로컬 SQLite 계정 화면으로 분리한다. 두 계정 저장소를 자동 병합하거나 같은 ID의 row를 서로 덮어쓰지 않는다.
 
 `FLOWNOTE_API_BASE_URL`이 설정되어 있고 서버 로그인이 성공하면 WPF 현재 세션의 사용자 ID, 로그인 ID, 표시 이름, role은 서버 응답을 우선한다. 같은 로그인 ID의 로컬 계정 정보가 다르더라도 서버 사용자 정보를 화면 표시, 버튼 권한, 서버 동기화 작성자 ID에 사용하고 로컬 계정 row는 자동 덮어쓰지 않는다.
 

@@ -39,6 +39,9 @@ public sealed record ServerLoginResponse
     [JsonPropertyName("refresh_expires_at")]
     public DateTimeOffset RefreshExpiresAt { get; init; }
 
+    [JsonPropertyName("must_change_password")]
+    public bool MustChangePassword { get; init; }
+
     public LoginResult ToLoginResult()
     {
         return new LoginResult(
@@ -51,7 +54,8 @@ public sealed record ServerLoginResponse
             AccessToken,
             ExpiresAt,
             RefreshToken,
-            RefreshExpiresAt);
+            RefreshExpiresAt,
+            MustChangePassword);
     }
 }
 
@@ -68,4 +72,15 @@ public sealed record ServerCurrentUserResponse
 
     [JsonPropertyName("display_name")]
     public string DisplayName { get; init; } = string.Empty;
+
+    [JsonPropertyName("must_change_password")]
+    public bool MustChangePassword { get; init; }
 }
+
+public sealed record ServerChangePasswordRequest(
+    [property: JsonPropertyName("current_password")] string CurrentPassword,
+    [property: JsonPropertyName("new_password")] string NewPassword);
+
+public sealed record ServerChangePasswordResponse(
+    [property: JsonPropertyName("changed")] bool Changed,
+    [property: JsonPropertyName("sessions_revoked")] int SessionsRevoked);

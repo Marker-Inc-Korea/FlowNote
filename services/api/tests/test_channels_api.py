@@ -220,12 +220,15 @@ def test_notification_polling_cursor_is_stable_scoped_and_idempotent() -> None:
         first_items = first_page.json()
         assert [item["message_id"] for item in first_items] == message_ids[:2]
         assert first_items[0]["cursor"] < first_items[1]["cursor"]
+        server_cursor = int(first_page.headers["X-FlowNote-Notification-Cursor"])
+        assert server_cursor >= first_items[-1]["cursor"]
 
         second_page = client.get(
             f"/api/v1/notifications?afterId={first_items[-1]['cursor']}&limit=2",
             headers=member_headers,
         )
         assert [item["message_id"] for item in second_page.json()] == message_ids[2:]
+        assert int(second_page.headers["X-FlowNote-Notification-Cursor"]) == server_cursor
         assert client.get(
             f"/api/v1/notifications?afterId={second_page.json()[-1]['cursor']}",
             headers=member_headers,

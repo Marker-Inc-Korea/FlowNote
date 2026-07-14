@@ -17,11 +17,11 @@ WPF의 서버 채널 알림 polling 위치는 공통 로컬 SQLite의 `server_no
 - 로그아웃 또는 HTTP 401: polling을 즉시 중지하고 재로그인을 요구한다. cursor와 처리 이력은 삭제하거나 전진시키지 않는다. 같은 서버와 사용자로 재로그인하면 마지막 성공 cursor 다음부터 재개한다.
 - 로컬 DB 복구: 복구 DB에 해당 row가 있으면 그대로 재개한다. row가 없으면 cursor 0에서 시작하고 화면에 `이전 알림을 재확인 중입니다. 중복 알림을 새로 만들지 않습니다.`와 진행 위치를 한글로 표시한다.
 - 서버 DB 복구 또는 초기화: 응답 헤더 cursor가 로컬 마지막 성공 cursor보다 낮으면 `RESET_REQUIRED`로 바꾸고 polling을 중지한다. 자동으로 0으로 되돌리지 않는다.
-- cursor 초기화: 서버 복구를 확인한 `admin` 또는 `system-admin`이 주 창의 `알림 위치 초기화`에서 경고 문구를 확인한 경우에만 현재 서버 scope와 현재 사용자의 cursor/처리 이력을 0으로 초기화한다. 확인 관리자와 시각을 cursor row에 남긴다. 다른 사용자와 다른 서버 scope에는 영향을 주지 않는다.
+- cursor 초기화: 서버 복구를 확인한 `admin` 또는 `system-admin`이 주 창의 `알림 위치 초기화`에서 경고 문구를 확인한 경우에만 현재 서버 scope와 현재 사용자의 cursor 위치를 0으로 초기화한다. Core 서비스도 전달받은 role을 검사하므로 일반 사용자의 직접 호출은 거부된다. 기존 처리 `message_id`는 멱등 근거로 계속 보존한다. 확인 관리자와 시각을 cursor row에 남기며 다른 사용자와 다른 서버 scope에는 영향을 주지 않는다.
 
 첫 동기화가 100건 page를 넘으면 100ms 간격으로 다음 page를 이어 받고 `진행 위치: 현재/서버`를 표시한다. 따라잡기가 끝나면 기본 15초 polling으로 돌아간다. 연결 실패는 기존 정책대로 최대 120초까지 backoff한다.
 
 ## 검증 기준
 
-- Core 단위 테스트는 두 사용자·두 서버 scope, 정상 처리, 처리 예외 rollback, 앱 재시작에 해당하는 서비스 재생성, 로그아웃/재로그인 보존, 로컬 DB 복구의 row 부재, 서버 cursor 역행, 관리자 초기화와 401 불변 조건을 검증한다.
+- Core 단위 테스트는 두 사용자·두 서버 scope, 정상 처리, 처리 예외 rollback, 앱 재시작에 해당하는 서비스 재생성, 로그아웃/재로그인 보존, 로컬 DB 복구의 row 부재, 서버 cursor 역행, 일반 사용자 초기화 거부, 관리자 초기화 뒤 기존 `message_id` 멱등 보존과 401 불변 조건을 검증한다.
 - WPF 스모크는 공통 `data/local/flownote.local.sqlite`에 cursor와 `message_id`를 누적하고, 서버 `notification_channel_members.last_read_message_id` 및 `handover_receipts.receipt_status`와 함께 대조한다.

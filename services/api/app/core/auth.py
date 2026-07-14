@@ -69,6 +69,7 @@ class AuthenticatedUser:
     display_name: str
     session_id: str
     access_token_id: str
+    must_change_password: bool
 
 
 @dataclass(frozen=True)
@@ -280,7 +281,7 @@ def _invalid_credentials(
     )
 
 
-def get_current_user(
+def get_authenticated_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
@@ -303,7 +304,19 @@ def get_current_user(
         display_name=account.display_name,
         session_id=auth_session.session_id,
         access_token_id=auth_session.access_token_id,
+        must_change_password=account.must_change_password,
     )
+
+
+def get_current_user(
+    authenticated_user: Annotated[AuthenticatedUser, Depends(get_authenticated_user)],
+) -> AuthenticatedUser:
+    if authenticated_user.must_change_password:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password change is required before using this API.",
+        )
+    return authenticated_user
 
 
 def require_roles(*allowed_roles: str):
@@ -323,6 +336,7 @@ def require_roles(*allowed_roles: str):
 
 
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
+PasswordChangeUser = Annotated[AuthenticatedUser, Depends(get_authenticated_user)]
 DocumentWriteUser = Annotated[
     AuthenticatedUser,
     Depends(require_roles(*DOCUMENT_WRITE_ROLES)),

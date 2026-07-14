@@ -10,7 +10,8 @@ public sealed record LoginResult(
     string? AccessToken = null,
     DateTimeOffset? AccessTokenExpiresAt = null,
     string? RefreshToken = null,
-    DateTimeOffset? RefreshTokenExpiresAt = null)
+    DateTimeOffset? RefreshTokenExpiresAt = null,
+    bool MustChangePassword = false)
 {
     public static LoginResult Failed(string reason)
     {

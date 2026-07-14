@@ -10,10 +10,29 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 | POST | `/api/v1/auth/refresh` | refresh token 검증 후 같은 세션의 access/refresh token 회전 |
 | POST | `/api/v1/auth/logout` | 현재 access token 세션을 `REVOKED`로 변경 |
 | GET | `/api/v1/auth/me` | 현재 Bearer token 사용자 정보 조회 |
+| POST | `/api/v1/auth/change-password` | 본인 현재 비밀번호를 검증하고 새 비밀번호로 변경한 뒤 모든 기존 세션 폐기 |
 
 보호 API는 `Authorization: Bearer {access_token}`을 요구한다. access token은 HMAC 서명 payload이며 서버의 `auth_sessions` 상태와 `access_token_id`까지 검증한다.
 
-서버 계정 발급, 잠금, 비밀번호 재설정, role 변경을 수행하는 공개 API는 현재 범위에 추가하지 않는다. 운영 배포 전 기준은 서버 PC의 `app.ops.server_accounts` 운영 스크립트이며, WPF 사용자 관리 화면은 로컬 SQLite 계정만 관리한다. 이 화면은 제목, 목록, 상세 안내에서 로컬 계정 전용임을 표시해야 한다. 운영 스크립트의 비밀번호 입력은 대화식이며 현재 최소 8자를 요구한다. 첫 로그인 후 비밀번호 변경 강제도 현재 응답 payload, 서버 컬럼, WPF 화면에 추가하지 않고 “운영 첫 로그인 전 비밀번호 변경” 절차로 통제한다. `must_change_password` 컬럼, 비밀번호 변경 API, WPF 강제 변경 화면은 후속 범위다.
+`must_change_password = true`인 계정은 로그인 응답에서 같은 값을 받지만 `change-password` 이외의 보호 API와 refresh를 사용할 수 없다. 비밀번호 변경 성공 시 현재 세션을 포함한 모든 활성 세션을 폐기하므로 새 비밀번호로 다시 로그인해야 한다. 최소 비밀번호 길이는 8자이며 현재 비밀번호와 같은 값은 거부한다. 새 비밀번호와 임시 비밀번호 hash는 계정별 무작위 salt를 사용한 PBKDF2-SHA256으로 저장하고 기존 개발 계정 hash도 같은 검증기가 호환한다.
+
+## 서버 계정 수명주기
+
+아래 API는 `admin`, `system-admin`만 사용할 수 있다. `admin`은 일반 계정만 운영하며 system-admin 계정 생성·변경·세션 조회·폐기는 `system-admin`만 가능하다.
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/api/v1/server-accounts` | 서버 계정 목록 조회. `query`로 로그인 ID/표시 이름 검색 |
+| POST | `/api/v1/server-accounts` | 임시 비밀번호와 `must_change_password = true`로 서버 계정 생성 |
+| PATCH | `/api/v1/server-accounts/{user_id}` | 표시 이름, role, `ACTIVE`/`LOCKED`/`DISABLED` 상태 변경 |
+| POST | `/api/v1/server-accounts/{user_id}/password-reset` | 임시 비밀번호 재설정, 강제 변경 설정, 기존 세션 폐기 |
+| GET | `/api/v1/server-accounts/{user_id}/sessions` | 활성 세션 목록. `active_only=false`로 폐기 세션 포함 |
+| POST | `/api/v1/server-accounts/{user_id}/sessions/revoke` | 대상 계정의 모든 활성 세션 강제 폐기 |
+| POST | `/api/v1/server-accounts/{user_id}/sessions/{session_id}/revoke` | 대상 계정의 특정 활성 세션 강제 폐기 |
+
+계정 생성·변경·재설정·세션 폐기 요청은 필수 `reason`을 받는다. 임시 비밀번호는 요청에서 한 번만 받고 응답, `activity_history`, 일반 애플리케이션 로그에 넣지 않는다. 응답에는 `must_change_password` 상태만 포함한다. 자기 자신을 잠금/비활성화할 수 없고, 마지막 활성 `system-admin`을 비활성화·잠금·다른 role로 변경할 수 없다. role 변경, 비활성화/잠금, 비밀번호 재설정은 대상의 활성 세션을 같은 트랜잭션에서 폐기한다.
+
+모든 계정 변경은 `activity_history`에 `actor_id`, `target_type = user_account`, `target_id`, 비밀번호를 제외한 전후 JSON, 변경 사유, 생성 시각을 기록한다. 이벤트는 `user.created`, `user.updated`, `user.password_reset`, `user.password_changed`, `user.sessions_revoked`, `user.session_revoked`를 사용한다.
 
 운영 기준:
 
@@ -22,7 +41,7 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 - 서버 로그인 성공 시 WPF는 서버 응답의 사용자 ID, 표시 이름, role을 현재 세션 기준으로 사용한다.
 - 서버가 로그인 요청에 401 또는 403을 반환하면 WPF는 로컬 계정 로그인으로 우회하지 않는다.
 - 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 WPF 로컬 계정 로그인을 사용한다.
-- 서버 계정 운영 스크립트의 `create`, `reset-password`, `set-status`, `set-role` 경로는 `services/api/tests/test_server_account_ops.py`로 검증한다.
+- 서버 PC 운영 스크립트는 비상/초기 운영 경로로 유지하고, 설치형 WPF 운영은 서버 계정 API를 사용한다.
 - refresh는 같은 `auth_sessions` row에서 access token ID와 refresh token hash를 회전한다. 이전 access token과 이전 refresh token은 거부된다.
 - Android가 `deviceId`로 로그인한 세션은 `auth_sessions.device_id`에 승인 단말 ID를 보존한다. refresh는 같은 세션의 단말 ID를 유지한다.
 - logout은 현재 세션을 `REVOKED`로 바꾸며 이후 같은 access token은 거부된다.
@@ -283,7 +302,7 @@ WPF `RolePermissionPolicy`와의 대조:
 | 보고서 버튼 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | `ReportWriteUser` |
 | 채널 관리/인수인계 확인 현황 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead` | 채널 생성은 `DocumentWriteUser`, 조회/읽음/수신확인은 채널 멤버십 또는 `admin`, `system-admin` |
 | 파일 감시 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | WPF 로컬 기능 |
-| 사용자 관리 | `admin`, `system-admin` | 서버 계정 관리 API는 후속 범위 |
+| 사용자 관리 | `admin`, `system-admin` | `admin`은 일반 계정, `system-admin`은 system-admin 포함 |
 | controlled copy 다운로드 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | 공개 버전 대상 60초 1회성 서버 티켓과 스트리밍 사용 |
 
 정합성 검증 기준:

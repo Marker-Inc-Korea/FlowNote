@@ -54,7 +54,7 @@
 
 ## 다음 우선순위
 
-1. FastAPI 75건 기준선과 전체 pytest 통과에 이어 Windows 환경에서 WPF 빌드, WPF 스모크, Git 산출물 사후 점검을 포함한 표준 검증을 실행하고 결과를 남긴다.
+1. FastAPI 92건 기준선과 전체 pytest 통과에 이어 WPF 빌드, WPF 스모크, Git 산출물 사후 점검을 포함한 표준 검증을 실행하고 결과를 남긴다.
 2. 현장별 MSI 설치 검증, 코드 서명, self-contained 패키징 조건 정리
 3. Android 운영 배포 서명, MDM/인증서, 단말 등록/비활성화 절차 확정
 4. Android 백그라운드 알림 정책과 Windows/Android 채널 polling 운영 UX 검증. WPF 서버 scope·사용자별 cursor 영구 보존, 전경 polling과 읽음/수신 확인은 구현되어 있다.

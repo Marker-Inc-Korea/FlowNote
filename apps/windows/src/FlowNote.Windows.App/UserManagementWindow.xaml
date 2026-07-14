@@ -98,7 +98,7 @@
                                FontSize="15"
                                FontWeight="SemiBold"
                                Foreground="{StaticResource PrimaryTextBrush}" />
-                    <TextBlock Text="이 화면은 이 PC의 로컬 SQLite 계정만 관리합니다. 서버 URL이 설정된 운영 환경의 서버 계정 발급, 비밀번호 재설정, 잠금, 역할 변경은 서버 PC의 운영 스크립트에서 처리하세요."
+                    <TextBlock Text="서버에 연결되지 않아 이 PC의 로컬 SQLite 계정만 관리합니다. 서버 계정과 로컬 계정은 서로 변경되지 않습니다."
                                Margin="0,8,0,0"
                                TextWrapping="Wrap"
                                Foreground="{StaticResource SecondaryTextBrush}" />

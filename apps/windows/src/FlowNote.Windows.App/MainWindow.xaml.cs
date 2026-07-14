@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly FlowNoteServerChannelClient? serverChannelClient;
     private readonly FlowNoteServerTerminalDeviceClient? serverTerminalDeviceClient;
+    private readonly FlowNoteServerAccountClient? serverAccountClient;
     private readonly bool canRegisterDocuments;
     private readonly bool canManageFileWatch;
     private readonly bool canWriteReports;
@@ -48,7 +49,7 @@ public partial class MainWindow : Window
         canWriteReports = RolePermissionPolicy.CanWriteReports(currentUser.Role);
         canManageUsers = RolePermissionPolicy.CanManageUsers(currentUser.Role);
         currentDisplayName = currentUser.DisplayName ?? currentUser.LoginId ?? "admin";
-        (serverDocumentClient, serverChannelClient, serverTerminalDeviceClient, serverHttpClient) =
+        (serverDocumentClient, serverChannelClient, serverTerminalDeviceClient, serverAccountClient, serverHttpClient) =
             CreateServerClients(currentUser);
         notificationServerScope = serverHttpClient?.BaseAddress is null
             ? null
@@ -201,7 +202,8 @@ public partial class MainWindow : Window
         services.ServerNotificationCursors.ResetAfterAdministratorConfirmation(
             notificationServerScope,
             notificationUserId,
-            GetCurrentUserId());
+            GetCurrentUserId(),
+            currentUser.Role);
         notificationPollFailures = 0;
         notificationPollingTimer.Interval = TimeSpan.FromMilliseconds(100);
         notificationPollingTimer.Start();
@@ -379,16 +381,28 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new UserManagementWindow(services.Users, GetCurrentActorName())
+        if (serverAccountClient is not null)
+        {
+            new ServerUserManagementWindow(
+                serverAccountClient,
+                GetCurrentUserId(),
+                currentUser.Role ?? string.Empty)
+            {
+                Owner = this
+            }.ShowDialog();
+            return;
+        }
+
+        var localWindow = new UserManagementWindow(services.Users, GetCurrentActorName())
         {
             Owner = this
         };
-        window.ShowDialog();
-        if (string.Equals(window.UpdatedUserId, currentUser.UserId, StringComparison.Ordinal) &&
-            !string.IsNullOrWhiteSpace(window.UpdatedDisplayName))
+        localWindow.ShowDialog();
+        if (string.Equals(localWindow.UpdatedUserId, currentUser.UserId, StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(localWindow.UpdatedDisplayName))
         {
-            currentDisplayName = window.UpdatedDisplayName;
-            SignedInUserTextBlock.Text = $"{window.UpdatedDisplayName} ({FormatUserRole(currentUser.Role)})";
+            currentDisplayName = localWindow.UpdatedDisplayName;
+            SignedInUserTextBlock.Text = $"{localWindow.UpdatedDisplayName} ({FormatUserRole(currentUser.Role)})";
         }
     }
 
@@ -999,13 +1013,14 @@ public partial class MainWindow : Window
         FlowNoteServerDocumentClient? DocumentClient,
         FlowNoteServerChannelClient? ChannelClient,
         FlowNoteServerTerminalDeviceClient? TerminalDeviceClient,
+        FlowNoteServerAccountClient? AccountClient,
         HttpClient? HttpClient) CreateServerClients(LoginResult currentUser)
     {
         var httpClient = FlowNoteServerApiEnvironment.CreateHttpClientFromEnvironment();
         if (httpClient is null || string.IsNullOrWhiteSpace(currentUser.AccessToken))
         {
             httpClient?.Dispose();
-            return (null, null, null, null);
+            return (null, null, null, null, null);
         }
 
         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", currentUser.AccessToken);
@@ -1013,6 +1028,7 @@ public partial class MainWindow : Window
             new FlowNoteServerDocumentClient(httpClient),
             new FlowNoteServerChannelClient(httpClient),
             new FlowNoteServerTerminalDeviceClient(httpClient),
+            new FlowNoteServerAccountClient(httpClient),
             httpClient);
     }
 

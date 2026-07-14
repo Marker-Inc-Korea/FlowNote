@@ -76,6 +76,15 @@
 - 서버가 로그인에 401 또는 403을 반환하면 WPF는 같은 ID의 로컬 계정으로 fallback하지 않는다. fallback은 서버 URL이 없거나 연결 자체가 실패한 경우에만 허용한다.
 - 서버와 WPF의 role 집합과 권한표는 FastAPI `test_role_permissions_api.py`와 WPF 스모크의 `RolePermissionPolicy` 행렬로 함께 고정한다.
 
+## 2026-07-14. 서버 계정 수명주기 API와 Windows 운영 화면
+
+- 설치형 WPF에서 서버 로그인한 `admin`, `system-admin`은 `/api/v1/server-accounts` 계정 수명주기 API를 사용한다. 서버 미연결 로컬 로그인은 별도 로컬 계정 화면을 유지한다.
+- `admin`은 일반 계정을 운영하고 `system-admin`만 system-admin 계정을 생성·변경·조회·폐기할 수 있다. 자기 자신 잠금/비활성화와 마지막 활성 system-admin 제거는 서버가 거부한다.
+- 계정 생성과 비밀번호 재설정은 운영자가 입력한 8자 이상 임시 비밀번호를 요청에서만 받고 `must_change_password = true`로 저장한다. 임시 비밀번호는 응답, 일반 로그, 활동 이력에 재노출하지 않는다.
+- 강제 변경 계정은 로그인 토큰을 비밀번호 변경에만 사용할 수 있고 refresh와 나머지 보호 API는 거부한다. 변경 성공 시 모든 기존 세션을 폐기하고 새 비밀번호 재로그인을 요구한다.
+- 계정 잠금/비활성화, role 변경, 비밀번호 변경/재설정, 관리자 세션 폐기는 `auth_sessions`를 즉시 `REVOKED`로 바꿔 기존 access/refresh를 함께 차단한다.
+- 모든 운영 변경은 actor, 대상, 비밀번호를 제외한 전후 상태, 사유, 시각을 `activity_history`에 남긴다.
+
 ## 2026-07-06. AI 검색 기초 범위
 
 - AI 계층의 첫 범위는 자동 조언이 아니라 근거가 있는 검색과 요약 후보 생성으로 제한한다.
@@ -192,7 +201,7 @@
 - WPF는 정규화한 서버 base URL과 서버 `user_id` 조합을 키로 `server_notification_cursors`에 마지막 성공 cursor와 갱신 시각을 저장한다. 사용자 전환과 다른 서버 URL은 cursor를 공유하지 않으며 로그아웃은 row를 삭제하지 않는다.
 - 처리한 공개 `message_id`는 `server_notification_messages`에 같은 scope와 사용자별로 유일하게 저장한다. 응답 항목 처리, `message_id` 기록과 cursor 전진은 한 SQLite 트랜잭션으로 완료하며 실패하면 모두 rollback한다.
 - FastAPI는 `X-FlowNote-Notification-Cursor`에 서버 high-water cursor를 반환한다. 이 값이 로컬 성공 cursor보다 낮으면 서버 DB 복구/초기화 의심 상태로 보고 polling을 중단하며 자동으로 cursor를 낮추지 않는다.
-- cursor 0 초기화는 서버 복구를 확인한 `admin`, `system-admin`이 WPF 경고 창에서 명시적으로 확인한 현재 서버 scope·현재 사용자에만 적용한다. 확인 관리자와 시각을 남기고 다른 사용자·서버 row는 유지한다.
+- cursor 0 초기화는 서버 복구를 확인한 `admin`, `system-admin`이 WPF 경고 창에서 명시적으로 확인한 현재 서버 scope·현재 사용자에만 적용한다. Core 서비스도 전달받은 role을 다시 검사해 일반 사용자의 직접 호출을 거부한다. 확인 관리자와 시각을 남기고 다른 사용자·서버 row는 유지하며, 기존 `server_notification_messages`의 처리 완료 `message_id`는 초기화 뒤 재조회 멱등 근거로 삭제하지 않는다.
 - 로컬 DB 복구 후 row가 없거나 신규 사용자인 경우 0부터 따라잡는다. 이 과정은 새 알림으로 중복 표시하지 않고 `이전 알림을 재확인 중입니다`와 cursor 진행 위치를 한글로 안내한다.
 - 401은 polling 중지와 재로그인 요구를 유지하며 cursor를 전진시키지 않는다.
 
