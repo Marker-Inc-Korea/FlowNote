@@ -99,6 +99,8 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Win
 
 스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 없으면 `http://127.0.0.1:5184`의 로컬 FastAPI 서버를 자동 확인한다. 해당 서버가 실행 중이면 서버 로그인, 문서 등록, 버전, 공개 조회까지 서버 연동 블록을 검증하고, 실행 중이 아니면 기존 로컬 SQLite 검증만 계속한다.
 
+표준 통합 실행은 저장소 루트의 `scripts/verify-preserved-tests.ps1`을 사용한다. 스크립트가 `FLOWNOTE_SMOKE_RUN_ID`를 주입하고 필요하면 누적 Windows 스모크 FastAPI를 시작한다. 이때 구 FAILED 큐 dry-run·승인 재실행 멱등성, 서버 viewer 비밀번호 변경·Windows/승인 Android 세션·비활성화 차단, AI ground-truth 평가와 provider 차단, cursor 재시작 복구, SQLite 무결성·매핑/idempotency 중복을 같은 실행 ID로 검증한다.
+
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 
 파일 유형별 미리보기 샘플과 실패 안내 기준은 [문서 미리보기 안정화 기준](./docs/document-preview-stability.md)을 따른다.

@@ -1,7 +1,10 @@
 param(
+    [string]$RunId = ("integrated-smoke-{0}" -f (Get-Date -Format "yyyyMMdd-HHmmss")),
     [switch]$SkipFastApiPytest,
     [switch]$SkipWpfBuild,
     [switch]$SkipWpfSmoke,
+    [switch]$SkipAndroidBuild,
+    [switch]$RunAndroidDeviceSmoke,
     [switch]$SkipGitArtifactCheck
 )
 
@@ -10,6 +13,18 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
+$RunId = ($RunId -replace "[^A-Za-z0-9._-]", "-").Trim([char[]]".-_")
+if ([string]::IsNullOrWhiteSpace($RunId)) {
+    throw "RunId must contain at least one letter or number."
+}
+if ($RunId.Length -gt 96) {
+    $RunId = $RunId.Substring(0, 96)
+}
+$runArtifactDir = Join-Path $repoRoot ("data/local/integrated-smoke/{0}" -f $RunId)
+New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
+$env:FLOWNOTE_SMOKE_RUN_ID = $RunId
+Write-Host "Integrated verification run ID: $RunId"
+Write-Host "Preserved run artifacts: $runArtifactDir"
 
 function Invoke-Step {
     param(
@@ -212,7 +227,8 @@ if (-not $SkipFastApiPytest) {
         $python = Join-Path $apiDir ".venv/Scripts/python.exe"
         Push-Location $apiDir
         try {
-            & $python -m pytest
+            $junitPath = Join-Path $runArtifactDir "fastapi-pytest.xml"
+            & $python -m pytest --junitxml $junitPath
             if ($LASTEXITCODE -ne 0) {
                 throw "FastAPI pytest failed with exit code $LASTEXITCODE."
             }
@@ -233,17 +249,76 @@ if (-not $SkipWpfBuild) {
 }
 
 if (-not $SkipWpfSmoke) {
-    Invoke-Step "Run WPF smoke against shared SQLite" {
+    Invoke-Step "Run integrated WPF smoke against shared SQLite and preserved FastAPI" {
         $expectedDatabasePath = Join-Path $repoRoot "data/local/flownote.local.sqlite"
         $previousLocalDataDir = $env:FLOWNOTE_LOCAL_DATA_DIR
         $previousLocalDatabasePath = $env:FLOWNOTE_LOCAL_DATABASE_PATH
+        $previousApiBaseUrl = $env:FLOWNOTE_API_BASE_URL
+        $previousEnvironment = $env:FLOWNOTE_ENVIRONMENT
+        $previousDatabaseUrl = $env:FLOWNOTE_DATABASE_URL
+        $previousStorageRoot = $env:FLOWNOTE_STORAGE_ROOT
+        $previousAiEnabled = $env:FLOWNOTE_AI_EXTERNAL_CALL_ENABLED
+        $managedApiProcess = $null
 
         try {
             $env:FLOWNOTE_LOCAL_DATA_DIR = $null
             $env:FLOWNOTE_LOCAL_DATABASE_PATH = $null
+            $env:FLOWNOTE_API_BASE_URL = "http://127.0.0.1:5184"
+
+            $apiAlreadyRunning = $false
+            try {
+                $health = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:5184/api/v1/health" -TimeoutSec 2
+                $apiAlreadyRunning = $health.StatusCode -eq 200
+            }
+            catch {
+                $apiAlreadyRunning = $false
+            }
+
+            if (-not $apiAlreadyRunning) {
+                $apiDir = Join-Path $repoRoot "services/api"
+                $python = Join-Path $apiDir ".venv/Scripts/python.exe"
+                if (-not (Test-Path $python)) {
+                    throw "FastAPI virtualenv python not found: $python"
+                }
+                $env:FLOWNOTE_ENVIRONMENT = "test"
+                $env:FLOWNOTE_DATABASE_URL = "sqlite:///./data/flownote.windows-smoke.sqlite3"
+                $env:FLOWNOTE_STORAGE_ROOT = "./storage/windows-smoke"
+                $env:FLOWNOTE_AI_EXTERNAL_CALL_ENABLED = "false"
+                $apiOutLog = Join-Path $runArtifactDir "fastapi-server.out.log"
+                $apiErrLog = Join-Path $runArtifactDir "fastapi-server.err.log"
+                $managedApiProcess = Start-Process -FilePath $python `
+                    -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "5184") `
+                    -WorkingDirectory $apiDir -PassThru `
+                    -RedirectStandardOutput $apiOutLog -RedirectStandardError $apiErrLog
+
+                $started = $false
+                for ($attempt = 0; $attempt -lt 30; $attempt++) {
+                    Start-Sleep -Seconds 1
+                    if ($managedApiProcess.HasExited) {
+                        throw "Managed FastAPI exited before health check. Preserve and inspect: $apiErrLog"
+                    }
+                    try {
+                        $health = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:5184/api/v1/health" -TimeoutSec 2
+                        if ($health.StatusCode -eq 200) {
+                            $started = $true
+                            break
+                        }
+                    }
+                    catch {
+                    }
+                }
+                if (-not $started) {
+                    throw "Managed FastAPI did not become healthy. Preserve and inspect: $apiErrLog"
+                }
+            }
+            else {
+                Write-Host "Using the already-running FastAPI at http://127.0.0.1:5184. Its configuration must keep external AI calls disabled."
+            }
 
             Write-Host "Expected WPF smoke SQLite DB: $expectedDatabasePath"
-            & dotnet run --project ".\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Windows.SmokeTests.csproj"
+            $wpfLog = Join-Path $runArtifactDir "wpf-smoke.log"
+            & dotnet run --project ".\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Windows.SmokeTests.csproj" *>&1 |
+                Tee-Object -FilePath $wpfLog
             if ($LASTEXITCODE -ne 0) {
                 throw "WPF smoke failed with exit code $LASTEXITCODE."
             }
@@ -253,8 +328,58 @@ if (-not $SkipWpfSmoke) {
             }
         }
         finally {
+            if ($null -ne $managedApiProcess -and -not $managedApiProcess.HasExited) {
+                Stop-Process -Id $managedApiProcess.Id
+                $managedApiProcess.WaitForExit()
+            }
             $env:FLOWNOTE_LOCAL_DATA_DIR = $previousLocalDataDir
             $env:FLOWNOTE_LOCAL_DATABASE_PATH = $previousLocalDatabasePath
+            $env:FLOWNOTE_API_BASE_URL = $previousApiBaseUrl
+            $env:FLOWNOTE_ENVIRONMENT = $previousEnvironment
+            $env:FLOWNOTE_DATABASE_URL = $previousDatabaseUrl
+            $env:FLOWNOTE_STORAGE_ROOT = $previousStorageRoot
+            $env:FLOWNOTE_AI_EXTERNAL_CALL_ENABLED = $previousAiEnabled
+        }
+    }
+}
+
+if (-not $SkipAndroidBuild) {
+    Invoke-Step "Run Android unit tests and debug build" {
+        $androidDir = Join-Path $repoRoot "apps/android"
+        $androidLog = Join-Path $runArtifactDir "android-unit-build.log"
+        Push-Location $androidDir
+        try {
+            & .\gradlew.bat testDebugUnitTest assembleDebug --stacktrace *>&1 | Tee-Object -FilePath $androidLog
+            if ($LASTEXITCODE -ne 0) {
+                throw "Android unit test or debug build failed with exit code $LASTEXITCODE."
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+}
+
+if ($RunAndroidDeviceSmoke) {
+    Invoke-Step "Run approved Android physical-device instrumentation smoke" {
+        if ($null -eq (Get-Command adb -ErrorAction SilentlyContinue)) {
+            throw "adb is required for the approved Android physical-device smoke."
+        }
+        $connectedDevices = @(& adb devices | Select-Object -Skip 1 | Where-Object { $_ -match "\sdevice$" })
+        if ($connectedDevices.Count -ne 1) {
+            throw "Exactly one approved Android physical device must be connected; found $($connectedDevices.Count)."
+        }
+        $androidDir = Join-Path $repoRoot "apps/android"
+        $deviceLog = Join-Path $runArtifactDir "android-device.log"
+        Push-Location $androidDir
+        try {
+            & .\gradlew.bat connectedDebugAndroidTest --stacktrace *>&1 | Tee-Object -FilePath $deviceLog
+            if ($LASTEXITCODE -ne 0) {
+                throw "Android physical-device instrumentation smoke failed with exit code $LASTEXITCODE."
+            }
+        }
+        finally {
+            Pop-Location
         }
     }
 }
@@ -267,4 +392,4 @@ if (-not $SkipGitArtifactCheck) {
 }
 
 Write-Host ""
-Write-Host "Verification sequence completed. Test DBs, logs, and artifacts were not deleted."
+Write-Host "Verification sequence completed for run ID $RunId. Test DBs, logs, and artifacts were not deleted."
