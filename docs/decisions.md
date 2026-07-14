@@ -13,6 +13,15 @@
 - 새 WPF 코멘트는 문서 버전이 아니라 `field_comments` 원천 이력으로 저장한다.
 - 기존 공통 SQLite에 남아 있는 구 FieldNote 테이블과 큐 row는 테스트 이력으로 보존한다. 현재 WPF는 `field_note/register_field_note`, `field_note_attachment/register_field_note_attachment` 큐를 FieldComment API로 자동 변환하지 않고 별도 전환 또는 마이그레이션 검토 대상으로 분류한다.
 
+## 2026-07-14. 보존 동기화 실패 무손실 전환
+
+- FAILED 누적 큐의 진단은 구 create, 구 FieldNote/첨부, 선행 서버 ID 누락, 로컬 파일 누락, 실제 서버/인증 오류의 배타적 분류를 사용한다.
+- 전환 상태는 `자동 전환 가능`, `관리자 확인 필요`, `원본 누락으로 전환 불가`, `계속 보존` 네 가지다.
+- dry-run은 SQLite read-only 연결만 사용하고 원천 row, 대상 action, 예상 idempotency key와 안정된 plan hash를 출력한다.
+- 승인 실행은 직전 plan hash와 명시한 원천 큐 row ID만 받는다. 기존 큐와 파일은 수정·삭제하지 않고 현재 action의 신규 큐와 `server_sync_migration_audit`를 추가한다.
+- 구 FieldNote는 새 FieldComment/첨부 원천으로 복제하되 작성자, 시각, 본문, 첨부 메타데이터, 원천 ID와 `FieldNote` 구 명칭을 감사 snapshot으로 보존한다.
+- 원천 큐 ID와 대상 idempotency key를 유일하게 연결해 같은 승인을 반복해도 신규 큐·매핑·감사 중복이 생기지 않게 한다.
+
 ## 2026-06-30. 사용자 관리
 
 - WPF 사용자 관리는 `admin`, `system-admin` 역할만 사용할 수 있다.

@@ -32,7 +32,13 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Win
 git status --short
 ```
 
-2026-07-13 현재 FastAPI 코드는 75건이 수집된다. 기존 68건 기준선에 AI 근거 검색 ground-truth 회귀 평가 1건과 controlled copy 보안·감사 회귀 6건이 추가된 결과다. 표준 PowerShell 스크립트도 같은 75건을 요구한다.
+2026-07-14 현재 FastAPI 코드는 75건이 수집된다. 기존 68건 기준선에 AI 근거 검색 ground-truth 회귀 평가 1건과 controlled copy 보안·감사 회귀 6건이 추가된 결과다. 표준 PowerShell 스크립트도 같은 75건을 요구한다.
+
+## 2026-07-14 작업 102 현재 코드 재대조
+
+작업 시작 시 Git 작업 트리는 깨끗했고 마지막 문서 정비 커밋 이후 추가 코드 변경은 없었다. 따라서 미커밋 변경을 문서에 추정 반영하지 않고 현재 FastAPI, Windows WPF, Android 코드와 상위 제품 문서의 구현 범위를 다시 대조했다. Android 문서 본문 뷰어 미구현, WPF controlled copy 저장·SHA-256 검증, AI 근거 평가와 외부 호출 전 안전장치 골격 등 현재 구현 설명은 코드와 일치한다.
+
+FastAPI OpenAPI는 루트 `GET /` 1개를 포함해 총 71개 method/path이며, 이 중 `/api/v1`은 70개 method/path와 55개 고유 path다. 아래 2026-07-13 기록의 “71개”는 이 전체 수를 뜻하므로 범위를 명확히 했다. `services/api`에서 `pytest --collect-only -q`를 다시 실행해 75건 수집도 확인했다. 이번 요청에는 코드 변경이 없어 전체 pytest, WPF 빌드·스모크와 Android 빌드·단위 테스트는 새로 실행하지 않았고 기존 테스트 데이터와 산출물은 삭제하지 않았다.
 
 ## 2026-07-13 전체 Markdown 코드 정합성 갱신
 
@@ -40,7 +46,7 @@ Git으로 추적하는 Markdown 문서 전체를 현재 FastAPI, Windows WPF, An
 
 주요 정정은 Android의 문서 기능을 파일 본문 열람으로 과장하지 않고 공개 문서 목록·상세 메타데이터 조회와 FieldComment 문서/버전 연결 범위로 명시한 것, 서버 DB 문서에 외부 AI 질의·근거 snapshot·인용·호출 감사·전송 승인 및 `controlled_copy_grants` 테이블을 추가한 것, WPF controlled copy가 로컬 원본 복사나 동기화 큐가 아니라 서버의 사용자·세션 바인딩 1회성 스트리밍과 저장 후 SHA-256 검증임을 반영한 것이다.
 
-FastAPI OpenAPI의 현재 method/path 71개가 `docs/api.md` 또는 `services/api/README.md`에 모두 존재하고, 서버 ORM의 모든 `__tablename__`이 DB 스키마 문서 3곳에 빠짐없이 명시된 것도 확인했다. 추적 Markdown의 상대 파일 링크와 `git diff --check`도 통과했다.
+FastAPI OpenAPI의 루트 `GET /`를 포함한 전체 method/path 71개가 `docs/api.md` 또는 `services/api/README.md`에 모두 존재하고, 서버 ORM의 모든 `__tablename__`이 DB 스키마 문서 3곳에 빠짐없이 명시된 것도 확인했다. 추적 Markdown의 상대 파일 링크와 `git diff --check`도 통과했다.
 
 `services/api`에서 `pytest --collect-only -q`로 75건을 확인한 뒤 전체 pytest를 실행해 75건이 모두 통과했다. 이번 작업은 문서와 예제 환경 변수 갱신이므로 WPF 빌드·스모크와 Android 빌드·단위 테스트는 새로 실행하지 않았다. 기존 SQLite, 로그, pytest cache와 테스트 산출물은 삭제하지 않았다.
 
