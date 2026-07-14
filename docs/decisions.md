@@ -53,6 +53,8 @@
 
 ## 2026-07-01. WPF와 서버 계정 정책
 
+이 결정의 서버 계정 관리 경로는 [2026-07-14 서버 계정 수명주기 API와 Windows 운영 화면](#2026-07-14-서버-계정-수명주기-api와-windows-운영-화면) 결정으로 대체되었다. 로컬/서버 계정 분리와 서버 role 우선 원칙은 유지한다.
+
 - WPF 사용자 추가, 역할 변경, 비밀번호 변경은 로컬 SQLite 계정 전용이다.
 - 서버 계정 발급과 변경은 서버 DB 운영 절차에서 관리하며, WPF 서버 계정 관리 API 연동은 후속 범위로 둔다.
 - 서버 로그인 성공 시 WPF 현재 세션은 서버 사용자 ID, 표시 이름, role을 우선 사용한다.
@@ -62,6 +64,8 @@
 
 ## 2026-07-02. 운영 초기 서버 계정
 
+이 결정의 앱 강제 변경 미구현과 스크립트 중심 운영 범위는 2026-07-14 결정으로 대체되었다. 최초 `admin`의 비상·초기 스크립트 경로는 유지한다.
+
 - 서버 DB 최초 생성 시 만들어지는 `admin` 계정을 최초 서버 관리자 계정으로 사용한다.
 - 개발/스모크 테스트 기본 비밀번호 `1234`는 운영 로그인 전에 서버 PC에서 현장 비밀번호로 변경한다.
 - 현재 구현 범위에서는 첫 로그인 후 비밀번호 변경을 앱이 강제하지 않는다. 운영 기준은 첫 로그인 전 비밀번호 변경이며, 강제 변경 컬럼/API/WPF 화면은 후속 범위다.
@@ -69,6 +73,8 @@
 - WPF 로컬 계정은 오프라인 또는 서버 미설정 상황의 로컬 계정이며 서버 계정의 대체 관리 화면이 아니다.
 
 ## 2026-07-06. 서버 계정 API와 WPF role 우선순위
+
+이 결정의 서버 계정 API 보류 범위는 2026-07-14 결정으로 대체되었다. 서버 role 우선과 명시적 401/403에서 로컬 fallback 금지 원칙은 유지한다.
 
 - 운영 배포 전 단계에서는 서버 계정 관리 공개 API를 추가하지 않고 `app.ops.server_accounts` 운영 스크립트 기준을 유지한다.
 - 첫 로그인 후 비밀번호 변경 강제는 `must_change_password` 컬럼, 변경 API, WPF 강제 변경 화면을 함께 설계해야 하므로 이번 범위에서는 착수하지 않는다.
@@ -241,6 +247,14 @@
 - 사람형 스모크와 API 테스트는 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source가 함께 필요한 질문과 기대 candidate/source/version/trace ID를 저장한다.
 - 삭제·비공개 문서, 제외/보관 FieldComment, 사라진 보고서 원천, 권한 없는 채널, 근거 부족 질문을 부정 사례로 유지하며 근거 부족은 `INSUFFICIENT_EVIDENCE`로 판정한다.
 - provider 착수 지표는 평가 전건 통과, 네 원천 유형 커버, candidate ID/content hash와 순위 재현성, 검토 완료 FieldComment 100건 충족을 모두 요구한다. 이 지표는 운영 승인과 기능 플래그를 대신하지 않으며 외부 호출을 자동 활성화하지 않는다.
+
+## 2026-07-14. 외부 AI provider 직전 최소 payload 게이트
+
+- 문서 버전, FieldComment, 작업순서 이력, report source는 공통 정책 서비스가 query snapshot 시점에 원천 상태, 작성자 계정·role과 연결 채널 멤버십을 다시 검사한다.
+- 주민등록번호·전화번호·이메일은 마스킹하고 계정·token·경로·고객 식별자와 현장별 금칙어는 원천 전체를 차단한다. 금칙 원문은 provider DTO, 근거 snapshot과 일반 로그에 남기지 않는다.
+- provider 경계 DTO는 정제 질의, 최소 발췌, 안정된 candidate/source/version/trace ID, content hash, rank와 prompt version만 허용한다. 운영 provider SDK나 네트워크 client는 이 결정에 포함하지 않는다.
+- 차단 감사 코드는 `CONTENT_RESTRICTED`, `SOURCE_FORBIDDEN`, `APPROVAL_REVOKED`, `INSUFFICIENT_EVIDENCE`로 정제한다. 제외 후보는 ID/hash와 사유만 snapshot으로 남기며 `sent_externally = false`를 유지한다.
+- 승인 철회는 신규 질의를 즉시 차단하지만 `ai_search_candidates`와 외부 호출 없는 ground-truth 품질 점검은 계속 사용할 수 있어야 한다.
 
 ## 2026-07-13. controlled copy는 짧은 만료의 1회성 인증 스트리밍 사용
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Protocol
@@ -12,7 +11,16 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.auth import ROLE_ADMIN, ROLE_SYSTEM_ADMIN, AuthenticatedUser, require_roles
+from app.core.auth import (
+    ROLE_ADMIN,
+    ROLE_ASSISTANT_MANAGER,
+    ROLE_DEPARTMENT_MANAGER,
+    ROLE_DOCUMENT_ADMIN,
+    ROLE_MANAGER,
+    ROLE_SYSTEM_ADMIN,
+    AuthenticatedUser,
+    require_roles,
+)
 from app.core.config import Settings, get_settings
 from app.db.models import (
     AICallAttempt,
@@ -22,21 +30,33 @@ from app.db.models import (
     AIQueryEvidenceCandidate,
     AISearchCandidate,
     AITransferApproval,
-    Document,
-    DocumentVersion,
-    FieldComment,
-    Report,
-    ReportSource,
-    WorkSequenceChangeHistory,
 )
 from app.db.session import get_db_session
+from app.services.ai_provider_gate import (
+    AISourceAccessPolicy,
+    ProviderBoundaryPayload,
+    ProviderEvidence,
+    approval_block_code,
+    load_sensitive_filter,
+    minimal_excerpt,
+    sha256_text,
+)
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 AIQueryUser = Annotated[
-    AuthenticatedUser, Depends(require_roles(ROLE_ADMIN, ROLE_SYSTEM_ADMIN))
+    AuthenticatedUser,
+    Depends(
+        require_roles(
+            ROLE_ADMIN,
+            ROLE_SYSTEM_ADMIN,
+            ROLE_DOCUMENT_ADMIN,
+            ROLE_MANAGER,
+            ROLE_ASSISTANT_MANAGER,
+            ROLE_DEPARTMENT_MANAGER,
+        )
+    ),
 ]
 ALLOWED_PURPOSES = {"EVIDENCE_SEARCH", "EVIDENCE_SUMMARY"}
-ALLOWED_FIELD_COMMENT_STATUSES = {"ANALYZED", "REVIEWED", "SELECTED"}
 ALLOWED_SOURCE_TYPES = {
     "PUBLISHED_DOCUMENT_VERSION", "FIELD_COMMENT", "WORK_SEQUENCE_HISTORY", "REPORT_SOURCE"
 }
@@ -74,12 +94,8 @@ class AIQueryCreateRequest(BaseModel):
         return cleaned
 
 
-def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
-
-
 def _hash(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return sha256_text(value)
 
 
 def _error(query_id: str, status_code: int, code: str, message: str, retryable: bool = False) -> JSONResponse:
@@ -108,47 +124,24 @@ def _block(
     return _error(query.query_id, status_code, code, message, status_code >= 500)
 
 
-def _approval(settings: Settings, session: Session, now: datetime) -> AITransferApproval | None:
-    approvals = session.scalars(
+def _approval(settings: Settings, session: Session) -> AITransferApproval | None:
+    return session.scalar(
         select(AITransferApproval).where(
             AITransferApproval.customer_scope == settings.ai_customer_scope,
             AITransferApproval.site_scope == settings.ai_site_scope,
             AITransferApproval.provider == settings.ai_provider,
         ).order_by(AITransferApproval.approved_at.desc())
-    ).all()
-    for approval in approvals:
-        model_allowed = approval.model_scope in {"*", settings.ai_model}
-        if approval.revoked_at is None and _utc(approval.expires_at) > now and model_allowed:
-            return approval
-    return None
-
-
-def _eligible(candidate: AISearchCandidate, session: Session) -> tuple[bool, str | None]:
-    if candidate.source_type == "PUBLISHED_DOCUMENT_VERSION":
-        document = session.scalar(select(Document).where(Document.document_id == candidate.source_id))
-        version = session.scalar(select(DocumentVersion).where(DocumentVersion.version_id == candidate.source_version_id))
-        valid = bool(document and version and document.status == "PUBLISHED" and document.deleted_at is None
-                     and document.published_version_id == version.version_id and version.document_id == document.document_id
-                     and version.version_status == "PUBLISHED" and version.is_published)
-        return valid, None if valid else "DOCUMENT_NOT_PUBLISHED"
-    if candidate.source_type == "FIELD_COMMENT":
-        comment = session.scalar(select(FieldComment).where(FieldComment.comment_id == candidate.source_id))
-        valid = bool(comment and comment.status in ALLOWED_FIELD_COMMENT_STATUSES)
-        return valid, None if valid else "FIELD_COMMENT_NOT_REVIEWED"
-    if candidate.source_type == "WORK_SEQUENCE_HISTORY":
-        history = session.scalar(select(WorkSequenceChangeHistory).where(WorkSequenceChangeHistory.change_id == candidate.source_id))
-        return (history is not None), None if history else "WORK_SEQUENCE_HISTORY_MISSING"
-    if candidate.source_type == "REPORT_SOURCE":
-        source = session.scalar(select(ReportSource).where(ReportSource.id == int(candidate.source_id))) if candidate.source_id.isdigit() else None
-        report = session.scalar(select(Report).where(Report.report_id == source.report_id)) if source else None
-        valid = bool(source and report and report.status != "ARCHIVED")
-        return valid, None if valid else "REPORT_SOURCE_NOT_AVAILABLE"
-    return False, "SOURCE_TYPE_NOT_ALLOWED"
+    )
 
 
 def _snapshot(
-    session: Session, query: AIQuery, candidate_ids: list[str] | None, approval: AITransferApproval
-) -> list[AIQueryEvidenceCandidate]:
+    session: Session,
+    query: AIQuery,
+    current_user: AuthenticatedUser,
+    candidate_ids: list[str] | None,
+    approval: AITransferApproval,
+    settings: Settings,
+) -> tuple[list[AIQueryEvidenceCandidate], list[ProviderEvidence]]:
     statement = select(AISearchCandidate)
     if candidate_ids is not None:
         statement = statement.where(AISearchCandidate.candidate_id.in_(candidate_ids))
@@ -157,26 +150,50 @@ def _snapshot(
         approved_types = set(json.loads(approval.allowed_source_types))
     except (TypeError, ValueError):
         approved_types = set()
+    access_policy = AISourceAccessPolicy(session, current_user)
+    content_filter = load_sensitive_filter(session, settings)
     snapshots: list[AIQueryEvidenceCandidate] = []
+    evidence: list[ProviderEvidence] = []
     for rank, candidate in enumerate(candidates, 1):
-        eligible, reason = _eligible(candidate, session)
+        policy_result = access_policy.evaluate(candidate)
+        eligible, reason = policy_result.allowed, policy_result.reason_code
         if candidate.source_type not in approved_types or candidate.source_type not in ALLOWED_SOURCE_TYPES:
-            eligible, reason = False, "TRANSFER_SCOPE_MISMATCH"
-        if not eligible:
-            continue
+            eligible, reason = False, "SOURCE_FORBIDDEN"
+        filtered_text: str | None = None
+        if eligible and policy_result.source_text is not None:
+            filtered = content_filter.filter(policy_result.source_text)
+            eligible, reason = filtered.allowed, filtered.reason_code
+            filtered_text = filtered.text
+        selected = eligible and filtered_text is not None and len(evidence) < settings.ai_provider_max_sources
         row = AIQueryEvidenceCandidate(
             query_id=query.query_id, candidate_id=candidate.candidate_id,
             source_type=candidate.source_type, source_id=candidate.source_id,
             source_version_id=candidate.source_version_id, trace_table=candidate.trace_table,
             trace_id=candidate.trace_id, trace_version_id=candidate.trace_version_id, rank=rank,
-            selected_for_prompt=True, sent_externally=False,
-            content_hash=_hash(candidate.search_text),
-            eligibility_result="ELIGIBLE", exclusion_reason=None,
+            selected_for_prompt=selected, sent_externally=False,
+            content_hash=policy_result.content_hash,
+            eligibility_result="ELIGIBLE" if eligible else "EXCLUDED", exclusion_reason=reason,
         )
         session.add(row)
         snapshots.append(row)
+        if selected:
+            evidence.append(
+                ProviderEvidence(
+                    candidate_id=candidate.candidate_id,
+                    source_type=candidate.source_type,
+                    source_id=candidate.source_id,
+                    source_version_id=candidate.source_version_id,
+                    trace_id=candidate.trace_id,
+                    trace_version_id=candidate.trace_version_id,
+                    content_hash=policy_result.content_hash,
+                    rank=rank,
+                    excerpt=minimal_excerpt(
+                        filtered_text, query.query_text, settings.ai_provider_excerpt_max_chars
+                    ),
+                )
+            )
     session.flush()
-    return snapshots
+    return snapshots, evidence
 
 
 @router.post("/queries")
@@ -190,7 +207,7 @@ def create_ai_query(
     now = datetime.now(timezone.utc)
     query = AIQuery(
         query_id=f"aiq-{uuid4().hex}", requested_by=current_user.user_id,
-        query_text=payload.query, query_hash=_hash(payload.query), purpose=payload.purpose,
+        query_text="[PENDING_FILTER]", query_hash=_hash(payload.query), purpose=payload.purpose,
         status="RECEIVED", response_storage_mode=payload.response_storage_mode,
         retention_until=now + timedelta(days=90), regenerable_until=now + timedelta(days=90),
     )
@@ -200,9 +217,16 @@ def create_ai_query(
         return _block(session, query, settings, "AI_SCOPE_NOT_ALLOWED", "허용되지 않은 AI 요청 목적입니다.", 422)
     if not settings.ai_external_call_enabled:
         return _block(session, query, settings, "AI_EXTERNAL_CALL_DISABLED", "외부 AI 호출이 비활성화되어 있습니다.", 503)
-    approval = _approval(settings, session, now)
-    if approval is None:
-        return _block(session, query, settings, "AI_TRANSFER_NOT_APPROVED", "유효한 외부 전송 승인이 없습니다.", 403)
+    approval = _approval(settings, session)
+    if approval_block_code(approval, settings, now):
+        return _block(session, query, settings, "APPROVAL_REVOKED", "유효한 외부 전송 승인이 없습니다.", 403)
+    assert approval is not None
+    query_filter = load_sensitive_filter(session, settings)
+    filtered_query = query_filter.filter(payload.query)
+    if not filtered_query.allowed or filtered_query.text is None:
+        query.query_text = "[REDACTED]"
+        return _block(session, query, settings, "CONTENT_RESTRICTED", "질의에 외부 전송 금지 정보가 포함되어 있습니다.", 422)
+    query.query_text = filtered_query.text
     prompt = session.scalar(
         select(AIPromptVersion).where(
             AIPromptVersion.allowed_purpose == payload.purpose,
@@ -212,10 +236,13 @@ def create_ai_query(
     if prompt is None:
         return _block(session, query, settings, "AI_PROMPT_NOT_APPROVED", "승인된 프롬프트 버전이 없습니다.", 409)
     query.prompt_version_id = prompt.prompt_version_id
-    snapshots = _snapshot(session, query, payload.candidate_ids, approval)
-    eligible = [row for row in snapshots if row.eligibility_result == "ELIGIBLE"]
-    if not eligible:
+    snapshots, provider_evidence = _snapshot(
+        session, query, current_user, payload.candidate_ids, approval, settings
+    )
+    eligible = [row for row in snapshots if row.selected_for_prompt]
+    if not provider_evidence:
         query.status = "INSUFFICIENT_EVIDENCE"
+        query.block_code = "INSUFFICIENT_EVIDENCE"
         query.completed_at = now
         session.commit()
         return {"queryId": query.query_id, "status": query.status, "grounded": False,
@@ -224,6 +251,12 @@ def create_ai_query(
     provider: AIProvider | None = getattr(request.app.state, "ai_provider", None)
     if provider is None:
         return _block(session, query, settings, "AI_PROVIDER_NOT_CONFIGURED", "외부 AI provider가 구성되지 않았습니다.", 503)
+    session.expire(approval)
+    current_approval = session.scalar(
+        select(AITransferApproval).where(AITransferApproval.approval_id == approval.approval_id)
+    )
+    if approval_block_code(current_approval, settings, datetime.now(timezone.utc)):
+        return _block(session, query, settings, "APPROVAL_REVOKED", "외부 전송 승인이 철회되었습니다.", 403)
     attempt = AICallAttempt(
         attempt_id=f"aica-{uuid4().hex}", query_id=query.query_id, provider=settings.ai_provider,
         model=settings.ai_model, status="CALLING", started_at=now,
@@ -231,10 +264,17 @@ def create_ai_query(
     session.add(attempt)
     query.status = "CALLING"
     session.flush()
+    provider_payload = ProviderBoundaryPayload(
+        purpose=payload.purpose,
+        query=filtered_query.text,
+        query_hash=query.query_hash,
+        prompt_version_id=prompt.prompt_version_id,
+        prompt_version=f"{prompt.name}/{prompt.version}",
+        trace_id=query.query_id,
+        sources=tuple(provider_evidence),
+    )
     # This is an injected boundary only. The repository contains no network provider client.
-    result = provider({"purpose": payload.purpose, "queryHash": query.query_hash,
-                       "promptVersionId": prompt.prompt_version_id,
-                       "candidateIds": [row.candidate_id for row in eligible]})
+    result = provider(provider_payload.as_dict())
     response_text = str(result.get("response", ""))
     snapshot_by_id = {row.candidate_id: row for row in eligible}
     claims = result.get("claims")

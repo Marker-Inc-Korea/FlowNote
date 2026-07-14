@@ -14,7 +14,7 @@
 
 1. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 2. 실행 전 `git status --porcelain=v1 --untracked-files=all`에서 SQLite 예외 외 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-3. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 75개인지 확인한다.
+3. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 96개인지 확인한다.
 4. `services/api`에서 FastAPI pytest를 실행한다.
 5. WPF 앱을 빌드한다.
 6. WPF 스모크 테스트를 실행한다.
@@ -32,7 +32,7 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Win
 git status --short
 ```
 
-2026-07-14 현재 FastAPI 코드는 92건이 수집된다. 기존 75건 기준선에 서버 계정 수명주기·권한·세션·감사 회귀 17건이 추가된 결과다. 표준 PowerShell 스크립트도 같은 92건을 요구한다.
+2026-07-14 현재 FastAPI 코드는 96건이 수집된다. 서버 계정 수명주기 회귀에 AI provider 직전 권한·민감정보·최소 payload 게이트 회귀 4건을 추가한 결과다. 표준 PowerShell 스크립트도 같은 96건을 요구한다.
 
 ## 2026-07-14 WPF 사용자별 알림 cursor 영구 보존
 
@@ -46,7 +46,19 @@ WPF 로컬 SQLite에 `server_notification_cursors`, `server_notification_message
 
 작업 시작 시 Git 작업 트리는 깨끗했으므로 미커밋 변경을 추정 반영하지 않고 현재 FastAPI, Windows WPF, Android 코드와 상위 제품 문서의 구현 범위를 다시 대조했다. Android 문서 본문 뷰어 미구현, WPF controlled copy 저장·SHA-256 검증, AI 근거 평가와 외부 호출 전 안전장치 골격 등 기존 구현 설명은 코드와 일치한다. 최신 Windows 코드의 보존 FAILED 큐 전환 기능은 독립 운영 문서와 데이터 모델·결정 기록에는 있었지만 Windows 문서 색인, 구현 목록, 로컬 SQLite 설명, 시스템 맵과 로드맵 연결이 부족해 해당 문서를 보강했다.
 
-FastAPI OpenAPI는 루트 `GET /` 1개를 포함해 총 71개 method/path이며, 이 중 `/api/v1`은 70개 method/path와 55개 고유 path다. 아래 2026-07-13 기록의 “71개”는 이 전체 수를 뜻하므로 범위를 명확히 했다. `services/api`에서 `pytest --collect-only -q`를 다시 실행해 75건 수집도 확인했다. 이번 요청에는 코드 변경이 없어 전체 pytest, WPF 빌드·스모크와 Android 빌드·단위 테스트는 새로 실행하지 않았고 기존 테스트 데이터와 산출물은 삭제하지 않았다.
+이후 서버 계정 수명주기 API와 WPF 운영 화면, 강제 비밀번호 변경, 세션 폐기 코드가 추가되어 상위 제품·시스템·보안·배포·로드맵 문서를 다시 갱신했다. `services/api`에서 `pytest --collect-only -q`를 실행해 현재 코드가 92건을 수집하는 것을 확인했으며 `scripts/verify-preserved-tests.ps1`의 기준선도 92건이다. 아래 2026-07-13의 75건 수집·통과 문장은 당시 실행 기록으로 보존한다. 이번 문서 갱신에서는 전체 pytest, WPF 빌드·스모크와 Android 빌드·단위 테스트를 새로 실행하지 않았고 기존 테스트 데이터와 산출물은 삭제하지 않았다.
+
+## 2026-07-14 외부 AI provider 직전 게이트 검증
+
+FastAPI fake provider/spy 경계로 실제 네트워크 없이 다음을 검증한다.
+
+- 문서 공개 버전, 검토 완료 FieldComment, 작업순서 변경 이력, report source가 함께 필요한 질문에서 네 source type이 모두 최소 발췌와 candidate/source/version/trace ID, content hash, rank, prompt version을 갖는다.
+- 같은 질문과 후보를 반복하면 질의 trace ID를 제외한 source 배열과 순위가 동일하다.
+- 권한 없는 채널, 비공개·삭제 문서, 보관/미검토 FieldComment, 보관 보고서·유효하지 않은 보고서 원천은 `SOURCE_FORBIDDEN` 또는 `INSUFFICIENT_EVIDENCE`이며 provider spy에 후보 ID와 내용이 0바이트다.
+- 주민등록번호·전화번호·이메일 원문은 마스킹 뒤 payload byte에 없고 계정/token/경로/고객 식별자와 현장별 금칙어 원천은 `CONTENT_RESTRICTED`로 전체 차단된다. 일반 오류와 호출 감사에는 검출 원문을 남기지 않는다.
+- 승인 철회 직후 신규 질의는 `APPROVAL_REVOKED`로 차단되고 호출 횟수는 증가하지 않는다. 같은 DB의 `/api/v1/ai-search/quality`와 ground-truth 평가는 계속 동작한다.
+
+사람형 표본 검토는 테스트용 고객/현장 scope와 운영 scope를 섞지 않는다. 한 현장·한 라인에서 `line + equipment` 또는 `process + error_type`처럼 태그 두 축으로 표본을 고르고, `ANALYZED`/`REVIEWED`/`SELECTED` FieldComment만 원문 품질과 관리자 분석의 일치 여부를 확인한다. 운영 원문은 테스트 DB나 fake provider payload에 복제하지 않고 candidate/source ID와 정제된 점검 결과만 기록한다.
 
 ## 2026-07-13 전체 Markdown 코드 정합성 갱신
 
