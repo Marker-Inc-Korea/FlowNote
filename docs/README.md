@@ -2,6 +2,8 @@
 
 이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-14 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
 
+전체 문서 갱신 범위는 Git이 추적하는 제품·구현 Markdown이다. `AGENTS.md`는 작업 정책 원문이므로 제품 코드 설명과 분리하고, 가상환경·빌드 캐시·테스트 산출물 안의 Markdown은 생성·보존 기록이므로 갱신 대상에서 제외한다.
+
 ## 읽는 순서
 
 1. [제품 개요](./product-overview.md)
@@ -33,6 +35,7 @@
 - Windows 보존 동기화 전환 CLI는 FAILED 큐를 읽기 전용 dry-run으로 분류하고 plan hash와 row별 승인을 요구한다. 승인된 구 `create`/FieldNote 항목은 기존 원천·큐·파일을 수정하지 않고 현재 action의 신규 큐와 감사 이력으로 연결한다.
 - WPF에는 AI 근거 후보 운영 점검 화면이 있으며, 서버의 `ai_search_candidates` 재생성/품질/목록 API를 직접 조회한다. WPF 서버 클라이언트와 스모크 테스트는 오프라인 ground-truth 회귀 평가 API도 호출해 후보 ID·내용 hash·순위·원천 커버의 재현성을 검증한다.
 - 외부 AI 질의·요약은 `/api/v1/ai/queries` 생성·조회, 호출 로그 모델, 기능 플래그·승인·목적·원천 권한·민감정보·최소 payload·근거 snapshot 게이트까지 구현되었다. 운영 provider client와 네트워크 호출은 아직 없으며 기본값은 비활성이다.
+- 고객·현장별 AI 금칙어와 고객 식별자는 `ai_sensitive_data_policies`에 버전별로 저장하고 활성 정책을 provider 직전 필터에 적용한다. 이를 관리하는 운영 API/UI는 아직 없다.
 - WPF MSI 패키징과 FastAPI 작업 스케줄러 등록/관리는 `scripts/`의 PowerShell 스크립트로 문서화되어 있다.
 - 사용자 역할은 코드와 DB에서 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`, `viewer`를 사용한다.
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전 원천 권한·민감정보·최소 payload·근거 snapshot·인용 검증과 감사 게이트를 다룬다. provider 호출 지점은 테스트용 주입 경계까지만 있으며 운영 네트워크 client는 없고, WPF UI는 근거 후보 운영 점검 화면까지만 제공한다.

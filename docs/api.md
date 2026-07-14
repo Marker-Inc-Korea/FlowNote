@@ -2,6 +2,8 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
 
+이 문서는 2026-07-14 현재 `app/api/v1/router.py`에 등록된 경로와 요청·응답 코드 기준이다. 본문에 “후속 예외”로 명시한 경로만 미구현이다.
+
 ## 인증
 
 | Method | Path | 설명 |
@@ -67,6 +69,7 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 
 | Method | Path | 설명 |
 | --- | --- | --- |
+| GET | `/` | 서비스 이름과 현재 환경 확인 |
 | GET | `/api/v1/health` | API 상태 확인 |
 | GET | `/api/v1/health/db` | DB 연결 확인 |
 
@@ -213,7 +216,7 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 
 후보 재생성의 제외 사유는 공개되지 않은 문서 버전, 제외/보관 FieldComment, MES 통합 입력 FieldComment, 내용 없는 FieldComment, 역추적 텍스트 없는 작업순서 이력, 누락/보관 보고서 source, 원천이 사라진 보고서 source를 구분해 반환한다. 보고서 source가 `DOCUMENT`를 가리키면 해당 문서와 선택한 버전의 존재 여부를 확인하며, 문서가 `status = DELETED`이거나 `deleted_at`이 설정된 경우도 `report_source_missing_origin`으로 분류해 후보에서 제외한다. 각 제외 사유에는 운영자가 문서 공개, FieldComment 검토/분석, 보고서 source 정리 중 무엇을 해야 하는지 판단할 수 있는 `label`, `operator_action`, `source_type` 안내를 포함한다. `EXCLUDED`, `ARCHIVED` FieldComment는 AI 검색 후보와 보고서 초안 후보 양쪽에서 제외한다.
 
-## 외부 AI 근거 검색과 요약 안전장치 골격
+## 외부 AI 근거 검색과 요약 안전장치
 
 이 절의 질의 생성·조회 라우터, 원천 권한·민감정보 필터·최소 payload 게이트와 차단 감사는 구현되었다. 운영 provider client와 네트워크 호출, 재생성 라우터는 아직 구현하지 않는다. 외부 호출은 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=true`와 고객·현장별 운영자 승인이 모두 유효할 때만 보고서 작성 role인 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`에게 허용한다. 전역 원천 role이 아닌 사용자는 연결 채널의 활성 멤버십도 필요하다. 허용 목적은 `EVIDENCE_SEARCH`, `EVIDENCE_SUMMARY`뿐이며 자동 의사결정, 작업지시 생성·변경, 승인·공개 자동화, 설비 제어, 안전·품질 판정 요청은 provider 호출 전에 `422 AI_SCOPE_NOT_ALLOWED`로 거부한다.
 
@@ -221,7 +224,8 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 | --- | --- | --- |
 | POST | `/api/v1/ai/queries` | 근거 검색·요약 질의 생성. 외부 호출이 꺼져 있으면 `503 AI_EXTERNAL_CALL_DISABLED`, 승인이 없거나 만료·철회·scope 불일치이면 `403 APPROVAL_REVOKED`, 질의 금칙정보는 `422 CONTENT_RESTRICTED` |
 | GET | `/api/v1/ai/queries/{query_id}` | 허용된 보고서 작성 role이 질의 상태, 응답 저장 여부/hash, 차단 코드, 적격·제외 근거 snapshot 조회. 현재는 호출자 본인 제한이나 응답 본문·citation 목록 반환은 없음 |
-| POST | `/api/v1/ai/queries/{query_id}/regenerations` | 후속 계약. 보존 기간 안의 질의·프롬프트·근거 snapshot으로 재생성하며 현재는 미구현 |
+
+후속 예외로 설계된 `POST /api/v1/ai/queries/{query_id}/regenerations`는 현재 라우터에 등록되어 있지 않다. 보존 기간 안의 질의·프롬프트·근거 snapshot을 사용하는 재생성 계약만 남겨 두며 현재 API로 호출하면 안 된다.
 
 `POST /api/v1/ai/queries` 요청:
 

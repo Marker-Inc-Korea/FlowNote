@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 현재 `app/api/v1/router.py`에 등록된 라우터 기준이다. 외부 AI API는 운영 provider 구현이 아니라 기본 비활성 안전장치·감사 경계이며, controlled copy는 서버에 저장된 현재 공개 버전만 1회 스트리밍한다.
+이 목록은 2026-07-14 현재 `app/api/v1/router.py`에 등록된 라우터 기준이다. 외부 AI API는 운영 provider 구현이 아니라 기본 비활성 안전장치·감사 경계이며, controlled copy는 서버에 저장된 현재 공개 버전만 1회 스트리밍한다.
 
 ## Current API
 
@@ -137,5 +137,7 @@ cd services\api
 ```
 
 The current collected FastAPI test count is 96. The fixed collection baseline in `scripts/verify-preserved-tests.ps1` is also 96.
+
+The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no policy-management API or network provider client in the current router.
 
 Test SQLite DBs, logs, upload files, and generated sample files are preserved unless the user explicitly asks to delete them.

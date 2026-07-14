@@ -2,6 +2,8 @@
 
 FlowNote는 생산공장 현장의 문서와 현장 지식을 함께 관리하는 사내 서버형 문서/현장지식 관리 시스템이다. 문서 파일, 문서 메타데이터, 버전, 변경 사유, 현장 코멘트, 작업순서, 접근 로그를 함께 축적해 이후 AI 검색과 작업 조언의 근거 데이터로 사용할 수 있게 하는 것이 제품 방향이다.
 
+이 README의 기능 목록은 2026-07-14 현재 저장소 코드 기준이다. 구현되지 않은 내용은 아래의 제외 범위와 각 문서의 후속 항목에서만 다룬다.
+
 현재 코드는 Windows WPF 로컬 클라이언트, Android 현장 단말 최소 앱, Python FastAPI 서버가 함께 개발되어 있다. WPF 앱은 로컬 SQLite를 우선 저장소로 사용하고, `FLOWNOTE_API_BASE_URL`이 설정되어 있으면 FastAPI 서버와 인증 후 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도한다. Android 앱은 승인 단말 `deviceId`로 서버 로그인 후 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 첨부, 신호등식 기록, 채널 알림, 인수인계 확인을 수행한다. 현재 Android 앱에는 문서 파일 본문 다운로드·미리보기는 없다. WPF는 서버 전송 실패 시 로컬 원천과 재시도 큐를 유지하고, Android는 FieldComment와 사진 첨부 전송 실패 항목만 전용 SQLite outbox에 보존한다.
 
 ## 현재 구현
@@ -10,6 +12,7 @@ FlowNote는 생산공장 현장의 문서와 현장 지식을 함께 관리하�
 - 공통 로컬 SQLite 기본 경로 `data/local/flownote.local.sqlite`
 - 로컬 기본 계정과 그룹 시드, 기본 비밀번호 `1234`
 - 사용자 관리 화면: 사용자 추가, 이름/역할/비밀번호 변경
+- 서버 계정 관리 화면: 계정 생성, 이름/역할/상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기, 첫 로그인 비밀번호 변경 강제
 - 기본 폴더: 문서, 인수인계, 작업순서, 사진
 - 문서 하위 분류 폴더: 도면, 작업표준서, 점검표, 품질검사, 안전수칙, 보전작업, 일반문서
 - 파일 업로드와 Drag & Drop 등록, 로컬 `Files/Uploads/yyyy-MM-dd/` 복사
@@ -22,12 +25,14 @@ FlowNote는 생산공장 현장의 문서와 현장 지식을 함께 관리하�
 - FieldComment 원천 기록과 첨부 파일 저장
 - 알림, 전체 이력, 보고서 초안 문서 저장과 서버 저장 시도, 작업순서 보드/항목/TV 화면
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
+- WPF 서버 scope·사용자별 알림 cursor와 처리 메시지 SQLite 보존, cursor 역행 차단과 관리자 초기화
 - AI 근거 후보 운영 점검 화면: 후보 재생성, 품질 지표, 제외 사유, 원천 추적값 복사
 - 관리자급 파일 감시 후보 등록과 버전 확정
 - FastAPI 인증, 승인 단말, 문서, controlled copy, FieldComment, 첨부, 태그, 접근 로그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가, 외부 AI 질의 안전장치 API
 - Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 첨부, 신호등식 기록, 알림/인수인계 조회와 확인, SQLite outbox 재전송
 - FastAPI-WPF role 정책 정합성 검증: 문서 등록, FieldComment 작성, 보고서 작성, 접근 로그 조회, 사용자 관리, controlled copy 다운로드
 - WPF 동기화 큐 대상: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장
+- 누적 FAILED 큐의 읽기 전용 진단과 승인 기반 무손실 전환 CLI
 
 운영 배포 보조 스크립트는 현재 저장소에 포함되어 있다. WPF MSI 패키징은 `scripts/package-wpf-msi.ps1`, FastAPI 서버 작업 스케줄러 등록과 관리는 `scripts/install-flownote-server-task.ps1`, `scripts/manage-flownote-server-task.ps1`를 기준으로 한다.
 

@@ -1,5 +1,7 @@
 # FlowNote 보안
 
+이 문서는 2026-07-14 현재 코드에 적용된 통제와 운영 전 후속 통제를 구분한다.
+
 ## 현재 구현
 
 현재 코드에 구현된 보안 기능은 다음과 같다.
@@ -20,7 +22,7 @@
 - FastAPI 관리자 승인 단말 등록·상태·교체 API와 WPF 승인 단말 운영 화면
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면의 서버 인증/멤버십 기반 조회와 상태 변경
 - Android 현장 단말 앱의 서버 Bearer token 사용, FieldComment/사진 outbox 재전송, 알림 읽음/인수인계 확인, 서버 오류 원문 비노출
-- 외부 AI 질의의 `admin`, `system-admin` 제한, 기본 비활성 플래그, 허용 목적, 고객·현장·provider·model 전송 승인, 승인된 프롬프트와 근거 원천 상태 검사
+- 외부 AI 질의의 보고서 작성 role(`admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`) 제한, 기본 비활성 플래그, 허용 목적, 고객·현장·provider·model 전송 승인, 승인된 프롬프트와 근거 원천 상태 검사
 - 외부 AI 질의·근거 snapshot·인용·호출 시도 감사 row, 기본 응답 본문 미저장과 응답 hash 저장
 
 Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현이 들어와 있다. Android 문서 기능은 공개 목록·상세 메타데이터 조회까지이며 파일 본문 다운로드·미리보기는 구현되어 있지 않다. 공통 채널 API는 서버 로그인, role, 채널 멤버십으로 접근을 제한하며, Android 로그인은 승인된 `terminal_devices.device_id`와 `status = ACTIVE`를 요구한다. 승인 단말 등록, 비활성화, 폐기, 교체는 `admin`, `system-admin` 전용 API와 WPF 운영 화면에서 수행하고 `activity_history`에 변경 주체와 사유를 남긴다. Android의 로그인, 문서, 알림, 인수인계 화면은 예외 메시지와 서버 오류 본문을 그대로 노출하지 않고 연결 실패, 시간 초과, HTTP 401·403·404와 기타 HTTP 오류를 한글 현장 안내로 변환한다. Android는 개인 휴대폰 기본 배포가 아니라 승인된 현장 태블릿 또는 러기드 단말을 기준으로 한다. MDM, 운영 인증서, outbox 암호화 정책은 후속 보안 범위다.

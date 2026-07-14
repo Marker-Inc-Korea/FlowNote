@@ -41,6 +41,14 @@ WPF 통합 스모크는 같은 실행 ID로 반장·조장·조원·문서관리
 
 마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. 이미 실행 중인 `5184` 서버를 재사용하면 그 서버도 외부 AI 비활성·테스트 데이터 보존 설정이어야 한다. 통제된 기준선 실행은 해당 포트를 비운 상태에서 스크립트가 관리형 FastAPI를 시작하게 한다.
 
+## 2026-07-14 작업 207 전체 Markdown 코드 정합성 갱신
+
+Git이 추적하는 제품·구현 Markdown 38개를 FastAPI, Windows WPF, Android 현재 코드와 다시 대조했다. 작업 정책 원문인 `AGENTS.md`와 가상환경·빌드 캐시·테스트 산출물 안의 생성 Markdown은 갱신 대상에서 제외했다. 기존 작업 트리에 있던 `docs/verification.md`, `services/api/db/README.md`, `services/api/db/migrations/0001_initial_mvp_schema.md` 변경은 되돌리지 않고 현재 문서 갱신에 합쳤다.
+
+오래된 서버 계정 결정에서 WPF 연동과 첫 로그인 강제 변경을 후속으로 읽을 수 있던 문장을 현재 서버 계정 수명주기 API와 WPF 구현으로 대체했다. Android 배포 설명은 문서 파일 본문 뷰어가 아니라 공개 문서 메타데이터 조회임을 명확히 하고, outbox 범위를 FieldComment와 사진 첨부로 제한했다. 외부 AI 질의 role은 실제 보고서 작성 role 여섯 개로 바로잡고 `ai_sensitive_data_policies`를 상위 데이터 모델, API DB 개요, 초기 스키마와 과거 스키마 요약에 모두 반영했다. 미구현 질의 재생성 경로는 현재 API 표에서 빼고 후속 예외로 분리했다.
+
+FastAPI OpenAPI의 현재 79개 method/path 조합과 `docs/api.md`, `services/api/README.md`의 각 79개 표 항목을 비교해 누락과 초과가 각각 0건임을 확인했다. 서버 ORM 41개 테이블도 `docs/data-model.md`, API DB 개요, 초기 스키마 설명에 모두 포함된다. Git 추적 제품 Markdown 38개의 상대 파일 링크를 검사해 깨진 링크 0건을 확인했고 `git diff --check`도 통과했다. macOS 실행 가능한 `services/api/.venv/bin/python`으로 `pytest --collect-only -q`를 실행해 96건 수집을 확인했다. 문서만 변경했으므로 전체 pytest, WPF/Android 빌드와 스모크 테스트는 새로 실행하지 않았고 기존 SQLite, 캐시, 로그와 테스트 산출물은 삭제하지 않았다.
+
 ## 2026-07-14 작업 6 통합 사람형 스모크 기준선
 
 실행 ID `integrated-smoke-20260714-agent6`으로 이 macOS 환경에서 FastAPI pytest를 최종 재실행해 96건 전체 통과를 확인했다. 정상 JUnit과 로그는 `data/local/integrated-smoke/integrated-smoke-20260714-agent6/`에 보존했다. 앞선 두 번의 로그 경로 계산 실패도 삭제하지 않았다. 그중 첫 JUnit은 저장소 한 단계 위의 로컬 `data/local`에, 두 번째 JUnit은 정상 실행 ID 폴더에 남아 있으며 최종 판정은 `fastapi-pytest-final.xml`과 `fastapi-pytest-final.log`를 기준으로 한다.
@@ -76,6 +84,8 @@ WPF 로컬 SQLite에 `server_notification_cursors`, `server_notification_message
 이후 서버 계정 수명주기 API와 WPF 운영 화면, 강제 비밀번호 변경, 세션 폐기 코드가 추가되어 상위 제품·시스템·보안·배포·로드맵 문서를 다시 갱신했다. 그 중간 시점에는 `services/api`의 `pytest --collect-only -q`와 `scripts/verify-preserved-tests.ps1` 기준선이 92건이었다. 같은 날 AI provider 직전 권한·민감정보·최소 payload 게이트 회귀가 추가된 현재 기준선은 이 문서 상단에 적은 96건이다. 아래 2026-07-13의 75건 수집·통과 문장도 당시 실행 기록으로 보존한다. 이 중간 문서 갱신에서는 전체 pytest, WPF 빌드·스모크와 Android 빌드·단위 테스트를 새로 실행하지 않았고 기존 테스트 데이터와 산출물은 삭제하지 않았다.
 
 이번 재대조에서는 현재 코드의 설정 모델과 `.env.example`에 있는 `FLOWNOTE_AI_PROVIDER_EXCERPT_MAX_CHARS`, `FLOWNOTE_AI_PROVIDER_MAX_SOURCES`를 API 설정 목록에 반영했다. 이미 구현된 서버 계정·세션 운영 UI는 MVP 후속 후보에서 현재 구현 범위로 옮기고, 후속 항목은 실제 현장 권한·발급 절차 검증으로 좁혔다. `services/api`에서 `pytest --collect-only -q`를 다시 실행해 96건 수집을 확인했으며 전체 pytest, WPF/Android 빌드와 스모크 테스트는 새로 실행하지 않았다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
+
+추가 대조에서 서버 ORM의 `ai_sensitive_data_policies`가 상위 데이터 모델에는 반영되어 있으나 API DB 개요와 초기 스키마 설명의 테이블 목록에는 빠진 것을 확인해 두 문서를 코드 기준으로 보완했다. 이 테이블은 고객·현장별 금칙어와 고객 식별자 정책 버전 및 활성 상태를 보존하고 provider payload 생성 전 필터에 적용한다. 현재 ORM 테이블은 `docs/data-model.md`, `services/api/db/README.md`, `services/api/db/migrations/0001_initial_mvp_schema.md` 세 곳에 모두 명시되어 있다.
 
 ## 2026-07-14 외부 AI provider 직전 게이트 검증
 
