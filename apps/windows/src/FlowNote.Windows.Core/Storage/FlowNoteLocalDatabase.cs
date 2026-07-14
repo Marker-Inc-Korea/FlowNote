@@ -453,6 +453,37 @@ public sealed class FlowNoteLocalDatabase
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS server_notification_cursors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                server_scope TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                last_success_cursor INTEGER NOT NULL DEFAULT 0,
+                observed_server_cursor INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'ACTIVE',
+                initial_sync_completed INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                reset_confirmed_by TEXT NULL,
+                reset_confirmed_at TEXT NULL,
+                UNIQUE(server_scope, user_id),
+                CHECK(last_success_cursor >= 0),
+                CHECK(observed_server_cursor >= 0),
+                CHECK(status IN ('ACTIVE', 'RESET_REQUIRED'))
+            );
+
+            CREATE TABLE IF NOT EXISTS server_notification_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                server_scope TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                cursor INTEGER NOT NULL,
+                processed_at TEXT NOT NULL,
+                UNIQUE(server_scope, user_id, message_id),
+                CHECK(cursor >= 0)
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_server_notification_messages_scope_cursor
+                ON server_notification_messages (server_scope, user_id, cursor);
+
             CREATE TABLE IF NOT EXISTS work_sequence_boards (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 board_id TEXT NOT NULL UNIQUE,

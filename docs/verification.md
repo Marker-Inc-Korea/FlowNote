@@ -36,7 +36,7 @@ git status --short
 
 ## 2026-07-14 작업 102 현재 코드 재대조
 
-작업 시작 시 Git 작업 트리는 깨끗했고 마지막 문서 정비 커밋 이후 추가 코드 변경은 없었다. 따라서 미커밋 변경을 문서에 추정 반영하지 않고 현재 FastAPI, Windows WPF, Android 코드와 상위 제품 문서의 구현 범위를 다시 대조했다. Android 문서 본문 뷰어 미구현, WPF controlled copy 저장·SHA-256 검증, AI 근거 평가와 외부 호출 전 안전장치 골격 등 현재 구현 설명은 코드와 일치한다.
+작업 시작 시 Git 작업 트리는 깨끗했으므로 미커밋 변경을 추정 반영하지 않고 현재 FastAPI, Windows WPF, Android 코드와 상위 제품 문서의 구현 범위를 다시 대조했다. Android 문서 본문 뷰어 미구현, WPF controlled copy 저장·SHA-256 검증, AI 근거 평가와 외부 호출 전 안전장치 골격 등 기존 구현 설명은 코드와 일치한다. 최신 Windows 코드의 보존 FAILED 큐 전환 기능은 독립 운영 문서와 데이터 모델·결정 기록에는 있었지만 Windows 문서 색인, 구현 목록, 로컬 SQLite 설명, 시스템 맵과 로드맵 연결이 부족해 해당 문서를 보강했다.
 
 FastAPI OpenAPI는 루트 `GET /` 1개를 포함해 총 71개 method/path이며, 이 중 `/api/v1`은 70개 method/path와 55개 고유 path다. 아래 2026-07-13 기록의 “71개”는 이 전체 수를 뜻하므로 범위를 명확히 했다. `services/api`에서 `pytest --collect-only -q`를 다시 실행해 75건 수집도 확인했다. 이번 요청에는 코드 변경이 없어 전체 pytest, WPF 빌드·스모크와 Android 빌드·단위 테스트는 새로 실행하지 않았고 기존 테스트 데이터와 산출물은 삭제하지 않았다.
 

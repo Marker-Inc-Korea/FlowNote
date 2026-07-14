@@ -56,6 +56,12 @@
                             Margin="0,0,8,0"
                             Content="알림함"
                             Click="NotificationButton_Click" />
+                    <Button x:Name="NotificationCursorResetButton"
+                            Width="120"
+                            Height="34"
+                            Margin="0,0,8,0"
+                            Content="알림 위치 초기화"
+                            Click="NotificationCursorResetButton_Click" />
                     <Button x:Name="ChannelInboxButton"
                             Width="96"
                             Height="34"

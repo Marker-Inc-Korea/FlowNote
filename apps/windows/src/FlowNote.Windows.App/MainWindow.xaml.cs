@@ -10,6 +10,7 @@ using FlowNote.Windows.Core.Auth;
 using FlowNote.Windows.Core.Documents;
 using FlowNote.Windows.Core.Explorer;
 using FlowNote.Windows.Core.Folders;
+using FlowNote.Windows.Core.Notifications;
 using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
 using Microsoft.Win32;
@@ -33,8 +34,8 @@ public partial class MainWindow : Window
     private string currentDisplayName;
     private readonly DispatcherTimer notificationPollingTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     private bool notificationPolling;
-    private bool notificationCursorInitialized;
-    private long notificationCursor;
+    private readonly string? notificationServerScope;
+    private readonly string? notificationUserId;
     private int notificationPollFailures;
 
     public MainWindow(FlowNoteLocalServices services, LoginResult currentUser)
@@ -49,9 +50,15 @@ public partial class MainWindow : Window
         currentDisplayName = currentUser.DisplayName ?? currentUser.LoginId ?? "admin";
         (serverDocumentClient, serverChannelClient, serverTerminalDeviceClient, serverHttpClient) =
             CreateServerClients(currentUser);
+        notificationServerScope = serverHttpClient?.BaseAddress is null
+            ? null
+            : ServerNotificationCursorService.NormalizeServerScope(serverHttpClient.BaseAddress);
+        notificationUserId = string.IsNullOrWhiteSpace(currentUser.UserId) ? null : currentUser.UserId;
         SignedInUserTextBlock.Text = $"{currentDisplayName} ({FormatUserRole(currentUser.Role)})";
         DataContext = workspace;
         ApplyRolePermissions();
+        NotificationCursorResetButton.IsEnabled = serverChannelClient is not null &&
+            IsNotificationCursorAdministrator(currentUser.Role);
         Loaded += MainWindow_Loaded;
         notificationPollingTimer.Tick += NotificationPollingTimer_Tick;
         RefreshWorkspace("로컬 작업 공간을 열었습니다.", services.Folders.GetDefaultSystemFolder(FlowNoteLocalDatabase.DocumentsFolderName).Id);
@@ -92,7 +99,10 @@ public partial class MainWindow : Window
 
     private async Task PollServerNotificationsAsync()
     {
-        if (serverChannelClient is null || notificationPolling)
+        if (serverChannelClient is null ||
+            notificationServerScope is null ||
+            notificationUserId is null ||
+            notificationPolling)
         {
             return;
         }
@@ -100,29 +110,52 @@ public partial class MainWindow : Window
         notificationPolling = true;
         try
         {
-            var notifications = await serverChannelClient.ListMyNotificationsAsync(
+            var savedState = services.ServerNotificationCursors.Get(
+                notificationServerScope,
+                notificationUserId);
+            var page = await serverChannelClient.PollMyNotificationsAsync(
                 unreadOnly: false,
                 limit: 100,
-                afterId: notificationCursorInitialized ? notificationCursor : 0);
-            var previousCursor = notificationCursor;
-            foreach (var notification in notifications)
-            {
-                notificationCursor = Math.Max(notificationCursor, notification.Cursor);
-            }
+                afterId: savedState.LastSuccessCursor);
+            var pageLastCursor = page.Items.Count == 0
+                ? savedState.LastSuccessCursor
+                : page.Items.Max(notification => notification.Cursor);
+            var reachedServerCursor = page.Items.Count < 100 ||
+                pageLastCursor >= page.ServerCursor;
+            var result = services.ServerNotificationCursors.ProcessBatch(
+                notificationServerScope,
+                notificationUserId,
+                page,
+                reachedServerCursor);
 
             notificationPollFailures = 0;
-            if (notificationCursorInitialized && notificationCursor > previousCursor)
+            if (result.ResetRequired)
             {
-                workspace.StatusText = $"새 채널·인수인계 알림 {notifications.Count}건이 도착했습니다.";
+                notificationPollingTimer.Stop();
+                workspace.StatusText =
+                    "서버 알림 위치가 이전 저장값보다 낮아 polling을 중지했습니다. " +
+                    "서버 DB 복구 여부를 확인한 뒤 관리자가 '알림 위치 초기화'를 실행하세요.";
             }
-            if (!notificationCursorInitialized && notifications.Count >= 100)
+            else if (!reachedServerCursor)
             {
                 notificationPollingTimer.Interval = TimeSpan.FromMilliseconds(100);
+                workspace.StatusText = savedState.InitialSyncCompleted
+                    ? $"새 알림을 이어서 처리 중입니다. 진행 위치: {result.State.LastSuccessCursor}/{result.State.ObservedServerCursor}"
+                    : $"이전 알림을 재확인 중입니다. 중복 알림을 새로 만들지 않습니다. " +
+                      $"진행 위치: {result.State.LastSuccessCursor}/{result.State.ObservedServerCursor}";
             }
             else
             {
-                notificationCursorInitialized = true;
                 notificationPollingTimer.Interval = TimeSpan.FromSeconds(15);
+                if (!savedState.InitialSyncCompleted)
+                {
+                    workspace.StatusText =
+                        $"이전 알림 재확인을 완료했습니다. 중복 없이 {result.State.LastSuccessCursor}번 다음부터 확인합니다.";
+                }
+                else if (result.ProcessedCount > 0)
+                {
+                    workspace.StatusText = $"새 채널·인수인계 알림 {result.ProcessedCount}건이 도착했습니다.";
+                }
             }
         }
         catch (FlowNoteServerAuthenticationException)
@@ -142,6 +175,41 @@ public partial class MainWindow : Window
             notificationPolling = false;
         }
     }
+
+    private void NotificationCursorResetButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!IsNotificationCursorAdministrator(currentUser.Role) ||
+            notificationServerScope is null ||
+            notificationUserId is null)
+        {
+            workspace.StatusText = "알림 위치 초기화는 로그인한 관리자만 확인 후 실행할 수 있습니다.";
+            return;
+        }
+
+        var confirmed = MessageBox.Show(
+            "이 서버와 현재 사용자의 저장된 알림 위치를 0으로 초기화합니다.\n" +
+            "다음 polling에서 과거 알림을 재확인하지만 message_id 기준으로 중복 처리하지 않습니다. 계속하시겠습니까?",
+            "알림 위치 초기화 관리자 확인",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning) == MessageBoxResult.Yes;
+        if (!confirmed)
+        {
+            workspace.StatusText = "알림 위치 초기화를 취소했습니다.";
+            return;
+        }
+
+        services.ServerNotificationCursors.ResetAfterAdministratorConfirmation(
+            notificationServerScope,
+            notificationUserId,
+            GetCurrentUserId());
+        notificationPollFailures = 0;
+        notificationPollingTimer.Interval = TimeSpan.FromMilliseconds(100);
+        notificationPollingTimer.Start();
+        workspace.StatusText = "관리자 확인으로 알림 위치를 초기화했습니다. 과거 알림을 중복 없이 재확인합니다.";
+    }
+
+    private static bool IsNotificationCursorAdministrator(string? role) =>
+        role is "admin" or "system-admin";
 
     private void NewFolderButton_Click(object sender, RoutedEventArgs e)
     {

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
@@ -627,10 +627,13 @@ def list_channel_messages(
 def list_my_notifications(
     current_user: CurrentUser,
     session: Annotated[Session, Depends(get_db_session)],
+    response: Response,
     unread_only: Annotated[bool, Query(alias="unreadOnly")] = False,
     after_id: Annotated[int | None, Query(alias="afterId", ge=0)] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[UserNotificationResponse]:
+    current_cursor = session.scalar(select(ChannelMessage.id).order_by(desc(ChannelMessage.id)).limit(1))
+    response.headers["X-FlowNote-Notification-Cursor"] = str(current_cursor or 0)
     statement = (
         select(ChannelMessage, NotificationChannel, NotificationChannelMember)
         .join(NotificationChannel, NotificationChannel.channel_id == ChannelMessage.channel_id)

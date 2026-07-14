@@ -5,6 +5,7 @@ namespace FlowNote.Windows.Core.ServerApi;
 
 public sealed class FlowNoteServerChannelClient
 {
+    public const string NotificationCursorHeaderName = "X-FlowNote-Notification-Cursor";
     private readonly HttpClient httpClient;
 
     public FlowNoteServerChannelClient(HttpClient httpClient)
@@ -112,12 +113,34 @@ public sealed class FlowNoteServerChannelClient
         long? afterId = null,
         CancellationToken cancellationToken = default)
     {
+        var page = await PollMyNotificationsAsync(unreadOnly, limit, afterId, cancellationToken);
+        return page.Items;
+    }
+
+    public async Task<ServerNotificationPage> PollMyNotificationsAsync(
+        bool unreadOnly = false,
+        int limit = 100,
+        long? afterId = null,
+        CancellationToken cancellationToken = default)
+    {
         var afterQuery = afterId.HasValue ? $"&afterId={Math.Max(0, afterId.Value)}" : string.Empty;
         using var response = await httpClient.GetAsync(
             $"api/v1/notifications?unreadOnly={unreadOnly.ToString().ToLowerInvariant()}&limit={Math.Clamp(limit, 1, 500)}{afterQuery}",
             cancellationToken);
         var notifications = await ReadJsonResponse<List<ServerUserNotificationResponse>>(response, cancellationToken);
-        return notifications;
+        var serverCursor = notifications.Count == 0 ? 0 : notifications.Max(item => item.Cursor);
+        if (response.Headers.TryGetValues(NotificationCursorHeaderName, out var values) &&
+            long.TryParse(values.FirstOrDefault(), out var headerCursor) &&
+            headerCursor >= 0)
+        {
+            serverCursor = headerCursor;
+        }
+        else if (afterId.HasValue)
+        {
+            serverCursor = Math.Max(serverCursor, afterId.Value);
+        }
+
+        return new ServerNotificationPage(notifications, serverCursor);
     }
 
     public async Task<ServerUserNotificationResponse> MarkNotificationReadAsync(
