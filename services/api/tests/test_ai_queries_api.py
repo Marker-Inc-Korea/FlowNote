@@ -17,7 +17,10 @@ from app.db.models import (
     AIQuery,
     AIQueryEvidenceCandidate,
     AISearchCandidate,
+    AISensitiveDataPolicy,
     AITransferApproval,
+    FieldComment,
+    NotificationChannel,
     UserAccount,
 )
 from app.db.init_db import hash_password_for_dev
@@ -74,7 +77,14 @@ def seed_policy(client: TestClient, *, expires_delta: timedelta = timedelta(days
 def rebuild_and_candidates(client: TestClient, auth: dict[str, str], seeded: dict[str, str]) -> dict[str, str]:
     response = client.post("/api/v1/ai-search/candidates/rebuild", headers=auth)
     assert response.status_code == 200
-    wanted = {seeded["published_document_id"], seeded["analyzed_comment_id"], seeded["new_comment_id"]}
+    wanted = {
+        seeded["published_document_id"],
+        seeded["analyzed_comment_id"],
+        seeded["selected_comment_id"],
+        seeded["new_comment_id"],
+        seeded["history_id"],
+        seeded["report_source_row_id"],
+    }
     with client.app.state.database.session() as session:
         candidates = session.scalars(select(AISearchCandidate).where(AISearchCandidate.source_id.in_(wanted))).all()
         return {item.source_id: item.candidate_id for item in candidates}
@@ -131,7 +141,7 @@ def test_invalid_transfer_approval_is_blocked_before_provider(approval_kind: str
             "purpose": "EVIDENCE_SUMMARY", "query": "근거를 요약해 주세요"
         })
         assert response.status_code == 403
-        assert response.json()["error"]["code"] == "AI_TRANSFER_NOT_APPROVED"
+        assert response.json()["error"]["code"] == "APPROVAL_REVOKED"
         assert calls == 0
 
 
@@ -144,7 +154,7 @@ def test_snapshot_rechecks_source_state_and_do_not_store_keeps_only_response_has
         calls: list[dict[str, object]] = []
         def spy(payload: dict[str, object]) -> dict[str, object]:
             calls.append(payload)
-            selected = payload["candidateIds"]
+            selected = [item["candidateId"] for item in payload["sources"]]
             return {"response": "검증된 응답 원문", "claims": [{
                 "claimKey": "claim-1", "text": "검증된 주장", "candidateIds": [selected[0]]
             }]}
@@ -155,15 +165,265 @@ def test_snapshot_rechecks_source_state_and_do_not_store_keeps_only_response_has
         })
         assert response.status_code == 200, response.text
         assert len(calls) == 1, response.json()
-        assert candidate_ids[seeded["new_comment_id"]] not in calls[0]["candidateIds"]
+        sent_ids = [item["candidateId"] for item in calls[0]["sources"]]
+        assert candidate_ids[seeded["new_comment_id"]] not in sent_ids
         with client.app.state.database.session() as session:
             query = session.scalar(select(AIQuery).where(AIQuery.query_id == response.json()["queryId"]))
             snapshots = session.scalars(select(AIQueryEvidenceCandidate).where(
                 AIQueryEvidenceCandidate.query_id == query.query_id)).all()
             assert query.response_text is None
             assert query.response_hash == hashlib.sha256("검증된 응답 원문".encode()).hexdigest()
-            assert all(row.candidate_id != candidate_ids[seeded["new_comment_id"]] for row in snapshots)
+            excluded = next(
+                row for row in snapshots
+                if row.candidate_id == candidate_ids[seeded["new_comment_id"]]
+            )
+            assert excluded.eligibility_result == "EXCLUDED"
+            assert excluded.exclusion_reason == "SOURCE_FORBIDDEN"
             assert all(row.trace_id and row.content_hash for row in snapshots)
+
+
+def test_four_source_minimal_payload_masks_pii_and_preserves_stable_identity() -> None:
+    with create_client(enabled=True) as client:
+        auth = headers(client)
+        seed_policy(client)
+        seeded = seed_ai_search_sources(client)
+        raw_email = f"worker-{uuid4().hex[:8]}@factory.example"
+        raw_phone = "010-9876-5432"
+        raw_rrn = "900101-1234567"
+        with client.app.state.database.session() as session:
+            comment = session.scalar(
+                select(FieldComment).where(FieldComment.comment_id == seeded["selected_comment_id"])
+            )
+            assert comment is not None
+            comment.analysis_content = f"검토 연락처 {raw_email}, {raw_phone}, {raw_rrn}. 조치 완료."
+            session.commit()
+        candidate_ids = rebuild_and_candidates(client, auth, seeded)
+        four_ids = [
+            candidate_ids[seeded["published_document_id"]],
+            candidate_ids[seeded["selected_comment_id"]],
+            candidate_ids[seeded["history_id"]],
+            candidate_ids[seeded["report_source_row_id"]],
+        ]
+        payload_bytes: list[bytes] = []
+
+        def spy(payload: dict[str, object]) -> dict[str, object]:
+            encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+            payload_bytes.append(encoded)
+            selected = [item["candidateId"] for item in payload["sources"]]
+            return {
+                "response": "네 원천 근거 요약",
+                "claims": [{"claimKey": "four-sources", "text": "요약", "candidateIds": selected}],
+            }
+
+        client.app.state.ai_provider = spy
+        response = client.post(
+            "/api/v1/ai/queries",
+            headers=auth,
+            json={
+                "purpose": "EVIDENCE_SUMMARY",
+                "query": "문서, 현장 코멘트, 작업순서, 보고서 근거를 함께 요약해 주세요",
+                "candidateIds": four_ids,
+            },
+        )
+        assert response.status_code == 200, response.text
+        repeated = client.post(
+            "/api/v1/ai/queries",
+            headers=auth,
+            json={
+                "purpose": "EVIDENCE_SUMMARY",
+                "query": "문서, 현장 코멘트, 작업순서, 보고서 근거를 함께 요약해 주세요",
+                "candidateIds": four_ids,
+            },
+        )
+        assert repeated.status_code == 200, repeated.text
+        assert len(payload_bytes) == 2
+        encoded = payload_bytes[0]
+        assert raw_email.encode() not in encoded
+        assert raw_phone.encode() not in encoded
+        assert raw_rrn.encode() not in encoded
+        assert "[이메일 마스킹]".encode() in encoded
+        assert "[전화번호 마스킹]".encode() in encoded
+        assert "[주민번호 마스킹]".encode() in encoded
+        sent = json.loads(encoded)["sources"]
+        assert {item["sourceType"] for item in sent} == {
+            "PUBLISHED_DOCUMENT_VERSION", "FIELD_COMMENT", "WORK_SEQUENCE_HISTORY", "REPORT_SOURCE"
+        }
+        assert [item["candidateId"] for item in sent] == four_ids
+        assert all(
+            item["candidateId"] and item["sourceId"] and item["traceId"]
+            and item["contentHash"] and item["rank"] > 0 and item["excerpt"]
+            for item in sent
+        )
+        boundary = json.loads(encoded)
+        repeated_boundary = json.loads(payload_bytes[1])
+        assert boundary["sources"] == repeated_boundary["sources"]
+        assert boundary["promptVersionId"] and boundary["promptVersion"]
+        assert boundary["traceId"] == response.json()["queryId"]
+
+
+def test_restricted_source_and_query_never_cross_provider_or_audit_log() -> None:
+    with create_client(enabled=True) as client:
+        auth = headers(client)
+        seed_policy(client)
+        seeded = seed_ai_search_sources(client)
+        forbidden_secret = f"token-{uuid4().hex}"
+        site_term = f"site-deny-{uuid4().hex}"
+        with client.app.state.database.session() as session:
+            comment = session.scalar(
+                select(FieldComment).where(FieldComment.comment_id == seeded["selected_comment_id"])
+            )
+            assert comment is not None
+            comment.analysis_content = f"api_key={forbidden_secret}"
+            session.add(
+                AISensitiveDataPolicy(
+                    policy_id=f"aisdp-{uuid4().hex}",
+                    customer_scope=client.app.state.settings.ai_customer_scope,
+                    site_scope=client.app.state.settings.ai_site_scope,
+                    version="test-v1",
+                    forbidden_terms_json=json.dumps([site_term]),
+                    customer_identifiers_json=json.dumps(["CUST-SECRET-77"]),
+                    created_by="user-admin",
+                )
+            )
+            session.commit()
+        candidate_ids = rebuild_and_candidates(client, auth, seeded)
+        calls: list[bytes] = []
+
+        def spy(payload: dict[str, object]) -> dict[str, object]:
+            calls.append(json.dumps(payload, ensure_ascii=False).encode())
+            selected = [item["candidateId"] for item in payload["sources"]]
+            return {"response": "허용 근거", "claims": [{
+                "claimKey": "safe", "text": "허용", "candidateIds": selected
+            }]}
+
+        client.app.state.ai_provider = spy
+        mixed = client.post("/api/v1/ai/queries", headers=auth, json={
+            "purpose": "EVIDENCE_SUMMARY",
+            "query": "허용 근거만 요약",
+            "candidateIds": [
+                candidate_ids[seeded["published_document_id"]],
+                candidate_ids[seeded["selected_comment_id"]],
+            ],
+        })
+        assert mixed.status_code == 200, mixed.text
+        assert forbidden_secret.encode() not in calls[0]
+        assert candidate_ids[seeded["selected_comment_id"]].encode() not in calls[0]
+        with client.app.state.database.session() as session:
+            rows = session.scalars(select(AIQueryEvidenceCandidate).where(
+                AIQueryEvidenceCandidate.query_id == mixed.json()["queryId"]
+            )).all()
+            restricted = next(
+                row for row in rows if row.candidate_id == candidate_ids[seeded["selected_comment_id"]]
+            )
+            assert restricted.exclusion_reason == "CONTENT_RESTRICTED"
+
+        blocked_responses = [
+            client.post("/api/v1/ai/queries", headers=auth, json={
+                "purpose": "EVIDENCE_SUMMARY", "query": restricted_query,
+                "candidateIds": [candidate_ids[seeded["published_document_id"]]],
+            })
+            for restricted_query in (
+                f"{site_term} 관련 내용을 알려주세요",
+                "CUST-SECRET-77 고객 자료를 알려주세요",
+                "/Users/operator/private/secret.txt 파일을 알려주세요",
+            )
+        ]
+        assert all(response.status_code == 422 for response in blocked_responses)
+        assert all(
+            response.json()["error"]["code"] == "CONTENT_RESTRICTED"
+            for response in blocked_responses
+        )
+        assert len(calls) == 1
+        blocked = blocked_responses[0]
+        with client.app.state.database.session() as session:
+            query = session.scalar(select(AIQuery).where(AIQuery.query_id == blocked.json()["queryId"]))
+            attempt = session.scalar(select(AICallAttempt).where(AICallAttempt.query_id == query.query_id))
+            assert query.query_text == "[REDACTED]"
+            assert site_term not in (attempt.sanitized_error_message or "")
+
+
+def test_manager_without_linked_channel_is_source_forbidden() -> None:
+    with create_client(enabled=True) as client:
+        admin_auth = headers(client)
+        seed_policy(client)
+        seeded = seed_ai_search_sources(client)
+        candidate_ids = rebuild_and_candidates(client, admin_auth, seeded)
+        suffix = uuid4().hex
+        manager_id = f"user-manager-{suffix}"
+        with client.app.state.database.session() as session:
+            session.add(UserAccount(
+                user_id=manager_id, username=f"manager-{suffix}", login_id=f"manager-{suffix}",
+                display_name="권한 검사 관리자", role="manager",
+                password_hash=hash_password_for_dev("1234"), is_active=True, status="ACTIVE",
+            ))
+            session.add(NotificationChannel(
+                channel_id=f"channel-private-{suffix}", name="비공개 라인 채널",
+                channel_type="CUSTOM", source_type="FIELD_COMMENT",
+                source_id=seeded["analyzed_comment_id"], status="ACTIVE", created_by="user-admin",
+            ))
+            session.commit()
+        login = client.post("/api/v1/auth/login", json={"username": f"manager-{suffix}", "password": "1234"})
+        manager_auth = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        calls = 0
+
+        def spy(_payload: dict[str, object]) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            return {}
+
+        client.app.state.ai_provider = spy
+        response = client.post("/api/v1/ai/queries", headers=manager_auth, json={
+            "purpose": "EVIDENCE_SUMMARY", "query": "비공개 채널 근거 요약",
+            "candidateIds": [candidate_ids[seeded["analyzed_comment_id"]]],
+        })
+        assert response.status_code == 200
+        assert response.json()["status"] == "INSUFFICIENT_EVIDENCE"
+        assert calls == 0
+        with client.app.state.database.session() as session:
+            row = session.scalar(select(AIQueryEvidenceCandidate).where(
+                AIQueryEvidenceCandidate.query_id == response.json()["queryId"]
+            ))
+            assert row.exclusion_reason == "SOURCE_FORBIDDEN"
+
+
+def test_approval_revocation_blocks_new_query_but_offline_quality_stays_available() -> None:
+    with create_client(enabled=True) as client:
+        auth = headers(client)
+        seed_policy(client)
+        seeded = seed_ai_search_sources(client)
+        candidate_ids = rebuild_and_candidates(client, auth, seeded)
+        calls = 0
+
+        def spy(payload: dict[str, object]) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            selected = [item["candidateId"] for item in payload["sources"]]
+            return {"response": "승인 상태 응답", "claims": [{
+                "claimKey": "approved", "text": "승인됨", "candidateIds": selected
+            }]}
+
+        client.app.state.ai_provider = spy
+        request_json = {
+            "purpose": "EVIDENCE_SUMMARY", "query": "공개 문서 근거 요약",
+            "candidateIds": [candidate_ids[seeded["published_document_id"]]],
+        }
+        first = client.post("/api/v1/ai/queries", headers=auth, json=request_json)
+        assert first.status_code == 200, first.text
+        with client.app.state.database.session() as session:
+            approval = session.scalar(select(AITransferApproval).where(
+                AITransferApproval.customer_scope == client.app.state.settings.ai_customer_scope,
+                AITransferApproval.site_scope == client.app.state.settings.ai_site_scope,
+            ).order_by(AITransferApproval.approved_at.desc()))
+            assert approval is not None
+            approval.revoked_at = datetime.now(timezone.utc)
+            session.commit()
+        second = client.post("/api/v1/ai/queries", headers=auth, json=request_json)
+        assert second.status_code == 403
+        assert second.json()["error"]["code"] == "APPROVAL_REVOKED"
+        assert calls == 1
+        quality = client.get("/api/v1/ai-search/quality", headers=auth)
+        assert quality.status_code == 200
+        assert quality.json()["candidate_count"] >= 4
 
 
 def test_no_evidence_and_non_admin_are_rejected_without_provider_call() -> None:

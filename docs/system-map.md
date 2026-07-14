@@ -7,6 +7,7 @@ Windows WPF App
   -> local SQLite: data/local/flownote.local.sqlite
   -> local Files/: uploads, FieldComment attachments
   -> local notification review
+  -> server account lifecycle/session management when server-authenticated
   -> optional FastAPI sync through FLOWNOTE_API_BASE_URL
 
 Android Field App
@@ -27,7 +28,7 @@ WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으�
 
 과거 구 `create` action과 FieldNote/첨부가 남은 FAILED 큐는 일반 재시도가 현재 계약으로 자동 해석하지 않는다. `FlowNote.Windows.SyncMigrationTool`이 먼저 SQLite read-only dry-run으로 전체 FAILED 큐를 배타적으로 분류하고 안정된 plan hash를 만든다. 운영자가 plan hash와 row ID를 명시해 승인하면 전환 가능한 항목만 현재 action의 별도 `PENDING` 큐로 만들고 `server_sync_migration_audit`에 원천 snapshot과 연결을 남긴다. 기존 큐, 원천 행과 파일은 수정·삭제하지 않는다.
 
-WPF 앱은 로컬 `notifications` 테이블과 알림 창으로 문서, FieldComment, 작업순서 이벤트 알림을 확인하고 읽음 처리한다. 서버 URL과 로그인이 있으면 `채널함`, `채널 관리`, `인수인계 확인 현황` 화면에서 FastAPI 채널/인수인계 API를 직접 호출한다. 채널함은 내 채널, 사용자별 알림, 인수인계 목록을 조회하고 메시지 읽음, 내 receipt 상태 변경, 원천 링크 복사, 후속 FieldComment 생성을 수행한다. 주 창이 열려 있는 동안 `server_notification_cursors`의 서버 scope·사용자별 마지막 성공 cursor 다음 알림을 기본 15초 간격으로 조회하고, `server_notification_messages`의 `message_id`로 멱등 처리한 뒤 같은 트랜잭션에서 cursor를 전진시킨다. 연결 실패 시 최대 120초까지 backoff하며 401이면 cursor를 유지한 채 중단한다. 저장 row가 없는 사용자는 cursor 0부터 최대 100건씩 빠르게 따라잡고 한글 진행 상태를 표시한다. 서버 cursor 역행은 자동 복구하지 않고 polling을 중지하며 Core 서비스가 `admin`, `system-admin` role을 다시 확인한 경우에만 현재 scope·사용자의 cursor 초기화를 허용한다. 초기화 뒤에도 기존 처리 `message_id`는 보존해 재조회 부작용을 막는다. 채널 관리는 채널 생성, 멤버 추가/제외를 제공하고, 인수인계 확인 현황은 수신자별 receipt 상태 변경과 후속 FieldComment 생성을 제공한다. `admin`, `system-admin`은 `승인 단말` 화면에서 서버 단말 목록·상세·마지막 접속을 조회하고 등록, 정보/상태 변경, 교체를 수행한다.
+WPF 앱은 로컬 `notifications` 테이블과 알림 창으로 문서, FieldComment, 작업순서 이벤트 알림을 확인하고 읽음 처리한다. 서버 URL과 로그인이 있으면 `채널함`, `채널 관리`, `인수인계 확인 현황` 화면에서 FastAPI 채널/인수인계 API를 직접 호출한다. 채널함은 내 채널, 사용자별 알림, 인수인계 목록을 조회하고 메시지 읽음, 내 receipt 상태 변경, 원천 링크 복사, 후속 FieldComment 생성을 수행한다. 주 창이 열려 있는 동안 `server_notification_cursors`의 서버 scope·사용자별 마지막 성공 cursor 다음 알림을 기본 15초 간격으로 조회하고, `server_notification_messages`의 `message_id`로 멱등 처리한 뒤 같은 트랜잭션에서 cursor를 전진시킨다. 연결 실패 시 최대 120초까지 backoff하며 401이면 cursor를 유지한 채 중단한다. 저장 row가 없는 사용자는 cursor 0부터 최대 100건씩 빠르게 따라잡고 한글 진행 상태를 표시한다. 서버 cursor 역행은 자동 복구하지 않고 polling을 중지하며 Core 서비스가 `admin`, `system-admin` role을 다시 확인한 경우에만 현재 scope·사용자의 cursor 초기화를 허용한다. 초기화 뒤에도 기존 처리 `message_id`는 보존해 재조회 부작용을 막는다. 채널 관리는 채널 생성, 멤버 추가/제외를 제공하고, 인수인계 확인 현황은 수신자별 receipt 상태 변경과 후속 FieldComment 생성을 제공한다. 서버 로그인한 `admin`, `system-admin`은 `사용자 관리` 화면에서 서버 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기를 수행한다. 로컬 로그인은 별도 로컬 계정 화면을 사용한다. `admin`, `system-admin`은 `승인 단말` 화면에서 서버 단말 목록·상세·마지막 접속을 조회하고 등록, 정보/상태 변경, 교체를 수행한다.
 
 Android 앱은 현장 단말 입력을 우선한다. 현장 작업자는 승인된 `deviceId`로 로그인하고 공개 문서 목록/상세 메타데이터 조회, FieldComment와 사진 기록, 신호등식 상태 기록을 수행한다. 상세 화면은 제목·설명·상태·공개 버전 ID를 표시하고 FieldComment 입력에 문서/버전 ID를 연결하며, 문서 파일 본문을 내려받거나 렌더링하지 않는다. Activity가 전경인 동안 채널 알림을 기본 15초 간격으로 polling하고, 연결 실패 시 최대 120초까지 backoff한 뒤 사용자별 마지막 cursor부터 재개한다. 인수인계는 같은 알림 스트림과 서버 인수인계 API에서 조회하고 읽음 또는 수신확인을 남긴다. Android의 로컬 저장은 네트워크 불안정 구간의 FieldComment와 사진 첨부 임시 보관, 재전송, 서버 원천 ID 연결 범위로 제한하고, 장기 기준 데이터는 FastAPI 서버에 남긴다. outbox는 `PENDING`, `FAILED` 항목을 최대 12회 자동 시도하며 15초부터 지수 backoff를 적용해 최대 15분 간격으로 재전송한다. 로그인, 문서, 알림, 인수인계 API 실패는 서버 원문을 화면에 직접 표시하지 않고 연결 실패·시간 초과와 HTTP 상태를 현장 사용자가 조치할 수 있는 한글 안내로 변환한다.
 
@@ -37,6 +38,7 @@ Android 앱은 현장 단말 입력을 우선한다. 현장 작업자는 승인�
 UserAccount
   -> role
   -> UserGroup
+  -> must_change_password / password_changed_at
   -> AuthSession
       -> TerminalDevice (approved Android device)
 
@@ -133,6 +135,6 @@ AI 관련 현재 구현은 외부 AI 호출이 아니라 서버 DB에서 `ai_sea
 
 외부 provider 착수 전 회귀 흐름은 질문 ground-truth → 권한을 반영한 후보 순위 → 기대 candidate/source/version/trace ID 비교 → 원천 URI 확인 → 재생성 전후 ID/content hash와 순위 비교 순서다. 실행과 케이스 snapshot은 공통 SQLite에 누적하며, 삭제·비공개·보관/제외·사라진 보고서 원천·권한 없는 채널은 부정 근거로 기록한다. 근거가 없는 질문은 답변 생성 대상이 아니라 `INSUFFICIENT_EVIDENCE`로 고정한다.
 
-외부 AI 1단계는 위 read model과 분리된 후속 쓰기 흐름이다. 현재 구현은 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`를 기본값으로 두고, `admin`/`system-admin`, 허용 목적, 고객·현장·provider·model 승인, 승인 프롬프트, 원천 상태, 승인 source type, 응답 인용 ID를 검사한다. 적격 후보만 질의 시점 snapshot으로 남기고, 근거가 없거나 응답의 사실 주장과 snapshot ID를 연결할 수 없으면 `INSUFFICIENT_EVIDENCE` 또는 `CITATION_VALIDATION_FAILED`로 종료한다. 결과는 작업순서·문서 상태·보고서 승인·설비를 변경하지 않는다.
+외부 AI 1단계는 위 read model과 분리된 후속 쓰기 흐름이다. 현재 구현은 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`를 기본값으로 두고, 보고서 작성 role, 허용 목적, 고객·현장·provider·model 승인, 승인 프롬프트, 원천 상태, 작성자 role, 채널 멤버십, 승인 source type, 민감정보 정책과 응답 인용 ID를 검사한다. 적격·제외 후보를 원문 없이 질의 시점 snapshot으로 남기고, 근거가 없거나 응답의 사실 주장과 snapshot ID를 연결할 수 없으면 `INSUFFICIENT_EVIDENCE` 또는 `CITATION_VALIDATION_FAILED`로 종료한다. 결과는 작업순서·문서 상태·보고서 승인·설비를 변경하지 않는다.
 
-현재 provider 주입 경계는 질의·프롬프트·근거 본문이 아닌 hash·버전 ID·후보 ID만 받으며, 운영 네트워크 client는 없다. 원천별 사용자 열람 권한, 민감정보/외부 전송 금지 필터, 최소 텍스트 전송은 후속 구현 범위다. 데이터 모델은 [데이터 모델](./data-model.md#외부-ai-질의와-호출-로그-골격), API 계약과 테스트 기준은 [API 문서](./api.md#외부-ai-근거-검색과-요약-안전장치-골격), 전송 승인은 [보안 문서](./security.md#외부-ai-전송과-운영자-승인)를 따른다. 착수 기준은 [MVP 범위 문서](./mvp-scope.md#후속-계층-착수-기준)를 따른다.
+provider 주입 경계는 정제 질의, 최소 발췌, candidate/source/version/trace ID, content hash, 순위와 prompt version만 받으며 운영 네트워크 client는 없다. 권한 없거나 상태가 바뀐 원천, 전송 금지 정보는 경계 DTO에 포함되지 않는다. 데이터 모델은 [데이터 모델](./data-model.md#외부-ai-질의와-호출-로그-골격), API 계약과 테스트 기준은 [API 문서](./api.md#외부-ai-근거-검색과-요약-안전장치-골격), 전송 승인은 [보안 문서](./security.md#외부-ai-전송과-운영자-승인)를 따른다. 착수 기준은 [MVP 범위 문서](./mvp-scope.md#후속-계층-착수-기준)를 따른다.

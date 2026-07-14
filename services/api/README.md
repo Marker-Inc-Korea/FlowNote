@@ -22,6 +22,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/server-accounts/{user_id}/password-reset` | Reset temporary password and revoke sessions |
 | GET | `/api/v1/server-accounts/{user_id}/sessions` | Active account sessions |
 | POST | `/api/v1/server-accounts/{user_id}/sessions/revoke` | Revoke active account sessions |
+| POST | `/api/v1/server-accounts/{user_id}/sessions/{session_id}/revoke` | Revoke one account session |
 | GET | `/api/v1/terminal-devices` | Approved terminal device list |
 | POST | `/api/v1/terminal-devices` | Register approved terminal device |
 | GET | `/api/v1/terminal-devices/{device_id}` | Terminal device detail |

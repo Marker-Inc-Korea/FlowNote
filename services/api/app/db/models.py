@@ -924,6 +924,41 @@ class AITransferApproval(Base):
     reason: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class AISensitiveDataPolicy(Base):
+    """Site-scoped deny terms and customer identifiers for the provider boundary."""
+
+    __tablename__ = "ai_sensitive_data_policies"
+    __table_args__ = (
+        UniqueConstraint(
+            "customer_scope",
+            "site_scope",
+            "version",
+            name="uq_ai_sensitive_data_policy_scope_version",
+        ),
+        Index(
+            "ix_ai_sensitive_data_policy_scope_active",
+            "customer_scope",
+            "site_scope",
+            "is_active",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    policy_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    customer_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    site_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    version: Mapped[str] = mapped_column(String(80), nullable=False)
+    forbidden_terms_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    customer_identifiers_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_by: Mapped[str] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 @event.listens_for(AIPromptVersion, "before_update")
 def prevent_approved_prompt_content_update(_mapper: object, _connection: object, target: AIPromptVersion) -> None:
     """Approved prompt content is immutable; retirement metadata may still be updated."""

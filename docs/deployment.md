@@ -139,7 +139,7 @@ FLOWNOTE_AI_CUSTOMER_SCOPE=DEFAULT
 FLOWNOTE_AI_SITE_SCOPE=DEFAULT
 ```
 
-AI 항목은 현재 안전장치 골격의 설정이다. 저장소에 운영 provider 네트워크 client, 원천별 사용자 권한 검사, 민감정보/전송 금지 필터가 없으므로 운영 `.env`에서 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`를 유지한다. provider/model/scope 값은 기능 활성 허가가 아니며, 후보 read model API는 이 플래그와 무관하게 동작한다.
+AI 항목은 현재 provider 직전 안전장치 설정이다. 원천별 사용자 권한, 민감정보/전송 금지 필터와 최소 payload DTO는 구현됐지만 저장소에 운영 provider 네트워크 client가 없으므로 운영 `.env`에서 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`를 유지한다. provider/model/scope 값은 기능 활성 허가가 아니며, 후보 read model API는 이 플래그와 무관하게 동작한다.
 
 5. 서버 실행 래퍼를 저장소에서 운영 폴더로 복사하고 작업 스케줄러에 등록한다. 등록 명령은 관리자 PowerShell에서 실행한다.
 
@@ -187,7 +187,7 @@ Invoke-RestMethod http://<서버IP>:5184/api/v1/health/db
 
 ### 최초 서버 관리자 계정
 
-1. 서버 DB 최초 생성 시 FastAPI는 서버 `user_accounts`에 `admin` 계정을 만든다. 이 계정은 최초 서버 관리자 계정이며 WPF 사용자 관리 화면에서 생성하거나 변경하지 않는다.
+1. 서버 DB 최초 생성 시 FastAPI는 서버 `user_accounts`에 `admin` 계정을 만든다. 이 계정은 최초 서버 관리자 계정이다. 최초 비밀번호 변경 전에는 서버 PC 운영 스크립트를 사용하고, 이후 계정 운영은 서버 로그인한 WPF 사용자 관리 화면을 사용한다.
 2. 개발/스모크 테스트용 기본 비밀번호 `1234`는 운영 로그인 전에 반드시 변경한다. 현장 운영자는 서버 PC의 관리자 PowerShell에서 운영 스크립트를 실행해 새 비밀번호를 대화식으로 입력한다. 현재 스크립트는 8자 미만 비밀번호를 거부한다. 새 비밀번호를 명령줄 인자, PowerShell 기록, 서버 로그에 남기지 않는다.
 
 ```powershell
@@ -201,19 +201,22 @@ cd C:\FlowNote\Server\api
 .\.venv\Scripts\python.exe -m app.ops.server_accounts --database-url sqlite:///C:/FlowNote/Server/data/flownote.sqlite3 reset-password --username admin
 ```
 
-3. 최초 운영 로그인은 변경된 서버 비밀번호로 WPF에서 수행한다. 현재 구현 범위에서는 WPF 또는 FastAPI가 첫 로그인 후 비밀번호 변경 화면을 강제로 띄우지 않는다. 운영 기준은 “첫 로그인 전 변경”으로 고정하고, `must_change_password` 같은 서버 컬럼과 변경 API, WPF 변경 화면은 후속 범위로 둔다. 운영자는 WPF 첫 서버 로그인 전에 변경 완료 여부, 변경 수행자, 확인자를 운영 기록에 남긴다.
+3. 최초 운영 로그인은 변경된 서버 비밀번호로 WPF에서 수행한다. 초기 `admin`의 스크립트 변경은 `must_change_password`를 설정하지 않으므로 첫 운영 로그인 전에 변경 완료 여부, 변경 수행자, 확인자를 운영 기록에 남긴다. 이후 WPF/API에서 생성하거나 재설정한 임시 비밀번호 계정은 `must_change_password = true`가 되고 로그인 직후 비밀번호 변경 화면으로 이동한다.
 4. 변경 완료 후 기본 비밀번호 `1234`로 WPF 서버 로그인이 실패하는지 확인한다. 이 실패가 서버 401이면 WPF가 로컬 `admin / 1234`로 우회해 성공하면 안 된다.
 
 ### 서버 계정과 WPF 로컬 계정
 
 - 서버 계정은 서버 DB의 `user_accounts`에서 관리한다. 서버 로그인, 서버 API 권한, 서버 문서 등록자, 서버 FieldComment 작성자, 서버 감사 이력은 서버 계정을 기준으로 남긴다.
-- WPF 로컬 사용자 관리 화면의 사용자 추가, 역할 변경, 비밀번호 변경은 로컬 SQLite 전용이다. 화면 제목, 사용자 목록, 상세 문구는 “로컬” 계정임을 표시해야 하며 서버 계정을 만들거나 수정하지 않는다.
+- 서버 로그인한 `admin`, `system-admin`이 여는 사용자 관리 화면은 FastAPI 서버 계정 전용이다. 계정 생성, 표시 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·전체 폐기를 제공한다.
+- 서버 미연결 로컬 로그인에서 여는 사용자 관리 화면은 로컬 SQLite 전용이다. 화면 제목, 사용자 목록, 상세 문구는 “로컬” 계정임을 표시하며 서버 계정을 만들거나 수정하지 않는다.
 - 서버 URL을 쓰는 운영 PC에서는 서버 계정 권한을 우선한다. 같은 로그인 ID의 로컬 계정 role이 다르더라도 서버 로그인 성공 후 화면 권한과 서버 동기화 작성자 기준은 서버 응답의 role과 사용자 ID다.
-- 서버 계정 관리 API와 WPF 서버 계정 관리 연동은 후속 범위다. 그 전까지 운영자는 서버 PC에서 DB 운영 절차로 서버 계정을 발급, 재설정, 비활성화한다.
+- 서버 계정 화면에서 서버 연결이 끊기거나 401/403이 발생해도 로컬 계정 화면으로 자동 전환하지 않는다. 연결 또는 권한을 복구한 뒤 다시 로그인한다.
 
 ### 서버 계정 발급
 
-서버 계정 발급은 운영 스크립트의 `create` 명령으로 수행한다. `role` 값은 [데이터 모델 문서의 역할 값](./data-model.md#역할-값) 중 하나만 사용한다.
+일반 서버 계정은 서버 로그인한 `admin`, `system-admin`이 WPF 사용자 관리 화면에서 발급한다. 8자 이상 임시 비밀번호와 발급 사유를 입력하며, 서버는 비밀번호를 응답·활동 이력·일반 로그에 다시 노출하지 않는다. 발급 계정은 `must_change_password = true`이므로 첫 로그인 직후 본인이 비밀번호를 바꾸고 새 비밀번호로 다시 로그인해야 한다. `admin`은 일반 계정만 운영하고 `system-admin` 계정은 `system-admin`만 생성·조회·변경할 수 있다.
+
+서버 PC 운영 스크립트의 `create` 명령은 WPF/API를 사용할 수 없는 초기·비상 경로다. `role` 값은 [데이터 모델 문서의 역할 값](./data-model.md#역할-값) 중 하나만 사용한다. 이 스크립트는 현재 `must_change_password`를 설정하지 않으므로, 일반 운영 계정 발급에는 사용하지 않는다.
 
 ```powershell
 cd C:\FlowNote\Server\api
@@ -225,9 +228,11 @@ cd C:\FlowNote\Server\api
 ### 비밀번호 재설정
 
 1. 본인 확인과 승인자를 운영 기록에 남긴다.
-2. `reset-password` 명령으로 임시 비밀번호를 설정한다.
-3. 해당 서버 계정의 기존 활성 `auth_sessions`는 명령 안에서 `REVOKED`로 바뀌고 `revoked_reason`은 `password_reset`으로 남는다.
-4. 임시 비밀번호는 운영자와 사용자에게 일회성으로 전달하고, 사용자가 로그인한 뒤 운영자 입회하에 다시 변경한다. 현재 앱 강제 변경 기능은 후속 범위이므로 운영 절차로 통제한다.
+2. WPF 서버 계정 화면에서 8자 이상 임시 비밀번호와 재설정 사유를 입력한다.
+3. 서버는 `must_change_password = true`로 바꾸고 해당 계정의 기존 활성 `auth_sessions`를 `REVOKED`, `revoked_reason = password_reset`으로 변경한다.
+4. 임시 비밀번호는 사용자에게 일회성으로 전달한다. 사용자는 로그인 직후 강제 변경 화면에서 새 비밀번호로 바꾸며, 변경 성공으로 현재 세션까지 폐기된 뒤 새 비밀번호로 다시 로그인한다.
+
+WPF/API를 사용할 수 없는 비상 상황에서는 아래 운영 스크립트를 사용할 수 있다. 스크립트는 세션을 폐기하지만 `must_change_password`를 설정하지 않으므로 비상 승인과 후속 비밀번호 변경 확인을 별도 운영 기록으로 남긴다.
 
 ```powershell
 .\.venv\Scripts\python.exe -m app.ops.server_accounts reset-password --username line-a-admin
@@ -237,9 +242,9 @@ cd C:\FlowNote\Server\api
 
 ### 비활성 계정, 퇴사, 권한 변경
 
-- 장기 미사용, 퇴사, 권한 회수 계정은 `set-status --status DISABLED`로 변경한다. 스크립트는 `is_active = 0`, `status = 'DISABLED'`로 저장하고 기존 활성 세션을 `REVOKED`로 바꾼다.
-- 일시 잠금은 `set-status --status LOCKED`로 구분한다. 재개 시 운영 승인 후 `set-status --status ACTIVE`로 되돌리고 비밀번호 재설정을 함께 수행한다.
-- 역할 변경은 `set-role`로 서버 DB의 `role`을 바꾸고, 변경 사유와 승인자를 운영 기록에 남긴다. WPF 로컬 계정이 별도로 필요한 PC라면 로컬 사용자 관리 화면에서도 같은 사용자에 대한 로컬 권한을 별도로 점검한다.
+- 장기 미사용, 퇴사, 권한 회수 계정은 WPF 서버 계정 화면에서 `DISABLED`로 변경한다. 일시 잠금은 `LOCKED`, 승인된 재개는 `ACTIVE`로 구분하며 변경 사유를 필수로 남긴다.
+- role 변경, 잠금·비활성화는 기존 활성 세션을 같은 트랜잭션에서 폐기한다. 자기 자신 잠금/비활성화, 마지막 활성 `system-admin` 제거, 일반 `admin`의 `system-admin` 계정 운영은 서버가 거부한다.
+- WPF/API를 사용할 수 없는 비상 상황에서는 아래 `set-status`, `set-role` 스크립트를 사용할 수 있다. WPF 로컬 계정이 별도로 필요한 PC라면 로컬 사용자 관리 화면에서도 같은 사용자의 로컬 권한을 별도로 점검한다.
 - 퇴사자는 서버 계정과 WPF 로컬 계정을 각각 비활성화한다. 서버 계정 비활성화만으로 오프라인 로컬 로그인 가능성을 제거할 수 없으므로, 로컬 계정 사용 PC 목록을 함께 확인한다.
 
 ```powershell
@@ -425,6 +430,8 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | 서버 | `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED` | 기본 `false`. 현재 운영에서는 `true` 설정 금지 |
 | 서버 | `FLOWNOTE_AI_PROVIDER`, `FLOWNOTE_AI_MODEL` | 승인 row 선택에 사용하는 provider/model scope. 기본 `UNCONFIGURED` |
 | 서버 | `FLOWNOTE_AI_CUSTOMER_SCOPE`, `FLOWNOTE_AI_SITE_SCOPE` | 외부 전송 승인을 찾는 고객/현장 scope. 기본 `DEFAULT` |
+| 서버 | `FLOWNOTE_AI_PROVIDER_EXCERPT_MAX_CHARS` | provider source 한 건의 최대 발췌 길이. 기본 600자 |
+| 서버 | `FLOWNOTE_AI_PROVIDER_MAX_SOURCES` | 질의 한 건의 provider 최대 근거 수. 기본 12건 |
 | WPF | `FLOWNOTE_LOCAL_DATA_DIR` | `C:\FlowNote\LocalData`처럼 DB와 `Files\`를 함께 둘 폴더 |
 | WPF | `FLOWNOTE_LOCAL_DATABASE_PATH` | 특정 DB 파일을 직접 지정할 때만 사용. 지정 시 `FLOWNOTE_LOCAL_DATA_DIR`보다 DB 경로 우선 |
 | WPF | `FLOWNOTE_API_BASE_URL` | 서버 PC 주소. 예: `http://192.168.0.10:5184` |
@@ -487,7 +494,9 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - WPF 로그인 화면에서 서버 계정으로 로그인한다.
 - 서버 계정 로그인 실패가 명확한 401 또는 403이면 로컬 계정으로 자동 전환되지 않는지 확인한다.
 - 같은 로그인 ID가 로컬 SQLite에도 있을 때 서버 로그인 성공 후 화면 버튼 권한이 서버 응답 role 기준으로 계산되는지 확인한다.
-- 사용자 관리 화면의 창 제목, 목록, 상세 안내가 로컬 SQLite 계정 전용임을 표시하는지 확인한다.
+- 서버 로그인한 `admin`, `system-admin`의 사용자 관리 화면이 서버 계정 생성·role/상태 변경·임시 비밀번호 재설정·활성 세션 폐기를 수행하는지 확인한다.
+- 로컬 로그인 사용자 관리 화면의 창 제목, 목록, 상세 안내가 로컬 SQLite 계정 전용임을 표시하는지 확인한다.
+- 임시 비밀번호 계정이 메인 화면 전에 비밀번호 변경을 강제하고 변경 후 새 비밀번호 재로그인을 요구하는지 확인한다.
 - 문서 목록이 열리고 서버에 등록된 문서가 조회되는지 확인한다.
 - 문서를 열어 뷰어가 표시되고 다운로드 차단 정책과 열람 로그가 동작하는지 확인한다.
 - WebView2 Runtime 미설치 또는 손상 환경에서는 `문서 뷰어를 시작할 수 없습니다.` 안내가 표시되는지 확인하고, WebView2 Runtime 설치 후 같은 문서가 정상 열람되는지 기록한다.
@@ -625,9 +634,8 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 - HTTPS 또는 사내망 접속 보호
 - 현장별 .NET/WebView2 설치 조합에서 self-contained MSI 실기 검증
 - 현장별 코드 서명 인증서 발급, 갱신, 폐기 운영 절차
-- 서버 계정 관리 UI와 관리자 세션 폐기 UI
 - PostgreSQL 전환 조건
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 FastAPI pytest 수집/실행, WPF build, WPF smoke, `.gitignore` 산출물 제외 규칙, 실행 전후 `git status` 금지 패턴을 함께 확인한다. 2026-07-13 현재 FastAPI 수집 기준선과 스크립트의 고정 기대값은 모두 75개다. 이 기준선 일치만으로 배포 검증을 통과한 것은 아니며, 실제 배포 근거로 사용하려면 해당 환경에서 스크립트 전체 실행과 사후 점검이 통과해야 한다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 FastAPI pytest 수집/실행, WPF build, WPF smoke, `.gitignore` 산출물 제외 규칙, 실행 전후 `git status` 금지 패턴을 함께 확인한다. 2026-07-14 현재 FastAPI 수집 기준선과 스크립트의 고정 기대값은 모두 96개다. 이 기준선 일치만으로 배포 검증을 통과한 것은 아니며, 실제 배포 근거로 사용하려면 해당 환경에서 스크립트 전체 실행과 사후 점검이 통과해야 한다.

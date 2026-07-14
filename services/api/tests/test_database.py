@@ -38,6 +38,7 @@ def test_app_startup_creates_mvp_schema() -> None:
         "ai_query_citations",
         "ai_prompt_versions",
         "ai_call_attempts",
+        "ai_sensitive_data_policies",
         "ai_transfer_approvals",
         "comment_templates",
         "controlled_copy_grants",

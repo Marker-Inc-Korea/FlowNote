@@ -68,7 +68,7 @@ Windows와 Android의 업무 채널 알림, 인수인계 확인, FieldComment/�
 
 AI 계층의 첫 착수 범위는 “근거가 있는 검색과 요약”까지로 제한한다. 자동 의사결정, 작업 지시 자동 변경, 현장 조치 승인 자동화는 별도 보안/책임 기준이 정해지기 전까지 포함하지 않는다.
 
-현재 구현 착수 범위는 `ai_search_candidates` read model의 재생성·목록·품질 API, WPF 운영 점검 화면, 그리고 `/api/v1/ai/queries` 생성·조회와 차단/감사 골격이다. 검색 후보는 `PUBLISHED` 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source로 제한하고 원문 ID와 version ID를 유지한다. 질의 시점에는 이 후보의 원천 상태와 승인된 source type을 다시 검사하지만, 원천별 사용자 열람 권한·민감정보 필터·운영 provider 네트워크 client는 아직 없다. FieldComment 관리자 검토 상태가 `ANALYZED`, `REVIEWED`, `SELECTED`로 충분히 쌓이기 전에는 답변 자동화보다 관리자 검토/분석/선정 운영 흐름을 먼저 보강한다.
+현재 구현 착수 범위는 `ai_search_candidates` read model의 재생성·목록·품질 API, WPF 운영 점검 화면, `/api/v1/ai/queries` 생성·조회와 원천 권한·민감정보·최소 payload 게이트다. 검색 후보는 `PUBLISHED` 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source로 제한하고 원문 ID와 version ID를 유지한다. 질의 시점에는 원천 상태, 작성자 role, 연결 채널 멤버십, 승인 source type과 현장별 금칙 정책을 다시 검사한다. 운영 provider 네트워크 client는 아직 없다. FieldComment 관리자 검토 상태가 `ANALYZED`, `REVIEWED`, `SELECTED`로 충분히 쌓이기 전에는 답변 자동화보다 관리자 검토/분석/선정 운영 흐름을 먼저 보강한다.
 
 ### MES/ERP 어댑터
 

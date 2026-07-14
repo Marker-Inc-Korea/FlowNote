@@ -14,6 +14,8 @@
 - 관리자 파일 감시 후보
 - FastAPI SQLite 서버와 `/api/v1` API
 - 서버 인증 세션과 refresh/logout
+- FastAPI 서버 계정 생성·role/상태 변경·비밀번호 재설정·세션 조회/폐기 API와 감사 이력
+- WPF 서버 계정 운영 화면, 임시 비밀번호 로그인 강제 변경과 재로그인 흐름
 - WPF 서버 전송 큐와 서버 ID 매핑
 - 서버 동기화 실패/재시도 UX
 - 보존 FAILED 큐의 읽기 전용 분류, plan hash·row별 승인, 구 `create`/FieldNote 무손실 전환 CLI와 감사 이력
@@ -36,7 +38,7 @@
 ## 설계 완료, 부분 구현
 
 - 외부 AI 1단계의 범위, 데이터 모델, API, 보안·보존 계약을 정리하고 질의 생성·조회 라우터, ORM 테이블, 기능 플래그와 전송 승인 검사를 구현했다. 허용 범위는 근거 검색과 요약이며, 운영 provider client와 네트워크 호출은 아직 구현하지 않았다.
-- 현재 동작하는 AI 기능은 `ai_search_candidates` 재생성·목록·품질 API, 오프라인 ground-truth 회귀 평가와 결과 누적, WPF 운영 점검 화면, 외부 질의의 비활성 기본값·승인·목적·근거 snapshot·감사 차단 골격이다. 운영 provider client와 네트워크 호출은 완료된 코드로 간주하지 않는다.
+- 현재 동작하는 AI 기능은 `ai_search_candidates` 재생성·목록·품질 API, 오프라인 ground-truth 회귀 평가와 결과 누적, WPF 운영 점검 화면, 외부 질의의 비활성 기본값·승인·목적·원천 권한·민감정보·최소 payload·근거 snapshot·감사 게이트다. 운영 provider client와 네트워크 호출은 완료된 코드로 간주하지 않는다.
 
 ## 개발 우선순위 원칙
 
@@ -54,11 +56,11 @@
 
 ## 다음 우선순위
 
-1. FastAPI 92건 기준선과 전체 pytest 통과에 이어 WPF 빌드, WPF 스모크, Git 산출물 사후 점검을 포함한 표준 검증을 실행하고 결과를 남긴다.
+1. FastAPI 96건 기준선과 전체 pytest 통과에 이어 WPF 빌드, WPF 스모크, Git 산출물 사후 점검을 포함한 표준 검증을 실행하고 결과를 남긴다.
 2. 현장별 MSI 설치 검증, 코드 서명, self-contained 패키징 조건 정리
 3. Android 운영 배포 서명, MDM/인증서, 단말 등록/비활성화 절차 확정
 4. Android 백그라운드 알림 정책과 Windows/Android 채널 polling 운영 UX 검증. WPF 서버 scope·사용자별 cursor 영구 보존, 전경 polling과 읽음/수신 확인은 구현되어 있다.
-5. 사용자/역할 UI와 서버 계정 정책 정합성 강화
+5. 구현된 사용자/역할 UI와 서버 계정 보호 규칙의 현장 운영 검증 및 오류 UX 보강
 6. 문서 버전/상태/공개 상태의 서버-WPF 동기화 정책 고도화
 7. FieldComment 관리자 검토/분석/선정 운영 화면 보강
 8. AI 근거 후보 운영 점검과 ground-truth 회귀 평가를 실제 축적 데이터 기준으로 반복 검증
@@ -69,7 +71,7 @@
 - PostgreSQL 전환 조건 검토
 - MES/ERP 어댑터 설계. 착수 전에는 수동 작업지시의 `work_order_no`, 문서 연결, 작업순서, FieldComment, 보고서 근거가 안정적으로 축적되어야 한다.
 - 외부 AI 호출 기반 검색/작업 조언. 착수 기준은 [MVP 범위 문서의 후속 계층 착수 기준](./mvp-scope.md#후속-계층-착수-기준)을 따른다.
-  - 운영 호출 전에 원천별 사용자 열람 권한, 민감정보/전송 금지 필터, 최소 텍스트 payload, summary-claim 일치 검증을 구현한다.
+  - 원천별 사용자 열람 권한, 민감정보/전송 금지 필터와 최소 텍스트 payload는 구현됐다. 운영 호출 전 남은 항목은 summary-claim 의미 일치 검증, 운영 승인 API/UI와 provider client다.
   - 전송 승인·프롬프트 운영 API/UI, 질의 조회 범위, 만료 삭제·감사 스케줄러를 구현한다.
 - 운영 감사 로그와 보안 정책 고도화
 

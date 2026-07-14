@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     ai_model: str = "UNCONFIGURED"
     ai_customer_scope: str = "DEFAULT"
     ai_site_scope: str = "DEFAULT"
+    ai_provider_excerpt_max_chars: int = Field(default=600, ge=100, le=4000)
+    ai_provider_max_sources: int = Field(default=12, ge=1, le=100)
 
 
 settings = Settings()
