@@ -143,6 +143,8 @@ smoke-output/
 smoke-results/
 test-output/
 test-results/
+# Root planning notes are local-only working artifacts.
+/*.txt
 *.tmp
 *.flownote-partial
 *.bak

@@ -4,23 +4,40 @@
 
 ## 표준 실행
 
+Windows 배포 준비·통합 검증 PC의 표준 도구 기준은 다음과 같다. `verify-preserved-tests.ps1`은 실행 시작 단계에서 이 기준을 검사하고 실제 버전을 실행 ID 폴더의 `environment.json`에 남긴다.
+
+| 도구 | 표준 기준 |
+| --- | --- |
+| 운영체제 | Windows 10/11 또는 동등한 Windows Server x64 |
+| PowerShell | Windows PowerShell 5.1 이상. PowerShell 7.4 LTS 이상 권장 |
+| .NET | SDK 10.x와 `Microsoft.WindowsDesktop.App` Runtime 10.x |
+| Python | `services/api/.venv/Scripts/python.exe`, Python 3.11 이상 |
+| Android Java | x64 JDK 17. `JAVA_HOME`과 `java`가 같은 설치를 가리켜야 함 |
+| Android SDK | `ANDROID_SDK_ROOT` 또는 `ANDROID_HOME`, Platform 35, Build Tools 35.0.0, Platform Tools |
+| Android 빌드 | 저장소 Gradle Wrapper 8.10.2, Android Gradle Plugin 8.7.3 |
+| Git | 검증 PC PATH에서 실행 가능한 Git |
+
+JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기준선으로 확정하지 않는다. WPF framework-dependent 배포 대상 PC도 Desktop Runtime 10.x를 사용하며, 런타임 설치를 통제할 수 없는 대상에는 별도의 self-contained MSI 검증 기준을 적용한다.
+
 저장소 루트에서 다음 명령을 실행한다.
 
 ```powershell
 .\scripts\verify-preserved-tests.ps1
 ```
 
-스크립트는 기본 `integrated-smoke-yyyyMMdd-HHmmss` 실행 ID를 만들며 `-RunId <값>`으로 현장 실행 ID를 지정할 수 있다. JUnit, 관리형 FastAPI, WPF, Android 로그는 Git 제외 경로 `data/local/integrated-smoke/<run-id>/`에 보존한다. 스크립트는 다음 순서로 실행한다.
+스크립트는 기본 `integrated-smoke-yyyyMMdd-HHmmss` 실행 ID를 만들며 `-RunId <값>`으로 현장 실행 ID를 지정할 수 있다. 단계별 로그, JUnit/TRX, 관리형 FastAPI 로그, WPF DB 증거, Android 결과, 환경 정보와 `verification-summary.json`은 Git 제외 경로 `data/local/integrated-smoke/<run-id>/`에 보존한다. 실패하면 즉시 종료하되 실패 단계까지의 DB·로그·산출물을 삭제하거나 초기화하지 않으며, 요약 파일에 실패 단계와 원인을 남긴다. 스크립트는 다음 순서로 실행한다.
 
-1. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
-2. 실행 전 `git status --porcelain=v1 --untracked-files=all`에서 SQLite 예외 외 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-3. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 96개인지 확인한다.
-4. `services/api`에서 FastAPI pytest를 실행하고 실행 ID별 JUnit을 보존한다.
-5. WPF 앱을 빌드한다.
-6. `5184` 포트에 서버가 없으면 누적 `flownote.windows-smoke.sqlite3`와 `storage/windows-smoke`를 쓰는 FastAPI를 시작하고, 같은 실행 ID로 WPF 통합 스모크를 실행한다.
-7. Android `testDebugUnitTest`와 `assembleDebug`를 실행한다.
-8. `-RunAndroidDeviceSmoke`를 지정하면 연결된 승인 실단말이 정확히 1대인지 확인하고 `connectedDebugAndroidTest`를 실행한다.
-9. 실행 후 `git status`를 다시 점검한다.
+1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
+2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
+3. 실행 전 `git status --porcelain=v1 --untracked-files=all`과 `git ls-files`에서 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
+4. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 96개인지 확인한다.
+5. FastAPI pytest 96건을 실행하고 실행 ID별 JUnit을 보존한다.
+6. WPF Core 테스트를 실행하고 TRX를 보존한다.
+7. WPF 앱을 빌드한다.
+8. `5184` 포트에 서버가 없으면 누적 `flownote.windows-smoke.sqlite3`와 `storage/windows-smoke`를 쓰는 FastAPI를 시작하고, 같은 실행 ID로 WPF 통합 스모크를 실행한다.
+9. Android `testDebugUnitTest`와 `assembleDebug`를 실행하고 JUnit XML을 실행 ID 폴더에도 복사해 보존한다.
+10. `-RunAndroidDeviceSmoke`를 지정하면 연결된 승인 실단말이 정확히 1대인지 확인하고 `connectedDebugAndroidTest`를 실행한다.
+11. 실행 후 `git status --short --untracked-files=all`과 `git ls-files`를 다시 점검한다.
 
 개별 명령은 다음과 같다.
 
@@ -29,6 +46,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest --collect-only -q
 .\.venv\Scripts\python.exe -m pytest
 cd ..\..
+dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
 dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Windows.SmokeTests.csproj
 cd apps\android
@@ -37,9 +55,17 @@ cd ..\..
 git status --short
 ```
 
-WPF 통합 스모크는 같은 실행 ID로 반장·조장·조원·문서관리자·system-admin·viewer와 승인 Android 단말을 추적한다. 오늘 사진/인수인계, 기존 과거 날짜 문서 버전 증가, FieldComment 검토 상태와 보고서 source, 채널 알림·receipt, 사용자별 cursor 재시작 복구를 연결한다. 또한 이번 실행에서 만든 구 `create` FAILED 큐를 dry-run하고 plan hash로 승인한 뒤 같은 row를 다시 승인해 target 큐·감사 중복이 생기지 않는지 확인한다. 서버 viewer는 임시 비밀번호 변경 후 Windows/승인 Android 세션을 만들고 `DISABLED` 전환 직후 access/refresh가 모두 차단되는지 확인한다. AI ground-truth 평가는 계속 통과하면서 외부 provider 호출은 `AI_EXTERNAL_CALL_DISABLED`로 차단되는지를 같은 흐름에서 검증한다.
+WPF 통합 스모크는 같은 실행 ID로 반장·조장·조원·문서관리자·system-admin·viewer와 승인 Android 단말을 추적한다. 오늘 사진/인수인계 문서의 날짜 폴더 생성·등록·목록 조회, 기존 과거 날짜 사진/인수인계 문서 중 무작위 1건의 버전 증가, FieldComment 검토 상태와 보고서 source, 채널 알림·receipt, 사용자별 cursor 재시작 복구를 연결한다. 과거 날짜 폴더나 문서는 새로 만들지 않으며 기존 과거 문서가 하나도 없으면 환경 준비 누락으로 실패한다. 또한 이번 실행에서 만든 구 `create` FAILED 큐를 dry-run하고 plan hash로 승인한 뒤 같은 row를 다시 승인해 target 큐·감사 중복이 생기지 않는지 확인한다. 서버 viewer는 임시 비밀번호 변경 후 Windows/승인 Android 세션을 만들고 `DISABLED` 전환 직후 access/refresh가 모두 차단되는지 확인한다. AI ground-truth 평가는 계속 통과하면서 외부 provider 호출은 `AI_EXTERNAL_CALL_DISABLED`로 차단되는지를 같은 흐름에서 검증한다.
 
-마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. 이미 실행 중인 `5184` 서버를 재사용하면 그 서버도 외부 AI 비활성·테스트 데이터 보존 설정이어야 한다. 통제된 기준선 실행은 해당 포트를 비운 상태에서 스크립트가 관리형 FastAPI를 시작하게 한다.
+마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. `wpf-smoke-database-evidence.json`에는 주요 테이블 실행 전후 통계, 오늘 문서 ID, 과거 기존 문서의 이전·신규 버전과 무결성 결과가 저장된다. 통제된 기준선은 실행마다 설정이 식별되는 관리형 FastAPI를 사용하므로 시작 전에 `5184` 포트를 비워야 한다. 해당 포트에 이미 건강한 서버가 있으면 환경 실패로 중단하고 외부 프로세스는 종료하지 않는다.
+
+한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. FastAPI JUnit의 tests 수는 96이어야 하고 failure/error는 0, WPF TRX와 Android JUnit도 failure 0이어야 한다. WPF·Android build 로그에는 build error가 없어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+
+## 2026-07-15 Windows 통합 기준선 복구 준비
+
+표준 스크립트에 Windows x64와 도구 버전 사전점검, WPF Core TRX, 단계별 로그와 실패 요약, FastAPI/Android JUnit 수치 검사, WPF 실행 전후 DB 통계 및 오늘/과거 날짜 SQL 증거 파일을 추가했다. 동일 run ID 경로에 기존 증거가 있으면 덮어쓰지 않고 새 run ID를 요구하며, `5184` 포트의 외부 서버도 임의로 재사용하거나 종료하지 않는다.
+
+현재 macOS 작업 환경에서는 `baseline-recovery-macos-20260715`로 FastAPI 96건 수집과 96건 전체 통과를 다시 확인해 JUnit과 로그를 보존했다. 이 환경에는 PowerShell과 .NET SDK가 없고 Android 표준 JDK/SDK도 갖춰지지 않아 WPF Core/build/smoke와 Android unit/debug build는 실행하지 않았다. 따라서 이 기록은 서버 회귀의 부분 근거일 뿐 최신 Windows 통합 기준선 확정 기록은 아니다. Windows 배포 준비 PC에서 생략 스위치 없이 표준 스크립트를 실행해 단일 `PASSED` 요약이 생긴 뒤 이 절에 run ID, 실제 WPF/Android 테스트 수와 DB 증거 값을 추가해야 한다.
 
 ## 2026-07-14 작업 207 전체 Markdown 코드 정합성 갱신
 

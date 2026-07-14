@@ -36,6 +36,7 @@ Console.WriteLine($"Integrated smoke run: id={runId}, startedAt={runStartedAt:O}
 try
 {
     var services = new FlowNoteLocalServices(databasePath);
+    var databaseStatisticsBefore = ReadDatabaseStatistics(services.Database);
 
     var cursorSmokeScopeA = $"https://cursor-a-{runId}.example/api/";
     var cursorSmokeScopeB = $"https://cursor-b-{runId}.example/api/";
@@ -4262,6 +4263,87 @@ try
             "shared WPF SQLite should have no duplicate server id mappings");
     }
 
+    long todayDocumentSqlCount;
+    long pastVersionSqlCount;
+    using (var evidenceConnection = services.Database.OpenConnection())
+    {
+        todayDocumentSqlCount = ScalarLong(
+            evidenceConnection,
+            """
+            SELECT COUNT(*)
+            FROM documents d
+            JOIN document_folders f ON f.id = d.folder_id
+            WHERE d.document_id IN ($handover_id, $photo_id)
+              AND f.name = $folder_name;
+            """,
+            ("$handover_id", todayHandoverDocument.DocumentId),
+            ("$photo_id", todayPhotoDocument.DocumentId),
+            ("$folder_name", todayFolderName));
+        pastVersionSqlCount = ScalarLong(
+            evidenceConnection,
+            """
+            SELECT COUNT(*)
+            FROM document_versions
+            WHERE document_id = $document_id
+              AND version_no = $version_no
+              AND comment = $comment;
+            """,
+            ("$document_id", randomPastDocument.Document.DocumentId),
+            ("$version_no", randomPastVersion.VersionNo),
+            ("$comment", randomPastComment));
+    }
+    Require(todayDocumentSqlCount == 2, "SQL evidence must find today's handover and photo documents in today's folder");
+    Require(pastVersionSqlCount == 1, "SQL evidence must find the new version on the selected existing past document");
+
+    var databaseStatisticsAfter = ReadDatabaseStatistics(services.Database);
+    var smokeArtifactDirectory = Environment.GetEnvironmentVariable("FLOWNOTE_SMOKE_ARTIFACT_DIR");
+    if (!string.IsNullOrWhiteSpace(smokeArtifactDirectory))
+    {
+        Directory.CreateDirectory(smokeArtifactDirectory);
+        var evidencePath = Path.Combine(smokeArtifactDirectory, "wpf-smoke-database-evidence.json");
+        var evidence = new
+        {
+            run_id = runId,
+            database_path = databasePath,
+            started_at = runStartedAt,
+            finished_at = DateTime.Now,
+            statistics_before = databaseStatisticsBefore,
+            statistics_after = databaseStatisticsAfter,
+            today = new
+            {
+                folder = todayFolderName,
+                handover_document_id = todayHandoverDocument.DocumentId,
+                handover_file = todayHandoverDocument.FileName,
+                photo_document_id = todayPhotoDocument.DocumentId,
+                photo_file = todayPhotoDocument.FileName,
+                registered_and_listed = true,
+                sql_verified_rows = todayDocumentSqlCount
+            },
+            past_existing_document = new
+            {
+                folder = randomPastDocument.FolderName,
+                flow_type = randomPastDocument.FlowType,
+                document_id = randomPastDocument.Document.DocumentId,
+                file = randomPastDocument.Document.FileName,
+                previous_version = randomPastOriginalVersion,
+                new_version = randomPastVersion.VersionNo,
+                change_reason = randomPastComment,
+                sql_verified_rows = pastVersionSqlCount
+            },
+            integrity = new
+            {
+                quick_check = "ok",
+                foreign_key_violations = 0,
+                mapping_duplicates = 0,
+                idempotency_duplicates = 0
+            }
+        };
+        File.WriteAllText(
+            evidencePath,
+            JsonSerializer.Serialize(evidence, new JsonSerializerOptions { WriteIndented = true }));
+        Console.WriteLine($"WPF smoke database evidence kept at: {evidencePath}");
+    }
+
     Console.WriteLine($"FlowNote Windows integrated smoke tests passed: run={runId}, quick_check=ok, foreign_key_check=0, mapping_duplicates=0, idempotency_duplicates=0");
     Console.WriteLine($"Smoke test SQLite DB kept at: {databasePath}");
     Console.WriteLine($"Smoke test Korean PDF kept at: {koreanPdfPath}");
@@ -4277,6 +4359,27 @@ static void Require(bool condition, string message)
     {
         throw new InvalidOperationException(message);
     }
+}
+
+static Dictionary<string, long> ReadDatabaseStatistics(FlowNoteLocalDatabase database)
+{
+    using var connection = database.OpenConnection();
+    var statistics = new Dictionary<string, long>(StringComparer.Ordinal);
+    foreach (var table in new[]
+    {
+        "documents",
+        "document_versions",
+        "field_comments",
+        "activity_history",
+        "notifications",
+        "server_sync_queue",
+        "server_id_mappings"
+    })
+    {
+        statistics[table] = ScalarLong(connection, $"SELECT COUNT(*) FROM {table};");
+    }
+
+    return statistics;
 }
 
 static async Task<T?> WaitForAsync<T>(Func<T?> action, TimeSpan timeout)
