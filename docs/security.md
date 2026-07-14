@@ -146,5 +146,5 @@ provider 주입 경계는 필터를 통과한 질의와 제한 길이의 최소 
 - 브라우저 직접 접근 제한 정책의 설치/배포 자동화
 - Android MDM, 운영 인증서와 현장별 단말 등록·비활성화·교체 정책
 - Android outbox 암호화와 제한된 WorkManager 백그라운드 알림 정책 검증
-- 외부 AI 원천별 사용자 열람 권한, 민감정보/전송 금지 필터, 최소 텍스트 전송 구현과 검증
+- 운영 AI provider 네트워크 client, provider 응답의 summary와 검증된 claim 사이 의미적 일치 강제, 실제 provider 조건에 대한 전송 경계 재검증
 - AI 전송 승인·프롬프트 운영 API/UI, 조회자 범위, 만료 삭제·감사 스케줄러

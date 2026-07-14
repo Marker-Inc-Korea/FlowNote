@@ -20,7 +20,7 @@
 - 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도
 - 관리자 파일 감시 후보와 버전 확정
 - AI 자동 조언 전 단계의 `ai_search_candidates` 근거 후보 재생성, 목록, 품질 점검 API와 WPF 운영 점검 화면
-- FastAPI `/api/v1/ai/queries` 질의 생성·조회와 기본 비활성, role, 목적, 외부 전송 승인, 프롬프트, 근거 snapshot, 인용 검증 및 감사 모델 골격
+- FastAPI `/api/v1/ai/queries` 질의 생성·조회와 기본 비활성, role, 목적, 외부 전송 승인, 프롬프트, 원천 권한·민감정보·최소 payload provider 주입 경계, 근거 snapshot·인용 검증과 감사 모델. 운영 provider 네트워크 client는 미구현
 - FastAPI 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
 - Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인
@@ -53,7 +53,7 @@ Windows와 Android의 업무 채널 알림, 인수인계 확인, FieldComment/�
 
 ## 후속 계층 착수 기준
 
-운영 provider client를 통한 실제 외부 AI 검색/작업 조언과 MES/ERP 자동 수신 어댑터는 현재 MVP 완료 범위가 아니다. 외부 AI는 안전장치를 먼저 검증하기 위한 질의·감사 골격만 부분 구현했다. 다음 조건은 운영 연동 착수 여부를 판단하기 위한 기준이며, 조건을 만족하기 전에는 문서 등록, FieldComment, 작업순서, 보고서 근거 축적을 우선한다.
+운영 provider client를 통한 실제 외부 AI 검색/작업 조언과 MES/ERP 자동 수신 어댑터는 현재 MVP 완료 범위가 아니다. 외부 AI는 질의·감사 모델뿐 아니라 provider 호출 직전의 원천 권한 재검사, 민감정보 필터, 최소 발췌·최대 원천 수 제한, 근거 snapshot과 인용 검증까지 구현했다. 다만 실제 네트워크 provider client와 운영 승인 UI는 없다. 다음 조건은 운영 연동 착수 여부를 판단하기 위한 기준이며, 조건을 만족하기 전에는 문서 등록, FieldComment, 작업순서, 보고서 근거 축적을 우선한다.
 
 ### AI 검색/작업 조언
 

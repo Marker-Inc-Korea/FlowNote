@@ -29,7 +29,7 @@ FlowNote는 생산공장 현장의 문서와 현장 경험을 함께 남기는 �
 - FastAPI 서버 계정 수명주기 API와 Windows WPF 서버 계정 운영 화면: 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기
 - 임시 비밀번호 로그인 후 WPF 비밀번호 변경 강제, 변경 완료 시 기존 세션 폐기와 새 비밀번호 재로그인
 - AI 자동 조언 전 단계의 근거 검색 후보 재생성, 목록 조회, 품질 점검, 오프라인 ground-truth 회귀 평가, WPF 운영 점검 화면
-- FastAPI 외부 AI 질의 생성·조회, 기능 플래그·승인·목적·프롬프트·근거 snapshot·인용 검증 및 감사 모델 골격
+- FastAPI 외부 AI 질의 생성·조회, 기능 플래그·승인·목적·프롬프트, 원천 권한·민감정보·최소 payload provider 주입 경계, 근거 snapshot·인용 검증과 감사 모델. 운영 provider 네트워크 client는 미구현
 - 관리자 파일 감시 후보와 버전 확정
 - FastAPI 인증, 승인 단말, 문서, controlled copy, FieldComment, 첨부, 접근 로그, 태그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가와 외부 AI 안전장치 API
 - WPF MSI 패키징 스크립트와 FastAPI 작업 스케줄러 등록/관리 스크립트

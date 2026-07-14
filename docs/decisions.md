@@ -163,7 +163,7 @@
 - 서버 DB와 서버 `storage`는 같은 시점의 백업을 정상 복구 기준으로 삼는다. DB만 또는 `storage`만 복원한 상태는 정상 운영 재개가 아니라 장애 대응 상태다.
 - 복구 검증은 서버 health, DB health, WPF 로그인, 문서 목록, 문서 열람, FieldComment, 보고서 근거 조회를 포함한다.
 - 복구 후 가능한 환경에서는 `.\scripts\verify-preserved-tests.ps1` 또는 동등 운영 점검을 실행한다.
-- 외부 AI 호출 기반 검색/작업 조언은 공개 문서, FieldComment, 보고서, 작업순서 이력이 충분히 축적되고 근거 역추적이 가능해진 뒤 후속 계층으로 착수한다. 현재 구현은 `ai_search_candidates` 근거 후보 운영과 외부 호출 전 비활성·승인·목적·snapshot·감사 차단 골격까지이며 운영 provider 연동은 하지 않는다.
+- 외부 AI 호출 기반 검색/작업 조언은 공개 문서, FieldComment, 보고서, 작업순서 이력이 충분히 축적되고 근거 역추적이 가능해진 뒤 후속 계층으로 착수한다. 현재 구현은 `ai_search_candidates` 근거 후보 운영과 외부 호출 전 비활성·승인·목적·원천 권한·민감정보·최소 payload·snapshot·인용 검증·감사 게이트까지이며, provider는 테스트용 주입 경계만 두고 운영 네트워크 연동은 하지 않는다.
 - MES/ERP 어댑터는 후속 연동 대상이며, 초기 수동 작업지시의 `work_order_no`, 문서 연결, 작업순서, FieldComment, 보고서 근거와 연결되는 방식으로 설계한다.
 
 ## 제품 범위 결정
