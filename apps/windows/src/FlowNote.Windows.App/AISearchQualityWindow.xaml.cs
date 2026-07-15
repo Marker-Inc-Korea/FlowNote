@@ -90,6 +90,8 @@ public partial class AISearchQualityWindow : Window
         {
             var quality = await serverClient.GetAISearchQualityAsync();
             ApplyQuality(quality);
+            var scopeReadiness = await serverClient.GetAISearchReadinessAsync();
+            ApplyScopeReadiness(scopeReadiness);
 
             var sourceType = SourceTypeFilterComboBox.SelectedValue?.ToString();
             if (string.Equals(sourceType, "ALL", StringComparison.Ordinal))
@@ -150,6 +152,24 @@ public partial class AISearchQualityWindow : Window
             ? $"검토/분석/선정 FieldComment {readiness.ReviewedStatusCount}건으로 {readiness.RequiredReviewedCount}건 기준을 충족했습니다."
             : $"검토/분석/선정 FieldComment {readiness.ReviewedStatusCount}건입니다. {readiness.RequiredReviewedCount}건 기준까지 {readiness.MissingReviewedCount}건 부족합니다.";
         ReadinessWarningTextBlock.Text = BuildReadinessWarning(readiness);
+    }
+
+    private void ApplyScopeReadiness(ServerAISearchReadinessResponse readiness)
+    {
+        var sourceGaps = string.Join(", ", SourceTypes
+            .Where(sourceType => CountOrZero(readiness.SourceGaps, sourceType) > 0)
+            .Select(sourceType => $"{FormatSourceType(sourceType)} {CountOrZero(readiness.SourceGaps, sourceType)}건"));
+        if (string.IsNullOrWhiteSpace(sourceGaps))
+        {
+            sourceGaps = "없음";
+        }
+
+        var status = readiness.ProviderStartReady ? "운영 AI 호출 가능" : "운영 AI 호출 차단";
+        ScopeReadinessTextBlock.Text =
+            $"서버 scope: {readiness.Scope.CustomerScope} / {readiness.Scope.SiteScope} / {readiness.Scope.DatabaseScope}\n" +
+            $"승인 질문 {readiness.GroundTruthCount}/{readiness.GroundTruthMinimum}건 · 부족 {readiness.GroundTruthGap}건 · " +
+            $"원천 부족: {sourceGaps} · 범주/유형 누락 {readiness.MissingCategoryScenarios.Count}개 · {status}\n" +
+            "이 수치는 서버 DB 기준이며 WPF 공통 로컬 SQLite 준비도와 합산하지 않습니다.";
     }
 
     private void ApplyCandidates(IReadOnlyList<ServerAISearchCandidateResponse> candidates)

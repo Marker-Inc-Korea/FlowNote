@@ -522,7 +522,8 @@ def test_ai_search_ground_truth_evaluation_is_reproducible_and_persisted() -> No
         assert result["ranking_stable"] is True
         assert result["passed_count"] == 2
         assert result["source_coverage_complete"] is True
-        assert result["provider_start_ready"] is (result["field_comment_missing_reviewed_count"] == 0)
+        assert result["provider_start_ready"] is False
+        assert result["field_comment_missing_reviewed_count"] == 0
         complex_case = result["cases"][0]
         assert len(complex_case["actual_evidence"]) == 4
         assert all(item["candidate_id"] and item["content_hash"] for item in complex_case["actual_evidence"])
@@ -871,3 +872,75 @@ def test_ai_search_quality_reports_field_comment_review_readiness_gap() -> None:
             "WORK_SEQUENCE_HISTORY",
             "REPORT_SOURCE",
         }
+
+
+def test_scope_readiness_counts_approved_ground_truth_and_category_gaps() -> None:
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        seeded = seed_ai_search_sources(client)
+        rebuild = client.post("/api/v1/ai-search/candidates/rebuild", headers=headers)
+        assert rebuild.status_code == 200, rebuild.text
+
+        initial = client.get("/api/v1/ai-search/readiness", headers=headers)
+        assert initial.status_code == 200, initial.text
+        initial_body = initial.json()
+        initial_ground_truth_count = initial_body["ground_truth_count"]
+        assert initial_body["ground_truth_gap"] == max(50 - initial_ground_truth_count, 0)
+        assert initial_body["provider_start_ready"] is False
+        assert initial_body["scope"]["customer_scope"] == "DEFAULT"
+        assert initial_body["scope"]["site_scope"] == "DEFAULT"
+        assert initial_body["scope"]["database_scope"].startswith("sqlite:")
+        assert set(initial_body["source_gaps"]) == {
+            "PUBLISHED_DOCUMENT_VERSION", "FIELD_COMMENT", "WORK_SEQUENCE_HISTORY", "REPORT_SOURCE"
+        }
+
+        approved = client.post("/api/v1/ai-search/ground-truth-cases", headers=headers, json={
+            "caseKey": f"safety-normal-{uuid4().hex}",
+            "category": "SAFETY",
+            "scenarioType": "NORMAL",
+            "question": f"{seeded['ground_truth_token']} 안전 근거는 무엇입니까?",
+            "expectedOutcome": "SUFFICIENT",
+            "expectedEvidence": [{
+                "sourceType": "PUBLISHED_DOCUMENT_VERSION",
+                "sourceId": seeded["published_document_id"],
+                "sourceVersionId": seeded["published_version_id"],
+            }],
+            "expectedExcluded": [],
+            "allowedRankMin": 1,
+            "allowedRankMax": 10,
+            "asOf": datetime.now(timezone.utc).isoformat(),
+        })
+        assert approved.status_code == 201, approved.text
+        assert approved.json()["approved_by"] == "user-admin"
+
+        updated = client.get("/api/v1/ai-search/readiness", headers=headers).json()
+        assert updated["ground_truth_count"] == initial_ground_truth_count + 1
+        assert updated["ground_truth_gap"] == max(50 - updated["ground_truth_count"], 0)
+        assert {"category": "SAFETY", "scenario_type": "NORMAL"} not in updated["missing_category_scenarios"]
+        listed = client.get("/api/v1/ai-search/ground-truth-cases", headers=headers)
+        assert listed.status_code == 200
+        assert any(item["ground_truth_case_id"] == approved.json()["ground_truth_case_id"] for item in listed.json())
+
+        evaluation = client.post("/api/v1/ai-search/evaluations", headers=headers, json={
+            "runLabel": f"approved-ground-truth-{uuid4().hex}",
+            "groundTruthCaseIds": [approved.json()["ground_truth_case_id"]],
+        })
+        assert evaluation.status_code == 200, evaluation.text
+        evaluation_body = evaluation.json()
+        assert evaluation_body["case_count"] == 1
+        assert evaluation_body["precision_at_k"] >= 0
+        assert evaluation_body["recall_at_k"] == 1
+        assert evaluation_body["excluded_source_violation"] == 0
+        assert evaluation_body["citation_trace_success_rate"] == 1
+        assert evaluation_body["provider_start_ready"] is False
+
+        repeated = client.post("/api/v1/ai-search/evaluations", headers=headers, json={
+            "runLabel": f"approved-ground-truth-repeat-{uuid4().hex}",
+            "groundTruthCaseIds": [approved.json()["ground_truth_case_id"]],
+        })
+        assert repeated.status_code == 200, repeated.text
+        delta = repeated.json()["cases"][0]["previous_run_delta"]
+        assert delta["candidate_ids_added"] == []
+        assert delta["candidate_ids_removed"] == []
+        assert delta["content_hash_changed"] == []
+        assert delta["ranking_changed"] is False

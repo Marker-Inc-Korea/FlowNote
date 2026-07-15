@@ -32,12 +32,13 @@ TEST_DB_PATH = API_ROOT / "data" / "flownote.test.sqlite3"
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 
 
-def create_client(*, enabled: bool = False) -> TestClient:
+def create_client(*, enabled: bool = False, readiness_gate: bool = False) -> TestClient:
     scope = uuid4().hex
     settings = Settings(
         _env_file=None, environment="test", database_url=TEST_DATABASE_URL,
         test_database_url=TEST_DATABASE_URL, storage_root=str(API_ROOT / "storage" / "ai-query-tests"),
-        ai_external_call_enabled=enabled, ai_provider="TEST_PROVIDER", ai_model="test-model",
+        ai_external_call_enabled=enabled, ai_readiness_gate_enabled=readiness_gate,
+        ai_provider="TEST_PROVIDER", ai_model="test-model",
         ai_customer_scope=f"customer-{scope}", ai_site_scope=f"site-{scope}",
     )
     return TestClient(create_app(settings))
@@ -121,6 +122,26 @@ def test_disabled_flag_and_forbidden_scope_never_call_provider_and_leave_audit_s
             assert "비밀 프롬프트 본문" not in (attempt.sanitized_error_message or "")
 
 
+def test_readiness_gap_blocks_operational_provider_call_with_numeric_shortage() -> None:
+    with create_client(enabled=True, readiness_gate=True) as client:
+        auth = headers(client)
+        calls = 0
+
+        def spy(_payload: dict[str, object]) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            return {}
+
+        client.app.state.ai_provider = spy
+        response = client.post("/api/v1/ai/queries", headers=auth, json={
+            "purpose": "EVIDENCE_SUMMARY", "query": "준비되지 않은 범위의 근거를 요약해 주세요"
+        })
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "AI_READINESS_NOT_MET"
+        assert "질문 50건 부족" in response.json()["error"]["message"]
+        assert calls == 0
+
+
 @pytest.mark.parametrize("approval_kind", ["missing", "expired", "revoked", "scope_mismatch"])
 def test_invalid_transfer_approval_is_blocked_before_provider(approval_kind: str) -> None:
     with create_client(enabled=True) as client:
@@ -182,7 +203,7 @@ def test_snapshot_rechecks_source_state_and_do_not_store_keeps_only_response_has
             assert all(row.trace_id and row.content_hash for row in snapshots)
 
 
-def test_four_source_minimal_payload_masks_pii_and_preserves_stable_identity() -> None:
+def test_four_source_minimal_payload_excludes_pii_candidate_and_preserves_stable_identity() -> None:
     with create_client(enabled=True) as client:
         auth = headers(client)
         seed_policy(client)
@@ -191,13 +212,21 @@ def test_four_source_minimal_payload_masks_pii_and_preserves_stable_identity() -
         raw_phone = "010-9876-5432"
         raw_rrn = "900101-1234567"
         with client.app.state.database.session() as session:
-            comment = session.scalar(
-                select(FieldComment).where(FieldComment.comment_id == seeded["selected_comment_id"])
-            )
-            assert comment is not None
-            comment.analysis_content = f"검토 연락처 {raw_email}, {raw_phone}, {raw_rrn}. 조치 완료."
+            sensitive_comment_id = f"comment-ai-sensitive-{uuid4().hex}"
+            session.add(FieldComment(
+                comment_id=sensitive_comment_id,
+                document_id=seeded["published_document_id"],
+                document_version_id=seeded["published_version_id"],
+                comment_type="issue", input_mode="free_text", signal_level="RED",
+                raw_content=f"검토 연락처 {raw_email}, {raw_phone}, {raw_rrn}. 조치 완료.",
+                author_id="user-admin", entry_source="field_user", status="ANALYZED",
+            ))
             session.commit()
         candidate_ids = rebuild_and_candidates(client, auth, seeded)
+        with client.app.state.database.session() as session:
+            assert session.scalar(select(AISearchCandidate).where(
+                AISearchCandidate.source_id == sensitive_comment_id
+            )) is None
         four_ids = [
             candidate_ids[seeded["published_document_id"]],
             candidate_ids[seeded["selected_comment_id"]],
@@ -241,9 +270,9 @@ def test_four_source_minimal_payload_masks_pii_and_preserves_stable_identity() -
         assert raw_email.encode() not in encoded
         assert raw_phone.encode() not in encoded
         assert raw_rrn.encode() not in encoded
-        assert "[이메일 마스킹]".encode() in encoded
-        assert "[전화번호 마스킹]".encode() in encoded
-        assert "[주민번호 마스킹]".encode() in encoded
+        assert "[이메일 마스킹]".encode() not in encoded
+        assert "[전화번호 마스킹]".encode() not in encoded
+        assert "[주민번호 마스킹]".encode() not in encoded
         sent = json.loads(encoded)["sources"]
         assert {item["sourceType"] for item in sent} == {
             "PUBLISHED_DOCUMENT_VERSION", "FIELD_COMMENT", "WORK_SEQUENCE_HISTORY", "REPORT_SOURCE"
@@ -269,11 +298,15 @@ def test_restricted_source_and_query_never_cross_provider_or_audit_log() -> None
         forbidden_secret = f"token-{uuid4().hex}"
         site_term = f"site-deny-{uuid4().hex}"
         with client.app.state.database.session() as session:
-            comment = session.scalar(
-                select(FieldComment).where(FieldComment.comment_id == seeded["selected_comment_id"])
-            )
-            assert comment is not None
-            comment.analysis_content = f"api_key={forbidden_secret}"
+            restricted_comment_id = f"comment-ai-restricted-{uuid4().hex}"
+            session.add(FieldComment(
+                comment_id=restricted_comment_id,
+                document_id=seeded["published_document_id"],
+                document_version_id=seeded["published_version_id"],
+                comment_type="issue", input_mode="free_text", signal_level="RED",
+                raw_content=f"api_key={forbidden_secret}", author_id="user-admin",
+                entry_source="field_user", status="ANALYZED",
+            ))
             session.add(
                 AISensitiveDataPolicy(
                     policy_id=f"aisdp-{uuid4().hex}",
@@ -287,6 +320,10 @@ def test_restricted_source_and_query_never_cross_provider_or_audit_log() -> None
             )
             session.commit()
         candidate_ids = rebuild_and_candidates(client, auth, seeded)
+        with client.app.state.database.session() as session:
+            assert session.scalar(select(AISearchCandidate).where(
+                AISearchCandidate.source_id == restricted_comment_id
+            )) is None
         calls: list[bytes] = []
 
         def spy(payload: dict[str, object]) -> dict[str, object]:
@@ -307,15 +344,11 @@ def test_restricted_source_and_query_never_cross_provider_or_audit_log() -> None
         })
         assert mixed.status_code == 200, mixed.text
         assert forbidden_secret.encode() not in calls[0]
-        assert candidate_ids[seeded["selected_comment_id"]].encode() not in calls[0]
         with client.app.state.database.session() as session:
             rows = session.scalars(select(AIQueryEvidenceCandidate).where(
                 AIQueryEvidenceCandidate.query_id == mixed.json()["queryId"]
             )).all()
-            restricted = next(
-                row for row in rows if row.candidate_id == candidate_ids[seeded["selected_comment_id"]]
-            )
-            assert restricted.exclusion_reason == "CONTENT_RESTRICTED"
+            assert all(row.eligibility_result == "ELIGIBLE" for row in rows)
 
         blocked_responses = [
             client.post("/api/v1/ai/queries", headers=auth, json={

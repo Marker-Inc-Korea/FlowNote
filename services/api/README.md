@@ -122,6 +122,7 @@ Useful settings:
 - `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES`: default `480`
 - `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS`: default `14`
 - `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED`: default `false`
+- `FLOWNOTE_AI_READINESS_GATE_ENABLED`: default `true`; 현재 고객·현장·DB scope의 근거/승인 질문/회귀 기준 미달 시 운영 provider 호출 차단
 - `FLOWNOTE_AI_PROVIDER`: default `UNCONFIGURED`
 - `FLOWNOTE_AI_MODEL`: default `UNCONFIGURED`
 - `FLOWNOTE_AI_CUSTOMER_SCOPE`: default `DEFAULT`

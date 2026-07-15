@@ -351,6 +351,11 @@ def prevent_field_comment_source_update(_mapper: object, _connection: object, ta
         raise ValueError("FieldComment source fields are immutable.")
 
 
+@event.listens_for(FieldComment, "before_delete")
+def prevent_field_comment_delete(_mapper: object, _connection: object, _target: FieldComment) -> None:
+    raise ValueError("FieldComment source records cannot be deleted.")
+
+
 class FieldCommentAttachment(Base):
     __tablename__ = "field_comment_attachments"
     __table_args__ = (
@@ -819,6 +824,52 @@ class AISearchEvaluationCase(Base):
     excluded_evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
     ranking_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AISearchGroundTruthCase(Base):
+    __tablename__ = "ai_search_ground_truth_cases"
+    __table_args__ = (
+        UniqueConstraint("customer_scope", "site_scope", "case_key", name="uq_ai_ground_truth_scope_case"),
+        CheckConstraint(
+            (
+                "category IN ('SAFETY', 'QUALITY', 'EQUIPMENT_ANOMALY', 'WORK_HOLD', "
+                "'REWORK', 'HANDOVER', 'LATEST_PUBLISHED_DOCUMENT', 'CONFLICTING_RECORDS')"
+            ),
+            name="ck_ai_ground_truth_category",
+        ),
+        CheckConstraint(
+            "scenario_type IN ('NORMAL', 'EXCLUSION', 'CONFLICT')",
+            name="ck_ai_ground_truth_scenario_type",
+        ),
+        Index(
+            "ix_ai_ground_truth_scope_approved",
+            "customer_scope",
+            "site_scope",
+            "line_scope",
+            "approved_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ground_truth_case_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    case_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    customer_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    site_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    line_scope: Mapped[str | None] = mapped_column(String(64))
+    database_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    scenario_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_outcome: Mapped[str] = mapped_column(String(30), nullable=False)
+    expected_evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    excluded_evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    allowed_rank_min: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    allowed_rank_max: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    approved_by: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

@@ -451,6 +451,20 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerAISearchQualityResponse>(response, cancellationToken);
     }
 
+    public async Task<ServerAISearchReadinessResponse> GetAISearchReadinessAsync(
+        string? lineScope = null,
+        CancellationToken cancellationToken = default)
+    {
+        var path = "api/v1/ai-search/readiness";
+        if (!string.IsNullOrWhiteSpace(lineScope))
+        {
+            path += $"?lineScope={Uri.EscapeDataString(lineScope.Trim())}";
+        }
+
+        using var response = await httpClient.GetAsync(path, cancellationToken);
+        return await ReadJsonResponse<ServerAISearchReadinessResponse>(response, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<ServerAISearchCandidateResponse>> ListAISearchCandidatesAsync(
         string? sourceType = null,
         string? sourceId = null,

@@ -13,11 +13,14 @@ from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.config import Settings, get_settings
 from app.db.models import (
     AISearchCandidate,
     AISearchEvaluationCase,
     AISearchEvaluationRun,
+    AISearchGroundTruthCase,
     Document,
+    DocumentTag,
     DocumentVersion,
     FieldComment,
     Report,
@@ -25,12 +28,21 @@ from app.db.models import (
     WorkRecord,
     WorkRecordVersion,
     WorkSequenceChangeHistory,
+    WorkSequenceBoard,
     WorkSequenceItem,
+    TagDefinition,
     NotificationChannel,
     NotificationChannelMember,
     UserAccount,
 )
 from app.db.session import get_db_session
+from app.services.ai_provider_gate import BLOCK_RULES, MASK_RULES, SensitiveContentFilter, load_sensitive_filter
+from app.services.ai_readiness import (
+    QUESTION_CATEGORIES,
+    SCENARIO_TYPES,
+    database_scope,
+    scope_readiness,
+)
 
 router = APIRouter(prefix="/ai-search", tags=["ai-search"], dependencies=[Depends(get_current_user)])
 
@@ -45,6 +57,11 @@ AI_SEARCH_SOURCE_TYPES = (
     "REPORT_SOURCE",
 )
 EXCLUDED_REASON_GUIDANCE = {
+    "sensitive_content": {
+        "label": "민감정보 포함 원천 제외",
+        "operator_action": "민감정보를 제거한 승인 원천을 별도로 만들고 원천 기록은 그대로 보존한다.",
+        "source_type": "ALL",
+    },
     "document_version_not_published": {
         "label": "공개 문서 버전 미충족",
         "operator_action": "문서 상태와 공개 버전을 확인하고 현장 사용 가능 버전을 publish한다.",
@@ -152,13 +169,32 @@ class AISearchEvaluationCaseRequest(BaseModel):
     expected_outcome: str = Field(alias="expectedOutcome")
     expected_evidence: list[AISearchEvidenceReference] = Field(default_factory=list, alias="expectedEvidence")
     expected_excluded: list[AISearchEvidenceReference] = Field(default_factory=list, alias="expectedExcluded")
+    allowed_rank_min: int = Field(default=1, alias="allowedRankMin", ge=1, le=100)
+    allowed_rank_max: int = Field(default=20, alias="allowedRankMax", ge=1, le=100)
+    as_of: datetime | None = Field(default=None, alias="asOf")
     limit: int = Field(default=20, ge=1, le=100)
 
 
 class AISearchEvaluationRequest(BaseModel):
     run_label: str = Field(alias="runLabel", min_length=1, max_length=160)
     evaluate_as_user_id: str | None = Field(default=None, alias="evaluateAsUserId")
-    cases: list[AISearchEvaluationCaseRequest] = Field(min_length=1, max_length=100)
+    line_scope: str | None = Field(default=None, alias="lineScope", max_length=64)
+    ground_truth_case_ids: list[str] = Field(default_factory=list, alias="groundTruthCaseIds", max_length=100)
+    cases: list[AISearchEvaluationCaseRequest] = Field(default_factory=list, max_length=100)
+
+
+class AISearchGroundTruthCaseRequest(BaseModel):
+    case_key: str = Field(alias="caseKey", min_length=1, max_length=100)
+    category: str
+    scenario_type: str = Field(alias="scenarioType")
+    question: str = Field(min_length=1, max_length=2000)
+    expected_outcome: str = Field(alias="expectedOutcome")
+    expected_evidence: list[AISearchEvidenceReference] = Field(default_factory=list, alias="expectedEvidence")
+    expected_excluded: list[AISearchEvidenceReference] = Field(default_factory=list, alias="expectedExcluded")
+    allowed_rank_min: int = Field(default=1, alias="allowedRankMin", ge=1, le=100)
+    allowed_rank_max: int = Field(default=20, alias="allowedRankMax", ge=1, le=100)
+    as_of: datetime = Field(alias="asOf")
+    line_scope: str | None = Field(default=None, alias="lineScope", max_length=64)
 
 
 def _new_public_id(prefix: str) -> str:
@@ -185,6 +221,55 @@ def _field_comment_content_text(comment: FieldComment) -> str:
 
 def _work_sequence_history_trace_text(history: WorkSequenceChangeHistory) -> str:
     return _clean_text(history.before_value, history.after_value, history.change_reason)
+
+
+def _contains_sensitive_content(value: str, content_filter: SensitiveContentFilter | None = None) -> bool:
+    statically_sensitive = any(pattern.search(value) for _, pattern in BLOCK_RULES) or any(
+        pattern.search(value) for _, pattern, _ in MASK_RULES
+    )
+    if statically_sensitive or content_filter is None:
+        return statically_sensitive
+    filtered = content_filter.filter(value)
+    return not filtered.allowed or bool(filtered.detections)
+
+
+def _document_line_scopes(session: Session, document_id: str) -> list[str]:
+    return list(
+        session.scalars(
+            select(TagDefinition.code)
+            .join(DocumentTag, DocumentTag.tag_id == TagDefinition.tag_id)
+            .where(DocumentTag.document_id == document_id, TagDefinition.tag_type == "line")
+            .order_by(TagDefinition.code)
+        ).all()
+    )
+
+
+def _history_line_scope(session: Session, history: WorkSequenceChangeHistory) -> str | None:
+    return session.scalar(
+        select(WorkSequenceBoard.line_code).where(WorkSequenceBoard.board_id == history.board_id)
+    )
+
+
+def _report_line_scope(session: Session, source: ReportSource) -> str | list[str] | None:
+    source_type = source.source_type.strip().upper()
+    if source_type == "FIELD_COMMENT":
+        return session.scalar(
+            select(FieldComment.location_code).where(FieldComment.comment_id == source.source_id)
+        )
+    if source_type == "DOCUMENT":
+        return _document_line_scopes(session, source.source_id)
+    if source_type == "WORK_SEQUENCE_HISTORY":
+        history = session.scalar(
+            select(WorkSequenceChangeHistory).where(WorkSequenceChangeHistory.change_id == source.source_id)
+        )
+        return _history_line_scope(session, history) if history else None
+    if source_type == "WORK_SEQUENCE_ITEM":
+        return session.scalar(
+            select(WorkSequenceBoard.line_code)
+            .join(WorkSequenceItem, WorkSequenceItem.board_id == WorkSequenceBoard.board_id)
+            .where(WorkSequenceItem.item_id == source.source_id)
+        )
+    return None
 
 
 def _candidate_response(candidate: AISearchCandidate) -> AISearchCandidateResponse:
@@ -366,7 +451,10 @@ def _report_source_text(source: ReportSource, report: Report) -> str:
     )
 
 
-def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
+def rebuild_ai_search_candidates(
+    session: Session,
+    content_filter: SensitiveContentFilter | None = None,
+) -> AISearchRebuildResponse:
     refreshed_at = datetime.now(timezone.utc)
     session.query(AISearchCandidate).delete(synchronize_session=False)
 
@@ -377,6 +465,8 @@ def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
             version.version_label,
             version.change_reason,
         )
+        if _contains_sensitive_content(search_text, content_filter):
+            continue
         _add_candidate(
             session,
             source_type="PUBLISHED_DOCUMENT_VERSION",
@@ -395,6 +485,7 @@ def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
                 "document_type": document.document_type,
                 "version_no": version.version_no,
                 "is_published": version.is_published,
+                "line_scope": _document_line_scopes(session, document.document_id),
             },
             refreshed_at=refreshed_at,
         )
@@ -404,6 +495,8 @@ def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
         if not content_text:
             continue
         search_text = _clean_text(content_text, comment.category, comment.signal_level)
+        if _contains_sensitive_content(search_text, content_filter):
+            continue
         _add_candidate(
             session,
             source_type="FIELD_COMMENT",
@@ -423,6 +516,7 @@ def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
                 "work_record_id": comment.work_record_id,
                 "input_mode": comment.input_mode,
                 "entry_source": comment.entry_source,
+                "line_scope": comment.location_code,
             },
             refreshed_at=refreshed_at,
         )
@@ -432,6 +526,8 @@ def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
         if not trace_text:
             continue
         search_text = _clean_text(history.change_type, trace_text)
+        if _contains_sensitive_content(search_text, content_filter):
+            continue
         _add_candidate(
             session,
             source_type="WORK_SEQUENCE_HISTORY",
@@ -448,12 +544,16 @@ def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
                 "board_id": history.board_id,
                 "item_id": history.item_id,
                 "actor_id": history.actor_id,
+                "line_scope": _history_line_scope(session, history),
             },
             refreshed_at=refreshed_at,
         )
 
     for source, report in _report_source_rows(session):
         if not _report_source_origin_exists(session, source):
+            continue
+        search_text = _report_source_text(source, report)
+        if _contains_sensitive_content(search_text, content_filter):
             continue
         source_row_id = str(source.id)
         _add_candidate(
@@ -468,13 +568,14 @@ def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
             parent_id=report.report_id,
             title=report.title,
             summary=source.relation_type,
-            search_text=_report_source_text(source, report),
+            search_text=search_text,
             review_status=report.status,
             metadata={
                 "report_id": report.report_id,
                 "report_source_type": source.source_type,
                 "report_source_id": source.source_id,
                 "generated_document_id": report.generated_document_id,
+                "line_scope": _report_line_scope(session, source),
             },
             refreshed_at=refreshed_at,
         )
@@ -483,7 +584,7 @@ def rebuild_ai_search_candidates(session: Session) -> AISearchRebuildResponse:
     return AISearchRebuildResponse(
         candidate_count=_candidate_count(session),
         counts_by_source_type=_candidate_counts_by_source_type(session),
-        excluded_counts_by_reason=_excluded_counts_by_reason(session),
+        excluded_counts_by_reason=_excluded_counts_by_reason(session, content_filter),
         excluded_reason_guidance=EXCLUDED_REASON_GUIDANCE,
         rebuilt_at=refreshed_at,
     )
@@ -504,7 +605,10 @@ def _candidate_counts_by_source_type(session: Session) -> dict[str, int]:
     return counts
 
 
-def _excluded_counts_by_reason(session: Session) -> dict[str, int]:
+def _excluded_counts_by_reason(
+    session: Session,
+    content_filter: SensitiveContentFilter | None = None,
+) -> dict[str, int]:
     eligible_document_versions = session.scalar(
         select(func.count())
         .select_from(DocumentVersion)
@@ -580,7 +684,27 @@ def _excluded_counts_by_reason(session: Session) -> dict[str, int]:
         if not _report_source_origin_exists(session, source):
             report_sources_missing_origin += 1
 
+    sensitive_content = 0
+    sensitive_content += sum(
+        _contains_sensitive_content(_clean_text(document.title, document.description, version.version_label, version.change_reason), content_filter)
+        for document, version in _published_document_rows(session)
+    )
+    sensitive_content += sum(
+        _contains_sensitive_content(_clean_text(_field_comment_content_text(comment), comment.category, comment.signal_level), content_filter)
+        for comment in _field_comment_rows(session)
+    )
+    sensitive_content += sum(
+        _contains_sensitive_content(_clean_text(history.change_type, _work_sequence_history_trace_text(history)), content_filter)
+        for history in _work_sequence_history_rows(session)
+    )
+    sensitive_content += sum(
+        _contains_sensitive_content(_report_source_text(source, report), content_filter)
+        for source, report in _report_source_rows(session)
+        if _report_source_origin_exists(session, source)
+    )
+
     return {
+        "sensitive_content": sensitive_content,
         "document_version_not_published": max(total_document_versions - eligible_document_versions, 0),
         "field_comment_excluded_status": field_comments_excluded,
         "field_comment_mes_integration": field_comments_mes_integration,
@@ -614,14 +738,17 @@ def _field_comment_review_readiness(session: Session) -> FieldCommentReviewReadi
     )
 
 
-def _quality_response(session: Session) -> AISearchQualityResponse:
+def _quality_response(
+    session: Session,
+    content_filter: SensitiveContentFilter | None = None,
+) -> AISearchQualityResponse:
     latest_run = session.scalar(
         select(AISearchEvaluationRun).order_by(desc(AISearchEvaluationRun.created_at), desc(AISearchEvaluationRun.id))
     )
     return AISearchQualityResponse(
         candidate_count=_candidate_count(session),
         counts_by_source_type=_candidate_counts_by_source_type(session),
-        excluded_counts_by_reason=_excluded_counts_by_reason(session),
+        excluded_counts_by_reason=_excluded_counts_by_reason(session, content_filter),
         excluded_reason_guidance=EXCLUDED_REASON_GUIDANCE,
         field_comment_review_readiness=_field_comment_review_readiness(session),
         latest_evaluation=(
@@ -693,7 +820,27 @@ def _can_evaluate_candidate(session: Session, candidate: AISearchCandidate, user
     )
 
 
-def _rank_candidates(session: Session, question: str, user: UserAccount, limit: int) -> tuple[list[AISearchCandidate], dict[str, str]]:
+def _candidate_created_at(session: Session, candidate: AISearchCandidate) -> datetime | None:
+    if candidate.source_type == "PUBLISHED_DOCUMENT_VERSION" and candidate.source_version_id:
+        return session.scalar(select(DocumentVersion.created_at).where(DocumentVersion.version_id == candidate.source_version_id))
+    if candidate.source_type == "FIELD_COMMENT":
+        return session.scalar(select(FieldComment.created_at).where(FieldComment.comment_id == candidate.source_id))
+    if candidate.source_type == "WORK_SEQUENCE_HISTORY":
+        return session.scalar(
+            select(WorkSequenceChangeHistory.created_at).where(WorkSequenceChangeHistory.change_id == candidate.source_id)
+        )
+    if candidate.source_type == "REPORT_SOURCE" and candidate.source_id.isdigit():
+        return session.scalar(select(ReportSource.created_at).where(ReportSource.id == int(candidate.source_id)))
+    return None
+
+
+def _rank_candidates(
+    session: Session,
+    question: str,
+    user: UserAccount,
+    limit: int,
+    as_of: datetime | None = None,
+) -> tuple[list[AISearchCandidate], dict[str, str]]:
     question_tokens = _tokens(question)
     candidates = session.scalars(select(AISearchCandidate).order_by(AISearchCandidate.candidate_id)).all()
     document_frequency = {
@@ -703,6 +850,12 @@ def _rank_candidates(session: Session, question: str, user: UserAccount, limit: 
     denied: dict[str, str] = {}
     ranked: list[tuple[float, AISearchCandidate]] = []
     for candidate in candidates:
+        created_at = _candidate_created_at(session, candidate)
+        if as_of is not None and created_at is not None:
+            comparable_created_at = created_at.replace(tzinfo=timezone.utc) if created_at.tzinfo is None else created_at
+            comparable_as_of = as_of.replace(tzinfo=timezone.utc) if as_of.tzinfo is None else as_of
+            if comparable_created_at > comparable_as_of:
+                continue
         score = _candidate_rank(candidate, question_tokens, document_frequency)
         if score <= 0:
             continue
@@ -712,6 +865,62 @@ def _rank_candidates(session: Session, question: str, user: UserAccount, limit: 
         ranked.append((score, candidate))
     ranked.sort(key=lambda item: (-item[0], item[1].candidate_id))
     return [candidate for _, candidate in ranked[:limit]], denied
+
+
+def _candidate_trace_exists(session: Session, candidate: AISearchCandidate) -> bool:
+    if candidate.source_type == "PUBLISHED_DOCUMENT_VERSION":
+        return session.scalar(
+            select(DocumentVersion.id).where(
+                DocumentVersion.document_id == candidate.trace_id,
+                DocumentVersion.version_id == candidate.trace_version_id,
+            )
+        ) is not None
+    if candidate.source_type == "FIELD_COMMENT":
+        return session.scalar(select(FieldComment.id).where(FieldComment.comment_id == candidate.trace_id)) is not None
+    if candidate.source_type == "WORK_SEQUENCE_HISTORY":
+        return session.scalar(
+            select(WorkSequenceChangeHistory.id).where(WorkSequenceChangeHistory.change_id == candidate.trace_id)
+        ) is not None
+    if candidate.source_type == "REPORT_SOURCE" and candidate.trace_id.isdigit():
+        return session.scalar(select(ReportSource.id).where(ReportSource.id == int(candidate.trace_id))) is not None
+    return False
+
+
+def _previous_case_delta(
+    session: Session,
+    *,
+    run_id: str,
+    case_key: str,
+    actual_evidence: list[dict[str, str | None]],
+    ranking_hash: str,
+) -> dict[str, object] | None:
+    previous = session.scalar(
+        select(AISearchEvaluationCase)
+        .join(AISearchEvaluationRun, AISearchEvaluationRun.run_id == AISearchEvaluationCase.run_id)
+        .where(
+            AISearchEvaluationCase.case_key == case_key,
+            AISearchEvaluationCase.run_id != run_id,
+        )
+        .order_by(desc(AISearchEvaluationRun.created_at), desc(AISearchEvaluationRun.id))
+    )
+    if previous is None:
+        return None
+    previous_items = json.loads(previous.actual_evidence_json)
+    previous_hashes = {item["candidate_id"]: item["content_hash"] for item in previous_items}
+    current_hashes = {item["candidate_id"]: item["content_hash"] for item in actual_evidence}
+    previous_ids = set(previous_hashes)
+    current_ids = set(current_hashes)
+    return {
+        "previous_evaluation_case_id": previous.evaluation_case_id,
+        "candidate_ids_added": sorted(current_ids - previous_ids),
+        "candidate_ids_removed": sorted(previous_ids - current_ids),
+        "content_hash_changed": sorted(
+            candidate_id
+            for candidate_id in previous_ids.intersection(current_ids)
+            if previous_hashes[candidate_id] != current_hashes[candidate_id]
+        ),
+        "ranking_changed": previous.ranking_hash != ranking_hash,
+    }
 
 
 def _candidate_identity(candidate: AISearchCandidate) -> dict[str, str | None]:
@@ -798,10 +1007,128 @@ def _excluded_reference_result(
     }
 
 
+def _ground_truth_response(case: AISearchGroundTruthCase) -> dict[str, object]:
+    return {
+        "ground_truth_case_id": case.ground_truth_case_id,
+        "case_key": case.case_key,
+        "customer_scope": case.customer_scope,
+        "site_scope": case.site_scope,
+        "line_scope": case.line_scope,
+        "database_scope": case.database_scope,
+        "category": case.category,
+        "scenario_type": case.scenario_type,
+        "question": case.question,
+        "expected_outcome": case.expected_outcome,
+        "expected_evidence": json.loads(case.expected_evidence_json),
+        "expected_excluded": json.loads(case.excluded_evidence_json),
+        "allowed_rank_min": case.allowed_rank_min,
+        "allowed_rank_max": case.allowed_rank_max,
+        "as_of": case.as_of,
+        "approved_by": case.approved_by,
+        "approved_at": case.approved_at,
+        "is_active": case.is_active,
+    }
+
+
+@router.post("/ground-truth-cases", status_code=status.HTTP_201_CREATED)
+def approve_ground_truth_case(
+    payload: AISearchGroundTruthCaseRequest,
+    current_user: CurrentUser,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, object]:
+    if current_user.role not in {"admin", "system-admin", "document-admin", "manager", "department-manager"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="ground-truth approval role required")
+    category = payload.category.strip().upper()
+    scenario_type = payload.scenario_type.strip().upper()
+    expected_outcome = payload.expected_outcome.strip().upper()
+    if category not in QUESTION_CATEGORIES:
+        raise HTTPException(status_code=422, detail=f"category must be one of {', '.join(QUESTION_CATEGORIES)}")
+    if scenario_type not in SCENARIO_TYPES:
+        raise HTTPException(status_code=422, detail=f"scenarioType must be one of {', '.join(SCENARIO_TYPES)}")
+    if expected_outcome not in {"SUFFICIENT", "INSUFFICIENT_EVIDENCE"}:
+        raise HTTPException(status_code=422, detail="expectedOutcome must be SUFFICIENT or INSUFFICIENT_EVIDENCE")
+    if payload.allowed_rank_min > payload.allowed_rank_max:
+        raise HTTPException(status_code=422, detail="allowedRankMin must not exceed allowedRankMax")
+    db_scope = database_scope(settings.database_url)
+    duplicate = session.scalar(
+        select(AISearchGroundTruthCase.id).where(
+            AISearchGroundTruthCase.customer_scope == settings.ai_customer_scope,
+            AISearchGroundTruthCase.site_scope == settings.ai_site_scope,
+            AISearchGroundTruthCase.case_key == payload.case_key,
+        )
+    )
+    if duplicate is not None:
+        raise HTTPException(status_code=409, detail="caseKey already exists in this customer/site scope")
+    now = datetime.now(timezone.utc)
+    case = AISearchGroundTruthCase(
+        ground_truth_case_id=_new_public_id("aigt"),
+        case_key=payload.case_key,
+        customer_scope=settings.ai_customer_scope,
+        site_scope=settings.ai_site_scope,
+        line_scope=payload.line_scope.strip() if payload.line_scope and payload.line_scope.strip() else None,
+        database_scope=db_scope,
+        category=category,
+        scenario_type=scenario_type,
+        question=payload.question.strip(),
+        expected_outcome=expected_outcome,
+        expected_evidence_json=json.dumps(
+            [item.model_dump(by_alias=True, mode="json") for item in payload.expected_evidence], ensure_ascii=False
+        ),
+        excluded_evidence_json=json.dumps(
+            [item.model_dump(by_alias=True, mode="json") for item in payload.expected_excluded], ensure_ascii=False
+        ),
+        allowed_rank_min=payload.allowed_rank_min,
+        allowed_rank_max=payload.allowed_rank_max,
+        as_of=payload.as_of,
+        approved_by=current_user.user_id,
+        approved_at=now,
+        is_active=True,
+    )
+    session.add(case)
+    session.commit()
+    return _ground_truth_response(case)
+
+
+@router.get("/ground-truth-cases")
+def list_ground_truth_cases(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_db_session)],
+    line_scope: Annotated[str | None, Query(alias="lineScope")] = None,
+) -> list[dict[str, object]]:
+    statement = select(AISearchGroundTruthCase).where(
+        AISearchGroundTruthCase.customer_scope == settings.ai_customer_scope,
+        AISearchGroundTruthCase.site_scope == settings.ai_site_scope,
+        AISearchGroundTruthCase.database_scope == database_scope(settings.database_url),
+        AISearchGroundTruthCase.is_active.is_(True),
+    )
+    statement = statement.where(
+        AISearchGroundTruthCase.line_scope == line_scope if line_scope else AISearchGroundTruthCase.line_scope.is_(None)
+    )
+    cases = session.scalars(statement.order_by(AISearchGroundTruthCase.case_key)).all()
+    return [_ground_truth_response(case) for case in cases]
+
+
+@router.get("/readiness")
+def get_scope_readiness(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_db_session)],
+    line_scope: Annotated[str | None, Query(alias="lineScope")] = None,
+) -> dict[str, object]:
+    return scope_readiness(
+        session,
+        customer_scope=settings.ai_customer_scope,
+        site_scope=settings.ai_site_scope,
+        line_scope=line_scope.strip() if line_scope and line_scope.strip() else None,
+        database_scope_value=database_scope(settings.database_url),
+    )
+
+
 @router.post("/evaluations")
 def run_evaluation(
     payload: AISearchEvaluationRequest,
     current_user: CurrentUser,
+    settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, object]:
     evaluate_as_user_id = payload.evaluate_as_user_id or current_user.user_id
@@ -814,15 +1141,56 @@ def run_evaluation(
     if evaluate_as is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="evaluateAsUserId does not exist")
 
-    rebuild_ai_search_candidates(session)
+    cases = list(payload.cases)
+    db_scope = database_scope(settings.database_url)
+    evaluation_line_scope = payload.line_scope.strip() if payload.line_scope and payload.line_scope.strip() else None
+    if payload.ground_truth_case_ids:
+        stored_cases = session.scalars(
+            select(AISearchGroundTruthCase).where(
+                AISearchGroundTruthCase.ground_truth_case_id.in_(payload.ground_truth_case_ids),
+                AISearchGroundTruthCase.customer_scope == settings.ai_customer_scope,
+                AISearchGroundTruthCase.site_scope == settings.ai_site_scope,
+                AISearchGroundTruthCase.database_scope == db_scope,
+                AISearchGroundTruthCase.line_scope == evaluation_line_scope,
+                AISearchGroundTruthCase.is_active.is_(True),
+            )
+        ).all()
+        if len(stored_cases) != len(set(payload.ground_truth_case_ids)):
+            raise HTTPException(status_code=404, detail="one or more approved ground-truth cases do not exist in this scope")
+        for stored in stored_cases:
+            cases.append(
+                AISearchEvaluationCaseRequest(
+                    caseKey=stored.case_key,
+                    question=stored.question,
+                    expectedOutcome=stored.expected_outcome,
+                    expectedEvidence=json.loads(stored.expected_evidence_json),
+                    expectedExcluded=json.loads(stored.excluded_evidence_json),
+                    allowedRankMin=stored.allowed_rank_min,
+                    allowedRankMax=stored.allowed_rank_max,
+                    asOf=stored.as_of,
+                    limit=max(stored.allowed_rank_max, 20),
+                )
+            )
+    if not cases:
+        raise HTTPException(status_code=422, detail="cases or groundTruthCaseIds must contain at least one case")
+    if len({case.case_key for case in cases}) != len(cases):
+        raise HTTPException(status_code=422, detail="caseKey must be unique within an evaluation run")
+    if any(case.allowed_rank_min > case.allowed_rank_max for case in cases):
+        raise HTTPException(status_code=422, detail="allowedRankMin must not exceed allowedRankMax")
+
+    content_filter = load_sensitive_filter(session, settings)
+    rebuild_ai_search_candidates(session, content_filter)
     first_candidates = session.scalars(select(AISearchCandidate).order_by(AISearchCandidate.candidate_id)).all()
     first_identity = {item.candidate_id: item.content_hash for item in first_candidates}
     first_rankings = {
-        case.case_key: [item.candidate_id for item in _rank_candidates(session, case.question, evaluate_as, case.limit)[0]]
-        for case in payload.cases
+        case.case_key: [
+            item.candidate_id
+            for item in _rank_candidates(session, case.question, evaluate_as, case.limit, case.as_of)[0]
+        ]
+        for case in cases
     }
     session.expunge_all()
-    rebuild_ai_search_candidates(session)
+    rebuild_ai_search_candidates(session, content_filter)
     all_candidates = session.scalars(select(AISearchCandidate).order_by(AISearchCandidate.candidate_id)).all()
     second_identity = {item.candidate_id: item.content_hash for item in all_candidates}
     candidate_identity_stable = first_identity == second_identity
@@ -844,14 +1212,19 @@ def run_evaluation(
     source_types: set[str] = set()
     excluded_reasons: set[str] = set()
     ranking_stable = True
-    for case in payload.cases:
+    precision_values: list[float] = []
+    recall_values: list[float] = []
+    excluded_source_violations = 0
+    trace_success_count = 0
+    trace_total_count = 0
+    for case in cases:
         expected_outcome = case.expected_outcome.strip().upper()
         if expected_outcome not in {"SUFFICIENT", "INSUFFICIENT_EVIDENCE"}:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="expectedOutcome must be SUFFICIENT or INSUFFICIENT_EVIDENCE",
             )
-        actual, denied = _rank_candidates(session, case.question, evaluate_as, case.limit)
+        actual, denied = _rank_candidates(session, case.question, evaluate_as, case.limit, case.as_of)
         actual_ids = [item.candidate_id for item in actual]
         stable_for_case = first_rankings[case.case_key] == actual_ids
         ranking_stable = ranking_stable and stable_for_case
@@ -860,11 +1233,11 @@ def run_evaluation(
             for reference in case.expected_evidence
         ]
         expected_ids = [item.candidate_id for item in expected_candidates if item is not None]
-        top_actual_ids = actual_ids[: len(expected_ids)]
+        allowed_actual_ids = actual_ids[case.allowed_rank_min - 1:case.allowed_rank_max]
         missing_expected = [
             _reference_key(reference)
             for reference, candidate in zip(case.expected_evidence, expected_candidates)
-            if candidate is None or candidate.candidate_id not in top_actual_ids
+            if candidate is None or candidate.candidate_id not in allowed_actual_ids
         ]
         excluded = [
             _excluded_reference_result(session, reference, all_candidates, actual, denied)
@@ -876,6 +1249,21 @@ def run_evaluation(
                 excluded_reasons.add(reason)
         actual_outcome = "SUFFICIENT" if actual else "INSUFFICIENT_EVIDENCE"
         excluded_passed = all(item["excluded"] and item["reason_matches"] for item in excluded)
+        excluded_source_violations += sum(1 for item in excluded if not item["excluded"])
+        expected_id_set = set(expected_ids)
+        precision_k = (
+            len(expected_id_set.intersection(allowed_actual_ids)) / len(allowed_actual_ids)
+            if allowed_actual_ids else (1.0 if not expected_id_set else 0.0)
+        )
+        recall_k = (
+            len(expected_id_set.intersection(allowed_actual_ids)) / len(expected_id_set)
+            if expected_id_set else 1.0
+        )
+        precision_values.append(precision_k)
+        recall_values.append(recall_k)
+        case_trace_success = sum(1 for item in actual if _candidate_trace_exists(session, item))
+        trace_success_count += case_trace_success
+        trace_total_count += len(actual)
         passed = bool(
             actual_outcome == expected_outcome
             and not missing_expected
@@ -888,6 +1276,13 @@ def run_evaluation(
             if item is not None:
                 source_types.add(item.source_type)
         ranking_hash = _hash(json.dumps(actual_ids, ensure_ascii=False, separators=(",", ":")))
+        previous_run_delta = _previous_case_delta(
+            session,
+            run_id=run_id,
+            case_key=case.case_key,
+            actual_evidence=actual_evidence,
+            ranking_hash=ranking_hash,
+        )
         evaluation_case_id = _new_public_id("aisevalcase")
         session.add(
             AISearchEvaluationCase(
@@ -916,7 +1311,14 @@ def run_evaluation(
                 "actual_evidence": actual_evidence,
                 "missing_expected": missing_expected,
                 "excluded_evidence": excluded,
+                "allowed_rank_range": [case.allowed_rank_min, case.allowed_rank_max],
+                "as_of": case.as_of.isoformat() if case.as_of else None,
+                "precision_at_k": round(precision_k, 4),
+                "recall_at_k": round(recall_k, 4),
+                "excluded_source_violation": sum(1 for item in excluded if not item["excluded"]),
+                "citation_trace_success_rate": round(case_trace_success / len(actual), 4) if actual else 1.0,
                 "ranking_hash": ranking_hash,
+                "previous_run_delta": previous_run_delta,
                 "ranking_stable": stable_for_case,
                 "passed": passed,
             }
@@ -926,9 +1328,18 @@ def run_evaluation(
     readiness = _field_comment_review_readiness(session)
     all_passed = passed_count == len(case_results)
     source_coverage_complete = source_types == set(AI_SEARCH_SOURCE_TYPES)
+    scoped_readiness = scope_readiness(
+        session,
+        customer_scope=settings.ai_customer_scope,
+        site_scope=settings.ai_site_scope,
+        line_scope=evaluation_line_scope,
+        database_scope_value=db_scope,
+    )
     provider_start_ready = bool(
         all_passed and candidate_identity_stable and ranking_stable
         and source_coverage_complete and readiness.missing_reviewed_count == 0
+        and scoped_readiness["source_ready"] and scoped_readiness["ground_truth_ready"]
+        and len(case_results) >= scoped_readiness["ground_truth_minimum"]
     )
     metrics = {
         "case_count": len(case_results),
@@ -938,6 +1349,14 @@ def run_evaluation(
         "excluded_reasons_observed": sorted(excluded_reasons),
         "field_comment_reviewed_count": readiness.reviewed_status_count,
         "field_comment_missing_reviewed_count": readiness.missing_reviewed_count,
+        "precision_at_k": round(sum(precision_values) / len(precision_values), 4),
+        "recall_at_k": round(sum(recall_values) / len(recall_values), 4),
+        "excluded_source_violation": excluded_source_violations,
+        "citation_trace_success_rate": round(trace_success_count / trace_total_count, 4) if trace_total_count else 1.0,
+        "customer_scope": settings.ai_customer_scope,
+        "site_scope": settings.ai_site_scope,
+        "line_scope": evaluation_line_scope,
+        "database_scope": db_scope,
         "provider_start_ready": provider_start_ready,
     }
     status = "PASSED" if all_passed and candidate_identity_stable and ranking_stable else "FAILED"
@@ -959,14 +1378,15 @@ def run_evaluation(
 @router.post("/candidates/rebuild", response_model=AISearchRebuildResponse)
 def rebuild_candidates(
     _current_user: CurrentUser,
+    settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> AISearchRebuildResponse:
-    return rebuild_ai_search_candidates(session)
+    return rebuild_ai_search_candidates(session, load_sensitive_filter(session, settings))
 
 
 @router.get("/candidates", response_model=list[AISearchCandidateResponse])
 def list_candidates(
-    _current_user: CurrentUser,
+    current_user: CurrentUser,
     session: Annotated[Session, Depends(get_db_session)],
     source_type: Annotated[str | None, Query(alias="sourceType")] = None,
     source_id: Annotated[str | None, Query(alias="sourceId")] = None,
@@ -980,13 +1400,18 @@ def list_candidates(
         statement = statement.where(AISearchCandidate.source_type == source_type.strip().upper())
     if source_id is not None and source_id.strip():
         statement = statement.where(AISearchCandidate.source_id == source_id.strip())
-    rows = session.scalars(statement.limit(min(max(limit, 1), 500))).all()
-    return [_candidate_response(candidate) for candidate in rows]
+    rows = session.scalars(statement.limit(500)).all()
+    user = session.scalar(select(UserAccount).where(UserAccount.user_id == current_user.user_id))
+    if user is None:
+        raise HTTPException(status_code=401, detail="authenticated user does not exist")
+    visible = [candidate for candidate in rows if _can_evaluate_candidate(session, candidate, user)]
+    return [_candidate_response(candidate) for candidate in visible[: min(max(limit, 1), 500)]]
 
 
 @router.get("/quality", response_model=AISearchQualityResponse)
 def get_quality(
     _current_user: CurrentUser,
+    settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> AISearchQualityResponse:
-    return _quality_response(session)
+    return _quality_response(session, load_sensitive_filter(session, settings))

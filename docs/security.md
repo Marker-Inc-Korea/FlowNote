@@ -123,7 +123,7 @@ FlowNote의 `PUBLISHED`는 현장 사용자에게 공개되었다는 뜻이지 �
 
 질의 생성 코드는 query snapshot 시점에 고객·현장 승인, source type, 원천 상태, 작성자 계정 상태·role과 연결 채널 멤버십을 다시 검사한다. 외부 전송 대상 FieldComment는 `ANALYZED`, `REVIEWED`, `SELECTED`로 제한하고, 문서는 삭제되지 않은 현재 공개 버전, 작업순서는 존재하는 변경 이력, 보고서는 비보관 보고서와 유효한 실제 source만 적격으로 선택한다. provider/model/system prompt는 서버 설정과 승인 프롬프트에서 선택하므로 사용자가 임의로 바꿀 수 없다.
 
-provider 주입 경계는 필터를 통과한 질의와 제한 길이의 최소 발췌, candidate/source/version/trace ID, content hash, rank, prompt version만 받는다. 전체 파일·사진·첨부, 사용자명, 로컬 경로, 내부 URL과 제외 원천은 전달하지 않는다. 주민등록번호·전화번호·이메일은 대체 표식으로 마스킹하고, 계정·비밀번호·API key·token·로컬 경로·고객 식별자와 `ai_sensitive_data_policies`의 현장별 금칙어는 원천 전체를 `CONTENT_RESTRICTED`로 차단한다. 차단 원문은 일반 로그와 근거 snapshot에 남기지 않는다.
+provider 주입 경계는 필터를 통과한 질의와 제한 길이의 최소 발췌, candidate/source/version/trace ID, content hash, rank, prompt version만 받는다. 전체 파일·사진·첨부, 사용자명, 로컬 경로, 내부 URL과 제외 원천은 전달하지 않는다. 사용자 질의의 주민등록번호·전화번호·이메일은 대체 표식으로 마스킹한다. 원천의 주민등록번호·전화번호·이메일, 계정·비밀번호·API key·token·로컬 경로·고객 식별자와 `ai_sensitive_data_policies`의 현장별 금칙어는 검색 후보 생성 단계에서 원천 전체를 제외한다. 차단 원문은 후보, 일반 로그와 근거 snapshot에 남기지 않는다.
 
 질의와 저장이 승인된 응답 본문은 제한 데이터로 취급한다. 생성·조회 API는 보고서 작성 role만 사용하며, 조회 API는 질의·응답 본문·citation 목록을 반환하지 않고 질의 상태·응답 hash·적격/제외 근거 snapshot만 반환한다. 현재는 호출자 본인만 조회하도록 제한하지 않으므로 관리자 간 질의 조회 범위는 운영 provider 연동 전에 정해야 한다. 일반 서버/프록시 로그에는 질의, 프롬프트, 근거 본문, 응답, 자격증명, 검출한 금칙 원문이나 provider raw 오류를 남기지 않는다.
 

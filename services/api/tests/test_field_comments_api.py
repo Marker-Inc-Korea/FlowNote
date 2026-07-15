@@ -280,6 +280,18 @@ def test_field_comment_source_fields_are_immutable_in_database() -> None:
             else:
                 raise AssertionError("FieldComment source update must be rejected")
 
+        with client.app.state.database.session() as session:
+            note = session.scalar(select(FieldComment).where(FieldComment.comment_id == created["comment_id"]))
+            assert note is not None
+            session.delete(note)
+            try:
+                session.commit()
+            except ValueError as exc:
+                assert "cannot be deleted" in str(exc)
+                session.rollback()
+            else:
+                raise AssertionError("FieldComment source deletion must be rejected")
+
         unchanged = client.get(
             f"/api/v1/field-comments/{created['comment_id']}", headers=headers
         ).json()

@@ -112,6 +112,10 @@
                                Margin="0,8,0,0"
                                Foreground="#B45309"
                                TextWrapping="Wrap" />
+                    <TextBlock x:Name="ScopeReadinessTextBlock"
+                               Margin="0,8,0,0"
+                               Foreground="{StaticResource SecondaryTextBrush}"
+                               TextWrapping="Wrap" />
                     <DataGrid x:Name="ReadinessStatusGrid"
                               Height="82"
                               Margin="0,8,0,0"

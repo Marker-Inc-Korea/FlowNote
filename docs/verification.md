@@ -30,8 +30,8 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
 2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 3. 실행 전 `git status --porcelain=v1 --untracked-files=all`과 `git ls-files`에서 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-4. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 101개인지 확인한다.
-5. FastAPI pytest 101건을 실행하고 실행 ID별 JUnit을 보존한다.
+4. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 104개인지 확인한다.
+5. FastAPI pytest 104건을 실행하고 실행 ID별 JUnit을 보존한다.
 6. WPF Core 테스트를 실행하고 TRX를 보존한다.
 7. WPF 앱을 빌드한다.
 8. `5184` 포트에 서버가 없으면 누적 `flownote.windows-smoke.sqlite3`와 `storage/windows-smoke`를 쓰는 FastAPI를 시작하고, 같은 실행 ID로 WPF 통합 스모크를 실행한다.
@@ -120,8 +120,10 @@ FastAPI fake provider/spy 경계로 실제 네트워크 없이 다음을 검증�
 - 문서 공개 버전, 검토 완료 FieldComment, 작업순서 변경 이력, report source가 함께 필요한 질문에서 네 source type이 모두 최소 발췌와 candidate/source/version/trace ID, content hash, rank, prompt version을 갖는다.
 - 같은 질문과 후보를 반복하면 질의 trace ID를 제외한 source 배열과 순위가 동일하다.
 - 권한 없는 채널, 비공개·삭제 문서, 보관/미검토 FieldComment, 보관 보고서·유효하지 않은 보고서 원천은 `SOURCE_FORBIDDEN` 또는 `INSUFFICIENT_EVIDENCE`이며 provider spy에 후보 ID와 내용이 0바이트다.
-- 주민등록번호·전화번호·이메일 원문은 마스킹 뒤 payload byte에 없고 계정/token/경로/고객 식별자와 현장별 금칙어 원천은 `CONTENT_RESTRICTED`로 전체 차단된다. 일반 오류와 호출 감사에는 검출 원문을 남기지 않는다.
+- 주민등록번호·전화번호·이메일, 계정/token/경로/고객 식별자와 현장별 금칙어가 든 원천은 후보 생성 단계에서 제외되어 candidate ID와 원문이 provider payload에 0바이트다. 사용자 질의의 주민등록번호·전화번호·이메일만 대체 표식으로 마스킹하며 일반 오류와 호출 감사에는 검출 원문을 남기지 않는다.
 - 승인 철회 직후 신규 질의는 `APPROVAL_REVOKED`로 차단되고 호출 횟수는 증가하지 않는다. 같은 DB의 `/api/v1/ai-search/quality`와 ground-truth 평가는 계속 동작한다.
+- scope readiness가 미달이면 외부 호출 기능과 승인이 켜져 있어도 `AI_READINESS_NOT_MET`이고 provider spy 호출은 0회다. readiness 응답에서 네 원천별 부족 수, 승인 질문 50건 부족 수, 여덟 범주의 정상/제외/상충 누락 조합을 대조한다.
+- 승인 사례 실행은 허용 순위와 `asOf`를 적용하고 run별 precision@k, recall@k, excluded-source violation, citation trace 성공률을 누적 비교한다. 임의 표본은 `trace_table`, `trace_id`, `trace_version_id`로 원문 화면과 DB row까지 역추적한다.
 
 사람형 표본 검토는 테스트용 고객/현장 scope와 운영 scope를 섞지 않는다. 한 현장·한 라인에서 `line + equipment` 또는 `process + error_type`처럼 태그 두 축으로 표본을 고르고, `ANALYZED`/`REVIEWED`/`SELECTED` FieldComment만 원문 품질과 관리자 분석의 일치 여부를 확인한다. 운영 원문은 테스트 DB나 fake provider payload에 복제하지 않고 candidate/source ID와 정제된 점검 결과만 기록한다.
 
