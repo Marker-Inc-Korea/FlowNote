@@ -1,6 +1,6 @@
 # FlowNote 보안
 
-이 문서는 2026-07-14 현재 코드에 적용된 통제와 운영 전 후속 통제를 구분한다.
+이 문서는 2026-07-15 현재 코드에 적용된 통제와 운영 전 후속 통제를 구분한다.
 
 ## 현재 구현
 
@@ -24,6 +24,8 @@
 - Android 현장 단말 앱의 서버 Bearer token 사용, FieldComment/사진 outbox 재전송, 알림 읽음/인수인계 확인, 서버 오류 원문 비노출
 - 외부 AI 질의의 보고서 작성 role(`admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`) 제한, 기본 비활성 플래그, 허용 목적, 고객·현장·provider·model 전송 승인, 승인된 프롬프트와 근거 원천 상태 검사
 - 외부 AI 질의·근거 snapshot·인용·호출 시도 감사 row, 기본 응답 본문 미저장과 응답 hash 저장
+- `system-admin` 전용 외부 AI 전송 승인·불변 프롬프트 수명주기·전역/현장 kill switch와 한도·보존 정책 API 및 WPF 운영 화면
+- 질의·응답·비밀 원문을 제외한 AI 운영 감사 조회/정책 허용 CSV와, 만료 질의 payload 비식별화·응답 원문 삭제의 수동 보존 처리 감사
 
 Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현이 들어와 있다. Android 문서 기능은 공개 목록·상세 메타데이터 조회까지이며 파일 본문 다운로드·미리보기는 구현되어 있지 않다. 공통 채널 API는 서버 로그인, role, 채널 멤버십으로 접근을 제한하며, Android 로그인은 승인된 `terminal_devices.device_id`와 `status = ACTIVE`를 요구한다. 승인 단말 등록, 비활성화, 폐기, 교체는 `admin`, `system-admin` 전용 API와 WPF 운영 화면에서 수행하고 `activity_history`에 변경 주체와 사유를 남긴다. Android의 로그인, 문서, 알림, 인수인계 화면은 예외 메시지와 서버 오류 본문을 그대로 노출하지 않고 연결 실패, 시간 초과, HTTP 401·403·404와 기타 HTTP 오류를 한글 현장 안내로 변환한다. Android는 개인 휴대폰 기본 배포가 아니라 승인된 현장 태블릿 또는 러기드 단말을 기준으로 한다. MDM, 운영 인증서, outbox 암호화 정책은 후속 보안 범위다.
 
@@ -123,7 +125,9 @@ FlowNote의 `PUBLISHED`는 현장 사용자에게 공개되었다는 뜻이지 �
 
 질의 생성 코드는 query snapshot 시점에 고객·현장 승인, source type, 원천 상태, 작성자 계정 상태·role과 연결 채널 멤버십을 다시 검사한다. 외부 전송 대상 FieldComment는 `ANALYZED`, `REVIEWED`, `SELECTED`로 제한하고, 문서는 삭제되지 않은 현재 공개 버전, 작업순서는 존재하는 변경 이력, 보고서는 비보관 보고서와 유효한 실제 source만 적격으로 선택한다. provider/model/system prompt는 서버 설정과 승인 프롬프트에서 선택하므로 사용자가 임의로 바꿀 수 없다.
 
-provider 주입 경계는 필터를 통과한 질의와 제한 길이의 최소 발췌, candidate/source/version/trace ID, content hash, rank, prompt version만 받는다. 전체 파일·사진·첨부, 사용자명, 로컬 경로, 내부 URL과 제외 원천은 전달하지 않는다. 사용자 질의의 주민등록번호·전화번호·이메일은 대체 표식으로 마스킹한다. 원천의 주민등록번호·전화번호·이메일, 계정·비밀번호·API key·token·로컬 경로·고객 식별자와 `ai_sensitive_data_policies`의 현장별 금칙어는 검색 후보 생성 단계에서 원천 전체를 제외한다. 차단 원문은 후보, 일반 로그와 근거 snapshot에 남기지 않는다.
+provider 경계는 필터를 통과한 질의와 제한 길이의 최소 발췌, candidate/source/version/trace ID, content hash, rank, prompt version, 고정 출력 형식만 받는다. 전체 파일·사진·첨부, 사용자명, 로컬 경로, 내부 URL과 제외 원천은 전달하지 않는다. 사용자 질의의 주민등록번호·전화번호·이메일은 대체 표식으로 마스킹한다. 원천의 주민등록번호·전화번호·이메일, 계정·비밀번호·API key·token·로컬 경로·고객 식별자, prompt injection 지시와 `ai_sensitive_data_policies`의 현장별 금칙어는 검색 후보 생성 단계에서 원천 전체를 제외한다. 차단 원문은 후보, 일반 로그와 근거 snapshot에 남기지 않는다.
+
+provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마다 중복 없는 기존 candidate ID가 필요하다. 서버는 숫자, 핵심 토큰 겹침, 부정 극성을 규칙으로 대조하고 summary도 인용된 근거 전체와 다시 확인한다. 모델 자기평가만으로 의미 일치를 승인하지 않는다. 낮은 확신은 `humanReviewRequired` 정상 보류, 명백한 모순·인용 오류·prompt injection은 본문 전체 폐기다. provider 응답 뒤에는 승인, kill switch/한도, 원천 상태·hash, 사용자 열람 권한을 재조회하며 바뀐 결과는 저장하거나 노출하지 않는다.
 
 질의와 저장이 승인된 응답 본문은 제한 데이터로 취급한다. 생성·조회 API는 보고서 작성 role만 사용하며, 조회 API는 질의·응답 본문·citation 목록을 반환하지 않고 질의 상태·응답 hash·적격/제외 근거 snapshot만 반환한다. 현재는 호출자 본인만 조회하도록 제한하지 않으므로 관리자 간 질의 조회 범위는 운영 provider 연동 전에 정해야 한다. 일반 서버/프록시 로그에는 질의, 프롬프트, 근거 본문, 응답, 자격증명, 검출한 금칙 원문이나 provider raw 오류를 남기지 않는다.
 
@@ -148,5 +152,5 @@ provider 주입 경계는 필터를 통과한 질의와 제한 길이의 최소 
 - 브라우저 직접 접근 제한 정책의 설치/배포 자동화
 - Android MDM, 운영 인증서와 현장별 단말 등록·비활성화·교체 정책
 - Android outbox 암호화와 제한된 WorkManager 백그라운드 알림 정책 검증
-- 운영 AI provider 네트워크 client, provider 응답의 summary와 검증된 claim 사이 의미적 일치 강제, 실제 provider 조건에 대한 전송 경계 재검증
+- provider별 운영 계약·전송 지역 검증과 운영 네트워크 활성 절차. 현재 generic adapter는 명시적 test scope에서만 허용
 - 운영 AI 감사 메타데이터의 장기 archive/purge와 법적 보존 hold 정책

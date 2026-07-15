@@ -1359,14 +1359,14 @@ def run_evaluation(
         "database_scope": db_scope,
         "provider_start_ready": provider_start_ready,
     }
-    status = "PASSED" if all_passed and candidate_identity_stable and ranking_stable else "FAILED"
-    evaluation_run.status = status
+    result_status = "PASSED" if all_passed and candidate_identity_stable and ranking_stable else "FAILED"
+    evaluation_run.status = result_status
     evaluation_run.ranking_stable = ranking_stable
     evaluation_run.metrics_json = json.dumps(metrics, ensure_ascii=False)
     session.commit()
     return {
         "run_id": run_id,
-        "status": status,
+        "status": result_status,
         "evaluated_as_user_id": evaluate_as_user_id,
         "candidate_identity_stable": candidate_identity_stable,
         "ranking_stable": ranking_stable,

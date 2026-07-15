@@ -1,6 +1,6 @@
 # FlowNote MVP 범위
 
-이 문서는 2026-07-14 현재 코드 기준이다. 구현되지 않은 기능은 “현재 제외 범위”, “후속 계층 착수 기준”, “후속 MVP 후보”에만 둔다.
+이 문서는 2026-07-15 현재 코드 기준이다. 구현되지 않은 기능은 “현재 제외 범위”, “후속 계층 착수 기준”, “후속 MVP 후보”에만 둔다.
 
 ## 현재 MVP 구현
 
@@ -22,7 +22,8 @@
 - 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도
 - 관리자 파일 감시 후보와 버전 확정
 - AI 자동 조언 전 단계의 `ai_search_candidates` 근거 후보 재생성, 목록, 품질 점검 API와 WPF 운영 점검 화면
-- FastAPI `/api/v1/ai/queries` 질의 생성·조회와 기본 비활성, role, 목적, 외부 전송 승인, 프롬프트, 원천 권한·민감정보·최소 payload provider 주입 경계, 근거 snapshot·인용 검증과 감사 모델. 운영 provider 네트워크 client는 미구현
+- FastAPI `/api/v1/ai/queries` 질의 생성·조회와 기본 비활성, role, 목적, 외부 전송 승인, 프롬프트, 원천 권한·민감정보·최소 payload provider adapter, 근거 snapshot·인용·규칙 기반 의미 일치·호출 후 재검증과 감사 모델. 네트워크 adapter는 명시적 test scope 전용
+- FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 불변 프롬프트 수명주기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 수동 실행
 - FastAPI 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
 - Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인
@@ -55,7 +56,7 @@ Windows와 Android의 업무 채널 알림, 인수인계 확인, FieldComment/�
 
 ## 후속 계층 착수 기준
 
-운영 provider client를 통한 실제 외부 AI 검색/작업 조언과 MES/ERP 자동 수신 어댑터는 현재 MVP 완료 범위가 아니다. 외부 AI는 질의·감사 모델뿐 아니라 provider 호출 직전의 원천 권한 재검사, 민감정보 필터, 최소 발췌·최대 원천 수 제한, 근거 snapshot과 인용 검증까지 구현했다. 다만 실제 네트워크 provider client와 운영 승인 UI는 없다. 다음 조건은 운영 연동 착수 여부를 판단하기 위한 기준이며, 조건을 만족하기 전에는 문서 등록, FieldComment, 작업순서, 보고서 근거 축적을 우선한다.
+provider별 운영 client를 통한 실제 외부 AI 검색/작업 조언과 MES/ERP 자동 수신 어댑터는 현재 MVP 완료 범위가 아니다. 외부 AI는 질의·감사 모델, 호출 전후 원천 권한 재검사, 민감정보 필터, 최소 발췌·최대 원천 수 제한, 근거 snapshot, 인용·의미 일치 검증뿐 아니라 `system-admin` 전용 전송 승인·프롬프트·운영 정책·감사·보존 API와 WPF 운영 UI까지 구현했다. fake/recording adapter와 제한형 generic 네트워크 adapter가 있으나 네트워크는 명시적 test scope에서만 생성된다. 다음 조건은 운영 연동 착수 여부를 판단하기 위한 기준이며, 조건을 만족하기 전에는 문서 등록, FieldComment, 작업순서, 보고서 근거 축적을 우선한다.
 
 ### AI 검색/작업 조언
 
@@ -72,7 +73,7 @@ Windows와 Android의 업무 채널 알림, 인수인계 확인, FieldComment/�
 
 AI 계층의 첫 착수 범위는 “근거가 있는 검색과 요약”까지로 제한한다. 자동 의사결정, 작업 지시 자동 변경, 현장 조치 승인 자동화는 별도 보안/책임 기준이 정해지기 전까지 포함하지 않는다.
 
-현재 구현 착수 범위는 `ai_search_candidates` read model의 재생성·목록·품질 API, WPF 운영 점검 화면, `/api/v1/ai/queries` 생성·조회와 원천 권한·민감정보·최소 payload 게이트다. 검색 후보는 `PUBLISHED` 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source로 제한하고 원문 ID와 version ID를 유지한다. 질의 시점에는 원천 상태, 작성자 role, 연결 채널 멤버십, 승인 source type과 현장별 금칙 정책을 다시 검사한다. 운영 provider 네트워크 client는 아직 없다. FieldComment 관리자 검토 상태가 `ANALYZED`, `REVIEWED`, `SELECTED`로 충분히 쌓이기 전에는 답변 자동화보다 관리자 검토/분석/선정 운영 흐름을 먼저 보강한다.
+현재 구현 착수 범위는 `ai_search_candidates` read model의 재생성·목록·품질 API, WPF 운영 점검 화면, `/api/v1/ai/queries` 생성·조회와 원천 권한·민감정보·최소 payload·응답 검증 게이트다. 검색 후보는 `PUBLISHED` 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source로 제한하고 원문 ID와 version ID를 유지한다. 질의 시점과 응답 직후에는 원천 상태, 작성자 role, 연결 채널 멤버십, 승인 source type과 현장별 금칙 정책을 다시 검사한다. provider별 운영 연동은 아직 없다. FieldComment 관리자 검토 상태가 `ANALYZED`, `REVIEWED`, `SELECTED`로 충분히 쌓이기 전에는 답변 자동화보다 관리자 검토/분석/선정 운영 흐름을 먼저 보강한다.
 
 ### MES/ERP 어댑터
 

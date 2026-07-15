@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as ProviderTimeoutError
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
@@ -31,6 +31,8 @@ from app.db.models import (
     AIQueryEvidenceCandidate,
     AISearchCandidate,
     AITransferApproval,
+    AuthSession,
+    UserAccount,
 )
 from app.db.session import get_db_session
 from app.services.ai_provider_gate import (
@@ -41,6 +43,16 @@ from app.services.ai_provider_gate import (
     load_sensitive_filter,
     minimal_excerpt,
     sha256_text,
+)
+from app.services.ai_provider_adapters import (
+    AIProviderAdapter,
+    CallableProviderAdapter,
+    ProviderAdapterError,
+)
+from app.services.ai_response_validation import (
+    ResponseValidationError,
+    parse_provider_response,
+    semantic_grounding,
 )
 from app.services.ai_readiness import database_scope, scope_readiness
 from app.services.ai_operations import active_policy, audit_event
@@ -55,10 +67,6 @@ ALLOWED_PURPOSES = {"EVIDENCE_SEARCH", "EVIDENCE_SUMMARY"}
 ALLOWED_SOURCE_TYPES = {
     "PUBLISHED_DOCUMENT_VERSION", "FIELD_COMMENT", "WORK_SEQUENCE_HISTORY", "REPORT_SOURCE"
 }
-
-
-class AIProvider(Protocol):
-    def __call__(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
 class AIQueryCreateRequest(BaseModel):
@@ -266,6 +274,177 @@ def _snapshot(
     return snapshots, evidence
 
 
+def _provider_adapter(provider: Any) -> AIProviderAdapter:
+    if hasattr(provider, "invoke") and callable(provider.invoke):
+        return provider
+    return CallableProviderAdapter(provider)
+
+
+def _invoke_provider(
+    session: Session,
+    query: AIQuery,
+    settings: Settings,
+    provider: Any,
+    payload: dict[str, Any],
+    timeout_seconds: int,
+) -> tuple[Any | None, AICallAttempt | None, tuple[str, str, int] | None]:
+    adapter = _provider_adapter(provider)
+    for attempt_number in range(1, settings.ai_provider_max_attempts + 1):
+        started = datetime.now(timezone.utc)
+        attempt = AICallAttempt(
+            attempt_id=f"aica-{uuid4().hex}", query_id=query.query_id,
+            provider=settings.ai_provider, model=settings.ai_model, status="CALLING",
+            started_at=started,
+        )
+        session.add(attempt)
+        query.status = "CALLING"
+        # Persist the boundary state before network work so audit survives process/provider failure
+        # and local document operations are not held behind this transaction.
+        session.commit()
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(adapter.invoke, payload)
+        error: ProviderAdapterError | None = None
+        try:
+            raw = future.result(timeout=timeout_seconds)
+        except ProviderTimeoutError:
+            error = ProviderAdapterError("AI_PROVIDER_TIMEOUT", retryable=True)
+            executor.shutdown(wait=False, cancel_futures=True)
+        except ProviderAdapterError as exc:
+            error = exc
+        except Exception:
+            error = ProviderAdapterError("AI_PROVIDER_ERROR", retryable=False)
+        finally:
+            if future.done():
+                executor.shutdown(wait=True)
+        if error is None:
+            return raw, attempt, None
+        attempt.http_status = error.http_status
+        if error.retryable and attempt_number < settings.ai_provider_max_attempts:
+            attempt.status = "FAILED"
+            attempt.finished_at = datetime.now(timezone.utc)
+            attempt.error_code = error.code
+            attempt.sanitized_error_message = "provider 호출이 완료되지 않았습니다."
+            session.commit()
+            continue
+        status_code = 504 if error.code == "AI_PROVIDER_TIMEOUT" else 502
+        message = (
+            "외부 AI 호출 제한 시간을 초과했습니다."
+            if error.code == "AI_PROVIDER_TIMEOUT"
+            else "외부 AI 호출이 실패했습니다."
+        )
+        return None, attempt, (error.code, message, status_code)
+    return None, None, ("AI_PROVIDER_ERROR", "외부 AI 호출이 실패했습니다.", 502)
+
+
+def _hold_response(
+    session: Session,
+    query: AIQuery,
+    attempt: AICallAttempt | None,
+    settings: Settings,
+    *,
+    code: str,
+    reason: str,
+    human_review_required: bool = False,
+) -> dict[str, Any]:
+    completed = datetime.now(timezone.utc)
+    query.status = "INSUFFICIENT_EVIDENCE"
+    query.block_code = code
+    query.completed_at = completed
+    query.response_text = None
+    query.response_hash = None
+    if attempt is not None:
+        attempt.status = "FAILED"
+        attempt.finished_at = completed
+        attempt.error_code = code
+        attempt.sanitized_error_message = reason[:255]
+    audit_event(
+        session,
+        event_type="AI_RESPONSE_WITHHELD",
+        actor_id=query.requested_by,
+        customer_scope=settings.ai_customer_scope,
+        site_scope=settings.ai_site_scope,
+        target_type="QUERY",
+        target_id=query.query_id,
+        reason_code=code,
+        detail={"humanReviewRequired": human_review_required},
+    )
+    session.commit()
+    return {
+        "queryId": query.query_id,
+        "status": query.status,
+        "grounded": False,
+        "summary": None,
+        "claims": [],
+        "reason": reason,
+        "responseStored": False,
+        "humanReviewRequired": human_review_required,
+    }
+
+
+def _validation_failure(
+    session: Session,
+    query: AIQuery,
+    attempt: AICallAttempt,
+    code: str,
+) -> JSONResponse:
+    completed = datetime.now(timezone.utc)
+    query.status = "CITATION_VALIDATION_FAILED" if code == "CITATION_VALIDATION_FAILED" else "FAILED"
+    query.block_code = code
+    query.completed_at = completed
+    query.response_text = None
+    query.response_hash = None
+    attempt.status = "FAILED"
+    attempt.finished_at = completed
+    attempt.error_code = code
+    attempt.sanitized_error_message = "provider 응답 검증에 실패했습니다."
+    session.commit()
+    return _error(query.query_id, 502, code, "외부 AI 응답을 안전하게 검증할 수 없어 폐기했습니다.")
+
+
+def _post_call_evidence_is_current(
+    session: Session,
+    current_user: AuthenticatedUser,
+    eligible: list[AIQueryEvidenceCandidate],
+) -> bool:
+    session.expire_all()
+    account = session.scalar(
+        select(UserAccount).where(UserAccount.user_id == current_user.user_id)
+    )
+    auth_session = session.scalar(
+        select(AuthSession).where(AuthSession.session_id == current_user.session_id)
+    )
+    if (
+        account is None
+        or not account.is_active
+        or account.status != "ACTIVE"
+        or account.role not in AI_QUERY_ROLES
+        or auth_session is None
+        or auth_session.status != "ACTIVE"
+        or auth_session.access_token_id != current_user.access_token_id
+    ):
+        return False
+    refreshed_user = AuthenticatedUser(
+        user_id=account.user_id,
+        username=account.username,
+        role=account.role,
+        display_name=account.display_name,
+        session_id=auth_session.session_id,
+        access_token_id=auth_session.access_token_id,
+        must_change_password=account.must_change_password,
+    )
+    policy = AISourceAccessPolicy(session, refreshed_user)
+    for snapshot in eligible:
+        candidate = session.scalar(
+            select(AISearchCandidate).where(AISearchCandidate.candidate_id == snapshot.candidate_id)
+        )
+        if candidate is None:
+            return False
+        result = policy.evaluate(candidate)
+        if not result.allowed or result.content_hash != snapshot.content_hash:
+            return False
+    return True
+
+
 @router.post("/queries")
 def create_ai_query(
     payload: AIQueryCreateRequest,
@@ -368,7 +547,7 @@ def create_ai_query(
         return {"queryId": query.query_id, "status": query.status, "grounded": False,
                 "summary": None, "claims": [], "reason": "사용 가능한 근거가 없습니다.", "responseStored": False}
 
-    provider: AIProvider | None = getattr(request.app.state, "ai_provider", None)
+    provider = getattr(request.app.state, "ai_provider", None)
     if provider is None:
         return _block(session, query, settings, "AI_PROVIDER_NOT_CONFIGURED", "외부 AI provider가 구성되지 않았습니다.", 503)
     session.expire(approval)
@@ -381,13 +560,6 @@ def create_ai_query(
     if final_operations_block:
         code, message, status_code = final_operations_block
         return _block(session, query, settings, code, message, status_code)
-    attempt = AICallAttempt(
-        attempt_id=f"aica-{uuid4().hex}", query_id=query.query_id, provider=settings.ai_provider,
-        model=settings.ai_model, status="CALLING", started_at=now,
-    )
-    session.add(attempt)
-    query.status = "CALLING"
-    session.flush()
     provider_payload = ProviderBoundaryPayload(
         purpose=payload.purpose,
         query=filtered_query.text,
@@ -397,53 +569,97 @@ def create_ai_query(
         trace_id=query.query_id,
         sources=tuple(provider_evidence),
     )
-    # This is an injected boundary only. The repository contains no network provider client.
+    for row in eligible:
+        row.sent_externally = True
+    session.flush()
     _, site_policy = active_policy(session, settings.ai_customer_scope, settings.ai_site_scope)
     timeout_seconds = site_policy.timeout_seconds if site_policy else 30
-    executor = ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(provider, provider_payload.as_dict())
+    raw_result, attempt, provider_error = _invoke_provider(
+        session,
+        query,
+        settings,
+        provider,
+        provider_payload.as_dict(),
+        timeout_seconds,
+    )
+    if provider_error:
+        code, message, status_code = provider_error
+        return _block(session, query, settings, code, message, status_code)
+    assert attempt is not None
     try:
-        result = future.result(timeout=timeout_seconds)
-    except ProviderTimeoutError:
-        executor.shutdown(wait=False, cancel_futures=True)
-        return _block(session, query, settings, "AI_PROVIDER_TIMEOUT", "외부 AI 호출 제한 시간을 초과했습니다.", 504)
-    except Exception:
-        return _block(session, query, settings, "AI_PROVIDER_ERROR", "외부 AI 호출이 실패했습니다.", 502)
-    finally:
-        if future.done():
-            executor.shutdown(wait=True)
-    response_text = str(result.get("response", ""))
+        validated = parse_provider_response(
+            raw_result,
+            max_bytes=settings.ai_provider_response_max_bytes,
+        )
+    except ResponseValidationError as exc:
+        return _validation_failure(session, query, attempt, exc.code)
+
+    # The provider result is disposable until approval, source state and user access all pass again.
+    session.expire_all()
+    current_approval = session.scalar(
+        select(AITransferApproval).where(AITransferApproval.approval_id == approval.approval_id)
+    )
+    if approval_block_code(current_approval, settings, datetime.now(timezone.utc)):
+        return _hold_response(
+            session, query, attempt, settings,
+            code="APPROVAL_CHANGED_AFTER_CALL",
+            reason="응답 생성 중 외부 전송 승인이 변경되어 결과를 폐기했습니다.",
+        )
+    final_operations_block = _operations_block(session, settings, datetime.now(timezone.utc))
+    if final_operations_block:
+        code, _, _ = final_operations_block
+        return _hold_response(
+            session, query, attempt, settings,
+            code=f"{code}_AFTER_CALL",
+            reason="응답 생성 중 운영 통제 상태가 변경되어 결과를 폐기했습니다.",
+        )
+    if not _post_call_evidence_is_current(session, current_user, eligible):
+        return _hold_response(
+            session, query, attempt, settings,
+            code="SOURCE_STATE_CHANGED_AFTER_CALL",
+            reason="응답 생성 중 근거 상태 또는 열람 권한이 변경되어 결과를 폐기했습니다.",
+        )
+
     snapshot_by_id = {row.candidate_id: row for row in eligible}
-    claims = result.get("claims")
-    if not isinstance(claims, list) or not claims:
-        query.status = "CITATION_VALIDATION_FAILED"
-        query.completed_at = datetime.now(timezone.utc)
-        attempt.status = "FAILED"
-        attempt.finished_at = query.completed_at
-        attempt.error_code = "CITATION_VALIDATION_FAILED"
-        attempt.sanitized_error_message = "응답 인용 검증에 실패했습니다."
-        session.commit()
-        return _error(query.query_id, 502, "CITATION_VALIDATION_FAILED", "응답 인용 검증에 실패했습니다.")
+    evidence_by_id = {item.candidate_id: item.excerpt for item in provider_evidence}
+    for claim in validated.claims:
+        if any(item not in snapshot_by_id for item in claim.candidate_ids):
+            return _validation_failure(session, query, attempt, "CITATION_VALIDATION_FAILED")
+        semantic = semantic_grounding(
+            claim.text,
+            [evidence_by_id[item] for item in claim.candidate_ids],
+        )
+        if not semantic.accepted:
+            return _hold_response(
+                session, query, attempt, settings,
+                code=semantic.reason_code or "CLAIM_GROUNDING_LOW_CONFIDENCE",
+                reason="주장과 인용 근거의 의미 일치를 보수적으로 확인할 수 없어 답변을 보류했습니다.",
+                human_review_required=semantic.human_review_required,
+            )
+    summary_evidence_ids = {
+        candidate_id for claim in validated.claims for candidate_id in claim.candidate_ids
+    }
+    summary_semantic = semantic_grounding(
+        validated.response,
+        [evidence_by_id[item] for item in summary_evidence_ids],
+    )
+    if not summary_semantic.accepted:
+        return _hold_response(
+            session, query, attempt, settings,
+            code=summary_semantic.reason_code or "CLAIM_GROUNDING_LOW_CONFIDENCE",
+            reason="요약과 인용 근거의 의미 일치를 보수적으로 확인할 수 없어 답변을 보류했습니다.",
+            human_review_required=summary_semantic.human_review_required,
+        )
+
     response_claims: list[dict[str, Any]] = []
-    for claim in claims:
-        citation_ids = claim.get("candidateIds") if isinstance(claim, dict) else None
-        if not isinstance(citation_ids, list) or not citation_ids or any(item not in snapshot_by_id for item in citation_ids):
-            query.status = "CITATION_VALIDATION_FAILED"
-            query.completed_at = datetime.now(timezone.utc)
-            attempt.status = "FAILED"
-            attempt.finished_at = query.completed_at
-            attempt.error_code = "CITATION_VALIDATION_FAILED"
-            attempt.sanitized_error_message = "응답 인용 검증에 실패했습니다."
-            session.commit()
-            return _error(query.query_id, 502, "CITATION_VALIDATION_FAILED", "응답 인용 검증에 실패했습니다.")
-        claim_key = str(claim.get("claimKey", ""))[:80] or f"claim-{len(response_claims) + 1}"
+    for claim in validated.claims:
         citations: list[dict[str, Any]] = []
-        for candidate_id in citation_ids:
+        for candidate_id in claim.candidate_ids:
             row = snapshot_by_id[candidate_id]
             uri = f"flownote://{row.trace_table}/{row.trace_id}"
             session.add(AIQueryCitation(
                 citation_id=f"aicit-{uuid4().hex}", query_id=query.query_id,
-                claim_key=claim_key, candidate_id=row.candidate_id, source_type=row.source_type,
+                claim_key=claim.claim_key, candidate_id=row.candidate_id, source_type=row.source_type,
                 source_id=row.source_id, source_version_id=row.source_version_id,
                 trace_table=row.trace_table, trace_id=row.trace_id,
                 trace_version_id=row.trace_version_id, internal_source_uri=uri,
@@ -453,19 +669,16 @@ def create_ai_query(
                               "sourceId": row.source_id, "sourceVersionId": row.source_version_id,
                               "traceTable": row.trace_table, "traceId": row.trace_id,
                               "traceVersionId": row.trace_version_id, "internalSourceUri": uri})
-        response_claims.append({"claimKey": claim_key, "text": str(claim.get("text", "")), "citations": citations})
+        response_claims.append({"claimKey": claim.claim_key, "text": claim.text, "citations": citations})
+    response_text = validated.response
     query.response_hash = _hash(response_text)
     query.response_text = response_text if payload.response_storage_mode == "STORE_90_DAYS" else None
     query.status = "SUCCEEDED"
     query.completed_at = datetime.now(timezone.utc)
     attempt.status = "SUCCEEDED"
     attempt.finished_at = query.completed_at
-    try:
-        attempt.cost_micros = max(0, int(result.get("costMicros", 0) or 0))
-    except (TypeError, ValueError):
-        attempt.cost_micros = 0
-    for row in eligible:
-        row.sent_externally = True
+    attempt.provider_request_id = validated.provider_request_id
+    attempt.cost_micros = validated.cost_micros
     session.commit()
     return {"queryId": query.query_id, "status": query.status, "grounded": True,
             "summary": response_text, "claims": response_claims,

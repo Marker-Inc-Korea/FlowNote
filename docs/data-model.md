@@ -123,7 +123,7 @@ MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_record
 
 ## 외부 AI 질의와 호출 로그 안전장치
 
-다음 모델은 외부 AI 1단계의 안전장치와 감사 골격으로 구현되었다. 운영 provider client와 네트워크 호출은 구현하지 않았으며 기본 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`에서 모든 외부 호출 시도를 차단한다. 기존 `ai_search_candidates`는 외부 AI 설정과 무관하게 재생성 가능한 read model로 유지한다.
+다음 모델은 외부 AI 1단계의 안전장치와 감사 골격으로 구현되었다. provider 중립 fake/recording adapter와 제한형 JSON 네트워크 adapter가 있으며, 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성된다. 기본 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`와 `FLOWNOTE_AI_PROVIDER_ADAPTER_MODE=DISABLED`는 모든 외부 호출 시도를 차단한다. 기존 `ai_search_candidates`는 외부 AI 설정과 무관하게 재생성 가능한 read model로 유지한다.
 
 | 테이블 | 주요 필드 | 역할과 보존 기준 |
 | --- | --- | --- |
@@ -131,7 +131,7 @@ MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_record
 | `ai_query_evidence_candidates` | `id`, `query_id`, `candidate_id`, `source_type`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `rank`, `selected_for_prompt`, `sent_externally`, `content_hash`, `eligibility_result`, `exclusion_reason` | 질의 시점의 적격·제외 후보 ID와 순위, provider 경계 전달 여부, 원천 식별자와 content hash snapshot. 제외 후보도 원문 없이 `EXCLUDED`와 `SOURCE_FORBIDDEN`/`CONTENT_RESTRICTED` 사유를 남기며 provider DTO에는 포함하지 않는다. |
 | `ai_query_citations` | `citation_id`, `query_id`, `claim_key`, `candidate_id`, `source_type`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `internal_source_uri`, `content_hash`, `validated_at` | 반환한 각 사실 주장과 문서 버전, FieldComment, 작업순서 이력 또는 `report_sources.id`의 연결. 1년 보존은 후속 운영 정책이다. |
 | `ai_prompt_versions` | `prompt_version_id`, `name`, `version`, `template_hash`, `template_text`, `allowed_purpose`, `created_by`, `approved_by`, `approved_at`, `retired_at` | 재현 가능한 불변 프롬프트 버전. 승인 후 내용을 덮어쓰지 않고 새 버전을 만든다. |
-| `ai_call_attempts` | `attempt_id`, `query_id`, `provider`, `model`, `provider_request_id`, `status`, `started_at`, `finished_at`, `http_status`, `error_code`, `sanitized_error_message`, `input_units`, `output_units` | 호출 및 오류 로그. 일반 로그에는 원문 프롬프트, 근거 본문, 응답, 자격증명이나 provider raw body를 넣지 않고 정제한 메타데이터를 남긴다. 1년 보존은 후속 운영 정책이다. |
+| `ai_call_attempts` | `attempt_id`, `query_id`, `provider`, `model`, `provider_request_id`, `status`, `started_at`, `finished_at`, `http_status`, `error_code`, `sanitized_error_message`, `input_units`, `output_units` | 최초 호출과 timeout/429/5xx 재시도를 요청 ID에 연결하는 호출 및 오류 로그. 일반 로그에는 원문 프롬프트, 근거 본문, 응답, 자격증명이나 provider raw body를 넣지 않고 정제한 메타데이터를 남긴다. 1년 보존은 후속 운영 정책이다. |
 | `ai_transfer_approvals` | `approval_id`, `customer_scope`, `site_scope`, `provider`, `model_scope`, `allowed_source_types`, `data_handling_policy_version`, `approved_by`, `approved_at`, `expires_at`, `revoked_at`, `reason` | 고객·현장별 외부 전송 승인. 만료·철회 시 새 호출을 즉시 차단하며 `admin` 또는 `system-admin`의 승인 주체와 근거를 보존한다. |
 | `ai_sensitive_data_policies` | `policy_id`, `customer_scope`, `site_scope`, `version`, `forbidden_terms_json`, `customer_identifiers_json`, `is_active`, `created_by`, `created_at` | 고객·현장별 사용자 정의 금칙어와 고객 식별자 정책. 최신 활성 정책 하나를 query snapshot 필터에 적용하며 원문 검출값은 감사 로그에 남기지 않는다. |
 

@@ -293,6 +293,16 @@
 - provider 자격증명은 DB 모델과 API DTO에 두지 않고 서버 환경/비밀 저장소에서만 읽는다. 화면은 설정 여부만 표시한다.
 - 만료 작업은 참조 row를 삭제하지 않고 질의 payload 비식별화와 응답 원문 삭제를 수행하며 hash·근거·인용·호출 메타데이터와 처리 감사를 보존한다.
 
+## 2026-07-15. 제한형 AI provider adapter와 응답 근거 검증
+
+- provider 계약은 `invoke(payload)` 중립 인터페이스로 고정하고 fake, recording, callable 호환, 제한형 JSON 네트워크 adapter를 분리한다. 기본 adapter mode는 `DISABLED`다.
+- 네트워크 adapter는 `environment=test`, `NETWORK_TEST` mode, 별도 test-scope switch, HTTPS endpoint, 환경 변수 자격증명을 모두 요구한다. 이 조건은 운영 provider 활성 승인을 대신하지 않는다.
+- provider-bound payload는 정제 질의, 승인된 최소 발췌, 안정 candidate/source/version/trace ID, content hash, 순위, prompt version과 허용 JSON 출력 형식만 포함한다.
+- 응답은 완전한 제한 크기 JSON, claim별 기존 citation ID, 중복 없는 claim/citation 구조를 요구한다. 숫자, 핵심 토큰 겹침, 부정 극성 규칙으로 claim과 summary를 근거 발췌에 대조하며 provider 모델의 자기평가만으로 승인하지 않는다.
+- 근거 없음, 상충, 낮은 의미 확신, 호출 중 승인·원천 상태·열람 권한 변경은 실패 문구를 생성하지 않고 `INSUFFICIENT_EVIDENCE` 정상 보류로 다룬다. 낮은 확신은 사람 검토 필요 상태를 함께 반환한다.
+- timeout, 429, 5xx만 제한 횟수까지 재시도하고 각 시도를 같은 `query_id`의 `ai_call_attempts`로 남긴다. 불완전 JSON, 과대 응답, prompt injection, 중복 인용은 재시도하지 않고 본문 전체를 폐기한다.
+- provider 장애와 검증 보류는 문서, FieldComment, 작업순서, 보고서와 로컬 저장 흐름에 영향을 주지 않는다. 외부 호출 없는 후보 재생성·ground-truth 평가는 계속 동작한다.
+
 ## 2026-07-13. controlled copy는 짧은 만료의 1회성 인증 스트리밍 사용
 
 - 사내 서버 운영의 controlled copy는 일반 정적 파일 URL이나 로컬 원본 복사가 아니라 기본 60초의 1회성 티켓 발급 후 인증 스트리밍으로 제공한다.

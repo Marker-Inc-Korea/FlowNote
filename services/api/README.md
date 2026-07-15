@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-07-14 현재 `app/api/v1/router.py`에 등록된 라우터 기준이다. 외부 AI API는 운영 provider 구현이 아니라 기본 비활성 안전장치·감사 경계이며, controlled copy는 서버에 저장된 현재 공개 버전만 1회 스트리밍한다.
+이 목록은 2026-07-15 현재 `app/api/v1/router.py`에 등록된 라우터 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy는 서버에 저장된 현재 공개 버전만 1회 스트리밍한다.
 
 ## Current API
 
@@ -51,6 +51,10 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/field-comments` | FieldComment list |
 | GET | `/api/v1/field-comments/{comment_id}` | FieldComment detail |
 | PATCH | `/api/v1/field-comments/{comment_id}` | Review/analyze FieldComment |
+| POST | `/api/v1/field-comments/bulk-review` | Bulk assignment, due date, and review-state update |
+| GET | `/api/v1/field-comments/{comment_id}/audit` | Review audit snapshots with source hash |
+| GET | `/api/v1/field-comments/quality-workbench` | Stale, weak-evidence, and missing-source review workbench |
+| GET | `/api/v1/field-comments/quality-metrics` | Status, signal, actor, line, error, and report-link quality metrics |
 | POST | `/api/v1/field-comments/{comment_id}/attachments` | Attachment create; optional multipart `idempotencyKey` returns the existing attachment on retry |
 | GET | `/api/v1/field-comments/{comment_id}/attachments` | Attachment list |
 | GET | `/api/v1/documents/{document_id}/field-comments` | FieldComments by document |
@@ -84,9 +88,28 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/ai-search/candidates/rebuild` | Rebuild traceable AI search evidence candidates |
 | GET | `/api/v1/ai-search/candidates` | List AI search evidence candidates |
 | GET | `/api/v1/ai-search/quality` | Candidate counts, exclusion reasons, and FieldComment review readiness |
+| POST | `/api/v1/ai-search/ground-truth-cases` | Save a human-approved scoped regression question |
+| GET | `/api/v1/ai-search/ground-truth-cases` | List active approved questions for the current scope |
+| GET | `/api/v1/ai-search/readiness` | Read scoped evidence, ground-truth, regression, and stability readiness |
 | POST | `/api/v1/ai-search/evaluations` | Persist offline ground-truth evidence, exclusion, and ranking regression results |
 | POST | `/api/v1/ai/queries` | Create an evidence search/summary request through the disabled-by-default safety boundary |
 | GET | `/api/v1/ai/queries/{query_id}` | Read sanitized AI query status and evidence snapshot |
+| GET | `/api/v1/ai-operations/approvals` | List scoped external-transfer approvals (`system-admin`) |
+| POST | `/api/v1/ai-operations/approvals` | Create a scoped external-transfer approval (`system-admin`) |
+| POST | `/api/v1/ai-operations/approvals/{approval_id}/revoke` | Revoke an approval immediately |
+| GET | `/api/v1/ai-operations/prompts` | List immutable prompt versions |
+| POST | `/api/v1/ai-operations/prompts` | Create an immutable prompt version |
+| POST | `/api/v1/ai-operations/prompts/{prompt_version_id}/review` | Mark a draft prompt reviewed |
+| POST | `/api/v1/ai-operations/prompts/{prompt_version_id}/approve` | Approve a reviewed prompt |
+| POST | `/api/v1/ai-operations/prompts/{prompt_version_id}/activate` | Activate an approved prompt and retire the previous active version for the purpose |
+| POST | `/api/v1/ai-operations/prompts/{prompt_version_id}/retire` | Retire a prompt version |
+| GET | `/api/v1/ai-operations/policies` | Read global/site kill switch, limits, retention, and export policy |
+| PUT | `/api/v1/ai-operations/policies` | Update global/site kill switch, limits, retention, and export policy |
+| GET | `/api/v1/ai-operations/audit/queries` | Read sanitized query/evidence/citation/call metadata |
+| GET | `/api/v1/ai-operations/audit/events` | Read AI operational change events |
+| GET | `/api/v1/ai-operations/audit/export` | Export policy-controlled sanitized query audit CSV |
+| POST | `/api/v1/ai-operations/retention/run` | Manually redact expired query payloads and delete expired response text |
+| GET | `/api/v1/ai-operations/retention/audit` | Read retention processing metadata |
 
 ## Auth
 
@@ -129,6 +152,13 @@ Useful settings:
 - `FLOWNOTE_AI_SITE_SCOPE`: default `DEFAULT`
 - `FLOWNOTE_AI_PROVIDER_EXCERPT_MAX_CHARS`: default `600`, constrained to `100`-`4000`
 - `FLOWNOTE_AI_PROVIDER_MAX_SOURCES`: default `12`, constrained to `1`-`100`
+- `FLOWNOTE_AI_PROVIDER_ADAPTER_MODE`: default `DISABLED`; `FAKE` 또는 명시적 시험용 `NETWORK_TEST`만 허용
+- `FLOWNOTE_AI_FAKE_SCENARIOS`: default `SUCCESS`; fake adapter 결정적 시나리오 목록
+- `FLOWNOTE_AI_PROVIDER_ENDPOINT`: `NETWORK_TEST` 전용 HTTPS JSON endpoint
+- `FLOWNOTE_AI_NETWORK_TEST_SCOPE_ENABLED`: default `false`; `environment=test`와 함께 있어야 네트워크 adapter 생성
+- `FLOWNOTE_AI_NETWORK_TIMEOUT_SECONDS`: default `30`, constrained to `1`-`120`
+- `FLOWNOTE_AI_PROVIDER_MAX_ATTEMPTS`: default `3`, constrained to `1`-`5`; timeout, 429, 5xx만 재시도
+- `FLOWNOTE_AI_PROVIDER_RESPONSE_MAX_BYTES`: default `65536`, constrained to `1024`-`1048576`
 
 ## Verification
 
@@ -137,8 +167,8 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-07-15, the collected FastAPI test count is 101. `scripts/verify-preserved-tests.ps1` fixes the same collection baseline and verifies the generated JUnit counts. The complete Windows baseline also runs WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID; a FastAPI-only run is partial evidence.
+As of 2026-07-15, the FastAPI suite collects and passes 116 tests. `scripts/verify-preserved-tests.ps1` uses the same 116-test collection and JUnit baseline. The complete Windows baseline also runs WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID; a FastAPI-only run is partial evidence.
 
-The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no policy-management API or network provider client in the current router.
+The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no management API for that sensitive-data policy. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission.
 
 Test SQLite DBs, logs, upload files, and generated sample files are preserved unless the user explicitly asks to delete them.
