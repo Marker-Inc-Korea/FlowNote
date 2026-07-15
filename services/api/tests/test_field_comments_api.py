@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from app.core.config import Settings
-from app.db.models import FieldComment, FieldCommentAttachment, FileObject
+from app.db.init_db import hash_password_for_dev
+from app.db.models import FieldComment, FieldCommentAttachment, FileObject, UserAccount
 from app.main import create_app
 
 
@@ -34,6 +35,26 @@ def auth_headers(client: TestClient) -> dict[str, str]:
         "/api/v1/auth/login",
         json={"username": "admin", "password": "1234"},
     )
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def create_role_headers(client: TestClient, role: str) -> dict[str, str]:
+    suffix = uuid4().hex[:10]
+    username = f"field-comment-{role}-{suffix}"
+    with client.app.state.database.session() as session:
+        session.add(UserAccount(
+            user_id=f"user-{suffix}",
+            username=username,
+            login_id=username,
+            display_name=f"FieldComment {role}",
+            role=role,
+            password_hash=hash_password_for_dev("1234"),
+            is_active=True,
+            status="ACTIVE",
+        ))
+        session.commit()
+    response = client.post("/api/v1/auth/login", json={"username": username, "password": "1234"})
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
@@ -114,6 +135,7 @@ def test_create_list_and_review_field_comment() -> None:
                 "normalizedContent": "Field issue normalized for manager review.",
                 "analysisContent": "Repeated field comment should be checked against the work standard.",
                 "analyzedBy": "user-admin",
+                "transitionReason": "관리자 분석 완료",
             },
         )
         assert review_response.status_code == 200, review_response.text
@@ -125,6 +147,192 @@ def test_create_list_and_review_field_comment() -> None:
         )
         assert reviewed["analyzed_by"] == "user-admin"
         assert reviewed["analyzed_at"] is not None
+
+        audit_response = client.get(
+            f"/api/v1/field-comments/{created['comment_id']}/audit",
+            headers=headers,
+        )
+        assert audit_response.status_code == 200, audit_response.text
+        audit = audit_response.json()[-1]
+        assert audit["before_snapshot"]["status"] == "NEW"
+        assert audit["after_snapshot"]["status"] == "ANALYZED"
+        assert audit["before_snapshot"]["source_hash_sha256"] == created["source_hash_sha256"]
+        assert audit["after_snapshot"]["source_hash_sha256"] == created["source_hash_sha256"]
+
+
+def test_field_comment_transition_policy_rejects_skip_and_requires_reason() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        created = client.post(
+            "/api/v1/field-comments",
+            headers=headers,
+            json={
+                "documentId": document["document_id"],
+                "documentVersionId": document["latest_version"]["version_id"],
+                "rawContent": "상태 전이 정책 검증",
+                "authorId": "user-admin",
+            },
+        ).json()
+
+        skipped = client.patch(
+            f"/api/v1/field-comments/{created['comment_id']}",
+            headers=headers,
+            json={
+                "status": "SELECTED",
+                "normalizedContent": "정리",
+                "analysisContent": "분석",
+                "transitionReason": "바로 선정 시도",
+            },
+        )
+        assert skipped.status_code == 409
+
+        no_reason = client.patch(
+            f"/api/v1/field-comments/{created['comment_id']}",
+            headers=headers,
+            json={"status": "ANALYZED", "analysisContent": "분석"},
+        )
+        assert no_reason.status_code == 422
+
+
+def test_bulk_review_preserves_source_and_quality_metrics_are_available() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        comments = []
+        for index in range(2):
+            response = client.post(
+                "/api/v1/field-comments",
+                headers=headers,
+                json={
+                    "documentId": document["document_id"],
+                    "documentVersionId": document["latest_version"]["version_id"],
+                    "rawContent": f"일괄 분석 원문 {index}",
+                    "authorId": "user-admin",
+                    "signalLevel": "YELLOW",
+                    "locationCode": "line-b",
+                    "category": "quality",
+                },
+            )
+            assert response.status_code == 201
+            comments.append(response.json())
+
+        for item in comments:
+            prepared = client.patch(
+                f"/api/v1/field-comments/{item['comment_id']}",
+                headers=headers,
+                json={"analysisContent": "공통 분석 내용"},
+            )
+            assert prepared.status_code == 200
+
+        bulk = client.post(
+            "/api/v1/field-comments/bulk-review",
+            headers=headers,
+            json={
+                "commentIds": [item["comment_id"] for item in comments],
+                "status": "ANALYZED",
+                "assignedTo": "user-admin",
+                "transitionReason": "일괄 분석 처리",
+            },
+        )
+        assert bulk.status_code == 200, bulk.text
+        for before, after in zip(comments, bulk.json(), strict=True):
+            assert after["status"] == "ANALYZED"
+            assert after["raw_content"] == before["raw_content"]
+            assert after["source_hash_sha256"] == before["source_hash_sha256"]
+
+        filtered = client.get(
+            "/api/v1/field-comments",
+            headers=headers,
+            params={"assignedTo": "user-admin", "hasAttachments": False, "reportLinked": False},
+        )
+        assert filtered.status_code == 200
+        assert all(item["assigned_to"] == "user-admin" for item in filtered.json())
+
+        metrics = client.get("/api/v1/field-comments/quality-metrics", headers=headers)
+        assert metrics.status_code == 200, metrics.text
+        assert metrics.json()["status_distribution"]["ANALYZED"] >= 2
+        assert metrics.json()["line_distribution"]["line-b"] >= 2
+
+        workbench = client.get("/api/v1/field-comments/quality-workbench", headers=headers)
+        assert workbench.status_code == 200, workbench.text
+
+
+def test_field_comment_source_fields_are_immutable_in_database() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        created = client.post(
+            "/api/v1/field-comments",
+            headers=headers,
+            json={"documentId": document["document_id"], "rawContent": "불변 원문"},
+        ).json()
+
+        with client.app.state.database.session() as session:
+            note = session.scalar(select(FieldComment).where(FieldComment.comment_id == created["comment_id"]))
+            assert note is not None
+            note.raw_content = "변경 시도"
+            try:
+                session.commit()
+            except ValueError as exc:
+                assert "immutable" in str(exc)
+                session.rollback()
+            else:
+                raise AssertionError("FieldComment source update must be rejected")
+
+        unchanged = client.get(
+            f"/api/v1/field-comments/{created['comment_id']}", headers=headers
+        ).json()
+        assert unchanged["raw_content"] == "불변 원문"
+        assert unchanged["source_hash_sha256"] == created["source_hash_sha256"]
+
+
+def test_field_comment_review_roles_separate_analysis_and_decision() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        admin_headers = auth_headers(client)
+        viewer_headers = create_role_headers(client, "viewer")
+        foreman_headers = create_role_headers(client, "line-foreman")
+        created = client.post(
+            "/api/v1/field-comments",
+            headers=admin_headers,
+            json={
+                "documentId": document["document_id"],
+                "documentVersionId": document["latest_version"]["version_id"],
+                "rawContent": "권한 분리 원문",
+            },
+        ).json()
+
+        denied_viewer = client.patch(
+            f"/api/v1/field-comments/{created['comment_id']}",
+            headers=viewer_headers,
+            json={"status": "ANALYZED", "analysisContent": "분석", "transitionReason": "viewer 분석"},
+        )
+        assert denied_viewer.status_code == 403
+
+        analyzed = client.patch(
+            f"/api/v1/field-comments/{created['comment_id']}",
+            headers=foreman_headers,
+            json={
+                "status": "ANALYZED",
+                "normalizedContent": "정리 내용",
+                "analysisContent": "반장 분석 내용",
+                "transitionReason": "반장 분석 완료",
+            },
+        )
+        assert analyzed.status_code == 200, analyzed.text
+
+        denied_decision = client.patch(
+            f"/api/v1/field-comments/{created['comment_id']}",
+            headers=foreman_headers,
+            json={
+                "status": "REVIEWED",
+                "normalizedContent": "정리 내용",
+                "analysisContent": "반장 분석 내용",
+                "transitionReason": "반장 검토 시도",
+            },
+        )
+        assert denied_decision.status_code == 403
 
 
 def test_field_comment_idempotency_key_returns_existing_note() -> None:

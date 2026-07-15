@@ -1640,7 +1640,9 @@ try
         (Login: memberLogin, DeviceId: "device-line-a-02", Location: "line-a", Signal: "green", Memo: "조원 A-1 기록: 사진 기준 위치와 실제 클램프 방향 일치."),
         (Login: memberA2Login, DeviceId: "device-line-a-03", Location: "line-a", Signal: "yellow", Memo: "조원 A-2 기록: 소재 대기 중 짧은 보류 발생, 다음 조에 전달 필요."),
         (Login: leadB1Login, DeviceId: "device-line-b-lead-01", Location: "line-b", Signal: "red", Memo: "조장 B-1 확인: 동일 품목 전환 시 센서 재영점 절차 누락 위험."),
-        (Login: memberB1Login, DeviceId: "device-line-b-02", Location: "line-b", Signal: "green", Memo: "조원 B-1 기록: 재영점과 1회 재작업 후 첫 제품 외관 이상 없음.")
+        (Login: memberB1Login, DeviceId: "device-line-b-02", Location: "line-b", Signal: "green", Memo: "조원 B-1 기록: 재영점과 1회 재작업 후 첫 제품 외관 이상 없음."),
+        (Login: managerLogin, DeviceId: "device-line-b-manager", Location: "line-b", Signal: "red", Memo: "관리자 품질 이상 확인: 첫 제품 치수 편차가 관리 기준을 벗어나 검사 보류."),
+        (Login: memberA2Login, DeviceId: "device-line-b-proxy", Location: "line-b", Signal: "yellow", Memo: "오입력 확인: 다른 작업번호를 선택해 등록했으므로 관리자 제외 필요.")
     };
     var humanLikeComments = new List<string>();
     foreach (var activity in humanActors)
@@ -1733,7 +1735,32 @@ try
             """,
             ("$excluded_comment", excludedAiComment.CommentId),
             ("$archived_comment", archivedAiComment.CommentId));
+        ExecuteNonQuery(
+            aiReadinessConnection,
+            """
+            UPDATE field_comments
+            SET status = 'EXCLUDED',
+                normalized_content = '작업번호 오입력으로 제외',
+                analysis_content = '원문은 보존하고 관리자 해석 영역에서 오입력으로 판정함',
+                last_transition_reason = '스모크 오입력 제외 검증'
+            WHERE comment_id = $comment_id;
+            """,
+            ("$comment_id", humanLikeComments[7]));
     }
+    var smokeLineDistribution = humanActors.GroupBy(item => item.Location).ToDictionary(group => group.Key, group => group.Count());
+    var smokeActorDistribution = humanActors.GroupBy(item => item.Login.DisplayName ?? item.Login.LoginId ?? "현장 사용자")
+        .ToDictionary(group => group.Key, group => group.Count());
+    Require(smokeLineDistribution["line-a"] == smokeLineDistribution["line-b"],
+        "FieldComment quality smoke should balance line-a and line-b cases");
+    Require(smokeActorDistribution.Values.Max() - smokeActorDistribution.Values.Min() <= 1,
+        "FieldComment quality smoke actor distribution should not be materially skewed");
+    services.History.Record(
+        "field_comment.quality_bias_checked",
+        managerLogin.DisplayName,
+        "field_comment",
+        humanLikeComments[0],
+        aiEvidenceDocument.Title,
+        $"FieldComment 편향 점검: 상태=NEW/ANALYZED/REVIEWED/SELECTED/EXCLUDED, 신호등=green/yellow/red, 라인={string.Join(',', smokeLineDistribution.Select(item => $"{item.Key}:{item.Value}"))}, actor최대편차={smokeActorDistribution.Values.Max() - smokeActorDistribution.Values.Min()}, 오류유형=정상/보류/재작업/안전우려/품질이상/오입력");
     foreach (var reviewedCommentId in humanLikeComments.Skip(1).Take(4))
     {
         services.History.Record(
@@ -2627,7 +2654,8 @@ try
                 "서버 재시도 큐가 FieldComment 정리 내용을 PATCH로 반영함.",
                 "검토 상태 변경이 서버 field_comments와 AI 준비도 기준에 누적되는지 확인한다.",
                 "ANALYZED",
-                smokeActorName);
+                smokeActorName,
+                "스모크 분석 검증");
             var queuedReviewSyncResult = await services.ServerSync.QueueAndTrySyncFieldCommentReviewAsync(
                 reviewedQueuedFieldComment,
                 serverDocuments,

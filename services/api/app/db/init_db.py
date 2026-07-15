@@ -252,6 +252,24 @@ def _ensure_idempotency_columns(database: Database) -> None:
             )
 
 
+def _ensure_field_comment_review_columns(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+    columns = {
+        "assigned_to": "VARCHAR(64)",
+        "review_due_at": "DATETIME",
+        "last_transition_reason": "TEXT",
+        "selected_at": "DATETIME",
+    }
+    with database.engine.begin() as connection:
+        existing = {row[1] for row in connection.execute(text("PRAGMA table_info(field_comments)"))}
+        if not existing:
+            return
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE field_comments ADD COLUMN {name} {definition}"))
+
+
 def _ensure_auth_session_device_column(database: Database) -> None:
     if not database.database_url.startswith("sqlite"):
         return
@@ -485,6 +503,7 @@ def initialize_database(database: Database) -> None:
     _ensure_user_account_columns(database)
     _ensure_user_account_role_constraint(database)
     _ensure_idempotency_columns(database)
+    _ensure_field_comment_review_columns(database)
     _ensure_terminal_device_schema(database)
     _ensure_auth_session_device_column(database)
     _ensure_document_access_log_reason_column(database)

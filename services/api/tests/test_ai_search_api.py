@@ -832,6 +832,17 @@ def test_ai_search_quality_reports_field_comment_review_readiness_gap() -> None:
         )
         assert quality["excluded_reason_guidance"]["field_comment_without_content"]["operator_action"]
 
+        analyze_response = client.patch(
+            f"/api/v1/field-comments/{seeded['new_comment_id']}",
+            headers=headers,
+            json={
+                "status": "ANALYZED",
+                "normalizedContent": "Reviewed comment now contributes to readiness.",
+                "analysisContent": "Manager review should change AI search quality counts.",
+                "transitionReason": "AI 준비도 분석 완료",
+            },
+        )
+        assert analyze_response.status_code == 200, analyze_response.text
         review_response = client.patch(
             f"/api/v1/field-comments/{seeded['new_comment_id']}",
             headers=headers,
@@ -839,7 +850,7 @@ def test_ai_search_quality_reports_field_comment_review_readiness_gap() -> None:
                 "status": "REVIEWED",
                 "normalizedContent": "Reviewed comment now contributes to readiness.",
                 "analysisContent": "Manager review should change AI search quality counts.",
-                "reviewedBy": "user-admin",
+                "transitionReason": "AI 준비도 검토 완료",
             },
         )
         assert review_response.status_code == 200, review_response.text

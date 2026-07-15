@@ -188,6 +188,15 @@ public sealed record ServerFieldCommentReviewRequest
     [JsonPropertyName("analyzedBy")]
     public string? AnalyzedBy { get; init; }
 
+    [JsonPropertyName("assignedTo")]
+    public string? AssignedTo { get; init; }
+
+    [JsonPropertyName("reviewDueAt")]
+    public DateTime? ReviewDueAt { get; init; }
+
+    [JsonPropertyName("transitionReason")]
+    public string TransitionReason { get; init; } = "WPF 관리자 검토 동기화";
+
     public static ServerFieldCommentReviewRequest FromLocal(
         FieldCommentRecord fieldComment,
         string? actorId = null)
@@ -203,7 +212,10 @@ public sealed record ServerFieldCommentReviewRequest
                 : null,
             AnalyzedBy = status is "ANALYZED" or "REVIEWED" or "SELECTED"
                 ? Clean(actorId)
-                : null
+                : null,
+            AssignedTo = Clean(fieldComment.AssignedTo),
+            ReviewDueAt = fieldComment.ReviewDueAt,
+            TransitionReason = Clean(fieldComment.LastTransitionReason) ?? "WPF 관리자 검토 동기화"
         };
     }
 

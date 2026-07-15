@@ -30,8 +30,8 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
 2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 3. 실행 전 `git status --porcelain=v1 --untracked-files=all`과 `git ls-files`에서 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-4. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 98개인지 확인한다.
-5. FastAPI pytest 98건을 실행하고 실행 ID별 JUnit을 보존한다.
+4. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 101개인지 확인한다.
+5. FastAPI pytest 101건을 실행하고 실행 ID별 JUnit을 보존한다.
 6. WPF Core 테스트를 실행하고 TRX를 보존한다.
 7. WPF 앱을 빌드한다.
 8. `5184` 포트에 서버가 없으면 누적 `flownote.windows-smoke.sqlite3`와 `storage/windows-smoke`를 쓰는 FastAPI를 시작하고, 같은 실행 ID로 WPF 통합 스모크를 실행한다.

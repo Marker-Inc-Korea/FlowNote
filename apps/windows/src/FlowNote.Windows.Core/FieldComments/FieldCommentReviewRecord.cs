@@ -19,6 +19,8 @@ public sealed record FieldCommentReviewRecord(
     string EntrySource,
     string? DeviceId,
     string? LocationCode,
+    string? AssignedTo,
+    DateTime? ReviewDueAt,
     string Status,
     int AttachmentCount,
     DateTime CreatedAt,

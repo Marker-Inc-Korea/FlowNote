@@ -19,4 +19,7 @@ public sealed record FieldCommentRecord(
     string? LocationCode,
     string Status,
     DateTime CreatedAt,
-    DateTime? SyncedAt);
+    DateTime? SyncedAt,
+    string? AssignedTo,
+    DateTime? ReviewDueAt,
+    string? LastTransitionReason);
