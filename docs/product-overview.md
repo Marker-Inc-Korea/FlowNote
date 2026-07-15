@@ -32,7 +32,7 @@ FlowNote는 생산공장 현장의 문서와 현장 경험을 함께 남기는 �
 - 임시 비밀번호 로그인 후 WPF 비밀번호 변경 강제, 변경 완료 시 기존 세션 폐기와 새 비밀번호 재로그인
 - AI 자동 조언 전 단계의 근거 검색 후보 재생성, 목록 조회, 품질 점검, 오프라인 ground-truth 회귀 평가, WPF 운영 점검 화면
 - FastAPI 외부 AI 질의 생성·조회, 기능 플래그·승인·목적·프롬프트, 원천 권한·민감정보·최소 payload provider adapter, 근거 snapshot·인용·의미 일치·호출 후 재검증과 감사 모델. generic 네트워크 adapter는 명시적 test scope 전용이며 provider별 운영 연동은 미구현
-- FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/내보내기, 만료 보존 수동 실행
+- FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/내보내기, 만료 보존 즉시 실행. 서버는 같은 보존 처리를 설정 주기로 자동 실행한다.
 - 관리자 파일 감시 후보와 버전 확정
 - FastAPI 인증, 승인 단말, 문서, controlled copy, FieldComment, 첨부, 접근 로그, 태그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가와 외부 AI 안전장치 API
 - WPF MSI 패키징 스크립트와 FastAPI 작업 스케줄러 등록/관리 스크립트
@@ -58,6 +58,8 @@ Android 현장 단말 앱과 Windows 채널/인수인계 전용 화면은 현재
 ## 배포 방향
 
 초기 운영은 서버 PC 1대에 FastAPI 서버, SQLite DB, 로컬 `storage/` 폴더를 두고, 관리자/현장 PC에는 Windows WPF 클라이언트를 설치하는 방식이다. Android 앱은 승인된 현장용 단말을 대상으로 추가하며, 개인 휴대폰 기본 배포는 초기 기준이 아니다. 현재 저장소에는 WPF MSI 패키징 스크립트와 FastAPI 작업 스케줄러 등록/관리 스크립트가 있다. Android에는 FieldComment와 사진 첨부 전용 SQLite outbox와 재전송 정책이 구현되어 있다. 채널 알림의 초기 전달 방식은 외부 인터넷에 의존하지 않는 사내망 HTTPS 전경 polling으로 확정되어 있다. Android 운영 설치·서명, MDM, 사내 Wi-Fi/인증서, 백그라운드 알림 정책과 outbox 암호화 정책은 현장 보안 기준에 맞춰 후속 확정한다. 클라우드, 외부 접근, PostgreSQL, NAS, MES/ERP 어댑터는 현장 요구가 확인된 뒤 확장한다.
+
+운영 배포 완료 판정은 코드와 자동 테스트만으로 내리지 않는다. 깨끗한 Windows 서버/클라이언트, 승인 Android 단말과 고객 유사 네트워크에서 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 설치, 인증서, 단말 교체, 백업 복구, 역할별 업무, 중단/rollback 기준을 단일 `run_id`로 통과해야 한다.
 
 ## 제외 범위
 

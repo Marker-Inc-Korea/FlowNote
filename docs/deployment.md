@@ -141,6 +141,10 @@ FLOWNOTE_AI_PROVIDER=UNCONFIGURED
 FLOWNOTE_AI_MODEL=UNCONFIGURED
 FLOWNOTE_AI_CUSTOMER_SCOPE=DEFAULT
 FLOWNOTE_AI_SITE_SCOPE=DEFAULT
+FLOWNOTE_AI_PROVIDER_ADAPTER_MODE=DISABLED
+FLOWNOTE_AI_NETWORK_TEST_SCOPE_ENABLED=false
+FLOWNOTE_AI_RETENTION_SCHEDULER_ENABLED=true
+FLOWNOTE_AI_RETENTION_SCHEDULER_INTERVAL_SECONDS=3600
 ```
 
 AI 항목은 provider adapter 안전장치와 운영 제어면의 scope 설정이다. 운영 `.env`에서는 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`, `FLOWNOTE_AI_PROVIDER_ADAPTER_MODE=DISABLED`, `FLOWNOTE_AI_NETWORK_TEST_SCOPE_ENABLED=false`를 유지한다. generic 네트워크 adapter는 `environment=test`와 `NETWORK_TEST`, 명시 시험 scope, HTTPS endpoint, 환경 변수 자격증명을 모두 요구하므로 운영 배포에서 활성화할 수 없다. provider/model/scope 값이나 provider 자격증명 설정 여부는 기능 활성 허가가 아니다. 후보 read model API와 `system-admin` 전용 운영 제어 API는 호출 플래그와 무관하게 동작한다. provider 자격증명은 `FLOWNOTE_AI_<PROVIDER>_API_KEY` 형식의 서버 환경/비밀 저장소에만 두고 DB·문서·클라이언트 설정에 기록하지 않는다.
@@ -436,6 +440,8 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | 서버 | `FLOWNOTE_AI_CUSTOMER_SCOPE`, `FLOWNOTE_AI_SITE_SCOPE` | 외부 전송 승인을 찾는 고객/현장 scope. 기본 `DEFAULT` |
 | 서버 | `FLOWNOTE_AI_PROVIDER_EXCERPT_MAX_CHARS` | provider source 한 건의 최대 발췌 길이. 기본 600자 |
 | 서버 | `FLOWNOTE_AI_PROVIDER_MAX_SOURCES` | 질의 한 건의 provider 최대 근거 수. 기본 12건 |
+| 서버 | `FLOWNOTE_AI_RETENTION_SCHEDULER_ENABLED` | 만료 질의 payload 비식별화와 저장 응답 원문 삭제 스케줄러. 기본 `true` |
+| 서버 | `FLOWNOTE_AI_RETENTION_SCHEDULER_INTERVAL_SECONDS` | 자동 보존 실행 간격. 기본 3600초, 허용 60~86400초 |
 | WPF | `FLOWNOTE_LOCAL_DATA_DIR` | `C:\FlowNote\LocalData`처럼 DB와 `Files\`를 함께 둘 폴더 |
 | WPF | `FLOWNOTE_LOCAL_DATABASE_PATH` | 특정 DB 파일을 직접 지정할 때만 사용. 지정 시 `FLOWNOTE_LOCAL_DATA_DIR`보다 DB 경로 우선 |
 | WPF | `FLOWNOTE_API_BASE_URL` | 서버 PC 주소. 예: `http://192.168.0.10:5184` |
@@ -454,7 +460,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`인지 확인한다. 현재 코드는 운영 provider 연동 완료 상태가 아니다.
 - `system-admin`으로 WPF `AI 운영` 화면에 접속해 전역/현장 kill switch가 의도한 상태인지 확인한다. 외부 호출을 준비하지 않은 설치는 기능 플래그뿐 아니라 kill switch도 켠 상태를 유지한다.
 - 전송 승인과 활성 프롬프트가 시험 범위·만료일·목적·원천 유형에 맞는지 확인하고, 감사 CSV 내보내기는 현장 정책상 필요한 경우에만 허용한다.
-- 만료 보존 작업은 현재 자동 스케줄러가 아니라 `system-admin`의 API/WPF 수동 실행이므로 운영 주기와 담당자를 정한다.
+- 만료 보존 작업은 서버 시작과 함께 기본 1시간 간격 스케줄러가 실행한다. 운영 주기와 담당자를 정하고, 즉시 처리가 필요하면 `system-admin`의 API/WPF 실행 기능을 사용한다.
 - Windows 방화벽에서 클라이언트 PC가 접근할 포트 `5184`만 허용한다.
 - 실제 고객 파일, 운영 DB, 운영 비밀값을 Git 저장소 또는 배포 준비 폴더에 섞어 두지 않는다.
 
@@ -638,10 +644,14 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 후속 배포 과제
 
-- HTTPS 또는 사내망 접속 보호
-- 현장별 .NET/WebView2 설치 조합에서 self-contained MSI 실기 검증
-- 현장별 코드 서명 인증서 발급, 갱신, 폐기 운영 절차
+- 고객 유사 네트워크의 HTTPS, 방화벽, 서버 주소 변경과 시간 동기화 리허설
+- 현장별 .NET/WebView2 설치 조합에서 self-contained MSI 신규 설치·업그레이드·제거·rollback 실기 검증
+- 현장별 HTTPS·코드 서명 인증서 발급, 배포, 갱신, 폐기 운영 절차
+- Android 운영 서명 APK/AAB, MDM/승인 배포, 단말 분실·교체와 outbox 보호 정책 확정
+- 서버 DB+`storage`, WPF DB+`Files`를 별도 PC에서 복구하고 전후 개수·hash를 비교하는 훈련
 - PostgreSQL 전환 조건
+
+위 항목은 각각 따로 완료 처리하지 않고 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 단일 `run_id`와 완료 판정으로 묶는다. 실제 Windows PC, 승인 Android 단말, 고객 유사 네트워크와 운영 책임자가 없는 개발 환경에서는 `대기`로 유지한다.
 
 ## 검증 자동화
 
