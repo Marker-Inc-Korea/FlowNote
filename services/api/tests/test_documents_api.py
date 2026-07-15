@@ -556,6 +556,49 @@ def test_document_registration_idempotency_key_returns_existing_document() -> No
             assert saved_count == 1
 
 
+def test_document_version_idempotency_key_returns_existing_version() -> None:
+    pdf_path, _, _, _ = prepare_factory_sample_files()
+    idempotency_key = f"pytest:document-version:{uuid4().hex}"
+
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        with pdf_path.open("rb") as file:
+            document_response = client.post(
+                "/api/v1/documents",
+                headers=headers,
+                data={
+                    "title": "Idempotent version target",
+                    "documentType": "work_instruction",
+                    "changeReason": "Create version target.",
+                },
+                files={"file": (pdf_path.name, file, "application/pdf")},
+            )
+        assert document_response.status_code == 201, document_response.text
+        document_id = document_response.json()["document_id"]
+
+        responses = []
+        for reason in ("First version request.", "Duplicate version request."):
+            with pdf_path.open("rb") as file:
+                response = client.post(
+                    f"/api/v1/documents/{document_id}/versions",
+                    headers=headers,
+                    data={"changeReason": reason, "idempotencyKey": idempotency_key},
+                    files={"file": (pdf_path.name, file, "application/pdf")},
+                )
+            assert response.status_code == 201, response.text
+            responses.append(response.json())
+
+        assert responses[0]["version_id"] == responses[1]["version_id"]
+        assert responses[0]["version_no"] == responses[1]["version_no"] == 2
+        with client.app.state.database.session() as session:
+            count = session.scalar(
+                select(func.count()).select_from(DocumentVersion).where(
+                    DocumentVersion.idempotency_key == idempotency_key
+                )
+            )
+            assert count == 1
+
+
 def test_document_registration_rejects_unknown_user_reference() -> None:
     pdf_path, _, _, _ = prepare_factory_sample_files()
     stored_files_before = {

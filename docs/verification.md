@@ -30,8 +30,8 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
 2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 3. 실행 전 `git status --porcelain=v1 --untracked-files=all`과 `git ls-files`에서 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-4. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 96개인지 확인한다.
-5. FastAPI pytest 96건을 실행하고 실행 ID별 JUnit을 보존한다.
+4. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 98개인지 확인한다.
+5. FastAPI pytest 98건을 실행하고 실행 ID별 JUnit을 보존한다.
 6. WPF Core 테스트를 실행하고 TRX를 보존한다.
 7. WPF 앱을 빌드한다.
 8. `5184` 포트에 서버가 없으면 누적 `flownote.windows-smoke.sqlite3`와 `storage/windows-smoke`를 쓰는 FastAPI를 시작하고, 같은 실행 ID로 WPF 통합 스모크를 실행한다.
@@ -59,7 +59,7 @@ WPF 통합 스모크는 같은 실행 ID로 반장·조장·조원·문서관리
 
 마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. `wpf-smoke-database-evidence.json`에는 주요 테이블 실행 전후 통계, 오늘 문서 ID, 과거 기존 문서의 이전·신규 버전과 무결성 결과가 저장된다. 통제된 기준선은 실행마다 설정이 식별되는 관리형 FastAPI를 사용하므로 시작 전에 `5184` 포트를 비워야 한다. 해당 포트에 이미 건강한 서버가 있으면 환경 실패로 중단하고 외부 프로세스는 종료하지 않는다.
 
-한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. FastAPI JUnit의 tests 수는 96이어야 하고 failure/error는 0, WPF TRX와 Android JUnit도 failure 0이어야 한다. WPF·Android build 로그에는 build error가 없어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. FastAPI JUnit의 tests 수는 98이어야 하고 failure/error는 0, WPF TRX와 Android JUnit도 failure 0이어야 한다. WPF·Android build 로그에는 build error가 없어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
 
 ## 2026-07-15 Windows 통합 기준선 복구 준비
 

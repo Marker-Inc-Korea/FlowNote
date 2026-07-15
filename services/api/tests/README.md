@@ -40,6 +40,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-07-14 현재 FastAPI 테스트 수집 기준은 96개이다. 저장소 루트의 `scripts/verify-preserved-tests.ps1`도 96개를 고정 기대하므로, 테스트를 추가하거나 제거할 때는 의도된 변경인지 확인한 뒤 이 문서와 스크립트의 기준선을 함께 갱신한다. 수집 기준선 일치와 FastAPI 전체 pytest 통과를 확인하며, WPF 빌드, WPF 스모크와 Git 산출물 점검을 포함한 전체 표준 검증은 저장소 루트에서 해당 스크립트를 실행해 별도로 확인한다.
+2026-07-15 현재 FastAPI 테스트 수집 기준은 98개이다. 저장소 루트의 `scripts/verify-preserved-tests.ps1`도 98개를 고정 기대하고 생성한 JUnit의 tests/failure/error 수를 다시 검사하므로, 테스트를 추가하거나 제거할 때는 의도된 변경인지 확인한 뒤 이 문서와 스크립트의 기준선을 함께 갱신한다. 수집 기준선 일치와 FastAPI 전체 pytest 통과를 확인하며, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 Git 산출물 점검을 포함한 전체 표준 검증은 Windows 기준 환경에서 저장소 루트의 해당 스크립트로 별도 확인한다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.

@@ -50,9 +50,10 @@ public partial class HistoryWindow : Window
         SyncQueueGrid.ItemsSource = items;
 
         var summary = serverSync.GetQueueSummary();
+        var metrics = serverSync.GetOperationalMetrics();
         var firstAction = items.FirstOrDefault(item => item.Status != "SYNCED")?.OperatorAction ?? "조치할 항목이 없습니다.";
         SyncQueueSummaryTextBlock.Text =
-            $"전체 {summary.Total}건(목록 {items.Count}건 표시), 대기 {summary.Pending}건, 실패 {summary.Failed}건, 보류 {summary.Held}건, 완료 {summary.Synced}건. 먼저 처리: {firstAction} 로컬 데이터는 삭제되지 않습니다.";
+            $"전체 {summary.Total}건(목록 {items.Count}건 표시), 처리 대기 {metrics.QueueDepth}건, 최장 대기 {metrics.OldestWaitingText}, 최근 1시간 처리 {metrics.SyncedLastHour}건, 실패 분포: {metrics.FailureDistributionText}. 먼저 처리: {firstAction} 로컬 데이터는 삭제되지 않습니다.";
     }
 
     private void RefreshButton_Click(object sender, RoutedEventArgs e)
@@ -85,6 +86,7 @@ public partial class HistoryWindow : Window
         int StatusOrder,
         int Priority,
         string PriorityText,
+        string OperationalState,
         string Category,
         string EntityText,
         string ActionText,
@@ -103,6 +105,7 @@ public partial class HistoryWindow : Window
                 FormatStatusOrder(record.Status),
                 diagnosis.Priority,
                 diagnosis.PriorityText,
+                diagnosis.OperationalState,
                 diagnosis.Category,
                 $"{FormatEntityType(record.EntityType)} / {record.EntityId}",
                 FormatAction(record.Action),

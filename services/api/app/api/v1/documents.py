@@ -733,6 +733,14 @@ def publish_document_version(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document version not found.")
 
     document, version = row
+    if (
+        document.status == "PUBLISHED"
+        and document.published_version_id == version.version_id
+        and version.is_published
+        and version.version_status == "PUBLISHED"
+    ):
+        return _document_response(session, document)
+
     previous_document_status = document.status
     previous_published_version_id = document.published_version_id
     now = datetime.now(timezone.utc)
@@ -798,16 +806,36 @@ async def create_document_version(
     _current_user: DocumentWriteUser,
     version_label: Annotated[str | None, Form(alias="versionLabel")] = None,
     created_by: Annotated[str | None, Form(alias="createdBy")] = None,
+    idempotency_key: Annotated[str | None, Form(alias="idempotencyKey")] = None,
     app_settings: Annotated[Settings, Depends(get_settings)] = None,
     session: Annotated[Session, Depends(get_db_session)] = None,
 ) -> DocumentVersionResponse:
     change_reason = _validate_change_reason(change_reason)
     created_by = _validate_user_id(session, _clean_optional(created_by), "createdBy")
+    idempotency_key = _clean_idempotency_key(idempotency_key)
     document = session.scalar(
         select(Document).where(Document.document_id == document_id, Document.deleted_at.is_(None))
     )
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+
+    if idempotency_key is not None:
+        existing = session.scalar(
+            select(DocumentVersion).where(DocumentVersion.idempotency_key == idempotency_key)
+        )
+        if existing is not None:
+            if existing.document_id != document_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="idempotencyKey is already used by another document.",
+                )
+            existing_file = session.get(FileObject, existing.file_object_id)
+            if existing_file is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotent document version has no file object.",
+                )
+            return _version_response(existing, existing_file)
 
     latest_version_no = session.scalar(
         select(DocumentVersion.version_no)
@@ -843,6 +871,7 @@ async def create_document_version(
 
     version = DocumentVersion(
         version_id=version_id,
+        idempotency_key=idempotency_key,
         document_id=document_id,
         file_object_id=file_object.id,
         version_no=version_no,
@@ -860,6 +889,14 @@ async def create_document_version(
     except IntegrityError as exc:
         session.rollback()
         _delete_stored_file(storage_root, file_object.storage_key)
+        if idempotency_key is not None:
+            existing = session.scalar(
+                select(DocumentVersion).where(DocumentVersion.idempotency_key == idempotency_key)
+            )
+            if existing is not None and existing.document_id == document_id:
+                existing_file = session.get(FileObject, existing.file_object_id)
+                if existing_file is not None:
+                    return _version_response(existing, existing_file)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Document version could not be saved because of a database constraint.",

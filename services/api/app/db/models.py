@@ -187,6 +187,7 @@ class DocumentVersion(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     version_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
     document_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("documents.document_id"), nullable=False, index=True
     )
@@ -327,6 +328,7 @@ class FieldCommentAttachment(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     attachment_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
     comment_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("field_comments.comment_id"), nullable=False, index=True
     )

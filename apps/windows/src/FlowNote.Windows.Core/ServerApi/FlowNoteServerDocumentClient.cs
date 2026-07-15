@@ -78,12 +78,14 @@ public sealed class FlowNoteServerDocumentClient
         string changeReason,
         string? versionLabel = null,
         string? createdBy = null,
+        string? idempotencyKey = null,
         CancellationToken cancellationToken = default)
     {
         using var form = new MultipartFormDataContent();
         AddString(form, "changeReason", changeReason);
         AddString(form, "versionLabel", versionLabel);
         AddString(form, "createdBy", createdBy);
+        AddString(form, "idempotencyKey", idempotencyKey);
 
         await using var stream = File.OpenRead(filePath);
         using var fileContent = new StreamContent(stream);
@@ -236,6 +238,7 @@ public sealed class FlowNoteServerDocumentClient
         string? caption = null,
         DateTime? capturedAt = null,
         string? createdBy = null,
+        string? idempotencyKey = null,
         CancellationToken cancellationToken = default)
     {
         using var form = new MultipartFormDataContent();
@@ -243,6 +246,7 @@ public sealed class FlowNoteServerDocumentClient
         AddString(form, "caption", caption);
         AddString(form, "capturedAt", capturedAt?.ToString("O"));
         AddString(form, "createdBy", createdBy);
+        AddString(form, "idempotencyKey", idempotencyKey);
 
         await using var stream = File.OpenRead(filePath);
         using var fileContent = new StreamContent(stream);

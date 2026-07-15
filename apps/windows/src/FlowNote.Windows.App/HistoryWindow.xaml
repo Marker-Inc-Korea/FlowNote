@@ -101,6 +101,7 @@
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="상태" Binding="{Binding StatusText}" Width="78" />
                                 <DataGridTextColumn Header="우선순위" Binding="{Binding PriorityText}" Width="104" />
+                                <DataGridTextColumn Header="운영 상태" Binding="{Binding OperationalState}" Width="118" />
                                 <DataGridTextColumn Header="분류" Binding="{Binding Category}" Width="150" />
                                 <DataGridTextColumn Header="대상" Binding="{Binding EntityText}" Width="142" />
                                 <DataGridTextColumn Header="작업" Binding="{Binding ActionText}" Width="150" />

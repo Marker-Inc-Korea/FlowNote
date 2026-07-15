@@ -359,11 +359,33 @@ async def create_field_comment_attachment(
     caption: Annotated[str | None, Form()] = None,
     captured_at: Annotated[datetime | None, Form(alias="capturedAt")] = None,
     created_by: Annotated[str | None, Form(alias="createdBy")] = None,
+    idempotency_key: Annotated[str | None, Form(alias="idempotencyKey")] = None,
     app_settings: Annotated[Settings, Depends(get_settings)] = None,
 ) -> FieldCommentAttachmentResponse:
     comment_exists = session.scalar(select(FieldComment.id).where(FieldComment.comment_id == comment_id))
     if comment_exists is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field comment not found.")
+
+    idempotency_key = _clean_idempotency_key(idempotency_key)
+    if idempotency_key is not None:
+        existing = session.scalar(
+            select(FieldCommentAttachment).where(
+                FieldCommentAttachment.idempotency_key == idempotency_key
+            )
+        )
+        if existing is not None:
+            if existing.comment_id != comment_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="idempotencyKey is already used by another field comment.",
+                )
+            existing_file = session.get(FileObject, existing.file_object_id)
+            if existing_file is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotent field comment attachment has no file object.",
+                )
+            return _attachment_response(existing, existing_file)
 
     _validate_attachment_file(file)
     storage_root = resolve_storage_root(app_settings.storage_root)
@@ -394,6 +416,7 @@ async def create_field_comment_attachment(
 
     attachment = FieldCommentAttachment(
         attachment_id=_new_public_id("att"),
+        idempotency_key=idempotency_key,
         comment_id=comment_id,
         file_object_id=file_object.id,
         attachment_type=_clean_attachment_type(attachment_type, stored.extension, stored.mime_type),
@@ -407,6 +430,16 @@ async def create_field_comment_attachment(
     except IntegrityError as exc:
         session.rollback()
         _delete_stored_file(storage_root, stored.storage_key)
+        if idempotency_key is not None:
+            existing = session.scalar(
+                select(FieldCommentAttachment).where(
+                    FieldCommentAttachment.idempotency_key == idempotency_key
+                )
+            )
+            if existing is not None and existing.comment_id == comment_id:
+                existing_file = session.get(FileObject, existing.file_object_id)
+                if existing_file is not None:
+                    return _attachment_response(existing, existing_file)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Field comment attachment could not be saved because of a database constraint.",
@@ -528,17 +561,27 @@ def review_field_comment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field comment not found.")
 
     if request.status is not None:
-        note.status = _validate_choice(request.status, STATUSES, "status")
+        target_status = _validate_choice(request.status, STATUSES, "status")
+        if note.status != target_status:
+            note.status = target_status
     if request.normalized_content is not None:
-        note.normalized_content = _clean_optional(request.normalized_content)
+        normalized_content = _clean_optional(request.normalized_content)
+        if note.normalized_content != normalized_content:
+            note.normalized_content = normalized_content
     if request.analysis_content is not None:
-        note.analysis_content = _clean_optional(request.analysis_content)
+        analysis_content = _clean_optional(request.analysis_content)
+        if note.analysis_content != analysis_content:
+            note.analysis_content = analysis_content
     if request.reviewed_by is not None:
-        note.reviewed_by = _clean_optional(request.reviewed_by)
-        note.reviewed_at = datetime.utcnow()
+        reviewed_by = _clean_optional(request.reviewed_by)
+        if note.reviewed_by != reviewed_by:
+            note.reviewed_by = reviewed_by
+            note.reviewed_at = datetime.utcnow()
     if request.analyzed_by is not None:
-        note.analyzed_by = _clean_optional(request.analyzed_by)
-        note.analyzed_at = datetime.utcnow()
+        analyzed_by = _clean_optional(request.analyzed_by)
+        if note.analyzed_by != analyzed_by:
+            note.analyzed_by = analyzed_by
+            note.analyzed_at = datetime.utcnow()
 
     try:
         session.commit()

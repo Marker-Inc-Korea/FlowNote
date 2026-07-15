@@ -166,6 +166,7 @@ try
     Require(
         legacyCreateDiagnosis.Category == "구 형식 큐" &&
         legacyCreateDiagnosis.IsDependencyHold &&
+        legacyCreateDiagnosis.OperationalState == "보존 구 형식" &&
         legacyCreateDiagnosis.OperatorAction.Contains("별도 마이그레이션", StringComparison.Ordinal),
         "legacy create queue should be shown as a Korean migration hold even without a prior error");
     var unknownServerFailureDiagnosis = ServerSyncQueueDiagnostics.Classify(
@@ -175,12 +176,36 @@ try
         "HTTP 503 Service Unavailable");
     Require(
         unknownServerFailureDiagnosis.Category == "실제 서버 오류" &&
+        unknownServerFailureDiagnosis.OperationalState == "재시도 가능" &&
         !unknownServerFailureDiagnosis.IsDependencyHold,
         "unknown server failures should remain retryable and be classified as actual server errors");
+    var authenticationDiagnosis = ServerSyncQueueDiagnostics.Classify(
+        "FAILED",
+        "document",
+        "register_document",
+        "로그인이 만료되었습니다.");
+    Require(
+        authenticationDiagnosis.OperationalState == "수동 조치 필요",
+        "authentication failures should require an explicit Korean operator action");
+    var dependencyDiagnosis = ServerSyncQueueDiagnostics.Classify(
+        "FAILED",
+        "document_version",
+        "register_document_version",
+        "선행 문서가 아직 서버에 전송되지 않았습니다.");
+    Require(
+        dependencyDiagnosis.OperationalState == "선행 조건 대기",
+        "document dependency failures should be shown as dependency waits");
     var initialQueueSummary = services.ServerSync.GetQueueSummary();
     Require(
         initialQueueSummary.Total >= services.ServerSync.ListQueueItems().Count,
         "sync queue summary should count the full database even when the visible list is limited");
+    var initialSyncMetrics = services.ServerSync.GetOperationalMetrics();
+    Require(
+        initialSyncMetrics.QueueDepth == initialQueueSummary.Pending + initialQueueSummary.Failed,
+        "sync operational queue depth should include every pending and failed row");
+    Require(
+        initialSyncMetrics.FailureReasons.Sum(item => item.Count) == initialQueueSummary.Failed,
+        "sync failure reason metrics should account for every failed row");
 
     var login = services.Auth.Login("admin", "1234");
     Require(login.Success, "admin / 1234 login should succeed");
