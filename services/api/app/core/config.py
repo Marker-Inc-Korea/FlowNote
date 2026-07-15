@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     ai_site_scope: str = "DEFAULT"
     ai_provider_excerpt_max_chars: int = Field(default=600, ge=100, le=4000)
     ai_provider_max_sources: int = Field(default=12, ge=1, le=100)
+    ai_retention_scheduler_enabled: bool = True
+    ai_retention_scheduler_interval_seconds: int = Field(default=3600, ge=60, le=86400)
 
 
 settings = Settings()

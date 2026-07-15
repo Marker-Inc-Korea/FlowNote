@@ -60,7 +60,7 @@ def seed_policy(client: TestClient, *, expires_delta: timedelta = timedelta(days
             prompt_version_id=f"aipv-{suffix}", name="evidence-summary", version=suffix[:8],
             template_hash=hashlib.sha256(template.encode()).hexdigest(), template_text=template,
             allowed_purpose="EVIDENCE_SUMMARY", created_by="user-admin", approved_by="user-admin",
-            approved_at=now,
+            approved_at=now, activated_at=now,
         ))
         session.add(AITransferApproval(
             approval_id=f"aita-{suffix}",
@@ -194,6 +194,11 @@ def test_snapshot_rechecks_source_state_and_do_not_store_keeps_only_response_has
                 AIQueryEvidenceCandidate.query_id == query.query_id)).all()
             assert query.response_text is None
             assert query.response_hash == hashlib.sha256("검증된 응답 원문".encode()).hexdigest()
+            prompt_snapshot = json.loads(query.prompt_snapshot_json)
+            approval_snapshot = json.loads(query.approval_snapshot_json)
+            assert prompt_snapshot["templateHash"] and prompt_snapshot["templateText"]
+            assert approval_snapshot["customerScope"] == client.app.state.settings.ai_customer_scope
+            assert approval_snapshot["siteScope"] == client.app.state.settings.ai_site_scope
             excluded = next(
                 row for row in snapshots
                 if row.candidate_id == candidate_ids[seeded["new_comment_id"]]
@@ -491,7 +496,13 @@ def test_no_evidence_and_non_admin_are_rejected_without_provider_call() -> None:
             "purpose": "EVIDENCE_SUMMARY", "query": "권한 없는 질의"
         })
         assert denied.status_code == 403
+        assert denied.json()["error"]["code"] == "AI_ROLE_NOT_ALLOWED"
         assert calls == 0
+        with client.app.state.database.session() as session:
+            denied_query = session.scalar(select(AIQuery).where(
+                AIQuery.query_id == denied.json()["queryId"]
+            ))
+            assert denied_query.block_code == "AI_ROLE_NOT_ALLOWED"
 
 
 def test_approved_prompt_content_is_immutable() -> None:

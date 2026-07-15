@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.ai_search import router as ai_search_router
 from app.api.v1.ai_queries import router as ai_queries_router
+from app.api.v1.ai_operations import router as ai_operations_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.channels import router as channels_router
 from app.api.v1.controlled_copies import router as controlled_copies_router
@@ -31,4 +32,5 @@ api_v1_router.include_router(work_sequences_router)
 api_v1_router.include_router(reports_router)
 api_v1_router.include_router(ai_search_router)
 api_v1_router.include_router(ai_queries_router)
+api_v1_router.include_router(ai_operations_router)
 api_v1_router.include_router(channels_router)
