@@ -159,6 +159,8 @@ Useful settings:
 - `FLOWNOTE_AI_NETWORK_TIMEOUT_SECONDS`: default `30`, constrained to `1`-`120`
 - `FLOWNOTE_AI_PROVIDER_MAX_ATTEMPTS`: default `3`, constrained to `1`-`5`; timeout, 429, 5xx만 재시도
 - `FLOWNOTE_AI_PROVIDER_RESPONSE_MAX_BYTES`: default `65536`, constrained to `1024`-`1048576`
+- `FLOWNOTE_AI_RETENTION_SCHEDULER_ENABLED`: default `true`; 서버 lifespan에서 만료 보존 작업을 주기 실행
+- `FLOWNOTE_AI_RETENTION_SCHEDULER_INTERVAL_SECONDS`: default `3600`, constrained to `60`-`86400`
 
 ## Verification
 
@@ -169,6 +171,6 @@ cd services\api
 
 As of 2026-07-15, the FastAPI suite collects and passes 116 tests. `scripts/verify-preserved-tests.ps1` uses the same 116-test collection and JUnit baseline. The complete Windows baseline also runs WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID; a FastAPI-only run is partial evidence.
 
-The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no management API for that sensitive-data policy. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission.
+The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no management API for that sensitive-data policy. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. The server lifespan runs expired-query retention on the configured interval by default, while the `system-admin` endpoint remains available for an immediate run.
 
 Test SQLite DBs, logs, upload files, and generated sample files are preserved unless the user explicitly asks to delete them.

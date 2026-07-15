@@ -25,7 +25,7 @@
 - 외부 AI 질의의 보고서 작성 role(`admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`) 제한, 기본 비활성 플래그, 허용 목적, 고객·현장·provider·model 전송 승인, 승인된 프롬프트와 근거 원천 상태 검사
 - 외부 AI 질의·근거 snapshot·인용·호출 시도 감사 row, 기본 응답 본문 미저장과 응답 hash 저장
 - `system-admin` 전용 외부 AI 전송 승인·불변 프롬프트 수명주기·전역/현장 kill switch와 한도·보존 정책 API 및 WPF 운영 화면
-- 질의·응답·비밀 원문을 제외한 AI 운영 감사 조회/정책 허용 CSV와, 만료 질의 payload 비식별화·응답 원문 삭제의 수동 보존 처리 감사
+- 질의·응답·비밀 원문을 제외한 AI 운영 감사 조회/정책 허용 CSV와, 만료 질의 payload 비식별화·응답 원문 삭제의 자동·즉시 보존 처리 감사
 
 Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현이 들어와 있다. Android 문서 기능은 공개 목록·상세 메타데이터 조회까지이며 파일 본문 다운로드·미리보기는 구현되어 있지 않다. 공통 채널 API는 서버 로그인, role, 채널 멤버십으로 접근을 제한하며, Android 로그인은 승인된 `terminal_devices.device_id`와 `status = ACTIVE`를 요구한다. 승인 단말 등록, 비활성화, 폐기, 교체는 `admin`, `system-admin` 전용 API와 WPF 운영 화면에서 수행하고 `activity_history`에 변경 주체와 사유를 남긴다. Android의 로그인, 문서, 알림, 인수인계 화면은 예외 메시지와 서버 오류 본문을 그대로 노출하지 않고 연결 실패, 시간 초과, HTTP 401·403·404와 기타 HTTP 오류를 한글 현장 안내로 변환한다. Android는 개인 휴대폰 기본 배포가 아니라 승인된 현장 태블릿 또는 러기드 단말을 기준으로 한다. MDM, 운영 인증서, outbox 암호화 정책은 후속 보안 범위다.
 
@@ -131,7 +131,7 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 
 질의와 저장이 승인된 응답 본문은 제한 데이터로 취급한다. 생성·조회 API는 보고서 작성 role만 사용하며, 조회 API는 질의·응답 본문·citation 목록을 반환하지 않고 질의 상태·응답 hash·적격/제외 근거 snapshot만 반환한다. 현재는 호출자 본인만 조회하도록 제한하지 않으므로 관리자 간 질의 조회 범위는 운영 provider 연동 전에 정해야 한다. 일반 서버/프록시 로그에는 질의, 프롬프트, 근거 본문, 응답, 자격증명, 검출한 금칙 원문이나 provider raw 오류를 남기지 않는다.
 
-질의 원문과 저장 승인 응답은 기본 90일이며 `DO_NOT_STORE`는 응답 hash만 남긴다. 만료 스케줄러는 질의 payload를 `[EXPIRED]`로 비식별화하고 응답 원문을 삭제하되 query/response hash, 근거·인용·호출 메타데이터와 외래키를 보존한다. 처리 건마다 `ai_retention_audits`에 삭제·비식별화 동작을 남긴다. 시스템 관리자 감사 API와 CSV는 질의·응답·근거 원문, 프롬프트 본문, provider raw 오류와 비밀값을 반환하지 않는다.
+질의 원문과 저장 승인 응답은 기본 90일이며 `DO_NOT_STORE`는 응답 hash만 남긴다. 서버 lifespan의 만료 스케줄러는 기본 1시간 간격으로 질의 payload를 `[EXPIRED]`로 비식별화하고 응답 원문을 삭제하며, `system-admin`은 같은 처리를 즉시 실행할 수 있다. 두 경로 모두 query/response hash, 근거·인용·호출 메타데이터와 외래키를 보존하고 처리 건마다 `ai_retention_audits`에 삭제·비식별화 동작을 남긴다. 시스템 관리자 감사 API와 CSV는 질의·응답·근거 원문, 프롬프트 본문, provider raw 오류와 비밀값을 반환하지 않는다.
 
 승인 만료, 고객 요청, provider 조건 변경, 정보 유출 의심이 발생하면 운영자는 기능 플래그를 끄고 승인을 철회해 신규 호출을 즉시 차단한다. 기존 원천과 `ai_search_candidates`는 삭제하지 않으며 외부 호출 없는 후보 재생성·목록·품질 점검은 계속 동작한다. 사고 분석에는 정제된 감사 로그를 사용하고 provider에 보낸 원문을 일반 로그에서 복구하려 하지 않는다.
 
@@ -147,10 +147,12 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 
 ## 아직 후속 범위인 보안 기능
 
-- HTTPS 또는 사내망 보호 배포 정책
+- 고객 유사 네트워크의 HTTPS 인증서 발급·신뢰 배포·갱신·폐기, 방화벽과 시간 동기화 실기 검증
 - 서버 접근 감사 로그의 운영 정책
 - 브라우저 직접 접근 제한 정책의 설치/배포 자동화
 - Android MDM, 운영 인증서와 현장별 단말 등록·비활성화·교체 정책
 - Android outbox 암호화와 제한된 WorkManager 백그라운드 알림 정책 검증
 - provider별 운영 계약·전송 지역 검증과 운영 네트워크 활성 절차. 현재 generic adapter는 명시적 test scope에서만 허용
 - 운영 AI 감사 메타데이터의 장기 archive/purge와 법적 보존 hold 정책
+
+운영 파일럿 전 보안 게이트, 책임자, 장애 중단 기준과 증거 보존 형식은 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)을 따른다. Android outbox 앱 수준 암호화가 확정되지 않은 상태에서는 MDM으로 단말 전체 암호화, 화면 잠금, 디버깅/USB 백업 제한과 원격 잠금·초기화를 강제하거나 비민감 시험 데이터만 사용한다.

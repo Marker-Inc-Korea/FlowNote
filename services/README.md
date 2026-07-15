@@ -35,7 +35,8 @@ FlowNote 서버 구성 요소를 보관하는 영역이다.
 - 보고서 초안 생성 보조, 보고서 등록, 목록, 상세 조회
 - AI 검색 전 단계의 근거 후보 재생성, 목록, 품질 점검과 오프라인 ground-truth 회귀 평가 API
 - 외부 AI 질의 생성·조회, 기본 비활성, 보고서 작성 role, 허용 목적, 전송 승인, 프롬프트, 원천 권한·민감정보·최소 payload, 근거 snapshot, 인용 검증과 호출 감사 게이트
-- `system-admin` 전용 외부 AI 운영 API: 전송 승인 생성·철회, 불변 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 요청·동시성·timeout·비용·보존 정책, 정제 감사 조회/내보내기, 만료 보존 수동 실행
+- `system-admin` 전용 외부 AI 운영 API: 전송 승인 생성·철회, 불변 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 요청·동시성·timeout·비용·보존 정책, 정제 감사 조회/내보내기, 만료 보존 즉시 실행
+- 서버 lifespan의 만료 보존 스케줄러: 기본 1시간 간격 실행, 설정으로 활성 여부와 간격 제어
 - 초기·비상 운영용 서버 계정 생성, 비밀번호 재설정, 상태 변경, role 변경 스크립트
 
 Android가 사용하는 공개 문서 API는 목록과 상세 메타데이터를 반환한다. 현재 Android 클라이언트에는 서버 문서 파일 본문 다운로드·미리보기 구현이 없고, controlled copy는 허용 role의 Windows WPF 흐름으로만 연결되어 있다.
@@ -47,7 +48,7 @@ Android가 사용하는 공개 문서 API는 목록과 상세 메타데이터를
 - 파일 저장소: 서버 로컬 `storage/`
 - API 기본 경로: `/api/v1`
 
-운영 provider client를 통한 실제 외부 AI 검색/작업 조언, MES/ERP 연동, 서버 파일 감시 API는 후속 범위이다. AI 관련 현재 서비스는 `ai_search_candidates` read model 운영 API, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 회귀 결과 누적, `/api/v1/ai/queries` provider 직전 게이트, `/api/v1/ai-operations` 운영 제어면까지다. 주입 경계는 정제 질의와 최소 발췌, 안정된 원천 ID/hash만 넘기며 저장소에는 네트워크 provider client가 없다.
+provider별 운영 연동을 통한 실제 외부 AI 검색/작업 조언, MES/ERP 연동, 서버 파일 감시 API는 후속 범위이다. AI 관련 현재 서비스는 `ai_search_candidates` read model 운영 API, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 회귀 결과 누적, `/api/v1/ai/queries` 안전장치·응답 검증, `/api/v1/ai-operations` 운영 제어면까지다. provider 경계는 정제 질의와 최소 발췌, 안정된 원천 ID/hash만 넘긴다. generic JSON 네트워크 adapter는 명시적 test 환경에서만 생성되며 provider별 운영 client는 구현하지 않았다.
 
 provider 직전 게이트는 `ai_sensitive_data_policies`의 활성 고객·현장 정책을 읽어 금칙어와 고객 식별자를 원천 단위로 차단한다. 이 민감정보 정책의 등록·변경 API/UI는 현재 서비스 범위에 없다. 별도로 구현된 `ai_operational_policies` API/UI는 kill switch, 호출 한도, 보존 기간과 감사 내보내기 허용 여부를 관리한다.
 
