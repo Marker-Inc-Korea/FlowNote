@@ -22,8 +22,8 @@
 - 작업순서: `work_sequence_boards`, `work_sequence_items`, `work_sequence_change_history`, `work_sequence_notification_candidates`
 - 채널/인수인계: `notification_channels`, `notification_channel_members`, `channel_messages`, `handovers`, `handover_receipts`
 - 보고서: `reports`, `report_sources`
-- AI 검색 후보·평가: `ai_search_candidates`, `ai_search_evaluation_runs`, `ai_search_evaluation_cases`
-- 외부 AI 안전장치·감사: `ai_prompt_versions`, `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations`, `ai_call_attempts`, `ai_transfer_approvals`, `ai_sensitive_data_policies`
+- AI 검색 후보·평가: `ai_search_candidates`, `ai_search_ground_truth_cases`, `ai_search_evaluation_runs`, `ai_search_evaluation_cases`
+- 외부 AI 안전장치·운영·감사: `ai_prompt_versions`, `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations`, `ai_call_attempts`, `ai_transfer_approvals`, `ai_sensitive_data_policies`, `ai_operational_policies`, `ai_operation_audit_events`, `ai_retention_audits`
 - 제한 다운로드: `controlled_copy_grants`
 - 마이그레이션 기록: `schema_migrations`
 - 공통 감사: `activity_history`
@@ -37,4 +37,6 @@
 - 공개 문서는 명시적으로 공개 버전을 지정해야 조회할 수 있다.
 - controlled copy는 현재 공개 버전에만 발급되며 사용자·세션에 묶인 짧은 만료의 1회성 티켓과 SHA-256 검증을 사용한다.
 - AI 검색 근거 후보는 공개 문서 버전, FieldComment, 작업순서 이력, 보고서 source에서 재생성한다.
-- 외부 AI provider 직전 경계는 활성 고객·현장 민감정보 정책, 원천 권한, 최소 발췌·최대 원천 수와 인용 ID를 검사하며 운영 네트워크 provider client는 없다.
+- FieldComment 원천 핵심 필드는 생성 뒤 불변이며 검토 변경은 담당자·기한·전이 사유와 원천 hash를 포함한 감사 snapshot으로 분리한다.
+- 외부 AI provider 직전 경계는 활성 고객·현장 민감정보 정책, 원천 권한, 최소 발췌·최대 원천 수와 인용 ID를 검사한다. generic 네트워크 adapter는 명시적 test scope에만 있고 provider별 운영 client는 없다.
+- 서버 lifespan 스케줄러와 `system-admin` 즉시 실행 API는 만료된 질의 payload를 비식별화하고 저장 응답 원문을 삭제하면서 hash와 감사 메타데이터를 보존한다.

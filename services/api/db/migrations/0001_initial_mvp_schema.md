@@ -57,7 +57,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 - Creating or uploading a version does not automatically publish the document.
 - Controlled copy can only target the current published version; grants expire quickly and are consumed once.
 - FieldComment must reference at least one of document, structure item, or work record.
-- External AI calls are disabled by default, and the repository contains no network provider client.
+- External AI calls are disabled by default. A generic HTTPS JSON adapter exists only for explicit `test` scope; no provider-specific production client or production activation is configured.
 - The active `ai_sensitive_data_policies` row for a customer/site scope adds deny terms and customer identifiers to the provider-boundary content filter.
 - External AI operational policy, approval, prompt lifecycle, audit, and retention APIs are restricted to `system-admin`; provider credentials remain outside these tables.
 - Current server role values are `admin`, `manager`, `viewer`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`.

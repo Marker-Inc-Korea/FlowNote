@@ -436,10 +436,18 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | 서버 | `FLOWNOTE_CONTROLLED_COPY_MAX_BYTES` | controlled copy 한 건의 최대 크기. 기본 524288000 바이트 |
 | 서버 | `FLOWNOTE_CONTROLLED_COPY_TICKET_EXPIRES_SECONDS` | 1회성 티켓 만료 시간. 기본 60초, 서버에서 5~300초로 정규화 |
 | 서버 | `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED` | 기본 `false`. 현재 운영에서는 `true` 설정 금지 |
+| 서버 | `FLOWNOTE_AI_READINESS_GATE_ENABLED` | 기본 `true`. 현재 scope의 근거·승인 질문·회귀 준비도 미달 시 호출 차단 |
 | 서버 | `FLOWNOTE_AI_PROVIDER`, `FLOWNOTE_AI_MODEL` | 승인 row 선택에 사용하는 provider/model scope. 기본 `UNCONFIGURED` |
 | 서버 | `FLOWNOTE_AI_CUSTOMER_SCOPE`, `FLOWNOTE_AI_SITE_SCOPE` | 외부 전송 승인을 찾는 고객/현장 scope. 기본 `DEFAULT` |
 | 서버 | `FLOWNOTE_AI_PROVIDER_EXCERPT_MAX_CHARS` | provider source 한 건의 최대 발췌 길이. 기본 600자 |
 | 서버 | `FLOWNOTE_AI_PROVIDER_MAX_SOURCES` | 질의 한 건의 provider 최대 근거 수. 기본 12건 |
+| 서버 | `FLOWNOTE_AI_PROVIDER_ADAPTER_MODE` | 기본 `DISABLED`. `FAKE`, `NETWORK_TEST`는 검증 전용이며 운영 provider 설정이 아님 |
+| 서버 | `FLOWNOTE_AI_FAKE_SCENARIOS` | fake adapter의 결정적 시험 시나리오. 기본 `SUCCESS` |
+| 서버 | `FLOWNOTE_AI_PROVIDER_ENDPOINT` | `NETWORK_TEST` 전용 HTTPS JSON endpoint. 운영 provider 주소로 사용 금지 |
+| 서버 | `FLOWNOTE_AI_NETWORK_TEST_SCOPE_ENABLED` | 기본 `false`. `environment=test`와 함께 있어야 `NETWORK_TEST` 생성 허용 |
+| 서버 | `FLOWNOTE_AI_NETWORK_TIMEOUT_SECONDS` | 시험 adapter timeout. 기본 30초, 허용 1~120초 |
+| 서버 | `FLOWNOTE_AI_PROVIDER_MAX_ATTEMPTS` | 시험 adapter 최대 시도. 기본 3회, 허용 1~5회 |
+| 서버 | `FLOWNOTE_AI_PROVIDER_RESPONSE_MAX_BYTES` | provider 응답 상한. 기본 65536바이트, 허용 1024~1048576바이트 |
 | 서버 | `FLOWNOTE_AI_RETENTION_SCHEDULER_ENABLED` | 만료 질의 payload 비식별화와 저장 응답 원문 삭제 스케줄러. 기본 `true` |
 | 서버 | `FLOWNOTE_AI_RETENTION_SCHEDULER_INTERVAL_SECONDS` | 자동 보존 실행 간격. 기본 3600초, 허용 60~86400초 |
 | WPF | `FLOWNOTE_LOCAL_DATA_DIR` | `C:\FlowNote\LocalData`처럼 DB와 `Files\`를 함께 둘 폴더 |

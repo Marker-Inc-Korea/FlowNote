@@ -13,6 +13,7 @@
 - 문서 상태: `WORKING`, `IN_REVIEW`, `PUBLISHED`, `ARCHIVED`
 - 문서 버전 상태: `WORKING`, `IN_REVIEW`, `APPROVED`, `PUBLISHED`, `SUPERSEDED`, `ARCHIVED`
 - FieldComment 상태: `NEW`, `NEEDS_REVIEW`, `ANALYZED`, `REVIEWED`, `SELECTED`, `EXCLUDED`, `ARCHIVED`
+- FieldComment 검토 상태 전이는 필수 변경 사유를 남기며 원천 내용은 상태 변경과 별개로 불변이다.
 - 작업순서 항목 상태: `WAITING`, `IN_PROGRESS`, `HOLD`, `COMPLETED`
 - 작업순서 보드 상태: `ACTIVE`, `ARCHIVED`
 - 알림 후보 상태: `CANDIDATE`, `SENT`, `DISMISSED`

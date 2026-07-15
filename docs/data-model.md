@@ -45,6 +45,8 @@
 
 ## FastAPI 서버 SQLite
 
+2026-07-15 현재 ORM은 아래 45개 테이블을 생성 기준으로 사용한다.
+
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
 서버 ORM 테이블은 다음과 같다.
@@ -135,7 +137,7 @@ MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_record
 | `ai_transfer_approvals` | `approval_id`, `customer_scope`, `site_scope`, `provider`, `model_scope`, `allowed_source_types`, `data_handling_policy_version`, `approved_by`, `approved_at`, `expires_at`, `revoked_at`, `reason` | 고객·현장별 외부 전송 승인. 만료·철회 시 새 호출을 즉시 차단하며 `admin` 또는 `system-admin`의 승인 주체와 근거를 보존한다. |
 | `ai_sensitive_data_policies` | `policy_id`, `customer_scope`, `site_scope`, `version`, `forbidden_terms_json`, `customer_identifiers_json`, `is_active`, `created_by`, `created_at` | 고객·현장별 사용자 정의 금칙어와 고객 식별자 정책. 최신 활성 정책 하나를 query snapshot 필터에 적용하며 원문 검출값은 감사 로그에 남기지 않는다. |
 
-`response_storage_mode`는 `DO_NOT_STORE`, `STORE_90_DAYS`만 허용한다. 기본값은 `DO_NOT_STORE`이며 이때 응답 본문은 요청 세션에 반환한 뒤 저장하지 않는다. `STORE_90_DAYS`는 본문을 저장한다. 현재는 만료 시각 필드만 설정하며 실제 삭제와 재생성 API는 없다. 후속 재생성은 같은 질의, 불변 프롬프트 버전, 근거 후보 ID와 content hash, provider/model을 다시 사용하되, 원천의 권한·공개·외부 전송 승인 상태를 다시 평가하는 계약으로 구현해야 한다.
+`response_storage_mode`는 `DO_NOT_STORE`, `STORE_90_DAYS`만 허용한다. 기본값은 `DO_NOT_STORE`이며 이때 응답 본문은 요청 세션에 반환한 뒤 저장하지 않는다. `STORE_90_DAYS`는 본문과 별도 `response_retention_until`을 저장한다. 서버 lifespan 스케줄러와 `system-admin` 즉시 실행 API는 만료된 질의 문구를 `[EXPIRED]`로 비식별화하고 저장 응답 원문을 삭제하되 query/response hash, 근거·인용·호출 메타데이터와 `ai_retention_audits`를 보존한다. 질의 재생성 API는 아직 없으며, 후속 재생성은 같은 질의, 불변 프롬프트 버전, 근거 후보 ID와 content hash, provider/model을 다시 사용하되 원천의 권한·공개·외부 전송 승인 상태를 다시 평가해야 한다.
 
 `ai_query_evidence_candidates.candidate_id`는 재생성 가능한 read model에 대한 논리적 역추적 키이며 물리 FK로 묶지 않는다. `ai_search_candidates` 재생성 뒤에도 질의 시점의 source/version/trace ID와 content hash snapshot을 보존하기 위한 결정이다.
 

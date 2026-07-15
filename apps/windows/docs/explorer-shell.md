@@ -1,6 +1,6 @@
 # 탐색기형 메인 화면
 
-이 문서는 2026-07-14 현재 WPF 메인 화면과 연결된 서비스 기준이다.
+이 문서는 2026-07-15 현재 WPF 메인 화면과 연결된 서비스 기준이다.
 
 ## 목적
 
@@ -50,7 +50,7 @@ Windows WPF 메인 화면은 현장/관리자가 폴더 트리에서 문서를 �
 
 ## FieldComment
 
-문서 보기 창에서 작성한 새 코멘트는 `field_comments`에 저장되며 문서 버전을 증가시키지 않는다. 첨부 사진/파일은 `field_comment_attachments`와 로컬 `Files/FieldCommentAttachments/` 아래 저장된다.
+문서 보기 창에서 작성한 새 코멘트는 `field_comments`에 저장되며 문서 버전을 증가시키지 않는다. 첨부 사진/파일은 `field_comment_attachments`와 로컬 `Files/FieldCommentAttachments/` 아래 저장된다. 관리자 검토 화면은 원천 내용을 읽기 전용으로 표시하고 담당자·기한·정리·분석·상태·전이 사유를 별도 저장하며, 상세 필터·일괄 변경·품질 작업함을 제공한다.
 
 ## 서버 연동
 

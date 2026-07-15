@@ -23,4 +23,4 @@
 - 외부 접근이나 클라우드 운영
 - Android 운영 배포 서명·MDM·인증서와 추가 클라이언트 플랫폼
 
-현재 서버에는 외부 AI 호출 없이 DB 원천에서 재생성하는 `ai_search_candidates` 근거 후보 재생성·목록·품질·오프라인 회귀 평가와 `/api/v1/ai/queries` 기본 비활성 안전장치·감사 골격이 구현되어 있고, WPF에는 근거 후보 운영 점검 화면이 있다. 운영 provider 네트워크 client는 없다.
+현재 서버에는 외부 AI 호출 없이 DB 원천에서 재생성하는 `ai_search_candidates` 근거 후보 재생성·목록·품질·오프라인 회귀 평가, `/api/v1/ai/queries` 기본 비활성 안전장치·응답 검증·감사, `/api/v1/ai-operations` 운영 제어와 자동 만료 보존이 구현되어 있다. WPF에는 근거 후보 운영 점검 화면과 `system-admin` 전용 `AI 운영` 화면이 있다. generic 네트워크 adapter는 명시적 test scope에만 있고 provider별 운영 client는 없다. FieldComment는 현재 원천 불변, 단계형 검토, 담당자·기한, 일괄 처리, 감사·품질 작업함까지 확장되어 있다.
