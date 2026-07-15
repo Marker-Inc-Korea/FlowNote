@@ -9,7 +9,7 @@
         Background="{StaticResource WindowBackgroundBrush}">
     <Grid Margin="14">
         <Grid.RowDefinitions>
-            <RowDefinition Height="96" />
+            <RowDefinition Height="156" />
             <RowDefinition Height="*" />
             <RowDefinition Height="34" />
         </Grid.RowDefinitions>
@@ -82,6 +82,40 @@
                            Margin="0,24,0,0"
                            Foreground="{StaticResource SecondaryTextBrush}"
                            TextWrapping="Wrap" />
+                <WrapPanel Grid.ColumnSpan="8" Margin="0,64,0,0" VerticalAlignment="Top">
+                    <StackPanel Width="116" Margin="0,0,8,0">
+                        <TextBlock Text="담당자" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBox x:Name="AssignedFilterTextBox" Height="28" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <StackPanel Width="106" Margin="0,0,8,0">
+                        <TextBlock Text="라인" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBox x:Name="LineFilterTextBox" Height="28" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <StackPanel Width="106" Margin="0,0,8,0">
+                        <TextBlock Text="설비" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBox x:Name="EquipmentFilterTextBox" Height="28" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <StackPanel Width="106" Margin="0,0,8,0">
+                        <TextBlock Text="공정" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBox x:Name="ProcessFilterTextBox" Height="28" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <StackPanel Width="116" Margin="0,0,8,0">
+                        <TextBlock Text="오류 유형" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBox x:Name="ErrorTypeFilterTextBox" Height="28" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <StackPanel Width="100" Margin="0,0,8,0">
+                        <TextBlock Text="오래된 NEW" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <ComboBox x:Name="AgingFilterComboBox" Height="28" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <StackPanel Width="100" Margin="0,0,8,0">
+                        <TextBlock Text="첨부" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <ComboBox x:Name="AttachmentFilterComboBox" Height="28" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <StackPanel Width="112">
+                        <TextBlock Text="보고서 연결" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <ComboBox x:Name="ReportLinkFilterComboBox" Height="28" Margin="0,3,0,0" />
+                    </StackPanel>
+                </WrapPanel>
             </Grid>
         </Border>
 
@@ -99,7 +133,8 @@
                     CornerRadius="4">
                 <DataGrid x:Name="FieldCommentGrid"
                           ItemsSource="{Binding FieldComments}"
-                          SelectionMode="Single"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
                           CanUserAddRows="False"
@@ -135,6 +170,7 @@
                             <RowDefinition Height="86" />
                             <RowDefinition Height="86" />
                             <RowDefinition Height="*" />
+                            <RowDefinition Height="62" />
                             <RowDefinition Height="42" />
                         </Grid.RowDefinitions>
                         <TextBlock x:Name="SelectedTitleTextBlock"
@@ -142,16 +178,17 @@
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource PrimaryTextBrush}" />
                         <StackPanel Grid.Row="1" Margin="0,8,0,0">
-                            <TextBlock Text="원문" Foreground="{StaticResource SecondaryTextBrush}" />
+                            <TextBlock Text="원천 기록(불변)" FontWeight="SemiBold" Foreground="#8A4B08" />
                             <TextBox x:Name="RawContentTextBox"
                                      Height="56"
                                      Margin="0,4,0,0"
                                      IsReadOnly="True"
+                                     Background="#FFF8E8"
                                      TextWrapping="Wrap"
                                      VerticalScrollBarVisibility="Auto" />
                         </StackPanel>
                         <StackPanel Grid.Row="2" Margin="0,8,0,0">
-                            <TextBlock Text="정리 내용" Foreground="{StaticResource SecondaryTextBrush}" />
+                            <TextBlock Text="관리자 정리 내용(해석)" FontWeight="SemiBold" Foreground="{StaticResource SecondaryTextBrush}" />
                             <TextBox x:Name="NormalizedContentTextBox"
                                      Height="56"
                                      Margin="0,4,0,0"
@@ -160,14 +197,33 @@
                                      VerticalScrollBarVisibility="Auto" />
                         </StackPanel>
                         <StackPanel Grid.Row="3" Margin="0,8,0,0">
-                            <TextBlock Text="분석 내용" Foreground="{StaticResource SecondaryTextBrush}" />
+                            <TextBlock Text="관리자 분석 내용(해석)" FontWeight="SemiBold" Foreground="{StaticResource SecondaryTextBrush}" />
                             <TextBox x:Name="AnalysisContentTextBox"
                                      Margin="0,4,0,0"
                                      AcceptsReturn="True"
                                      TextWrapping="Wrap"
                                      VerticalScrollBarVisibility="Auto" />
                         </StackPanel>
-                        <DockPanel Grid.Row="4" Margin="0,10,0,0">
+                        <Grid Grid.Row="4" Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="120" />
+                                <ColumnDefinition Width="130" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                <TextBlock Text="상태 변경 사유(필수 · 감사 이력 저장)" Foreground="{StaticResource SecondaryTextBrush}" />
+                                <TextBox x:Name="TransitionReasonTextBox" Height="32" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Margin="0,0,8,0">
+                                <TextBlock Text="담당자" Foreground="{StaticResource SecondaryTextBrush}" />
+                                <TextBox x:Name="AssignedToTextBox" Height="32" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="검토 기한" Foreground="{StaticResource SecondaryTextBrush}" />
+                                <DatePicker x:Name="ReviewDueDatePicker" Height="32" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Grid>
+                        <DockPanel Grid.Row="5" Margin="0,10,0,0">
                             <ComboBox x:Name="ReviewStatusComboBox"
                                       Width="150"
                                       Height="30"
@@ -180,6 +236,12 @@
                                     Content="검토 저장"
                                     DockPanel.Dock="Left"
                                     Click="SaveReviewButton_Click" />
+                            <Button Width="116"
+                                    Height="30"
+                                    Margin="10,0,0,0"
+                                    Content="선택 일괄 저장"
+                                    DockPanel.Dock="Left"
+                                    Click="BulkSaveReviewButton_Click" />
                         </DockPanel>
                     </Grid>
                 </Border>

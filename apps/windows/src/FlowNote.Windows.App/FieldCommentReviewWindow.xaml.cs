@@ -47,6 +47,24 @@ public partial class FieldCommentReviewWindow : Window
         }.Concat(FieldCommentService.ReviewStatuses.Select(status => new StatusOption(status, FormatStatus(status))));
         StatusFilterComboBox.SelectedValue = "ALL";
         ReviewStatusComboBox.ItemsSource = FieldCommentService.ReviewStatuses.Select(status => new StatusOption(status, FormatStatus(status))).ToList();
+        AgingFilterComboBox.ItemsSource = new[]
+        {
+            new StatusOption("ALL", "전체"), new StatusOption("7", "7일 이상"), new StatusOption("30", "30일 이상")
+        };
+        AttachmentFilterComboBox.ItemsSource = new[]
+        {
+            new StatusOption("ALL", "전체"), new StatusOption("YES", "첨부 있음"), new StatusOption("NO", "첨부 없음")
+        };
+        ReportLinkFilterComboBox.ItemsSource = new[]
+        {
+            new StatusOption("ALL", "전체"), new StatusOption("YES", "연결됨"), new StatusOption("NO", "미연결")
+        };
+        foreach (var combo in new[] { AgingFilterComboBox, AttachmentFilterComboBox, ReportLinkFilterComboBox })
+        {
+            combo.DisplayMemberPath = nameof(StatusOption.Label);
+            combo.SelectedValuePath = nameof(StatusOption.Value);
+            combo.SelectedValue = "ALL";
+        }
         RefreshComments("FieldComment 검토 목록을 조회했습니다.");
     }
 
@@ -83,7 +101,10 @@ public partial class FieldCommentReviewWindow : Window
                 NormalizedContentTextBox.Text,
                 AnalysisContentTextBox.Text,
                 status,
-                actorName);
+                actorName,
+                TransitionReasonTextBox.Text,
+                AssignedToTextBox.Text,
+                ReviewDueDatePicker.SelectedDate);
             var syncResult = await serverSync.QueueAndTrySyncFieldCommentReviewAsync(
                 updated,
                 serverClient,
@@ -98,6 +119,55 @@ public partial class FieldCommentReviewWindow : Window
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentOutOfRangeException or HttpRequestException or TaskCanceledException)
         {
             StatusTextBlock.Text = $"검토 저장에 실패했습니다. {exception.Message}";
+        }
+    }
+
+    private async void BulkSaveReviewButton_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = FieldCommentGrid.SelectedItems.Cast<FieldCommentReviewRecord>().ToList();
+        if (selected.Count == 0)
+        {
+            StatusTextBlock.Text = "일괄 검토할 FieldComment를 하나 이상 선택하세요.";
+            return;
+        }
+
+        var status = ReviewStatusComboBox.SelectedValue?.ToString();
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            StatusTextBlock.Text = "일괄 변경할 상태를 선택하세요.";
+            return;
+        }
+
+        try
+        {
+            var synced = 0;
+            foreach (var item in selected)
+            {
+                var updated = fieldComments.UpdateReview(
+                    item.CommentId,
+                    NormalizedContentTextBox.Text,
+                    AnalysisContentTextBox.Text,
+                    status,
+                    actorName,
+                    TransitionReasonTextBox.Text,
+                    AssignedToTextBox.Text,
+                    ReviewDueDatePicker.SelectedDate);
+                var result = await serverSync.QueueAndTrySyncFieldCommentReviewAsync(
+                    updated,
+                    serverClient,
+                    serverUserId,
+                    DateTime.UtcNow);
+                if (result.Success)
+                {
+                    synced++;
+                }
+            }
+            ReviewChanged = true;
+            RefreshComments($"선택 {selected.Count}건을 {FormatStatus(status)} 상태로 저장했습니다. 서버 반영 {synced}건.");
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentOutOfRangeException or HttpRequestException or TaskCanceledException)
+        {
+            StatusTextBlock.Text = $"일괄 검토 저장에 실패했습니다. {exception.Message}";
         }
     }
 
@@ -123,12 +193,20 @@ public partial class FieldCommentReviewWindow : Window
     {
         workspace.FieldComments.Clear();
         var filter = new FieldCommentReviewFilter(
-            StatusFilterComboBox.SelectedValue?.ToString(),
-            DocumentFilterTextBox.Text,
-            AuthorFilterTextBox.Text,
-            TagFilterTextBox.Text,
-            CreatedFromDatePicker.SelectedDate,
-            CreatedToDatePicker.SelectedDate);
+            Status: StatusFilterComboBox.SelectedValue?.ToString(),
+            DocumentText: DocumentFilterTextBox.Text,
+            AuthorText: AuthorFilterTextBox.Text,
+            TagText: TagFilterTextBox.Text,
+            AssignedTo: AssignedFilterTextBox.Text,
+            LineText: LineFilterTextBox.Text,
+            EquipmentText: EquipmentFilterTextBox.Text,
+            ProcessText: ProcessFilterTextBox.Text,
+            ErrorTypeText: ErrorTypeFilterTextBox.Text,
+            OlderThanDays: int.TryParse(AgingFilterComboBox.SelectedValue?.ToString(), out var agingDays) ? agingDays : null,
+            HasAttachments: ChoiceToBool(AttachmentFilterComboBox.SelectedValue?.ToString()),
+            ReportLinked: ChoiceToBool(ReportLinkFilterComboBox.SelectedValue?.ToString()),
+            CreatedFrom: CreatedFromDatePicker.SelectedDate,
+            CreatedTo: CreatedToDatePicker.SelectedDate);
         foreach (var comment in fieldComments.ListForReview(filter))
         {
             workspace.FieldComments.Add(comment);
@@ -160,6 +238,9 @@ public partial class FieldCommentReviewWindow : Window
             NormalizedContentTextBox.Text = string.Empty;
             AnalysisContentTextBox.Text = string.Empty;
             ReviewStatusComboBox.SelectedValue = null;
+            TransitionReasonTextBox.Text = string.Empty;
+            AssignedToTextBox.Text = string.Empty;
+            ReviewDueDatePicker.SelectedDate = null;
             return;
         }
 
@@ -168,6 +249,9 @@ public partial class FieldCommentReviewWindow : Window
         NormalizedContentTextBox.Text = selected.NormalizedContent ?? string.Empty;
         AnalysisContentTextBox.Text = selected.AnalysisContent ?? string.Empty;
         ReviewStatusComboBox.SelectedValue = selected.Status;
+        TransitionReasonTextBox.Text = string.Empty;
+        AssignedToTextBox.Text = selected.AssignedTo ?? string.Empty;
+        ReviewDueDatePicker.SelectedDate = selected.ReviewDueAt;
 
         foreach (var attachment in fieldComments.ListAttachments(selected.CommentId))
         {
@@ -189,6 +273,13 @@ public partial class FieldCommentReviewWindow : Window
             _ => status
         };
     }
+
+    private static bool? ChoiceToBool(string? value) => value switch
+    {
+        "YES" => true,
+        "NO" => false,
+        _ => null
+    };
 
     private sealed record StatusOption(string Value, string Label);
 

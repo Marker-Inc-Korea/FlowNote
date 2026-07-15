@@ -316,8 +316,39 @@ class FieldComment(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="NEW")
     reviewed_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
     analyzed_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    assigned_to: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    review_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_transition_reason: Mapped[str | None] = mapped_column(Text)
+    selected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+@event.listens_for(FieldComment, "before_update")
+def prevent_field_comment_source_update(_mapper: object, _connection: object, target: FieldComment) -> None:
+    """Field input is evidence; manager interpretation must use separate columns."""
+    state = inspect(target)
+    immutable_fields = (
+        "comment_id",
+        "document_id",
+        "document_version_id",
+        "structure_item_id",
+        "work_record_id",
+        "comment_type",
+        "input_mode",
+        "signal_level",
+        "template_id",
+        "raw_content",
+        "author_id",
+        "reported_by",
+        "operator_id",
+        "entry_source",
+        "device_id",
+        "location_code",
+        "created_at",
+    )
+    if any(state.attrs[field].history.has_changes() for field in immutable_fields):
+        raise ValueError("FieldComment source fields are immutable.")
 
 
 class FieldCommentAttachment(Base):

@@ -9,13 +9,14 @@
 1. [제품 개요](./product-overview.md)
 2. [시스템 맵](./system-map.md)
 3. [데이터 모델](./data-model.md)
-4. [API](./api.md)
-5. [MVP 범위](./mvp-scope.md)
-6. [구현 로드맵](./implementation-roadmap.md)
-7. [보안](./security.md)
-8. [배포](./deployment.md)
-9. [설계 결정](./decisions.md)
-10. [검증 기록과 현재 검증 제한](./verification.md)
+4. [FieldComment 검토·분석·선정 운영](./field-comment-review-workflow.md)
+5. [API](./api.md)
+6. [MVP 범위](./mvp-scope.md)
+7. [구현 로드맵](./implementation-roadmap.md)
+8. [보안](./security.md)
+9. [배포](./deployment.md)
+10. [설계 결정](./decisions.md)
+11. [검증 기록과 현재 검증 제한](./verification.md)
 
 ## 현재 코드 기준
 
@@ -31,7 +32,7 @@
 - 문서 등록은 즉시 공개가 아니다. 등록된 문서는 `WORKING` 상태와 최신 버전으로 저장되고, 공개 버전은 별도 publish 절차로 지정한다.
 - WPF 다운로드 허용 role의 파일 저장은 로컬 원본 복사가 아니라 서버의 세션 바인딩 1회성 controlled copy와 저장 후 SHA-256 검증을 사용한다.
 - FieldComment는 문서 버전이 아니라 현장 원천 기록이다.
-- WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다.
+- WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다. 문서 버전과 FieldComment 첨부도 서버 idempotency key를 사용하며, 작업내역 화면에서 큐 깊이·최장 대기·최근 처리량·실패 분포와 row별 운영 상태를 확인한다.
 - Windows 보존 동기화 전환 CLI는 FAILED 큐를 읽기 전용 dry-run으로 분류하고 plan hash와 row별 승인을 요구한다. 승인된 구 `create`/FieldNote 항목은 기존 원천·큐·파일을 수정하지 않고 현재 action의 신규 큐와 감사 이력으로 연결한다.
 - WPF에는 AI 근거 후보 운영 점검 화면이 있으며, 서버의 `ai_search_candidates` 재생성/품질/목록 API를 직접 조회한다. WPF 서버 클라이언트와 스모크 테스트는 오프라인 ground-truth 회귀 평가 API도 호출해 후보 ID·내용 hash·순위·원천 커버의 재현성을 검증한다.
 - 외부 AI 질의·요약은 `/api/v1/ai/queries` 생성·조회, 호출 로그 모델, 기능 플래그·승인·목적·원천 권한·민감정보·최소 payload·근거 snapshot 게이트까지 구현되었다. 운영 provider client와 네트워크 호출은 아직 없으며 기본값은 비활성이다.
@@ -41,7 +42,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전 원천 권한·민감정보·최소 payload·근거 snapshot·인용 검증과 감사 게이트를 다룬다. provider 호출 지점은 테스트용 주입 경계까지만 있으며 운영 네트워크 client는 없고, WPF UI는 근거 후보 운영 점검 화면까지만 제공한다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-15 현재 pytest 98건이 수집되며 `scripts/verify-preserved-tests.ps1`도 같은 98건을 기준선으로 사용한다. AI 근거 검색·provider 경계, controlled copy, 서버 계정 수명주기·권한·세션·감사 회귀가 포함된다.
+- FastAPI 코드는 2026-07-15 현재 pytest 101건이 수집되며 `scripts/verify-preserved-tests.ps1`도 같은 101건을 기준선으로 사용한다. AI 근거 검색·provider 경계, controlled copy, 서버 계정 수명주기·권한·세션·감사 회귀가 포함된다.
 
 ## 일일 기록
 

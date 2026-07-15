@@ -286,6 +286,7 @@ def test_report_rejects_excluded_field_comment_source() -> None:
                 "normalizedContent": "Excluded from report source candidates.",
                 "analysisContent": "Manager decided this source should not be reused.",
                 "reviewedBy": "user-admin",
+                "transitionReason": "보고서 근거 제외 결정",
             },
         )
         assert review_response.status_code == 200, review_response.text

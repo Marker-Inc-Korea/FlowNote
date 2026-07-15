@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-07-14 현재 `app/api/v1/router.py`에 등록된 경로와 요청·응답 코드 기준이다. 본문에 “후속 예외”로 명시한 경로만 미구현이다.
+이 문서는 2026-07-15 현재 `app/api/v1/router.py`에 등록된 경로와 요청·응답 코드 기준이다. 본문에 “후속 예외”로 명시한 경로만 미구현이다.
 
 ## 인증
 
@@ -85,13 +85,15 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 | PUT | `/api/v1/documents/{document_id}/tags` | 문서 태그 교체 |
 | PATCH | `/api/v1/documents/{document_id}/status` | 문서 상태 변경 |
 | GET | `/api/v1/documents/{document_id}/versions` | 문서 버전 목록 |
-| POST | `/api/v1/documents/{document_id}/versions` | 새 파일 버전 등록 |
+| POST | `/api/v1/documents/{document_id}/versions` | 새 파일 버전 등록. multipart `idempotencyKey`를 보내면 같은 키의 재시도는 기존 버전을 반환 |
 | PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | 버전 상태 변경 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | 특정 버전을 공개 버전으로 지정 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | 현재 공개 버전의 1회성 controlled copy 티켓 발급 |
 | GET | `/api/v1/controlled-copies/{token}` | 발급 사용자·로그인 세션에 묶인 controlled copy 1회 스트리밍 |
 
 문서 생성 시 허용되는 상태는 `WORKING`, `IN_REVIEW`, `ARCHIVED`이다. `PUBLISHED`는 publish 엔드포인트로만 만든다.
+
+문서 버전 등록의 선택적 `idempotencyKey`는 공백을 제거한 뒤 최대 160자로 제한하며 서버 `document_versions.idempotency_key`에 유일하게 저장한다. 같은 키를 같은 문서에 다시 보내면 새 파일이나 버전을 만들지 않고 기존 버전을 반환한다. 다른 문서에 이미 사용한 키는 409로 거부한다. 특정 버전 publish도 이미 그 버전이 현재 공개 버전이고 문서·버전 공개 상태가 일치하면 추가 상태 변경 없이 현재 문서를 반환한다.
 
 controlled copy는 `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`만 요청할 수 있다. 서버는 요청 시점과 전송 시점에 문서가 삭제되지 않은 `PUBLISHED` 상태인지, 요청 버전이 `published_version_id`와 일치하고 `version_status = PUBLISHED`, `is_published = true`인지 다시 검사한다. 티켓은 기본 60초, 최대 300초이며 발급 사용자와 `auth_sessions.session_id`에 묶이고 첫 전송 시 소비된다. 다른 사용자·다른 로그인 세션, 만료, 재사용은 거부한다.
 
@@ -114,13 +116,21 @@ controlled copy는 `admin`, `manager`, `system-admin`, `document-admin`, `assist
 | GET | `/api/v1/field-comments` | FieldComment 목록 조회 |
 | GET | `/api/v1/field-comments/{comment_id}` | FieldComment 상세 조회 |
 | PATCH | `/api/v1/field-comments/{comment_id}` | 상태, 정리 내용, 분석 내용 갱신 |
-| POST | `/api/v1/field-comments/{comment_id}/attachments` | 첨부 파일 등록 |
+| POST | `/api/v1/field-comments/bulk-review` | 최대 200건 담당 지정·기한·상태 일괄 변경 |
+| GET | `/api/v1/field-comments/{comment_id}/audit` | 원천 hash를 포함한 검토 변경 전·후 감사 snapshot |
+| GET | `/api/v1/field-comments/quality-workbench` | 오래된 NEW, 근거가 빈약한 SELECTED, 원천 누락 report source 작업함 |
+| GET | `/api/v1/field-comments/quality-metrics` | 상태·신호등·actor·라인·오류 유형 분포와 보고서 연결률 |
+| POST | `/api/v1/field-comments/{comment_id}/attachments` | 첨부 파일 등록. multipart `idempotencyKey`를 보내면 같은 키의 재시도는 기존 첨부를 반환 |
 | GET | `/api/v1/field-comments/{comment_id}/attachments` | 첨부 파일 목록 조회 |
 | GET | `/api/v1/documents/{document_id}/field-comments` | 특정 문서의 FieldComment 조회 |
 
 FieldComment는 `documentId`, `structureItemId`, `workRecordId` 중 하나 이상을 참조해야 한다. 현재 구조에서는 문서 참조가 주 사용 경로다.
 
-`GET /api/v1/field-comments`는 관리자 검토 화면 기준으로 `status`, `documentId`, `documentText`, `author`, `tag`, `createdFrom`, `createdTo`, `limit` 필터를 지원한다. WPF 관리자 화면은 같은 기준으로 로컬 `field_comments`, 문서, 문서 태그, 첨부 개수를 함께 조회한다.
+첨부 등록의 선택적 `idempotencyKey`도 공백을 제거한 뒤 최대 160자로 제한하며 서버 `field_comment_attachments.idempotency_key`에 유일하게 저장한다. 같은 키를 같은 FieldComment에 다시 보내면 새 파일이나 첨부 row를 만들지 않고 기존 첨부를 반환한다. 다른 FieldComment에 이미 사용한 키는 409로 거부한다. WPF 재시도 큐는 문서 버전과 FieldComment 첨부 전송에도 큐의 안정된 idempotency key를 그대로 전달한다.
+
+`GET /api/v1/field-comments`는 관리자 검토 화면 기준으로 `status`, `documentId`, `documentText`, `author`, `assignedTo`, `tag`, `line`, `equipment`, `process`, `errorType`, `createdFrom`, `createdTo`, `oldNewDays`, `hasAttachments`, `reportLinked`, `limit` 필터를 지원한다. WPF 관리자 화면은 같은 기준으로 로컬 `field_comments`, 문서, 문서 태그, 첨부와 보고서 source를 함께 조회한다.
+
+상태 변경은 `transitionReason` 3자 이상이 필수다. 주 흐름은 `NEW → ANALYZED → REVIEWED → SELECTED`이며 정해진 한 단계 전진과 감사 가능한 되돌림만 허용한다. 서버는 요청의 `reviewedBy`·`analyzedBy`를 신뢰하지 않고 인증 actor를 기록한다. `SELECTED`는 정리·분석 내용과 원천 작성자·문서 버전이 있어야 한다. 세부 권한과 되돌림 표는 [FieldComment 검토·분석·선정 운영](./field-comment-review-workflow.md)을 따른다.
 
 WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `analysis_content`, `status`를 수정하고 `server_sync_queue`에 `entity_type = field_comment_review`, `action = update_field_comment_review`로 서버 PATCH 재시도 항목을 남긴다. 서버 ID가 아직 없는 로컬 FieldComment는 선행 등록 동기화가 끝난 뒤 검토 변경 PATCH를 재시도한다.
 

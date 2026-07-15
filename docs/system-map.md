@@ -1,6 +1,6 @@
 # FlowNote 시스템 맵
 
-이 시스템 맵은 2026-07-14 현재 실행 코드와 저장소 경계를 기준으로 한다. 후속 연동은 마지막 절에서만 예외로 표시한다.
+이 시스템 맵은 2026-07-15 현재 실행 코드와 저장소 경계를 기준으로 한다. 후속 연동은 마지막 절에서만 예외로 표시한다.
 
 ## 실행 구성
 
@@ -26,7 +26,9 @@ FastAPI Server
   -> /api/v1 REST API
 ```
 
-WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 보고서는 로컬 보고서 문서와 `report_sources`를 먼저 남긴 뒤 `server_sync_queue`의 `register_report` 항목으로 서버 `/api/v1/reports` 저장을 재시도한다. 큐 재시도는 단순 생성 순서가 아니라 같은 문서 또는 보고서 근거 단위로 묶고, 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다.
+WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 보고서는 로컬 보고서 문서와 `report_sources`를 먼저 남긴 뒤 `server_sync_queue`의 `register_report` 항목으로 서버 `/api/v1/reports` 저장을 재시도한다. 큐 재시도는 단순 생성 순서가 아니라 같은 문서 또는 보고서 근거 단위로 묶고, 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다. 문서 버전과 FieldComment 첨부도 큐의 idempotency key를 서버 multipart 요청에 전달해 응답 유실 뒤 재시도가 중복 버전이나 파일을 만들지 않게 한다.
+
+`작업내역`의 동기화 큐 화면은 각 row를 완료, 보존 구 형식, 선행 조건 대기, 수동 조치 필요, 재시도 가능의 운영 상태로 구분한다. 요약은 `SYNCED`가 아닌 큐 깊이, 그중 가장 오래된 `created_at` 기준 대기 시간, 최근 1시간 `SYNCED` 처리량, `FAILED` 진단 분포를 표시한다. 인증 만료와 서버 연결 실패·시간 초과는 뒤 항목도 같은 원인으로 연속 실패시키지 않도록 현재 재시도 묶음을 즉시 중단하고, 항목 자체의 검증·로컬 파일 오류는 실패를 기록한 뒤 다음 독립 항목을 계속 처리한다.
 
 과거 구 `create` action과 FieldNote/첨부가 남은 FAILED 큐는 일반 재시도가 현재 계약으로 자동 해석하지 않는다. `FlowNote.Windows.SyncMigrationTool`이 먼저 SQLite read-only dry-run으로 전체 FAILED 큐를 배타적으로 분류하고 안정된 plan hash를 만든다. 운영자가 plan hash와 row ID를 명시해 승인하면 전환 가능한 항목만 현재 action의 별도 `PENDING` 큐로 만들고 `server_sync_migration_audit`에 원천 snapshot과 연결을 남긴다. 기존 큐, 원천 행과 파일은 수정·삭제하지 않는다.
 

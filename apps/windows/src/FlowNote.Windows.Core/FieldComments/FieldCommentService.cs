@@ -159,6 +159,9 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             locationCode,
             "NEW",
             now,
+            null,
+            null,
+            null,
             null);
     }
 
@@ -169,7 +172,8 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         command.CommandText = """
             SELECT id, comment_id, document_id, document_version_no, comment_type, input_mode, signal_level,
                    raw_content, normalized_content, analysis_content, author_name, reported_by,
-                   operator_name, entry_source, device_id, location_code, status, created_at, synced_at
+                   operator_name, entry_source, device_id, location_code, status, created_at, synced_at,
+                   assigned_to, review_due_at, last_transition_reason
             FROM field_comments
             WHERE document_id = $document_id
             ORDER BY created_at DESC, id DESC;
@@ -232,6 +236,36 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             command.Parameters.AddWithValue("$tag_text", $"%{tagText}%");
         }
 
+        var assignedTo = CleanFilter(filter.AssignedTo);
+        if (!string.IsNullOrWhiteSpace(assignedTo))
+        {
+            clauses.Add("comment.assigned_to LIKE $assigned_to");
+            command.Parameters.AddWithValue("$assigned_to", $"%{assignedTo}%");
+        }
+
+        AddTypedTagFilter(clauses, command, "line", filter.LineText);
+        AddTypedTagFilter(clauses, command, "equipment", filter.EquipmentText);
+        AddTypedTagFilter(clauses, command, "process", filter.ProcessText);
+        AddTypedTagFilter(clauses, command, "error_type", filter.ErrorTypeText);
+
+        if (filter.OlderThanDays is > 0)
+        {
+            clauses.Add("comment.status = 'NEW' AND comment.created_at <= $aging_cutoff");
+            command.Parameters.AddWithValue("$aging_cutoff", DateTime.UtcNow.AddDays(-filter.OlderThanDays.Value).ToString("O"));
+        }
+        if (filter.HasAttachments is not null)
+        {
+            clauses.Add(filter.HasAttachments.Value
+                ? "EXISTS (SELECT 1 FROM field_comment_attachments a WHERE a.comment_id = comment.comment_id)"
+                : "NOT EXISTS (SELECT 1 FROM field_comment_attachments a WHERE a.comment_id = comment.comment_id)");
+        }
+        if (filter.ReportLinked is not null)
+        {
+            clauses.Add(filter.ReportLinked.Value
+                ? "EXISTS (SELECT 1 FROM report_sources r WHERE r.source_type = 'FIELD_COMMENT' AND r.local_source_id = comment.comment_id)"
+                : "NOT EXISTS (SELECT 1 FROM report_sources r WHERE r.source_type = 'FIELD_COMMENT' AND r.local_source_id = comment.comment_id)");
+        }
+
         if (filter.CreatedFrom is not null)
         {
             clauses.Add("comment.created_at >= $created_from");
@@ -269,6 +303,8 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
                    comment.entry_source,
                    comment.device_id,
                    comment.location_code,
+                   comment.assigned_to,
+                   comment.review_due_at,
                    comment.status,
                    (
                        SELECT COUNT(*)
@@ -312,7 +348,10 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         string? normalizedContent,
         string? analysisContent,
         string status,
-        string actorName)
+        string actorName,
+        string transitionReason,
+        string? assignedTo = null,
+        DateTime? reviewDueAt = null)
     {
         if (string.IsNullOrWhiteSpace(commentId))
         {
@@ -324,17 +363,29 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         using var connection = database.OpenConnection();
         var existing = LoadCommentTarget(connection, commentId)
             ?? throw new InvalidOperationException($"Field comment not found: {commentId}");
+        var existingComment = LoadComment(connection, commentId)
+            ?? throw new InvalidOperationException($"Field comment not found: {commentId}");
+        var normalized = CleanNullable(normalizedContent);
+        var analysis = CleanNullable(analysisContent);
+        var reason = CleanNullable(transitionReason);
+        ValidateTransition(existingComment.Status, status, normalized, analysis, reason);
 
         using var update = connection.CreateCommand();
         update.CommandText = """
             UPDATE field_comments
             SET normalized_content = $normalized_content,
                 analysis_content = $analysis_content,
+                assigned_to = $assigned_to,
+                review_due_at = $review_due_at,
+                last_transition_reason = $transition_reason,
                 status = $status
             WHERE comment_id = $comment_id;
             """;
-        update.Parameters.AddWithValue("$normalized_content", CleanNullable(normalizedContent) ?? (object)DBNull.Value);
-        update.Parameters.AddWithValue("$analysis_content", CleanNullable(analysisContent) ?? (object)DBNull.Value);
+        update.Parameters.AddWithValue("$normalized_content", normalized ?? (object)DBNull.Value);
+        update.Parameters.AddWithValue("$analysis_content", analysis ?? (object)DBNull.Value);
+        update.Parameters.AddWithValue("$assigned_to", CleanNullable(assignedTo) ?? (object)DBNull.Value);
+        update.Parameters.AddWithValue("$review_due_at", reviewDueAt is null ? DBNull.Value : reviewDueAt.Value.ToString("O"));
+        update.Parameters.AddWithValue("$transition_reason", reason ?? (object)DBNull.Value);
         update.Parameters.AddWithValue("$status", status);
         update.Parameters.AddWithValue("$comment_id", commentId);
         update.ExecuteNonQuery();
@@ -346,7 +397,7 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             "field_comment",
             commentId,
             existing.DocumentTitle,
-            $"FieldComment 검토 상태 변경: {status}",
+            $"FieldComment 검토 상태 변경: {existingComment.Status} → {status} · 사유: {reason}",
             now);
 
         return LoadComment(connection, commentId)
@@ -519,7 +570,10 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             reader.IsDBNull(15) ? null : reader.GetString(15),
             reader.GetString(16),
             DateTime.Parse(reader.GetString(17)),
-            reader.IsDBNull(18) ? null : DateTime.Parse(reader.GetString(18)));
+            reader.IsDBNull(18) ? null : DateTime.Parse(reader.GetString(18)),
+            reader.IsDBNull(19) ? null : reader.GetString(19),
+            reader.IsDBNull(20) ? null : DateTime.Parse(reader.GetString(20)),
+            reader.IsDBNull(21) ? null : reader.GetString(21));
     }
 
     private static FieldCommentReviewRecord ReadFieldCommentReview(SqliteDataReader reader)
@@ -543,10 +597,12 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             reader.GetString(15),
             reader.IsDBNull(16) ? null : reader.GetString(16),
             reader.IsDBNull(17) ? null : reader.GetString(17),
-            reader.GetString(18),
-            reader.GetInt32(19),
-            DateTime.Parse(reader.GetString(20)),
-            reader.IsDBNull(21) ? null : DateTime.Parse(reader.GetString(21)));
+            reader.IsDBNull(18) ? null : reader.GetString(18),
+            reader.IsDBNull(19) ? null : DateTime.Parse(reader.GetString(19)),
+            reader.GetString(20),
+            reader.GetInt32(21),
+            DateTime.Parse(reader.GetString(22)),
+            reader.IsDBNull(23) ? null : DateTime.Parse(reader.GetString(23)));
     }
 
     private static FieldCommentRecord? LoadComment(SqliteConnection connection, string commentId)
@@ -555,7 +611,8 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         command.CommandText = """
             SELECT id, comment_id, document_id, document_version_no, comment_type, input_mode, signal_level,
                    raw_content, normalized_content, analysis_content, author_name, reported_by,
-                   operator_name, entry_source, device_id, location_code, status, created_at, synced_at
+                   operator_name, entry_source, device_id, location_code, status, created_at, synced_at,
+                   assigned_to, review_due_at, last_transition_reason
             FROM field_comments
             WHERE comment_id = $comment_id
             LIMIT 1;
@@ -573,9 +630,74 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         }
     }
 
+    private static void ValidateTransition(
+        string currentStatus,
+        string targetStatus,
+        string? normalizedContent,
+        string? analysisContent,
+        string? reason)
+    {
+        if (string.Equals(currentStatus, targetStatus, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var allowed = currentStatus switch
+        {
+            "NEW" => new[] { "ANALYZED", "NEEDS_REVIEW", "EXCLUDED" },
+            "NEEDS_REVIEW" => new[] { "NEW", "ANALYZED", "EXCLUDED" },
+            "ANALYZED" => new[] { "NEW", "NEEDS_REVIEW", "REVIEWED", "EXCLUDED" },
+            "REVIEWED" => new[] { "ANALYZED", "SELECTED", "EXCLUDED" },
+            "SELECTED" => new[] { "REVIEWED", "EXCLUDED", "ARCHIVED" },
+            "EXCLUDED" => new[] { "NEW", "ARCHIVED" },
+            "ARCHIVED" => new[] { "EXCLUDED" },
+            _ => []
+        };
+        if (!allowed.Contains(targetStatus, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException($"허용되지 않은 상태 전이입니다: {currentStatus} → {targetStatus}");
+        }
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length < 3)
+        {
+            throw new InvalidOperationException("상태 변경 사유를 3자 이상 입력하세요.");
+        }
+        if (targetStatus is "ANALYZED" or "REVIEWED" or "SELECTED" && string.IsNullOrWhiteSpace(analysisContent))
+        {
+            throw new InvalidOperationException("분석완료 이후 상태에는 분석 내용이 필요합니다.");
+        }
+        if (targetStatus is "REVIEWED" or "SELECTED" && string.IsNullOrWhiteSpace(normalizedContent))
+        {
+            throw new InvalidOperationException("검토완료 이후 상태에는 정리 내용이 필요합니다.");
+        }
+    }
+
     private static string? CleanFilter(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static void AddTypedTagFilter(
+        List<string> clauses,
+        SqliteCommand command,
+        string tagType,
+        string? value)
+    {
+        var cleaned = CleanFilter(value);
+        if (string.IsNullOrWhiteSpace(cleaned))
+        {
+            return;
+        }
+        var parameter = $"$tag_{tagType}";
+        clauses.Add($"""
+            EXISTS (
+                SELECT 1 FROM document_tags typed_document_tag
+                JOIN tag_definitions typed_tag ON typed_tag.tag_id = typed_document_tag.tag_id
+                WHERE typed_document_tag.document_id = comment.document_id
+                  AND typed_tag.tag_type = '{tagType}'
+                  AND (typed_tag.name LIKE {parameter} OR typed_tag.code LIKE {parameter})
+            )
+            """);
+        command.Parameters.AddWithValue(parameter, $"%{cleaned}%");
     }
 
     private static string? CleanNullable(string? value)

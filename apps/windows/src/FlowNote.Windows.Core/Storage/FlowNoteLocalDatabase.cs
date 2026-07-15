@@ -325,6 +325,9 @@ public sealed class FlowNoteLocalDatabase
                 entry_source TEXT NOT NULL,
                 device_id TEXT NULL,
                 location_code TEXT NULL,
+                assigned_to TEXT NULL,
+                review_due_at TEXT NULL,
+                last_transition_reason TEXT NULL,
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 synced_at TEXT NULL
@@ -633,6 +636,9 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "document_versions", "server_version_id", "TEXT NULL");
         EnsureColumn(connection, "document_versions", "synced_at", "TEXT NULL");
         EnsureColumn(connection, "field_comments", "server_comment_id", "TEXT NULL");
+        EnsureColumn(connection, "field_comments", "assigned_to", "TEXT NULL");
+        EnsureColumn(connection, "field_comments", "review_due_at", "TEXT NULL");
+        EnsureColumn(connection, "field_comments", "last_transition_reason", "TEXT NULL");
         EnsureColumn(connection, "field_comments", "synced_at", "TEXT NULL");
         EnsureColumn(connection, "field_comment_attachments", "server_attachment_id", "TEXT NULL");
         EnsureColumn(connection, "field_comment_attachments", "synced_at", "TEXT NULL");

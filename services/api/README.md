@@ -38,7 +38,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | PUT | `/api/v1/documents/{document_id}/tags` | Replace document tags |
 | PATCH | `/api/v1/documents/{document_id}/status` | Change document status |
 | GET | `/api/v1/documents/{document_id}/versions` | Version list |
-| POST | `/api/v1/documents/{document_id}/versions` | Register new version |
+| POST | `/api/v1/documents/{document_id}/versions` | Register new version; optional multipart `idempotencyKey` returns the existing version on retry |
 | PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | Change version status |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | Publish selected version |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | Issue one-time controlled copy grant for the current published version |
@@ -51,7 +51,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/field-comments` | FieldComment list |
 | GET | `/api/v1/field-comments/{comment_id}` | FieldComment detail |
 | PATCH | `/api/v1/field-comments/{comment_id}` | Review/analyze FieldComment |
-| POST | `/api/v1/field-comments/{comment_id}/attachments` | Attachment create |
+| POST | `/api/v1/field-comments/{comment_id}/attachments` | Attachment create; optional multipart `idempotencyKey` returns the existing attachment on retry |
 | GET | `/api/v1/field-comments/{comment_id}/attachments` | Attachment list |
 | GET | `/api/v1/documents/{document_id}/field-comments` | FieldComments by document |
 | POST | `/api/v1/work-sequence-boards` | Work sequence board create |
@@ -136,7 +136,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-07-15, the collected FastAPI test count is 96. `scripts/verify-preserved-tests.ps1` fixes the same collection baseline and verifies the generated JUnit counts. The complete Windows baseline also runs WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID; a FastAPI-only run is partial evidence.
+As of 2026-07-15, the collected FastAPI test count is 101. `scripts/verify-preserved-tests.ps1` fixes the same collection baseline and verifies the generated JUnit counts. The complete Windows baseline also runs WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID; a FastAPI-only run is partial evidence.
 
 The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no policy-management API or network provider client in the current router.
 

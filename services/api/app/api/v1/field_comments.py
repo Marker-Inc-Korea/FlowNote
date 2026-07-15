@@ -1,22 +1,39 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import desc, or_, select
+from sqlalchemy import desc, exists, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import FieldCommentCreateUser, get_current_user
+from app.core.auth import (
+    FIELD_COMMENT_DECIDE_ROLES,
+    FieldCommentAnalyzeUser,
+    FieldCommentCreateUser,
+    get_current_user,
+)
 from app.core.config import Settings, get_settings
 from app.core.storage import UploadTooLargeError, file_family_from_extension
 from app.core.storage import resolve_storage_root, store_upload_file_at
-from app.db.models import Document, DocumentTag, DocumentVersion, FieldComment, FieldCommentAttachment, FileObject
-from app.db.models import TagDefinition
+from app.db.models import (
+    ActivityHistory,
+    Document,
+    DocumentTag,
+    DocumentVersion,
+    FieldComment,
+    FieldCommentAttachment,
+    FileObject,
+    ReportSource,
+    TagDefinition,
+    UserAccount,
+)
 from app.db.session import get_db_session
 
 router = APIRouter(prefix="/field-comments", tags=["field-comments"], dependencies=[Depends(get_current_user)])
@@ -29,6 +46,16 @@ document_field_comments_router = APIRouter(
 COMMENT_TYPES = {"experience", "work_evaluation", "issue"}
 INPUT_MODES = {"signal", "free_text", "template", "template_with_text", "admin_proxy", "mes_integration"}
 STATUSES = {"NEW", "NEEDS_REVIEW", "ANALYZED", "REVIEWED", "SELECTED", "EXCLUDED", "ARCHIVED"}
+PRIMARY_WORKFLOW_STATUSES = {"NEW", "ANALYZED", "REVIEWED", "SELECTED"}
+ALLOWED_TRANSITIONS = {
+    "NEW": {"ANALYZED", "NEEDS_REVIEW", "EXCLUDED"},
+    "NEEDS_REVIEW": {"NEW", "ANALYZED", "EXCLUDED"},
+    "ANALYZED": {"NEW", "NEEDS_REVIEW", "REVIEWED", "EXCLUDED"},
+    "REVIEWED": {"ANALYZED", "SELECTED", "EXCLUDED"},
+    "SELECTED": {"REVIEWED", "EXCLUDED", "ARCHIVED"},
+    "EXCLUDED": {"NEW", "ARCHIVED"},
+    "ARCHIVED": {"EXCLUDED"},
+}
 ATTACHMENT_TYPES = {"photo", "document", "other"}
 ATTACHMENT_ALLOWED_EXTENSIONS = {
     ".png",
@@ -74,6 +101,37 @@ class FieldCommentReviewRequest(BaseModel):
     analysis_content: str | None = Field(default=None, alias="analysisContent")
     reviewed_by: str | None = Field(default=None, alias="reviewedBy")
     analyzed_by: str | None = Field(default=None, alias="analyzedBy")
+    assigned_to: str | None = Field(default=None, alias="assignedTo")
+    review_due_at: datetime | None = Field(default=None, alias="reviewDueAt")
+    transition_reason: str | None = Field(default=None, alias="transitionReason")
+
+
+class FieldCommentBulkReviewRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    comment_ids: list[str] = Field(alias="commentIds", min_length=1, max_length=200)
+    status: str | None = None
+    assigned_to: str | None = Field(default=None, alias="assignedTo")
+    review_due_at: datetime | None = Field(default=None, alias="reviewDueAt")
+    transition_reason: str | None = Field(default=None, alias="transitionReason")
+
+
+class FieldCommentAuditResponse(BaseModel):
+    history_id: str
+    event_type: str
+    actor_id: str | None
+    before_snapshot: dict | None
+    after_snapshot: dict | None
+    change_reason: str | None
+    created_at: datetime
+
+
+class FieldCommentQualityItemResponse(BaseModel):
+    issue_type: str
+    comment_id: str | None
+    report_id: str | None = None
+    age_days: int | None = None
+    detail: str
 
 
 class FieldCommentResponse(BaseModel):
@@ -100,6 +158,11 @@ class FieldCommentResponse(BaseModel):
     status: str
     reviewed_by: str | None
     analyzed_by: str | None
+    assigned_to: str | None
+    review_due_at: datetime | None
+    last_transition_reason: str | None
+    selected_at: datetime | None
+    source_hash_sha256: str
     created_at: datetime
     updated_at: datetime
     reviewed_at: datetime | None
@@ -220,11 +283,149 @@ def _field_comment_response(note: FieldComment) -> FieldCommentResponse:
         status=note.status,
         reviewed_by=note.reviewed_by,
         analyzed_by=note.analyzed_by,
+        assigned_to=note.assigned_to,
+        review_due_at=note.review_due_at,
+        last_transition_reason=note.last_transition_reason,
+        selected_at=note.selected_at,
+        source_hash_sha256=_source_hash(note),
         created_at=note.created_at,
         updated_at=note.updated_at,
         reviewed_at=note.reviewed_at,
         analyzed_at=note.analyzed_at,
     )
+
+
+def _source_snapshot(note: FieldComment) -> dict:
+    return {
+        "comment_id": note.comment_id,
+        "document_id": note.document_id,
+        "document_version_id": note.document_version_id,
+        "structure_item_id": note.structure_item_id,
+        "work_record_id": note.work_record_id,
+        "comment_type": note.comment_type,
+        "input_mode": note.input_mode,
+        "signal_level": note.signal_level,
+        "template_id": note.template_id,
+        "raw_content": note.raw_content,
+        "author_id": note.author_id,
+        "reported_by": note.reported_by,
+        "operator_id": note.operator_id,
+        "entry_source": note.entry_source,
+        "device_id": note.device_id,
+        "location_code": note.location_code,
+        "created_at": note.created_at.isoformat() if note.created_at else None,
+    }
+
+
+def _source_hash(note: FieldComment) -> str:
+    payload = json.dumps(_source_snapshot(note), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _review_snapshot(note: FieldComment) -> dict:
+    return {
+        "source_hash_sha256": _source_hash(note),
+        "status": note.status,
+        "normalized_content": note.normalized_content,
+        "analysis_content": note.analysis_content,
+        "assigned_to": note.assigned_to,
+        "review_due_at": note.review_due_at.isoformat() if note.review_due_at else None,
+        "analyzed_by": note.analyzed_by,
+        "reviewed_by": note.reviewed_by,
+    }
+
+
+def _load_user_id(session: Session, value: str | None, field_name: str) -> str | None:
+    user_id = _clean_optional(value)
+    if user_id is None:
+        return None
+    if session.scalar(select(UserAccount.id).where(UserAccount.user_id == user_id)) is None:
+        raise HTTPException(status_code=422, detail=f"{field_name} must reference an existing user_id.")
+    return user_id
+
+
+def _validate_transition(note: FieldComment, target: str, reason: str | None, actor_role: str) -> str:
+    if target == note.status:
+        return _clean_optional(reason) or note.last_transition_reason or "상태 유지"
+    if target not in ALLOWED_TRANSITIONS[note.status]:
+        raise HTTPException(status_code=409, detail=f"Transition {note.status} -> {target} is not allowed.")
+    if target in {"REVIEWED", "SELECTED", "EXCLUDED", "ARCHIVED"} and actor_role not in FIELD_COMMENT_DECIDE_ROLES:
+        raise HTTPException(status_code=403, detail="Current user role cannot make this FieldComment decision.")
+    cleaned_reason = _clean_optional(reason)
+    if cleaned_reason is None or len(cleaned_reason) < 3:
+        raise HTTPException(status_code=422, detail="transitionReason of at least 3 characters is required.")
+    if target in {"ANALYZED", "REVIEWED", "SELECTED"} and not _clean_optional(note.analysis_content):
+        raise HTTPException(status_code=422, detail="analysisContent is required for analyzed or later status.")
+    if target in {"REVIEWED", "SELECTED"} and not _clean_optional(note.normalized_content):
+        raise HTTPException(status_code=422, detail="normalizedContent is required for reviewed or selected status.")
+    if target == "SELECTED" and (not note.document_version_id or not note.author_id):
+        raise HTTPException(status_code=422, detail="SELECTED requires documentVersionId and authorId trace evidence.")
+    return cleaned_reason
+
+
+def _record_review_audit(
+    session: Session,
+    note: FieldComment,
+    actor_id: str,
+    before: dict,
+    reason: str | None,
+) -> None:
+    after = _review_snapshot(note)
+    if before == after:
+        return
+    if before["source_hash_sha256"] != after["source_hash_sha256"]:
+        raise HTTPException(status_code=409, detail="FieldComment source snapshot changed during review.")
+    session.add(
+        ActivityHistory(
+            history_id=_new_public_id("hist"),
+            event_type="field_comment.review_changed",
+            actor_id=actor_id,
+            target_type="field_comment",
+            target_id=note.comment_id,
+            target_title=note.comment_id,
+            message=f"FieldComment 검토 변경: {before['status']} → {after['status']}",
+            before_value=json.dumps(before, ensure_ascii=False, sort_keys=True),
+            after_value=json.dumps(after, ensure_ascii=False, sort_keys=True),
+            change_reason=reason,
+        )
+    )
+
+
+def _apply_review_change(
+    session: Session,
+    note: FieldComment,
+    request: FieldCommentReviewRequest | FieldCommentBulkReviewRequest,
+    actor_id: str,
+    actor_role: str,
+) -> None:
+    before = _review_snapshot(note)
+    if isinstance(request, FieldCommentReviewRequest):
+        if request.normalized_content is not None:
+            note.normalized_content = _clean_optional(request.normalized_content)
+        if request.analysis_content is not None:
+            note.analysis_content = _clean_optional(request.analysis_content)
+    if request.assigned_to is not None:
+        note.assigned_to = _load_user_id(session, request.assigned_to, "assignedTo")
+    if request.review_due_at is not None:
+        note.review_due_at = request.review_due_at
+
+    reason = None
+    if request.status is not None:
+        target = _validate_choice(request.status, STATUSES, "status")
+        reason = _validate_transition(note, target, request.transition_reason, actor_role)
+        if target != note.status:
+            note.status = target
+            note.last_transition_reason = reason
+            now = datetime.now(timezone.utc)
+            if target == "ANALYZED":
+                note.analyzed_by = actor_id
+                note.analyzed_at = now
+            elif target == "REVIEWED":
+                note.reviewed_by = actor_id
+                note.reviewed_at = now
+            elif target == "SELECTED":
+                note.selected_at = now
+    _record_review_audit(session, note, actor_id, before, reason or _clean_optional(request.transition_reason))
 
 
 def _delete_stored_file(storage_root: Path, storage_key: str) -> None:
@@ -291,7 +492,7 @@ def _attachment_response(
 @router.post("", response_model=FieldCommentResponse, status_code=status.HTTP_201_CREATED)
 def create_field_comment(
     request: FieldCommentCreateRequest,
-    _current_user: FieldCommentCreateUser,
+    current_user: FieldCommentCreateUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> FieldCommentResponse:
     request.document_id = _clean_optional(request.document_id)
@@ -323,8 +524,8 @@ def create_field_comment(
         signal_level=_clean_optional(request.signal_level),
         template_id=_clean_optional(request.template_id),
         raw_content=request.raw_content,
-        author_id=_clean_optional(request.author_id),
-        reported_by=_clean_optional(request.reported_by),
+        author_id=_clean_optional(request.author_id) or current_user.user_id,
+        reported_by=_clean_optional(request.reported_by) or current_user.display_name,
         operator_id=_clean_optional(request.operator_id),
         entry_source=request.entry_source.strip() or "field_user",
         device_id=_clean_optional(request.device_id),
@@ -473,9 +674,17 @@ def list_field_comments(
     comment_status: Annotated[str | None, Query(alias="status")] = None,
     document_text: Annotated[str | None, Query(alias="documentText")] = None,
     author_text: Annotated[str | None, Query(alias="author")] = None,
+    assigned_to: Annotated[str | None, Query(alias="assignedTo")] = None,
     tag_text: Annotated[str | None, Query(alias="tag")] = None,
+    line_text: Annotated[str | None, Query(alias="line")] = None,
+    equipment_text: Annotated[str | None, Query(alias="equipment")] = None,
+    process_text: Annotated[str | None, Query(alias="process")] = None,
+    error_type_text: Annotated[str | None, Query(alias="errorType")] = None,
     created_from: Annotated[datetime | None, Query(alias="createdFrom")] = None,
     created_to: Annotated[datetime | None, Query(alias="createdTo")] = None,
+    old_new_days: Annotated[int | None, Query(alias="oldNewDays", ge=1, le=3650)] = None,
+    has_attachments: Annotated[bool | None, Query(alias="hasAttachments")] = None,
+    report_linked: Annotated[bool | None, Query(alias="reportLinked")] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[FieldCommentResponse]:
     statement = select(FieldComment).order_by(desc(FieldComment.created_at), desc(FieldComment.id)).limit(limit)
@@ -500,6 +709,8 @@ def list_field_comments(
                 FieldComment.operator_id.ilike(pattern),
             )
         )
+    if assigned_to := _clean_optional(assigned_to):
+        statement = statement.where(FieldComment.assigned_to == assigned_to)
     if tag_text := _clean_optional(tag_text):
         pattern = f"%{tag_text}%"
         tagged_document_ids = (
@@ -511,10 +722,42 @@ def list_field_comments(
             )
         )
         statement = statement.where(FieldComment.document_id.in_(tagged_document_ids))
+    for tag_type, value in (
+        ("line", line_text),
+        ("equipment", equipment_text),
+        ("process", process_text),
+        ("error_type", error_type_text),
+    ):
+        if cleaned := _clean_optional(value):
+            pattern = f"%{cleaned}%"
+            matching_documents = (
+                select(DocumentTag.document_id)
+                .join(TagDefinition, DocumentTag.tag_id == TagDefinition.tag_id)
+                .where(
+                    TagDefinition.is_active.is_(True),
+                    TagDefinition.tag_type == tag_type,
+                    or_(TagDefinition.name.ilike(pattern), TagDefinition.code.ilike(pattern)),
+                )
+            )
+            statement = statement.where(FieldComment.document_id.in_(matching_documents))
     if created_from is not None:
         statement = statement.where(FieldComment.created_at >= created_from)
     if created_to is not None:
         statement = statement.where(FieldComment.created_at <= created_to)
+    if old_new_days is not None:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=old_new_days)
+        statement = statement.where(FieldComment.status == "NEW", FieldComment.created_at <= cutoff)
+    attachment_exists = exists(select(FieldCommentAttachment.id).where(FieldCommentAttachment.comment_id == FieldComment.comment_id))
+    if has_attachments is not None:
+        statement = statement.where(attachment_exists if has_attachments else ~attachment_exists)
+    report_source_exists = exists(
+        select(ReportSource.id).where(
+            ReportSource.source_type == "FIELD_COMMENT",
+            ReportSource.source_id == FieldComment.comment_id,
+        )
+    )
+    if report_linked is not None:
+        statement = statement.where(report_source_exists if report_linked else ~report_source_exists)
     return [_field_comment_response(note) for note in session.scalars(statement).all()]
 
 
@@ -539,6 +782,152 @@ def list_document_field_comments(
     return [_field_comment_response(note) for note in notes]
 
 
+@router.post("/bulk-review", response_model=list[FieldCommentResponse])
+def bulk_review_field_comments(
+    request: FieldCommentBulkReviewRequest,
+    current_user: FieldCommentAnalyzeUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> list[FieldCommentResponse]:
+    comment_ids = list(dict.fromkeys(_clean_optional(item) for item in request.comment_ids))
+    if any(item is None for item in comment_ids):
+        raise HTTPException(status_code=422, detail="commentIds cannot contain blank values.")
+    notes = session.scalars(select(FieldComment).where(FieldComment.comment_id.in_(comment_ids))).all()
+    by_id = {note.comment_id: note for note in notes}
+    missing = [item for item in comment_ids if item not in by_id]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Field comments not found: {', '.join(missing)}")
+    ordered = [by_id[item] for item in comment_ids]
+    for note in ordered:
+        _apply_review_change(session, note, request, current_user.user_id, current_user.role)
+    try:
+        session.commit()
+    except (IntegrityError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Bulk FieldComment review could not be saved.") from exc
+    return [_field_comment_response(note) for note in ordered]
+
+
+@router.get("/quality-workbench", response_model=list[FieldCommentQualityItemResponse])
+def field_comment_quality_workbench(
+    _current_user: FieldCommentAnalyzeUser,
+    session: Annotated[Session, Depends(get_db_session)],
+    aging_days: Annotated[int, Query(alias="agingDays", ge=1, le=3650)] = 7,
+) -> list[FieldCommentQualityItemResponse]:
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=aging_days)
+    result: list[FieldCommentQualityItemResponse] = []
+    old_notes = session.scalars(
+        select(FieldComment).where(FieldComment.status == "NEW", FieldComment.created_at <= cutoff)
+    ).all()
+    for note in old_notes:
+        created = note.created_at.replace(tzinfo=timezone.utc) if note.created_at.tzinfo is None else note.created_at
+        result.append(FieldCommentQualityItemResponse(
+            issue_type="OLD_NEW",
+            comment_id=note.comment_id,
+            age_days=max((now - created).days, 0),
+            detail="검토 기한 없이 오래 대기한 신규 FieldComment",
+        ))
+
+    selected = session.scalars(select(FieldComment).where(FieldComment.status == "SELECTED")).all()
+    for note in selected:
+        attachment_count = session.scalar(
+            select(func.count()).select_from(FieldCommentAttachment).where(
+                FieldCommentAttachment.comment_id == note.comment_id
+            )
+        ) or 0
+        audit_count = session.scalar(
+            select(func.count()).select_from(ActivityHistory).where(
+                ActivityHistory.target_type == "field_comment",
+                ActivityHistory.target_id == note.comment_id,
+                ActivityHistory.event_type == "field_comment.review_changed",
+            )
+        ) or 0
+        missing = []
+        if not note.document_version_id:
+            missing.append("문서 버전")
+        if not note.author_id:
+            missing.append("작성자")
+        if not note.analysis_content:
+            missing.append("분석")
+        if attachment_count == 0:
+            missing.append("첨부")
+        if audit_count < 3:
+            missing.append("단계별 검토 이력")
+        if missing:
+            result.append(FieldCommentQualityItemResponse(
+                issue_type="WEAK_SELECTED",
+                comment_id=note.comment_id,
+                detail=f"SELECTED 근거 보강 필요: {', '.join(missing)}",
+            ))
+
+    sources = session.scalars(select(ReportSource).where(ReportSource.source_type == "FIELD_COMMENT")).all()
+    for source in sources:
+        exists_comment = session.scalar(
+            select(FieldComment.id).where(FieldComment.comment_id == source.source_id)
+        )
+        if exists_comment is None:
+            result.append(FieldCommentQualityItemResponse(
+                issue_type="MISSING_REPORT_SOURCE",
+                comment_id=source.source_id,
+                report_id=source.report_id,
+                detail="보고서 source가 존재하지 않는 FieldComment를 참조함",
+            ))
+    return result
+
+
+@router.get("/quality-metrics")
+def field_comment_quality_metrics(
+    _current_user: FieldCommentAnalyzeUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> dict:
+    def distribution(column) -> dict[str, int]:
+        return {str(key or "(없음)"): count for key, count in session.execute(
+            select(column, func.count()).group_by(column).order_by(column)
+        ).all()}
+
+    total = session.scalar(select(func.count()).select_from(FieldComment)) or 0
+    linked = session.scalar(
+        select(func.count(func.distinct(ReportSource.source_id))).where(
+            ReportSource.source_type == "FIELD_COMMENT"
+        )
+    ) or 0
+    return {
+        "total": total,
+        "status_distribution": distribution(FieldComment.status),
+        "signal_distribution": distribution(FieldComment.signal_level),
+        "actor_distribution": distribution(FieldComment.author_id),
+        "line_distribution": distribution(FieldComment.location_code),
+        "error_type_distribution": distribution(FieldComment.category),
+        "report_linked_count": linked,
+        "report_link_rate": round(linked / total, 4) if total else 0.0,
+    }
+
+
+@router.get("/{comment_id}/audit", response_model=list[FieldCommentAuditResponse])
+def list_field_comment_audit(
+    comment_id: str,
+    _current_user: FieldCommentAnalyzeUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> list[FieldCommentAuditResponse]:
+    if session.scalar(select(FieldComment.id).where(FieldComment.comment_id == comment_id)) is None:
+        raise HTTPException(status_code=404, detail="Field comment not found.")
+    rows = session.scalars(
+        select(ActivityHistory).where(
+            ActivityHistory.target_type == "field_comment",
+            ActivityHistory.target_id == comment_id,
+        ).order_by(ActivityHistory.created_at, ActivityHistory.id)
+    ).all()
+    return [FieldCommentAuditResponse(
+        history_id=row.history_id,
+        event_type=row.event_type,
+        actor_id=row.actor_id,
+        before_snapshot=json.loads(row.before_value) if row.before_value else None,
+        after_snapshot=json.loads(row.after_value) if row.after_value else None,
+        change_reason=row.change_reason,
+        created_at=row.created_at,
+    ) for row in rows]
+
+
 @router.get("/{comment_id}", response_model=FieldCommentResponse)
 def get_field_comment(
     comment_id: str,
@@ -554,38 +943,18 @@ def get_field_comment(
 def review_field_comment(
     comment_id: str,
     request: FieldCommentReviewRequest,
+    current_user: FieldCommentAnalyzeUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> FieldCommentResponse:
     note = session.scalar(select(FieldComment).where(FieldComment.comment_id == comment_id))
     if note is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field comment not found.")
 
-    if request.status is not None:
-        target_status = _validate_choice(request.status, STATUSES, "status")
-        if note.status != target_status:
-            note.status = target_status
-    if request.normalized_content is not None:
-        normalized_content = _clean_optional(request.normalized_content)
-        if note.normalized_content != normalized_content:
-            note.normalized_content = normalized_content
-    if request.analysis_content is not None:
-        analysis_content = _clean_optional(request.analysis_content)
-        if note.analysis_content != analysis_content:
-            note.analysis_content = analysis_content
-    if request.reviewed_by is not None:
-        reviewed_by = _clean_optional(request.reviewed_by)
-        if note.reviewed_by != reviewed_by:
-            note.reviewed_by = reviewed_by
-            note.reviewed_at = datetime.utcnow()
-    if request.analyzed_by is not None:
-        analyzed_by = _clean_optional(request.analyzed_by)
-        if note.analyzed_by != analyzed_by:
-            note.analyzed_by = analyzed_by
-            note.analyzed_at = datetime.utcnow()
+    _apply_review_change(session, note, request, current_user.user_id, current_user.role)
 
     try:
         session.commit()
-    except IntegrityError as exc:
+    except (IntegrityError, ValueError) as exc:
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

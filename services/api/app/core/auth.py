@@ -44,6 +44,28 @@ DOCUMENT_WRITE_ROLES = frozenset(
     }
 )
 FIELD_COMMENT_CREATE_ROLES = DOCUMENT_WRITE_ROLES | frozenset({ROLE_VIEWER, ROLE_TEAM_MEMBER})
+FIELD_COMMENT_ANALYZE_ROLES = frozenset(
+    {
+        ROLE_ADMIN,
+        ROLE_MANAGER,
+        ROLE_SYSTEM_ADMIN,
+        ROLE_DOCUMENT_ADMIN,
+        ROLE_ASSISTANT_MANAGER,
+        ROLE_DEPARTMENT_MANAGER,
+        ROLE_LINE_FOREMAN,
+        ROLE_TEAM_LEAD,
+    }
+)
+FIELD_COMMENT_DECIDE_ROLES = frozenset(
+    {
+        ROLE_ADMIN,
+        ROLE_MANAGER,
+        ROLE_SYSTEM_ADMIN,
+        ROLE_DOCUMENT_ADMIN,
+        ROLE_ASSISTANT_MANAGER,
+        ROLE_DEPARTMENT_MANAGER,
+    }
+)
 ACCESS_LOG_READ_ROLES = frozenset({ROLE_ADMIN, ROLE_SYSTEM_ADMIN})
 REPORT_WRITE_ROLES = frozenset(
     {
@@ -344,6 +366,10 @@ DocumentWriteUser = Annotated[
 FieldCommentCreateUser = Annotated[
     AuthenticatedUser,
     Depends(require_roles(*FIELD_COMMENT_CREATE_ROLES)),
+]
+FieldCommentAnalyzeUser = Annotated[
+    AuthenticatedUser,
+    Depends(require_roles(*FIELD_COMMENT_ANALYZE_ROLES)),
 ]
 AccessLogReadUser = Annotated[
     AuthenticatedUser,

@@ -1,6 +1,6 @@
 # FlowNote 데이터 모델
 
-이 문서는 2026-07-14 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 구현 전 모델은 “후속 외부 연동” 절에서만 예외로 다룬다.
+이 문서는 2026-07-15 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 구현 전 모델은 “후속 외부 연동” 절에서만 예외로 다룬다.
 
 ## WPF 로컬 SQLite
 
@@ -56,10 +56,10 @@
 | `auth_sessions` | access token ID, refresh token hash, 세션 만료/폐기 상태, Android 승인 단말 `device_id` |
 | `operator_profiles` | 작업자/작업그룹/대리 입력 주체 |
 | `file_objects` | 서버 로컬 파일 참조, MIME, 크기, SHA-256 |
-| `documents`, `document_versions` | 문서, 버전, 최신/공개 버전 |
+| `documents`, `document_versions` | 문서, 버전, 최신/공개 버전. 문서와 개별 버전의 재시도 idempotency key를 각각 유일하게 보존 |
 | `tag_definitions`, `document_tags` | 태그 사전과 문서 연결 |
 | `terminal_devices` | Android 현장 단말기 승인 기준 정보 |
-| `field_comments`, `field_comment_attachments` | 현장 코멘트와 첨부 |
+| `field_comments`, `field_comment_attachments` | 현장 코멘트와 첨부. 원천 기록과 개별 첨부의 재시도 idempotency key를 각각 유일하게 보존. 담당자, 검토 기한, 마지막 전이 사유, 선정 시각은 관리자 해석 영역으로 분리 |
 | `comment_templates` | 정형 코멘트 문구 |
 | `work_records`, `work_record_versions` | 작업내역 모델 기반 |
 | `work_sequence_boards`, `work_sequence_items` | 작업순서 보드와 항목 |
@@ -86,6 +86,10 @@
 `terminal_devices`는 개인 휴대폰 자동 등록 테이블이 아니라 승인된 현장 태블릿 또는 러기드 단말의 운영 기준이다. 단말 용도 `device_mode`는 현장 열람용 `viewer`와 관리 지원용 `admin_support`를 사용한다. 상태는 `ACTIVE`, `INACTIVE`, `RETIRED`이고 폐기 단말은 재활성화하지 않는다. `registered_by`, `updated_by`는 등록자와 마지막 변경자, `replaced_device_id`는 교체 단말이 대체한 기존 단말 ID를 보존한다. Android 앱은 로그인 시 `deviceId`를 보내며, 서버는 같은 ID가 `terminal_devices.device_id`에 있고 `status = ACTIVE`일 때만 세션을 만든다. 성공한 Android 세션은 `auth_sessions.device_id`에 단말 ID를 남기고 로그인 성공 때마다 `terminal_devices.last_seen_at`을 갱신한다. 등록, 정보 변경, 비활성화, 폐기, 교체 이력은 `activity_history`의 `terminal_device.*` 이벤트로 추적한다.
 
 Android 로컬 DB `flownote_android_outbox.db`는 장기 기준 데이터가 아니다. 네트워크 불안정 구간의 FieldComment와 사진 첨부 재전송을 위해 `local_id`, `idempotency_key`, 원천 문서/버전 ID, `device_id`, 사진 URI, 서버 `comment_id`, 시도 횟수, 마지막 오류만 임시 보관한다. `PENDING`, `FAILED` 항목은 최대 12회 자동 시도하며 재시도 간격은 시도 횟수에 따라 `15초 → 30초 → 60초`로 증가하고 최대 15분으로 제한한다. 재전송 성공 후 서버 원천 ID를 연결하고 `SYNCED`로 전환하며 `SYNCED` 항목과 최대 시도 횟수에 도달한 항목은 자동 재전송하지 않는다.
+
+서버의 `documents`, `document_versions`, `field_comments`, `field_comment_attachments`, `document_access_logs`, `reports`는 각 생성 단위의 선택적 `idempotency_key`를 최대 160자로 저장하고 유일 인덱스로 보호한다. 앱 시작 시 기존 SQLite에도 누락된 열과 유일 인덱스를 보완한다. 동일 키 재요청은 같은 부모 원천에 속할 때 기존 row를 반환하고, 다른 문서나 FieldComment에 사용된 키는 충돌로 거부해 재시도 중복 파일과 중복 이력을 막는다.
+
+`field_comments`의 원천 핵심 필드는 생성 후 ORM 수준에서 불변이다. API 응답의 `source_hash_sha256`은 원천 snapshot을 정렬 JSON으로 직렬화해 계산한다. 관리자 검토 변경은 `activity_history.before_value/after_value`에 검토 snapshot과 같은 원천 hash를 저장하고 `actor_id`, `change_reason`으로 전이와 되돌림을 추적한다.
 
 `controlled_copy_grants`는 원본 토큰 대신 `token_hash`만 저장한다. 각 grant는 공개 문서와 정확한 공개 버전, 요청 사용자, `auth_sessions.session_id`, 선택적 승인 단말 ID, 발급 시점의 파일 크기와 SHA-256에 묶인다. 상태는 `ISSUED`, `CONSUMED`, `EXPIRED`, `FAILED`이며 기본 60초(설정값은 5~300초로 정규화) 안에 한 번만 소비할 수 있다. 스트리밍 시작 전 상태를 원자적으로 `CONSUMED`로 바꾸고, 이후 공개 상태·저장 경로·크기·SHA-256 검사가 실패하면 `FAILED`와 정제된 실패 사유를 남긴다.
 
