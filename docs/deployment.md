@@ -1,6 +1,6 @@
 # FlowNote 배포
 
-이 문서는 2026-07-14 현재 저장소의 실행 코드와 배포 스크립트 기준이다. 서명, MDM, 현장 인증서처럼 실제 운영 환경에서만 확정 가능한 내용은 후속 점검 항목으로 구분한다.
+이 문서는 2026-07-15 현재 저장소의 실행 코드와 배포 스크립트 기준이다. 서명, MDM, 현장 인증서처럼 실제 운영 환경에서만 확정 가능한 내용은 후속 점검 항목으로 구분한다.
 
 ## 기준
 
@@ -143,7 +143,7 @@ FLOWNOTE_AI_CUSTOMER_SCOPE=DEFAULT
 FLOWNOTE_AI_SITE_SCOPE=DEFAULT
 ```
 
-AI 항목은 현재 provider 직전 안전장치 설정이다. 원천별 사용자 권한, 민감정보/전송 금지 필터와 최소 payload DTO는 구현됐지만 저장소에 운영 provider 네트워크 client가 없으므로 운영 `.env`에서 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`를 유지한다. provider/model/scope 값은 기능 활성 허가가 아니며, 후보 read model API는 이 플래그와 무관하게 동작한다.
+AI 항목은 provider adapter 안전장치와 운영 제어면의 scope 설정이다. 운영 `.env`에서는 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`, `FLOWNOTE_AI_PROVIDER_ADAPTER_MODE=DISABLED`, `FLOWNOTE_AI_NETWORK_TEST_SCOPE_ENABLED=false`를 유지한다. generic 네트워크 adapter는 `environment=test`와 `NETWORK_TEST`, 명시 시험 scope, HTTPS endpoint, 환경 변수 자격증명을 모두 요구하므로 운영 배포에서 활성화할 수 없다. provider/model/scope 값이나 provider 자격증명 설정 여부는 기능 활성 허가가 아니다. 후보 read model API와 `system-admin` 전용 운영 제어 API는 호출 플래그와 무관하게 동작한다. provider 자격증명은 `FLOWNOTE_AI_<PROVIDER>_API_KEY` 형식의 서버 환경/비밀 저장소에만 두고 DB·문서·클라이언트 설정에 기록하지 않는다.
 
 5. 서버 실행 래퍼를 저장소에서 운영 폴더로 복사하고 작업 스케줄러에 등록한다. 등록 명령은 관리자 PowerShell에서 실행한다.
 
@@ -452,6 +452,9 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - `C:\FlowNote\Server\api`, `data`, `storage`, `logs` 폴더가 있고 서버 실행 계정에 읽기/쓰기 권한이 있는지 확인한다.
 - `C:\FlowNote\Server\.env`에 운영 DB 경로, storage 경로, 토큰 비밀값이 들어 있고 기본 개발 비밀값이 남아 있지 않은지 확인한다.
 - `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`인지 확인한다. 현재 코드는 운영 provider 연동 완료 상태가 아니다.
+- `system-admin`으로 WPF `AI 운영` 화면에 접속해 전역/현장 kill switch가 의도한 상태인지 확인한다. 외부 호출을 준비하지 않은 설치는 기능 플래그뿐 아니라 kill switch도 켠 상태를 유지한다.
+- 전송 승인과 활성 프롬프트가 시험 범위·만료일·목적·원천 유형에 맞는지 확인하고, 감사 CSV 내보내기는 현장 정책상 필요한 경우에만 허용한다.
+- 만료 보존 작업은 현재 자동 스케줄러가 아니라 `system-admin`의 API/WPF 수동 실행이므로 운영 주기와 담당자를 정한다.
 - Windows 방화벽에서 클라이언트 PC가 접근할 포트 `5184`만 허용한다.
 - 실제 고객 파일, 운영 DB, 운영 비밀값을 Git 저장소 또는 배포 준비 폴더에 섞어 두지 않는다.
 
@@ -642,6 +645,6 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·실행, WPF Core 테스트·앱 build·통합 smoke, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files` 금지 산출물을 함께 확인한다. 2026-07-15 현재 FastAPI 수집 기준선과 스크립트의 고정 기대값은 모두 104개다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·실행, WPF Core 테스트·앱 build·통합 smoke, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files` 금지 산출물을 함께 확인한다. 2026-07-15 현재 FastAPI 테스트 코드와 스크립트는 116개 수집·통과 기준으로 일치한다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.

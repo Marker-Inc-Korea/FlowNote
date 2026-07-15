@@ -1,6 +1,6 @@
 # API Database
 
-FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 코드이며, 문서는 2026-07-14 현재 모델을 따라간다.
+FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 코드이며, 문서는 2026-07-15 현재 모델을 따라간다.
 
 ## 현재 코드 기준
 
@@ -36,11 +36,12 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 - `ai_prompt_versions`, `ai_queries`
 - `ai_query_evidence_candidates`, `ai_query_citations`
 - `ai_call_attempts`, `ai_transfer_approvals`, `ai_sensitive_data_policies`
+- `ai_operational_policies`, `ai_operation_audit_events`, `ai_retention_audits`
 - `document_access_logs`
 - `controlled_copy_grants`
 - `activity_history`
 
-`ai_queries` 계열은 운영 provider 구현이 아니라 기본 비활성 외부 호출 경계의 질의, 근거 snapshot, 인용, 호출 시도와 전송 승인 감사 모델이다. `ai_sensitive_data_policies`는 고객·현장별 금칙어와 고객 식별자 정책 버전을 저장하고, 현재 활성 정책을 provider 경계의 원천 필터에 적용한다. `controlled_copy_grants`는 원본 티켓 대신 SHA-256 hash를 저장하고 공개 문서 버전, 사용자, 인증 세션, 선택적 승인 단말, 만료와 소비 상태를 연결한다.
+`ai_queries` 계열은 운영 provider 구현이 아니라 기본 비활성 외부 호출 경계의 질의, 근거 snapshot, 인용, 호출 시도와 전송 승인 감사 모델이다. `ai_sensitive_data_policies`는 고객·현장별 금칙어와 고객 식별자 정책 버전을 저장하고, 현재 활성 정책을 provider 경계의 원천 필터에 적용한다. `ai_operational_policies`는 전역/현장 kill switch, 호출·비용 한도, 보존 기간과 감사 내보내기 허용 여부를 저장한다. `ai_operation_audit_events`는 승인·프롬프트·정책 변경을 정제 메타데이터로 남기고, `ai_retention_audits`는 만료 질의 payload 비식별화와 응답 원문 삭제 결과를 보존한다. `controlled_copy_grants`는 원본 티켓 대신 SHA-256 hash를 저장하고 공개 문서 버전, 사용자, 인증 세션, 선택적 승인 단말, 만료와 소비 상태를 연결한다.
 
 ## 로컬 경로
 

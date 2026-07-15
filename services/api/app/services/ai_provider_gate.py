@@ -28,6 +28,7 @@ from app.db.models import (
     WorkSequenceChangeHistory,
     WorkSequenceItem,
 )
+from app.services.ai_response_validation import contains_prompt_injection
 
 ALLOWED_FIELD_COMMENT_STATUSES = frozenset({"ANALYZED", "REVIEWED", "SELECTED"})
 ALLOWED_SOURCE_TYPES = frozenset(
@@ -132,6 +133,13 @@ class ProviderBoundaryPayload:
             "promptVersionId": self.prompt_version_id,
             "promptVersion": self.prompt_version,
             "traceId": self.trace_id,
+            "outputFormat": {
+                "type": "json",
+                "additionalProperties": False,
+                "required": ["response", "claims"],
+                "claimRequired": ["claimKey", "text", "candidateIds"],
+                "rule": "모든 사실 주장은 하나 이상의 제공된 candidateId를 인용한다.",
+            },
             "sources": [source.as_dict() for source in self.sources],
         }
 
@@ -143,6 +151,8 @@ class SensitiveContentFilter:
 
     def filter(self, text: str) -> ContentFilterResult:
         detections: list[str] = []
+        if contains_prompt_injection(text):
+            detections.append("PROMPT_INJECTION")
         for name, pattern in BLOCK_RULES:
             if pattern.search(text):
                 detections.append(name)

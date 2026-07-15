@@ -4,7 +4,9 @@ from fastapi import Request
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="FLOWNOTE_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="FLOWNOTE_", env_file=".env", extra="ignore", populate_by_name=True
+    )
 
     environment: str = Field(
         default="local",
@@ -31,6 +33,13 @@ class Settings(BaseSettings):
     ai_site_scope: str = "DEFAULT"
     ai_provider_excerpt_max_chars: int = Field(default=600, ge=100, le=4000)
     ai_provider_max_sources: int = Field(default=12, ge=1, le=100)
+    ai_provider_adapter_mode: str = "DISABLED"
+    ai_fake_scenarios: str = "SUCCESS"
+    ai_provider_endpoint: str = ""
+    ai_network_test_scope_enabled: bool = False
+    ai_network_timeout_seconds: int = Field(default=30, ge=1, le=120)
+    ai_provider_max_attempts: int = Field(default=3, ge=1, le=5)
+    ai_provider_response_max_bytes: int = Field(default=65536, ge=1024, le=1048576)
     ai_retention_scheduler_enabled: bool = True
     ai_retention_scheduler_interval_seconds: int = Field(default=3600, ge=60, le=86400)
 

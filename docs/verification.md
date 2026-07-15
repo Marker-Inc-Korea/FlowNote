@@ -30,8 +30,8 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
 2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 3. 실행 전 `git status --porcelain=v1 --untracked-files=all`과 `git ls-files`에서 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-4. `services/api`에서 FastAPI pytest 수집 개수가 현재 기준선인 104개인지 확인한다.
-5. FastAPI pytest 104건을 실행하고 실행 ID별 JUnit을 보존한다.
+4. `services/api`에서 FastAPI pytest 수집 개수를 확인한다. 현재 테스트 코드와 스크립트 기준선은 116개다.
+5. FastAPI pytest를 실행하고 실행 ID별 JUnit을 보존한다.
 6. WPF Core 테스트를 실행하고 TRX를 보존한다.
 7. WPF 앱을 빌드한다.
 8. `5184` 포트에 서버가 없으면 누적 `flownote.windows-smoke.sqlite3`와 `storage/windows-smoke`를 쓰는 FastAPI를 시작하고, 같은 실행 ID로 WPF 통합 스모크를 실행한다.
@@ -59,13 +59,23 @@ WPF 통합 스모크는 같은 실행 ID로 반장·조장·조원·문서관리
 
 마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. `wpf-smoke-database-evidence.json`에는 주요 테이블 실행 전후 통계, 오늘 문서 ID, 과거 기존 문서의 이전·신규 버전과 무결성 결과가 저장된다. 통제된 기준선은 실행마다 설정이 식별되는 관리형 FastAPI를 사용하므로 시작 전에 `5184` 포트를 비워야 한다. 해당 포트에 이미 건강한 서버가 있으면 환경 실패로 중단하고 외부 프로세스는 종료하지 않는다.
 
-한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. FastAPI JUnit의 tests 수는 104여야 하고 failure/error는 0, WPF TRX와 Android JUnit도 failure 0이어야 한다. WPF·Android build 로그에는 build error가 없어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. FastAPI JUnit의 tests 수는 현재 수집 코드와 일치하는 116이어야 하고 failure/error는 0, WPF TRX와 Android JUnit도 failure 0이어야 한다. WPF·Android build 로그에는 build error가 없어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+
+## 2026-07-15 제한형 AI provider adapter와 응답 검증
+
+provider 중립 `invoke(payload)` 계약, fake/recording/callable adapter와 명시적 test scope 전용 JSON 네트워크 adapter를 구현했다. provider payload는 정제 질의, 최소 발췌, 안정 ID/hash, prompt version과 허용 출력 형식으로 제한한다. 응답은 크기 제한 안의 완전한 JSON, 기존 citation ID, 중복 없는 claim 구조를 요구하며 숫자·핵심 토큰·부정 극성 규칙으로 claim과 summary를 근거에 대조한다. 낮은 의미 확신과 호출 중 승인·원천·권한 변경은 본문 없는 `INSUFFICIENT_EVIDENCE`로 보류한다.
+
+fake adapter로 success, timeout, 429/5xx 재시도, 비재시도 차단, 잘못된 인용을 결정적으로 재현했다. 별도 단위 검증은 불완전 JSON, 과대 응답, prompt injection, 중복 인용, citation 숫자 변조를 차단한다. 통합 테스트는 provider 호출 중 FieldComment 상태를 변경해 응답 후 원천 재검사와 본문 전체 폐기를 확인하고, provider-bound payload에 주민번호·전화번호·이메일 canary와 제한 원천 원문이 0바이트임을 유지한다. 각 재시도는 같은 `query_id`의 `ai_call_attempts`로 이어진다.
+
+`services/api/.venv/bin/python -m ruff check app tests`와 `pytest --collect-only -q`를 실행해 정적 검사 통과와 116건 수집을 확인했다. 전체 `pytest -q`는 116건 모두 통과했다. `scripts/verify-preserved-tests.ps1`의 수집/JUnit 기준도 116건으로 갱신했다. 이번 환경에서는 WPF·Android 빌드와 통합 스모크를 새로 실행하지 않았으며 기존 SQLite, 로그, 캐시와 테스트 산출물을 삭제하지 않았다.
 
 ## 2026-07-15 작업 102 현재 코드 재대조
 
-작업 시작 시 Git 작업 트리는 깨끗했으므로 미커밋 변경을 추정하지 않고 최근 FastAPI, Windows WPF, Android 구현과 현재 개발 문서를 다시 대조했다. FastAPI OpenAPI의 루트 `GET /`를 포함한 86개 method/path 조합과 `docs/api.md`의 86개 표 항목은 누락과 초과가 각각 0건이었다. 서버 ORM 42개 테이블도 `docs/data-model.md`, `services/api/db/README.md`, `services/api/db/migrations/0001_initial_mvp_schema.md`에 모두 반영되어 있었다.
+작업 시작 시 Git 작업 트리는 깨끗했으므로 미커밋 변경을 추정하지 않고 최근 FastAPI, Windows WPF, Android 구현과 현재 개발 문서를 다시 대조했다. FastAPI OpenAPI의 루트 `GET /`를 포함한 102개 method/path 조합과 `docs/api.md`, `services/api/README.md`의 각 102개 표 항목은 누락과 초과가 각각 0건이었다. 서버 ORM 45개 테이블도 `docs/data-model.md`, `services/api/db/README.md`, `services/api/db/migrations/0001_initial_mvp_schema.md`에 모두 반영했다.
 
-`scripts/verify-preserved-tests.ps1`과 `services/api/tests/README.md`는 FastAPI 수집·JUnit 기준을 104건으로 사용하지만 이 문서의 최신 Windows 통합 기준선 판정 문장만 98건으로 남아 있어 코드와 스크립트를 우선해 104건으로 바로잡았다. `services/api/.venv/bin/python -m pytest --collect-only -q`로 현재 104건 수집을 확인했다. 이번 작업에서는 전체 pytest, WPF 빌드·스모크와 Android 빌드·단위 테스트를 새로 실행하지 않았고 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
+최근 외부 AI 운영 제어 구현을 기준으로 제품·시스템·MVP·로드맵·보안·배포·서버·WPF 문서를 다시 대조했다. 서버에는 `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 API가, WPF에는 별도 `AI 운영` 화면이 구현되어 있어 “운영 승인 API/UI 없음”과 “WPF는 근거 후보 점검 화면만 제공”이라는 오래된 설명을 현재 코드에 맞게 수정했다. 실제 미구현 범위는 운영 provider 네트워크 client, 실제 외부 호출, 질의 실행 UI, 자동 보존 스케줄러로 좁혔다.
+
+`services/api/.venv/bin/python -m pytest --collect-only -q`를 다시 실행한 결과 현재 코드는 106건을 수집했다. `scripts/verify-preserved-tests.ps1`과 기존 문서는 104건을 고정 기대하고 있어 표준 실행이 수집 단계에서 실패하는 불일치를 확인했다. 이번 요청은 문서 갱신이므로 스크립트 코드는 변경하지 않고 현재 상태와 후속 수정 필요를 문서에 남겼다. 전체 pytest, WPF 빌드·스모크와 Android 빌드·단위 테스트는 새로 실행하지 않았고 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
 
 ## 2026-07-15 Windows 통합 기준선 복구 준비
 

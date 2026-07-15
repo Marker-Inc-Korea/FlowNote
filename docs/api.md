@@ -233,7 +233,7 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 
 ## 외부 AI 근거 검색과 요약 안전장치
 
-이 절의 질의 생성·조회 라우터, 원천 권한·민감정보 필터·최소 payload 게이트와 차단 감사는 구현되었다. 운영 provider client와 네트워크 호출, 재생성 라우터는 아직 구현하지 않는다. 외부 호출은 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=true`와 고객·현장별 운영자 승인이 모두 유효할 때만 보고서 작성 role인 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`에게 허용한다. 전역 원천 role이 아닌 사용자는 연결 채널의 활성 멤버십도 필요하다. 허용 목적은 `EVIDENCE_SEARCH`, `EVIDENCE_SUMMARY`뿐이며 자동 의사결정, 작업지시 생성·변경, 승인·공개 자동화, 설비 제어, 안전·품질 판정 요청은 provider 호출 전에 `422 AI_SCOPE_NOT_ALLOWED`로 거부한다.
+이 절의 질의 생성·조회 라우터, provider 중립 adapter, 원천 권한·민감정보 필터·최소 payload 게이트, 구조·인용·보수적 의미 검증과 차단 감사가 구현되었다. provider별 운영 연동과 재생성 라우터는 아직 구현하지 않는다. generic JSON 네트워크 adapter는 `environment=test`, `FLOWNOTE_AI_PROVIDER_ADAPTER_MODE=NETWORK_TEST`, `FLOWNOTE_AI_NETWORK_TEST_SCOPE_ENABLED=true`, HTTPS endpoint, 환경 변수 자격증명을 모두 명시한 제한 시험에서만 생성된다. 외부 호출은 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=true`와 고객·현장별 운영자 승인이 모두 유효할 때만 보고서 작성 role인 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`에게 허용한다. 전역 원천 role이 아닌 사용자는 연결 채널의 활성 멤버십도 필요하다. 허용 목적은 `EVIDENCE_SEARCH`, `EVIDENCE_SUMMARY`뿐이며 자동 의사결정, 작업지시 생성·변경, 승인·공개 자동화, 설비 제어, 안전·품질 판정 요청은 provider 호출 전에 `422 AI_SCOPE_NOT_ALLOWED`로 거부한다.
 
 | Method | Path | 설명 |
 | --- | --- | --- |
@@ -255,11 +255,11 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 
 `candidateIds`는 선택 사항이며 생략하면 `ai_search_candidates` 정렬 순서의 최대 100건을 검사한다. 서버는 query snapshot 시점에 고객/현장 승인과 허용 source type, 공개 문서와 정확한 공개 버전, `ANALYZED`/`REVIEWED`/`SELECTED` FieldComment, 존재하는 작업순서 이력, 비보관 보고서와 그 실제 원천, 작성자 계정 상태·role, 연결 채널 멤버십을 다시 조회한다. 적격과 제외 후보를 모두 `ai_query_evidence_candidates`에 남기되 제외 후보는 `selected_for_prompt = false`, `sent_externally = false`이고 `SOURCE_FORBIDDEN` 또는 `CONTENT_RESTRICTED` 사유만 기록한다. 원문은 이 감사 row와 일반 로그에 저장하지 않는다.
 
-클라이언트는 provider, model, 시스템 프롬프트를 지정할 수 없다. 서버는 설정의 provider/model과 해당 목적에 대해 최근 승인된 미폐기 `ai_prompt_versions`를 선택한다. 주입형 provider 경계 DTO는 정제한 `query`, `queryHash`, `purpose`, `promptVersionId`, 표시용 `promptVersion`, 질의 `traceId`와 `sources[]`만 허용한다. 각 source는 안정된 `candidateId`, `sourceType`, `sourceId`, `sourceVersionId`, `traceId`, `traceVersionId`, 원문 `contentHash`, `rank`, 제한 길이 `excerpt`만 가진다. 전체 파일·첨부·사진, 사용자명, 로컬 경로, 내부 URI와 제외 원천은 DTO에 들어가지 않는다. 이 경계는 fake provider 검증용이며 실제 네트워크 client가 아니다.
+클라이언트는 provider, model, 시스템 프롬프트를 지정할 수 없다. 서버는 설정의 provider/model과 해당 목적에 대해 최근 승인된 미폐기 `ai_prompt_versions`를 선택한다. provider 경계 DTO는 정제한 `query`, `queryHash`, `purpose`, `promptVersionId`, 표시용 `promptVersion`, 질의 `traceId`, 고정 `outputFormat`과 `sources[]`만 허용한다. 각 source는 안정된 `candidateId`, `sourceType`, `sourceId`, `sourceVersionId`, `traceId`, `traceVersionId`, 원문 `contentHash`, `rank`, 제한 길이 `excerpt`만 가진다. 전체 파일·첨부·사진, 사용자명, 로컬 경로, 내부 URI와 제외 원천은 DTO에 들어가지 않는다. fake와 recording adapter는 이 동일 DTO로 성공·차단·timeout·429/5xx 재시도·불완전 JSON·과대 응답·prompt injection·중복 인용을 결정적으로 재현한다.
 
 기본 필터는 사용자 질의의 주민등록번호·전화번호·이메일을 대체 표식으로 마스킹하고 계정/비밀번호/API key/token, 로컬 경로, 고객 식별자 패턴은 질의 전체를 `CONTENT_RESTRICTED`로 차단한다. 검색 원천은 더 엄격하게 주민등록번호·전화번호·이메일을 포함한 정적 민감 패턴이나 `ai_sensitive_data_policies`의 고객·현장별 금칙어·고객 식별자가 하나라도 검출되면 후보 생성 단계에서 전체 제외한다. 원천 row는 삭제하지 않으며 금지 원문이 후보·근거 snapshot·provider payload에 일부라도 남는 것을 허용하지 않는다.
 
-성공 응답의 `grounded`는 `true`이고, `claims`의 모든 사실 주장에는 하나 이상의 `citations`가 있어야 한다. 현재 코드는 claim별 인용 ID를 snapshot과 대조하지만, 최상위 `summary`와 claim 텍스트의 의미적 일치를 따로 검증하지 않는다. 운영 provider 연동 전에 summary가 검증된 claim 밖의 사실을 추가하지 못하게 하는 계약과 테스트를 보강해야 한다. 각 citation은 `candidateId`, `sourceType`, `sourceId`, `sourceVersionId`, `traceTable`, `traceId`, `traceVersionId`, `internalSourceUri`를 포함한다. 문서 인용은 `document_id + version_id`, FieldComment 인용은 `comment_id`와 연결된 `document_version_id`(있는 경우), 작업순서 이력 인용은 `change_id`, 보고서 근거 인용은 `report_sources.id`와 그 row의 `source_type + source_id + source_version_id`를 반환한다. `internalSourceUri`는 외부 공개 URL이 아니며, 후속 클라이언트가 사용할 때 원천 권한을 다시 검사해야 한다.
+성공 응답의 `grounded`는 `true`이고, `claims`의 모든 사실 주장에는 하나 이상의 `citations`가 있어야 한다. 서버는 JSON 구조, claim/citation 중복, snapshot ID 존재 여부를 먼저 검사한 뒤 숫자·핵심 토큰 겹침·부정 극성 규칙으로 claim과 최상위 `summary`를 인용 발췌와 보수적으로 대조한다. 이 검증은 provider 모델의 자기평가에 의존하지 않는다. 명백한 수치·극성 모순은 `CLAIM_EVIDENCE_CONFLICT`, 의미 확신 부족은 `CLAIM_GROUNDING_LOW_CONFIDENCE`로 본문 전체를 폐기하며 후자는 `humanReviewRequired = true`인 정상 보류다. 각 citation은 `candidateId`, `sourceType`, `sourceId`, `sourceVersionId`, `traceTable`, `traceId`, `traceVersionId`, `internalSourceUri`를 포함한다. 문서 인용은 `document_id + version_id`, FieldComment 인용은 `comment_id`와 연결된 `document_version_id`(있는 경우), 작업순서 이력 인용은 `change_id`, 보고서 근거 인용은 `report_sources.id`와 그 row의 `source_type + source_id + source_version_id`를 반환한다. `internalSourceUri`는 외부 공개 URL이 아니며, 후속 클라이언트가 사용할 때 원천 권한을 다시 검사해야 한다.
 
 ```json
 {
@@ -290,7 +290,7 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 }
 ```
 
-검색 결과가 없거나 주장을 뒷받침할 수 없으면 HTTP 200으로 `status = INSUFFICIENT_EVIDENCE`, `grounded = false`, `summary = null`, `claims = []`, `reason`을 반환한다. provider 응답에 인용이 없거나 후보 snapshot에 없는 ID가 있거나 일부 사실 주장에 인용이 없으면 해당 본문 전체를 폐기하고 `502 CITATION_VALIDATION_FAILED`를 반환한다. 부분적으로 검증된 문장만 골라 답변처럼 노출하지 않는다. 오류 응답도 `queryId`, 안정된 `error.code`, 한글 `error.message`, `retryable`만 노출하고 provider raw body나 외부 전송 본문은 반환하지 않는다.
+검색 결과가 없거나 주장을 뒷받침할 수 없거나 의미 확신이 낮거나 provider 호출 중 승인·원천 상태·사용자 권한이 바뀌면 HTTP 200으로 `status = INSUFFICIENT_EVIDENCE`, `grounded = false`, `summary = null`, `claims = []`, `reason`을 반환한다. provider 응답에 인용이 없거나 후보 snapshot에 없는 ID가 있거나 일부 사실 주장에 인용이 없으면 해당 본문 전체를 폐기하고 `502 CITATION_VALIDATION_FAILED`를 반환한다. 불완전 JSON, 제한 초과, prompt injection 문구도 정제 오류 코드로 전체 폐기한다. timeout, 429, 5xx만 설정된 최대 횟수까지 재시도하며 각 시도를 `ai_call_attempts`로 남긴다. 부분적으로 검증된 문장이나 provider raw body는 답변처럼 노출하지 않는다.
 
 `responseStorageMode = DO_NOT_STORE`에서는 응답 본문을 저장하지 않고 SHA-256 hash만 남긴다. `STORE_90_DAYS`는 응답 본문을 저장한다. 질의는 필터 통과 후 마스킹된 문구만 저장하며 전송 금지 질의는 `[REDACTED]`와 hash만 남긴다. `retention_until` 만료 후 스케줄러는 질의 payload를 비식별화하고 저장 응답 원문을 삭제하며 삭제 감사 row를 남긴다.
 
@@ -300,14 +300,22 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 
 | Method | Path | 용도 |
 | --- | --- | --- |
-| `GET`, `POST` | `/api/v1/ai-operations/approvals` | 고객·현장·provider·model·목적·source type·만료가 고정된 승인 조회/생성 |
-| `POST` | `/api/v1/ai-operations/approvals/{id}/revoke` | 승인 즉시 폐기 |
-| `GET`, `POST` | `/api/v1/ai-operations/prompts` | 불변 프롬프트 버전 조회/등록 |
-| `POST` | `/api/v1/ai-operations/prompts/{id}/{review|approve|activate|retire}` | 검토·승인·활성화·폐기 lifecycle |
-| `GET`, `PUT` | `/api/v1/ai-operations/policies` | 전역/현재 현장 kill switch, 요청·동시성·timeout·비용·보존·내보내기 정책 |
-| `GET` | `/api/v1/ai-operations/audit/queries`, `/audit/events` | 질의 결과와 운영 변경 감사 검색 |
+| `GET` | `/api/v1/ai-operations/approvals` | 고객·현장·provider·model·목적·source type·만료가 고정된 승인 조회 |
+| `POST` | `/api/v1/ai-operations/approvals` | 범위가 고정된 승인 생성 |
+| `POST` | `/api/v1/ai-operations/approvals/{approval_id}/revoke` | 승인 즉시 폐기 |
+| `GET` | `/api/v1/ai-operations/prompts` | 불변 프롬프트 버전 조회 |
+| `POST` | `/api/v1/ai-operations/prompts` | 새 불변 프롬프트 버전 등록 |
+| `POST` | `/api/v1/ai-operations/prompts/{prompt_version_id}/review` | 초안 검토 완료 |
+| `POST` | `/api/v1/ai-operations/prompts/{prompt_version_id}/approve` | 검토 프롬프트 승인 |
+| `POST` | `/api/v1/ai-operations/prompts/{prompt_version_id}/activate` | 승인 프롬프트 활성화와 같은 목적의 이전 활성 버전 폐기 |
+| `POST` | `/api/v1/ai-operations/prompts/{prompt_version_id}/retire` | 프롬프트 폐기 |
+| `GET` | `/api/v1/ai-operations/policies` | 전역/현재 현장 운영 정책 조회 |
+| `PUT` | `/api/v1/ai-operations/policies` | kill switch, 요청·동시성·timeout·비용·보존·내보내기 정책 저장 |
+| `GET` | `/api/v1/ai-operations/audit/queries` | 질의 결과와 근거·인용·호출 감사 검색 |
+| `GET` | `/api/v1/ai-operations/audit/events` | 승인·프롬프트·정책 운영 변경 감사 검색 |
 | `GET` | `/api/v1/ai-operations/audit/export` | 현장 정책이 허용한 원문 없는 CSV 내보내기 |
-| `POST`, `GET` | `/api/v1/ai-operations/retention/run`, `/retention/audit` | 만료 처리 즉시 실행과 처리 이력 조회 |
+| `POST` | `/api/v1/ai-operations/retention/run` | 만료 처리 즉시 실행 |
+| `GET` | `/api/v1/ai-operations/retention/audit` | 만료 처리 이력 조회 |
 
 정책의 `maxRequestsPerDay`, `maxConcurrency`, `dailyCostBudgetMicros`가 `0`이면 호출 허용이 아니라 해당 자원을 사용 불가로 해석한다. 비밀은 `FLOWNOTE_AI_{PROVIDER}_API_KEY` 환경 변수 또는 배포 비밀 저장소가 공급하며 정책 응답은 `providerCredentialConfigured` boolean만 반환한다.
 
@@ -317,8 +325,8 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 - 금지 목적, 승인 만료·철회, 권한 없는 채널, 비공개/삭제 문서, 보관 FieldComment와 민감 원천은 provider 호출 전에 차단되고 정제 코드만 감사된다.
 - 후보가 0건이면 `INSUFFICIENT_EVIDENCE`이고 조언·추정·작업 지시 문구가 반환되지 않는다.
 - 성공 응답의 모든 claim은 질의 시점 후보 snapshot에 있는 citation을 한 개 이상 가지며 원천 row와 version/content hash가 일치한다.
-- 인용 누락과 snapshot에 존재하지 않는 후보 ID는 응답 전체를 `CITATION_VALIDATION_FAILED`로 처리한다. 원천 권한·상태는 snapshot 시점에, 전송 승인은 provider 주입 직전에 다시 검사한다.
-- fake provider/spy 테스트는 네 원천 동시 질문, 최소 발췌, candidate/source/version/trace ID·content hash·순위 재현성, 마스킹 전 민감 문자열과 차단 후보의 byte 부재, 인용 ID와 응답 미저장을 검증하며 실제 네트워크를 사용하지 않는다.
+- 인용 누락과 snapshot에 존재하지 않는 후보 ID는 응답 전체를 `CITATION_VALIDATION_FAILED`로 처리한다. 원천 권한·상태와 전송 승인은 snapshot·provider 직전·provider 응답 후에 다시 검사한다.
+- fake/recording adapter 테스트는 네 원천 동시 질문, 최소 발췌, candidate/source/version/trace ID·content hash·순위 재현성, 마스킹 전 민감 문자열과 차단 후보의 byte 부재, retry 시도 연결, 인용·의미 일치와 응답 미저장을 검증하며 실제 네트워크를 사용하지 않는다.
 
 ## 권한 요약
 

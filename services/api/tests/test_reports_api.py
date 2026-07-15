@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.core.config import Settings
 from app.db.init_db import hash_password_for_dev
-from app.db.models import Document, DocumentVersion, FieldComment, Report, ReportSource, UserAccount
+from app.db.models import Document, DocumentVersion, Report, ReportSource, UserAccount
 from app.main import create_app
 
 
