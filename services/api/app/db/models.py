@@ -891,8 +891,11 @@ class AIPromptVersion(Base):
     template_text: Mapped[str] = mapped_column(Text, nullable=False)
     allowed_purpose: Mapped[str] = mapped_column(String(30), nullable=False)
     created_by: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
+    reviewed_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     approved_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -914,15 +917,20 @@ class AIQuery(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     query_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     requested_by: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
+    customer_scope: Mapped[str] = mapped_column(String(120), nullable=False, default="DEFAULT")
+    site_scope: Mapped[str] = mapped_column(String(120), nullable=False, default="DEFAULT")
     query_text: Mapped[str] = mapped_column(Text, nullable=False)
     query_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     purpose: Mapped[str] = mapped_column(String(30), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="RECEIVED")
     prompt_version_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("ai_prompt_versions.prompt_version_id"))
+    prompt_snapshot_json: Mapped[str | None] = mapped_column(Text)
+    approval_snapshot_json: Mapped[str | None] = mapped_column(Text)
     response_storage_mode: Mapped[str] = mapped_column(String(30), nullable=False, default="DO_NOT_STORE")
     response_text: Mapped[str | None] = mapped_column(Text)
     response_hash: Mapped[str | None] = mapped_column(String(64))
     retention_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    response_retention_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     regeneration_of_query_id: Mapped[str | None] = mapped_column(String(64))
     regenerable_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     block_code: Mapped[str | None] = mapped_column(String(80))
@@ -988,6 +996,7 @@ class AICallAttempt(Base):
     sanitized_error_message: Mapped[str | None] = mapped_column(String(255))
     input_units: Mapped[int | None] = mapped_column(Integer)
     output_units: Mapped[int | None] = mapped_column(Integer)
+    cost_micros: Mapped[int | None] = mapped_column(Integer)
 
 
 class AITransferApproval(Base):
@@ -999,6 +1008,9 @@ class AITransferApproval(Base):
     site_scope: Mapped[str] = mapped_column(String(120), nullable=False)
     provider: Mapped[str] = mapped_column(String(80), nullable=False)
     model_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    allowed_purposes: Mapped[str] = mapped_column(
+        Text, nullable=False, default='["EVIDENCE_SEARCH", "EVIDENCE_SUMMARY"]'
+    )
     allowed_source_types: Mapped[str] = mapped_column(Text, nullable=False)
     data_handling_policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
     approved_by: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
@@ -1006,6 +1018,69 @@ class AITransferApproval(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reason: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class AIOperationalPolicy(Base):
+    """Fail-safe operational limits. Secrets are intentionally absent."""
+
+    __tablename__ = "ai_operational_policies"
+    __table_args__ = (
+        UniqueConstraint("customer_scope", "site_scope", name="uq_ai_operational_policy_scope"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    policy_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    customer_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    site_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    kill_switch_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    max_requests_per_day: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    daily_cost_budget_micros: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    query_payload_retention_days: Mapped[int] = mapped_column(Integer, nullable=False, default=90)
+    response_retention_days: Mapped[int] = mapped_column(Integer, nullable=False, default=90)
+    audit_retention_days: Mapped[int] = mapped_column(Integer, nullable=False, default=365)
+    allow_audit_export: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class AIOperationAuditEvent(Base):
+    __tablename__ = "ai_operation_audit_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    actor_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    customer_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    site_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reason_code: Mapped[str | None] = mapped_column(String(80), index=True)
+    detail_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+
+
+class AIRetentionAudit(Base):
+    __tablename__ = "ai_retention_audits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    retention_audit_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    query_id: Mapped[str] = mapped_column(String(64), ForeignKey("ai_queries.query_id"), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    query_text_action: Mapped[str] = mapped_column(String(30), nullable=False)
+    response_text_action: Mapped[str] = mapped_column(String(30), nullable=False)
+    query_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_hash: Mapped[str | None] = mapped_column(String(64))
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class AISensitiveDataPolicy(Base):

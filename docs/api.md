@@ -292,7 +292,24 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 
 검색 결과가 없거나 주장을 뒷받침할 수 없으면 HTTP 200으로 `status = INSUFFICIENT_EVIDENCE`, `grounded = false`, `summary = null`, `claims = []`, `reason`을 반환한다. provider 응답에 인용이 없거나 후보 snapshot에 없는 ID가 있거나 일부 사실 주장에 인용이 없으면 해당 본문 전체를 폐기하고 `502 CITATION_VALIDATION_FAILED`를 반환한다. 부분적으로 검증된 문장만 골라 답변처럼 노출하지 않는다. 오류 응답도 `queryId`, 안정된 `error.code`, 한글 `error.message`, `retryable`만 노출하고 provider raw body나 외부 전송 본문은 반환하지 않는다.
 
-`responseStorageMode = DO_NOT_STORE`에서는 응답 본문을 저장하지 않고 SHA-256 hash만 남긴다. `STORE_90_DAYS`는 응답 본문을 저장한다. 질의는 필터 통과 후 마스킹된 문구만 저장하며 전송 금지 질의는 `[REDACTED]`와 hash만 남긴다. `retention_until`, `regenerable_until`은 90일 기준이지만 만료 데이터를 삭제하는 스케줄러는 아직 구현하지 않았다.
+`responseStorageMode = DO_NOT_STORE`에서는 응답 본문을 저장하지 않고 SHA-256 hash만 남긴다. `STORE_90_DAYS`는 응답 본문을 저장한다. 질의는 필터 통과 후 마스킹된 문구만 저장하며 전송 금지 질의는 `[REDACTED]`와 hash만 남긴다. `retention_until` 만료 후 스케줄러는 질의 payload를 비식별화하고 저장 응답 원문을 삭제하며 삭제 감사 row를 남긴다.
+
+## 외부 AI 운영 API
+
+모든 `/api/v1/ai-operations/*` 경로는 `system-admin` 전용이다. 응답은 API key, 질의/응답/근거 원문, provider raw 오류를 포함하지 않는다.
+
+| Method | Path | 용도 |
+| --- | --- | --- |
+| `GET`, `POST` | `/api/v1/ai-operations/approvals` | 고객·현장·provider·model·목적·source type·만료가 고정된 승인 조회/생성 |
+| `POST` | `/api/v1/ai-operations/approvals/{id}/revoke` | 승인 즉시 폐기 |
+| `GET`, `POST` | `/api/v1/ai-operations/prompts` | 불변 프롬프트 버전 조회/등록 |
+| `POST` | `/api/v1/ai-operations/prompts/{id}/{review|approve|activate|retire}` | 검토·승인·활성화·폐기 lifecycle |
+| `GET`, `PUT` | `/api/v1/ai-operations/policies` | 전역/현재 현장 kill switch, 요청·동시성·timeout·비용·보존·내보내기 정책 |
+| `GET` | `/api/v1/ai-operations/audit/queries`, `/audit/events` | 질의 결과와 운영 변경 감사 검색 |
+| `GET` | `/api/v1/ai-operations/audit/export` | 현장 정책이 허용한 원문 없는 CSV 내보내기 |
+| `POST`, `GET` | `/api/v1/ai-operations/retention/run`, `/retention/audit` | 만료 처리 즉시 실행과 처리 이력 조회 |
+
+정책의 `maxRequestsPerDay`, `maxConcurrency`, `dailyCostBudgetMicros`가 `0`이면 호출 허용이 아니라 해당 자원을 사용 불가로 해석한다. 비밀은 `FLOWNOTE_AI_{PROVIDER}_API_KEY` 환경 변수 또는 배포 비밀 저장소가 공급하며 정책 응답은 `providerCredentialConfigured` boolean만 반환한다.
 
 검증 테스트 기준:
 
@@ -312,6 +329,7 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 | 접근 로그 조회 | `admin`, `system-admin` |
 | 보고서 작성 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
 | 외부 AI 근거 검색·요약(후속 1단계) | `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`. 기능 플래그, 고객·현장별 전송 승인과 원천/채널 권한도 필요 |
+| 외부 AI 운영 승인·프롬프트·정책·감사·보존 | `system-admin` 전용 |
 | 채널 생성/멤버 관리 | 문서/작업순서 쓰기 role. 단, 채널 조회와 메시지/인수인계 조회는 채널 멤버 또는 `admin`, `system-admin` |
 
 WPF `RolePermissionPolicy`와의 대조:
@@ -357,3 +375,5 @@ WPF `RolePermissionPolicy`와의 대조:
 - `FLOWNOTE_AI_SITE_SCOPE`
 - `FLOWNOTE_AI_PROVIDER_EXCERPT_MAX_CHARS` (기본 600, 100~4000자)
 - `FLOWNOTE_AI_PROVIDER_MAX_SOURCES` (기본 12, 1~100건)
+- `FLOWNOTE_AI_RETENTION_SCHEDULER_ENABLED` (기본 `true`)
+- `FLOWNOTE_AI_RETENTION_SCHEDULER_INTERVAL_SECONDS` (기본 3600초)

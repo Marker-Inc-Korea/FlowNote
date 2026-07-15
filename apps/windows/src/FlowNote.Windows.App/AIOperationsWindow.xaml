@@ -1,0 +1,121 @@
+<Window x:Class="FlowNote.Windows.App.AIOperationsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="외부 AI 운영 관리" Width="1180" Height="760" MinWidth="980" MinHeight="640"
+        Background="{StaticResource WindowBackgroundBrush}">
+    <DockPanel Margin="16">
+        <Border DockPanel.Dock="Top" Padding="14" Margin="0,0,0,12"
+                Background="{StaticResource PanelBackgroundBrush}" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Width="90" Height="32" Content="전체 새로고침" Click="Refresh_Click" />
+                <StackPanel>
+                    <TextBlock Text="외부 AI 운영 관리" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="승인, 프롬프트, 즉시 중지, 한도, 보존과 감사 메타데이터를 관리합니다. 비밀값과 원문 응답은 표시하지 않습니다."
+                               Margin="0,5,0,0" Foreground="{StaticResource SecondaryTextBrush}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <TextBlock x:Name="StatusTextBlock" DockPanel.Dock="Bottom" Margin="4,10,4,0" Text="서버에서 운영 정책을 불러오는 중입니다." />
+        <TabControl>
+            <TabItem Header="즉시 중지·한도">
+                <Grid Margin="12">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="360"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="정책 범위" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="PolicyScopeComboBox" Margin="0,6,0,12" Height="30" SelectedIndex="1">
+                            <ComboBoxItem Content="전역" Tag="GLOBAL"/><ComboBoxItem Content="현재 현장" Tag="SITE"/>
+                        </ComboBox>
+                        <CheckBox x:Name="KillSwitchCheckBox" Content="외부 AI 호출 즉시 중지" Margin="0,0,0,12" FontWeight="SemiBold"/>
+                        <UniformGrid Columns="2" Rows="7">
+                            <TextBlock Text="일일 요청 한도" VerticalAlignment="Center"/><TextBox x:Name="RequestLimitTextBox" Margin="4" Text="0"/>
+                            <TextBlock Text="동시 호출 한도" VerticalAlignment="Center"/><TextBox x:Name="ConcurrencyTextBox" Margin="4" Text="0"/>
+                            <TextBlock Text="제한 시간(초)" VerticalAlignment="Center"/><TextBox x:Name="TimeoutTextBox" Margin="4" Text="30"/>
+                            <TextBlock Text="일일 비용(마이크로 단위)" VerticalAlignment="Center"/><TextBox x:Name="CostBudgetTextBox" Margin="4" Text="0"/>
+                            <TextBlock Text="질의 보존(일)" VerticalAlignment="Center"/><TextBox x:Name="QueryRetentionTextBox" Margin="4" Text="90"/>
+                            <TextBlock Text="응답 보존(일)" VerticalAlignment="Center"/><TextBox x:Name="ResponseRetentionTextBox" Margin="4" Text="90"/>
+                            <TextBlock Text="감사 보존(일)" VerticalAlignment="Center"/><TextBox x:Name="AuditRetentionTextBox" Margin="4" Text="365"/>
+                        </UniformGrid>
+                        <CheckBox x:Name="AllowExportCheckBox" Content="감사 메타데이터 내보내기 허용" Margin="0,10"/>
+                        <TextBox x:Name="PolicyReasonTextBox" Height="54" TextWrapping="Wrap" AcceptsReturn="True" ToolTip="변경 사유"/>
+                        <Button Height="34" Margin="0,10,0,0" Content="정책 저장" Click="SavePolicy_Click"/>
+                    </StackPanel>
+                    <DataGrid x:Name="PolicyGrid" Grid.Column="2" AutoGenerateColumns="False" IsReadOnly="True" SelectionChanged="PolicyGrid_SelectionChanged">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="범위" Binding="{Binding ScopeType}" Width="90"/>
+                            <DataGridCheckBoxColumn Header="중지" Binding="{Binding KillSwitchEnabled}" Width="60"/>
+                            <DataGridTextColumn Header="요청/일" Binding="{Binding MaxRequestsPerDay}" Width="80"/>
+                            <DataGridTextColumn Header="동시성" Binding="{Binding MaxConcurrency}" Width="70"/>
+                            <DataGridTextColumn Header="제한 시간" Binding="{Binding TimeoutSeconds}" Width="80"/>
+                            <DataGridCheckBoxColumn Header="비밀 설정됨" Binding="{Binding ProviderCredentialConfigured}" Width="90"/>
+                            <DataGridTextColumn Header="변경 사유" Binding="{Binding Reason}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+            <TabItem Header="전송 승인">
+                <Grid Margin="12">
+                    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="210"/></Grid.RowDefinitions>
+                    <DataGrid x:Name="ApprovalGrid" AutoGenerateColumns="False" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="고객" Binding="{Binding CustomerScope}" Width="120"/><DataGridTextColumn Header="현장" Binding="{Binding SiteScope}" Width="120"/>
+                            <DataGridTextColumn Header="Provider" Binding="{Binding Provider}" Width="110"/><DataGridTextColumn Header="Model" Binding="{Binding ModelScope}" Width="110"/>
+                            <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="80"/><DataGridTextColumn Header="만료" Binding="{Binding ExpiresAt}" Width="160"/>
+                            <DataGridTextColumn Header="사유" Binding="{Binding Reason}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <Grid Grid.Row="1" Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <UniformGrid Columns="2" Rows="5" Margin="0,0,12,0">
+                            <TextBlock Text="고객" VerticalAlignment="Center"/><TextBox x:Name="ApprovalCustomerTextBox" Margin="4"/>
+                            <TextBlock Text="현장" VerticalAlignment="Center"/><TextBox x:Name="ApprovalSiteTextBox" Margin="4"/>
+                            <TextBlock Text="Provider" VerticalAlignment="Center"/><TextBox x:Name="ApprovalProviderTextBox" Margin="4"/>
+                            <TextBlock Text="Model" VerticalAlignment="Center"/><TextBox x:Name="ApprovalModelTextBox" Margin="4" Text="*"/>
+                            <TextBlock Text="만료(예: 2026-12-31)" VerticalAlignment="Center"/><TextBox x:Name="ApprovalExpiryTextBox" Margin="4"/>
+                        </UniformGrid>
+                        <StackPanel Grid.Column="1">
+                            <TextBox x:Name="ApprovalPurposeTextBox" Text="EVIDENCE_SEARCH,EVIDENCE_SUMMARY" ToolTip="목적 목록" Margin="0,0,0,6"/>
+                            <TextBox x:Name="ApprovalSourcesTextBox" Text="PUBLISHED_DOCUMENT_VERSION,FIELD_COMMENT,WORK_SEQUENCE_HISTORY,REPORT_SOURCE" ToolTip="원천 유형 목록" Margin="0,0,0,6"/>
+                            <TextBox x:Name="ApprovalPolicyVersionTextBox" Text="v1" ToolTip="데이터 처리 정책 버전" Margin="0,0,0,6"/>
+                            <TextBox x:Name="ApprovalReasonTextBox" ToolTip="승인 또는 폐기 사유" Margin="0,0,0,8"/>
+                            <StackPanel Orientation="Horizontal"><Button Width="100" Content="승인 생성" Click="CreateApproval_Click"/><Button Width="100" Margin="8,0,0,0" Content="선택 폐기" Click="RevokeApproval_Click"/></StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </TabItem>
+            <TabItem Header="프롬프트">
+                <Grid Margin="12">
+                    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="220"/></Grid.RowDefinitions>
+                    <DataGrid x:Name="PromptGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionChanged="PromptGrid_SelectionChanged">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="이름" Binding="{Binding Name}" Width="150"/><DataGridTextColumn Header="버전" Binding="{Binding Version}" Width="90"/>
+                            <DataGridTextColumn Header="목적" Binding="{Binding AllowedPurpose}" Width="150"/><DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="90"/>
+                            <DataGridTextColumn Header="불변 해시" Binding="{Binding TemplateHash}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <Grid Grid.Row="1" Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="320"/><ColumnDefinition Width="12"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <StackPanel><TextBox x:Name="PromptNameTextBox" ToolTip="프롬프트 이름" Margin="0,0,0,6"/><TextBox x:Name="PromptVersionTextBox" ToolTip="버전" Margin="0,0,0,6"/>
+                            <ComboBox x:Name="PromptPurposeComboBox" SelectedIndex="0" Margin="0,0,0,6"><ComboBoxItem Content="근거 검색" Tag="EVIDENCE_SEARCH"/><ComboBoxItem Content="근거 요약" Tag="EVIDENCE_SUMMARY"/></ComboBox>
+                            <TextBox x:Name="PromptReasonTextBox" ToolTip="상태 변경 사유" Margin="0,0,0,8"/>
+                            <WrapPanel><Button Width="76" Content="등록" Click="CreatePrompt_Click"/><Button Width="76" Margin="6,0" Content="검토" Tag="review" Click="PromptAction_Click"/><Button Width="76" Content="승인" Tag="approve" Click="PromptAction_Click"/><Button Width="76" Margin="6,0" Content="활성화" Tag="activate" Click="PromptAction_Click"/><Button Width="76" Content="폐기" Tag="retire" Click="PromptAction_Click"/></WrapPanel>
+                        </StackPanel>
+                        <TextBox x:Name="PromptTemplateTextBox" Grid.Column="2" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" ToolTip="프롬프트 본문"/>
+                    </Grid>
+                </Grid>
+            </TabItem>
+            <TabItem Header="감사·보존">
+                <DockPanel Margin="12">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10"><Button Width="120" Content="감사 내보내기" Click="ExportAudit_Click"/><Button Width="150" Margin="8,0,0,0" Content="만료 보존 작업 실행" Click="RunRetention_Click"/></StackPanel>
+                    <DataGrid x:Name="AuditGrid" AutoGenerateColumns="False" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="질의 ID" Binding="{Binding QueryId}" Width="180"/><DataGridTextColumn Header="요청자" Binding="{Binding RequestedBy}" Width="100"/>
+                            <DataGridTextColumn Header="목적" Binding="{Binding Purpose}" Width="130"/><DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="110"/>
+                            <DataGridTextColumn Header="차단 사유" Binding="{Binding BlockCode}" Width="160"/><DataGridCheckBoxColumn Header="응답 보존" Binding="{Binding ResponseStored}" Width="80"/>
+                            <DataGridCheckBoxColumn Header="질의 만료" Binding="{Binding QueryPayloadExpired}" Width="80"/><DataGridTextColumn Header="근거" Binding="{Binding EvidenceCount}" Width="55"/><DataGridTextColumn Header="인용" Binding="{Binding CitationCount}" Width="55"/><DataGridTextColumn Header="시각" Binding="{Binding CreatedAt}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

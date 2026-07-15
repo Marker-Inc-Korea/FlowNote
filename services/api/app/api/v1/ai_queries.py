@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as ProviderTimeoutError
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Protocol
 from uuid import uuid4
@@ -8,7 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import (
@@ -19,7 +20,7 @@ from app.core.auth import (
     ROLE_MANAGER,
     ROLE_SYSTEM_ADMIN,
     AuthenticatedUser,
-    require_roles,
+    CurrentUser,
 )
 from app.core.config import Settings, get_settings
 from app.db.models import (
@@ -42,21 +43,14 @@ from app.services.ai_provider_gate import (
     sha256_text,
 )
 from app.services.ai_readiness import database_scope, scope_readiness
+from app.services.ai_operations import active_policy, audit_event
 
 router = APIRouter(prefix="/ai", tags=["ai"])
-AIQueryUser = Annotated[
-    AuthenticatedUser,
-    Depends(
-        require_roles(
-            ROLE_ADMIN,
-            ROLE_SYSTEM_ADMIN,
-            ROLE_DOCUMENT_ADMIN,
-            ROLE_MANAGER,
-            ROLE_ASSISTANT_MANAGER,
-            ROLE_DEPARTMENT_MANAGER,
-        )
-    ),
-]
+AIQueryUser = CurrentUser
+AI_QUERY_ROLES = {
+    ROLE_ADMIN, ROLE_SYSTEM_ADMIN, ROLE_DOCUMENT_ADMIN, ROLE_MANAGER,
+    ROLE_ASSISTANT_MANAGER, ROLE_DEPARTMENT_MANAGER,
+}
 ALLOWED_PURPOSES = {"EVIDENCE_SEARCH", "EVIDENCE_SUMMARY"}
 ALLOWED_SOURCE_TYPES = {
     "PUBLISHED_DOCUMENT_VERSION", "FIELD_COMMENT", "WORK_SEQUENCE_HISTORY", "REPORT_SOURCE"
@@ -99,6 +93,11 @@ def _hash(value: str) -> str:
     return sha256_text(value)
 
 
+def utc_iso(value: datetime) -> str:
+    normalized = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    return normalized.isoformat()
+
+
 def _error(query_id: str, status_code: int, code: str, message: str, retryable: bool = False) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
@@ -113,13 +112,34 @@ def _block(
     query.status = "BLOCKED"
     query.block_code = code
     query.completed_at = now
-    session.add(
-        AICallAttempt(
+    calling_attempt = session.scalar(
+        select(AICallAttempt).where(
+            AICallAttempt.query_id == query.query_id,
+            AICallAttempt.status == "CALLING",
+        ).order_by(AICallAttempt.id.desc())
+    )
+    if calling_attempt is not None:
+        calling_attempt.status = "FAILED"
+        calling_attempt.finished_at = now
+        calling_attempt.error_code = code
+        calling_attempt.sanitized_error_message = message
+    else:
+        session.add(AICallAttempt(
             attempt_id=f"aica-{uuid4().hex}", query_id=query.query_id,
             provider=settings.ai_provider, model=settings.ai_model, status="BLOCKED",
             started_at=now, finished_at=now, error_code=code,
             sanitized_error_message=message,
-        )
+        ))
+    audit_event(
+        session,
+        event_type="AI_QUERY_BLOCKED",
+        actor_id=query.requested_by,
+        customer_scope=settings.ai_customer_scope,
+        site_scope=settings.ai_site_scope,
+        target_type="QUERY",
+        target_id=query.query_id,
+        reason_code=code,
+        detail={"statusCode": status_code},
     )
     session.commit()
     return _error(query.query_id, status_code, code, message, status_code >= 500)
@@ -133,6 +153,55 @@ def _approval(settings: Settings, session: Session) -> AITransferApproval | None
             AITransferApproval.provider == settings.ai_provider,
         ).order_by(AITransferApproval.approved_at.desc())
     )
+
+
+def _operations_block(
+    session: Session, settings: Settings, now: datetime
+) -> tuple[str, str, int] | None:
+    global_policy, site_policy = active_policy(
+        session, settings.ai_customer_scope, settings.ai_site_scope
+    )
+    if global_policy and global_policy.kill_switch_enabled:
+        return "AI_GLOBAL_KILL_SWITCH", "전역 외부 AI 즉시 중지가 활성화되어 있습니다.", 503
+    if site_policy is None:
+        return None
+    if site_policy.kill_switch_enabled:
+        return "AI_SITE_KILL_SWITCH", "현장 외부 AI 즉시 중지가 활성화되어 있습니다.", 503
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if site_policy.max_requests_per_day == 0:
+        return "AI_REQUEST_LIMIT", "현장 일일 요청 한도가 0으로 설정되어 있습니다.", 429
+    request_count = session.scalar(
+        select(func.count()).select_from(AIQuery).where(
+            AIQuery.created_at >= day_start,
+            AIQuery.customer_scope == settings.ai_customer_scope,
+            AIQuery.site_scope == settings.ai_site_scope,
+        )
+    ) or 0
+    if request_count > site_policy.max_requests_per_day:
+        return "AI_REQUEST_LIMIT", "현장 일일 요청 한도를 초과했습니다.", 429
+    if site_policy.max_concurrency == 0:
+        return "AI_CONCURRENCY_LIMIT", "현장 동시 호출 한도가 0으로 설정되어 있습니다.", 429
+    calling = session.scalar(
+        select(func.count()).select_from(AIQuery).where(
+            AIQuery.status == "CALLING",
+            AIQuery.customer_scope == settings.ai_customer_scope,
+            AIQuery.site_scope == settings.ai_site_scope,
+        )
+    ) or 0
+    if calling >= site_policy.max_concurrency:
+        return "AI_CONCURRENCY_LIMIT", "현장 동시 호출 한도를 초과했습니다.", 429
+    spent = session.scalar(
+        select(func.coalesce(func.sum(AICallAttempt.cost_micros), 0))
+        .join(AIQuery, AIQuery.query_id == AICallAttempt.query_id)
+        .where(
+            AICallAttempt.started_at >= day_start,
+            AIQuery.customer_scope == settings.ai_customer_scope,
+            AIQuery.site_scope == settings.ai_site_scope,
+        )
+    ) or 0
+    if site_policy.daily_cost_budget_micros == 0 or spent >= site_policy.daily_cost_budget_micros:
+        return "AI_COST_BUDGET", "현장 일일 비용 예산을 사용할 수 없습니다.", 429
+    return None
 
 
 def _snapshot(
@@ -206,18 +275,30 @@ def create_ai_query(
     session: Annotated[Session, Depends(get_db_session)],
 ) -> Any:
     now = datetime.now(timezone.utc)
+    _, retention_policy = active_policy(session, settings.ai_customer_scope, settings.ai_site_scope)
+    query_retention_days = retention_policy.query_payload_retention_days if retention_policy else 90
+    response_retention_days = retention_policy.response_retention_days if retention_policy else 90
     query = AIQuery(
         query_id=f"aiq-{uuid4().hex}", requested_by=current_user.user_id,
+        customer_scope=settings.ai_customer_scope, site_scope=settings.ai_site_scope,
         query_text="[PENDING_FILTER]", query_hash=_hash(payload.query), purpose=payload.purpose,
         status="RECEIVED", response_storage_mode=payload.response_storage_mode,
-        retention_until=now + timedelta(days=90), regenerable_until=now + timedelta(days=90),
+        retention_until=now + timedelta(days=query_retention_days),
+        response_retention_until=now + timedelta(days=response_retention_days),
+        regenerable_until=now + timedelta(days=query_retention_days),
     )
     session.add(query)
     session.flush()
+    if current_user.role not in AI_QUERY_ROLES:
+        return _block(session, query, settings, "AI_ROLE_NOT_ALLOWED", "현재 역할은 외부 AI 질의를 사용할 수 없습니다.", 403)
     if payload.purpose not in ALLOWED_PURPOSES:
         return _block(session, query, settings, "AI_SCOPE_NOT_ALLOWED", "허용되지 않은 AI 요청 목적입니다.", 422)
     if not settings.ai_external_call_enabled:
         return _block(session, query, settings, "AI_EXTERNAL_CALL_DISABLED", "외부 AI 호출이 비활성화되어 있습니다.", 503)
+    operations_block = _operations_block(session, settings, now)
+    if operations_block:
+        code, message, status_code = operations_block
+        return _block(session, query, settings, code, message, status_code)
     if settings.ai_readiness_gate_enabled:
         readiness = scope_readiness(
             session,
@@ -238,6 +319,12 @@ def create_ai_query(
     if approval_block_code(approval, settings, now):
         return _block(session, query, settings, "APPROVAL_REVOKED", "유효한 외부 전송 승인이 없습니다.", 403)
     assert approval is not None
+    try:
+        allowed_purposes = set(json.loads(approval.allowed_purposes or "[]"))
+    except (TypeError, ValueError):
+        allowed_purposes = set()
+    if payload.purpose not in allowed_purposes:
+        return _block(session, query, settings, "APPROVAL_SCOPE_MISMATCH", "요청 목적이 전송 승인 범위에 포함되지 않습니다.", 403)
     query_filter = load_sensitive_filter(session, settings)
     filtered_query = query_filter.filter(payload.query)
     if not filtered_query.allowed or filtered_query.text is None:
@@ -247,12 +334,28 @@ def create_ai_query(
     prompt = session.scalar(
         select(AIPromptVersion).where(
             AIPromptVersion.allowed_purpose == payload.purpose,
-            AIPromptVersion.approved_at.is_not(None), AIPromptVersion.retired_at.is_(None),
-        ).order_by(AIPromptVersion.approved_at.desc())
+            AIPromptVersion.approved_at.is_not(None),
+            AIPromptVersion.activated_at.is_not(None),
+            AIPromptVersion.retired_at.is_(None),
+        ).order_by(AIPromptVersion.activated_at.desc(), AIPromptVersion.approved_at.desc())
     )
     if prompt is None:
         return _block(session, query, settings, "AI_PROMPT_NOT_APPROVED", "승인된 프롬프트 버전이 없습니다.", 409)
     query.prompt_version_id = prompt.prompt_version_id
+    query.prompt_snapshot_json = json.dumps(
+        {"promptVersionId": prompt.prompt_version_id, "name": prompt.name,
+         "version": prompt.version, "templateHash": prompt.template_hash,
+         "templateText": prompt.template_text, "allowedPurpose": prompt.allowed_purpose},
+        ensure_ascii=False, sort_keys=True,
+    )
+    query.approval_snapshot_json = json.dumps(
+        {"approvalId": approval.approval_id, "customerScope": approval.customer_scope,
+         "siteScope": approval.site_scope, "provider": approval.provider,
+         "modelScope": approval.model_scope, "purposes": sorted(allowed_purposes),
+         "sourceTypes": sorted(json.loads(approval.allowed_source_types)),
+         "expiresAt": utc_iso(approval.expires_at)},
+        ensure_ascii=False, sort_keys=True,
+    )
     snapshots, provider_evidence = _snapshot(
         session, query, current_user, payload.candidate_ids, approval, settings
     )
@@ -274,6 +377,10 @@ def create_ai_query(
     )
     if approval_block_code(current_approval, settings, datetime.now(timezone.utc)):
         return _block(session, query, settings, "APPROVAL_REVOKED", "외부 전송 승인이 철회되었습니다.", 403)
+    final_operations_block = _operations_block(session, settings, datetime.now(timezone.utc))
+    if final_operations_block:
+        code, message, status_code = final_operations_block
+        return _block(session, query, settings, code, message, status_code)
     attempt = AICallAttempt(
         attempt_id=f"aica-{uuid4().hex}", query_id=query.query_id, provider=settings.ai_provider,
         model=settings.ai_model, status="CALLING", started_at=now,
@@ -291,7 +398,20 @@ def create_ai_query(
         sources=tuple(provider_evidence),
     )
     # This is an injected boundary only. The repository contains no network provider client.
-    result = provider(provider_payload.as_dict())
+    _, site_policy = active_policy(session, settings.ai_customer_scope, settings.ai_site_scope)
+    timeout_seconds = site_policy.timeout_seconds if site_policy else 30
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(provider, provider_payload.as_dict())
+    try:
+        result = future.result(timeout=timeout_seconds)
+    except ProviderTimeoutError:
+        executor.shutdown(wait=False, cancel_futures=True)
+        return _block(session, query, settings, "AI_PROVIDER_TIMEOUT", "외부 AI 호출 제한 시간을 초과했습니다.", 504)
+    except Exception:
+        return _block(session, query, settings, "AI_PROVIDER_ERROR", "외부 AI 호출이 실패했습니다.", 502)
+    finally:
+        if future.done():
+            executor.shutdown(wait=True)
     response_text = str(result.get("response", ""))
     snapshot_by_id = {row.candidate_id: row for row in eligible}
     claims = result.get("claims")
@@ -340,6 +460,10 @@ def create_ai_query(
     query.completed_at = datetime.now(timezone.utc)
     attempt.status = "SUCCEEDED"
     attempt.finished_at = query.completed_at
+    try:
+        attempt.cost_micros = max(0, int(result.get("costMicros", 0) or 0))
+    except (TypeError, ValueError):
+        attempt.cost_micros = 0
     for row in eligible:
         row.sent_externally = True
     session.commit()

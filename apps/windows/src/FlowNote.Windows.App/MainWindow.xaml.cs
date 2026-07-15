@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private readonly FlowNoteServerChannelClient? serverChannelClient;
     private readonly FlowNoteServerTerminalDeviceClient? serverTerminalDeviceClient;
     private readonly FlowNoteServerAccountClient? serverAccountClient;
+    private readonly FlowNoteServerAIOperationsClient? serverAIOperationsClient;
     private readonly bool canRegisterDocuments;
     private readonly bool canManageFileWatch;
     private readonly bool canWriteReports;
@@ -49,7 +50,7 @@ public partial class MainWindow : Window
         canWriteReports = RolePermissionPolicy.CanWriteReports(currentUser.Role);
         canManageUsers = RolePermissionPolicy.CanManageUsers(currentUser.Role);
         currentDisplayName = currentUser.DisplayName ?? currentUser.LoginId ?? "admin";
-        (serverDocumentClient, serverChannelClient, serverTerminalDeviceClient, serverAccountClient, serverHttpClient) =
+        (serverDocumentClient, serverChannelClient, serverTerminalDeviceClient, serverAccountClient, serverAIOperationsClient, serverHttpClient) =
             CreateServerClients(currentUser);
         notificationServerScope = serverHttpClient?.BaseAddress is null
             ? null
@@ -487,6 +488,16 @@ public partial class MainWindow : Window
         window.ShowDialog();
     }
 
+    private void AIOperationsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.Equals(currentUser.Role, "system-admin", StringComparison.OrdinalIgnoreCase))
+        {
+            workspace.StatusText = "외부 AI 운영 관리는 시스템 관리자만 사용할 수 있습니다.";
+            return;
+        }
+        new AIOperationsWindow(serverAIOperationsClient) { Owner = this }.ShowDialog();
+    }
+
     private void FieldCommentReviewButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureReportWriteAllowed())
@@ -850,6 +861,9 @@ public partial class MainWindow : Window
         FieldCommentReviewButton.IsEnabled = canWriteReports;
         ReportDraftButton.IsEnabled = canWriteReports;
         AISearchQualityButton.IsEnabled = canWriteReports;
+        AIOperationsButton.Visibility = string.Equals(
+            currentUser.Role, "system-admin", StringComparison.OrdinalIgnoreCase)
+            ? Visibility.Visible : Visibility.Collapsed;
         ApplyDocumentStatusButton.IsEnabled = canRegisterDocuments;
         PublishDocumentButton.IsEnabled = canRegisterDocuments;
         DocumentStatusComboBox.IsEnabled = canRegisterDocuments;
@@ -1014,13 +1028,14 @@ public partial class MainWindow : Window
         FlowNoteServerChannelClient? ChannelClient,
         FlowNoteServerTerminalDeviceClient? TerminalDeviceClient,
         FlowNoteServerAccountClient? AccountClient,
+        FlowNoteServerAIOperationsClient? AIOperationsClient,
         HttpClient? HttpClient) CreateServerClients(LoginResult currentUser)
     {
         var httpClient = FlowNoteServerApiEnvironment.CreateHttpClientFromEnvironment();
         if (httpClient is null || string.IsNullOrWhiteSpace(currentUser.AccessToken))
         {
             httpClient?.Dispose();
-            return (null, null, null, null, null);
+            return (null, null, null, null, null, null);
         }
 
         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", currentUser.AccessToken);
@@ -1029,6 +1044,7 @@ public partial class MainWindow : Window
             new FlowNoteServerChannelClient(httpClient),
             new FlowNoteServerTerminalDeviceClient(httpClient),
             new FlowNoteServerAccountClient(httpClient),
+            new FlowNoteServerAIOperationsClient(httpClient),
             httpClient);
     }
 

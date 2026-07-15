@@ -263,6 +263,15 @@ FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관�
 - `REVOKED`
 - `EXPIRED`
 
+## 외부 AI 운영·보존 모델
+
+- `ai_transfer_approvals`: 고객/현장/provider/model/목적/source type, 처리정책 버전, 승인·만료·폐기 시각을 보존한다. 다른 고객/현장에는 재사용하지 않는다.
+- `ai_prompt_versions`: 초안→검토→승인→활성→폐기 lifecycle과 template hash를 가진다. 승인된 본문은 수정하지 않고 새 version을 만든다.
+- `ai_queries`: 고객/현장 scope, prompt/approval JSON snapshot을 질의 시점에 저장한다. 이후 운영 객체 변경은 과거 snapshot을 바꾸지 않는다.
+- `ai_operational_policies`: 전역 `*/*` 또는 정확한 고객/현장 scope별 kill switch, 요청·동시성·timeout·비용, 보존과 감사 내보내기 정책이다. 비밀 컬럼은 없다.
+- `ai_operation_audit_events`: 승인·프롬프트·정책 변경과 호출 전 차단 사유의 원문 없는 감사 이벤트다.
+- `ai_retention_audits`: 만료 질의별 payload 비식별화와 응답 삭제 동작, 보존된 hash를 기록한다.
+
 ## 역할 값
 
 현재 코드의 role 값은 다음과 같다.

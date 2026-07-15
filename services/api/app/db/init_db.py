@@ -498,6 +498,43 @@ def _seed_default_admin_account(database: Database) -> None:
         session.commit()
 
 
+def _ensure_ai_operations_columns(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+    additions = {
+        "ai_prompt_versions": {
+            "reviewed_by": "VARCHAR(64)",
+            "reviewed_at": "DATETIME",
+            "activated_at": "DATETIME",
+        },
+        "ai_queries": {
+            "customer_scope": "VARCHAR(120) NOT NULL DEFAULT 'DEFAULT'",
+            "site_scope": "VARCHAR(120) NOT NULL DEFAULT 'DEFAULT'",
+            "prompt_snapshot_json": "TEXT",
+            "approval_snapshot_json": "TEXT",
+            "response_retention_until": "DATETIME",
+        },
+        "ai_call_attempts": {"cost_micros": "INTEGER"},
+        "ai_transfer_approvals": {
+            "allowed_purposes": (
+                "TEXT NOT NULL DEFAULT '[\"EVIDENCE_SEARCH\", \"EVIDENCE_SUMMARY\"]'"
+            ),
+        },
+    }
+    with database.engine.begin() as connection:
+        for table_name, columns in additions.items():
+            existing = {
+                row[1] for row in connection.execute(text(f"PRAGMA table_info({table_name})"))
+            }
+            if not existing:
+                continue
+            for column_name, definition in columns.items():
+                if column_name not in existing:
+                    connection.execute(
+                        text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+                    )
+
+
 def initialize_database(database: Database) -> None:
     Base.metadata.create_all(bind=database.engine)
     _ensure_user_account_columns(database)
@@ -510,6 +547,7 @@ def initialize_database(database: Database) -> None:
     _ensure_work_sequence_columns(database)
     _ensure_ai_evidence_snapshot_has_no_candidate_fk(database)
     _ensure_ai_search_candidate_content_hash(database)
+    _ensure_ai_operations_columns(database)
     with database.session() as session:
         existing = session.scalar(
             select(SchemaMigration).where(SchemaMigration.version == INITIAL_SCHEMA_VERSION)
