@@ -107,7 +107,7 @@ WPF 로컬 DB는 공개 버전을 `documents.published_version_no`와 `document_
 
 FieldComment는 문서 파일 개정이 아니라 현장 원천 기록이다. 새 WPF 코멘트는 `field_comments`에 저장되며 문서 버전을 증가시키지 않는다. 첨부 사진/파일은 `field_comment_attachments`에 별도로 저장된다.
 
-관리자 검토 화면은 FieldComment를 상태, 문서, 작성자, 태그, 기간으로 필터링하고 선택 항목의 정리 내용, 분석 내용, 상태를 수정한다. 첨부 사진/파일은 같은 화면의 첨부 목록에서 원본 파일명, 유형, 로컬 경로, 서버 첨부 ID로 추적한다. 검토 변경은 로컬 DB에 먼저 저장하고 서버가 연결되어 있으면 `/api/v1/field-comments/{comment_id}` PATCH로 반영하며, 실패하면 `server_sync_queue`의 `field_comment_review/update_field_comment_review` 항목으로 남긴다.
+관리자 검토 화면은 FieldComment 원천을 읽기 전용으로 표시하고 상태, 문서, 작성자, 담당자, 태그, 라인, 설비, 공정, 오류 유형, 기간, 오래된 NEW, 첨부와 보고서 연결 여부로 필터링한다. 관리자 해석 영역의 정리·분석 내용, 담당자, 검토 기한, 상태와 필수 전이 사유를 수정하고 다중 선택 항목을 순서대로 로컬 저장·개별 동기화한다. 첨부 사진/파일은 같은 화면의 첨부 목록에서 원본 파일명, 유형, 로컬 경로, 서버 첨부 ID로 추적한다. WPF 검토 변경은 로컬 DB에 먼저 저장하고 서버가 연결되어 있으면 각 항목을 `/api/v1/field-comments/{comment_id}` PATCH로 반영하며, 실패하면 `server_sync_queue`의 `field_comment_review/update_field_comment_review` 항목으로 남긴다. FastAPI의 별도 `/api/v1/field-comments/bulk-review`는 요청당 최대 200건을 한 트랜잭션으로 검증·저장한다. 원천 hash를 포함한 전후 snapshot 감사와 오래된 NEW·근거 부족 SELECTED·원천 누락 보고서 품질 작업함/지표도 서버 API에서 제공한다.
 
 ## 작업순서
 

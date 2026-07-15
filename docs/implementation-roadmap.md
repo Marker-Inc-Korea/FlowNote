@@ -9,7 +9,7 @@
 - 로그인, 사용자 관리, role 정책
 - 문서 폴더/문서/버전/태그
 - 문서 미리보기와 접근 로그
-- FieldComment와 첨부
+- FieldComment 원천 불변과 첨부, 단계형 상태 전이, 담당자·기한, WPF 다중 선택 개별 동기화, FastAPI 최대 200건 일괄 검토, 원천 hash 감사와 품질 작업함
 - 알림과 활동 이력
 - 작업순서 보드/항목/TV 화면
 - 보고서 초안 저장과 서버 보고서 저장 시도
@@ -40,7 +40,7 @@
 
 ## 설계 완료, 부분 구현
 
-- 외부 AI 1단계의 범위, 데이터 모델, API, 보안·보존 계약을 정리하고 질의 생성·조회 라우터, ORM 테이블, 기능 플래그·전송 승인, 원천 권한·민감정보 필터, 최소 payload provider adapter와 인용·규칙 기반 의미 검증을 구현했다. fake/recording adapter, timeout/429/5xx 재시도, 응답 JSON·크기·중복·prompt injection 방어, 호출 후 승인·원천·권한 재검증도 포함한다. 전송 승인·프롬프트 수명주기·전역/현장 kill switch와 한도·보존 정책·정제 감사·수동 만료 처리 API 및 WPF 운영 UI도 구현했다. 허용 범위는 근거 검색과 요약이며, provider별 운영 연동은 아직 구현하지 않았다.
+- 외부 AI 1단계의 범위, 데이터 모델, API, 보안·보존 계약을 정리하고 질의 생성·조회 라우터, ORM 테이블, 기능 플래그·전송 승인, 원천 권한·민감정보 필터, 최소 payload provider adapter와 인용·규칙 기반 의미 검증을 구현했다. fake/recording adapter, timeout/429/5xx 재시도, 응답 JSON·크기·중복·prompt injection 방어, 호출 후 승인·원천·권한 재검증도 포함한다. 전송 승인·프롬프트 수명주기·전역/현장 kill switch와 한도·보존 정책·정제 감사, 자동 만료 보존 스케줄러, 즉시 실행 API 및 WPF 운영 UI도 구현했다. 허용 범위는 근거 검색과 요약이며, provider별 운영 연동은 아직 구현하지 않았다.
 - 현재 동작하는 AI 기능은 `ai_search_candidates` 재생성·목록·품질 API, 오프라인 ground-truth 회귀 평가와 결과 누적, WPF 근거 후보 점검 화면, 외부 질의의 비활성 기본값·승인·목적·원천 권한·민감정보·최소 payload·근거 snapshot·응답 검증·감사 게이트, `system-admin` 전용 운영 제어면이다. generic 네트워크 adapter는 명시적 test scope에서만 동작하며 운영 호출로 간주하지 않는다.
 
 ## 개발 우선순위 원칙

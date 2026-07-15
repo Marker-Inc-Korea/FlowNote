@@ -16,6 +16,7 @@
 - FastAPI 서버 계정 생성·role/상태 변경·임시 비밀번호 재설정·세션 조회/폐기 API와 변경 사유 감사
 - WPF 서버 계정 운영 화면과 `must_change_password` 로그인 직후 비밀번호 변경 강제
 - FastAPI role 기반 문서 쓰기, 태그 생성, FieldComment 작성, 접근 로그 조회, 보고서 작성 권한
+- FieldComment 원천 핵심 필드의 ORM 수정·삭제 차단, 원천 SHA-256 snapshot과 관리자 검토 전후 감사
 - FastAPI 공개 문서 버전 controlled copy 1회성 티켓, 사용자·세션 바인딩, 만료·재사용 차단, 경로·크기·SHA-256 검증과 전체 감사
 - FastAPI 채널 멤버십 기반 채널 메시지 조회, 사용자별 알림 읽음, 인수인계 수신 확인 권한
 - Android 승인 단말 `deviceId` 로그인 검증과 `auth_sessions.device_id` 기록

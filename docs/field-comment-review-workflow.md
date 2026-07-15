@@ -20,7 +20,7 @@
 | 활성 상태 → `EXCLUDED` | 관리자·부서 관리자·문서 관리자 계열 | 제외 사유 |
 | `SELECTED/EXCLUDED → ARCHIVED` | 관리자·부서 관리자·문서 관리자 계열 | 보관 사유 |
 
-되돌림은 `ANALYZED → NEW/NEEDS_REVIEW`, `REVIEWED → ANALYZED`, `SELECTED → REVIEWED`, `EXCLUDED → NEW`, `ARCHIVED → EXCLUDED`만 허용한다. 일괄 처리도 항목별로 같은 규칙을 모두 통과해야 한 트랜잭션으로 저장한다.
+되돌림은 `ANALYZED → NEW/NEEDS_REVIEW`, `REVIEWED → ANALYZED`, `SELECTED → REVIEWED`, `EXCLUDED → NEW`, `ARCHIVED → EXCLUDED`만 허용한다. FastAPI 일괄 API는 요청당 최대 200건이며 항목별로 같은 규칙을 모두 통과해야 한 트랜잭션으로 저장하고 각 원천별 감사 이력을 남긴다. WPF의 다중 선택 저장은 선택 항목을 순서대로 로컬 저장하고 개별 PATCH/재시도 큐로 동기화한다.
 
 ## 관리자 작업함
 

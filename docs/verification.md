@@ -63,6 +63,12 @@ WPF 통합 스모크는 같은 실행 ID로 반장·조장·조원·문서관리
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
 
+## 2026-07-15 작업 207 전체 Markdown 코드 정합성 갱신
+
+작업 정책 원문 `AGENTS.md`를 제외한 Git 추적 제품·구현 Markdown 40개를 FastAPI, Windows WPF, Android 현재 코드와 다시 대조했다. 기존 작업 트리의 문서 8개 변경은 되돌리지 않고 함께 보존했다. FieldComment 원천 불변·단계형 검토, 담당자·기한, WPF 다중 선택 개별 동기화와 FastAPI 최대 200건 트랜잭션 일괄 검토, 원천 hash 감사·품질 작업함을 상위 제품/시스템/클라이언트/서버/과거 요약 문서에 반영했다. 제한형 generic 네트워크 adapter가 구현되어 있는데도 네트워크 client가 없다고 남아 있던 초기 스키마 설명을 test scope 전용 구현과 provider별 운영 client 미구현으로 바로잡고, 운영 배포 표에는 현재 AI readiness·adapter·timeout·재시도·응답 크기 설정을 보강했다.
+
+전역 FastAPI 앱의 루트 `GET /`를 포함한 102개 method/path 조합을 `docs/api.md`와 `services/api/README.md`의 API 표와 집합 비교해 누락·초과 0건을 확인했다. ORM 45개 테이블은 세 데이터베이스 문서에 모두 존재하고 `Settings` 31개 항목은 API 문서와 서버 README에 모두 반영되어 있다. 제품·구현 Markdown 40개의 상대 파일 링크는 깨진 링크 0건이며 `git diff --check`와 Ruff도 통과했다. `pytest --collect-only -q`로 116건 수집을 확인했으며 문서 갱신 범위이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
+
 ## 2026-07-15 실제 배포 리허설과 제한 파일럿 준비
 
 Windows 서버/WPF 설치, .NET/self-contained/WebView2, EXE·MSI hash와 서명, 작업 스케줄러 재부팅, HTTPS·방화벽·주소·시간, Android 서명/배포/단말 수명주기/outbox 보호, 서버·WPF 별도 PC 복구, 역할별 업무와 권한 역검증, 단절·알림 복구, 제한형 AI, UX 관찰, 중단/rollback을 하나의 실행 기준으로 정리했다. 실행 증거는 `PILOT-YYYYMMDD-HHMM-현장코드-일련번호` 형식의 `run_id`로 연결하고 DB 무결성, 원천별 전후 개수와 파일 SHA-256을 비교한다.
@@ -79,7 +85,7 @@ fake adapter로 success, timeout, 429/5xx 재시도, 비재시도 차단, 잘못
 
 ## 2026-07-15 작업 102 문서 재갱신
 
-현재 코드의 `Settings`와 FastAPI lifespan을 다시 대조해 기본 활성 만료 보존 스케줄러, 3600초 기본 간격과 60~86400초 제한, `system-admin` 즉시 실행 경로를 제품·시스템·데이터·API·보안·배포·로드맵·서버·WPF 문서에 반영했다. 제한 시험용 generic 네트워크 adapter가 있는데도 네트워크 client가 전혀 없다고 읽히던 서비스 설명은 provider별 운영 연동 미구현으로 범위를 바로잡았다. 116건을 수집하는 현재 FastAPI 코드와 같은 116건을 요구하는 표준 스크립트의 기준선도 상위 문서에서 일치시켰다.
+현재 코드의 `Settings`와 FastAPI lifespan을 다시 대조해 기본 활성 만료 보존 스케줄러, 3600초 기본 간격과 60~86400초 제한, `system-admin` 즉시 실행 경로를 제품·시스템·데이터·API·보안·배포·로드맵·서버·WPF 문서에 반영했다. 추가 재대조에서는 루트 `GET /`를 포함한 OpenAPI 102개 method/path 조합, ORM 45개 테이블, `Settings` 31개 항목이 현재 핵심 문서에 빠짐없이 반영됐음을 확인했다. 다만 데이터 모델에 남아 있던 “실제 삭제 없음” 문구와 일부 현재 코드 요약의 수동 보존·provider 설명은 자동 만료 처리와 제한형 generic 네트워크 adapter 구현에 맞게 바로잡았다. 116건을 수집하는 현재 FastAPI 코드와 같은 116건을 요구하는 표준 스크립트의 기준선도 상위 문서에서 일치시켰다.
 
 이번 문서 갱신에서 `.venv/bin/python -m pytest --collect-only -q`를 실행해 116건 수집을 확인했다. 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았고 기존 SQLite, 로그, 캐시와 테스트 산출물을 삭제하지 않았다.
 
