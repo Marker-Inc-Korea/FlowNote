@@ -41,6 +41,7 @@ from app.services.ai_provider_gate import (
     minimal_excerpt,
     sha256_text,
 )
+from app.services.ai_readiness import database_scope, scope_readiness
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 AIQueryUser = Annotated[
@@ -217,6 +218,22 @@ def create_ai_query(
         return _block(session, query, settings, "AI_SCOPE_NOT_ALLOWED", "허용되지 않은 AI 요청 목적입니다.", 422)
     if not settings.ai_external_call_enabled:
         return _block(session, query, settings, "AI_EXTERNAL_CALL_DISABLED", "외부 AI 호출이 비활성화되어 있습니다.", 503)
+    if settings.ai_readiness_gate_enabled:
+        readiness = scope_readiness(
+            session,
+            customer_scope=settings.ai_customer_scope,
+            site_scope=settings.ai_site_scope,
+            line_scope=None,
+            database_scope_value=database_scope(settings.database_url),
+        )
+        if not readiness["provider_start_ready"]:
+            gaps = readiness["source_gaps"]
+            gap_text = ", ".join(f"{key} {value}" for key, value in gaps.items() if value)
+            message = (
+                f"AI 근거 준비도 미달: 질문 {readiness['ground_truth_gap']}건 부족"
+                + (f", 원천 부족 {gap_text}" if gap_text else "")
+            )
+            return _block(session, query, settings, "AI_READINESS_NOT_MET", message, 409)
     approval = _approval(settings, session)
     if approval_block_code(approval, settings, now):
         return _block(session, query, settings, "APPROVAL_REVOKED", "유효한 외부 전송 승인이 없습니다.", 403)

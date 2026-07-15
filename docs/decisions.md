@@ -7,6 +7,7 @@
 - 주 검토 흐름은 `NEW → ANALYZED → REVIEWED → SELECTED`로 고정하고 보강 대기 `NEEDS_REVIEW`, 근거 부적합 `EXCLUDED`, 결정 완료 장기 보관 `ARCHIVED`를 별도 의미로 사용한다.
 - 모든 상태 변경과 되돌림은 역할·필수 내용·사유를 검사한다. 서버는 요청 본문의 actor 필드 대신 인증 사용자를 분석자·검토자로 기록한다.
 - 작업자 원문과 작성·대상·단말 정보는 불변 원천이며 관리자 정리·분석은 별도 필드다. 감사 snapshot 전후의 원천 hash가 다르면 저장하지 않는다.
+- FieldComment 원천 row는 삭제하지 않는다. 서버 ORM은 직접 삭제도 거부하며 오입력·중복·근거 부적합 기록은 사유와 함께 `EXCLUDED`로 분류해 추적성을 유지한다.
 - 일괄 검토는 개별 항목이 모두 같은 정책을 통과할 때만 저장한다. 오래된 NEW, 빈약한 SELECTED, 누락 report source는 품질 작업함에서 운영한다.
 
 ## 2026-06-30. 현재 문서 기준
@@ -276,6 +277,13 @@
 - provider 경계 DTO는 정제 질의, 최소 발췌, 안정된 candidate/source/version/trace ID, content hash, rank와 prompt version만 허용한다. 운영 provider SDK나 네트워크 client는 이 결정에 포함하지 않는다.
 - 차단 감사 코드는 `CONTENT_RESTRICTED`, `SOURCE_FORBIDDEN`, `APPROVAL_REVOKED`, `INSUFFICIENT_EVIDENCE`로 정제한다. 제외 후보는 ID/hash와 사유만 snapshot으로 남기며 `sent_externally = false`를 유지한다.
 - 승인 철회는 신규 질의를 즉시 차단하지만 `ai_search_candidates`와 외부 호출 없는 ground-truth 품질 점검은 계속 사용할 수 있어야 한다.
+
+## 2026-07-15. scope별 승인 ground-truth와 운영 호출 readiness 게이트
+
+- 고객·현장·선택적 라인과 DB fingerprint를 서로 다른 readiness scope로 집계한다. WPF 공통 로컬 SQLite, FastAPI 테스트 DB, 운영 서버 DB의 수치를 합산하지 않는다.
+- 승인 질문 원본은 평가 run과 분리해 저장하고 안전·품질·설비 이상·작업 보류·재작업·인수인계·최신 공개 문서·상충 기록 범주와 정상·제외·상충 유형, 기대 포함/제외 근거, 허용 순위, 시점을 고정한다.
+- provider 착수 기준은 네 원천 최소 수, 승인 질문 50건과 범주/유형 커버, 같은 scope의 50건 이상 평가 통과, 후보 ID/content hash와 순위 안정성이다. 미달 scope는 외부 호출 전에 차단하며 부족 수를 반환한다.
+- 주민번호·전화번호·이메일, 계정/token/경로 패턴과 고객·현장 활성 민감정보 정책에 걸린 원천은 마스킹 후보가 아니라 검색 후보 생성 단계에서 제외한다. 원천 row는 삭제하지 않는다.
 
 ## 2026-07-13. controlled copy는 짧은 만료의 1회성 인증 스트리밍 사용
 

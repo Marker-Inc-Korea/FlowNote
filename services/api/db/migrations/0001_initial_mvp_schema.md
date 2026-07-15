@@ -36,6 +36,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `ai_search_candidates` | Traceable evidence candidates for search and summary before AI advice |
 | `ai_search_evaluation_runs` | Offline ground-truth regression run and provider-start metrics |
 | `ai_search_evaluation_cases` | Expected/actual evidence snapshots, exclusions, and ranking hashes by question |
+| `ai_search_ground_truth_cases` | Human-approved scoped question categories, expected/excluded evidence, allowed rank, and as-of criteria |
 | `ai_prompt_versions` | Approved immutable prompt versions by allowed purpose |
 | `ai_queries` | AI query text/hash, purpose, status, response storage policy, and retention metadata |
 | `ai_query_evidence_candidates` | Query-time evidence snapshots independent of later candidate rebuilds |

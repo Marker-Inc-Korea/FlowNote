@@ -74,6 +74,7 @@
 | `ai_search_candidates` | 안정된 candidate ID와 content hash를 가진 AI 자동 조언 전 단계의 근거 검색 후보 read model |
 | `ai_search_evaluation_runs` | 외부 AI 없는 ground-truth 회귀 실행과 provider 착수 판단 지표 |
 | `ai_search_evaluation_cases` | 질문별 기대/실제 근거, 제외 사유, 순위 hash와 통과 여부 |
+| `ai_search_ground_truth_cases` | 고객·현장·라인·DB scope별 사람이 승인한 질문 범주, 정상/제외/상충 유형, 기대/제외 근거, 허용 순위와 시점 기준 |
 | `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations` | 외부 AI 질의 상태와 질의 시점 근거 snapshot, 검증된 주장별 인용 연결 |
 | `ai_prompt_versions`, `ai_call_attempts`, `ai_transfer_approvals` | 승인 프롬프트 버전, 정제된 호출 시도 감사, 고객·현장별 외부 전송 승인 |
 | `ai_sensitive_data_policies` | 고객·현장별 활성 금칙어와 고객 식별자 정책 버전 |
@@ -89,7 +90,7 @@ Android 로컬 DB `flownote_android_outbox.db`는 장기 기준 데이터가 아
 
 서버의 `documents`, `document_versions`, `field_comments`, `field_comment_attachments`, `document_access_logs`, `reports`는 각 생성 단위의 선택적 `idempotency_key`를 최대 160자로 저장하고 유일 인덱스로 보호한다. 앱 시작 시 기존 SQLite에도 누락된 열과 유일 인덱스를 보완한다. 동일 키 재요청은 같은 부모 원천에 속할 때 기존 row를 반환하고, 다른 문서나 FieldComment에 사용된 키는 충돌로 거부해 재시도 중복 파일과 중복 이력을 막는다.
 
-`field_comments`의 원천 핵심 필드는 생성 후 ORM 수준에서 불변이다. API 응답의 `source_hash_sha256`은 원천 snapshot을 정렬 JSON으로 직렬화해 계산한다. 관리자 검토 변경은 `activity_history.before_value/after_value`에 검토 snapshot과 같은 원천 hash를 저장하고 `actor_id`, `change_reason`으로 전이와 되돌림을 추적한다.
+`field_comments`의 원천 핵심 필드는 생성 후 ORM 수준에서 불변이며, 원천 row 자체의 ORM 삭제도 거부한다. 오입력·중복·근거 부적합 기록은 삭제하지 않고 검토 상태 `EXCLUDED`로 분류해 이력을 보존한다. API 응답의 `source_hash_sha256`은 원천 snapshot을 정렬 JSON으로 직렬화해 계산한다. 관리자 검토 변경은 `activity_history.before_value/after_value`에 검토 snapshot과 같은 원천 hash를 저장하고 `actor_id`, `change_reason`으로 전이와 되돌림을 추적한다.
 
 `controlled_copy_grants`는 원본 토큰 대신 `token_hash`만 저장한다. 각 grant는 공개 문서와 정확한 공개 버전, 요청 사용자, `auth_sessions.session_id`, 선택적 승인 단말 ID, 발급 시점의 파일 크기와 SHA-256에 묶인다. 상태는 `ISSUED`, `CONSUMED`, `EXPIRED`, `FAILED`이며 기본 60초(설정값은 5~300초로 정규화) 안에 한 번만 소비할 수 있다. 스트리밍 시작 전 상태를 원자적으로 `CONSUMED`로 바꾸고, 이후 공개 상태·저장 경로·크기·SHA-256 검사가 실패하면 `FAILED`와 정제된 실패 사유를 남긴다.
 
@@ -112,7 +113,9 @@ AI 자동 조언과 자동 의사결정은 아직 범위에 넣지 않는다. �
 
 `ai_search_candidates`의 `candidate_id`는 `source_type + source_id + source_version_id`로 결정되는 안정 식별자이고 `content_hash`는 검색 본문의 SHA-256이다. 원문 화면 이동은 `source_type`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `parent_type`, `parent_id`를 함께 사용한다. 보고서 source는 원천의 원천을 직접 후보 ID로 삼지 않고 `report_sources.id`를 후보 `source_id`로 삼아 보고서가 어떤 근거를 어떤 관계로 사용했는지 먼저 추적한다.
 
-`ai_search_evaluation_runs`는 실행 ID/라벨, 요청자와 평가 대상 사용자, ID/hash 안정성, 순위 안정성, 원천 커버·FieldComment 준비도·provider 착수 가능 지표를 보존한다. `ai_search_evaluation_cases`는 질문, 기대/실제 `SUFFICIENT` 또는 `INSUFFICIENT_EVIDENCE`, 기대 근거 JSON, 실제 candidate/source/version/trace/content hash snapshot, 제외 근거와 사유, ranking hash를 보존한다. 테스트와 사람형 스모크의 회귀 기록이므로 자동 삭제하지 않는다.
+`ai_search_ground_truth_cases`는 고객·현장·선택적 라인과 로컬 경로를 노출하지 않는 DB fingerprint scope에 묶인다. 질문 범주는 안전, 품질, 설비 이상, 작업 보류, 재작업, 인수인계, 최신 공개 문서, 상충 기록이고 각 범주에서 `NORMAL`, `EXCLUSION`, `CONFLICT`를 구분한다. 기대 포함/제외 근거, 허용 순위 최소·최대, `as_of`, 승인자·승인 시각을 보존하며 승인 질문 원본을 평가 실행과 분리한다.
+
+`ai_search_evaluation_runs`는 실행 ID/라벨, 요청자와 평가 대상 사용자, ID/hash 안정성, 순위 안정성, scope, precision@k, recall@k, 제외 원천 위반, citation trace 성공률과 provider 착수 가능 지표를 보존한다. `ai_search_evaluation_cases`는 질문, 기대/실제 `SUFFICIENT` 또는 `INSUFFICIENT_EVIDENCE`, 기대 근거 JSON, 실제 candidate/source/version/trace/content hash snapshot, 제외 근거와 사유, ranking hash를 보존한다. 테스트와 사람형 스모크의 회귀 기록이므로 자동 삭제하지 않는다.
 
 품질 점검은 후보 수와 제외 사유를 함께 산출한다. `REPORT_SOURCE`의 `DOCUMENT` 원천은 `documents.status != DELETED`와 `documents.deleted_at IS NULL`을 모두 만족해야 하며, 버전 ID가 있으면 그 버전이 같은 문서에 속하는지도 확인한다. 조건을 만족하지 않으면 `report_source_missing_origin`으로 집계한다. FieldComment 검토 품질은 전체 상태별 개수, `ANALYZED`/`REVIEWED`/`SELECTED` 합계, AI 착수 최소 기준 100건 대비 부족분을 표시한다. FieldComment가 대부분 `NEW`라면 검색 후보에는 들어갈 수 있어도 요약 신뢰도와 AI 착수 기준은 부족한 것으로 본다.
 

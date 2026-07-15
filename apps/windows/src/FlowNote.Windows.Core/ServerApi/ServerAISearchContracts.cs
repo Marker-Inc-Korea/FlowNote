@@ -118,6 +118,51 @@ public sealed record ServerAISearchQualityResponse
     public ServerFieldCommentReviewReadinessResponse FieldCommentReviewReadiness { get; init; } = new();
 }
 
+public sealed record ServerAISearchReadinessScopeResponse
+{
+    [JsonPropertyName("customer_scope")]
+    public string CustomerScope { get; init; } = string.Empty;
+
+    [JsonPropertyName("site_scope")]
+    public string SiteScope { get; init; } = string.Empty;
+
+    [JsonPropertyName("line_scope")]
+    public string? LineScope { get; init; }
+
+    [JsonPropertyName("database_scope")]
+    public string DatabaseScope { get; init; } = string.Empty;
+}
+
+public sealed record ServerAISearchReadinessResponse
+{
+    [JsonPropertyName("scope")]
+    public ServerAISearchReadinessScopeResponse Scope { get; init; } = new();
+
+    [JsonPropertyName("source_counts")]
+    public IReadOnlyDictionary<string, int> SourceCounts { get; init; } = new Dictionary<string, int>();
+
+    [JsonPropertyName("source_minimums")]
+    public IReadOnlyDictionary<string, int> SourceMinimums { get; init; } = new Dictionary<string, int>();
+
+    [JsonPropertyName("source_gaps")]
+    public IReadOnlyDictionary<string, int> SourceGaps { get; init; } = new Dictionary<string, int>();
+
+    [JsonPropertyName("ground_truth_count")]
+    public int GroundTruthCount { get; init; }
+
+    [JsonPropertyName("ground_truth_minimum")]
+    public int GroundTruthMinimum { get; init; }
+
+    [JsonPropertyName("ground_truth_gap")]
+    public int GroundTruthGap { get; init; }
+
+    [JsonPropertyName("missing_category_scenarios")]
+    public IReadOnlyList<Dictionary<string, string>> MissingCategoryScenarios { get; init; } = [];
+
+    [JsonPropertyName("provider_start_ready")]
+    public bool ProviderStartReady { get; init; }
+}
+
 public sealed record ServerAISearchEvidenceReferenceRequest
 {
     [JsonPropertyName("candidateId")]

@@ -32,6 +32,7 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 - `ai_search_candidates`
 - `ai_search_evaluation_runs`
 - `ai_search_evaluation_cases`
+- `ai_search_ground_truth_cases`
 - `ai_prompt_versions`, `ai_queries`
 - `ai_query_evidence_candidates`, `ai_query_citations`
 - `ai_call_attempts`, `ai_transfer_approvals`, `ai_sensitive_data_policies`
