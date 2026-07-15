@@ -243,7 +243,23 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
                 synced++;
             }
-            catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TaskCanceledException or IOException)
+            catch (FlowNoteServerAuthenticationException exception)
+            {
+                failed++;
+                var reason = SummarizeFailure(exception);
+                firstFailureReason ??= reason;
+                RecordFailure(item, reason);
+                break;
+            }
+            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+            {
+                failed++;
+                var reason = SummarizeFailure(exception);
+                firstFailureReason ??= reason;
+                RecordFailure(item, reason);
+                break;
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or IOException)
             {
                 failed++;
                 var reason = SummarizeFailure(exception);
@@ -252,10 +268,11 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             }
         }
 
+        var metrics = GetOperationalMetrics();
         var success = failed == 0 && held == 0;
         var message = success
-            ? $"서버 동기화 완료: 성공 {synced}건, 이미 처리 {skipped}건, 시도 {attempted}건."
-            : $"서버 동기화에 조치가 필요한 항목이 있습니다: 성공 {synced}건, 이미 처리 {skipped}건, 보류 {held}건, 실패 {failed}건, 시도 {attempted}건. 첫 사유: {firstFailureReason} 동기화 큐의 우선순위와 조치 내용을 확인한 뒤 서버 실행 상태, 서버 URL, 로그인 상태, 선행 문서/버전 동기화 여부를 조치하고 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
+            ? $"서버 동기화 완료: 성공 {synced}건, 이미 처리 {skipped}건, 시도 {attempted}건. 남은 큐 {metrics.QueueDepth}건, 최장 대기 {metrics.OldestWaitingText}, 최근 1시간 처리 {metrics.SyncedLastHour}건."
+            : $"서버 동기화에 조치가 필요한 항목이 있습니다: 성공 {synced}건, 이미 처리 {skipped}건, 보류 {held}건, 실패 {failed}건, 시도 {attempted}건. 남은 큐 {metrics.QueueDepth}건, 최장 대기 {metrics.OldestWaitingText}, 실패 분포 {metrics.FailureDistributionText}. 첫 사유: {firstFailureReason} 동기화 큐의 우선순위와 조치 내용을 확인한 뒤 서버 실행 상태, 서버 URL, 로그인 상태, 선행 문서/버전 동기화 여부를 조치하고 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
         if (items.Count > 0)
         {
             using var connection = database.OpenConnection();
@@ -377,6 +394,67 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         }
 
         return new ServerSyncQueueSummary(pending, failed, synced, held);
+    }
+
+    public ServerSyncOperationalMetrics GetOperationalMetrics(DateTime? now = null)
+    {
+        var measuredAt = now ?? DateTime.UtcNow;
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT status, entity_type, action, last_error, created_at, synced_at
+            FROM server_sync_queue;
+            """;
+
+        var queueDepth = 0;
+        DateTime? oldestCreatedAt = null;
+        var syncedLastHour = 0;
+        var failureReasons = new Dictionary<string, int>(StringComparer.Ordinal);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var status = reader.GetString(0);
+            if (string.Equals(status, Synced, StringComparison.Ordinal))
+            {
+                if (!reader.IsDBNull(5) &&
+                    DateTime.TryParse(reader.GetString(5), out var syncedAt) &&
+                    syncedAt >= measuredAt.AddHours(-1) && syncedAt <= measuredAt)
+                {
+                    syncedLastHour++;
+                }
+                continue;
+            }
+
+            queueDepth++;
+            if (DateTime.TryParse(reader.GetString(4), out var createdAt) &&
+                (oldestCreatedAt is null || createdAt < oldestCreatedAt.Value))
+            {
+                oldestCreatedAt = createdAt;
+            }
+
+            if (string.Equals(status, Failed, StringComparison.Ordinal))
+            {
+                var diagnosis = ServerSyncQueueDiagnostics.Classify(
+                    status,
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    reader.IsDBNull(3) ? null : TranslateFailureReason(reader.GetString(3)));
+                failureReasons[diagnosis.Category] = failureReasons.GetValueOrDefault(diagnosis.Category) + 1;
+            }
+        }
+
+        var oldestWaitingTime = oldestCreatedAt is null
+            ? null
+            : measuredAt - oldestCreatedAt.Value;
+        return new ServerSyncOperationalMetrics(
+            queueDepth,
+            oldestWaitingTime,
+            syncedLastHour,
+            failureReasons
+                .OrderByDescending(item => item.Value)
+                .ThenBy(item => item.Key, StringComparer.Ordinal)
+                .Select(item => new ServerSyncFailureMetric(item.Key, item.Value))
+                .ToList());
     }
 
     public static string CreateDocumentIdempotencyKey(string documentId, int versionNo = 1)
@@ -950,6 +1028,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 Clean(localVersion.Comment) ?? FlowNoteServerDocumentClient.DefaultWpfLocalUploadChangeReason,
                 localVersion.VersionLabel,
                 Clean(serverUserId),
+                item.IdempotencyKey,
                 cancellationToken);
         }
         catch (InvalidOperationException exception) when (IsServerVersionConflict(exception))
@@ -1188,6 +1267,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             attachment.Caption,
             attachment.CapturedAt,
             Clean(serverUserId),
+            item.IdempotencyKey,
             cancellationToken);
 
         var now = DateTime.UtcNow;

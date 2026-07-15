@@ -227,7 +227,9 @@ def _ensure_idempotency_columns(database: Database) -> None:
 
     targets = (
         ("documents", "ix_documents_idempotency_key"),
+        ("document_versions", "ix_document_versions_idempotency_key"),
         ("field_comments", "ix_field_comments_idempotency_key"),
+        ("field_comment_attachments", "ix_field_comment_attachments_idempotency_key"),
         ("document_access_logs", "ix_document_access_logs_idempotency_key"),
         ("reports", "ix_reports_idempotency_key"),
     )

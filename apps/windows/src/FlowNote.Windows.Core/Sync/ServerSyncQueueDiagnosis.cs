@@ -5,7 +5,37 @@ public sealed record ServerSyncQueueDiagnosis(
     int Priority,
     string PriorityText,
     string OperatorAction,
-    bool IsDependencyHold);
+    bool IsDependencyHold)
+{
+    public string OperationalState
+    {
+        get
+        {
+            if (Category is "완료")
+            {
+                return "완료";
+            }
+
+            if (Category is "구 FieldNote 큐" or "구 형식 큐")
+            {
+                return "보존 구 형식";
+            }
+
+            if (Category is "선행 문서 버전 미동기화" or "선행 문서 미동기화" or
+                "선행 FieldComment 미동기화" or "보고서 근거 미동기화")
+            {
+                return "선행 조건 대기";
+            }
+
+            if (Category is "로컬 파일 누락" or "서버 URL 미설정" or "인증 만료")
+            {
+                return "수동 조치 필요";
+            }
+
+            return "재시도 가능";
+        }
+    }
+}
 
 public static class ServerSyncQueueDiagnostics
 {

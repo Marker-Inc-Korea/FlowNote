@@ -1,6 +1,6 @@
 # FlowNote 문서
 
-이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-14 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
+이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-15 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
 
 전체 문서 갱신 범위는 Git이 추적하는 제품·구현 Markdown이다. `AGENTS.md`는 작업 정책 원문이므로 제품 코드 설명과 분리하고, 가상환경·빌드 캐시·테스트 산출물 안의 Markdown은 생성·보존 기록이므로 갱신 대상에서 제외한다.
 
@@ -41,7 +41,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전 원천 권한·민감정보·최소 payload·근거 snapshot·인용 검증과 감사 게이트를 다룬다. provider 호출 지점은 테스트용 주입 경계까지만 있으며 운영 네트워크 client는 없고, WPF UI는 근거 후보 운영 점검 화면까지만 제공한다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-14 현재 pytest 96건이 수집되며 `scripts/verify-preserved-tests.ps1`도 같은 96건을 기준선으로 사용한다. AI 근거 검색·provider 경계, controlled copy, 서버 계정 수명주기·권한·세션·감사 회귀가 포함된다.
+- FastAPI 코드는 2026-07-15 현재 pytest 98건이 수집되며 `scripts/verify-preserved-tests.ps1`도 같은 98건을 기준선으로 사용한다. AI 근거 검색·provider 경계, controlled copy, 서버 계정 수명주기·권한·세션·감사 회귀가 포함된다.
 
 ## 일일 기록
 
@@ -49,4 +49,4 @@
 
 ## 검증 자동화
 
-FastAPI pytest, WPF build, WPF smoke를 테스트 DB와 산출물 보존 규칙에 맞춰 실행하는 표준 순서는 [verification.md](./verification.md)를 따른다.
+FastAPI pytest, WPF Core 테스트·앱 build·통합 smoke, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 하나의 실행 ID로 보존하는 표준 순서는 [verification.md](./verification.md)를 따른다. 표준 실행은 Windows x64 도구 기준을 먼저 검사하며 단계별 로그, JUnit/TRX, WPF SQLite 증거와 최종 요약이 모두 통과한 경우에만 통합 기준선으로 인정한다.

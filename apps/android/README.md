@@ -63,6 +63,6 @@ cd apps/android
 
 JDK와 Android SDK가 필요하다. macOS 기본 SDK 경로 `$HOME/Library/Android/sdk`가 있으면 `gradlew`가 `ANDROID_HOME`을 자동 지정한다. 운영 배포 전에는 현장 서버 HTTPS, 사내 인증서, 단말별 `deviceId` 발급 절차를 확정해야 한다.
 
-Windows 배포 준비 PC의 통합 기준선은 `scripts/verify-preserved-tests.ps1`이 단위 테스트와 debug build를 같은 실행 ID로 보존한다. 승인 실단말이 정확히 1대 연결된 경우에만 `-RunAndroidDeviceSmoke`를 추가한다. 이 자동 단계만으로 카메라 선택, 네트워크 단절 뒤 outbox 재시도, 사내 HTTPS 인증서 신뢰, 전경 polling을 완료 판정하지 않으며 같은 실행 ID의 수동 실기 로그를 함께 남긴다.
+Windows 배포 준비 PC의 통합 기준선은 x64 JDK 17, Android Platform 35와 Build Tools 35.0.0을 사용한다. `scripts/verify-preserved-tests.ps1`은 단위 테스트와 debug build를 실행하고 JUnit XML과 단계 로그를 같은 실행 ID에 복사한 뒤 failure/error가 0인지 확인한다. 승인 실단말이 정확히 1대 연결된 경우에만 `-RunAndroidDeviceSmoke`를 추가한다. 이 자동 단계만으로 카메라 선택, 네트워크 단절 뒤 outbox 재시도, 사내 HTTPS 인증서 신뢰, 전경 polling을 완료 판정하지 않으며 같은 실행 ID의 수동 실기 로그를 함께 남긴다.
 
 현재 단위 테스트는 API 경로·로그인/FieldComment payload 계약, 사용자 오류 문구와 outbox 재시도 횟수·지수 backoff 정책을 검증한다. 실제 단말의 사진 선택, SQLite 지속성, 사내망 통신과 승인 단말 로그인은 Android 실기 검증 대상이다.

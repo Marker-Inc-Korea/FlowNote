@@ -240,6 +240,44 @@ def test_field_comment_attachment_rejects_unknown_comment_id() -> None:
     assert response.json()["detail"] == "Field comment not found."
 
 
+def test_field_comment_attachment_idempotency_key_returns_existing_attachment() -> None:
+    idempotency_key = f"pytest:field-comment-attachment:{uuid4().hex}"
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        comment_response = client.post(
+            "/api/v1/field-comments",
+            headers=headers,
+            json={
+                "documentId": document["document_id"],
+                "rawContent": "Idempotent attachment target",
+            },
+        )
+        assert comment_response.status_code == 201, comment_response.text
+        comment_id = comment_response.json()["comment_id"]
+
+        responses = []
+        for caption in ("First upload", "Duplicate upload"):
+            response = client.post(
+                f"/api/v1/field-comments/{comment_id}/attachments",
+                headers=headers,
+                data={"caption": caption, "idempotencyKey": idempotency_key},
+                files={"file": ("evidence.txt", b"same evidence", "text/plain")},
+            )
+            assert response.status_code == 201, response.text
+            responses.append(response.json())
+
+        assert responses[0]["attachment_id"] == responses[1]["attachment_id"]
+        assert responses[1]["caption"] == "First upload"
+        with client.app.state.database.session() as session:
+            count = session.scalar(
+                select(func.count()).select_from(FieldCommentAttachment).where(
+                    FieldCommentAttachment.idempotency_key == idempotency_key
+                )
+            )
+            assert count == 1
+
+
 def test_field_comment_attachment_rejects_unsupported_file_type() -> None:
     with create_test_client() as client:
         document = create_document(client)

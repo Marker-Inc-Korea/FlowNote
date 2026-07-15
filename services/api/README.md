@@ -136,7 +136,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The current collected FastAPI test count is 96. The fixed collection baseline in `scripts/verify-preserved-tests.ps1` is also 96.
+As of 2026-07-15, the collected FastAPI test count is 96. `scripts/verify-preserved-tests.ps1` fixes the same collection baseline and verifies the generated JUnit counts. The complete Windows baseline also runs WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID; a FastAPI-only run is partial evidence.
 
 The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no policy-management API or network provider client in the current router.
 
