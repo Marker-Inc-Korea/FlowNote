@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import case, delete, desc, select
+from sqlalchemy import case, delete, desc, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import DocumentWriteUser, get_current_user
+from app.core.auth import DocumentGovernanceUser, DocumentWriteUser, get_current_user
 from app.core.config import Settings, get_settings
 from app.core.storage import resolve_storage_root, store_upload_file
 from app.db.models import ActivityHistory, Document, DocumentTag, DocumentVersion, FileObject
@@ -23,6 +24,12 @@ router = APIRouter(prefix="/documents", tags=["documents"], dependencies=[Depend
 DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "PUBLISHED", "ARCHIVED"}
 CREATABLE_DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "ARCHIVED"}
 VERSION_STATUSES = {"WORKING", "IN_REVIEW", "APPROVED", "PUBLISHED", "ARCHIVED"}
+DOCUMENT_STATUS_TRANSITIONS = {
+    "WORKING": {"IN_REVIEW", "ARCHIVED"},
+    "IN_REVIEW": {"WORKING", "ARCHIVED"},
+    "PUBLISHED": {"IN_REVIEW", "ARCHIVED"},
+    "ARCHIVED": {"WORKING", "IN_REVIEW"},
+}
 
 
 class FileObjectResponse(BaseModel):
@@ -58,6 +65,7 @@ class DocumentResponse(BaseModel):
     owner_id: str | None
     category_id: str | None
     status: str
+    revision: int
     latest_version_id: str | None
     published_version_id: str | None
     created_at: datetime
@@ -72,6 +80,7 @@ class DocumentListItem(BaseModel):
     title: str
     document_type: str
     status: str
+    revision: int
     latest_version_id: str | None
     latest_version_no: int | None = None
     latest_filename: str | None = None
@@ -87,6 +96,7 @@ class DocumentStatusUpdateRequest(BaseModel):
 
     status: str = Field(min_length=1)
     change_reason: str | None = Field(default=None, alias="changeReason")
+    base_revision: int | None = Field(default=None, alias="baseRevision", ge=1)
 
 
 class DocumentVersionStatusUpdateRequest(BaseModel):
@@ -100,6 +110,17 @@ class DocumentVersionPublishRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     change_reason: str | None = Field(default=None, alias="changeReason")
+    base_revision: int | None = Field(default=None, alias="baseRevision", ge=1)
+    expected_published_version_id: str | None = Field(
+        default=None, alias="expectedPublishedVersionId"
+    )
+
+
+class DocumentDeleteRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    change_reason: str = Field(alias="changeReason", min_length=1)
+    base_revision: int = Field(alias="baseRevision", ge=1)
 
 
 def _new_public_id(prefix: str) -> str:
@@ -133,6 +154,21 @@ def _validate_status(value: str, allowed: set[str], field_name: str = "status") 
     return cleaned
 
 
+def _validate_document_status_transition(before: str, after: str) -> None:
+    if before == after:
+        return
+    if after == "PUBLISHED":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Document cannot be set to PUBLISHED without a published version.",
+        )
+    if after not in DOCUMENT_STATUS_TRANSITIONS.get(before, set()):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Document status transition {before} -> {after} is not allowed.",
+        )
+
+
 def _clean_optional(value: str | None) -> str | None:
     if value is None:
         return None
@@ -150,6 +186,85 @@ def _clean_idempotency_key(value: str | None) -> str | None:
             detail="idempotencyKey is too long.",
         )
     return cleaned
+
+
+def _conflict(
+    code: str,
+    message: str,
+    *,
+    document: Document | None = None,
+    expected_revision: int | None = None,
+    extra: dict[str, object | None] | None = None,
+) -> HTTPException:
+    detail: dict[str, object | None] = {
+        "code": code,
+        "message": message,
+        "documentId": document.document_id if document is not None else None,
+        "expectedRevision": expected_revision,
+        "currentRevision": document.revision if document is not None else None,
+        "currentStatus": document.status if document is not None else None,
+        "currentLatestVersionId": document.latest_version_id if document is not None else None,
+        "currentPublishedVersionId": (
+            document.published_version_id if document is not None else None
+        ),
+    }
+    if extra:
+        detail.update(extra)
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
+def _require_live_document(session: Session, document_id: str) -> Document:
+    document = session.scalar(select(Document).where(Document.document_id == document_id))
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    if document.deleted_at is not None or document.status == "DELETED":
+        raise _conflict(
+            "DOCUMENT_DELETED",
+            "The server document was deleted; a local resend cannot restore it implicitly.",
+            document=document,
+        )
+    return document
+
+
+def _claim_revision(session: Session, document: Document, expected_revision: int | None) -> int:
+    base_revision = document.revision if expected_revision is None else expected_revision
+    claimed = session.execute(
+        update(Document)
+        .where(
+            Document.id == document.id,
+            Document.deleted_at.is_(None),
+            Document.revision == base_revision,
+        )
+        .values(revision=Document.revision + 1)
+    )
+    if claimed.rowcount != 1:
+        session.rollback()
+        current = session.scalar(select(Document).where(Document.id == document.id))
+        raise _conflict(
+            "STALE_REVISION",
+            "The document changed after the client base revision. Administrator resolution is required.",
+            document=current,
+            expected_revision=base_revision,
+        )
+    document.revision = base_revision + 1
+    return document.revision
+
+
+async def _upload_sha256(upload: UploadFile) -> str:
+    digest = sha256()
+    await upload.seek(0)
+    while chunk := await upload.read(1024 * 1024):
+        digest.update(chunk)
+    await upload.seek(0)
+    return digest.hexdigest()
+
+
+def _path_sha256(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _normalize_tag_code(value: str) -> str:
@@ -318,6 +433,10 @@ def _published_version_for_document(
         .join(FileObject, DocumentVersion.file_object_id == FileObject.id)
         .where(
             DocumentVersion.document_id == document_id,
+            DocumentVersion.version_id
+            == select(Document.published_version_id)
+            .where(Document.document_id == document_id)
+            .scalar_subquery(),
             DocumentVersion.is_published.is_(True),
             DocumentVersion.version_status == "PUBLISHED",
         )
@@ -341,6 +460,7 @@ def _document_response(session: Session, document: Document) -> DocumentResponse
         owner_id=document.owner_id,
         category_id=document.category_id,
         status=document.status,
+        revision=document.revision,
         latest_version_id=document.latest_version_id,
         published_version_id=document.published_version_id,
         created_at=document.created_at,
@@ -394,6 +514,7 @@ async def create_document(
     tags: Annotated[list[str] | None, Form()] = None,
     created_by: Annotated[str | None, Form(alias="createdBy")] = None,
     idempotency_key: Annotated[str | None, Form(alias="idempotencyKey")] = None,
+    file_hash_sha256: Annotated[str | None, Form(alias="fileHashSha256")] = None,
     app_settings: Annotated[Settings, Depends(get_settings)] = None,
     session: Annotated[Session, Depends(get_db_session)] = None,
 ) -> DocumentResponse:
@@ -407,6 +528,13 @@ async def create_document(
     owner_id = _validate_user_id(session, _clean_optional(owner_id), "ownerId")
     created_by = _validate_user_id(session, _clean_optional(created_by), "createdBy")
     idempotency_key = _clean_idempotency_key(idempotency_key)
+    actual_upload_hash = await _upload_sha256(file)
+    if file_hash_sha256 and actual_upload_hash.lower() != file_hash_sha256.strip().lower():
+        raise _conflict(
+            "FILE_HASH_MISMATCH",
+            "The uploaded file SHA-256 does not match fileHashSha256.",
+            extra={"expectedFileHash": file_hash_sha256, "actualFileHash": actual_upload_hash},
+        )
     if idempotency_key is not None:
         existing = session.scalar(
             select(Document).where(
@@ -415,6 +543,19 @@ async def create_document(
             )
         )
         if existing is not None:
+            existing_version = _latest_version_for_document(session, existing.document_id)
+            existing_hash = existing_version[1].hash_sha256 if existing_version else None
+            if (
+                existing.title != title.strip()
+                or existing.document_type != document_type.strip()
+                or existing_hash != actual_upload_hash
+            ):
+                raise _conflict(
+                    "IDEMPOTENCY_KEY_REUSED",
+                    "The idempotency key was retried with different metadata or file content.",
+                    document=existing,
+                    extra={"existingFileHash": existing_hash, "requestFileHash": actual_upload_hash},
+                )
             return _document_response(session, existing)
 
     document_id = _new_public_id("doc")
@@ -494,6 +635,7 @@ def list_documents(
                 title=document.title,
                 document_type=document.document_type,
                 status=document.status,
+                revision=document.revision,
                 latest_version_id=document.latest_version_id,
                 latest_version_no=version.version_no,
                 latest_filename=file_object.original_filename,
@@ -531,6 +673,7 @@ def list_published_documents(
                 title=document.title,
                 document_type=document.document_type,
                 status=document.status,
+                revision=document.revision,
                 latest_version_id=document.latest_version_id,
                 latest_version_no=None,
                 latest_filename=None,
@@ -600,23 +743,16 @@ def replace_document_tags(
 def update_document_status(
     document_id: str,
     payload: DocumentStatusUpdateRequest,
-    current_user: DocumentWriteUser,
+    current_user: DocumentGovernanceUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> DocumentResponse:
     target_status = _validate_status(payload.status, DOCUMENT_STATUSES)
-    document = session.scalar(
-        select(Document).where(Document.document_id == document_id, Document.deleted_at.is_(None))
-    )
-    if document is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    document = _require_live_document(session, document_id)
 
     before = document.status
     if before != target_status:
-        if target_status == "PUBLISHED" and document.published_version_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Document cannot be set to PUBLISHED without a published version.",
-            )
+        _validate_document_status_transition(before, target_status)
+        _claim_revision(session, document, payload.base_revision)
         document.status = target_status
         _record_activity(
             session,
@@ -660,7 +796,7 @@ def update_document_version_status(
     document_id: str,
     version_id: str,
     payload: DocumentVersionStatusUpdateRequest,
-    current_user: DocumentWriteUser,
+    current_user: DocumentGovernanceUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> DocumentVersionResponse:
     target_status = _validate_status(payload.status, VERSION_STATUSES)
@@ -717,22 +853,52 @@ def publish_document_version(
     document_id: str,
     version_id: str,
     payload: DocumentVersionPublishRequest,
-    current_user: DocumentWriteUser,
+    current_user: DocumentGovernanceUser,
+    app_settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> DocumentResponse:
+    document = _require_live_document(session, document_id)
     row = session.execute(
-        select(Document, DocumentVersion)
-        .join(DocumentVersion, Document.document_id == DocumentVersion.document_id)
+        select(DocumentVersion)
         .where(
-            Document.document_id == document_id,
-            Document.deleted_at.is_(None),
+            DocumentVersion.document_id == document_id,
             DocumentVersion.version_id == version_id,
         )
     ).first()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document version not found.")
-
-    document, version = row
+    version = row[0]
+    file_object = session.get(FileObject, version.file_object_id)
+    if file_object is None or not file_object.hash_sha256:
+        raise _conflict(
+            "FILE_HASH_MISMATCH",
+            "The version has no authoritative server file hash and cannot be published.",
+            document=document,
+            expected_revision=payload.base_revision,
+        )
+    storage_root = resolve_storage_root(app_settings.storage_root)
+    stored_path = (storage_root / Path(file_object.storage_key)).resolve()
+    try:
+        stored_path.relative_to(storage_root)
+    except ValueError:
+        stored_path = Path()
+    if not stored_path.is_file():
+        raise _conflict(
+            "FILE_HASH_MISMATCH",
+            "The server file for the selected version is missing.",
+            document=document,
+            expected_revision=payload.base_revision,
+            extra={"expectedFileHash": file_object.hash_sha256},
+        )
+    actual_hash = _path_sha256(stored_path)
+    if actual_hash != file_object.hash_sha256.lower():
+        raise _conflict(
+            "FILE_HASH_MISMATCH",
+            "The server file SHA-256 does not match the stored version hash.",
+            document=document,
+            expected_revision=payload.base_revision,
+            extra={"expectedFileHash": file_object.hash_sha256, "actualFileHash": actual_hash},
+        )
     if (
         document.status == "PUBLISHED"
         and document.published_version_id == version.version_id
@@ -740,6 +906,20 @@ def publish_document_version(
         and version.version_status == "PUBLISHED"
     ):
         return _document_response(session, document)
+
+    if (
+        payload.expected_published_version_id is not None
+        and payload.expected_published_version_id != document.published_version_id
+    ):
+        raise _conflict(
+            "PUBLISHED_VERSION_CHANGED",
+            "Another administrator replaced the published version after this client loaded it.",
+            document=document,
+            expected_revision=payload.base_revision,
+            extra={"expectedPublishedVersionId": payload.expected_published_version_id},
+        )
+
+    _claim_revision(session, document, payload.base_revision)
 
     previous_document_status = document.status
     previous_published_version_id = document.published_version_id
@@ -807,17 +987,25 @@ async def create_document_version(
     version_label: Annotated[str | None, Form(alias="versionLabel")] = None,
     created_by: Annotated[str | None, Form(alias="createdBy")] = None,
     idempotency_key: Annotated[str | None, Form(alias="idempotencyKey")] = None,
+    base_revision: Annotated[int | None, Form(alias="baseRevision", ge=1)] = None,
+    base_version_id: Annotated[str | None, Form(alias="baseVersionId")] = None,
+    file_hash_sha256: Annotated[str | None, Form(alias="fileHashSha256")] = None,
     app_settings: Annotated[Settings, Depends(get_settings)] = None,
     session: Annotated[Session, Depends(get_db_session)] = None,
 ) -> DocumentVersionResponse:
     change_reason = _validate_change_reason(change_reason)
     created_by = _validate_user_id(session, _clean_optional(created_by), "createdBy")
     idempotency_key = _clean_idempotency_key(idempotency_key)
-    document = session.scalar(
-        select(Document).where(Document.document_id == document_id, Document.deleted_at.is_(None))
-    )
-    if document is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    document = _require_live_document(session, document_id)
+    actual_upload_hash = await _upload_sha256(file)
+    if file_hash_sha256 and actual_upload_hash.lower() != file_hash_sha256.strip().lower():
+        raise _conflict(
+            "FILE_HASH_MISMATCH",
+            "The uploaded file SHA-256 does not match fileHashSha256.",
+            document=document,
+            expected_revision=base_revision,
+            extra={"expectedFileHash": file_hash_sha256, "actualFileHash": actual_upload_hash},
+        )
 
     if idempotency_key is not None:
         existing = session.scalar(
@@ -835,7 +1023,27 @@ async def create_document_version(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Idempotent document version has no file object.",
                 )
+            if existing_file.hash_sha256 != actual_upload_hash:
+                raise _conflict(
+                    "IDEMPOTENCY_KEY_REUSED",
+                    "The idempotency key was retried with different file content.",
+                    document=document,
+                    expected_revision=base_revision,
+                    extra={
+                        "existingFileHash": existing_file.hash_sha256,
+                        "requestFileHash": actual_upload_hash,
+                    },
+                )
             return _version_response(existing, existing_file)
+
+    if base_version_id is not None and base_version_id != document.latest_version_id:
+        raise _conflict(
+            "STALE_BASE_VERSION",
+            "The server latest version changed after the local version was created.",
+            document=document,
+            expected_revision=base_revision,
+            extra={"expectedLatestVersionId": base_version_id},
+        )
 
     latest_version_no = session.scalar(
         select(DocumentVersion.version_no)
@@ -854,6 +1062,12 @@ async def create_document_version(
     )
     session.add(file_object)
     session.flush()
+
+    try:
+        _claim_revision(session, document, base_revision)
+    except HTTPException:
+        _delete_stored_file(storage_root, file_object.storage_key)
+        raise
 
     session.query(DocumentVersion).filter(
         DocumentVersion.document_id == document_id,
@@ -903,3 +1117,42 @@ async def create_document_version(
         ) from exc
     session.refresh(version)
     return _version_response(version, file_object)
+
+
+@router.delete("/{document_id}", response_model=DocumentResponse)
+def delete_document(
+    document_id: str,
+    payload: DocumentDeleteRequest,
+    current_user: DocumentGovernanceUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> DocumentResponse:
+    document = _require_live_document(session, document_id)
+    reason = _validate_change_reason(payload.change_reason)
+    before = document.status
+    _claim_revision(session, document, payload.base_revision)
+    now = datetime.now(timezone.utc)
+    session.query(DocumentVersion).filter(
+        DocumentVersion.document_id == document_id,
+        DocumentVersion.is_published.is_(True),
+    ).update(
+        {"is_published": False, "published_at": None, "version_status": "ARCHIVED"},
+        synchronize_session=False,
+    )
+    document.status = "DELETED"
+    document.published_version_id = None
+    document.deleted_at = now
+    _record_activity(
+        session,
+        event_type="document.deleted",
+        actor_id=current_user.user_id,
+        target_type="document",
+        target_id=document.document_id,
+        target_title=document.title,
+        message="Document was soft-deleted; local resend cannot restore it.",
+        before_value=before,
+        after_value="DELETED",
+        change_reason=reason,
+    )
+    session.commit()
+    session.refresh(document)
+    return _document_response(session, document)

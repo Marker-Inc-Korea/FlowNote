@@ -7,6 +7,7 @@ using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
 using FlowNote.Windows.Core.Tags;
 using Microsoft.Data.Sqlite;
+using System.Security.Cryptography;
 
 namespace FlowNote.Windows.Core.Sync;
 
@@ -15,6 +16,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
     private const string Pending = "PENDING";
     private const string Failed = "FAILED";
     private const string Synced = "SYNCED";
+    private const string Conflict = "CONFLICT";
+    private const string Discarded = "DISCARDED";
 
     public ControlledCopyServerMapping? GetControlledCopyServerMapping(string documentId, int versionNo)
     {
@@ -251,6 +254,13 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 RecordFailure(item, reason);
                 break;
             }
+            catch (FlowNoteServerConflictException exception)
+            {
+                failed++;
+                var reason = $"{TranslateConflictCode(exception.ConflictCode)}: {exception.Message}";
+                firstFailureReason ??= reason;
+                RecordConflict(item, exception, reason);
+            }
             catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
             {
                 failed++;
@@ -269,10 +279,10 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         }
 
         var metrics = GetOperationalMetrics();
-        var success = failed == 0 && held == 0;
+        var success = failed == 0 && held == 0 && metrics.QueueDepth == 0;
         var message = success
             ? $"서버 동기화 완료: 성공 {synced}건, 이미 처리 {skipped}건, 시도 {attempted}건. 남은 큐 {metrics.QueueDepth}건, 최장 대기 {metrics.OldestWaitingText}, 최근 1시간 처리 {metrics.SyncedLastHour}건."
-            : $"서버 동기화에 조치가 필요한 항목이 있습니다: 성공 {synced}건, 이미 처리 {skipped}건, 보류 {held}건, 실패 {failed}건, 시도 {attempted}건. 남은 큐 {metrics.QueueDepth}건, 최장 대기 {metrics.OldestWaitingText}, 실패 분포 {metrics.FailureDistributionText}. 첫 사유: {firstFailureReason} 동기화 큐의 우선순위와 조치 내용을 확인한 뒤 서버 실행 상태, 서버 URL, 로그인 상태, 선행 문서/버전 동기화 여부를 조치하고 재시도하세요. 로컬 데이터는 삭제되지 않습니다.";
+            : $"서버 확인이 끝나지 않은 항목이 있습니다: 성공 {synced}건, 이미 처리 {skipped}건, 보류 {held}건, 실패/충돌 {failed}건, 시도 {attempted}건. 남은 큐 {metrics.QueueDepth}건, 최장 대기 {metrics.OldestWaitingText}, 실패 분포 {metrics.FailureDistributionText}. 첫 사유: {firstFailureReason ?? "기존 충돌 작업함을 확인하세요."} 동기화 큐 또는 충돌 작업함에서 조치한 뒤 재시도하세요. 서버 확인 전에는 동기화 완료가 아닙니다. 로컬 데이터는 삭제되지 않습니다.";
         if (items.Count > 0)
         {
             using var connection = database.OpenConnection();
@@ -321,7 +331,10 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             SELECT id, sync_id, entity_type, entity_id, action, local_document_id, local_version_no,
                    idempotency_key, status, attempt_count, last_error, created_at, last_attempt_at,
                    synced_at, server_document_id, server_version_id, server_report_id, server_comment_id,
-                   server_attachment_id, server_log_id
+                   server_attachment_id, server_log_id, base_server_revision,
+                   expected_server_version_id, expected_published_version_id,
+                   local_file_hash_sha256, conflict_code, conflict_details,
+                   resolution_action, resolution_reason, resolved_by, resolved_at
             FROM server_sync_queue
             ORDER BY
                 CASE status
@@ -359,10 +372,122 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 reader.IsDBNull(16) ? null : reader.GetString(16),
                 reader.IsDBNull(17) ? null : reader.GetString(17),
                 reader.IsDBNull(18) ? null : reader.GetString(18),
-                reader.IsDBNull(19) ? null : reader.GetString(19)));
+                reader.IsDBNull(19) ? null : reader.GetString(19),
+                reader.IsDBNull(20) ? null : reader.GetInt32(20),
+                reader.IsDBNull(21) ? null : reader.GetString(21),
+                reader.IsDBNull(22) ? null : reader.GetString(22),
+                reader.IsDBNull(23) ? null : reader.GetString(23),
+                reader.IsDBNull(24) ? null : reader.GetString(24),
+                reader.IsDBNull(25) ? null : reader.GetString(25),
+                reader.IsDBNull(26) ? null : reader.GetString(26),
+                reader.IsDBNull(27) ? null : reader.GetString(27),
+                reader.IsDBNull(28) ? null : reader.GetString(28),
+                reader.IsDBNull(29) ? null : DateTime.Parse(reader.GetString(29))));
         }
 
         return records;
+    }
+
+    public void DiscardConflict(long queueId, string resolvedBy, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(resolvedBy) || string.IsNullOrWhiteSpace(reason))
+        {
+            throw new InvalidOperationException("충돌 폐기에는 관리자와 폐기 사유가 필요합니다.");
+        }
+
+        var now = DateTime.UtcNow;
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE server_sync_queue
+            SET status = 'DISCARDED',
+                resolution_action = 'KEEP_SERVER',
+                resolution_reason = $reason,
+                resolved_by = $resolved_by,
+                resolved_at = $resolved_at
+            WHERE id = $id AND status = 'CONFLICT';
+            """;
+        command.Parameters.AddWithValue("$reason", reason.Trim());
+        command.Parameters.AddWithValue("$resolved_by", resolvedBy.Trim());
+        command.Parameters.AddWithValue("$resolved_at", now.ToString("O"));
+        command.Parameters.AddWithValue("$id", queueId);
+        if (command.ExecuteNonQuery() != 1)
+        {
+            throw new InvalidOperationException("선택한 항목은 현재 해결 가능한 충돌 상태가 아닙니다.");
+        }
+        RecordSyncHistory(connection, "server_sync.conflict_discarded", "server_sync_queue", queueId.ToString(), $"서버본 유지로 로컬 요청을 폐기했습니다. 사유: {reason.Trim()}", now);
+    }
+
+    public async Task<ServerSyncResult> RetryConflictUsingLatestServerAsync(
+        long queueId,
+        FlowNoteServerDocumentClient serverClient,
+        string resolvedBy,
+        string reason,
+        string? serverUserId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(resolvedBy) || string.IsNullOrWhiteSpace(reason))
+        {
+            throw new InvalidOperationException("충돌 재시도에는 관리자와 선택 사유가 필요합니다.");
+        }
+
+        string localDocumentId;
+        string serverDocumentId;
+        using (var connection = database.OpenConnection())
+        using (var lookup = connection.CreateCommand())
+        {
+            lookup.CommandText = """
+                SELECT COALESCE(queue.local_document_id, queue.entity_id), document.server_document_id
+                FROM server_sync_queue AS queue
+                JOIN documents AS document
+                  ON document.document_id = COALESCE(queue.local_document_id, queue.entity_id)
+                WHERE queue.id = $id AND queue.status = 'CONFLICT'
+                LIMIT 1;
+                """;
+            lookup.Parameters.AddWithValue("$id", queueId);
+            using var reader = lookup.ExecuteReader();
+            if (!reader.Read() || reader.IsDBNull(1))
+            {
+                throw new InvalidOperationException("충돌 항목의 서버 문서 ID를 확인할 수 없습니다.");
+            }
+            localDocumentId = reader.GetString(0);
+            serverDocumentId = reader.GetString(1);
+        }
+
+        var serverDocument = await serverClient.GetDocumentAsync(serverDocumentId, cancellationToken);
+        var now = DateTime.UtcNow;
+        using (var connection = database.OpenConnection())
+        {
+            UpdateDocumentServerState(connection, localDocumentId, serverDocument);
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE server_sync_queue
+                SET status = 'PENDING',
+                    last_error = NULL,
+                    base_server_revision = $base_server_revision,
+                    expected_server_version_id = $expected_server_version_id,
+                    expected_published_version_id = $expected_published_version_id,
+                    resolution_action = 'RETRY_LOCAL_ON_LATEST',
+                    resolution_reason = $reason,
+                    resolved_by = $resolved_by,
+                    resolved_at = $resolved_at
+                WHERE id = $id AND status = 'CONFLICT';
+                """;
+            command.Parameters.AddWithValue("$base_server_revision", serverDocument.Revision);
+            command.Parameters.AddWithValue("$expected_server_version_id", string.IsNullOrWhiteSpace(serverDocument.LatestVersionId) ? DBNull.Value : serverDocument.LatestVersionId);
+            command.Parameters.AddWithValue("$expected_published_version_id", string.IsNullOrWhiteSpace(serverDocument.PublishedVersionId) ? DBNull.Value : serverDocument.PublishedVersionId);
+            command.Parameters.AddWithValue("$reason", reason.Trim());
+            command.Parameters.AddWithValue("$resolved_by", resolvedBy.Trim());
+            command.Parameters.AddWithValue("$resolved_at", now.ToString("O"));
+            command.Parameters.AddWithValue("$id", queueId);
+            if (command.ExecuteNonQuery() != 1)
+            {
+                throw new InvalidOperationException("충돌 상태가 변경되어 최신 목록을 다시 확인해야 합니다.");
+            }
+            RecordSyncHistory(connection, "server_sync.conflict_retry_selected", "server_sync_queue", queueId.ToString(), $"서버 revision {serverDocument.Revision}을 기준으로 로컬 변경 재시도를 선택했습니다. 사유: {reason.Trim()}", now);
+        }
+
+        return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);
     }
 
     public ServerSyncQueueSummary GetQueueSummary()
@@ -388,7 +513,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 reader.GetString(2),
                 reader.IsDBNull(3) ? null : TranslateFailureReason(reader.GetString(3)));
             pending += string.Equals(status, Pending, StringComparison.Ordinal) ? 1 : 0;
-            failed += string.Equals(status, Failed, StringComparison.Ordinal) ? 1 : 0;
+            failed += status is Failed or Conflict ? 1 : 0;
             synced += string.Equals(status, Synced, StringComparison.Ordinal) ? 1 : 0;
             held += diagnosis.IsDependencyHold && !string.Equals(status, Synced, StringComparison.Ordinal) ? 1 : 0;
         }
@@ -414,7 +539,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         while (reader.Read())
         {
             var status = reader.GetString(0);
-            if (string.Equals(status, Synced, StringComparison.Ordinal))
+            if (status is Synced or Discarded)
             {
                 if (!reader.IsDBNull(5) &&
                     DateTime.TryParse(reader.GetString(5), out var syncedAt) &&
@@ -432,7 +557,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 oldestCreatedAt = createdAt;
             }
 
-            if (string.Equals(status, Failed, StringComparison.Ordinal))
+            if (status is Failed or Conflict)
             {
                 var diagnosis = ServerSyncQueueDiagnostics.Classify(
                     status,
@@ -443,7 +568,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             }
         }
 
-        var oldestWaitingTime = oldestCreatedAt is null
+        TimeSpan? oldestWaitingTime = oldestCreatedAt is null
             ? null
             : measuredAt - oldestCreatedAt.Value;
         return new ServerSyncOperationalMetrics(
@@ -626,6 +751,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var now = DateTime.UtcNow;
         var status = string.IsNullOrWhiteSpace(failureReason) ? Pending : Failed;
         using var connection = database.OpenConnection();
+        var snapshot = LoadDocumentSyncSnapshot(connection, localDocumentId, localVersionNo);
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO server_sync_queue (
@@ -639,7 +765,11 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 status,
                 attempt_count,
                 last_error,
-                created_at
+                created_at,
+                base_server_revision,
+                expected_server_version_id,
+                expected_published_version_id,
+                local_file_hash_sha256
             )
             VALUES (
                 $sync_id,
@@ -652,16 +782,36 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 $status,
                 0,
                 $last_error,
-                $created_at
+                $created_at,
+                $base_server_revision,
+                $expected_server_version_id,
+                $expected_published_version_id,
+                $local_file_hash_sha256
             )
             ON CONFLICT(idempotency_key) DO UPDATE SET
                 status = CASE
-                    WHEN server_sync_queue.status = 'SYNCED' THEN server_sync_queue.status
+                    WHEN server_sync_queue.status IN ('SYNCED', 'DISCARDED') THEN server_sync_queue.status
                     ELSE excluded.status
                 END,
                 last_error = CASE
-                    WHEN server_sync_queue.status = 'SYNCED' THEN server_sync_queue.last_error
+                    WHEN server_sync_queue.status IN ('SYNCED', 'DISCARDED') THEN server_sync_queue.last_error
                     ELSE excluded.last_error
+                END,
+                base_server_revision = CASE
+                    WHEN server_sync_queue.status IN ('SYNCED', 'DISCARDED') THEN server_sync_queue.base_server_revision
+                    ELSE excluded.base_server_revision
+                END,
+                expected_server_version_id = CASE
+                    WHEN server_sync_queue.status IN ('SYNCED', 'DISCARDED') THEN server_sync_queue.expected_server_version_id
+                    ELSE excluded.expected_server_version_id
+                END,
+                expected_published_version_id = CASE
+                    WHEN server_sync_queue.status IN ('SYNCED', 'DISCARDED') THEN server_sync_queue.expected_published_version_id
+                    ELSE excluded.expected_published_version_id
+                END,
+                local_file_hash_sha256 = CASE
+                    WHEN server_sync_queue.status IN ('SYNCED', 'DISCARDED') THEN server_sync_queue.local_file_hash_sha256
+                    ELSE excluded.local_file_hash_sha256
                 END;
             """;
         command.Parameters.AddWithValue("$sync_id", $"sync-{Guid.NewGuid():N}");
@@ -674,6 +824,10 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$status", status);
         command.Parameters.AddWithValue("$last_error", string.IsNullOrWhiteSpace(failureReason) ? DBNull.Value : failureReason);
         command.Parameters.AddWithValue("$created_at", now.ToString("O"));
+        command.Parameters.AddWithValue("$base_server_revision", snapshot.ServerRevision is null ? DBNull.Value : snapshot.ServerRevision.Value);
+        command.Parameters.AddWithValue("$expected_server_version_id", string.IsNullOrWhiteSpace(snapshot.ServerVersionId) ? DBNull.Value : snapshot.ServerVersionId);
+        command.Parameters.AddWithValue("$expected_published_version_id", string.IsNullOrWhiteSpace(snapshot.ServerPublishedVersionId) ? DBNull.Value : snapshot.ServerPublishedVersionId);
+        command.Parameters.AddWithValue("$local_file_hash_sha256", string.IsNullOrWhiteSpace(snapshot.LocalFileHashSha256) ? DBNull.Value : snapshot.LocalFileHashSha256);
         command.ExecuteNonQuery();
 
         if (!string.IsNullOrWhiteSpace(failureReason))
@@ -682,12 +836,63 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         }
     }
 
+    private static DocumentSyncSnapshot LoadDocumentSyncSnapshot(
+        SqliteConnection connection,
+        string? localDocumentId,
+        int? localVersionNo)
+    {
+        if (string.IsNullOrWhiteSpace(localDocumentId))
+        {
+            return new(null, null, null, null);
+        }
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT document.server_revision, document.server_version_id,
+                   document.server_published_version_id,
+                   COALESCE(version.local_path, document.local_path)
+            FROM documents AS document
+            LEFT JOIN document_versions AS version
+              ON version.document_id = document.document_id
+             AND version.version_no = $version_no
+            WHERE document.document_id = $document_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$document_id", localDocumentId);
+        command.Parameters.AddWithValue("$version_no", localVersionNo is null ? DBNull.Value : localVersionNo.Value);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return new(null, null, null, null);
+        }
+
+        var storedPath = reader.IsDBNull(3) ? null : reader.GetString(3);
+        string? hash = null;
+        if (!string.IsNullOrWhiteSpace(storedPath))
+        {
+            var path = FlowNoteLocalDatabase.ResolveLocalContentPath(storedPath);
+            if (File.Exists(path))
+            {
+                using var stream = File.OpenRead(path);
+                hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+            }
+        }
+
+        return new(
+            reader.IsDBNull(0) ? null : reader.GetInt32(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2),
+            hash);
+    }
+
     private IReadOnlyList<QueueItem> LoadRetryItems()
     {
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, entity_type, entity_id, action, local_document_id, local_version_no, idempotency_key
+            SELECT id, entity_type, entity_id, action, local_document_id, local_version_no,
+                   idempotency_key, base_server_revision, expected_server_version_id,
+                   expected_published_version_id, local_file_hash_sha256
             FROM server_sync_queue
             WHERE status IN ('PENDING', 'FAILED')
             ORDER BY
@@ -774,7 +979,11 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 reader.GetString(3),
                 reader.IsDBNull(4) ? null : reader.GetString(4),
                 reader.IsDBNull(5) ? null : reader.GetInt32(5),
-                reader.GetString(6)));
+                reader.GetString(6),
+                reader.IsDBNull(7) ? null : reader.GetInt32(7),
+                reader.IsDBNull(8) ? null : reader.GetString(8),
+                reader.IsDBNull(9) ? null : reader.GetString(9),
+                reader.IsDBNull(10) ? null : reader.GetString(10)));
         }
 
         return items;
@@ -947,6 +1156,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             UPDATE documents
             SET server_document_id = $server_document_id,
                 server_version_id = $server_version_id,
+                server_revision = $server_revision,
+                server_published_version_id = $server_published_version_id,
                 synced_at = $synced_at
             WHERE document_id = $document_id;
 
@@ -957,6 +1168,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             """;
         updateDocument.Parameters.AddWithValue("$server_document_id", response.DocumentId);
         updateDocument.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
+        updateDocument.Parameters.AddWithValue("$server_revision", response.Revision);
+        updateDocument.Parameters.AddWithValue("$server_published_version_id", string.IsNullOrWhiteSpace(response.PublishedVersionId) ? DBNull.Value : response.PublishedVersionId);
         updateDocument.Parameters.AddWithValue("$synced_at", now.ToString("O"));
         updateDocument.Parameters.AddWithValue("$document_id", document.DocumentId);
         updateDocument.ExecuteNonQuery();
@@ -991,19 +1204,41 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
         var localVersion = LoadDocumentVersion(item.EntityId, versionNo)
             ?? throw new InvalidOperationException($"Local document version not found: {item.EntityId} v{versionNo}");
-        var existingServerVersion = await TryFindServerVersionByNumberAsync(
-            serverClient,
-            documentMapping.ServerDocumentId,
-            versionNo,
-            cancellationToken);
+        ServerDocumentVersionResponse? existingServerVersion = null;
+        if (item.BaseServerRevision is null)
+        {
+            existingServerVersion = await TryFindServerVersionByNumberAsync(
+                serverClient,
+                documentMapping.ServerDocumentId,
+                versionNo,
+                cancellationToken);
+        }
         if (existingServerVersion is not null)
         {
+            if (!string.Equals(
+                    existingServerVersion.File.HashSha256,
+                    item.LocalFileHashSha256,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new FlowNoteServerConflictException(
+                    "FILE_HASH_MISMATCH",
+                    "같은 버전 번호의 서버 파일과 로컬 파일 SHA-256이 다릅니다.",
+                    item.BaseServerRevision,
+                    documentMapping.ServerRevision,
+                    null,
+                    existingServerVersion.VersionId,
+                    documentMapping.ServerPublishedVersionId,
+                    $"serverHash={existingServerVersion.File.HashSha256}; localHash={item.LocalFileHashSha256}");
+            }
+            var serverDocument = await serverClient.GetDocumentAsync(documentMapping.ServerDocumentId, cancellationToken);
             MarkDocumentVersionSynced(
                 item,
                 document,
                 localVersion,
                 documentMapping.ServerDocumentId,
                 existingServerVersion.VersionId,
+                serverDocument.Revision,
+                serverDocument.PublishedVersionId,
                 DateTime.UtcNow);
             return;
         }
@@ -1029,6 +1264,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 localVersion.VersionLabel,
                 Clean(serverUserId),
                 item.IdempotencyKey,
+                item.BaseServerRevision,
+                item.ExpectedServerVersionId,
+                item.LocalFileHashSha256,
                 cancellationToken);
         }
         catch (InvalidOperationException exception) when (IsServerVersionConflict(exception))
@@ -1049,16 +1287,21 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 localVersion,
                 documentMapping.ServerDocumentId,
                 existingServerVersion.VersionId,
+                documentMapping.ServerRevision,
+                documentMapping.ServerPublishedVersionId,
                 DateTime.UtcNow);
             return;
         }
 
+        var updatedServerDocument = await serverClient.GetDocumentAsync(response.DocumentId, cancellationToken);
         MarkDocumentVersionSynced(
             item,
             document,
             localVersion,
             response.DocumentId,
             response.VersionId,
+            updatedServerDocument.Revision,
+            updatedServerDocument.PublishedVersionId,
             DateTime.UtcNow);
     }
 
@@ -1087,11 +1330,14 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             documentMapping.ServerDocumentId,
             versionMapping.ServerVersionId,
             $"WPF local publish sync v{versionNo}",
+            item.BaseServerRevision,
+            item.ExpectedPublishedVersionId,
             cancellationToken);
         var publishedVersionId = response.PublishedVersion?.VersionId ?? response.PublishedVersionId ?? versionMapping.ServerVersionId;
         var now = DateTime.UtcNow;
 
         using var connection = database.OpenConnection();
+        UpdateDocumentServerState(connection, document.DocumentId, response);
         UpsertMapping(connection, "document_publish", document.DocumentId, versionNo, response.DocumentId, publishedVersionId, null, null, null, now);
         UpsertMapping(connection, "document", document.DocumentId, 0, response.DocumentId, response.LatestVersionId ?? documentMapping.ServerVersionId, null, null, null, now);
         MarkQueueSynced(connection, item.Id, response.DocumentId, publishedVersionId, null, null, now);
@@ -1128,11 +1374,13 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             documentMapping.ServerDocumentId,
             document.Status,
             $"WPF local status sync: {document.Status}",
+            item.BaseServerRevision,
             cancellationToken);
         var now = DateTime.UtcNow;
         var serverVersionId = response.LatestVersionId ?? documentMapping.ServerVersionId;
 
         using var connection = database.OpenConnection();
+        UpdateDocumentServerState(connection, document.DocumentId, response);
         UpsertMapping(connection, "document_status", document.DocumentId, item.LocalVersionNo ?? document.VersionNo, response.DocumentId, serverVersionId, null, null, null, now);
         UpsertMapping(connection, "document", document.DocumentId, 0, response.DocumentId, serverVersionId, null, null, null, now);
         MarkQueueSynced(connection, item.Id, response.DocumentId, serverVersionId, null, null, now);
@@ -1532,6 +1780,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         DocumentVersionRecord version,
         string serverDocumentId,
         string? serverVersionId,
+        int? serverRevision,
+        string? serverPublishedVersionId,
         DateTime syncedAt)
     {
         using var connection = database.OpenConnection();
@@ -1545,11 +1795,15 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             UPDATE documents
             SET server_document_id = $server_document_id,
                 server_version_id = CASE WHEN version_no = $version_no THEN $server_version_id ELSE server_version_id END,
+                server_revision = COALESCE($server_revision, server_revision),
+                server_published_version_id = $server_published_version_id,
                 synced_at = $synced_at
             WHERE document_id = $document_id;
             """;
         update.Parameters.AddWithValue("$server_document_id", serverDocumentId);
         update.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
+        update.Parameters.AddWithValue("$server_revision", serverRevision is null ? DBNull.Value : serverRevision.Value);
+        update.Parameters.AddWithValue("$server_published_version_id", string.IsNullOrWhiteSpace(serverPublishedVersionId) ? DBNull.Value : serverPublishedVersionId);
         update.Parameters.AddWithValue("$synced_at", syncedAt.ToString("O"));
         update.Parameters.AddWithValue("$document_id", document.DocumentId);
         update.Parameters.AddWithValue("$version_no", version.VersionNo);
@@ -1563,6 +1817,30 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
         MarkQueueSynced(connection, item.Id, serverDocumentId, serverVersionId, null, null, syncedAt);
         RecordSyncHistory(connection, "server_sync.succeeded", "document_version", document.DocumentId, $"Server document version synced: {serverDocumentId} v{version.VersionNo}", syncedAt);
+    }
+
+    private static void UpdateDocumentServerState(
+        SqliteConnection connection,
+        string localDocumentId,
+        ServerDocumentResponse response)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE documents
+            SET server_document_id = $server_document_id,
+                server_version_id = $server_version_id,
+                server_revision = $server_revision,
+                server_published_version_id = $server_published_version_id,
+                synced_at = $synced_at
+            WHERE document_id = $document_id;
+            """;
+        command.Parameters.AddWithValue("$server_document_id", response.DocumentId);
+        command.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(response.LatestVersionId) ? DBNull.Value : response.LatestVersionId);
+        command.Parameters.AddWithValue("$server_revision", response.Revision);
+        command.Parameters.AddWithValue("$server_published_version_id", string.IsNullOrWhiteSpace(response.PublishedVersionId) ? DBNull.Value : response.PublishedVersionId);
+        command.Parameters.AddWithValue("$synced_at", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$document_id", localDocumentId);
+        command.ExecuteNonQuery();
     }
 
     private FieldCommentRecord? LoadFieldComment(string commentId)
@@ -1777,7 +2055,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT server_document_id, server_version_id
+            SELECT server_document_id, server_version_id, server_revision,
+                   server_published_version_id
             FROM documents
             WHERE document_id = $document_id
             LIMIT 1;
@@ -1888,7 +2167,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT server_document_id, server_version_id
+            SELECT server_document_id, server_version_id, server_revision,
+                   server_published_version_id
             FROM documents
             WHERE document_id = $document_id
               AND server_document_id IS NOT NULL
@@ -1904,7 +2184,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
         return new DocumentServerMapping(
             reader.IsDBNull(0) ? null : reader.GetString(0),
-            reader.IsDBNull(1) ? null : reader.GetString(1));
+            reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetInt32(2),
+            reader.IsDBNull(3) ? null : reader.GetString(3));
     }
 
     private DocumentServerMapping? TryGetDocumentVersionServerMapping(string documentId, int versionNo)
@@ -1912,7 +2194,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT document.server_document_id, version.server_version_id
+            SELECT document.server_document_id, version.server_version_id,
+                   document.server_revision, document.server_published_version_id
             FROM document_versions AS version
             JOIN documents AS document ON document.document_id = version.document_id
             WHERE version.document_id = $document_id
@@ -1932,7 +2215,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 
         return new DocumentServerMapping(
             reader.IsDBNull(0) ? null : reader.GetString(0),
-            reader.IsDBNull(1) ? null : reader.GetString(1));
+            reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetInt32(2),
+            reader.IsDBNull(3) ? null : reader.GetString(3));
     }
 
     private DocumentServerMapping? TryGetServerIdMapping(string entityType, string localId, int localVersionNo)
@@ -2148,6 +2433,49 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$id", item.Id);
         command.ExecuteNonQuery();
         RecordSyncHistory(connection, "server_sync.failed", item.EntityType, item.EntityId, reason, DateTime.UtcNow);
+    }
+
+    private void RecordConflict(
+        QueueItem item,
+        FlowNoteServerConflictException exception,
+        string reason)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE server_sync_queue
+            SET status = 'CONFLICT',
+                last_error = $last_error,
+                conflict_code = $conflict_code,
+                conflict_details = $conflict_details
+            WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$last_error", reason);
+        command.Parameters.AddWithValue("$conflict_code", exception.ConflictCode);
+        command.Parameters.AddWithValue("$conflict_details", exception.ResponseBody);
+        command.Parameters.AddWithValue("$id", item.Id);
+        command.ExecuteNonQuery();
+        RecordSyncHistory(
+            connection,
+            "server_sync.conflict_detected",
+            item.EntityType,
+            item.EntityId,
+            $"{reason} 기준 revision={exception.ExpectedRevision?.ToString() ?? "없음"}, 서버 revision={exception.CurrentRevision?.ToString() ?? "없음"}",
+            DateTime.UtcNow);
+    }
+
+    private static string TranslateConflictCode(string code)
+    {
+        return code switch
+        {
+            "STALE_REVISION" => "서버 revision 변경 충돌",
+            "STALE_BASE_VERSION" => "기준 버전 변경 충돌",
+            "PUBLISHED_VERSION_CHANGED" => "공개본 교체 경쟁 충돌",
+            "DOCUMENT_DELETED" => "서버 삭제 문서 재전송 충돌",
+            "IDEMPOTENCY_KEY_REUSED" => "멱등키 내용 불일치",
+            "FILE_HASH_MISMATCH" => "파일 SHA-256 불일치",
+            _ => "서버 문서 충돌"
+        };
     }
 
     private void MarkQueueSynced(
@@ -2626,9 +2954,24 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         string Action,
         string? LocalDocumentId,
         int? LocalVersionNo,
-        string IdempotencyKey);
+        string IdempotencyKey,
+        int? BaseServerRevision,
+        string? ExpectedServerVersionId,
+        string? ExpectedPublishedVersionId,
+        string? LocalFileHashSha256);
 
-    private sealed record DocumentServerMapping(string? ServerDocumentId, string? ServerVersionId);
+    private sealed record DocumentServerMapping(
+        string? ServerDocumentId,
+        string? ServerVersionId,
+        int? ServerRevision = null,
+        string? ServerPublishedVersionId = null,
+        string? ServerFileHashSha256 = null);
+
+    private sealed record DocumentSyncSnapshot(
+        int? ServerRevision,
+        string? ServerVersionId,
+        string? ServerPublishedVersionId,
+        string? LocalFileHashSha256);
 
     private sealed record ReportServerMapping(string? ServerReportId, string? ServerDocumentId, string? ServerVersionId);
 

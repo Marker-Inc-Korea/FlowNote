@@ -1,5 +1,6 @@
 using System.Net;
 using FlowNote.Windows.Core.ServerApi;
+using FlowNote.Windows.Core.Auth;
 using Xunit;
 
 namespace FlowNote.Windows.Core.Tests;
@@ -28,5 +29,17 @@ public sealed class ServerAccountUiPolicyTests
     {
         Assert.Contains("다시 로그인", ServerAccountUiPolicy.ErrorMessage(HttpStatusCode.Unauthorized));
         Assert.Contains("권한", ServerAccountUiPolicy.ErrorMessage(HttpStatusCode.Forbidden));
+    }
+
+    [Theory]
+    [InlineData("admin", true)]
+    [InlineData("document-admin", true)]
+    [InlineData("department-manager", true)]
+    [InlineData("line-foreman", false)]
+    [InlineData("team-lead", false)]
+    [InlineData("viewer", false)]
+    public void DocumentGovernanceMatchesServerPolicy(string role, bool expected)
+    {
+        Assert.Equal(expected, RolePermissionPolicy.CanGovernDocuments(role));
     }
 }

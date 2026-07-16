@@ -20,7 +20,17 @@ public sealed record ServerSyncQueueRecord(
     string? ServerReportId,
     string? ServerCommentId,
     string? ServerAttachmentId,
-    string? ServerLogId)
+    string? ServerLogId,
+    int? BaseServerRevision,
+    string? ExpectedServerVersionId,
+    string? ExpectedPublishedVersionId,
+    string? LocalFileHashSha256,
+    string? ConflictCode,
+    string? ConflictDetails,
+    string? ResolutionAction,
+    string? ResolutionReason,
+    string? ResolvedBy,
+    DateTime? ResolvedAt)
 {
     public ServerSyncQueueDiagnosis Diagnosis =>
         ServerSyncQueueDiagnostics.Classify(Status, EntityType, Action, LastError);

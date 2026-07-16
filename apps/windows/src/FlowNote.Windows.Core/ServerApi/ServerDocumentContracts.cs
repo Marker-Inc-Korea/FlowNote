@@ -88,6 +88,9 @@ public sealed record ServerDocumentResponse
     [JsonPropertyName("status")]
     public string Status { get; init; } = string.Empty;
 
+    [JsonPropertyName("revision")]
+    public int Revision { get; init; }
+
     [JsonPropertyName("latest_version_id")]
     public string? LatestVersionId { get; init; }
 
@@ -124,6 +127,9 @@ public sealed record ServerDocumentListItem
     [JsonPropertyName("status")]
     public string Status { get; init; } = string.Empty;
 
+    [JsonPropertyName("revision")]
+    public int Revision { get; init; }
+
     [JsonPropertyName("latest_version_id")]
     public string? LatestVersionId { get; init; }
 
@@ -153,6 +159,12 @@ public sealed record ServerDocumentVersionPublishRequest
 {
     [JsonPropertyName("changeReason")]
     public string? ChangeReason { get; init; }
+
+    [JsonPropertyName("baseRevision")]
+    public int? BaseRevision { get; init; }
+
+    [JsonPropertyName("expectedPublishedVersionId")]
+    public string? ExpectedPublishedVersionId { get; init; }
 }
 
 public sealed record ServerDocumentStatusUpdateRequest
@@ -162,6 +174,9 @@ public sealed record ServerDocumentStatusUpdateRequest
 
     [JsonPropertyName("changeReason")]
     public string? ChangeReason { get; init; }
+
+    [JsonPropertyName("baseRevision")]
+    public int? BaseRevision { get; init; }
 }
 
 public sealed record ServerControlledCopyGrantResponse

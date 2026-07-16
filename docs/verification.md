@@ -65,9 +65,9 @@ Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 �
 
 ## 2026-07-16 작업 102 현재 코드와 개발 문서 재대조
 
-깨끗한 작업 트리의 현재 구현을 제품·시스템·데이터 모델·API·보안·배포·클라이언트·서버 개발 문서와 다시 대조했다. 코드가 문서보다 우선한다는 기준으로 전역 FastAPI OpenAPI 102개 method/path 조합, ORM 45개 테이블, `Settings` 31개 항목을 확인했으며 기존 문서와 다른 기능 계약은 발견되지 않았다. 현재 코드 기준 문서의 기준일만 2026-07-16으로 갱신하고, 과거 일일 기록과 기존 결정·검증 이력의 날짜와 수치는 보존했다.
+깨끗한 작업 트리의 현재 구현을 제품·시스템·데이터 모델·API·보안·배포·클라이언트·서버 개발 문서와 다시 대조했다. 코드가 문서보다 우선한다는 기준으로 전역 FastAPI OpenAPI 104개 method/path 조합, ORM 46개 테이블, `Settings` 36개 항목을 확인했다. Android 전용 grant/stream 두 경로와 `android_document_view_grants`, 보안 뷰어 설정은 API·데이터·보안 문서에 반영되어 있었지만, 제품 개요·MVP 범위·구현 로드맵과 루트 기능 목록에는 여전히 Android 문서 본문 뷰어가 없다는 설명이 남아 있어 현재 구현으로 바로잡았다. 배포 설정 표에는 Android grant 만료, 자동 닫힘, 전체/TXT 크기와 PDF 페이지 한도를 추가했다. 과거 일일 기록과 기존 결정·검증 이력의 당시 날짜와 수치는 보존했다.
 
-`.venv/bin/python -m pytest --collect-only -q`로 FastAPI 테스트 116건 수집을 확인했다. 문서 정합성 작업이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았고, 기존 SQLite·로그·캐시·테스트 산출물은 삭제하지 않았다.
+`services/api/.venv/bin/python`으로 현재 OpenAPI·ORM·설정 수를 확인하고, OpenAPI 104개 조합과 서버 README의 API 표가 누락·초과 0건임을 비교했다. `pytest --collect-only -q`로 FastAPI 테스트 120건 수집도 확인했다. 문서 정합성 작업이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았고, 기존 SQLite·로그·캐시·테스트 산출물은 삭제하지 않았다.
 
 ## 2026-07-15 작업 207 전체 Markdown 코드 정합성 갱신
 

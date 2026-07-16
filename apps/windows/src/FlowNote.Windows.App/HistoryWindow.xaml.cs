@@ -75,12 +75,81 @@ public partial class HistoryWindow : Window
         SyncQueueSummaryTextBlock.Text = result.Message;
     }
 
+    private async void RetryConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SyncQueueGrid.SelectedItem is not SyncQueueRow { Status: "CONFLICT" } selected)
+        {
+            SyncQueueSummaryTextBlock.Text = "로컬 변경을 다시 보낼 충돌 항목을 선택하세요.";
+            return;
+        }
+        if (serverDocumentClient is null)
+        {
+            SyncQueueSummaryTextBlock.Text = "서버 연결과 로그인이 필요합니다. 충돌 기록은 로컬 DB에 보존됩니다.";
+            return;
+        }
+        var reason = ConflictReasonTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            SyncQueueSummaryTextBlock.Text = "관리자 선택 사유를 입력하세요.";
+            return;
+        }
+
+        try
+        {
+            var actor = string.IsNullOrWhiteSpace(serverUserId) ? "관리자" : serverUserId;
+            var result = await serverSync.RetryConflictUsingLatestServerAsync(
+                selected.Id,
+                serverDocumentClient,
+                actor!,
+                reason,
+                serverUserId);
+            RefreshAll();
+            SyncQueueSummaryTextBlock.Text = result.Message;
+        }
+        catch (InvalidOperationException exception)
+        {
+            RefreshAll();
+            SyncQueueSummaryTextBlock.Text = exception.Message;
+        }
+    }
+
+    private void DiscardConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SyncQueueGrid.SelectedItem is not SyncQueueRow { Status: "CONFLICT" } selected)
+        {
+            SyncQueueSummaryTextBlock.Text = "서버본 유지로 폐기할 충돌 항목을 선택하세요.";
+            return;
+        }
+        var reason = ConflictReasonTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            SyncQueueSummaryTextBlock.Text = "폐기 사유를 입력하세요.";
+            return;
+        }
+
+        try
+        {
+            serverSync.DiscardConflict(
+                selected.Id,
+                string.IsNullOrWhiteSpace(serverUserId) ? "관리자" : serverUserId!,
+                reason);
+            RefreshAll();
+            SyncQueueSummaryTextBlock.Text = "서버본 유지로 로컬 전송 요청을 폐기했으며 사유와 감사 이력을 저장했습니다.";
+        }
+        catch (InvalidOperationException exception)
+        {
+            RefreshAll();
+            SyncQueueSummaryTextBlock.Text = exception.Message;
+        }
+    }
+
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {
         Close();
     }
 
     private sealed record SyncQueueRow(
+        long Id,
         string Status,
         string StatusText,
         int StatusOrder,
@@ -94,12 +163,14 @@ public partial class HistoryWindow : Window
         DateTime? LastAttemptAt,
         string OperatorAction,
         bool IsDependencyHold,
-        string LastError)
+        string LastError,
+        string ConflictCode)
     {
         public static SyncQueueRow FromRecord(ServerSyncQueueRecord record)
         {
             var diagnosis = record.Diagnosis;
             return new SyncQueueRow(
+                record.Id,
                 record.Status,
                 FormatStatus(record.Status),
                 FormatStatusOrder(record.Status),
@@ -113,7 +184,8 @@ public partial class HistoryWindow : Window
                 record.LastAttemptAt,
                 diagnosis.OperatorAction,
                 diagnosis.IsDependencyHold,
-                record.LastError ?? "-");
+                record.LastError ?? "-",
+                record.ConflictCode ?? "-");
         }
 
         private static string FormatStatus(string status)
@@ -123,6 +195,8 @@ public partial class HistoryWindow : Window
                 "PENDING" => "대기",
                 "FAILED" => "실패",
                 "SYNCED" => "완료",
+                "CONFLICT" => "충돌",
+                "DISCARDED" => "폐기",
                 _ => status
             };
         }
@@ -134,6 +208,8 @@ public partial class HistoryWindow : Window
                 "FAILED" => 0,
                 "PENDING" => 1,
                 "SYNCED" => 2,
+                "CONFLICT" => 0,
+                "DISCARDED" => 3,
                 _ => 3
             };
         }

@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private readonly FlowNoteServerAccountClient? serverAccountClient;
     private readonly FlowNoteServerAIOperationsClient? serverAIOperationsClient;
     private readonly bool canRegisterDocuments;
+    private readonly bool canGovernDocuments;
     private readonly bool canManageFileWatch;
     private readonly bool canWriteReports;
     private readonly bool canManageUsers;
@@ -46,6 +47,7 @@ public partial class MainWindow : Window
         this.services = services;
         this.currentUser = currentUser;
         canRegisterDocuments = RolePermissionPolicy.CanRegisterDocuments(currentUser.Role);
+        canGovernDocuments = RolePermissionPolicy.CanGovernDocuments(currentUser.Role);
         canManageFileWatch = RolePermissionPolicy.CanManageFileWatch(currentUser.Role);
         canWriteReports = RolePermissionPolicy.CanWriteReports(currentUser.Role);
         canManageUsers = RolePermissionPolicy.CanManageUsers(currentUser.Role);
@@ -248,7 +250,7 @@ public partial class MainWindow : Window
 
     private async void ApplyDocumentStatusButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!EnsureDocumentRegistrationAllowed())
+        if (!EnsureDocumentGovernanceAllowed())
         {
             return;
         }
@@ -286,7 +288,7 @@ public partial class MainWindow : Window
 
     private async void PublishDocumentButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!EnsureDocumentRegistrationAllowed())
+        if (!EnsureDocumentGovernanceAllowed())
         {
             return;
         }
@@ -864,9 +866,9 @@ public partial class MainWindow : Window
         AIOperationsButton.Visibility = string.Equals(
             currentUser.Role, "system-admin", StringComparison.OrdinalIgnoreCase)
             ? Visibility.Visible : Visibility.Collapsed;
-        ApplyDocumentStatusButton.IsEnabled = canRegisterDocuments;
-        PublishDocumentButton.IsEnabled = canRegisterDocuments;
-        DocumentStatusComboBox.IsEnabled = canRegisterDocuments;
+        ApplyDocumentStatusButton.IsEnabled = canGovernDocuments;
+        PublishDocumentButton.IsEnabled = canGovernDocuments;
+        DocumentStatusComboBox.IsEnabled = canGovernDocuments;
         FileListDropZone.AllowDrop = canRegisterDocuments;
         FileWatchButton.IsEnabled = canManageFileWatch;
         UserManagementButton.Visibility = canManageUsers ? Visibility.Visible : Visibility.Collapsed;
@@ -879,10 +881,15 @@ public partial class MainWindow : Window
             WorkSequenceAdminButton.ToolTip = noDocumentWritePermission;
             ChannelManagementButton.ToolTip = "채널 관리는 관리자/반장/조장 이상 권한에서 사용할 수 있습니다.";
             HandoverStatusButton.ToolTip = "인수인계 확인 현황은 관리자/반장/조장 이상 권한에서 사용할 수 있습니다.";
-            ApplyDocumentStatusButton.ToolTip = noDocumentWritePermission;
-            PublishDocumentButton.ToolTip = noDocumentWritePermission;
-            DocumentStatusComboBox.ToolTip = noDocumentWritePermission;
             FileListDropZone.ToolTip = noDocumentWritePermission;
+        }
+
+        if (!canGovernDocuments)
+        {
+            const string noGovernancePermission = "문서 상태와 공개본 결정은 관리자/문서관리/부서관리 권한에서만 사용할 수 있습니다.";
+            ApplyDocumentStatusButton.ToolTip = noGovernancePermission;
+            PublishDocumentButton.ToolTip = noGovernancePermission;
+            DocumentStatusComboBox.ToolTip = noGovernancePermission;
         }
 
         if (!canWriteReports)
@@ -906,6 +913,17 @@ public partial class MainWindow : Window
         }
 
         workspace.StatusText = "문서 등록 권한이 없습니다. 현장 코멘트 등록만 사용할 수 있습니다.";
+        return false;
+    }
+
+    private bool EnsureDocumentGovernanceAllowed()
+    {
+        if (canGovernDocuments)
+        {
+            return true;
+        }
+
+        workspace.StatusText = "문서 상태와 공개본 결정은 관리자급 권한에서만 가능합니다.";
         return false;
     }
 

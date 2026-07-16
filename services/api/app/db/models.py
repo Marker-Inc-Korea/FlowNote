@@ -165,6 +165,7 @@ class Document(TimestampMixin, Base):
     owner_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
     category_id: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="WORKING")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     latest_version_id: Mapped[str | None] = mapped_column(String(64))
     published_version_id: Mapped[str | None] = mapped_column(String(64))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

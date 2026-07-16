@@ -290,6 +290,8 @@ public sealed class FlowNoteLocalDatabase
                 server_report_id TEXT NULL,
                 server_document_id TEXT NULL,
                 server_version_id TEXT NULL,
+                server_revision INTEGER NULL,
+                server_published_version_id TEXT NULL,
                 synced_at TEXT NULL
             );
 
@@ -578,6 +580,16 @@ public sealed class FlowNoteLocalDatabase
                 server_comment_id TEXT NULL,
                 server_attachment_id TEXT NULL,
                 server_log_id TEXT NULL
+                ,base_server_revision INTEGER NULL
+                ,expected_server_version_id TEXT NULL
+                ,expected_published_version_id TEXT NULL
+                ,local_file_hash_sha256 TEXT NULL
+                ,conflict_code TEXT NULL
+                ,conflict_details TEXT NULL
+                ,resolution_action TEXT NULL
+                ,resolution_reason TEXT NULL
+                ,resolved_by TEXT NULL
+                ,resolved_at TEXT NULL
             );
 
             CREATE INDEX IF NOT EXISTS ix_server_sync_queue_status
@@ -594,6 +606,8 @@ public sealed class FlowNoteLocalDatabase
                 server_comment_id TEXT NULL,
                 server_attachment_id TEXT NULL,
                 server_log_id TEXT NULL,
+                server_revision INTEGER NULL,
+                server_file_hash_sha256 TEXT NULL,
                 synced_at TEXT NOT NULL,
                 UNIQUE(entity_type, local_id, local_version_no)
             );
@@ -627,6 +641,8 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "documents", "server_report_id", "TEXT NULL");
         EnsureColumn(connection, "documents", "server_document_id", "TEXT NULL");
         EnsureColumn(connection, "documents", "server_version_id", "TEXT NULL");
+        EnsureColumn(connection, "documents", "server_revision", "INTEGER NULL");
+        EnsureColumn(connection, "documents", "server_published_version_id", "TEXT NULL");
         EnsureColumn(connection, "documents", "synced_at", "TEXT NULL");
         EnsureColumn(connection, "document_versions", "version_status", "TEXT NOT NULL DEFAULT 'WORKING'");
         EnsureColumn(connection, "document_versions", "is_latest", "INTEGER NOT NULL DEFAULT 0");
@@ -645,9 +661,21 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "server_sync_queue", "server_comment_id", "TEXT NULL");
         EnsureColumn(connection, "server_sync_queue", "server_attachment_id", "TEXT NULL");
         EnsureColumn(connection, "server_sync_queue", "server_report_id", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "base_server_revision", "INTEGER NULL");
+        EnsureColumn(connection, "server_sync_queue", "expected_server_version_id", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "expected_published_version_id", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "local_file_hash_sha256", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "conflict_code", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "conflict_details", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "resolution_action", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "resolution_reason", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "resolved_by", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "resolved_at", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_comment_id", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_attachment_id", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_report_id", "TEXT NULL");
+        EnsureColumn(connection, "server_id_mappings", "server_revision", "INTEGER NULL");
+        EnsureColumn(connection, "server_id_mappings", "server_file_hash_sha256", "TEXT NULL");
         EnsureColumn(connection, "document_view_logs", "server_start_log_id", "INTEGER NULL");
         EnsureColumn(connection, "document_view_logs", "server_close_log_id", "INTEGER NULL");
         EnsureColumn(connection, "document_view_logs", "synced_at", "TEXT NULL");
@@ -699,7 +727,16 @@ public sealed class FlowNoteLocalDatabase
 
         using var alter = connection.CreateCommand();
         alter.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {definition};";
-        alter.ExecuteNonQuery();
+        try
+        {
+            alter.ExecuteNonQuery();
+        }
+        catch (SqliteException exception) when (
+            exception.SqliteErrorCode == 1 &&
+            exception.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+        {
+            // Another app/test process completed the same additive migration after our PRAGMA read.
+        }
     }
 
     private static void EnsureDocumentUpdatedAt(SqliteConnection connection)
