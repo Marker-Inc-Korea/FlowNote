@@ -424,8 +424,8 @@ if (-not $SkipFastApiPytest) {
         try {
             $collected = @(& $python -m pytest --collect-only -q)
             $testCount = @($collected | Where-Object { $_ -match "::" }).Count
-            if ($testCount -ne 116) {
-                throw "Expected 116 FastAPI pytest tests, collected $testCount."
+            if ($testCount -ne 120) {
+                throw "Expected 120 FastAPI pytest tests, collected $testCount."
             }
             Write-Host "Collected FastAPI pytest tests: $testCount"
         }
@@ -445,10 +445,10 @@ if (-not $SkipFastApiPytest) {
                 throw "FastAPI pytest failed with exit code $LASTEXITCODE."
             }
             $junitCounts = Get-JUnitCounts $junitPath
-            if ($junitCounts.Tests -ne 116 -or $junitCounts.Failures -ne 0 -or $junitCounts.Errors -ne 0) {
+            if ($junitCounts.Tests -ne 120 -or $junitCounts.Failures -ne 0 -or $junitCounts.Errors -ne 0) {
                 throw "FastAPI JUnit mismatch: tests=$($junitCounts.Tests), failures=$($junitCounts.Failures), errors=$($junitCounts.Errors)."
             }
-            Write-Host "FastAPI JUnit: tests=116, failures=0, errors=0"
+            Write-Host "FastAPI JUnit: tests=120, failures=0, errors=0"
         }
         finally {
             Pop-Location

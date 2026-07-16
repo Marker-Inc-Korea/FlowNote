@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-07-15 현재 전역 FastAPI 앱에 등록된 102개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy는 서버에 저장된 현재 공개 버전만 1회 스트리밍한다.
+이 목록은 2026-07-16 현재 전역 FastAPI 앱에 등록된 103개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -43,6 +43,8 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | Publish selected version |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | Issue one-time controlled copy grant for the current published version |
 | GET | `/api/v1/controlled-copies/{token}` | Stream the session-bound controlled copy once |
+| POST | `/api/v1/documents/{document_id}/versions/{version_id}/android-view-grants` | Issue an approved-device Android secure view grant |
+| GET | `/api/v1/android-document-views/{token}/stream` | Stream the device/session-bound Android body once |
 | POST | `/api/v1/documents/{document_id}/access-logs` | Register access log |
 | GET | `/api/v1/documents/{document_id}/access-logs` | Access log list |
 | GET | `/api/v1/tags` | Tag list |
@@ -140,6 +142,11 @@ Useful settings:
 - `FLOWNOTE_FIELD_COMMENT_ATTACHMENT_MAX_BYTES`: default `20971520`
 - `FLOWNOTE_CONTROLLED_COPY_MAX_BYTES`: default `524288000`
 - `FLOWNOTE_CONTROLLED_COPY_TICKET_EXPIRES_SECONDS`: default `60`, normalized to `5`-`300`
+- `FLOWNOTE_ANDROID_VIEW_GRANT_EXPIRES_SECONDS`: default `60`, normalized to `5`-`300`
+- `FLOWNOTE_ANDROID_VIEW_AUTO_CLOSE_SECONDS`: default `300`
+- `FLOWNOTE_ANDROID_VIEW_MAX_BYTES`: default `52428800` (50 MiB)
+- `FLOWNOTE_ANDROID_VIEW_MAX_TEXT_BYTES`: default `5242880` (5 MiB)
+- `FLOWNOTE_ANDROID_VIEW_MAX_PDF_PAGES`: default `200`
 - `FLOWNOTE_SESSION_COOKIE_NAME`: default `flownote_session`
 - `FLOWNOTE_ACCESS_TOKEN_SECRET`
 - `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES`: default `480`
@@ -169,7 +176,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-07-15, the FastAPI suite collects and passes 116 tests. `scripts/verify-preserved-tests.ps1` uses the same 116-test collection and JUnit baseline. The complete Windows baseline also runs WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID; a FastAPI-only run is partial evidence.
+As of 2026-07-16, the FastAPI suite collects 120 tests. `scripts/verify-preserved-tests.ps1` uses the same 120-test collection and JUnit baseline. The complete Windows baseline also runs WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID; a FastAPI-only run is partial evidence.
 
 The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no management API for that sensitive-data policy. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. The server lifespan runs expired-query retention on the configured interval by default, while the `system-admin` endpoint remains available for an immediate run.
 

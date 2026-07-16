@@ -1,6 +1,6 @@
 # FlowNote 보안
 
-이 문서는 2026-07-15 현재 코드에 적용된 통제와 운영 전 후속 통제를 구분한다.
+이 문서는 2026-07-16 현재 코드에 적용된 통제와 운영 전 후속 통제를 구분한다.
 
 ## 현재 구현
 
@@ -22,13 +22,13 @@
 - Android 승인 단말 `deviceId` 로그인 검증과 `auth_sessions.device_id` 기록
 - FastAPI 관리자 승인 단말 등록·상태·교체 API와 WPF 승인 단말 운영 화면
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면의 서버 인증/멤버십 기반 조회와 상태 변경
-- Android 현장 단말 앱의 서버 Bearer token 사용, FieldComment/사진 outbox 재전송, 알림 읽음/인수인계 확인, 서버 오류 원문 비노출
+- Android 현장 단말 앱의 서버 Bearer token 사용, 승인 단말 전용 1회성 보안 본문 열람, FieldComment/사진 outbox 재전송, 알림 읽음/인수인계 확인, 서버 오류 원문 비노출
 - 외부 AI 질의의 보고서 작성 role(`admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`) 제한, 기본 비활성 플래그, 허용 목적, 고객·현장·provider·model 전송 승인, 승인된 프롬프트와 근거 원천 상태 검사
 - 외부 AI 질의·근거 snapshot·인용·호출 시도 감사 row, 기본 응답 본문 미저장과 응답 hash 저장
 - `system-admin` 전용 외부 AI 전송 승인·불변 프롬프트 수명주기·전역/현장 kill switch와 한도·보존 정책 API 및 WPF 운영 화면
 - 질의·응답·비밀 원문을 제외한 AI 운영 감사 조회/정책 허용 CSV와, 만료 질의 payload 비식별화·응답 원문 삭제의 자동·즉시 보존 처리 감사
 
-Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현이 들어와 있다. Android 문서 기능은 공개 목록·상세 메타데이터 조회까지이며 파일 본문 다운로드·미리보기는 구현되어 있지 않다. 공통 채널 API는 서버 로그인, role, 채널 멤버십으로 접근을 제한하며, Android 로그인은 승인된 `terminal_devices.device_id`와 `status = ACTIVE`를 요구한다. 승인 단말 등록, 비활성화, 폐기, 교체는 `admin`, `system-admin` 전용 API와 WPF 운영 화면에서 수행하고 `activity_history`에 변경 주체와 사유를 남긴다. Android의 로그인, 문서, 알림, 인수인계 화면은 예외 메시지와 서버 오류 본문을 그대로 노출하지 않고 연결 실패, 시간 초과, HTTP 401·403·404와 기타 HTTP 오류를 한글 현장 안내로 변환한다. Android는 개인 휴대폰 기본 배포가 아니라 승인된 현장 태블릿 또는 러기드 단말을 기준으로 한다. MDM, 운영 인증서, outbox 암호화 정책은 후속 보안 범위다.
+Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현이 들어와 있다. Android 문서 기능은 공개 목록·상세 조회와 PDF/이미지/UTF-8 TXT 앱 내부 보안 열람을 제공한다. 공통 채널 API는 서버 로그인, role, 채널 멤버십으로 접근을 제한하며, Android 로그인과 본문 열람은 승인된 `terminal_devices.device_id`와 `status = ACTIVE`를 요구한다. 승인 단말 등록, 비활성화, 폐기, 교체는 `admin`, `system-admin` 전용 API와 WPF 운영 화면에서 수행하고 `activity_history`에 변경 주체와 사유를 남긴다. Android 화면은 예외 메시지와 서버 오류 본문을 그대로 노출하지 않고 현장 사용자를 위한 한글 안내로 변환한다. Android는 개인 휴대폰 기본 배포가 아니라 승인된 현장 태블릿 또는 러기드 단말을 기준으로 한다. MDM, 운영 인증서, outbox 암호화 정책은 후속 보안 범위다.
 
 ## 계정과 role
 
@@ -97,6 +97,10 @@ WPF 문서 뷰어는 로컬 앱 계층에서 보호한다.
 - TXT/PDF/XLSX/이미지의 정상, 비정상, 한글 파일명, 큰 파일 기준과 CAD/HWP 제외 범위는 [문서 미리보기 안정화 기준](../apps/windows/docs/document-preview-stability.md)을 따른다.
 
 허용 role의 controlled copy도 로컬 원본을 직접 복사하지 않는다. WPF는 서버에 현재 문서/버전의 티켓을 요청하고 같은 Bearer 사용자·로그인 세션으로 한 번만 스트리밍한다. 서버는 공개 상태와 정확한 공개 버전, 저장소 경계, 파일 크기, 등록 SHA-256을 발급 전과 전송 전에 검사한다. 티켓 원문은 DB에 저장하지 않고 SHA-256만 보존하며 기본 60초 후 만료된다. Range 요청, 다른 사용자·세션, 재사용과 만료 후 요청은 거부되고 성공·실패·차단을 모두 감사한다. 응답은 서버 로컬 경로나 `storage_key`를 노출하지 않는다.
+
+Android 본문 열람은 WPF controlled copy와 별도 계약이다. 앱은 승인 단말과 현장 열람 role에 묶인 기본 60초 1회성 grant로 `inline` 스트림만 받고 외부 앱 열기, 공유 Intent, `FileProvider`, 공개 저장소 쓰기를 제공하지 않는다. 서버는 발급과 스트림 때 사용자·세션·단말·공개 버전·크기·SHA-256을 재검사하고 성공·실패·만료를 문서 버전 단위로 감사한다. 응답과 앱 임시 파일명은 원본 파일명을 사용하지 않는다.
+
+수신 파일은 `cacheDir/secure-document-viewer/`의 앱 전용 내부 디렉터리에 확장자 없는 난수 이름으로만 잠시 둔다. 수신 길이, 응답/계약 SHA-256이 모두 일치한 뒤에만 `PdfRenderer`, `BitmapFactory`, 읽기 전용 TextView로 표시한다. 손상·과대·네트워크 오류에는 부분 파일을 즉시 제거한다. 뷰어 종료, 백그라운드 전환, 자동 닫힘, 오류, 로그아웃에서 삭제하고 다음 앱 시작 시 남은 파일을 다시 정리한다. 뷰어 Activity는 exported가 아니고 최근 항목에서 제외하며 `FLAG_SECURE`로 일반 화면 캡처와 미러링을 차단한다. 이 제어는 루팅·변조 단말이나 외부 카메라 촬영까지 막는 DRM 보장이 아니므로 승인 단말·MDM 정책을 함께 적용한다.
 
 ## 운영 데이터 보호
 

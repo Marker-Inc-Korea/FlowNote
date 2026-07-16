@@ -1,6 +1,6 @@
 # FlowNote 문서
 
-이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-15 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
+이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-16 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
 
 전체 문서 갱신 범위는 Git이 추적하는 제품·구현 Markdown이다. `AGENTS.md`는 작업 정책 원문이므로 제품 코드 설명과 분리하고, 가상환경·빌드 캐시·테스트 산출물 안의 Markdown은 생성·보존 기록이므로 갱신 대상에서 제외한다.
 
@@ -22,7 +22,7 @@
 ## 현재 코드 기준
 
 - Windows WPF 앱은 로컬 SQLite를 기본 저장소로 사용한다.
-- Android 현장 단말 앱은 Java/Android 네이티브 View 기반 최소 앱으로 구현되어 있다. 승인 단말 `deviceId` 로그인, 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인을 제공한다. 문서 파일 본문 다운로드·미리보기는 아직 없다.
+- Android 현장 단말 앱은 Java/Android 네이티브 View 기반 최소 앱으로 구현되어 있다. 승인 단말 `deviceId` 로그인, 공개 문서 목록·상세, PDF/이미지/TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인을 제공한다.
 - Windows에는 `admin`, `system-admin`용 승인 단말 관리 화면이 구현되어 있다. FastAPI 단말 API를 통해 목록·상세·마지막 접속 조회, 등록, 정보/상태 변경, 교체를 수행한다.
 - Windows 사용자 관리는 로그인 저장소에 따라 분리된다. 서버 로그인한 `admin`, `system-admin`은 서버 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기를 수행하고, 로컬 로그인은 로컬 SQLite 계정 화면만 사용한다. 임시 비밀번호 계정은 메인 화면 전에 비밀번호 변경을 강제하고 변경 후 재로그인을 요구한다.
 - Windows에는 채널함, 채널 관리, 인수인계 확인 현황 화면이 구현되어 있고 FastAPI 채널/인수인계 API를 직접 호출한다. 서버 미연결 시 로컬 데이터와 동기화 큐를 삭제하지 않고 서버 설정 확인 문구를 표시한다.
@@ -45,7 +45,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-15 현재 pytest 116건이 수집되며 `scripts/verify-preserved-tests.ps1`도 같은 116건을 수집·JUnit 기준선으로 사용한다. AI 근거 검색·provider 경계·운영 제어·자동 보존, controlled copy, 서버 계정 수명주기·권한·세션·감사 회귀가 포함된다.
+- FastAPI 코드는 2026-07-16 현재 pytest 120건이 수집되며 `scripts/verify-preserved-tests.ps1`도 같은 120건을 수집·JUnit 기준선으로 사용한다. AI 근거 검색·provider 경계·운영 제어·자동 보존, controlled copy, Android secure view, 서버 계정 수명주기·권한·세션·감사 회귀가 포함된다.
 
 ## 일일 기록
 

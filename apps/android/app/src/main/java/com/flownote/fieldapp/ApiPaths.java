@@ -10,9 +10,14 @@ public final class ApiPaths {
     public static final String FIELD_COMMENTS = "/api/v1/field-comments";
     public static final String NOTIFICATIONS = "/api/v1/notifications";
     public static final String HANDOVERS = "/api/v1/handovers";
+    public static final String LOGOUT = "/api/v1/auth/logout";
 
     public static String document(String documentId) {
         return DOCUMENTS + documentId;
+    }
+
+    public static String androidViewGrant(String documentId, String versionId) {
+        return DOCUMENTS + documentId + "/versions/" + versionId + "/android-view-grants";
     }
 
     public static String fieldCommentAttachments(String commentId) {

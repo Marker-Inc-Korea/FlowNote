@@ -16,5 +16,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".SecureDocumentViewerActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true" />
     </application>
 </manifest>

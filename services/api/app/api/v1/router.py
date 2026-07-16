@@ -4,6 +4,7 @@ from app.api.v1.ai_search import router as ai_search_router
 from app.api.v1.ai_queries import router as ai_queries_router
 from app.api.v1.ai_operations import router as ai_operations_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.android_document_views import router as android_document_views_router
 from app.api.v1.channels import router as channels_router
 from app.api.v1.controlled_copies import router as controlled_copies_router
 from app.api.v1.document_access_logs import router as document_access_logs_router
@@ -22,6 +23,7 @@ api_v1_router.include_router(health_router)
 api_v1_router.include_router(auth_router)
 api_v1_router.include_router(server_accounts_router)
 api_v1_router.include_router(documents_router)
+api_v1_router.include_router(android_document_views_router)
 api_v1_router.include_router(controlled_copies_router)
 api_v1_router.include_router(document_access_logs_router)
 api_v1_router.include_router(field_comments_router)

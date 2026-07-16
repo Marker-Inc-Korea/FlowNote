@@ -1187,6 +1187,47 @@ class ControlledCopyGrant(Base):
     )
 
 
+class AndroidDocumentViewGrant(Base):
+    __tablename__ = "android_document_view_grants"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ISSUED', 'CONSUMED', 'EXPIRED', 'FAILED')",
+            name="ck_android_document_view_grant_status",
+        ),
+        Index("ix_android_document_view_grants_expiry_status", "expires_at", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    grant_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    document_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("documents.document_id"), nullable=False, index=True
+    )
+    document_version_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("document_versions.version_id"), nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id"), nullable=False, index=True
+    )
+    session_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("auth_sessions.session_id"), nullable=False, index=True
+    )
+    device_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("terminal_devices.device_id"), nullable=False, index=True
+    )
+    media_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    expected_hash_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    expected_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ISSUED")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_reason: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class ActivityHistory(Base):
     __tablename__ = "activity_history"
     __table_args__ = (

@@ -1,6 +1,6 @@
 # Services
 
-이 문서는 2026-07-15 현재 `services/api` 코드 기준이다. 구현되지 않은 서비스는 마지막 후속 범위에서만 예외로 다룬다.
+이 문서는 2026-07-16 현재 `services/api` 코드 기준이다. 구현되지 않은 서비스는 마지막 후속 범위에서만 예외로 다룬다.
 
 FlowNote 서버 구성 요소를 보관하는 영역이다.
 
@@ -39,7 +39,7 @@ FlowNote 서버 구성 요소를 보관하는 영역이다.
 - 서버 lifespan의 만료 보존 스케줄러: 기본 1시간 간격 실행, 설정으로 활성 여부와 간격 제어
 - 초기·비상 운영용 서버 계정 생성, 비밀번호 재설정, 상태 변경, role 변경 스크립트
 
-Android가 사용하는 공개 문서 API는 목록과 상세 메타데이터를 반환한다. 현재 Android 클라이언트에는 서버 문서 파일 본문 다운로드·미리보기 구현이 없고, controlled copy는 허용 role의 Windows WPF 흐름으로만 연결되어 있다.
+Android는 공개 문서 목록·상세 API와 승인 단말 전용 1회성 secure view grant/stream API를 사용한다. PDF/이미지/TXT는 앱 내부에서만 열고 controlled copy는 별도의 허용 role을 사용하는 Windows WPF 흐름으로 유지한다.
 
 ## 개발 기준
 

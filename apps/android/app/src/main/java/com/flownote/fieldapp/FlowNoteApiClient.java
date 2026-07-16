@@ -9,6 +9,8 @@ import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -16,6 +18,8 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 public final class FlowNoteApiClient {
     public interface AuthenticationFailureListener {
@@ -65,6 +69,82 @@ public final class FlowNoteApiClient {
 
     public JSONObject getDocument(String documentId) throws IOException, JSONException {
         return getObject(ApiPaths.document(documentId));
+    }
+
+    public void logout() throws IOException, JSONException {
+        postJson(ApiPaths.LOGOUT, "{}", true);
+    }
+
+    public SecureDocumentPayload downloadSecureDocument(
+            String documentId,
+            String versionId,
+            File destination
+    ) throws IOException, JSONException {
+        JSONObject grant = postJson(ApiPaths.androidViewGrant(documentId, versionId), "{}", true);
+        String streamUrl = grant.getString("stream_url");
+        long expectedSize = grant.getLong("size_bytes");
+        String expectedHash = grant.getString("hash_sha256");
+        HttpURLConnection connection = openConnection(streamUrl, "GET", true);
+        connection.setRequestProperty("Accept", grant.getString("mime_type"));
+        try {
+            int code = connection.getResponseCode();
+            if (code < 200 || code >= 300) {
+                String error = readFully(connection.getErrorStream());
+                if (shouldDiscardStoredSession(code) && authenticationFailureListener != null) {
+                    authenticationFailureListener.onAuthenticationRejected();
+                }
+                throw new IOException("HTTP " + code + ": " + error);
+            }
+            MessageDigest digest;
+            try {
+                digest = MessageDigest.getInstance("SHA-256");
+            } catch (NoSuchAlgorithmException exc) {
+                throw new IOException("SHA-256 verification is unavailable.", exc);
+            }
+            long received = 0;
+            try (InputStream input = new BufferedInputStream(connection.getInputStream());
+                 FileOutputStream output = new FileOutputStream(destination)) {
+                byte[] buffer = new byte[64 * 1024];
+                int read;
+                while ((read = input.read(buffer)) >= 0) {
+                    received += read;
+                    if (received > expectedSize) {
+                        throw new IOException("수신 문서 크기가 서버 계약을 초과했습니다.");
+                    }
+                    digest.update(buffer, 0, read);
+                    output.write(buffer, 0, read);
+                }
+                output.getFD().sync();
+            }
+            String actualHash = toHex(digest.digest());
+            String headerHash = connection.getHeaderField("X-Content-SHA256");
+            if (received != expectedSize
+                    || !expectedHash.equalsIgnoreCase(actualHash)
+                    || headerHash == null
+                    || !expectedHash.equalsIgnoreCase(headerHash)) {
+                throw new IOException("수신 문서 무결성 검증에 실패했습니다.");
+            }
+            return new SecureDocumentPayload(
+                    destination,
+                    grant.getString("media_kind"),
+                    grant.getString("mime_type"),
+                    grant.getInt("max_pdf_pages"),
+                    grant.getInt("auto_close_seconds")
+            );
+        } catch (IOException | JSONException exc) {
+            SecureViewerFiles.delete(destination);
+            throw exc;
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    static String toHex(byte[] bytes) {
+        StringBuilder result = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) {
+            result.append(String.format(java.util.Locale.ROOT, "%02x", value & 0xff));
+        }
+        return result.toString();
     }
 
     public JSONArray listNotifications(boolean unreadOnly) throws IOException, JSONException {

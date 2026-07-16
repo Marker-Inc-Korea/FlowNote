@@ -30,7 +30,7 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
 2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 3. 실행 전 `git status --porcelain=v1 --untracked-files=all`과 `git ls-files`에서 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-4. `services/api`에서 FastAPI pytest 수집 개수를 확인한다. 현재 테스트 코드와 스크립트 기준선은 116개다.
+4. `services/api`에서 FastAPI pytest 수집 개수를 확인한다. 현재 테스트 코드와 스크립트 기준선은 120개다.
 5. FastAPI pytest를 실행하고 실행 ID별 JUnit을 보존한다.
 6. WPF Core 테스트를 실행하고 TRX를 보존한다.
 7. WPF 앱을 빌드한다.
@@ -59,9 +59,15 @@ WPF 통합 스모크는 같은 실행 ID로 반장·조장·조원·문서관리
 
 마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. `wpf-smoke-database-evidence.json`에는 주요 테이블 실행 전후 통계, 오늘 문서 ID, 과거 기존 문서의 이전·신규 버전과 무결성 결과가 저장된다. 통제된 기준선은 실행마다 설정이 식별되는 관리형 FastAPI를 사용하므로 시작 전에 `5184` 포트를 비워야 한다. 해당 포트에 이미 건강한 서버가 있으면 환경 실패로 중단하고 외부 프로세스는 종료하지 않는다.
 
-한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. FastAPI JUnit의 tests 수는 현재 수집 코드와 일치하는 116이어야 하고 failure/error는 0, WPF TRX와 Android JUnit도 failure 0이어야 한다. WPF·Android build 로그에는 build error가 없어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. FastAPI JUnit의 tests 수는 현재 수집 코드와 일치하는 120이어야 하고 failure/error는 0, WPF TRX와 Android JUnit도 failure 0이어야 한다. WPF·Android build 로그에는 build error가 없어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
+
+## 2026-07-16 작업 102 현재 코드와 개발 문서 재대조
+
+깨끗한 작업 트리의 현재 구현을 제품·시스템·데이터 모델·API·보안·배포·클라이언트·서버 개발 문서와 다시 대조했다. 코드가 문서보다 우선한다는 기준으로 전역 FastAPI OpenAPI 102개 method/path 조합, ORM 45개 테이블, `Settings` 31개 항목을 확인했으며 기존 문서와 다른 기능 계약은 발견되지 않았다. 현재 코드 기준 문서의 기준일만 2026-07-16으로 갱신하고, 과거 일일 기록과 기존 결정·검증 이력의 날짜와 수치는 보존했다.
+
+`.venv/bin/python -m pytest --collect-only -q`로 FastAPI 테스트 116건 수집을 확인했다. 문서 정합성 작업이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았고, 기존 SQLite·로그·캐시·테스트 산출물은 삭제하지 않았다.
 
 ## 2026-07-15 작업 207 전체 Markdown 코드 정합성 갱신
 
@@ -629,3 +635,23 @@ outbox 실기 검증은 공개 문서 `doc_5fd2fb924dfd448aa48199bf2b2b73de`와 
 재시도 단위 테스트는 최대 자동 시도 12회와 `15초 → 30초 → 60초 → ... → 최대 15분` 지수 backoff 값을 명시적으로 검증하도록 보강했다. 한글 오류 안내 테스트를 포함한 Android 단위 테스트와 debug 빌드를 다시 통과했으며, FastAPI 관련 회귀 테스트 `test_auth_api.py`, `test_terminal_devices_api.py`, `test_field_comments_api.py`, `test_channels_api.py`는 25건 모두 통과했다.
 
 이번 결과는 에뮬레이터와 로컬 HTTP 서버를 사용한 개발 실기 검증이다. 운영 승인된 실제 태블릿 또는 러기드 단말의 카메라, 사내 Wi-Fi, HTTPS 인증서, MDM/운영 서명 APK 검증은 아직 대기 상태이며 운영 배포 확정 근거와 분리한다. SQLite, 업로드 사진, outbox 스냅샷, APK와 빌드 로그는 삭제하지 않았고 모두 Git 제외 경로에 보존했다.
+
+## 2026-07-16 Android 보안 문서 본문 뷰어 검증
+
+FastAPI에 Android 전용 grant/stream 권한·무결성 테스트를 추가했다. 현재 자동 검증은 승인된 활성 단말의 `viewer` 열람, `system-admin` 비허용 role, 단말 없는 세션과 비활성 단말 거부, grant 만료·재사용, 공개 해제, 발급 후 파일 변조, PDF/PNG/TXT 허용, 손상 PDF·미지원 형식·대용량 거부, 응답 SHA-256과 사용자·단말·문서 버전 감사 로그를 확인한다. 기존 WPF controlled copy 회귀 테스트도 함께 유지한다.
+
+Android 단위 테스트에는 전용 API 경로와 SHA-256 hex 계약을 추가했고 계측 테스트에는 뷰어 Activity 비공개, `FLAG_SECURE`, 앱 내부 난수 캐시 시작 정리를 추가했다. 현재 Java Runtime을 찾을 수 없어 이번 변경 뒤 Gradle 단위/계측 빌드를 실행하지 못했다. 이 미실행 상태는 이전 2026-07-10 Android 빌드·에뮬레이터 통과 기록을 대체하지 않으며, JDK가 있는 검증 환경에서 `./gradlew testDebugUnitTest assembleDebug`와 승인 단말 계측을 다시 실행해야 한다.
+
+현재 FastAPI 테스트는 120건이 수집되며 표준 검증 스크립트의 수집·JUnit 기준도 120건으로 갱신했다.
+
+승인 실단말 수동 검증은 아직 대기 상태다. 다음을 같은 `run_id`로 기록한다.
+
+- PDF, PNG/JPEG/WebP, UTF-8 TXT 정상 표시와 페이지/크기 한도 안내
+- 손상 파일, 미지원 형식, 대용량, 수신 중 Wi-Fi 단절에서 뷰어 종료와 부분 캐시 제거
+- 파일 앱, 다운로드, 최근 항목과 Android 공유 UI에 본문/원본 파일명이 나타나지 않는지 확인
+- `cacheDir/secure-document-viewer/`가 열람 종료, 자동 닫힘, 홈 전환, 오류, 로그아웃, 앱 재시작 뒤 비어 있는지 확인
+- 화면 캡처와 최근 앱 미리보기 차단, 외부 앱 열기/공유 진입점 부재 확인
+- 공개 해제, 새 버전 공개, 사용자·단말 비활성화 직후 기존 grant 재사용 거부 확인
+- 서버 원본 SHA-256, 수신 응답 `X-Content-SHA256`, 감사 로그 사용자·단말·문서 버전 대조
+
+자동/수동 테스트 중 생성된 SQLite, 스트림 시험 파일, APK, JUnit XML과 로그는 기존 보존 규칙대로 삭제하지 않고 Git 제외 경로에 누적한다.

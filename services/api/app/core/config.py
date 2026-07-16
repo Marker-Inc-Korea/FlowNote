@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     field_comment_attachment_max_bytes: int = 20 * 1024 * 1024
     controlled_copy_max_bytes: int = 500 * 1024 * 1024
     controlled_copy_ticket_expires_seconds: int = 60
+    android_view_grant_expires_seconds: int = 60
+    android_view_auto_close_seconds: int = 300
+    android_view_max_bytes: int = 50 * 1024 * 1024
+    android_view_max_text_bytes: int = 5 * 1024 * 1024
+    android_view_max_pdf_pages: int = 200
     session_cookie_name: str = "flownote_session"
     access_token_secret: str = "flownote-local-dev-token-secret-change-before-operation"
     access_token_expires_minutes: int = 480
