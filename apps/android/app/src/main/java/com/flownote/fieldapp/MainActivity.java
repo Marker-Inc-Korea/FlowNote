@@ -58,6 +58,7 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences("flownote-field-app", MODE_PRIVATE);
+        SecureViewerFiles.clean(this);
         outbox = new OfflineQueueStore(this);
         buildUi();
         restoreSettings();
@@ -107,6 +108,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout loginRow = row();
         loginRow.addView(button("로그인", view -> login()));
+        loginRow.addView(button("로그아웃", view -> logout()));
         loginRow.addView(button("재전송", view -> retryOutbox()));
         root.addView(loginRow);
 
@@ -313,6 +315,7 @@ public final class MainActivity extends Activity {
     }
 
     private void clearRejectedSession() {
+        SecureViewerFiles.clean(this);
         accessToken = null;
         refreshToken = null;
         currentUserId = null;
@@ -321,6 +324,23 @@ public final class MainActivity extends Activity {
                 .remove("refresh_token")
                 .remove("user_id")
                 .apply();
+    }
+
+    private void logout() {
+        stopPolling();
+        rebuildApiClient();
+        executor.execute(() -> {
+            try {
+                if (accessToken != null && !accessToken.trim().isEmpty()) {
+                    apiClient.logout();
+                }
+            } catch (Exception ignored) {
+                // Local session and secure files must still be cleared when the server is offline.
+            } finally {
+                clearRejectedSession();
+                postStatus("로그아웃했습니다. 보안 열람 임시 파일을 정리했습니다.");
+            }
+        });
     }
 
     private void loadPublishedDocuments() {
@@ -377,6 +397,30 @@ public final class MainActivity extends Activity {
         contentArea.addView(text("문서: " + document.optString("title"), 18, "#1F2A30"));
         contentArea.addView(text("상태: " + document.optString("status"), 15, "#3D4852"));
         contentArea.addView(text("설명: " + document.optString("description"), 15, "#3D4852"));
+        if (published != null) {
+            String documentId = document.optString("document_id");
+            String versionId = published.optString("version_id");
+            String title = document.optString("title");
+            contentArea.addView(button("본문 보안 열람", view -> openSecureViewer(
+                    documentId, versionId, title)));
+        } else {
+            contentArea.addView(text("현재 열람 가능한 공개 버전이 없습니다.", 15, "#8A3B12"));
+        }
+    }
+
+    private void openSecureViewer(String documentId, String versionId, String title) {
+        if (accessToken == null || accessToken.trim().isEmpty()) {
+            updateStatus("로그인 후 문서를 열람하세요.");
+            return;
+        }
+        Intent intent = new Intent(this, SecureDocumentViewerActivity.class);
+        intent.putExtra(SecureDocumentViewerActivity.EXTRA_SERVER_URL,
+                serverUrlInput.getText().toString().trim());
+        intent.putExtra(SecureDocumentViewerActivity.EXTRA_ACCESS_TOKEN, accessToken);
+        intent.putExtra(SecureDocumentViewerActivity.EXTRA_DOCUMENT_ID, documentId);
+        intent.putExtra(SecureDocumentViewerActivity.EXTRA_VERSION_ID, versionId);
+        intent.putExtra(SecureDocumentViewerActivity.EXTRA_TITLE, title);
+        startActivity(intent);
     }
 
     private void loadNotifications() {

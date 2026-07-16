@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-07-15 현재 전역 FastAPI 앱에 등록된 102개 method/path 조합과 요청·응답 코드 기준이다. 본문에 “후속 예외”로 명시한 경로만 미구현이다.
+이 문서는 2026-07-16 현재 전역 FastAPI 앱에 등록된 103개 method/path 조합과 요청·응답 코드 기준이다. 본문에 “후속 예외”로 명시한 경로만 미구현이다.
 
 ## 인증
 
@@ -90,6 +90,8 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | 특정 버전을 공개 버전으로 지정 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | 현재 공개 버전의 1회성 controlled copy 티켓 발급 |
 | GET | `/api/v1/controlled-copies/{token}` | 발급 사용자·로그인 세션에 묶인 controlled copy 1회 스트리밍 |
+| POST | `/api/v1/documents/{document_id}/versions/{version_id}/android-view-grants` | 승인 Android 단말의 현재 공개 버전 앱 내부 열람 grant 발급 |
+| GET | `/api/v1/android-document-views/{token}/stream` | 사용자·세션·승인 단말에 묶인 Android 본문 1회 `inline` 스트리밍 |
 
 문서 생성 시 허용되는 상태는 `WORKING`, `IN_REVIEW`, `ARCHIVED`이다. `PUBLISHED`는 publish 엔드포인트로만 만든다.
 
@@ -99,6 +101,12 @@ controlled copy는 `admin`, `manager`, `system-admin`, `document-admin`, `assist
 
 응답은 상대 `download_url`, 파일명, MIME type, 크기, SHA-256만 포함하며 `storage_key`와 로컬 원본 경로를 포함하지 않는다. 스트리밍 응답은 `Content-Disposition: attachment`, `Content-Length`, `X-Content-SHA256`, `Cache-Control: no-store`, `Accept-Ranges: none`을 사용한다. Range 요청은 티켓을 소비하고 416으로 거부한다. 서버는 저장 키가 절대 경로나 `..`를 포함하지 않고 설정된 `storage_root` 아래로 해석되는지 검사하며, 기본 500 MiB 크기 제한과 등록 SHA-256을 발급 전·전송 전에 확인한다.
 
+Android secure view grant는 `system-admin`을 제외한 현장·문서 운영 role인 `admin`, `manager`, `viewer`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`에게만 발급한다. role 허용만으로 충분하지 않고 로그인 세션에 `device_id`가 있으며 해당 `terminal_devices.status = ACTIVE`여야 한다. 발급과 스트림 직전에 사용자·세션·단말, 현재 `PUBLISHED` 문서와 정확한 `published_version_id`, 파일 경계·크기·등록 SHA-256을 다시 검사한다. 공개 해제·새 버전 공개·계정/세션/단말 비활성화 후 기존 grant는 사용할 수 없다.
+
+grant 응답은 `grant_id`, 상대 `stream_url`, 문서/버전 ID, 만료 시각, `media_kind`(`PDF`, `IMAGE`, `TEXT`), MIME type, 크기, SHA-256, PDF 페이지 한도, TXT 크기 한도, 자동 닫힘 초를 반환한다. 실제 파일명과 `storage_key`는 반환하지 않는다. 기본 grant 만료는 60초이고 5~300초로 정규화하며 1회 소비한다. 스트림은 `Content-Disposition: inline`, `Cache-Control: no-store, private, max-age=0`, `X-Content-SHA256`, `Accept-Ranges: none`, `X-Content-Type-Options: nosniff`를 사용한다.
+
+허용 형식은 UTF-8 `.txt`, `.pdf`, `.png`, `.jpg`/`.jpeg`, `.webp`이다. 기본 전체 크기 한도는 50 MiB, TXT는 5 MiB, PDF는 200쪽이며 환경 변수 `FLOWNOTE_ANDROID_VIEW_MAX_BYTES`, `FLOWNOTE_ANDROID_VIEW_MAX_TEXT_BYTES`, `FLOWNOTE_ANDROID_VIEW_MAX_PDF_PAGES`로 조정한다. 확장자/MIME 불일치, 미지원 형식과 기본 손상 검사는 415, 크기 초과는 413이다. 권한·단말 거부는 403, 만료·재사용은 410, 발급 뒤 공개 상태나 파일 무결성 변경은 409로 응답한다. 네트워크가 끊겨 1회 스트림이 중단되면 앱은 부분 파일을 제거하고 새 grant를 요청해야 한다.
+
 ## 접근 로그
 
 | Method | Path | 설명 |
@@ -106,7 +114,7 @@ controlled copy는 `admin`, `manager`, `system-admin`, `document-admin`, `assist
 | POST | `/api/v1/documents/{document_id}/access-logs` | 문서 접근 로그 등록 |
 | GET | `/api/v1/documents/{document_id}/access-logs` | 문서 접근 로그 조회 |
 
-`action` 값은 `view_started`, `view_closed`, `download_blocked`, `auto_closed`와 controlled copy의 `controlled_copy_requested`, `controlled_copy_allowed`, `controlled_copy_completed`, `controlled_copy_failed`, `controlled_copy_blocked`를 사용한다. controlled copy 이벤트는 사용자, 세션에 연결된 단말, 문서 버전, IP, user agent, 사유를 `document_access_logs`와 `activity_history`에 함께 남긴다. 존재하지 않는 문서는 외래키로 문서 접근 로그를 만들 수 없으므로 요청 ID와 사유를 `activity_history`에 남긴다. 조회는 `admin`, `system-admin`만 가능하다.
+`action` 값은 `view_started`, `view_closed`, `download_blocked`, `auto_closed`, controlled copy 이벤트와 Android의 `android_view_granted`, `android_view_stream_started`, `android_view_completed`, `android_view_failed`, `android_view_blocked`, `android_view_expired`를 사용한다. 두 계약의 이벤트는 사용자, 세션에 연결된 단말, 문서 버전, IP, user agent, 사유를 `document_access_logs`와 `activity_history`에 함께 남긴다. 존재하지 않는 문서는 외래키로 문서 접근 로그를 만들 수 없으므로 요청 ID와 사유를 `activity_history`에 남긴다. 조회는 `admin`, `system-admin`만 가능하다.
 
 ## FieldComment
 
@@ -354,7 +362,7 @@ WPF `RolePermissionPolicy`와의 대조:
 
 정합성 검증 기준:
 
-- FastAPI `app/core/auth.py`는 `DOCUMENT_WRITE_ROLES`, `FIELD_COMMENT_CREATE_ROLES`, `ACCESS_LOG_READ_ROLES`, `REPORT_WRITE_ROLES`, `USER_MANAGEMENT_ROLES`, `CONTROLLED_COPY_DOWNLOAD_ROLES`를 권한 표의 기준으로 둔다.
+- FastAPI `app/core/auth.py`는 `DOCUMENT_WRITE_ROLES`, `FIELD_COMMENT_CREATE_ROLES`, `ACCESS_LOG_READ_ROLES`, `REPORT_WRITE_ROLES`, `USER_MANAGEMENT_ROLES`, `CONTROLLED_COPY_DOWNLOAD_ROLES`, `ANDROID_DOCUMENT_VIEW_ROLES`를 권한 표의 기준으로 둔다.
 - WPF `RolePermissionPolicy`는 같은 role 집합을 문서 등록, FieldComment 작성, 보고서 작성, 접근 로그 조회, 사용자 관리, controlled copy 다운로드 정책으로 검증한다.
 - controlled copy 다운로드는 서버와 WPF 모두 `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`로 고정하며 WPF는 로컬 원본 복사 대신 서버 티켓 API를 호출한다.
 - 서버 로그인 성공 시 WPF 현재 세션의 role은 서버 응답 role을 우선하며, 같은 로그인 ID의 로컬 role과 달라도 화면 권한은 서버 role 기준으로 계산한다.
@@ -372,6 +380,11 @@ WPF `RolePermissionPolicy`와의 대조:
 - `FLOWNOTE_FIELD_COMMENT_ATTACHMENT_MAX_BYTES`
 - `FLOWNOTE_CONTROLLED_COPY_MAX_BYTES`
 - `FLOWNOTE_CONTROLLED_COPY_TICKET_EXPIRES_SECONDS`
+- `FLOWNOTE_ANDROID_VIEW_GRANT_EXPIRES_SECONDS`
+- `FLOWNOTE_ANDROID_VIEW_AUTO_CLOSE_SECONDS`
+- `FLOWNOTE_ANDROID_VIEW_MAX_BYTES`
+- `FLOWNOTE_ANDROID_VIEW_MAX_TEXT_BYTES`
+- `FLOWNOTE_ANDROID_VIEW_MAX_PDF_PAGES`
 - `FLOWNOTE_SESSION_COOKIE_NAME`
 - `FLOWNOTE_ACCESS_TOKEN_SECRET`
 - `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES`

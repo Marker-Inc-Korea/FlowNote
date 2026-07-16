@@ -12,6 +12,10 @@ public final class ApiContractTest {
         assertEquals("/api/v1/documents/published", ApiPaths.PUBLISHED_DOCUMENTS);
         assertEquals("/api/v1/documents/doc_123", ApiPaths.document("doc_123"));
         assertEquals(
+                "/api/v1/documents/doc_123/versions/ver_1/android-view-grants",
+                ApiPaths.androidViewGrant("doc_123", "ver_1")
+        );
+        assertEquals(
                 "/api/v1/field-comments/comment_123/attachments",
                 ApiPaths.fieldCommentAttachments("comment_123")
         );

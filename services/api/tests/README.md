@@ -2,7 +2,7 @@
 
 이 디렉터리는 FlowNote FastAPI 서버 테스트를 보관한다.
 
-범위와 수집 기준선은 2026-07-15 현재 테스트 코드 기준이다.
+범위와 수집 기준선은 2026-07-16 현재 테스트 코드 기준이다.
 
 ## 현재 테스트 범위
 
@@ -42,6 +42,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-07-15 현재 FastAPI 테스트 코드와 저장소 루트의 `scripts/verify-preserved-tests.ps1`은 116개 수집·통과 기준으로 일치한다. WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 Git 산출물 점검을 포함한 전체 표준 검증은 Windows 기준 환경에서 저장소 루트의 해당 스크립트로 별도 확인한다.
+2026-07-16 현재 FastAPI 테스트 코드와 저장소 루트의 `scripts/verify-preserved-tests.ps1`은 120개 수집·통과 기준으로 일치한다. WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 Git 산출물 점검을 포함한 전체 표준 검증은 Windows 기준 환경에서 저장소 루트의 해당 스크립트로 별도 확인한다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
