@@ -57,7 +57,7 @@ Android 현장 단말 앱과 Windows 채널/인수인계 전용 화면은 현재
 
 ## 배포 방향
 
-초기 운영은 서버 PC 1대에 FastAPI 서버, SQLite DB, 로컬 `storage/` 폴더를 두고, 관리자/현장 PC에는 Windows WPF 클라이언트를 설치하는 방식이다. Android 앱은 승인된 현장용 단말을 대상으로 추가하며, 개인 휴대폰 기본 배포는 초기 기준이 아니다. 현재 저장소에는 WPF MSI 패키징 스크립트와 FastAPI 작업 스케줄러 등록/관리 스크립트가 있다. Android에는 FieldComment와 사진 첨부 전용 SQLite outbox와 재전송 정책이 구현되어 있다. 채널 알림의 초기 전달 방식은 외부 인터넷에 의존하지 않는 사내망 HTTPS 전경 polling으로 확정되어 있다. Android 운영 설치·서명, MDM, 사내 Wi-Fi/인증서, 백그라운드 알림 정책과 outbox 암호화 정책은 현장 보안 기준에 맞춰 후속 확정한다. 클라우드, 외부 접근, PostgreSQL, NAS, MES/ERP 어댑터는 현장 요구가 확인된 뒤 확장한다.
+초기 운영은 서버 PC 1대에 FastAPI 서버, SQLite DB, 로컬 `storage/` 폴더를 두고, 관리자/현장 PC에는 Windows WPF 클라이언트를 설치하는 방식이다. Android 앱은 승인된 현장용 단말을 대상으로 추가하며, 개인 휴대폰 기본 배포는 초기 기준이 아니다. 현재 저장소에는 WPF MSI 패키징 스크립트와 FastAPI 작업 스케줄러 등록/관리 스크립트가 있다. Android에는 Keystore 보호 FieldComment/사진 outbox와 15초 foreground 알림 복구가 구현되어 있다. 채널 알림의 초기 전달 방식은 외부 인터넷에 의존하지 않는 사내망 HTTPS polling으로 확정되어 있다. Android 운영 APK 서명 계약은 구현됐고 실제 조직 키, MDM, 사내 Wi-Fi/인증서와 실단말 결과는 현장 승인 게이트로 남는다. 클라우드, 외부 접근, PostgreSQL, NAS, MES/ERP 어댑터는 현장 요구가 확인된 뒤 확장한다.
 
 운영 배포 완료 판정은 코드와 자동 테스트만으로 내리지 않는다. 깨끗한 Windows 서버/클라이언트, 승인 Android 단말과 고객 유사 네트워크에서 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 설치, 인증서, 단말 교체, 백업 복구, 역할별 업무, 중단/rollback 기준을 단일 `run_id`로 통과해야 한다.
 

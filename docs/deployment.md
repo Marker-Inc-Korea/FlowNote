@@ -25,7 +25,7 @@ Approved Android field devices
 
 WPF 앱은 로컬 SQLite에 먼저 기록하고 서버 URL이 설정되어 있으면 서버 동기화를 시도한다. 서버 호출 실패는 로컬 저장을 되돌리지 않고 동기화 큐와 이력으로 남긴다.
 
-Android 앱은 현장 입력과 알림 확인을 서버 기준으로 처리한다. 네트워크가 불안정할 때 FieldComment와 사진 첨부만 전용 SQLite outbox에 임시 저장하며, 채널 메시지·인수인계·문서 메타데이터는 outbox 대상이 아니다. 장기 원천 데이터는 서버 SQLite와 `storage/`에 남기는 것을 기준으로 한다. Android 배포는 개인 휴대폰 기본 배포가 아니라 현장 승인 단말 배포를 기준으로 하며, MDM, APK/AAB 배포 방식, 사내 Wi-Fi, 백그라운드 알림 정책은 현장 보안 정책에 맞춰 후속 확정한다. 초기 채널 알림은 Activity가 전경인 동안 사내망 HTTPS polling으로 전달한다.
+Android 앱은 현장 입력과 알림 확인을 서버 기준으로 처리한다. 네트워크가 불안정할 때 FieldComment와 사진 첨부만 Keystore AES-GCM 보호 outbox에 임시 저장하며, 채널 메시지·인수인계·문서 메타데이터는 outbox 대상이 아니다. 장기 원천 데이터는 서버 SQLite와 `storage/`에 남긴다. 개인 휴대폰은 제외하고 MDM 등록 승인 단말만 배포하며, 채널 알림은 로그인 동안 15초 foreground service가 사내 HTTPS polling으로 복구한다.
 
 ## 운영 설치 경로
 
@@ -63,16 +63,34 @@ C:\FlowNote\
 | `C:\Program Files\FlowNote\Client\FlowNote.Windows.App` | MSI가 설치한 WPF 실행 파일, .NET 실행 메타데이터, 의존 DLL | WPF 로컬 DB, 실제 현장 문서 데이터 |
 | `C:\FlowNote\LocalData` | WPF 로컬 SQLite, `Files\` | 서버 SQLite, 서버 `storage` |
 
-현재 저장소 기준으로 서버는 별도 압축 패키지 없이 `services/api/app`과 `pyproject.toml`을 `C:\FlowNote\Server\api`에 복사하고 해당 폴더에서 운영 `.venv`를 만든다. WPF 클라이언트는 MSI로 고정해 설치하며 설치 위치는 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`, 로컬 데이터 위치는 `FLOWNOTE_LOCAL_DATA_DIR`로 분리한다. Android 클라이언트 코드는 `apps/android/`에 있으며 `./gradlew assembleDebug`로 개발 APK를 만들 수 있다. 운영 배포용 서명, APK/AAB 산출물 보관 위치, MDM 또는 현장 단말 설치 절차는 아직 확정되지 않았다.
+현재 저장소 기준으로 서버는 별도 압축 패키지 없이 `services/api/app`과 `pyproject.toml`을 `C:\FlowNote\Server\api`에 복사하고 해당 폴더에서 운영 `.venv`를 만든다. WPF 클라이언트는 MSI로 고정해 설치하며 설치 위치는 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`, 로컬 데이터 위치는 `FLOWNOTE_LOCAL_DATA_DIR`로 분리한다. Android 개발 APK는 `./gradlew assembleDebug`, 운영 후보는 조직 키 환경변수를 주입한 `./gradlew assembleRelease`로 만든다. 운영 기본 산출물은 MDM/사내 배포용 APK이고 AAB는 관리형 스토어 채택 시에만 선택한다.
 
 ## 배포 방식 결정
 
 - WPF 앱은 MSI를 기준 패키징 방식으로 사용한다. MSIX는 서명, 패키지 아이덴티티, 앱 컨테이너 제약을 현장별로 더 검토해야 하므로 초기 운영 배포 기준에서 제외한다.
 - MSI는 WPF 실행에 필요한 앱 파일만 설치한다. 로컬 SQLite와 `Files\`는 설치 폴더 아래에 두지 않고 `FLOWNOTE_LOCAL_DATA_DIR`가 가리키는 폴더에 둔다.
-- Android 앱은 승인된 현장 단말용 설치 패키지로 배포한다. 개인 휴대폰 기본 배포와 일반 웹 브라우저 접속은 기준이 아니다.
-- Windows와 Android의 채널 알림과 인수인계 확인은 사내망 HTTPS 전경 polling을 초기 전달 방식으로 사용한다. 기본 주기는 15초이며 연결 실패 시 최대 120초까지 backoff한다. Android는 사용자별 cursor를 로컬 설정에 보존하고, WPF는 서버 scope·사용자별 마지막 성공 cursor와 처리한 `message_id`를 로컬 SQLite에 보존해 앱 재시작 후 이어간다. HTTP 401이면 polling을 중단하고 cursor를 전진시키지 않은 채 재로그인을 안내한다. Android 백그라운드 전달은 운영 단말의 Doze·배터리·네트워크 정책 검증 후 별도로 결정한다.
+- Android 앱은 MDM 앱 allowlist와 조직 키로 서명한 사내 APK를 승인된 현장 단말에 배포한다. 개인 휴대폰 기본 배포와 일반 웹 브라우저 접속은 기준이 아니다.
+- WPF는 창 활성 중, Android는 로그인 동안 foreground service로 사내망 HTTPS를 15초 polling한다. Android는 서버 주소+사용자 scope별 cursor를 각 표시 뒤 보존하고 재부팅·단절 뒤 이어간다. access 401은 refresh를 1회 시도하고 거부되면 token과 서비스를 폐기한다. 외부 push 의존은 없고 사내 relay push는 후속 선택지다.
 - FastAPI 서버는 Windows 작업 스케줄러의 부팅 시 자동 실행 작업으로 등록한다. Python/FastAPI 프로세스를 Windows 서비스로 직접 등록하려면 별도 서비스 래퍼가 필요하므로, 초기 기준은 Windows 기본 기능만 사용하는 작업 스케줄러 방식으로 고정한다.
 - 서버 작업 이름은 기본 `\FlowNote\FlowNoteApi`다. 실행 래퍼는 `C:\FlowNote\Server\scripts\run-flownote-server.ps1`, 로그는 `C:\FlowNote\Server\logs`에 둔다.
+
+## Android 운영 배포와 단말 수명주기
+
+운영 서명키는 조직 소유이며 최소 2인 승인으로 오프라인/HSM 또는 승인된 비밀 저장소에 보관한다. keystore, alias 암호와 key 암호는 `FLOWNOTE_ANDROID_KEYSTORE`, `FLOWNOTE_ANDROID_KEY_ALIAS`, `FLOWNOTE_ANDROID_STORE_PASSWORD`, `FLOWNOTE_ANDROID_KEY_PASSWORD` 환경변수로 빌드 프로세스에만 주입한다. 값과 키 파일은 Git·패키지·일반 로그·증거 폴더에 남기지 않는다. `assembleRelease`는 네 값 중 하나라도 없으면 실패한다. 같은 applicationId 업그레이드와 rollback은 동일 서명 인증서만 허용한다.
+
+MDM 기준은 단말 전체 암호화, 6자리 이상 화면 잠금과 짧은 자동 잠금, 개발자 옵션·USB 디버깅·USB 파일 전송·ADB backup 차단, 알 수 없는 출처 차단, 앱 allowlist, 원격 잠금·초기화, 부팅/강제 중지 후 kiosk 재실행이다. FlowNote foreground service와 사내 HTTPS 주소를 배터리/네트워크 정책에서 허용하고 사용자가 서비스 상태 알림 채널을 차단하지 못하게 한다. 정책 준수 보고서가 없는 단말에는 운영 로그인을 발급하지 않는다.
+
+`deviceId`는 MDM 자산 ID와 1:1인 임의 식별자로 중앙 발급하며 사용자 계정, Android ID, serial, MAC 주소를 그대로 쓰지 않는다. 수명주기는 다음과 같다.
+
+1. MDM 등록과 정책 준수 확인 후 관리자가 `ACTIVE` 단말을 등록한다.
+2. 수리·일시 회수는 즉시 `INACTIVE`로 바꿔 access/refresh/재로그인을 막고 MDM에서 격리한다.
+3. 분실은 발견 즉시 `INACTIVE`, 모든 해당 세션 폐기 확인, MDM 원격 잠금·초기화, 사고 `run_id`와 마지막 접속 시각 보존 순서로 처리한다.
+4. 교체는 기존 단말을 `RETIRED`로 만드는 replace API와 새 임의 `deviceId`를 사용한다. 기존 outbox/Keystore 키를 복사하지 않고 미전송 건은 idempotency key와 서버 원천을 대조해 전송·보존·폐기를 승인한다.
+5. 폐기 단말은 `RETIRED`에서 재활성화하지 않으며 MDM wipe 증거와 자산 폐기 기록을 연결한다.
+
+서명 APK 생성 뒤 `scripts/verify-android-release.sh <run_id> <apk> data/local/pilot-evidence`로 인증서 지문과 SHA-256을 보존한다. `--install`은 동일 키 신규 설치/업그레이드를, `--rollback <이전.apk>`는 승인된 이전 versionCode 설치를 수행한다. 정확히 한 대의 승인 단말 연결, 현재/이전 APK의 동일 인증서, `PENDING`/`FAILED` outbox 0건, 서버/API·로컬 schema 하위 호환성과 rollback 승인 없이는 실행하지 않는다. 이전 APK는 새 암호화 outbox를 해석하지 못할 수 있으므로 미전송 항목이 있으면 rollback을 중단한다. 운영 패키지와 모든 실행 증거는 Git 제외 상태로 보존한다.
+
+서명키 분실은 기존 설치 앱 업그레이드 불가 사건으로 처리해 outbox 판정, 앱 제거, 새 키/필요 시 새 applicationId 배포와 새 `deviceId` 등록을 수행한다. 키 유출은 해당 인증서 빌드 허용 중단, MDM blocklist, 영향 버전·단말 파악과 승인된 Android 키 업그레이드 또는 새 applicationId 재배포 절차를 따른다.
 
 ## Windows MSI 운영 배포 확정 조건
 
@@ -668,6 +686,6 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·실행, WPF Core 테스트·앱 build·통합 smoke, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files` 금지 산출물을 함께 확인한다. 2026-07-16 현재 FastAPI 테스트 코드와 스크립트는 120개 수집·통과 기준으로 일치한다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·실행, WPF Core 테스트·앱 build·통합 smoke, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files` 금지 산출물을 함께 확인한다. 2026-07-16 현재 FastAPI 테스트는 125건이지만 스크립트의 수집/JUnit 기준은 120건으로 남아 있다. 스크립트를 125건으로 갱신하기 전의 표준 실행은 FastAPI 수집 단계에서 실패하는 것이 현재 코드 기준의 정상 결과이며 통합 기준선으로 인정하지 않는다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.

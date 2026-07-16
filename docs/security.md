@@ -22,13 +22,13 @@
 - Android 승인 단말 `deviceId` 로그인 검증과 `auth_sessions.device_id` 기록
 - FastAPI 관리자 승인 단말 등록·상태·교체 API와 WPF 승인 단말 운영 화면
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면의 서버 인증/멤버십 기반 조회와 상태 변경
-- Android 현장 단말 앱의 서버 Bearer token 사용, 승인 단말 전용 1회성 보안 본문 열람, FieldComment/사진 outbox 재전송, 알림 읽음/인수인계 확인, 서버 오류 원문 비노출
+- Android 현장 단말 앱의 Keystore 보호 Bearer token, AES-GCM outbox 본문·첨부, 승인 단말 전용 1회성 보안 본문 열람, foreground 알림 복구, 알림 읽음/인수인계 확인, 서버 오류 원문 비노출
 - 외부 AI 질의의 보고서 작성 role(`admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`) 제한, 기본 비활성 플래그, 허용 목적, 고객·현장·provider·model 전송 승인, 승인된 프롬프트와 근거 원천 상태 검사
 - 외부 AI 질의·근거 snapshot·인용·호출 시도 감사 row, 기본 응답 본문 미저장과 응답 hash 저장
 - `system-admin` 전용 외부 AI 전송 승인·불변 프롬프트 수명주기·전역/현장 kill switch와 한도·보존 정책 API 및 WPF 운영 화면
 - 질의·응답·비밀 원문을 제외한 AI 운영 감사 조회/정책 허용 CSV와, 만료 질의 payload 비식별화·응답 원문 삭제의 자동·즉시 보존 처리 감사
 
-Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현이 들어와 있다. Android 문서 기능은 공개 목록·상세 조회와 PDF/이미지/UTF-8 TXT 앱 내부 보안 열람을 제공한다. 공통 채널 API는 서버 로그인, role, 채널 멤버십으로 접근을 제한하며, Android 로그인과 본문 열람은 승인된 `terminal_devices.device_id`와 `status = ACTIVE`를 요구한다. 승인 단말 등록, 비활성화, 폐기, 교체는 `admin`, `system-admin` 전용 API와 WPF 운영 화면에서 수행하고 `activity_history`에 변경 주체와 사유를 남긴다. Android 화면은 예외 메시지와 서버 오류 본문을 그대로 노출하지 않고 현장 사용자를 위한 한글 안내로 변환한다. Android는 개인 휴대폰 기본 배포가 아니라 승인된 현장 태블릿 또는 러기드 단말을 기준으로 한다. MDM, 운영 인증서, outbox 암호화 정책은 후속 보안 범위다.
+Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현이 들어와 있다. Android 문서 기능은 공개 목록·상세 조회와 PDF/이미지/UTF-8 TXT 앱 내부 보안 열람을 제공한다. 공통 채널 API는 서버 로그인, role, 채널 멤버십으로 접근을 제한하며, Android 로그인·모든 access 요청·refresh와 본문 열람은 세션의 `terminal_devices.device_id`와 `status = ACTIVE`를 요구한다. 승인 단말 등록, 비활성화, 폐기, 교체는 `admin`, `system-admin` 전용 API와 WPF 운영 화면에서 수행하고 `activity_history`에 변경 주체와 사유를 남긴다. Android 화면은 예외 메시지와 서버 오류 본문을 그대로 노출하지 않고 현장 사용자를 위한 한글 안내로 변환한다. Android는 개인 휴대폰 기본 배포가 아니라 승인된 현장 태블릿 또는 러기드 단말을 기준으로 한다. MDM 제품·운영 인증서·실단말 정책 보고서는 현장별 승인 범위다.
 
 ## 계정과 role
 
@@ -78,7 +78,7 @@ FastAPI 서버는 HMAC 서명 Bearer access token과 `auth_sessions` 테이블�
 - refresh는 같은 세션에서 `access_token_id`와 `refresh_token_hash`를 교체한다.
 - refresh 후 이전 access token과 이전 refresh token은 거부된다.
 - logout은 세션을 `REVOKED`로 변경한다.
-- 보호 API는 세션 상태, 폐기 시각, access token ID, 만료 시각을 모두 검증한다.
+- 보호 API는 세션 상태, 폐기 시각, access token ID, 만료 시각과 세션에 묶인 단말의 현재 `ACTIVE` 상태를 모두 검증한다. refresh도 계정과 단말 활성 상태를 다시 확인한다.
 - 현재 예외로 `GET /api/v1/tags`는 인증 없이 태그 목록을 조회할 수 있고, 태그 생성은 문서 쓰기 role을 요구한다.
 - WPF는 서버가 401 또는 403으로 로그인 실패를 응답하면 로컬 계정 로그인으로 우회하지 않는다.
 - 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 WPF 로컬 계정 로그인을 사용한다.
@@ -111,10 +111,11 @@ Android 본문 열람은 WPF controlled copy와 별도 계약이다. 앱은 승�
 - 서버 PC 방화벽은 승인된 Windows WPF 클라이언트와 Android 현장 단말이 접근할 FastAPI 포트만 허용한다.
 - 일반 브라우저 직접 접근은 초기 운영 기준이 아니며 승인된 설치형 클라이언트 접근을 기본으로 한다.
 - Windows와 Android 채널 알림은 업무 채널, 서버 사용자, role, 클라이언트/단말 승인 상태를 기준으로 표시한다. 개인 메신저 대화 수집, 개인 휴대폰 기본 배포, GPS/근태 추적은 포함하지 않는다.
-- 채널·인수인계 알림의 초기 전달은 외부 인터넷에 의존하지 않는 사내망 HTTPS polling이다. 서버는 Bearer token과 활성 채널 멤버십을 매 요청 검증한다. Android는 사용자별 마지막 cursor를 로컬 설정에 보존하고, WPF는 credential을 제외해 정규화한 서버 scope와 사용자 ID별 cursor·처리 `message_id`를 로컬 SQLite에 격리한다. 읽음 변경과 로컬 재처리는 공개 `message_id`를 멱등 키로 사용한다.
-- Windows와 Android의 전경 polling은 기본 15초, 연결 실패 시 최대 120초 백오프를 적용한다. 401 응답에는 polling을 멈추고 토큰을 재사용하지 않으며 재로그인을 안내한다. 앱 비활성 상태에는 전경 polling을 중단한다.
-- Android는 1차 범위에서 상시 백그라운드 서비스나 외부 push를 사용하지 않는다. 후속 WorkManager 확인은 승인 단말 정책, 네트워크 조건, Doze와 배터리 최적화 영향을 반영해야 하며 보안 알림의 즉시 전달 수단으로 가정하지 않는다.
-- WebSocket과 외부 push는 후속 선택지다. WebSocket은 사내 프록시·재연결 운영 기준이, 외부 push는 인터넷 허용·외부 전송 데이터 최소화·고객 보안 승인이 각각 선행되어야 한다.
+- 채널·인수인계 알림은 외부 인터넷에 의존하지 않는 사내망 HTTPS polling이다. Android는 로그인 동안 15초 `specialUse` foreground service를 사용하고 서버 주소+사용자 scope별 cursor를 항목 표시 직후 보존한다. WPF는 credential을 제외해 정규화한 서버 scope와 사용자 ID별 cursor·처리 `message_id`를 로컬 SQLite에 격리한다.
+- Android access/refresh token과 outbox JSON은 Android Keystore 비반출 AES-256 GCM 키로 암호화한다. 새 outbox 사진은 선택 즉시 앱 전용 내부 저장소의 AES-GCM 파일로 복사한다. backup은 금지하고 DB 상태·cursor 같은 비본문 메타데이터만 평문으로 둔다.
+- 정상 연결 표시 목표는 30초, 5분 이상 단절 복구 목표는 연결 회복 후 30초+page 전송 시간이다. `message_id` 고정 시스템 알림으로 crash 경계 시각 중복을 최대 1건으로 제한하고 서버 읽음/receipt 중복 row는 0건을 요구한다.
+- 재부팅은 저장 세션이 있으면 서비스를 재개하고 access 401은 refresh를 한 번 회전한다. refresh 거부는 token 폐기와 서비스 중단이다. Android 강제 중지는 OS가 자동 복구를 차단하므로 MDM kiosk 재실행 또는 사용자 재실행을 운영 통제로 둔다.
+- 제한 주기 WorkManager는 Doze 지연 때문에 목표 전달 수단으로 사용하지 않는다. 사내 relay push는 MDM 허용, 상호 인증, 감사, 배터리 실기 검증 후의 선택지이며 FCM 같은 외부 클라우드 의존은 기본 범위에 없다. relay를 추가해도 cursor polling은 missed notification 복구 원천이다.
 - 백업 저장소에도 운영 DB, 고객 문서, 비밀값이 포함되므로 접근 권한을 운영 관리자에게 제한한다.
 
 ## 외부 AI 전송과 운영자 승인
@@ -155,9 +156,9 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 - 고객 유사 네트워크의 HTTPS 인증서 발급·신뢰 배포·갱신·폐기, 방화벽과 시간 동기화 실기 검증
 - 서버 접근 감사 로그의 운영 정책
 - 브라우저 직접 접근 제한 정책의 설치/배포 자동화
-- Android MDM, 운영 인증서와 현장별 단말 등록·비활성화·교체 정책
-- Android outbox 암호화와 제한된 WorkManager 백그라운드 알림 정책 검증
+- Android MDM 제품 적용, 운영 인증서와 현장별 단말 등록·비활성화·교체 실기 검증
+- Android Keystore/outbox 암호화와 foreground service의 Doze·재부팅·강제 중지 실단말 검사
 - provider별 운영 계약·전송 지역 검증과 운영 네트워크 활성 절차. 현재 generic adapter는 명시적 test scope에서만 허용
 - 운영 AI 감사 메타데이터의 장기 archive/purge와 법적 보존 hold 정책
 
-운영 파일럿 전 보안 게이트, 책임자, 장애 중단 기준과 증거 보존 형식은 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)을 따른다. Android outbox 앱 수준 암호화가 확정되지 않은 상태에서는 MDM으로 단말 전체 암호화, 화면 잠금, 디버깅/USB 백업 제한과 원격 잠금·초기화를 강제하거나 비민감 시험 데이터만 사용한다.
+운영 파일럿 전 보안 게이트, 책임자, 장애 중단 기준과 증거 보존 형식은 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)을 따른다. 앱 암호화와 별개로 MDM은 단말 전체 암호화, 6자리 이상 화면 잠금, 개발자 옵션·USB 디버깅·USB 파일 전송·ADB backup 차단, 알 수 없는 출처 차단, 원격 잠금·초기화, 앱 allowlist와 kiosk 자동 재실행을 강제한다. 정책 예외 단말은 운영 데이터 사용을 금지한다.

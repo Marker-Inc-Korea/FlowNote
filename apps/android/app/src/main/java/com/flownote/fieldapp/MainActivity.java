@@ -1,11 +1,13 @@
 package com.flownote.fieldapp;
 
 import android.app.Activity;
+import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
@@ -26,13 +28,12 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     private static final int REQUEST_PICK_PHOTO = 1001;
-    private static final long FOREGROUND_POLL_INTERVAL_MS = 15_000L;
-    private static final long MAX_POLL_BACKOFF_MS = 120_000L;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private SharedPreferences preferences;
+    private SecureSessionStore sessionStore;
     private OfflineQueueStore outbox;
     private FlowNoteApiClient apiClient;
 
@@ -50,40 +51,27 @@ public final class MainActivity extends Activity {
     private String accessToken;
     private String refreshToken;
     private String currentUserId;
-    private boolean pollingActive;
-    private long pollingDelayMs = FOREGROUND_POLL_INTERVAL_MS;
-    private final Runnable notificationPoll = this::pollNotifications;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences("flownote-field-app", MODE_PRIVATE);
+        sessionStore = new SecureSessionStore(this);
         SecureViewerFiles.clean(this);
         outbox = new OfflineQueueStore(this);
         buildUi();
         restoreSettings();
         rebuildApiClient();
+        requestNotificationPermission();
+        startNotificationDelivery();
         updateStatus("서버 주소와 승인 단말 ID를 확인한 뒤 로그인하세요.");
     }
 
     @Override
     protected void onDestroy() {
-        stopPolling();
         executor.shutdownNow();
         outbox.close();
         super.onDestroy();
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        startPolling();
-    }
-
-    @Override
-    protected void onPause() {
-        stopPolling();
-        super.onPause();
     }
 
     private void buildUi() {
@@ -197,8 +185,8 @@ public final class MainActivity extends Activity {
         serverUrlInput.setText(preferences.getString("server_url", ""));
         deviceIdInput.setText(preferences.getString("device_id", ""));
         usernameInput.setText(preferences.getString("username", ""));
-        accessToken = preferences.getString("access_token", null);
-        refreshToken = preferences.getString("refresh_token", null);
+        accessToken = sessionStore.accessToken();
+        refreshToken = sessionStore.refreshToken();
         currentUserId = preferences.getString("user_id", null);
     }
 
@@ -207,13 +195,16 @@ public final class MainActivity extends Activity {
                 .putString("server_url", serverUrlInput.getText().toString().trim())
                 .putString("device_id", deviceIdInput.getText().toString().trim())
                 .putString("username", usernameInput.getText().toString().trim())
-                .putString("access_token", accessToken)
-                .putString("refresh_token", refreshToken)
                 .putString("user_id", currentUserId)
-                .apply();
+                .commit();
+        sessionStore.save(accessToken, refreshToken, currentUserId);
     }
 
     private void rebuildApiClient() {
+        String storedAccessToken = sessionStore.accessToken();
+        if (storedAccessToken != null && !storedAccessToken.trim().isEmpty()) {
+            accessToken = storedAccessToken;
+        }
         apiClient = new FlowNoteApiClient(serverUrlInput.getText().toString(), getContentResolver());
         apiClient.setAccessToken(accessToken);
         apiClient.setAuthenticationFailureListener(this::clearRejectedSession);
@@ -234,83 +225,10 @@ public final class MainActivity extends Activity {
                 currentUserId = payload.getString("user_id");
                 saveSettings();
                 postStatus("로그인 완료: " + payload.optString("display_name"));
-                mainHandler.post(this::startPolling);
+                mainHandler.post(this::startNotificationDelivery);
             } catch (Exception exc) {
                 postStatus("로그인 실패: " + UserErrorMessage.from(exc));
             }
-        });
-    }
-
-    private void startPolling() {
-        if (accessToken == null || accessToken.trim().isEmpty() || pollingActive) {
-            return;
-        }
-        pollingActive = true;
-        pollingDelayMs = FOREGROUND_POLL_INTERVAL_MS;
-        mainHandler.post(notificationPoll);
-    }
-
-    private void stopPolling() {
-        pollingActive = false;
-        mainHandler.removeCallbacks(notificationPoll);
-    }
-
-    private void pollNotifications() {
-        if (!pollingActive) {
-            return;
-        }
-        rebuildApiClient();
-        final String cursorKey = "notification_cursor_" + (currentUserId == null ? "anonymous" : currentUserId);
-        final String caughtUpKey = cursorKey + "_caught_up";
-        final long afterId = preferences.getLong(cursorKey, 0L);
-        executor.execute(() -> {
-            long nextDelay = FOREGROUND_POLL_INTERVAL_MS;
-            try {
-                JSONArray items = apiClient.pollNotifications(afterId, 100);
-                long nextCursor = afterId;
-                int newCount = 0;
-                for (int i = 0; i < items.length(); i++) {
-                    JSONObject item = items.optJSONObject(i);
-                    if (item == null) {
-                        continue;
-                    }
-                    long cursor = item.optLong("cursor", 0L);
-                    if (cursor > nextCursor) {
-                        nextCursor = cursor;
-                        newCount++;
-                    }
-                }
-                boolean wasCaughtUp = preferences.getBoolean(caughtUpKey, false);
-                boolean caughtUp = wasCaughtUp;
-                SharedPreferences.Editor cursorEditor = preferences.edit().putLong(cursorKey, nextCursor);
-                if (!caughtUp && items.length() < 100) {
-                    caughtUp = true;
-                    cursorEditor.putBoolean(caughtUpKey, true);
-                }
-                cursorEditor.apply();
-                pollingDelayMs = FOREGROUND_POLL_INTERVAL_MS;
-                if (wasCaughtUp && newCount > 0) {
-                    postStatus("새 채널·인수인계 알림 " + newCount + "건이 도착했습니다.");
-                }
-                if (!caughtUp || items.length() >= 100) {
-                    nextDelay = 100L;
-                }
-            } catch (Exception exc) {
-                String message = exc.getMessage();
-                if (message != null && message.startsWith("HTTP 401")) {
-                    pollingActive = false;
-                    postStatus("로그인이 만료되었습니다. 다시 로그인하세요.");
-                    return;
-                }
-                pollingDelayMs = Math.min(MAX_POLL_BACKOFF_MS, Math.max(FOREGROUND_POLL_INTERVAL_MS, pollingDelayMs * 2));
-                nextDelay = pollingDelayMs;
-            }
-            final long delay = nextDelay;
-            mainHandler.post(() -> {
-                if (pollingActive) {
-                    mainHandler.postDelayed(notificationPoll, delay);
-                }
-            });
         });
     }
 
@@ -319,15 +237,11 @@ public final class MainActivity extends Activity {
         accessToken = null;
         refreshToken = null;
         currentUserId = null;
-        preferences.edit()
-                .remove("access_token")
-                .remove("refresh_token")
-                .remove("user_id")
-                .apply();
+        sessionStore.clear();
+        stopService(new Intent(this, NotificationPollingService.class));
     }
 
     private void logout() {
-        stopPolling();
         rebuildApiClient();
         executor.execute(() -> {
             try {
@@ -456,7 +370,10 @@ public final class MainActivity extends Activity {
     private void markNotificationRead(String messageId) {
         executor.execute(() -> {
             try {
-                apiClient.markNotificationRead(messageId);
+                apiClient.markNotificationRead(
+                        messageId,
+                        preferences.getString("delivery_run_id", null),
+                        preferences.getString("notification_displayed_at_" + messageId, null));
                 postStatus("알림 읽음 처리 완료");
             } catch (Exception exc) {
                 postStatus("알림 읽음 실패: " + UserErrorMessage.from(exc));
@@ -510,7 +427,12 @@ public final class MainActivity extends Activity {
     private void updateReceipt(String handoverId, String receiptId, String receiptStatus) {
         executor.execute(() -> {
             try {
-                apiClient.updateHandoverReceipt(handoverId, receiptId, receiptStatus, null);
+                apiClient.updateHandoverReceipt(
+                        handoverId,
+                        receiptId,
+                        receiptStatus,
+                        null,
+                        preferences.getString("delivery_run_id", null));
                 postStatus("인수인계 상태 저장 완료");
             } catch (Exception exc) {
                 postStatus("인수인계 상태 저장 실패: " + UserErrorMessage.from(exc));
@@ -550,7 +472,7 @@ public final class MainActivity extends Activity {
                 versionIdInput.getText().toString(),
                 null,
                 commentInput.getText().toString(),
-                signalGroup.getCheckedRadioButtonId() > 0 ? "signal" : "free_text",
+                signalGroup.getCheckedRadioButtonId() != -1 ? "signal" : "free_text",
                 signalLevel(),
                 deviceIdInput.getText().toString(),
                 currentUserId,
@@ -561,7 +483,12 @@ public final class MainActivity extends Activity {
             updateStatus("문서 ID와 현장 기록 내용을 입력하세요.");
             return;
         }
-        outbox.enqueueFieldComment(draft);
+        try {
+            outbox.enqueueFieldComment(draft);
+        } catch (Exception exc) {
+            updateStatus("보안 임시 저장 실패: " + UserErrorMessage.from(exc));
+            return;
+        }
         selectedPhotoUri = null;
         updateStatus("임시 저장 완료. 서버 전송을 시도합니다.");
         retryOutbox();
@@ -600,5 +527,21 @@ public final class MainActivity extends Activity {
 
     private void postStatus(String message) {
         mainHandler.post(() -> updateStatus(message));
+    }
+
+    private void startNotificationDelivery() {
+        if (!sessionStore.hasSession()) {
+            return;
+        }
+        Intent intent = new Intent(this, NotificationPollingService.class);
+        startForegroundService(intent);
+    }
+
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1002);
+        }
     }
 }

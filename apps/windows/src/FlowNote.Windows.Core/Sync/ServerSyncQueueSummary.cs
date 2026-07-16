@@ -4,7 +4,8 @@ public sealed record ServerSyncQueueSummary(
     int Pending,
     int Failed,
     int Synced,
-    int Held)
+    int Held,
+    int Discarded = 0)
 {
-    public int Total => Pending + Failed + Synced;
+    public int Total => Pending + Failed + Synced + Discarded;
 }

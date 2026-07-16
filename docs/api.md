@@ -82,12 +82,12 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 | GET | `/api/v1/documents/published` | 공개 문서 목록 |
 | GET | `/api/v1/documents/{document_id}` | 문서 상세 |
 | GET | `/api/v1/documents/{document_id}/published` | 공개 버전 조회 |
-| PUT | `/api/v1/documents/{document_id}/tags` | 문서 태그 교체 |
-| PATCH | `/api/v1/documents/{document_id}/status` | 문서 상태 변경 |
+| PUT | `/api/v1/documents/{document_id}/tags?baseRevision={revision}` | 기준 revision이 일치할 때 문서 태그 교체 |
+| PATCH | `/api/v1/documents/{document_id}/status` | JSON `baseRevision` 기준 문서 상태 변경 |
 | GET | `/api/v1/documents/{document_id}/versions` | 문서 버전 목록 |
 | POST | `/api/v1/documents/{document_id}/versions` | 새 파일 버전 등록. multipart `idempotencyKey`를 보내면 같은 키의 재시도는 기존 버전을 반환 |
-| PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | 버전 상태 변경 |
-| POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | 특정 버전을 공개 버전으로 지정 |
+| PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | JSON `baseRevision` 기준 버전 상태 변경 |
+| POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | JSON `baseRevision`과 예상 공개본 기준으로 특정 버전을 공개 버전으로 지정 |
 | DELETE | `/api/v1/documents/{document_id}` | `baseRevision`, `changeReason`으로 문서를 soft delete. 공개 포인터 해제와 감사를 함께 저장 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | 현재 공개 버전의 1회성 controlled copy 티켓 발급 |
 | GET | `/api/v1/controlled-copies/{token}` | 발급 사용자·로그인 세션에 묶인 controlled copy 1회 스트리밍 |
@@ -96,7 +96,7 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 
 문서 생성 시 허용되는 상태는 `WORKING`, `IN_REVIEW`, `ARCHIVED`이다. `PUBLISHED`는 publish 엔드포인트로만 만든다.
 
-문서 응답과 목록은 서버 권위의 `revision`을 포함한다. 버전 등록 multipart는 `baseRevision`, `baseVersionId`, `fileHashSha256`, `idempotencyKey`를 받을 수 있다. WPF는 네 값을 모두 보내며 서버는 최신 버전 ID와 revision을 원자적으로 비교한 뒤 새 버전 번호를 배정한다. publish JSON은 `baseRevision`, `expectedPublishedVersionId`, `changeReason`, 상태 JSON은 `baseRevision`, `status`, `changeReason`을 사용한다.
+문서 응답과 목록은 서버 권위의 `revision`을 포함한다. 버전 등록 multipart는 `baseRevision`, `baseVersionId`, `fileHashSha256`, `idempotencyKey`를 받을 수 있다. WPF는 네 값을 모두 보내며 서버는 최신 버전 ID와 revision을 원자적으로 비교한 뒤 새 버전 번호를 배정한다. publish JSON은 `baseRevision`, `expectedPublishedVersionId`, `changeReason`, 문서 상태 JSON은 `baseRevision`, `status`, `changeReason`, 버전 상태 JSON도 `baseRevision`, `status`, `changeReason`을 사용한다. 태그 전체 교체는 필수 `baseRevision` query가 맞을 때만 수행한다.
 
 문서 버전 등록의 선택적 `idempotencyKey`는 공백을 제거한 뒤 최대 160자로 제한하며 서버 `document_versions.idempotency_key`에 유일하게 저장한다. 같은 키·같은 파일 hash를 같은 문서에 다시 보내면 새 파일이나 버전을 만들지 않고 기존 버전을 반환한다. 다른 문서 사용, 같은 키의 다른 파일 또는 최초 문서 등록의 핵심 메타데이터 불일치는 409 `IDEMPOTENCY_KEY_REUSED`다. 특정 버전 publish도 이미 그 버전이 현재 공개 버전이고 문서·버전 공개 상태가 일치하면 revision을 다시 올리지 않고 현재 문서를 반환한다.
 
@@ -117,7 +117,7 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 }
 ```
 
-충돌 코드는 `STALE_REVISION`, `STALE_BASE_VERSION`, `PUBLISHED_VERSION_CHANGED`, `DOCUMENT_DELETED`, `IDEMPOTENCY_KEY_REUSED`, `FILE_HASH_MISMATCH`를 구분한다. 클라이언트는 이를 자동 일반 재시도하지 않고 충돌 작업함에 보존한다. 네트워크 단절·timeout은 409가 아니므로 안정된 idempotency key로 재시도한다.
+충돌 코드는 `STALE_REVISION`, `STALE_BASE_VERSION`, `PUBLISHED_VERSION_CHANGED`, `DOCUMENT_DELETED`, `IDEMPOTENCY_KEY_REUSED`, `FILE_HASH_MISMATCH`를 구분한다. WPF 구 공개/상태 큐에 서버 기준 revision이 없으면 서버 호출 전에 `LEGACY_BASE_MISSING` 충돌로 전환한다. 클라이언트는 이를 자동 일반 재시도하지 않고 충돌 작업함에 보존한다. 네트워크 단절·timeout은 409가 아니므로 안정된 idempotency key로 재시도한다.
 
 controlled copy는 `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`만 요청할 수 있다. 서버는 요청 시점과 전송 시점에 문서가 삭제되지 않은 `PUBLISHED` 상태인지, 요청 버전이 `published_version_id`와 일치하고 `version_status = PUBLISHED`, `is_published = true`인지 다시 검사한다. 티켓은 기본 60초, 최대 300초이며 발급 사용자와 `auth_sessions.session_id`에 묶이고 첫 전송 시 소비된다. 다른 사용자·다른 로그인 세션, 만료, 재사용은 거부한다.
 
@@ -202,11 +202,11 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 | POST | `/api/v1/notification-channels/{channel_id}/messages` | 채널 메시지 등록 |
 | GET | `/api/v1/notification-channels/{channel_id}/messages` | 채널 메시지 조회 |
 | GET | `/api/v1/notifications` | 현재 사용자 기준 채널 알림 목록. `afterId`, `limit`, `unreadOnly` 지원 |
-| PATCH | `/api/v1/notifications/{message_id}/read` | 현재 사용자의 해당 채널 메시지 읽음 처리 |
+| PATCH | `/api/v1/notifications/{message_id}/read` | 현재 사용자의 해당 채널 메시지 읽음 처리. Android는 선택 `deliveryRunId`, `displayedAt` 증거 포함 |
 | POST | `/api/v1/handovers` | 인수인계 등록, 수신자별 receipt 생성, 채널 메시지 생성 |
 | GET | `/api/v1/handovers` | 현재 사용자가 속한 채널의 인수인계 목록 |
 | GET | `/api/v1/handovers/{handover_id}` | 인수인계 상세와 수신자별 receipt 조회 |
-| PATCH | `/api/v1/handovers/{handover_id}/receipts/{receipt_id}` | 수신자별 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 상태 기록 |
+| PATCH | `/api/v1/handovers/{handover_id}/receipts/{receipt_id}` | 수신자별 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 상태와 선택 `deliveryRunId`, `displayedAt` 기록 |
 | GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | 작업순서 변경으로 생성된 알림 후보 조회 |
 | PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | 작업순서 알림 후보 상태를 `CANDIDATE`, `SENT`, `DISMISSED` 중 하나로 변경 |
 
@@ -219,9 +219,10 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 - `afterId`는 마지막으로 처리 완료한 응답 항목의 정수 `cursor`다. 생략하면 최신순 목록, 지정하면 `cursor > afterId`인 항목을 cursor 오름차순으로 반환한다.
 - `limit`은 1~500이고 기본값은 100이다. `unreadOnly` 기본값은 `false`이며 필터 적용 후 limit을 계산한다.
 - 응답의 `cursor`는 서버 `channel_messages`의 단조 증가 식별자이고 `message_id`는 사용자 표시와 읽음 처리의 공개 멱등 키다. 생성 시각은 cursor 경계로 사용하지 않는다.
-- 응답 헤더 `X-FlowNote-Notification-Cursor`는 서버 `channel_messages` 전체의 현재 high-water cursor이며 메시지가 없으면 `0`이다. 클라이언트는 마지막 page를 모두 처리한 뒤 이 위치까지 전진하고, 저장값보다 낮은 헤더는 서버 DB 복구/초기화 의심 상태로 다룬다.
-- 응답을 모두 로컬 처리한 뒤 마지막 cursor를 저장한다. 응답 도중 실패하면 기존 cursor로 다시 조회하고 `message_id`로 이미 표시한 항목을 제거한다.
-- 인수인계 등록은 `message_type = HANDOVER`, `source_id = handover_id`인 채널 메시지를 함께 만들므로 같은 알림 증분 스트림으로 전달된다. receipt 갱신은 동일 상태와 note를 반복 요청해도 추가 상태 변경 이력을 만들지 않는다.
+- 응답 헤더 `X-FlowNote-Notification-Cursor`는 서버 `channel_messages` 전체의 현재 high-water cursor이며 메시지가 없으면 `0`이다. `X-FlowNote-Next-Cursor`는 이번 응답에서 안전하게 확정할 마지막 cursor(빈 page면 요청 `afterId`), `X-FlowNote-Has-More`는 page가 limit에 도달했는지를 반환한다. 클라이언트는 항목 처리 뒤 `Next-Cursor`까지만 전진하고, 저장값보다 낮은 high-water는 서버 DB 복구/초기화 의심 상태로 다룬다.
+- 응답 항목을 표시·보존한 직후 해당 cursor를 원자적으로 저장한다. 응답 도중 실패하면 마지막 확정 cursor로 다시 조회한다. Android 시스템 알림은 `message_id` 기반 고정 notification ID로 교체하고, 서버 읽음과 receipt는 공개 `message_id` 및 유일한 `receipt_id` row를 반복 갱신해 중복 row를 만들지 않는다.
+- 인수인계 등록은 `message_type = HANDOVER`, `source_id = handover_id`인 채널 메시지를 함께 만들므로 같은 알림 증분 스트림으로 전달된다. receipt 갱신은 동일 `receiptStatus`와 `note`를 반복 요청해도 추가 상태 변경 이력을 만들지 않으며 현재 receipt를 반환한다. timeout에는 같은 receipt ID와 동일 payload로 재시도한다.
+- Android는 service 실행마다 `ANDROID-DELIVERY-{uuid}` run ID를 만들고 알림 표시 시각을 로컬 전달 로그에 남긴다. 읽음 JSON의 `deliveryRunId`/`displayedAt`, receipt JSON의 `deliveryRunId`/`displayedAt`은 선택 필드이며 제공되면 `activity_history.after_value`의 JSON 증거에 서버 처리 시각과 함께 저장한다. token이나 알림 본문은 이 증거에 저장하지 않는다.
 - 멤버십이 `ACTIVE`인 현재 사용자 채널만 반환한다. 권한 없는 채널 및 다른 사용자의 알림은 cursor 범위에 있어도 반환하지 않는다.
 
 채널 생성과 메시지 등록은 서버 인증이 필요하다. 채널 생성은 문서/작업순서 쓰기 role 기준을 사용하며, 채널 조회, 메시지 조회, 인수인계 조회는 채널 멤버 또는 `admin`, `system-admin`만 가능하다. 수신확인은 해당 receipt 수신자 또는 `admin`, `system-admin`만 변경할 수 있다. 개인 DM, 개인 메신저 수집, GPS, 근태 기능은 이 API에 포함하지 않는다.

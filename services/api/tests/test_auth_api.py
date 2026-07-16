@@ -196,6 +196,50 @@ def test_login_rejects_unknown_or_inactive_android_terminal_device() -> None:
     assert retired_response.json()["detail"] == "Terminal device is not approved or active."
 
 
+def test_direct_device_deactivation_blocks_access_refresh_and_relogin() -> None:
+    with create_test_client() as client:
+        account = create_login_user(client)
+        terminal = create_terminal_device(client)
+        login_response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": account.username,
+                "password": "correct-password",
+                "deviceId": terminal.device_id,
+            },
+        )
+        tokens = login_response.json()
+
+        with client.app.state.database.session() as session:
+            terminal_row = session.scalar(
+                select(TerminalDevice).where(TerminalDevice.device_id == terminal.device_id)
+            )
+            assert terminal_row is not None
+            terminal_row.status = "INACTIVE"
+            session.commit()
+
+        access_response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {tokens['access_token']}"},
+        )
+        refresh_response = client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": tokens["refresh_token"]},
+        )
+        relogin_response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": account.username,
+                "password": "correct-password",
+                "deviceId": terminal.device_id,
+            },
+        )
+
+    assert access_response.status_code == 401
+    assert refresh_response.status_code == 401
+    assert relogin_response.status_code == 403
+
+
 def test_me_returns_current_user_for_bearer_token() -> None:
     with create_test_client() as client:
         account = create_login_user(client)

@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.db.models import AuthSession, UserAccount
+from app.db.models import AuthSession, TerminalDevice, UserAccount
 from app.db.session import get_db_session
 
 TOKEN_TYPE = "Bearer"
@@ -313,6 +313,12 @@ def _validate_auth_session(
         raise _invalid_credentials("Authentication token has been replaced.")
     if _as_utc(auth_session.access_expires_at) <= datetime.now(timezone.utc):
         raise _invalid_credentials("Authentication token has expired.")
+    if auth_session.device_id is not None:
+        terminal = db_session.scalar(
+            select(TerminalDevice).where(TerminalDevice.device_id == auth_session.device_id)
+        )
+        if terminal is None or terminal.status != "ACTIVE":
+            raise _invalid_credentials("Terminal device is not approved or active.")
     return auth_session
 
 

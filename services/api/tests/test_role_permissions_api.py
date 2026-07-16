@@ -191,7 +191,7 @@ def test_team_member_cannot_register_document_version_or_change_tags() -> None:
         assert version_response.status_code == 403, version_response.text
 
         tag_response = client.put(
-            f"/api/v1/documents/{document_id}/tags",
+            f"/api/v1/documents/{document_id}/tags?baseRevision=1",
             headers=auth_headers(client, member),
             json=["member-denied"],
         )

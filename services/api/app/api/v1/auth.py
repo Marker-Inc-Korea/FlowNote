@@ -164,6 +164,15 @@ def refresh(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token is invalid or expired.",
         )
+    if auth_session.device_id is not None:
+        terminal = session.scalar(
+            select(TerminalDevice).where(TerminalDevice.device_id == auth_session.device_id)
+        )
+        if terminal is None or terminal.status != "ACTIVE":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token is invalid or expired.",
+            )
     if account.must_change_password:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

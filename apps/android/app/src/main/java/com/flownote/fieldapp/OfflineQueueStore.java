@@ -11,16 +11,26 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 public final class OfflineQueueStore extends SQLiteOpenHelper {
     private static final String DB_NAME = "flownote_android_outbox.db";
+    // The table shape remains version 1 so an approved APK rollback can still
+    // open the database after all pending items have been drained.
     private static final int DB_VERSION = 1;
+    private final Context context;
+    private final CryptoBox cryptoBox;
+    private final EncryptedAttachmentStore attachmentStore;
 
     public OfflineQueueStore(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
+        this.context = context.getApplicationContext();
+        cryptoBox = new CryptoBox();
+        attachmentStore = new EncryptedAttachmentStore(context, cryptoBox);
+        migratePlaintextPayloads();
     }
 
     @Override
@@ -49,14 +59,39 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
         throw new IllegalStateException("No Android outbox migration is defined for version " + oldVersion);
     }
 
-    public String enqueueFieldComment(FieldCommentDraft draft) {
+    private void migratePlaintextPayloads() {
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try (Cursor cursor = db.query("outbox", new String[]{"local_id", "payload"},
+                null, null, null, null, null)) {
+            while (cursor.moveToNext()) {
+                String payload = cursor.getString(1);
+                if (cryptoBox.isEncrypted(payload)) {
+                    continue;
+                }
+                ContentValues values = new ContentValues();
+                values.put("payload", cryptoBox.encrypt(payload));
+                db.update("outbox", values, "local_id = ?", new String[]{cursor.getString(0)});
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    public String enqueueFieldComment(FieldCommentDraft draft) throws IOException {
         long now = System.currentTimeMillis();
         String localId = FieldCommentDraft.nonEmpty(draft.localId, UUID.randomUUID().toString());
+        String attachmentReference = null;
+        if (draft.photoUri != null) {
+            attachmentReference = attachmentStore.importFrom(
+                    context.getContentResolver(), Uri.parse(draft.photoUri), localId);
+        }
         ContentValues values = new ContentValues();
         values.put("local_id", localId);
         values.put("kind", "field_comment");
-        values.put("payload", toPayload(draft).toString());
-        values.put("attachment_uri", draft.photoUri);
+        values.put("payload", cryptoBox.encrypt(toPayload(draft).toString()));
+        values.put("attachment_uri", attachmentReference);
         values.put("status", "PENDING");
         values.put("idempotency_key", draft.idempotencyKey);
         values.put("attempt_count", 0);
@@ -115,7 +150,16 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
                     markServerId(item.localId, commentId);
                 }
                 if (item.attachmentUri != null) {
-                    apiClient.uploadFieldCommentPhoto(commentId, Uri.parse(item.attachmentUri), createdBy);
+                    if (item.attachmentUri.startsWith("encfile:")) {
+                        try (InputStream input = attachmentStore.open(item.attachmentUri)) {
+                            apiClient.uploadFieldCommentPhoto(commentId, input, createdBy);
+                        }
+                    } else {
+                        // Version 1 migration keeps the persisted content URI readable until
+                        // this entry is sent; every newly queued attachment is app-private ciphertext.
+                        apiClient.uploadFieldCommentPhoto(
+                                commentId, Uri.parse(item.attachmentUri), createdBy);
+                    }
                 }
                 markSynced(item.localId, commentId);
                 success++;
@@ -151,7 +195,7 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
         return new OutboxItem(
                 cursor.getString(cursor.getColumnIndexOrThrow("local_id")),
                 cursor.getString(cursor.getColumnIndexOrThrow("kind")),
-                cursor.getString(cursor.getColumnIndexOrThrow("payload")),
+                cryptoBox.decrypt(cursor.getString(cursor.getColumnIndexOrThrow("payload"))),
                 cursor.getString(cursor.getColumnIndexOrThrow("attachment_uri")),
                 cursor.getString(cursor.getColumnIndexOrThrow("status")),
                 cursor.getString(cursor.getColumnIndexOrThrow("server_id")),

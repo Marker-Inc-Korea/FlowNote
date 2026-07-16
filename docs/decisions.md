@@ -34,12 +34,14 @@
 ## 2026-07-16. 문서 aggregate는 서버 revision과 공개 포인터가 권위 원천
 
 - 서버 `documents.revision`, `latest_version_id`, `published_version_id`, 문서/버전 상태와 `file_objects.hash_sha256`가 권위 원천이다. WPF의 `version_no`, `updated_at`, 상태는 로컬 작업과 재전송 원천이며 서버 확인 전 권위값이 아니다.
-- 새 버전, 공개, 상태, 삭제 요청은 WPF 큐 생성 시 보존한 base revision과 기준 버전 ID를 서버에 보낸다. 서버는 revision을 조건부 갱신해 두 Windows 사용자와 서버 관리 변경 중 하나만 성공시키며, 나머지는 구조화된 409로 돌려보낸다.
+- 새 버전, 공개, 문서·버전 상태, 태그 전체 교체, 삭제 요청은 base revision과 필요한 기준 버전 ID를 서버에 보낸다. 서버는 실제 변경 시 revision을 조건부 갱신해 두 Windows 사용자와 서버 관리 변경 중 하나만 성공시키며, 나머지는 구조화된 409로 돌려보낸다. 태그 교체는 필수 `baseRevision` query, 버전 상태 변경은 필수 `baseRevision` JSON 필드를 사용한다.
 - 파일 내용, 공개본, 상태, 삭제는 자동 병합하지 않는다. 태그처럼 서로 독립된 집합형 메타데이터만 후속 patch 설계에서 서버 최신값과 명시적으로 합칠 수 있으며 현재 문서 mutation은 자동 병합하지 않는다.
 - 같은 idempotency key는 같은 의도와 파일 hash에만 재사용한다. 다른 내용은 기존 결과로 위장하지 않고 `IDEMPOTENCY_KEY_REUSED`로 분리한다. 서버 버전 번호가 우연히 같아도 SHA-256이 다르면 성공 매핑하지 않는다.
 - `PUBLISHED` 문서는 항상 같은 문서의 유효한 공개 버전 하나와 연결한다. publish transaction 전에 서버 파일 SHA-256을 재검사하고, 공개본 교체는 예상 공개 버전 ID와 revision이 모두 맞을 때만 수행한다.
 - 충돌은 `CONFLICT` 큐와 원 서버 응답으로 영속화한다. 관리자가 최신 서버본 기준 로컬 변경 재시도 또는 서버본 유지·로컬 요청 폐기를 사유와 함께 선택하며 `DISCARDED`도 삭제하지 않는 종결 감사 상태다.
+- 생성 시점의 서버 revision이 없는 구 공개·문서 상태 큐는 최신 revision을 추정하지 않는다. 서버 호출 전에 `LEGACY_BASE_MISSING`으로 충돌 전환해 관리자가 최신 서버본을 확인한 뒤 처리하게 한다.
 - 서버 확인 응답과 로컬 매핑 저장이 끝난 항목만 `SYNCED`다. `PENDING`, `FAILED`, `CONFLICT`가 남아 있으면 화면은 “동기화 완료”를 표시하지 않는다.
+- 네트워크 실패 뒤 앱을 재시작해도 같은 큐와 안정된 idempotency key를 재사용한다. 성공 응답을 받은 문서·버전 서버 ID 매핑은 유일하게 유지하며 같은 재시도를 반복해도 큐나 매핑을 추가하지 않는다.
 
 ## 2026-06-30. FieldComment 명칭
 
@@ -228,11 +230,30 @@
 
 - 서버 PC와 승인된 설치형 단말이 같은 사내망에서 동작하는 초기 배포는 HTTP polling을 1차 알림 전달 방식으로 사용한다.
 - `/api/v1/notifications`의 단조 증가 `cursor`와 `afterId`를 사용해 마지막 성공 위치 다음부터 오름차순으로 조회한다. 클라이언트는 `message_id`와 cursor를 멱등 키로 사용하며, cursor는 응답을 처리한 뒤에만 전진시킨다.
-- Windows와 Android 전경 상태는 기본 15초 주기로 확인한다. 연결 실패 시 30초, 60초, 최대 120초까지 지수 백오프하고 성공 즉시 15초로 복귀한다. 서버 또는 네트워크 복구 뒤에는 현재 보유한 마지막 cursor부터 재개한다.
-- HTTP 401이면 polling을 중지하고 재로그인을 요구한다. Android는 사용자별 cursor를 `SharedPreferences`에 보존해 다른 사용자와 공유하지 않는다. WPF 영구 보존 정책은 아래 2026-07-14 결정을 따른다.
-- Windows는 창이 열린 동안만, Android는 Activity가 전경인 동안만 15초 polling한다. 비활성·종료 상태에는 즉시 polling을 중단한다.
-- Android 백그라운드 확인은 1차 구현에 상시 서비스를 두지 않는다. WorkManager를 도입하더라도 현장 단말 정책이 허용하는 네트워크 연결 조건의 제한된 주기 작업으로만 사용하며, Android 최소 주기·Doze·배터리 최적화로 즉시성이 보장되지 않음을 운영 문서에 표시한다.
+- Windows와 Android 전경 상태는 기본 15초 주기로 확인한다. 연결 실패 시 30초, 60초, 최대 120초까지 지수 백오프하고 성공 즉시 15초로 복귀한다. 서버 또는 네트워크 복구 뒤에는 현재 보유한 마지막 cursor부터 재개한다. Android 부분은 아래 2026-07-16 운영 결정으로 대체했다.
+- HTTP 401이면 polling을 중지하고 재로그인을 요구한다. Android는 사용자별 cursor를 `SharedPreferences`에 보존해 다른 사용자와 공유하지 않는다. WPF 영구 보존 정책은 아래 2026-07-14 결정을 따른다. Android의 scope와 refresh 처리는 아래 2026-07-16 결정으로 대체했다.
+- Windows는 창이 열린 동안만 15초 polling한다. 이 결정 당시 Android는 Activity 전경에서만 polling했으나 아래 2026-07-16 foreground service 결정으로 대체했다.
+- Android 백그라운드 확인을 두지 않는다는 당시 범위는 아래 2026-07-16 결정으로 대체했다. WorkManager의 최소 주기·Doze·배터리 최적화로 즉시성이 보장되지 않는다는 평가는 유지한다.
 - WebSocket은 프록시, 재연결, 서버 fan-out 운영 기준이 마련된 뒤의 사내망 저지연 선택지다. FCM 등 외부 push는 인터넷 연결과 외부 전송 보안 정책을 별도 승인한 현장의 후속 선택지다.
+
+## 2026-07-16. Android 운영 알림은 전용 단말 foreground polling으로 복구
+
+| 방식 | 외부 의존 | 예상 지연/복구 | 배터리·운영 비용 | 판정 |
+| --- | --- | --- | --- | --- |
+| WorkManager 제한 polling | 없음 | 최소 주기·Doze로 수십 분까지 지연 가능 | 낮음 | missed 복구 보조만 가능, 30초 목표에는 부적합 |
+| foreground service HTTPS polling | 없음 | 15초 주기, 단절·재부팅 cursor 복구 | 상시 알림·무선 wake로 높음 | 전원 공급/거치형 승인 단말의 기본 |
+| MDM 허용 push+사내 relay | 사내 relay만, FCM 미사용 기준 | 저지연 wake 후 cursor 복구 | 단말 배터리 낮음, relay HA·인증 운영 높음 | 현장 실기 후 후속 대안 |
+
+- 제한 주기 WorkManager polling은 최소 주기와 Doze 지연 때문에 30초 목표를 충족하지 못한다. 일반 foreground service는 배터리와 상시 알림 비용이 있지만 승인된 거치형/러기드 전용 단말에서 사내 HTTPS만으로 15초 확인과 재부팅 복구를 제공하므로 운영 기본으로 선택한다.
+- 외부 FCM 의존은 두지 않는다. 현장 MDM이 허용하고 사내 relay의 인증·재연결·감사가 검증되면 relay push를 저전력 후속 대안으로 추가하되 cursor polling을 missed notification 복구 원천으로 유지한다.
+- 정상 연결 목표 표시 지연은 30초, 5분 이상 단절 복구는 연결 회복 후 30초+page 전송 시간이다. 시각 알림 중복 허용은 crash 경계 최대 1건, 서버 read/receipt 중복 row 허용은 0건이다.
+- cursor는 서버 주소와 사용자 ID scope로 분리하고 각 항목 표시 뒤 전진한다. 첫 로그인은 과거 page를 따라잡되 새 시스템 알림을 만들지 않는다. 재부팅은 저장 세션으로 서비스를 재개하지만 사용자의 Android 강제 중지는 OS 정책상 MDM kiosk 또는 명시적 앱 재실행 전까지 복구할 수 없는 운영 예외다.
+
+## 2026-07-16. Android 비밀과 outbox는 Keystore 앱 수준 암호화를 기본 통제로 사용
+
+- access/refresh token, outbox JSON과 새 사진 첨부는 Android Keystore 비반출 AES-256 GCM 키로 보호한다. OS sandbox·backup 차단을 함께 사용하며 MDM 전체 디스크 암호화만을 유일한 보호 수단으로 의존하지 않는다.
+- 키는 단말 밖으로 export하거나 교체 단말로 이전하지 않는다. 키 분실·무효화 시 해당 단말을 비활성화하고 미전송 항목의 서버 반영 여부를 idempotency key로 확인한 뒤 승인된 보존/폐기와 새 `deviceId` 등록을 수행한다.
+- 운영 배포 기본은 조직 키로 서명한 사내 APK다. AAB는 관리형 스토어 선택 시에만 사용한다. keystore와 암호는 환경의 승인된 비밀 주입 경로로 제공하고 저장소·패키지 증거에 포함하지 않는다.
 
 ## 2026-07-14. WPF 서버 scope·사용자별 알림 cursor 영구 보존
 
