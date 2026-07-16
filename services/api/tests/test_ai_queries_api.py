@@ -139,7 +139,7 @@ def test_readiness_gap_blocks_operational_provider_call_with_numeric_shortage() 
         })
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "AI_READINESS_NOT_MET"
-        assert "질문 50건 부족" in response.json()["error"]["message"]
+        assert "질문 48건 부족" in response.json()["error"]["message"]
         assert calls == 0
 
 

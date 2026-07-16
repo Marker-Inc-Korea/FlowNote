@@ -52,6 +52,7 @@ def test_role_matrix_approval_prompt_policy_and_kill_switch_are_audited() -> Non
     with create_client() as client:
         ordinary = login(client, "admin", "1234")
         assert client.get("/api/v1/ai-operations/approvals", headers=ordinary).status_code == 403
+        assert client.get("/api/v1/ai-operations/provider-reviews", headers=ordinary).status_code == 403
         auth = system_admin(client)
         settings = client.app.state.settings
         canary = f"API-KEY-CANARY-{uuid4().hex}"
@@ -116,6 +117,31 @@ def test_role_matrix_approval_prompt_policy_and_kill_switch_are_audited() -> Non
         prompts = client.get("/api/v1/ai-operations/prompts", headers=auth).json()
         snapshot = next(row for row in prompts if row["promptVersionId"] == prompt_id)
         assert snapshot["templateHash"] and snapshot["templateText"].startswith("제공된 근거")
+
+        checklist = {
+            key: {"status": "PASS", "note": f"{key} 검토 증거", "evidenceReference": f"review://{key}"}
+            for key in (
+                "contract_terms", "data_retention", "training_use", "transfer_region", "tls",
+                "timeout", "rate_limit_429", "server_error_5xx", "cost_limit", "kill_switch",
+                "legal_approval", "customer_approval",
+            )
+        }
+        provider_review = client.post("/api/v1/ai-operations/provider-reviews", headers=auth, json={
+            "customerScope": settings.ai_customer_scope, "siteScope": settings.ai_site_scope,
+            "provider": "TEST_PROVIDER", "modelScope": "test-model", "reviewVersion": "review-v1",
+            "allowedPurposes": ["EVIDENCE_SEARCH", "EVIDENCE_SUMMARY"], "checklist": checklist,
+            "technicalStatus": "APPROVED", "securityStatus": "APPROVED",
+            "legalStatus": "APPROVED", "customerStatus": "APPROVED",
+        })
+        assert provider_review.status_code == 201, provider_review.text
+        assert provider_review.json()["checklistPassed"] is True
+        assert provider_review.json()["providerStartApproved"] is True
+        reviews = client.get(
+            "/api/v1/ai-operations/provider-reviews", headers=auth,
+            params={"customerScope": settings.ai_customer_scope, "siteScope": settings.ai_site_scope},
+        )
+        assert reviews.status_code == 200
+        assert any(item["reviewId"] == provider_review.json()["reviewId"] for item in reviews.json())
 
 
 def test_retention_redacts_payload_preserves_hash_references_and_records_history() -> None:

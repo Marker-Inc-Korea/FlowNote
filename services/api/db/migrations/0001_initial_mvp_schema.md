@@ -45,6 +45,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `ai_transfer_approvals` | Customer/site/provider/model scoped external transfer approvals |
 | `ai_sensitive_data_policies` | Versioned customer/site deny terms and customer identifiers applied before provider payload creation |
 | `ai_operational_policies` | Global/site kill switches, request/concurrency/timeout/cost limits, retention, and audit-export policy |
+| `ai_provider_onboarding_reviews` | Versioned provider contract/security/legal/customer checklist and start decision |
 | `ai_operation_audit_events` | Sanitized approval, prompt, and operational-policy change audit events |
 | `ai_retention_audits` | Query-payload de-identification and response-text deletion audit metadata |
 | `document_access_logs` | Document view/download/auto-close access logs |
