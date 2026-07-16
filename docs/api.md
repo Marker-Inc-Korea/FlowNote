@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-07-16 현재 전역 FastAPI 앱에 등록된 103개 method/path 조합과 요청·응답 코드 기준이다. 본문에 “후속 예외”로 명시한 경로만 미구현이다.
+이 문서는 2026-07-16 현재 전역 FastAPI 앱에 등록된 104개 method/path 조합과 요청·응답 코드 기준이다. 본문에 “후속 예외”로 명시한 경로만 미구현이다.
 
 ## 인증
 
@@ -88,6 +88,7 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 | POST | `/api/v1/documents/{document_id}/versions` | 새 파일 버전 등록. multipart `idempotencyKey`를 보내면 같은 키의 재시도는 기존 버전을 반환 |
 | PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | 버전 상태 변경 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | 특정 버전을 공개 버전으로 지정 |
+| DELETE | `/api/v1/documents/{document_id}` | `baseRevision`, `changeReason`으로 문서를 soft delete. 공개 포인터 해제와 감사를 함께 저장 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | 현재 공개 버전의 1회성 controlled copy 티켓 발급 |
 | GET | `/api/v1/controlled-copies/{token}` | 발급 사용자·로그인 세션에 묶인 controlled copy 1회 스트리밍 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/android-view-grants` | 승인 Android 단말의 현재 공개 버전 앱 내부 열람 grant 발급 |
@@ -95,7 +96,28 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 
 문서 생성 시 허용되는 상태는 `WORKING`, `IN_REVIEW`, `ARCHIVED`이다. `PUBLISHED`는 publish 엔드포인트로만 만든다.
 
-문서 버전 등록의 선택적 `idempotencyKey`는 공백을 제거한 뒤 최대 160자로 제한하며 서버 `document_versions.idempotency_key`에 유일하게 저장한다. 같은 키를 같은 문서에 다시 보내면 새 파일이나 버전을 만들지 않고 기존 버전을 반환한다. 다른 문서에 이미 사용한 키는 409로 거부한다. 특정 버전 publish도 이미 그 버전이 현재 공개 버전이고 문서·버전 공개 상태가 일치하면 추가 상태 변경 없이 현재 문서를 반환한다.
+문서 응답과 목록은 서버 권위의 `revision`을 포함한다. 버전 등록 multipart는 `baseRevision`, `baseVersionId`, `fileHashSha256`, `idempotencyKey`를 받을 수 있다. WPF는 네 값을 모두 보내며 서버는 최신 버전 ID와 revision을 원자적으로 비교한 뒤 새 버전 번호를 배정한다. publish JSON은 `baseRevision`, `expectedPublishedVersionId`, `changeReason`, 상태 JSON은 `baseRevision`, `status`, `changeReason`을 사용한다.
+
+문서 버전 등록의 선택적 `idempotencyKey`는 공백을 제거한 뒤 최대 160자로 제한하며 서버 `document_versions.idempotency_key`에 유일하게 저장한다. 같은 키·같은 파일 hash를 같은 문서에 다시 보내면 새 파일이나 버전을 만들지 않고 기존 버전을 반환한다. 다른 문서 사용, 같은 키의 다른 파일 또는 최초 문서 등록의 핵심 메타데이터 불일치는 409 `IDEMPOTENCY_KEY_REUSED`다. 특정 버전 publish도 이미 그 버전이 현재 공개 버전이고 문서·버전 공개 상태가 일치하면 revision을 다시 올리지 않고 현재 문서를 반환한다.
+
+동기화 충돌은 HTTP 409와 아래 `detail` 구조를 사용한다.
+
+```json
+{
+  "detail": {
+    "code": "STALE_REVISION",
+    "message": "The document changed after the client base revision. Administrator resolution is required.",
+    "documentId": "doc_...",
+    "expectedRevision": 4,
+    "currentRevision": 5,
+    "currentStatus": "PUBLISHED",
+    "currentLatestVersionId": "ver_...",
+    "currentPublishedVersionId": "ver_..."
+  }
+}
+```
+
+충돌 코드는 `STALE_REVISION`, `STALE_BASE_VERSION`, `PUBLISHED_VERSION_CHANGED`, `DOCUMENT_DELETED`, `IDEMPOTENCY_KEY_REUSED`, `FILE_HASH_MISMATCH`를 구분한다. 클라이언트는 이를 자동 일반 재시도하지 않고 충돌 작업함에 보존한다. 네트워크 단절·timeout은 409가 아니므로 안정된 idempotency key로 재시도한다.
 
 controlled copy는 `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`만 요청할 수 있다. 서버는 요청 시점과 전송 시점에 문서가 삭제되지 않은 `PUBLISHED` 상태인지, 요청 버전이 `published_version_id`와 일치하고 `version_status = PUBLISHED`, `is_published = true`인지 다시 검사한다. 티켓은 기본 60초, 최대 300초이며 발급 사용자와 `auth_sessions.session_id`에 묶이고 첫 전송 시 소비된다. 다른 사용자·다른 로그인 세션, 만료, 재사용은 거부한다.
 
@@ -341,6 +363,7 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 | 기능 | 허용 role |
 | --- | --- |
 | 문서 등록/버전 등록/태그 변경/작업순서 변경 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead` |
+| 문서 상태/버전 상태/공개본/삭제 결정 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
 | FieldComment 등록 | 위 role + `team-member`, `viewer` |
 | 접근 로그 조회 | `admin`, `system-admin` |
 | 보고서 작성 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
@@ -352,7 +375,8 @@ WPF `RolePermissionPolicy`와의 대조:
 
 | WPF 기능 | WPF 허용 role | 서버 대응 정책 |
 | --- | --- | --- |
-| 문서 등록, 파일 업로드, 상태 변경, 공개, 작업판 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead` | `DocumentWriteUser` |
+| 문서 등록, 파일 업로드, 작업판 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead` | `DocumentWriteUser` |
+| 문서 상태, 버전 상태, 공개, 삭제 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | `DocumentGovernanceUser` |
 | 현장 코멘트 작성 | 기본 role 전체 | `FieldCommentCreateUser` |
 | 보고서 버튼 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | `ReportWriteUser` |
 | 채널 관리/인수인계 확인 현황 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead` | 채널 생성은 `DocumentWriteUser`, 조회/읽음/수신확인은 채널 멤버십 또는 `admin`, `system-admin` |

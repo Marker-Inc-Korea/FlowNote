@@ -31,7 +31,7 @@ FlowNote는 생산공장 현장의 문서와 현장 지식을 함께 관리하�
 - FastAPI 만료 보존 스케줄러: 기본 1시간 간격으로 질의 payload 비식별화와 저장 응답 원문 삭제
 - 관리자급 파일 감시 후보 등록과 버전 확정
 - FastAPI 인증, 승인 단말, 문서, controlled copy, FieldComment, 첨부, 태그, 접근 로그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가, 외부 AI 질의 안전장치·운영 제어 API
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 첨부, 신호등식 기록, 알림/인수인계 조회와 확인, SQLite outbox 재전송
+- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부, 신호등식 기록, 알림/인수인계 조회와 확인, SQLite outbox 재전송
 - FastAPI-WPF role 정책 정합성 검증: 문서 등록, FieldComment 작성, 보고서 작성, 접근 로그 조회, 사용자 관리, controlled copy 다운로드
 - WPF 동기화 큐 대상: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장
 - 누적 FAILED 큐의 읽기 전용 진단과 승인 기반 무손실 전환 CLI

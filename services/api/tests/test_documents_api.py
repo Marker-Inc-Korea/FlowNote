@@ -535,9 +535,9 @@ def test_document_registration_idempotency_key_returns_existing_document() -> No
                 "/api/v1/documents",
                 headers=headers,
                 data={
-                    "title": "Changed title should not create a second document",
+                    "title": "Idempotent document registration",
                     "documentType": "work_instruction",
-                    "changeReason": "Duplicate idempotent document request.",
+                    "changeReason": "First idempotent document request.",
                     "idempotencyKey": idempotency_key,
                 },
                 files={"file": (pdf_path.name, file, "application/pdf")},
@@ -546,6 +546,21 @@ def test_document_registration_idempotency_key_returns_existing_document() -> No
         second = second_response.json()
         assert second["document_id"] == first["document_id"]
         assert second["title"] == first["title"]
+
+        with pdf_path.open("rb") as file:
+            mismatch_response = client.post(
+                "/api/v1/documents",
+                headers=headers,
+                data={
+                    "title": "Changed title must be rejected",
+                    "documentType": "work_instruction",
+                    "changeReason": "Conflicting idempotency retry.",
+                    "idempotencyKey": idempotency_key,
+                },
+                files={"file": (pdf_path.name, file, "application/pdf")},
+            )
+        assert mismatch_response.status_code == 409
+        assert mismatch_response.json()["detail"]["code"] == "IDEMPOTENCY_KEY_REUSED"
 
         with client.app.state.database.session() as session:
             saved_count = session.scalar(
@@ -629,3 +644,226 @@ def test_document_registration_rejects_unknown_user_reference() -> None:
     assert response.status_code == 422
     assert response.json()["detail"] == "ownerId must reference an existing user_id."
     assert stored_files_after == stored_files_before
+
+
+def test_stale_base_version_is_rejected_without_version_regression() -> None:
+    pdf_path, pdf_v2_path, _, _ = prepare_factory_sample_files()
+
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        created = post_document(
+            client,
+            pdf_path,
+            title="Concurrent Windows version target",
+            document_type="work_instruction",
+        )
+        assert created["revision"] == 1
+        first_version_id = created["latest_version_id"]
+
+        with pdf_v2_path.open("rb") as file:
+            first_writer = client.post(
+                f"/api/v1/documents/{created['document_id']}/versions",
+                headers=headers,
+                data={
+                    "changeReason": "Windows user A update.",
+                    "baseRevision": "1",
+                    "baseVersionId": first_version_id,
+                    "fileHashSha256": file_sha256(pdf_v2_path),
+                    "idempotencyKey": f"pytest:user-a:{uuid4().hex}",
+                },
+                files={"file": (pdf_v2_path.name, file, "application/pdf")},
+            )
+        assert first_writer.status_code == 201, first_writer.text
+
+        with pdf_path.open("rb") as file:
+            stale_writer = client.post(
+                f"/api/v1/documents/{created['document_id']}/versions",
+                headers=headers,
+                data={
+                    "changeReason": "Windows user B stale update.",
+                    "baseRevision": "1",
+                    "baseVersionId": first_version_id,
+                    "fileHashSha256": file_sha256(pdf_path),
+                    "idempotencyKey": f"pytest:user-b:{uuid4().hex}",
+                },
+                files={"file": (pdf_path.name, file, "application/pdf")},
+            )
+        assert stale_writer.status_code == 409
+        assert stale_writer.json()["detail"]["code"] == "STALE_BASE_VERSION"
+
+        detail = client.get(
+            f"/api/v1/documents/{created['document_id']}", headers=headers
+        ).json()
+        assert detail["revision"] == 2
+        assert detail["latest_version"]["version_no"] == 2
+        assert detail["latest_version"]["file"]["hash_sha256"] == file_sha256(pdf_v2_path)
+
+
+def test_published_version_replacement_race_requires_administrator_resolution() -> None:
+    pdf_path, pdf_v2_path, _, _ = prepare_factory_sample_files()
+
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        created = post_document(
+            client,
+            pdf_path,
+            title="Published replacement race target",
+            document_type="work_instruction",
+        )
+        with pdf_v2_path.open("rb") as file:
+            version_response = client.post(
+                f"/api/v1/documents/{created['document_id']}/versions",
+                headers=headers,
+                data={
+                    "changeReason": "Prepare replacement version.",
+                    "baseRevision": "1",
+                    "baseVersionId": created["latest_version_id"],
+                },
+                files={"file": (pdf_v2_path.name, file, "application/pdf")},
+            )
+        second_version = version_response.json()
+
+        first_publish = client.post(
+            f"/api/v1/documents/{created['document_id']}/versions/"
+            f"{created['latest_version_id']}/publish",
+            headers=headers,
+            json={"changeReason": "Initial release.", "baseRevision": 2},
+        )
+        assert first_publish.status_code == 200, first_publish.text
+        published_v1 = first_publish.json()
+        assert published_v1["revision"] == 3
+
+        replacement = client.post(
+            f"/api/v1/documents/{created['document_id']}/versions/"
+            f"{second_version['version_id']}/publish",
+            headers=headers,
+            json={
+                "changeReason": "User A replaces the public version.",
+                "baseRevision": 3,
+                "expectedPublishedVersionId": created["latest_version_id"],
+            },
+        )
+        assert replacement.status_code == 200, replacement.text
+
+        competing = client.post(
+            f"/api/v1/documents/{created['document_id']}/versions/"
+            f"{created['latest_version_id']}/publish",
+            headers=headers,
+            json={
+                "changeReason": "User B tries a competing replacement.",
+                "baseRevision": 3,
+                "expectedPublishedVersionId": created["latest_version_id"],
+            },
+        )
+        assert competing.status_code == 409
+        assert competing.json()["detail"]["code"] == "PUBLISHED_VERSION_CHANGED"
+
+        detail = client.get(
+            f"/api/v1/documents/{created['document_id']}", headers=headers
+        ).json()
+        assert detail["revision"] == 4
+        assert detail["published_version_id"] == second_version["version_id"]
+        assert detail["published_version"]["file"]["hash_sha256"] == file_sha256(pdf_v2_path)
+        published_flags = [
+            version["is_published"]
+            for version in client.get(
+                f"/api/v1/documents/{created['document_id']}/versions", headers=headers
+            ).json()
+        ]
+        assert published_flags.count(True) == 1
+
+
+def test_deleted_document_rejects_local_resend_and_preserves_audit() -> None:
+    pdf_path, pdf_v2_path, _, _ = prepare_factory_sample_files()
+
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        created = post_document(
+            client,
+            pdf_path,
+            title="Deleted local resend target",
+            document_type="work_instruction",
+        )
+        deleted = client.request(
+            "DELETE",
+            f"/api/v1/documents/{created['document_id']}",
+            headers=headers,
+            json={"changeReason": "Administrator deletion test.", "baseRevision": 1},
+        )
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json()["status"] == "DELETED"
+        assert deleted.json()["published_version_id"] is None
+
+        with pdf_v2_path.open("rb") as file:
+            resend = client.post(
+                f"/api/v1/documents/{created['document_id']}/versions",
+                headers=headers,
+                data={"changeReason": "Offline local resend.", "baseRevision": "1"},
+                files={"file": (pdf_v2_path.name, file, "application/pdf")},
+            )
+        assert resend.status_code == 409
+        assert resend.json()["detail"]["code"] == "DOCUMENT_DELETED"
+
+        with client.app.state.database.session() as session:
+            document = session.scalar(
+                select(Document).where(Document.document_id == created["document_id"])
+            )
+            assert document is not None
+            assert document.revision == 2
+            assert document.deleted_at is not None
+            history = session.scalars(
+                select(ActivityHistory).where(
+                    ActivityHistory.target_id == created["document_id"],
+                    ActivityHistory.event_type == "document.deleted",
+                )
+            ).all()
+            assert len(history) == 1
+
+
+def test_revision_and_stale_conflict_survive_server_app_restart() -> None:
+    pdf_path, _, _, _ = prepare_factory_sample_files()
+
+    with create_test_client() as first_process:
+        created = post_document(
+            first_process,
+            pdf_path,
+            title="Server restart revision target",
+            document_type="work_instruction",
+        )
+        document_id = created["document_id"]
+        assert created["revision"] == 1
+
+    with create_test_client() as second_process:
+        headers = auth_headers(second_process)
+        loaded = second_process.get(
+            f"/api/v1/documents/{document_id}", headers=headers
+        )
+        assert loaded.status_code == 200
+        assert loaded.json()["revision"] == 1
+        changed = second_process.patch(
+            f"/api/v1/documents/{document_id}/status",
+            headers=headers,
+            json={
+                "status": "IN_REVIEW",
+                "changeReason": "Server-side review transition after restart.",
+                "baseRevision": 1,
+            },
+        )
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["revision"] == 2
+
+    with create_test_client() as third_process:
+        stale = third_process.patch(
+            f"/api/v1/documents/{document_id}/status",
+            headers=auth_headers(third_process),
+            json={
+                "status": "ARCHIVED",
+                "changeReason": "Offline client still has revision one.",
+                "baseRevision": 1,
+            },
+        )
+        assert stale.status_code == 409
+        detail = stale.json()["detail"]
+        assert detail["code"] == "STALE_REVISION"
+        assert detail["expectedRevision"] == 1
+        assert detail["currentRevision"] == 2

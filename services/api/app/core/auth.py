@@ -43,6 +43,16 @@ DOCUMENT_WRITE_ROLES = frozenset(
         ROLE_TEAM_LEAD,
     }
 )
+DOCUMENT_GOVERNANCE_ROLES = frozenset(
+    {
+        ROLE_ADMIN,
+        ROLE_MANAGER,
+        ROLE_SYSTEM_ADMIN,
+        ROLE_DOCUMENT_ADMIN,
+        ROLE_ASSISTANT_MANAGER,
+        ROLE_DEPARTMENT_MANAGER,
+    }
+)
 FIELD_COMMENT_CREATE_ROLES = DOCUMENT_WRITE_ROLES | frozenset({ROLE_VIEWER, ROLE_TEAM_MEMBER})
 FIELD_COMMENT_ANALYZE_ROLES = frozenset(
     {
@@ -375,6 +385,10 @@ PasswordChangeUser = Annotated[AuthenticatedUser, Depends(get_authenticated_user
 DocumentWriteUser = Annotated[
     AuthenticatedUser,
     Depends(require_roles(*DOCUMENT_WRITE_ROLES)),
+]
+DocumentGovernanceUser = Annotated[
+    AuthenticatedUser,
+    Depends(require_roles(*DOCUMENT_GOVERNANCE_ROLES)),
 ]
 FieldCommentCreateUser = Annotated[
     AuthenticatedUser,

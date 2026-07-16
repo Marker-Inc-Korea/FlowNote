@@ -33,7 +33,9 @@
 - FastAPI `system-admin` 전용 외부 AI 전송 승인·프롬프트·운영 정책·감사·보존 API와 WPF `AI 운영` 화면
 - FastAPI 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인 API
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면과 서버 API 클라이언트
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 첨부 outbox, 신호등식 기록, 채널 알림, 인수인계 확인. 문서 파일 본문 뷰어는 미구현
+- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 채널 알림, 인수인계 확인
+- Android 전용 단기 1회 grant/stream, 현재 공개 버전·사용자·세션·승인 단말 바인딩, 파일 무결성 재검사와 접근 감사
+- Android 내부 난수 캐시, 수신 크기·SHA-256 검증, `FLAG_SECURE`, 외부 열기·공유 미제공, 종료·백그라운드 전환·오류·로그아웃·다음 시작 시 캐시 정리
 - Windows/Android 사내망 HTTPS 전경 polling, cursor 기반 증분 조회와 연결 실패 backoff
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
 - 공개 문서 버전의 60초 1회성 controlled copy 발급·스트리밍, 서버 무결성 재검사, 감사 로그와 WPF 저장·SHA-256 검증

@@ -72,11 +72,28 @@
                             CornerRadius="4"
                             Padding="12">
                         <DockPanel>
-                            <Button DockPanel.Dock="Right"
-                                    Width="96"
-                                    Height="32"
-                                    Content="재시도"
-                                    Click="RetrySyncButton_Click" />
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <TextBox x:Name="ConflictReasonTextBox"
+                                         Width="220"
+                                         Height="32"
+                                         Margin="0,0,8,0"
+                                         VerticalContentAlignment="Center"
+                                         ToolTip="충돌 해결 또는 폐기 사유" />
+                                <Button Width="148"
+                                        Height="32"
+                                        Margin="0,0,8,0"
+                                        Content="로컬 변경 재시도"
+                                        Click="RetryConflictButton_Click" />
+                                <Button Width="126"
+                                        Height="32"
+                                        Margin="0,0,8,0"
+                                        Content="서버본 유지·폐기"
+                                        Click="DiscardConflictButton_Click" />
+                                <Button Width="96"
+                                        Height="32"
+                                        Content="일반 재시도"
+                                        Click="RetrySyncButton_Click" />
+                            </StackPanel>
                             <TextBlock x:Name="SyncQueueSummaryTextBlock"
                                        Foreground="{StaticResource SecondaryTextBrush}"
                                        VerticalAlignment="Center" />
@@ -100,6 +117,7 @@
                                   ColumnHeaderHeight="34">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="상태" Binding="{Binding StatusText}" Width="78" />
+                                <DataGridTextColumn Header="충돌 코드" Binding="{Binding ConflictCode}" Width="170" />
                                 <DataGridTextColumn Header="우선순위" Binding="{Binding PriorityText}" Width="104" />
                                 <DataGridTextColumn Header="운영 상태" Binding="{Binding OperationalState}" Width="118" />
                                 <DataGridTextColumn Header="분류" Binding="{Binding Category}" Width="150" />

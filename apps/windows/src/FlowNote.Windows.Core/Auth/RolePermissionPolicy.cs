@@ -38,6 +38,16 @@ public static class RolePermissionPolicy
         "department-manager"
     };
 
+    private static readonly HashSet<string> DocumentGovernanceRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "admin",
+        "manager",
+        "system-admin",
+        "document-admin",
+        "assistant-manager",
+        "department-manager"
+    };
+
     private static readonly HashSet<string> FileWatchManagementRoles = new(StringComparer.OrdinalIgnoreCase)
     {
         "admin",
@@ -78,6 +88,11 @@ public static class RolePermissionPolicy
     public static bool CanDownloadDocuments(string? role)
     {
         return !string.IsNullOrWhiteSpace(role) && DocumentDownloadRoles.Contains(role);
+    }
+
+    public static bool CanGovernDocuments(string? role)
+    {
+        return !string.IsNullOrWhiteSpace(role) && DocumentGovernanceRoles.Contains(role);
     }
 
     public static bool CanWriteFieldComments(string? role)

@@ -55,6 +55,26 @@ public static class ServerSyncQueueDiagnostics
                 false);
         }
 
+        if (string.Equals(status, "DISCARDED", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ServerSyncQueueDiagnosis(
+                "관리자 폐기",
+                91,
+                "91 해결 완료",
+                "관리자가 서버본 유지를 선택해 로컬 전송 요청을 폐기한 항목입니다.",
+                false);
+        }
+
+        if (string.Equals(status, "CONFLICT", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ServerSyncQueueDiagnosis(
+                "문서 충돌",
+                5,
+                "05 관리자 선택",
+                "충돌 작업함에서 서버 최신 기준으로 로컬 변경을 재시도하거나, 사유를 남기고 서버본 유지로 폐기하세요.",
+                true);
+        }
+
         if (IsLegacyFieldNote(entityType, action, lastError ?? string.Empty))
         {
             return new ServerSyncQueueDiagnosis(

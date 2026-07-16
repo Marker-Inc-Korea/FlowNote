@@ -450,6 +450,11 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | 서버 | `FLOWNOTE_AI_PROVIDER_RESPONSE_MAX_BYTES` | provider 응답 상한. 기본 65536바이트, 허용 1024~1048576바이트 |
 | 서버 | `FLOWNOTE_AI_RETENTION_SCHEDULER_ENABLED` | 만료 질의 payload 비식별화와 저장 응답 원문 삭제 스케줄러. 기본 `true` |
 | 서버 | `FLOWNOTE_AI_RETENTION_SCHEDULER_INTERVAL_SECONDS` | 자동 보존 실행 간격. 기본 3600초, 허용 60~86400초 |
+| 서버 | `FLOWNOTE_ANDROID_VIEW_GRANT_EXPIRES_SECONDS` | Android 본문 열람 grant 만료 시간. 기본 60초, 5~300초로 정규화 |
+| 서버 | `FLOWNOTE_ANDROID_VIEW_AUTO_CLOSE_SECONDS` | Android 보안 뷰어 무입력 자동 닫힘 시간. 기본 300초 |
+| 서버 | `FLOWNOTE_ANDROID_VIEW_MAX_BYTES` | Android 보안 열람 파일 전체 크기 한도. 기본 52428800바이트(50 MiB) |
+| 서버 | `FLOWNOTE_ANDROID_VIEW_MAX_TEXT_BYTES` | Android UTF-8 TXT 열람 크기 한도. 기본 5242880바이트(5 MiB) |
+| 서버 | `FLOWNOTE_ANDROID_VIEW_MAX_PDF_PAGES` | Android PDF 열람 페이지 한도. 기본 200쪽 |
 | WPF | `FLOWNOTE_LOCAL_DATA_DIR` | `C:\FlowNote\LocalData`처럼 DB와 `Files\`를 함께 둘 폴더 |
 | WPF | `FLOWNOTE_LOCAL_DATABASE_PATH` | 특정 DB 파일을 직접 지정할 때만 사용. 지정 시 `FLOWNOTE_LOCAL_DATA_DIR`보다 DB 경로 우선 |
 | WPF | `FLOWNOTE_API_BASE_URL` | 서버 PC 주소. 예: `http://192.168.0.10:5184` |

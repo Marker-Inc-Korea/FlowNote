@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.Json;
 using FlowNote.Windows.Core.FieldComments;
 
 namespace FlowNote.Windows.Core.ServerApi;
@@ -63,6 +64,16 @@ public sealed class FlowNoteServerDocumentClient
         return documents;
     }
 
+    public async Task<ServerDocumentResponse> GetDocumentAsync(
+        string documentId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/documents/{Uri.EscapeDataString(documentId)}",
+            cancellationToken);
+        return await ReadJsonResponse<ServerDocumentResponse>(response, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<ServerDocumentVersionResponse>> ListVersionsAsync(
         string documentId,
         CancellationToken cancellationToken = default)
@@ -79,6 +90,9 @@ public sealed class FlowNoteServerDocumentClient
         string? versionLabel = null,
         string? createdBy = null,
         string? idempotencyKey = null,
+        int? baseRevision = null,
+        string? baseVersionId = null,
+        string? fileHashSha256 = null,
         CancellationToken cancellationToken = default)
     {
         using var form = new MultipartFormDataContent();
@@ -86,6 +100,9 @@ public sealed class FlowNoteServerDocumentClient
         AddString(form, "versionLabel", versionLabel);
         AddString(form, "createdBy", createdBy);
         AddString(form, "idempotencyKey", idempotencyKey);
+        AddString(form, "baseRevision", baseRevision?.ToString());
+        AddString(form, "baseVersionId", baseVersionId);
+        AddString(form, "fileHashSha256", fileHashSha256);
 
         await using var stream = File.OpenRead(filePath);
         using var fileContent = new StreamContent(stream);
@@ -103,11 +120,18 @@ public sealed class FlowNoteServerDocumentClient
         string documentId,
         string versionId,
         string? changeReason = null,
+        int? baseRevision = null,
+        string? expectedPublishedVersionId = null,
         CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PostAsJsonAsync(
             $"api/v1/documents/{documentId}/versions/{versionId}/publish",
-            new ServerDocumentVersionPublishRequest { ChangeReason = changeReason },
+            new ServerDocumentVersionPublishRequest
+            {
+                ChangeReason = changeReason,
+                BaseRevision = baseRevision,
+                ExpectedPublishedVersionId = expectedPublishedVersionId
+            },
             cancellationToken);
         return await ReadJsonResponse<ServerDocumentResponse>(response, cancellationToken);
     }
@@ -116,6 +140,7 @@ public sealed class FlowNoteServerDocumentClient
         string documentId,
         string status,
         string? changeReason = null,
+        int? baseRevision = null,
         CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PatchAsJsonAsync(
@@ -123,7 +148,8 @@ public sealed class FlowNoteServerDocumentClient
             new ServerDocumentStatusUpdateRequest
             {
                 Status = status,
-                ChangeReason = changeReason
+                ChangeReason = changeReason,
+                BaseRevision = baseRevision
             },
             cancellationToken);
         return await ReadJsonResponse<ServerDocumentResponse>(response, cancellationToken);
@@ -521,11 +547,54 @@ public sealed class FlowNoteServerDocumentClient
                     $"로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인한 뒤 동기화 큐에서 재시도하세요. 로컬 데이터와 동기화 큐는 삭제되지 않습니다. {errorBody}");
             }
 
+            if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                throw ParseConflict(errorBody);
+            }
+
             throw new InvalidOperationException(
                 $"FlowNote API request failed: {(int)response.StatusCode} {response.ReasonPhrase}. {errorBody}");
         }
 
         var result = await response.Content.ReadFromJsonAsync<T>(cancellationToken);
         return result ?? throw new InvalidOperationException("FlowNote API returned an empty response body.");
+    }
+
+    private static FlowNoteServerConflictException ParseConflict(string errorBody)
+    {
+        try
+        {
+            using var json = JsonDocument.Parse(errorBody);
+            var detail = json.RootElement.GetProperty("detail");
+            string? ReadString(string name) =>
+                detail.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+                    ? value.GetString()
+                    : null;
+            int? ReadInt(string name) =>
+                detail.TryGetProperty(name, out var value) && value.TryGetInt32(out var number)
+                    ? number
+                    : null;
+            return new FlowNoteServerConflictException(
+                ReadString("code") ?? "SERVER_CONFLICT",
+                ReadString("message") ?? "서버 문서 변경과 로컬 요청이 충돌했습니다.",
+                ReadInt("expectedRevision"),
+                ReadInt("currentRevision"),
+                ReadString("currentStatus"),
+                ReadString("currentLatestVersionId"),
+                ReadString("currentPublishedVersionId"),
+                errorBody);
+        }
+        catch (JsonException)
+        {
+            return new FlowNoteServerConflictException(
+                "SERVER_CONFLICT",
+                "서버가 충돌을 반환했지만 상세 응답을 해석하지 못했습니다.",
+                null,
+                null,
+                null,
+                null,
+                null,
+                errorBody);
+        }
     }
 }

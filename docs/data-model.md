@@ -191,7 +191,11 @@ MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_record
 - `PUBLISHED`
 - `ARCHIVED`
 
-서버 ORM의 `documents.status` 제약에는 `DELETED`도 포함되어 있다. 현재 공개 API의 문서 생성/상태 변경 흐름에서는 `DELETED`로 전환하는 엔드포인트가 없으며, 삭제 시각은 `documents.deleted_at`로 별도 관리하는 구조만 준비되어 있다.
+서버 ORM의 `documents.status` 제약에는 `DELETED`도 포함된다. 일반 상태 PATCH는 `DELETED`를 받지 않고 전용 DELETE API가 `status = DELETED`, `deleted_at`, 공개 포인터 해제와 감사를 한 transaction에서 처리한다.
+
+`documents.revision`은 서버가 단독으로 증가시키는 문서 aggregate revision이다. 최초 등록은 1이며 새 버전, 문서 상태, 버전 상태, 공개본 교체, soft delete처럼 서버 기준 상태가 실제로 바뀔 때 한 번 증가한다. WPF의 로컬 `version_no`나 수정 시각으로 대체하지 않는다. WPF는 마지막 서버 확인값을 `documents.server_revision`, `documents.server_version_id`, `documents.server_published_version_id`에 보관하고 큐 생성 시 기준값을 복사한다.
+
+문서 상태 전이는 `WORKING → IN_REVIEW|ARCHIVED`, `IN_REVIEW → WORKING|ARCHIVED`, `PUBLISHED → IN_REVIEW|ARCHIVED`, `ARCHIVED → WORKING|IN_REVIEW`만 상태 API에서 허용한다. `PUBLISHED` 진입은 publish API만 수행한다. `DELETE /documents/{document_id}`는 `DELETED`, `deleted_at`, 공개 포인터 해제를 같은 revision 변경으로 처리하며 삭제된 서버 문서는 로컬 재전송으로 암묵 복구하지 않는다.
 
 서버 문서 버전 상태:
 
@@ -243,7 +247,19 @@ FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관�
 
 - `PENDING`
 - `FAILED`
+- `CONFLICT`
 - `SYNCED`
+- `DISCARDED`
+
+`server_sync_queue`는 문서 작업에 대해 `base_server_revision`, `expected_server_version_id`, `expected_published_version_id`, `local_file_hash_sha256`를 생성 시점 snapshot으로 보존한다. 409는 일반 전송 실패와 분리해 `CONFLICT`와 `conflict_code`, 원 응답을 기록한다. 관리자 해결 뒤 로컬 요청을 최신 서버 revision에서 다시 보내면 `resolution_action = RETRY_LOCAL_ON_LATEST`, 서버본 유지로 폐기하면 `DISCARDED`와 `resolution_action = KEEP_SERVER`를 사용한다. 두 경로 모두 사유, 해결자, 해결 시각과 `activity_history` 감사를 남기며 앱 재시작 뒤에도 유지한다.
+
+문서·공개 버전 불변조건:
+
+- `documents.latest_version_id`는 같은 문서에서 유일하게 `is_latest = true`인 버전을 가리키고 버전 번호는 감소하지 않는다.
+- `documents.status = PUBLISHED`이면 `published_version_id`는 null이 아니며 같은 문서의 `version_status = PUBLISHED`, `is_published = true`인 정확히 한 버전을 가리킨다.
+- publish 전에 서버 저장 파일을 다시 읽어 `file_objects.hash_sha256`과 비교한다. 불일치나 파일 누락은 `FILE_HASH_MISMATCH` 충돌이며 공개 포인터를 바꾸지 않는다.
+- 같은 idempotency key의 동일 내용 재시도는 기존 결과를 반환한다. 파일 hash나 핵심 메타데이터가 다르면 `IDEMPOTENCY_KEY_REUSED`로 거부한다.
+- 기존 `field_notes`, `field_note_attachments`와 구 큐는 삭제·rename·자동 덮어쓰지 않는다. 읽기 전용 dry-run과 row별 관리자 승인으로 새 FieldComment 원천/큐를 별도 생성하며 원천 snapshot을 감사에 남긴다.
 
 채널/인수인계 상태:
 

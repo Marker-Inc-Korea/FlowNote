@@ -26,12 +26,13 @@
 - FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 불변 프롬프트 수명주기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 즉시 실행. 서버의 주기적 자동 보존도 구현되어 있다.
 - FastAPI 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세 메타데이터 조회, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인
+- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인
+- Android 보안 본문 열람용 승인 단말·사용자·세션·현재 공개 버전 바인딩 1회 grant, 크기·SHA-256 검증, 내부 캐시 자동 정리와 화면 캡처 차단
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
 - WPF 로컬 저장 후 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장 큐와 서버 ID 매핑
 - WPF MSI 패키징 스크립트와 FastAPI 작업 스케줄러 등록/관리 스크립트
 
-운영 배포용 Android 서명/MDM/인증서, 현장별 단말 등록·비활성화 운영 절차, 백그라운드 알림 정책, 채널/인수인계 UX 고도화는 아직 완료 범위가 아니다. 초기 알림 전달은 Windows와 Android의 사내망 HTTPS 전경 polling으로 구현되어 있다.
+Android 보안 뷰어의 승인 실단말 검증, 운영 배포용 서명/MDM/인증서, 현장별 단말 등록·비활성화 운영 절차, 백그라운드 알림 정책, 채널/인수인계 UX 고도화는 아직 완료 범위가 아니다. 초기 알림 전달은 Windows와 Android의 사내망 HTTPS 전경 polling으로 구현되어 있다.
 
 ## MVP 판단 기준
 

@@ -1,0 +1,213 @@
+using FlowNote.Windows.Core.Storage;
+using FlowNote.Windows.Core.Sync;
+using FlowNote.Windows.Core.ServerApi;
+using Microsoft.Data.Sqlite;
+using System.Net;
+using System.Text;
+using Xunit;
+
+namespace FlowNote.Windows.Core.Tests;
+
+public sealed class DocumentSyncConflictPersistenceTests
+{
+    private static readonly string DatabasePath = Path.Combine(
+        FlowNoteLocalDatabase.DefaultDataDirectory,
+        "flownote.core-tests.sqlite");
+
+    [Fact]
+    public void ExistingDatabaseMigrationPreservesLegacyFieldNotesAndAddsConflictColumns()
+    {
+        var database = CreateDatabase();
+        var legacyId = $"legacy-{Guid.NewGuid():N}";
+        using (var connection = database.OpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                CREATE TABLE IF NOT EXISTS field_notes (
+                    note_id TEXT PRIMARY KEY,
+                    raw_content TEXT NOT NULL
+                );
+                INSERT INTO field_notes (note_id, raw_content)
+                VALUES ($note_id, '보존 원천')
+                ON CONFLICT(note_id) DO NOTHING;
+                """;
+            command.Parameters.AddWithValue("$note_id", legacyId);
+            command.ExecuteNonQuery();
+        }
+
+        new FlowNoteLocalDatabase(DatabasePath).Initialize();
+
+        using var verify = database.OpenConnection();
+        Assert.Equal(
+            1L,
+            ScalarLong(verify, "SELECT COUNT(*) FROM field_notes WHERE note_id = $value;", legacyId));
+        Assert.True(ColumnExists(verify, "documents", "server_revision"));
+        Assert.True(ColumnExists(verify, "server_sync_queue", "conflict_code"));
+        Assert.True(ColumnExists(verify, "server_sync_queue", "resolution_reason"));
+        Assert.True(ColumnExists(verify, "server_id_mappings", "server_file_hash_sha256"));
+    }
+
+    [Fact]
+    public void ConflictAndAdministratorDiscardAuditSurviveServiceRestart()
+    {
+        var database = CreateDatabase();
+        var suffix = Guid.NewGuid().ToString("N");
+        var documentId = $"doc-conflict-{suffix}";
+        var queueId = InsertConflict(database, documentId, suffix);
+
+        var restarted = new ServerSyncService(new FlowNoteLocalDatabase(DatabasePath));
+        var conflict = Assert.Single(restarted.ListQueueItems(), item => item.Id == queueId);
+        Assert.Equal("CONFLICT", conflict.Status);
+        Assert.Equal("STALE_REVISION", conflict.ConflictCode);
+        Assert.Equal(3, conflict.BaseServerRevision);
+
+        restarted.DiscardConflict(queueId, "user-admin", "서버 공개본을 유지하기로 확인");
+
+        var afterSecondRestart = new ServerSyncService(new FlowNoteLocalDatabase(DatabasePath));
+        var discarded = Assert.Single(afterSecondRestart.ListQueueItems(), item => item.Id == queueId);
+        Assert.Equal("DISCARDED", discarded.Status);
+        Assert.Equal("KEEP_SERVER", discarded.ResolutionAction);
+        Assert.Equal("서버 공개본을 유지하기로 확인", discarded.ResolutionReason);
+        Assert.Equal("user-admin", discarded.ResolvedBy);
+        Assert.NotNull(discarded.ResolvedAt);
+
+        using var connection = database.OpenConnection();
+        Assert.Equal(
+            1L,
+            ScalarLong(
+                connection,
+                "SELECT COUNT(*) FROM activity_history WHERE event_type = 'server_sync.conflict_discarded' AND target_id = $value;",
+                queueId.ToString()));
+    }
+
+    [Fact]
+    public async Task ClientSendsBaseRevisionAndParsesStructuredConflict()
+    {
+        var handler = new ConflictHandler();
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://sync.example/") };
+        var client = new FlowNoteServerDocumentClient(http);
+
+        var exception = await Assert.ThrowsAsync<FlowNoteServerConflictException>(() =>
+            client.UpdateDocumentStatusAsync(
+                "server-document",
+                "ARCHIVED",
+                "관리자 보관",
+                baseRevision: 7));
+
+        Assert.Contains("\"baseRevision\":7", handler.RequestBody, StringComparison.Ordinal);
+        Assert.Equal("STALE_REVISION", exception.ConflictCode);
+        Assert.Equal(7, exception.ExpectedRevision);
+        Assert.Equal(8, exception.CurrentRevision);
+        Assert.Equal("PUBLISHED", exception.CurrentStatus);
+        Assert.Equal("ver-public", exception.CurrentPublishedVersionId);
+    }
+
+    private static FlowNoteLocalDatabase CreateDatabase()
+    {
+        var database = new FlowNoteLocalDatabase(DatabasePath);
+        database.Initialize();
+        return database;
+    }
+
+    private static long InsertConflict(FlowNoteLocalDatabase database, string documentId, string suffix)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        long folderRowId;
+        using (var folder = connection.CreateCommand())
+        {
+            folder.Transaction = transaction;
+            folder.CommandText = "SELECT id FROM document_folders ORDER BY id LIMIT 1;";
+            folderRowId = Convert.ToInt64(folder.ExecuteScalar());
+        }
+        using (var document = connection.CreateCommand())
+        {
+            document.Transaction = transaction;
+            document.CommandText = """
+                INSERT INTO documents (
+                    document_id, folder_id, title, file_name, document_type, status,
+                    created_by, created_at, updated_at, version_no, server_document_id,
+                    server_version_id, server_revision, synced_at
+                ) VALUES (
+                    $document_id, $folder_id, '충돌 테스트', 'conflict.txt', 'Text', 'WORKING',
+                    'user-admin', $now, $now, 2, $server_document_id,
+                    $server_version_id, 3, $now
+                );
+                """;
+            document.Parameters.AddWithValue("$document_id", documentId);
+            document.Parameters.AddWithValue("$folder_id", folderRowId);
+            document.Parameters.AddWithValue("$server_document_id", $"server-{suffix}");
+            document.Parameters.AddWithValue("$server_version_id", $"version-{suffix}");
+            document.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
+            document.ExecuteNonQuery();
+        }
+        using var queue = connection.CreateCommand();
+        queue.Transaction = transaction;
+        queue.CommandText = """
+            INSERT INTO server_sync_queue (
+                sync_id, entity_type, entity_id, action, local_document_id,
+                local_version_no, idempotency_key, status, attempt_count,
+                last_error, created_at, base_server_revision, conflict_code,
+                conflict_details
+            ) VALUES (
+                $sync_id, 'document_version', $document_id, 'register_document_version',
+                $document_id, 2, $idempotency_key, 'CONFLICT', 1,
+                '서버 revision 변경 충돌', $now, 3, 'STALE_REVISION', '{}'
+            );
+            SELECT last_insert_rowid();
+            """;
+        queue.Parameters.AddWithValue("$sync_id", $"sync-{suffix}");
+        queue.Parameters.AddWithValue("$document_id", documentId);
+        queue.Parameters.AddWithValue("$idempotency_key", $"test-conflict-{suffix}");
+        queue.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
+        var queueId = Convert.ToInt64(queue.ExecuteScalar());
+        transaction.Commit();
+        return queueId;
+    }
+
+    private static bool ColumnExists(SqliteConnection connection, string tableName, string columnName)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({tableName});";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static long ScalarLong(SqliteConnection connection, string sql, string value)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("$value", value);
+        return Convert.ToInt64(command.ExecuteScalar());
+    }
+
+    private sealed class ConflictHandler : HttpMessageHandler
+    {
+        public string RequestBody { get; private set; } = string.Empty;
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestBody = request.Content is null
+                ? string.Empty
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = new StringContent(
+                    """
+                    {"detail":{"code":"STALE_REVISION","message":"stale","documentId":"server-document","expectedRevision":7,"currentRevision":8,"currentStatus":"PUBLISHED","currentLatestVersionId":"ver-latest","currentPublishedVersionId":"ver-public"}}
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        }
+    }
+}
