@@ -35,7 +35,7 @@ FlowNote는 생산공장 현장의 문서와 현장 경험을 함께 남기는 �
 - FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/내보내기, 만료 보존 즉시 실행. 서버는 같은 보존 처리를 설정 주기로 자동 실행한다.
 - 관리자 파일 감시 후보와 버전 확정
 - FastAPI 인증, 승인 단말, 문서, controlled copy, FieldComment, 첨부, 접근 로그, 태그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가와 외부 AI 안전장치 API
-- WPF MSI 패키징 스크립트와 FastAPI 작업 스케줄러 등록/관리 스크립트
+- WPF MSI 패키징, FastAPI 작업 스케줄러 등록/관리, 서버 DB+`storage`·WPF DB+`Files` 복구 전후 증거 비교 스크립트
 
 서버와 WPF 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장을 대상으로 하며, 서버 URL이 없거나 실패하면 로컬 저장을 우선한다. 재시도는 같은 문서/근거 단위로 묶은 뒤 문서 등록, 버전, 공개, 상태, FieldComment, 검토, 첨부, 접근 로그, 보고서 순서로 처리한다. 선행 서버 ID가 없으면 실제 서버 호출 없이 보류 사유를 남기고 로컬 데이터는 삭제하지 않는다.
 
@@ -57,7 +57,7 @@ Android 현장 단말 앱과 Windows 채널/인수인계 전용 화면은 현재
 
 ## 배포 방향
 
-초기 운영은 서버 PC 1대에 FastAPI 서버, SQLite DB, 로컬 `storage/` 폴더를 두고, 관리자/현장 PC에는 Windows WPF 클라이언트를 설치하는 방식이다. Android 앱은 승인된 현장용 단말을 대상으로 추가하며, 개인 휴대폰 기본 배포는 초기 기준이 아니다. 현재 저장소에는 WPF MSI 패키징 스크립트와 FastAPI 작업 스케줄러 등록/관리 스크립트가 있다. Android에는 Keystore 보호 FieldComment/사진 outbox와 15초 foreground 알림 복구가 구현되어 있다. 채널 알림의 초기 전달 방식은 외부 인터넷에 의존하지 않는 사내망 HTTPS polling으로 확정되어 있다. Android 운영 APK 서명 계약은 구현됐고 실제 조직 키, MDM, 사내 Wi-Fi/인증서와 실단말 결과는 현장 승인 게이트로 남는다. 클라우드, 외부 접근, PostgreSQL, NAS, MES/ERP 어댑터는 현장 요구가 확인된 뒤 확장한다.
+초기 운영은 서버 PC 1대에 FastAPI 서버, SQLite DB, 로컬 `storage/` 폴더를 두고, 관리자/현장 PC에는 Windows WPF 클라이언트를 설치하는 방식이다. Android 앱은 승인된 현장용 단말을 대상으로 추가하며, 개인 휴대폰 기본 배포는 초기 기준이 아니다. 현재 저장소에는 WPF MSI 패키징, FastAPI 작업 스케줄러 등록/관리, 파일럿 복구 전후 증거 비교 스크립트가 있다. Android에는 Keystore 보호 FieldComment/사진 outbox와 15초 foreground 알림 복구가 구현되어 있다. 채널 알림의 초기 전달 방식은 외부 인터넷에 의존하지 않는 사내망 HTTPS polling으로 확정되어 있다. Android 운영 APK 서명 계약은 구현됐고 실제 조직 키, MDM, 사내 Wi-Fi/인증서와 실단말 결과는 현장 승인 게이트로 남는다. 클라우드, 외부 접근, PostgreSQL, NAS, MES/ERP 어댑터는 현장 요구가 확인된 뒤 확장한다.
 
 운영 배포 완료 판정은 코드와 자동 테스트만으로 내리지 않는다. 깨끗한 Windows 서버/클라이언트, 승인 Android 단말과 고객 유사 네트워크에서 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 설치, 인증서, 단말 교체, 백업 복구, 역할별 업무, 중단/rollback 기준을 단일 `run_id`로 통과해야 한다.
 
