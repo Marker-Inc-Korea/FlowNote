@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Annotated
 from uuid import uuid4
@@ -153,6 +154,15 @@ class HandoverReceiptUpdateRequest(BaseModel):
 
     receipt_status: str = Field(alias="receiptStatus", min_length=1)
     note: str | None = None
+    delivery_run_id: str | None = Field(default=None, alias="deliveryRunId", max_length=120)
+    displayed_at: datetime | None = Field(default=None, alias="displayedAt")
+
+
+class NotificationReadRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    delivery_run_id: str | None = Field(default=None, alias="deliveryRunId", max_length=120)
+    displayed_at: datetime | None = Field(default=None, alias="displayedAt")
 
 
 class HandoverReceiptResponse(BaseModel):
@@ -671,6 +681,9 @@ def list_my_notifications(
         )
         if len(notifications) >= limit:
             break
+    next_cursor = notifications[-1].cursor if notifications else (after_id or 0)
+    response.headers["X-FlowNote-Next-Cursor"] = str(next_cursor)
+    response.headers["X-FlowNote-Has-More"] = str(len(notifications) == limit).lower()
     return notifications
 
 
@@ -679,6 +692,7 @@ def mark_notification_read(
     message_id: str,
     current_user: CurrentUser,
     session: Annotated[Session, Depends(get_db_session)],
+    request: NotificationReadRequest | None = None,
 ) -> UserNotificationResponse:
     row = session.execute(
         select(ChannelMessage, NotificationChannel, NotificationChannelMember)
@@ -706,6 +720,16 @@ def mark_notification_read(
         )
     member.last_read_message_id = message.message_id
     member.last_read_at = datetime.now(timezone.utc)
+    delivery_evidence = None
+    if request is not None and request.delivery_run_id:
+        delivery_evidence = json.dumps(
+            {
+                "delivery_run_id": request.delivery_run_id,
+                "displayed_at": request.displayed_at.isoformat() if request.displayed_at else None,
+                "read_at": member.last_read_at.isoformat(),
+            },
+            sort_keys=True,
+        )
     session.add(
         ActivityHistory(
             history_id=_new_public_id("hist"),
@@ -715,6 +739,7 @@ def mark_notification_read(
             target_id=message.message_id,
             target_title=message.title,
             message=f"Channel message read: {message.title}.",
+            after_value=delivery_evidence,
         )
     )
     session.commit()
@@ -891,7 +916,21 @@ def update_handover_receipt(
             target_id=receipt.receipt_id,
             target_title=handover.title,
             message=f"Handover receipt status changed: {target_status}.",
-            after_value=target_status,
+            after_value=(
+                json.dumps(
+                    {
+                        "receipt_status": target_status,
+                        "delivery_run_id": request.delivery_run_id,
+                        "displayed_at": (
+                            request.displayed_at.isoformat() if request.displayed_at else None
+                        ),
+                        "receipt_at": now.isoformat(),
+                    },
+                    sort_keys=True,
+                )
+                if request.delivery_run_id
+                else target_status
+            ),
             change_reason=receipt.note,
         )
     )

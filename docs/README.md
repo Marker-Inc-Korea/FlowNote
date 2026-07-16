@@ -34,7 +34,7 @@
 - WPF 다운로드 허용 role의 파일 저장은 로컬 원본 복사가 아니라 서버의 세션 바인딩 1회성 controlled copy와 저장 후 SHA-256 검증을 사용한다.
 - FieldComment는 문서 버전이 아니라 현장 원천 기록이다.
 - FieldComment 원천 핵심 필드는 생성 후 수정·삭제하지 않고, 관리자 해석은 담당자·기한·정리·분석·상태·전이 사유와 원천 hash 감사로 분리한다. WPF에는 상세 필터와 다중 선택 검토·품질 작업함이 있고, FastAPI에는 요청당 최대 200건 일괄 검토·감사 조회·품질 API가 구현되어 있다.
-- WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다. 문서 버전과 FieldComment 첨부도 서버 idempotency key를 사용하며, 작업내역 화면에서 큐 깊이·최장 대기·최근 처리량·실패 분포와 row별 운영 상태를 확인한다.
+- WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다. 문서 버전과 FieldComment 첨부도 서버 idempotency key를 사용하며, 작업내역 화면에서 큐 깊이·최장 대기·최근 처리량·실패 분포와 row별 운영 상태를 확인한다. 서버본 유지로 종결한 `DISCARDED`도 전체 보존 건수에는 포함하되 재시도 대상 큐 깊이에서는 제외한다.
 - Windows 보존 동기화 전환 CLI는 FAILED 큐를 읽기 전용 dry-run으로 분류하고 plan hash와 row별 승인을 요구한다. 승인된 구 `create`/FieldNote 항목은 기존 원천·큐·파일을 수정하지 않고 현재 action의 신규 큐와 감사 이력으로 연결한다.
 - WPF에는 AI 근거 후보 운영 점검 화면이 있으며, 서버의 `ai_search_candidates` 재생성/품질/목록 API를 직접 조회한다. WPF 서버 클라이언트와 스모크 테스트는 오프라인 ground-truth 회귀 평가 API도 호출해 후보 ID·내용 hash·순위·원천 커버의 재현성을 검증한다.
 - 서버와 WPF에는 `system-admin` 전용 외부 AI 운영 제어면이 구현되어 있다. 전송 승인 생성·철회, 프롬프트 불변 버전의 검토·승인·활성화·폐기, 전역/현장 kill switch와 요청·동시성·timeout·비용·보존 한도, 정제 감사 조회/CSV 내보내기와 만료 보존 작업을 관리한다. provider 비밀값은 반환하지 않고 설정 여부만 표시한다.
@@ -45,7 +45,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-16 현재 pytest 120건이 수집되며 `scripts/verify-preserved-tests.ps1`도 같은 120건을 수집·JUnit 기준선으로 사용한다. AI 근거 검색·provider 경계·운영 제어·자동 보존, controlled copy, Android secure view, 서버 계정 수명주기·권한·세션·감사 회귀가 포함된다.
+- FastAPI 코드는 2026-07-16 현재 pytest 125건이 수집된다. AI 근거 검색·provider 경계·운영 제어·자동 보존, controlled copy, Android secure view, 서버 계정 수명주기·권한·세션·감사와 문서 revision·파일 hash 충돌 회귀가 포함된다. `scripts/verify-preserved-tests.ps1`의 수집/JUnit 고정값은 아직 120건이므로 현재 코드와 일치하지 않으며, 125건으로 갱신하기 전에는 표준 통합 검증이 이 단계에서 중단된다.
 
 ## 일일 기록
 

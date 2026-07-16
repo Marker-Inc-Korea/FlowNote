@@ -102,6 +102,73 @@ public sealed class DocumentSyncConflictPersistenceTests
         Assert.Equal("ver-public", exception.CurrentPublishedVersionId);
     }
 
+    [Fact]
+    public async Task NetworkFailureRestartAndDuplicateRetryPreserveOneQueueAndMapping()
+    {
+        var database = CreateDatabase();
+        var suffix = Guid.NewGuid().ToString("N");
+        var documentId = $"doc-network-{suffix}";
+        var relativePath = Path.Combine("Files", "CoreSyncTests", $"network-{suffix}.txt");
+        var absolutePath = Path.Combine(FlowNoteLocalDatabase.DefaultDataDirectory, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
+        await File.WriteAllTextAsync(absolutePath, $"network retry evidence {suffix}");
+        InsertPendingDocument(database, documentId, relativePath);
+        var record = new FlowNote.Windows.Core.Documents.DocumentRecord(
+            0,
+            documentId,
+            0,
+            "네트워크 재시도 문서",
+            Path.GetFileName(absolutePath),
+            "Text",
+            "WORKING",
+            "user-admin",
+            DateTime.UtcNow,
+            DateTime.UtcNow,
+            relativePath,
+            1,
+            "네트워크 재연결 검증");
+
+        using var unavailableHttp = new HttpClient(new UnavailableHandler())
+        {
+            BaseAddress = new Uri("https://offline.example/")
+        };
+        var firstService = new ServerSyncService(database);
+        var offlineResult = await firstService.QueueAndTrySyncDocumentAsync(
+            record,
+            new FlowNoteServerDocumentClient(unavailableHttp),
+            "user-admin");
+        Assert.False(offlineResult.Success);
+        Assert.Equal(1, firstService.CountQueuedForEntity("document", documentId, "FAILED"));
+
+        using var recoveredHttp = new HttpClient(new DocumentSuccessHandler(documentId, absolutePath))
+        {
+            BaseAddress = new Uri("https://recovered.example/")
+        };
+        var restarted = new ServerSyncService(new FlowNoteLocalDatabase(DatabasePath));
+        await restarted.RetryPendingAsync(
+            new FlowNoteServerDocumentClient(recoveredHttp),
+            "user-admin");
+        Assert.Equal(1, restarted.CountQueuedForEntity("document", documentId, "SYNCED"));
+        Assert.Equal(1, restarted.CountQueuedForEntity("document", documentId));
+
+        await restarted.RetryPendingAsync(
+            new FlowNoteServerDocumentClient(recoveredHttp),
+            "user-admin");
+        using var connection = database.OpenConnection();
+        Assert.Equal(
+            1L,
+            ScalarLong(
+                connection,
+                "SELECT COUNT(*) FROM server_id_mappings WHERE entity_type = 'document' AND local_id = $value;",
+                documentId));
+        Assert.Equal(
+            1L,
+            ScalarLong(
+                connection,
+                "SELECT COUNT(*) FROM server_id_mappings WHERE entity_type = 'document_version' AND local_id = $value;",
+                documentId));
+    }
+
     private static FlowNoteLocalDatabase CreateDatabase()
     {
         var database = new FlowNoteLocalDatabase(DatabasePath);
@@ -165,6 +232,61 @@ public sealed class DocumentSyncConflictPersistenceTests
         return queueId;
     }
 
+    private static void InsertPendingDocument(
+        FlowNoteLocalDatabase database,
+        string documentId,
+        string relativePath)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        long folderRowId;
+        using (var folder = connection.CreateCommand())
+        {
+            folder.Transaction = transaction;
+            folder.CommandText = "SELECT id FROM document_folders ORDER BY id LIMIT 1;";
+            folderRowId = Convert.ToInt64(folder.ExecuteScalar());
+        }
+        var now = DateTime.UtcNow.ToString("O");
+        using (var document = connection.CreateCommand())
+        {
+            document.Transaction = transaction;
+            document.CommandText = """
+                INSERT INTO documents (
+                    document_id, folder_id, title, file_name, document_type, status,
+                    created_by, created_at, updated_at, local_path, version_no
+                ) VALUES (
+                    $document_id, $folder_id, '네트워크 재시도 문서', $file_name, 'Text',
+                    'WORKING', 'user-admin', $now, $now, $local_path, 1
+                );
+                """;
+            document.Parameters.AddWithValue("$document_id", documentId);
+            document.Parameters.AddWithValue("$folder_id", folderRowId);
+            document.Parameters.AddWithValue("$file_name", Path.GetFileName(relativePath));
+            document.Parameters.AddWithValue("$local_path", relativePath);
+            document.Parameters.AddWithValue("$now", now);
+            document.ExecuteNonQuery();
+        }
+        using (var version = connection.CreateCommand())
+        {
+            version.Transaction = transaction;
+            version.CommandText = """
+                INSERT INTO document_versions (
+                    document_id, version_no, file_name, local_path, comment, created_by,
+                    created_at, version_status, is_latest, is_published
+                ) VALUES (
+                    $document_id, 1, $file_name, $local_path, '네트워크 재연결 검증',
+                    'user-admin', $now, 'WORKING', 1, 0
+                );
+                """;
+            version.Parameters.AddWithValue("$document_id", documentId);
+            version.Parameters.AddWithValue("$file_name", Path.GetFileName(relativePath));
+            version.Parameters.AddWithValue("$local_path", relativePath);
+            version.Parameters.AddWithValue("$now", now);
+            version.ExecuteNonQuery();
+        }
+        transaction.Commit();
+    }
+
     private static bool ColumnExists(SqliteConnection connection, string tableName, string columnName)
     {
         using var command = connection.CreateCommand();
@@ -208,6 +330,65 @@ public sealed class DocumentSyncConflictPersistenceTests
                     Encoding.UTF8,
                     "application/json")
             };
+        }
+    }
+
+    private sealed class UnavailableHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = new StringContent("{\"detail\":\"offline\"}", Encoding.UTF8, "application/json")
+            });
+    }
+
+    private sealed class DocumentSuccessHandler(string localDocumentId, string filePath) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(filePath))).ToLowerInvariant();
+            var now = DateTime.UtcNow.ToString("O");
+            var serverDocumentId = $"server-{localDocumentId}";
+            var serverVersionId = $"version-{localDocumentId}";
+            var json = $$"""
+                {
+                  "document_id":"{{serverDocumentId}}",
+                  "title":"네트워크 재시도 문서",
+                  "description":null,
+                  "document_type":"Text",
+                  "owner_id":null,
+                  "category_id":null,
+                  "status":"WORKING",
+                  "revision":1,
+                  "latest_version_id":"{{serverVersionId}}",
+                  "published_version_id":null,
+                  "created_at":"{{now}}",
+                  "updated_at":"{{now}}",
+                  "tags":[],
+                  "latest_version":{
+                    "version_id":"{{serverVersionId}}",
+                    "document_id":"{{serverDocumentId}}",
+                    "version_no":1,
+                    "version_label":"v1",
+                    "change_reason":"network retry",
+                    "version_status":"WORKING",
+                    "is_latest":true,
+                    "is_published":false,
+                    "created_by":"user-admin",
+                    "created_at":"{{now}}",
+                    "file":{"storage_type":"local","storage_key":"test","original_filename":"network.txt","extension":".txt","mime_type":"text/plain","file_family":"text","size_bytes":1,"hash_sha256":"{{hash}}"}
+                  },
+                  "published_version":null
+                }
+                """;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            });
         }
     }
 }

@@ -503,6 +503,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var failed = 0;
         var synced = 0;
         var held = 0;
+        var discarded = 0;
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -515,10 +516,11 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             pending += string.Equals(status, Pending, StringComparison.Ordinal) ? 1 : 0;
             failed += status is Failed or Conflict ? 1 : 0;
             synced += string.Equals(status, Synced, StringComparison.Ordinal) ? 1 : 0;
+            discarded += string.Equals(status, Discarded, StringComparison.Ordinal) ? 1 : 0;
             held += diagnosis.IsDependencyHold && !string.Equals(status, Synced, StringComparison.Ordinal) ? 1 : 0;
         }
 
-        return new ServerSyncQueueSummary(pending, failed, synced, held);
+        return new ServerSyncQueueSummary(pending, failed, synced, held, discarded);
     }
 
     public ServerSyncOperationalMetrics GetOperationalMetrics(DateTime? now = null)
@@ -1310,6 +1312,10 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         FlowNoteServerDocumentClient serverClient,
         CancellationToken cancellationToken)
     {
+        if (item.BaseServerRevision is null)
+        {
+            throw LegacyBaseConflict("구 공개 큐에는 서버 기준 revision이 없어 자동 공개할 수 없습니다.");
+        }
         var versionNo = item.LocalVersionNo
             ?? throw new InvalidOperationException("Local document version number is required.");
         var document = LoadDocument(item.EntityId)
@@ -1349,6 +1355,10 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         FlowNoteServerDocumentClient serverClient,
         CancellationToken cancellationToken)
     {
+        if (item.BaseServerRevision is null)
+        {
+            throw LegacyBaseConflict("구 상태 큐에는 서버 기준 revision이 없어 자동 상태 변경할 수 없습니다.");
+        }
         var document = LoadDocument(item.EntityId)
             ?? throw new InvalidOperationException($"Local document not found: {item.EntityId}");
         var documentMapping = TryGetDocumentServerMapping(item.EntityId);
@@ -2474,8 +2484,22 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             "DOCUMENT_DELETED" => "서버 삭제 문서 재전송 충돌",
             "IDEMPOTENCY_KEY_REUSED" => "멱등키 내용 불일치",
             "FILE_HASH_MISMATCH" => "파일 SHA-256 불일치",
+            "LEGACY_BASE_MISSING" => "구 큐 서버 기준값 누락",
             _ => "서버 문서 충돌"
         };
+    }
+
+    private static FlowNoteServerConflictException LegacyBaseConflict(string message)
+    {
+        return new FlowNoteServerConflictException(
+            "LEGACY_BASE_MISSING",
+            message,
+            null,
+            null,
+            null,
+            null,
+            null,
+            $"{{\"detail\":{{\"code\":\"LEGACY_BASE_MISSING\",\"message\":\"{message}\"}}}}");
     }
 
     private void MarkQueueSynced(

@@ -28,13 +28,13 @@ FastAPI Server
 
 WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 보고서는 로컬 보고서 문서와 `report_sources`를 먼저 남긴 뒤 `server_sync_queue`의 `register_report` 항목으로 서버 `/api/v1/reports` 저장을 재시도한다. 큐 재시도는 단순 생성 순서가 아니라 같은 문서 또는 보고서 근거 단위로 묶고, 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다. 문서 버전과 FieldComment 첨부도 큐의 idempotency key를 서버 multipart 요청에 전달해 응답 유실 뒤 재시도가 중복 버전이나 파일을 만들지 않게 한다.
 
-`작업내역`의 동기화 큐 화면은 각 row를 완료, 보존 구 형식, 선행 조건 대기, 수동 조치 필요, 재시도 가능의 운영 상태로 구분한다. 요약은 `SYNCED`가 아닌 큐 깊이, 그중 가장 오래된 `created_at` 기준 대기 시간, 최근 1시간 `SYNCED` 처리량, `FAILED` 진단 분포를 표시한다. 인증 만료와 서버 연결 실패·시간 초과는 뒤 항목도 같은 원인으로 연속 실패시키지 않도록 현재 재시도 묶음을 즉시 중단하고, 항목 자체의 검증·로컬 파일 오류는 실패를 기록한 뒤 다음 독립 항목을 계속 처리한다.
+`작업내역`의 동기화 큐 화면은 각 row를 완료, 보존 구 형식, 선행 조건 대기, 수동 조치 필요, 재시도 가능의 운영 상태로 구분한다. 전체 보존 건수는 `PENDING`, `FAILED`/`CONFLICT`, `SYNCED`, `DISCARDED`를 모두 세며, 서버본 유지로 종결한 `DISCARDED`는 삭제하지 않되 처리 대기 깊이에서는 제외한다. 요약은 `SYNCED`와 `DISCARDED`가 아닌 큐 깊이, 그중 가장 오래된 `created_at` 기준 대기 시간, 최근 1시간 `SYNCED` 처리량, `FAILED` 진단 분포를 표시한다. 인증 만료와 서버 연결 실패·시간 초과는 뒤 항목도 같은 원인으로 연속 실패시키지 않도록 현재 재시도 묶음을 즉시 중단하고, 항목 자체의 검증·로컬 파일 오류는 실패를 기록한 뒤 다음 독립 항목을 계속 처리한다.
 
 과거 구 `create` action과 FieldNote/첨부가 남은 FAILED 큐는 일반 재시도가 현재 계약으로 자동 해석하지 않는다. `FlowNote.Windows.SyncMigrationTool`이 먼저 SQLite read-only dry-run으로 전체 FAILED 큐를 배타적으로 분류하고 안정된 plan hash를 만든다. 운영자가 plan hash와 row ID를 명시해 승인하면 전환 가능한 항목만 현재 action의 별도 `PENDING` 큐로 만들고 `server_sync_migration_audit`에 원천 snapshot과 연결을 남긴다. 기존 큐, 원천 행과 파일은 수정·삭제하지 않는다.
 
 WPF 앱은 로컬 `notifications` 테이블과 알림 창으로 문서, FieldComment, 작업순서 이벤트 알림을 확인하고 읽음 처리한다. 서버 URL과 로그인이 있으면 `채널함`, `채널 관리`, `인수인계 확인 현황` 화면에서 FastAPI 채널/인수인계 API를 직접 호출한다. 채널함은 내 채널, 사용자별 알림, 인수인계 목록을 조회하고 메시지 읽음, 내 receipt 상태 변경, 원천 링크 복사, 후속 FieldComment 생성을 수행한다. 주 창이 열려 있는 동안 `server_notification_cursors`의 서버 scope·사용자별 마지막 성공 cursor 다음 알림을 기본 15초 간격으로 조회하고, `server_notification_messages`의 `message_id`로 멱등 처리한 뒤 같은 트랜잭션에서 cursor를 전진시킨다. 연결 실패 시 최대 120초까지 backoff하며 401이면 cursor를 유지한 채 중단한다. 저장 row가 없는 사용자는 cursor 0부터 최대 100건씩 빠르게 따라잡고 한글 진행 상태를 표시한다. 서버 cursor 역행은 자동 복구하지 않고 polling을 중지하며 Core 서비스가 `admin`, `system-admin` role을 다시 확인한 경우에만 현재 scope·사용자의 cursor 초기화를 허용한다. 초기화 뒤에도 기존 처리 `message_id`는 보존해 재조회 부작용을 막는다. 채널 관리는 채널 생성, 멤버 추가/제외를 제공하고, 인수인계 확인 현황은 수신자별 receipt 상태 변경과 후속 FieldComment 생성을 제공한다. 서버 로그인한 `admin`, `system-admin`은 `사용자 관리` 화면에서 서버 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기를 수행한다. 로컬 로그인은 별도 로컬 계정 화면을 사용한다. `admin`, `system-admin`은 `승인 단말` 화면에서 서버 단말 목록·상세·마지막 접속을 조회하고 등록, 정보/상태 변경, 교체를 수행한다.
 
-Android 앱은 현장 단말 입력과 작업 중 문서 열람을 우선한다. 현장 작업자는 승인된 `deviceId`로 로그인하고 공개 문서 목록/상세 조회, PDF·이미지·TXT 앱 내부 보안 열람, FieldComment와 사진 기록, 신호등식 상태 기록을 수행한다. 본문은 사용자·세션·승인 단말·현재 공개 버전에 묶인 단기 1회 grant로 받아 앱 내부 난수 캐시에서만 표시하며 외부 열기·공유를 제공하지 않는다. Activity가 전경인 동안 채널 알림을 기본 15초 간격으로 polling하고, 연결 실패 시 최대 120초까지 backoff한 뒤 사용자별 마지막 cursor부터 재개한다. 인수인계는 같은 알림 스트림과 서버 인수인계 API에서 조회하고 읽음 또는 수신확인을 남긴다. Android의 장기 기준 데이터는 FastAPI 서버에 남기며 로컬에는 FieldComment/사진 outbox와 열람 중 즉시 정리 대상 캐시만 둔다. 로그인, 문서, 알림, 인수인계 API 실패는 서버 원문을 화면에 직접 표시하지 않고 연결 실패·시간 초과와 HTTP 상태를 현장 사용자가 조치할 수 있는 한글 안내로 변환한다.
+Android 앱은 현장 단말 입력과 작업 중 문서 열람을 우선한다. 현장 작업자는 승인된 `deviceId`로 로그인하고 공개 문서 목록/상세 조회, PDF·이미지·TXT 앱 내부 보안 열람, FieldComment와 사진 기록, 신호등식 상태 기록을 수행한다. 본문은 사용자·세션·승인 단말·현재 공개 버전에 묶인 단기 1회 grant로 받아 앱 내부 난수 캐시에서만 표시하며 외부 열기·공유를 제공하지 않는다. 로그인 동안 foreground service가 채널 알림을 기본 15초 간격으로 polling하고, 재부팅·네트워크 단절 뒤 서버 주소+사용자 scope별 마지막 cursor부터 재개한다. 인수인계는 같은 알림 스트림과 서버 인수인계 API에서 조회하고 읽음 또는 수신확인을 남긴다. Android의 장기 기준 데이터는 FastAPI 서버에 남기며 로컬에는 Keystore AES-GCM 보호 FieldComment/사진 outbox와 열람 중 즉시 정리 대상 캐시만 둔다. 로그인, 문서, 알림, 인수인계 API 실패는 서버 원문을 화면에 직접 표시하지 않고 연결 실패·시간 초과와 HTTP 상태를 현장 사용자가 조치할 수 있는 한글 안내로 변환한다.
 
 ## 주요 도메인
 
@@ -101,7 +101,7 @@ WPF 로컬 DB는 공개 버전을 `documents.published_version_no`와 `document_
 
 허용 role의 제한 다운로드는 WPF 로컬 원본 복사가 아니라 서버 controlled copy를 사용한다. WPF가 현재 공개 버전의 티켓을 요청하면 서버는 공개 상태, 저장소 경계, 크기와 SHA-256을 검사하고 사용자·로그인 세션에 묶인 기본 60초 1회성 grant를 발급한다. 같은 Bearer 세션으로 한 번만 스트리밍하며 WPF는 저장 뒤 응답 SHA-256과 실제 파일을 다시 대조한다. 발급·허용·완료·실패·차단은 문서 접근 로그와 활동 이력으로 추적한다.
 
-서버-WPF 동기화에서는 같은 문서의 서버 ID 선행 조건을 우선한다. 재시도 큐는 문서 등록, 문서 버전, 공개, 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 순서로 처리한다. 문서 최초 등록이 서버 ID를 받아야 문서 버전, FieldComment, 접근 로그가 후속 서버 ID에 연결된다. 공개는 해당 버전의 서버 버전 ID가 있어야 실행하고, `PUBLISHED` 상태 변경은 공개 버전 매핑이 있어야 서버에 반영한다.
+서버-WPF 동기화에서는 같은 문서의 서버 ID 선행 조건을 우선한다. 재시도 큐는 문서 등록, 문서 버전, 공개, 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 순서로 처리한다. 문서 최초 등록이 서버 ID를 받아야 문서 버전, FieldComment, 접근 로그가 후속 서버 ID에 연결된다. 공개는 해당 버전의 서버 버전 ID가 있어야 실행하고, `PUBLISHED` 상태 변경은 공개 버전 매핑이 있어야 서버에 반영한다. 공개·문서 상태 큐에 생성 당시의 `base_server_revision`이 없는 구 항목은 최신값을 추정해 보내지 않고 서버 호출 전에 `LEGACY_BASE_MISSING` 충돌로 보존한다.
 
 ## FieldComment
 

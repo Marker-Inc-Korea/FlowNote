@@ -168,7 +168,9 @@ def test_android_view_rechecks_expiry_device_publication_and_file_integrity():
             device_row = session.scalar(select(TerminalDevice).where(TerminalDevice.device_id == device_id))
             device_row.status = "INACTIVE"
             session.commit()
-        assert client.get(inactive["stream_url"], headers=auth).status_code == 403
+        # The common auth boundary now rejects an inactive session device before
+        # the view-grant-specific policy runs.
+        assert client.get(inactive["stream_url"], headers=auth).status_code == 401
         with client.app.state.database.session() as session:
             device_row = session.scalar(select(TerminalDevice).where(TerminalDevice.device_id == device_id))
             device_row.status = "ACTIVE"

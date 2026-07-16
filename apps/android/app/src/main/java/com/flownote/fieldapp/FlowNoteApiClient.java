@@ -63,6 +63,15 @@ public final class FlowNoteApiClient {
         return result;
     }
 
+    public JSONObject refresh(String refreshToken) throws IOException, JSONException {
+        StringBuilder body = new StringBuilder("{");
+        JsonEscaper.appendStringField(body, "refresh_token", refreshToken, true);
+        body.append('}');
+        JSONObject result = postJson(ApiPaths.REFRESH, body.toString(), false);
+        accessToken = result.getString("access_token");
+        return result;
+    }
+
     public JSONArray listPublishedDocuments() throws IOException, JSONException {
         return getArray(ApiPaths.PUBLISHED_DOCUMENTS);
     }
@@ -158,8 +167,14 @@ public final class FlowNoteApiClient {
                 + "&limit=" + safeLimit + "&unreadOnly=false");
     }
 
-    public JSONObject markNotificationRead(String messageId) throws IOException, JSONException {
-        return patchJson(ApiPaths.notificationRead(messageId), "{}");
+    public JSONObject markNotificationRead(
+            String messageId, String deliveryRunId, String displayedAt
+    ) throws IOException, JSONException {
+        StringBuilder body = new StringBuilder("{");
+        JsonEscaper.appendStringField(body, "deliveryRunId", deliveryRunId, false);
+        JsonEscaper.appendStringField(body, "displayedAt", displayedAt, false);
+        body.append('}');
+        return patchJson(ApiPaths.notificationRead(messageId), body.toString());
     }
 
     public JSONArray listHandovers() throws IOException, JSONException {
@@ -170,11 +185,13 @@ public final class FlowNoteApiClient {
             String handoverId,
             String receiptId,
             String receiptStatus,
-            String note
+            String note,
+            String deliveryRunId
     ) throws IOException, JSONException {
         StringBuilder body = new StringBuilder("{");
         JsonEscaper.appendStringField(body, "receiptStatus", receiptStatus, true);
         JsonEscaper.appendStringField(body, "note", note, false);
+        JsonEscaper.appendStringField(body, "deliveryRunId", deliveryRunId, false);
         body.append('}');
         return patchJson(ApiPaths.handoverReceipt(handoverId, receiptId), body.toString());
     }
@@ -202,6 +219,15 @@ public final class FlowNoteApiClient {
 
     public JSONObject uploadFieldCommentPhoto(String commentId, Uri photoUri, String createdBy)
             throws IOException, JSONException {
+        InputStream source = contentResolver.openInputStream(photoUri);
+        if (source == null) {
+            throw new IOException("Photo content cannot be opened.");
+        }
+        return uploadFieldCommentPhoto(commentId, source, createdBy);
+    }
+
+    public JSONObject uploadFieldCommentPhoto(String commentId, InputStream photoInput, String createdBy)
+            throws IOException, JSONException {
         String boundary = "FlowNoteAndroid" + System.currentTimeMillis();
         HttpURLConnection connection = openConnection(ApiPaths.fieldCommentAttachments(commentId), "POST", true);
         connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
@@ -215,14 +241,7 @@ public final class FlowNoteApiClient {
             output.write(("Content-Disposition: form-data; name=\"file\"; filename=\"field-photo.jpg\"\r\n")
                     .getBytes(StandardCharsets.UTF_8));
             output.write(("Content-Type: image/jpeg\r\n\r\n").getBytes(StandardCharsets.UTF_8));
-            InputStream source = contentResolver.openInputStream(photoUri);
-            if (source == null) {
-                throw new IOException("Photo content cannot be opened.");
-            }
-            try (InputStream input = new BufferedInputStream(source)) {
-                if (input == null) {
-                    throw new IOException("Photo content cannot be opened.");
-                }
+            try (InputStream input = new BufferedInputStream(photoInput)) {
                 byte[] buffer = new byte[8192];
                 int read;
                 while ((read = input.read(buffer)) >= 0) {

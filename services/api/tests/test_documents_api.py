@@ -242,7 +242,7 @@ def test_register_factory_files_and_document_versions_are_preserved() -> None:
         assert versions[1]["version_status"] == "SUPERSEDED"
 
         tag_update_response = client.put(
-            f"/api/v1/documents/{pdf_doc['document_id']}/tags",
+            f"/api/v1/documents/{pdf_doc['document_id']}/tags?baseRevision=2",
             headers=auth_headers(client),
             json=["line-a", "guard-sensor", "press-a"],
         )
@@ -867,3 +867,37 @@ def test_revision_and_stale_conflict_survive_server_app_restart() -> None:
         assert detail["code"] == "STALE_REVISION"
         assert detail["expectedRevision"] == 1
         assert detail["currentRevision"] == 2
+
+
+def test_publish_rejects_tampered_server_file_hash() -> None:
+    pdf_path, _, _, _ = prepare_factory_sample_files()
+
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        created = post_document(
+            client,
+            pdf_path,
+            title="Tampered publish hash target",
+            document_type="work_instruction",
+        )
+        stored_path = TEST_STORAGE_ROOT / Path(
+            created["latest_version"]["file"]["storage_key"]
+        )
+        with stored_path.open("ab") as stored:
+            stored.write(b"\nintentional-publish-hash-tamper")
+
+        response = client.post(
+            f"/api/v1/documents/{created['document_id']}/versions/"
+            f"{created['latest_version_id']}/publish",
+            headers=headers,
+            json={"changeReason": "Hash mismatch must block publication.", "baseRevision": 1},
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "FILE_HASH_MISMATCH"
+
+        detail = client.get(
+            f"/api/v1/documents/{created['document_id']}", headers=headers
+        ).json()
+        assert detail["revision"] == 1
+        assert detail["status"] == "WORKING"
+        assert detail["published_version_id"] is None

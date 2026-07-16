@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -220,6 +221,8 @@ def test_notification_polling_cursor_is_stable_scoped_and_idempotent() -> None:
         first_items = first_page.json()
         assert [item["message_id"] for item in first_items] == message_ids[:2]
         assert first_items[0]["cursor"] < first_items[1]["cursor"]
+        assert int(first_page.headers["X-FlowNote-Next-Cursor"]) == first_items[-1]["cursor"]
+        assert first_page.headers["X-FlowNote-Has-More"] == "true"
         server_cursor = int(first_page.headers["X-FlowNote-Notification-Cursor"])
         assert server_cursor >= first_items[-1]["cursor"]
 
@@ -229,6 +232,7 @@ def test_notification_polling_cursor_is_stable_scoped_and_idempotent() -> None:
         )
         assert [item["message_id"] for item in second_page.json()] == message_ids[2:]
         assert int(second_page.headers["X-FlowNote-Notification-Cursor"]) == server_cursor
+        assert int(second_page.headers["X-FlowNote-Next-Cursor"]) == second_page.json()[-1]["cursor"]
         assert client.get(
             f"/api/v1/notifications?afterId={second_page.json()[-1]['cursor']}",
             headers=member_headers,
@@ -303,10 +307,24 @@ def test_handover_receipts_record_read_acknowledged_and_follow_up_required() -> 
         ack_update = client.patch(
             f"/api/v1/handovers/{handover['handover_id']}/receipts/{ack_receipt['receipt_id']}",
             headers=ack_headers,
-            json={"receiptStatus": "ACKNOWLEDGED", "note": "확인했습니다."},
+            json={
+                "receiptStatus": "ACKNOWLEDGED",
+                "note": "확인했습니다.",
+                "deliveryRunId": "ANDROID-DELIVERY-test-run",
+            },
         )
         assert ack_update.status_code == 200, ack_update.text
         assert receipt_for(ack_update.json(), ack_user.user_id)["receipt_status"] == "ACKNOWLEDGED"
+        ack_retry = client.patch(
+            f"/api/v1/handovers/{handover['handover_id']}/receipts/{ack_receipt['receipt_id']}",
+            headers=ack_headers,
+            json={
+                "receiptStatus": "ACKNOWLEDGED",
+                "note": "확인했습니다.",
+                "deliveryRunId": "ANDROID-DELIVERY-test-run",
+            },
+        )
+        assert ack_retry.status_code == 200, ack_retry.text
 
         follow_update = client.patch(
             f"/api/v1/handovers/{handover['handover_id']}/receipts/{follow_receipt['receipt_id']}",
@@ -346,3 +364,13 @@ def test_handover_receipts_record_read_acknowledged_and_follow_up_required() -> 
             assert receipt_statuses[follow_user.user_id] == "FOLLOW_UP_REQUIRED"
             assert handover_message is not None
             assert handover_message.message_type == "HANDOVER"
+            ack_events = session.scalars(
+                select(ActivityHistory).where(
+                    ActivityHistory.event_type == "handover.receipt_status_changed",
+                    ActivityHistory.target_id == ack_receipt["receipt_id"],
+                )
+            ).all()
+            assert len(ack_events) == 1
+            assert json.loads(ack_events[0].after_value)["delivery_run_id"] == (
+                "ANDROID-DELIVERY-test-run"
+            )

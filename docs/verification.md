@@ -655,3 +655,31 @@ Android 단위 테스트에는 전용 API 경로와 SHA-256 hex 계약을 추가
 - 서버 원본 SHA-256, 수신 응답 `X-Content-SHA256`, 감사 로그 사용자·단말·문서 버전 대조
 
 자동/수동 테스트 중 생성된 SQLite, 스트림 시험 파일, APK, JUnit XML과 로그는 기존 보존 규칙대로 삭제하지 않고 Git 제외 경로에 누적한다.
+
+## 2026-07-16 문서 revision·상태·공개본 서버-WPF 동기화 검증
+
+FastAPI 문서/DB 집중 테스트는 16건 모두 통과했다. 서로 같은 base revision을 읽은 두 작성자의 버전 등록, 공개본 교체 경쟁, 상태 변경을 교차해 한 요청만 revision을 증가시키고 다른 요청은 `STALE_BASE_VERSION`, `STALE_REVISION`, `PUBLISHED_VERSION_CHANGED` 중 해당 409로 남는지 확인했다. 같은 멱등키의 동일 파일은 기존 버전을 반환하고 다른 메타데이터·파일은 `IDEMPOTENCY_KEY_REUSED`, 선언 hash 불일치와 공개 직전 서버 파일 변조는 `FILE_HASH_MISMATCH`, 서버 soft delete 뒤 로컬 재전송은 `DOCUMENT_DELETED`로 분리됐다. FastAPI 앱을 닫고 같은 누적 DB로 다시 연 세 번의 lifecycle에서도 revision 1 → 2와 stale 409가 유지됐다.
+
+WPF Core 테스트는 누적 `data/local/flownote.core-tests.sqlite`를 사용해 21건 모두 통과했다. 새 검증은 다음을 포함한다.
+
+- 기존 DB 초기화가 `documents.server_revision`, 공개 버전 ID, 큐 conflict/resolution 열과 매핑 hash 열을 additive migration으로 추가하고 구 `field_notes` row를 보존한다.
+- 구조화된 서버 409를 코드·expected/current revision·공개 버전 ID로 해석하고 요청 JSON에 `baseRevision`을 보낸다.
+- 네트워크 503 중단 뒤 문서 큐가 `FAILED`로 남고 새 `ServerSyncService` 인스턴스에서 재연결하면 같은 idempotency key의 단일 큐와 문서/버전 매핑만 `SYNCED`가 된다.
+- `CONFLICT`와 원 응답은 재시작 뒤 남고, 관리자 `KEEP_SERVER` 폐기는 사유·해결자·시각·`activity_history`와 함께 `DISCARDED`로 보존된다.
+- 서버와 같은 문서 거버넌스 role만 WPF 상태/공개 버튼을 사용할 수 있다.
+
+WPF Core와 앱은 macOS의 .NET SDK에서 각각 빌드했고, 앱은 `-p:EnableWindowsTargeting=true`를 사용해 경고 0개·오류 0개로 통과했다. 실제 Windows 창의 버튼 조작, 두 개의 실제 WPF 프로세스와 운영 유사 네트워크 장비를 사용한 동시 클릭은 Windows 검증 PC의 후속 실기 항목이며 자동 테스트의 두 클라이언트/재시작/503 주입 결과와 구분한다.
+
+누적 SQLite SQL 대조 결과는 다음과 같다.
+
+| 검사 | 결과 |
+| --- | --- |
+| 서버 `PRAGMA quick_check` / `foreign_key_check` | `ok` / 위반 0 |
+| 공개 문서 포인터·버전 상태 불일치 | 0 |
+| 문서별 복수 `is_published`, 복수 `is_latest` | 각각 0 |
+| null 또는 1 미만 `documents.revision` | 0 |
+| WPF Core DB `quick_check` / FK 위반 | `ok` / 0 |
+| `server_id_mappings` 중복 그룹 | 0 |
+| 공개 교체 경쟁 테스트의 DB hash와 실제 저장 파일 SHA-256 | 일치 |
+
+첫 FastAPI 전체 회귀에서는 124건 중 AI 검색 ground-truth 평가 1건이 누적 suite 순서에서 실패했고 단독 재실행은 통과했다. 이후 공개 전 파일 변조 회귀를 추가한 최종 전체 재실행은 125건 모두 통과했다. 실패 실행과 재실행 캐시·DB 기록은 삭제하지 않았다.

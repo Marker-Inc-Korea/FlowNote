@@ -11,6 +11,7 @@ public final class ApiPaths {
     public static final String NOTIFICATIONS = "/api/v1/notifications";
     public static final String HANDOVERS = "/api/v1/handovers";
     public static final String LOGOUT = "/api/v1/auth/logout";
+    public static final String REFRESH = "/api/v1/auth/refresh";
 
     public static String document(String documentId) {
         return DOCUMENTS + documentId;

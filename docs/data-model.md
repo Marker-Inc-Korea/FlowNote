@@ -251,7 +251,7 @@ FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관�
 - `SYNCED`
 - `DISCARDED`
 
-`server_sync_queue`는 문서 작업에 대해 `base_server_revision`, `expected_server_version_id`, `expected_published_version_id`, `local_file_hash_sha256`를 생성 시점 snapshot으로 보존한다. 409는 일반 전송 실패와 분리해 `CONFLICT`와 `conflict_code`, 원 응답을 기록한다. 관리자 해결 뒤 로컬 요청을 최신 서버 revision에서 다시 보내면 `resolution_action = RETRY_LOCAL_ON_LATEST`, 서버본 유지로 폐기하면 `DISCARDED`와 `resolution_action = KEEP_SERVER`를 사용한다. 두 경로 모두 사유, 해결자, 해결 시각과 `activity_history` 감사를 남기며 앱 재시작 뒤에도 유지한다.
+`server_sync_queue`는 문서 작업에 대해 `base_server_revision`, `expected_server_version_id`, `expected_published_version_id`, `local_file_hash_sha256`를 생성 시점 snapshot으로 보존한다. 409는 일반 전송 실패와 분리해 `CONFLICT`와 `conflict_code`, 원 응답을 기록한다. 공개·문서 상태 구 큐의 `base_server_revision`이 null이면 WPF가 서버 호출 전에 `LEGACY_BASE_MISSING` 충돌을 만들며 현재 revision을 임의 대입하지 않는다. 관리자 해결 뒤 로컬 요청을 최신 서버 revision에서 다시 보내면 `resolution_action = RETRY_LOCAL_ON_LATEST`, 서버본 유지로 폐기하면 `DISCARDED`와 `resolution_action = KEEP_SERVER`를 사용한다. 두 경로 모두 사유, 해결자, 해결 시각과 `activity_history` 감사를 남기며 앱 재시작 뒤에도 유지한다. 큐 요약의 전체 건수에는 감사 종결 상태인 `DISCARDED`를 포함하지만 운영 지표의 처리 대기 깊이에서는 제외한다.
 
 문서·공개 버전 불변조건:
 

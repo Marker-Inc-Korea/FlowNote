@@ -92,17 +92,32 @@ pilot-evidence/<run_id>/
 
 | 항목 | 확정할 기준 |
 | --- | --- |
-| 산출물 | MDM/사내 배포는 서명 APK를 기본 후보로 하고, 관리형 스토어를 사용할 때만 AAB와 스토어 서명 책임을 선택한다. |
-| 서명키 | 조직 소유, 접근자 최소화, 오프라인 또는 HSM/승인된 비밀 저장소 백업, 분실·교체 절차 |
-| 배포 | MDM 허용 목록 또는 승인된 수동 설치 절차, 설치자, 업데이트 강제/유예, rollback 버전 |
-| `deviceId` | 자산과 1:1 발급, 사용자와 분리, 재설치 시 재사용 여부, 교체 사유와 이전 단말 폐기 이력 |
-| 분실 | 계정 세션 폐기, 단말 `INACTIVE` 또는 `RETIRED`, MDM 잠금/초기화, 사고 연락과 처리 시간 |
-| 비활성화 | 퇴사·부서 이동·수리·폐기별 담당자와 API/WPF 처리, 마지막 접속과 감사 이력 확인 |
-| outbox | 저장 내용, 파일 경로, OS sandbox, 화면 잠금/MDM 암호화, 앱 수준 DB·첨부 암호화 필요성 |
+| 산출물 | `결정`: MDM/사내 배포는 조직 키 서명 APK. 관리형 스토어를 실제 채택할 때만 AAB로 변경한다. |
+| 서명키 | `결정`: 조직 소유, 최소 2인 승인, 오프라인/HSM 또는 승인 비밀 저장소, 빌드 시 환경 주입. 키 분실·유출은 보안 사고 절차를 따른다. |
+| 배포 | `결정`: MDM allowlist, 동일 인증서 업그레이드/rollback, 이전 승인 APK 보존. 수동 sideload는 격리 리허설만 허용한다. |
+| `deviceId` | `결정`: MDM 자산과 1:1 임의 발급, 사용자/하드웨어 식별자와 분리, 교체 시 새 ID, 기존 ID `RETIRED`. |
+| 분실 | `결정`: 즉시 `INACTIVE`, 세션 폐기 확인, MDM 격리·잠금·초기화, 마지막 접속/사고 `run_id` 보존. |
+| 비활성화 | `결정`: 수리는 `INACTIVE`, 교체·폐기는 `RETIRED`; 담당 관리자가 WPF/API와 MDM을 함께 처리한다. |
+| outbox | `결정`: token·본문·새 첨부는 Keystore AES-GCM. 전체 암호화·화면 잠금·USB/backup 차단도 MDM 필수다. |
 
-현재 Android outbox 암호화는 운영 정책 확정 전 후속 보안 항목이다. 따라서 파일럿 전에 단말 전체 암호화, 강제 화면 잠금, 디버깅/USB 백업 제한, 원격 잠금·초기화를 MDM으로 강제하거나, 해당 통제가 불가능하면 앱 수준 DB와 첨부 암호화를 구현하기 전까지 비민감 시험 데이터만 허용한다.
+MDM 정책 보고서에서 단말 전체 암호화, 6자리 이상 화면 잠금, 개발자 옵션·USB 디버깅·USB 파일 전송·ADB backup 차단, 알 수 없는 출처 차단, 앱 allowlist, 원격 잠금·초기화와 kiosk 재실행을 확인한다. 하나라도 적용할 수 없으면 운영 데이터를 사용하지 않는다.
 
 단말 교체 시험은 기존 단말 비활성화, 활성 세션 폐기, 새 `deviceId` 등록, 새 단말 로그인, 기존 단말 재로그인 거부, 미전송 outbox 처리 결정을 모두 포함한다. 미전송 항목을 새 단말로 임의 복사하지 않으며 전송·폐기·증거 보존 책임자가 판단한다.
+
+### Android 알림·절전·보안 실단말 시나리오
+
+각 시나리오는 앱이 만든 `ANDROID-DELIVERY-{uuid}`를 파일럿 `run_id` manifest에 연결하고 서버 메시지 `created_at`, Android `displayed_at`, 사용자 읽음/receipt 서버 처리 시각을 UTC와 현장 시간대로 함께 비교한다. 정상 연결과 Doze의 목표는 생성 후 30초, 5분 이상 단절·서버 주소 변경·재부팅 복구는 연결/부팅/설정 완료 후 30초+page 전송 시간이다.
+
+1. 새 설치 로그인 후 초기 과거 알림이 시스템 새 알림으로 표시되지 않고 cursor만 따라잡는지 확인한다.
+2. 화면 off와 `adb shell dumpsys deviceidle force-idle`에서 새 알림을 만들고 30초 이내 표시, 시스템 알림 ID와 `message_id` 일치를 기록한다.
+3. Wi-Fi/사내망을 5분 이상 끊은 동안 3건을 만들고 연결 복구 뒤 순서·누락·중복을 확인한다. 시각 중복 허용은 crash 경계 최대 1건, 서버 receipt row 중복은 0건이다.
+4. 단말 재부팅 뒤 사용자 앱 실행 전 foreground service 상태와 알림 복구를 확인한다. Android 강제 중지는 OS 예외로 분리해 MDM kiosk가 앱을 재실행하는 시각부터 목표를 측정한다.
+5. DNS/서버 URL을 바꾸고 새 scope가 이전 cursor를 공유하지 않는지, 사내 인증서 오류에서 HTTP 강등하지 않는지 확인한다.
+6. 단말을 `INACTIVE`, 사용자를 비활성화한 직후 기존 access API와 refresh가 401, 재로그인이 403인지 각각 확인한다. 분실 시 MDM 잠금/초기화 보고서를 연결한다.
+7. 로그인 token과 outbox 본문/새 첨부를 `run-as` 또는 MDM 승인 저장소 검사로 확인해 평문 검색 결과 0건, backup 불가, Keystore key 비반출을 기록한다. 키 무효화 모의 후 단말 격리·미전송 판정 절차를 수행한다.
+8. 서명 APK 신규 설치, 같은 키 업그레이드, 승인 이전 APK rollback을 수행하고 `apksigner` 인증서 SHA-256, APK SHA-256, package/versionCode/versionName과 설치 로그를 보존한다.
+
+`scripts/verify-android-release.sh`의 결과, MDM 정책 PDF/JSON, `adb bugreport` 또는 제한된 logcat, 서버 감사 조회와 시각 비교표를 `pilot-evidence/<run_id>/android-logs`, `packages`, `scenario-results`, `integrity`에 보존한다. token, keystore, 암호와 고객 원문은 증거에서 제외한다.
 
 ## 4. 백업과 별도 PC 복구 훈련
 

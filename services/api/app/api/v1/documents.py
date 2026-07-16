@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import case, delete, desc, select, update
 from sqlalchemy.exc import IntegrityError
@@ -104,6 +104,7 @@ class DocumentVersionStatusUpdateRequest(BaseModel):
 
     status: str = Field(min_length=1)
     change_reason: str | None = Field(default=None, alias="changeReason")
+    base_revision: int = Field(alias="baseRevision", ge=1)
 
 
 class DocumentVersionPublishRequest(BaseModel):
@@ -725,14 +726,12 @@ def replace_document_tags(
     document_id: str,
     tags: list[str],
     _current_user: DocumentWriteUser,
+    base_revision: Annotated[int, Query(alias="baseRevision", ge=1)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> DocumentResponse:
-    document = session.scalar(
-        select(Document).where(Document.document_id == document_id, Document.deleted_at.is_(None))
-    )
-    if document is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    document = _require_live_document(session, document_id)
 
+    _claim_revision(session, document, base_revision)
     _replace_document_tags(session, document_id, _clean_tags(tags))
     session.commit()
     session.refresh(document)
@@ -827,6 +826,7 @@ def update_document_version_status(
             detail="Published versions must be changed through the publish endpoint.",
         )
     if before != target_status:
+        _claim_revision(session, document, payload.base_revision)
         version.version_status = target_status
         _record_activity(
             session,
