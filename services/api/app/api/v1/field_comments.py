@@ -31,8 +31,13 @@ from app.db.models import (
     FieldCommentAttachment,
     FileObject,
     ReportSource,
+    Report,
     TagDefinition,
     UserAccount,
+    WorkRecord,
+    WorkRecordVersion,
+    WorkSequenceChangeHistory,
+    WorkSequenceItem,
 )
 from app.db.session import get_db_session
 
@@ -167,6 +172,33 @@ class FieldCommentResponse(BaseModel):
     updated_at: datetime
     reviewed_at: datetime | None
     analyzed_at: datetime | None
+    workbench_flags: list[str] = Field(default_factory=list)
+    workbench_priority: int = 0
+
+
+class FieldCommentTraceDocumentResponse(BaseModel):
+    document_id: str
+    title: str
+    status: str
+    latest_version_id: str | None
+    published_version_id: str | None
+    generated_version_ids: list[str]
+
+
+class FieldCommentTraceReportResponse(BaseModel):
+    report_id: str
+    report_type: str
+    title: str
+    status: str
+    relation_type: str | None
+    source_version_id: str | None
+    generated_document: FieldCommentTraceDocumentResponse | None
+
+
+class FieldCommentTraceResponse(BaseModel):
+    field_comment: FieldCommentResponse
+    audit: list[FieldCommentAuditResponse]
+    reports: list[FieldCommentTraceReportResponse]
 
 
 class FieldCommentAttachmentFileResponse(BaseModel):
@@ -258,7 +290,12 @@ def _validate_target(session: Session, request: FieldCommentCreateRequest) -> No
             )
 
 
-def _field_comment_response(note: FieldComment) -> FieldCommentResponse:
+def _field_comment_response(
+    note: FieldComment,
+    *,
+    workbench_flags: list[str] | None = None,
+    workbench_priority: int = 0,
+) -> FieldCommentResponse:
     return FieldCommentResponse(
         comment_id=note.comment_id,
         document_id=note.document_id,
@@ -292,7 +329,56 @@ def _field_comment_response(note: FieldComment) -> FieldCommentResponse:
         updated_at=note.updated_at,
         reviewed_at=note.reviewed_at,
         analyzed_at=note.analyzed_at,
+        workbench_flags=workbench_flags or [],
+        workbench_priority=workbench_priority,
     )
+
+
+def _workbench_flags(session: Session, note: FieldComment, now: datetime) -> list[str]:
+    flags: list[str] = []
+    active = note.status not in {"SELECTED", "EXCLUDED", "ARCHIVED"}
+    if note.status in {"NEW", "NEEDS_REVIEW"}:
+        flags.append("UNREVIEWED")
+    due_at = note.review_due_at
+    if due_at is not None:
+        normalized_due = due_at.replace(tzinfo=timezone.utc) if due_at.tzinfo is None else due_at
+        if active and normalized_due < now:
+            flags.append("OVERDUE")
+    if active and note.assigned_to is None:
+        flags.append("UNASSIGNED")
+    if not note.document_version_id or not note.author_id or not _clean_optional(note.analysis_content):
+        flags.append("MISSING_EVIDENCE")
+    duplicate = session.scalar(
+        select(FieldComment.id).where(
+            FieldComment.comment_id != note.comment_id,
+            FieldComment.raw_content == note.raw_content,
+        ).limit(1)
+    )
+    if duplicate is not None:
+        flags.append("DUPLICATE_SUSPECTED")
+    linked = session.scalar(
+        select(ReportSource.id).where(
+            ReportSource.source_type == "FIELD_COMMENT",
+            ReportSource.source_id == note.comment_id,
+        ).limit(1)
+    )
+    if linked is None:
+        flags.append("REPORT_UNLINKED")
+    return flags
+
+
+WORKBENCH_FLAG_WEIGHTS = {
+    "OVERDUE": 64,
+    "UNASSIGNED": 32,
+    "MISSING_EVIDENCE": 16,
+    "DUPLICATE_SUSPECTED": 8,
+    "UNREVIEWED": 4,
+    "REPORT_UNLINKED": 2,
+}
+
+
+def _workbench_priority(flags: list[str]) -> int:
+    return sum(WORKBENCH_FLAG_WEIGHTS[flag] for flag in flags)
 
 
 def _source_snapshot(note: FieldComment) -> dict:
@@ -683,11 +769,17 @@ def list_field_comments(
     created_from: Annotated[datetime | None, Query(alias="createdFrom")] = None,
     created_to: Annotated[datetime | None, Query(alias="createdTo")] = None,
     old_new_days: Annotated[int | None, Query(alias="oldNewDays", ge=1, le=3650)] = None,
+    unreviewed: Annotated[bool | None, Query(alias="unreviewed")] = None,
+    overdue: Annotated[bool | None, Query(alias="overdue")] = None,
+    unassigned: Annotated[bool | None, Query(alias="unassigned")] = None,
+    missing_evidence: Annotated[bool | None, Query(alias="missingEvidence")] = None,
+    duplicate_suspected: Annotated[bool | None, Query(alias="duplicateSuspected")] = None,
     has_attachments: Annotated[bool | None, Query(alias="hasAttachments")] = None,
     report_linked: Annotated[bool | None, Query(alias="reportLinked")] = None,
+    priority_order: Annotated[bool, Query(alias="priorityOrder")] = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[FieldCommentResponse]:
-    statement = select(FieldComment).order_by(desc(FieldComment.created_at), desc(FieldComment.id)).limit(limit)
+    statement = select(FieldComment)
     if document_id is not None:
         statement = statement.where(FieldComment.document_id == document_id)
     if comment_status is not None:
@@ -747,6 +839,27 @@ def list_field_comments(
     if old_new_days is not None:
         cutoff = datetime.now(timezone.utc) - timedelta(days=old_new_days)
         statement = statement.where(FieldComment.status == "NEW", FieldComment.created_at <= cutoff)
+    if unreviewed is not None:
+        condition = FieldComment.status.in_({"NEW", "NEEDS_REVIEW"})
+        statement = statement.where(condition if unreviewed else ~condition)
+    if overdue is not None:
+        condition = (
+            FieldComment.review_due_at.is_not(None)
+            & (FieldComment.review_due_at < datetime.now(timezone.utc))
+            & ~FieldComment.status.in_({"SELECTED", "EXCLUDED", "ARCHIVED"})
+        )
+        statement = statement.where(condition if overdue else ~condition)
+    if unassigned is not None:
+        condition = FieldComment.assigned_to.is_(None)
+        statement = statement.where(condition if unassigned else ~condition)
+    if missing_evidence is not None:
+        condition = or_(
+            FieldComment.document_version_id.is_(None),
+            FieldComment.author_id.is_(None),
+            FieldComment.analysis_content.is_(None),
+            func.trim(FieldComment.analysis_content) == "",
+        )
+        statement = statement.where(condition if missing_evidence else ~condition)
     attachment_exists = exists(select(FieldCommentAttachment.id).where(FieldCommentAttachment.comment_id == FieldComment.comment_id))
     if has_attachments is not None:
         statement = statement.where(attachment_exists if has_attachments else ~attachment_exists)
@@ -758,7 +871,27 @@ def list_field_comments(
     )
     if report_linked is not None:
         statement = statement.where(report_source_exists if report_linked else ~report_source_exists)
-    return [_field_comment_response(note) for note in session.scalars(statement).all()]
+    statement = statement.order_by(desc(FieldComment.created_at), desc(FieldComment.id))
+    if not priority_order and duplicate_suspected is None:
+        statement = statement.limit(limit)
+    notes = list(session.scalars(statement).all())
+    now = datetime.now(timezone.utc)
+    rows = []
+    for note in notes:
+        flags = _workbench_flags(session, note, now)
+        if duplicate_suspected is not None and (("DUPLICATE_SUSPECTED" in flags) != duplicate_suspected):
+            continue
+        rows.append(_field_comment_response(
+            note,
+            workbench_flags=flags,
+            workbench_priority=_workbench_priority(flags),
+        ))
+    if priority_order:
+        rows.sort(
+            key=lambda item: (item.workbench_priority, item.created_at, item.comment_id),
+            reverse=True,
+        )
+    return rows[:limit]
 
 
 @document_field_comments_router.get("/{document_id}/field-comments", response_model=list[FieldCommentResponse])
@@ -891,6 +1024,62 @@ def field_comment_quality_metrics(
             ReportSource.source_type == "FIELD_COMMENT"
         )
     ) or 0
+    document_total = session.scalar(
+        select(func.count()).select_from(Document).where(Document.deleted_at.is_(None))
+    ) or 0
+    documents_with_comments = session.scalar(
+        select(func.count(func.distinct(FieldComment.document_id))).where(FieldComment.document_id.is_not(None))
+    ) or 0
+    source_type_count = session.scalar(
+        select(func.count(func.distinct(ReportSource.source_type)))
+    ) or 0
+    report_total = session.scalar(select(func.count()).select_from(Report)) or 0
+    multi_source_reports = session.scalar(
+        select(func.count()).select_from(
+            select(ReportSource.report_id)
+            .group_by(ReportSource.report_id)
+            .having(func.count(func.distinct(ReportSource.source_type)) >= 2)
+            .subquery()
+        )
+    ) or 0
+    work_sequence_source_count = session.scalar(
+        select(func.count()).select_from(ReportSource).where(
+            ReportSource.source_type.in_({"WORK_SEQUENCE_ITEM", "WORK_SEQUENCE_HISTORY"})
+        )
+    ) or 0
+    report_source_total = session.scalar(select(func.count()).select_from(ReportSource)) or 0
+    def source_origin_exists(source: ReportSource) -> bool:
+        model_and_key = {
+            "FIELD_COMMENT": (FieldComment, FieldComment.comment_id),
+            "DOCUMENT": (Document, Document.document_id),
+            "WORK_SEQUENCE_ITEM": (WorkSequenceItem, WorkSequenceItem.item_id),
+            "WORK_SEQUENCE_HISTORY": (WorkSequenceChangeHistory, WorkSequenceChangeHistory.change_id),
+            "WORK_RECORD": (WorkRecord, WorkRecord.work_record_id),
+            "WORK_RECORD_VERSION": (WorkRecordVersion, WorkRecordVersion.version_id),
+        }.get(source.source_type)
+        if model_and_key is None:
+            return False
+        model, key = model_and_key
+        return session.scalar(select(func.count()).select_from(model).where(key == source.source_id)) > 0
+
+    report_sources = session.scalars(select(ReportSource)).all()
+    orphan_count = sum(
+        1
+        for source in report_sources
+        if session.scalar(select(Report.id).where(Report.report_id == source.report_id)) is None
+        or not source_origin_exists(source)
+    )
+    tag_axis_coverage: dict[str, dict[str, int | float]] = {}
+    for axis in ("line", "equipment", "item", "process", "error_type"):
+        tagged_documents = session.scalar(
+            select(func.count(func.distinct(DocumentTag.document_id)))
+            .join(TagDefinition, DocumentTag.tag_id == TagDefinition.tag_id)
+            .where(TagDefinition.is_active.is_(True), TagDefinition.tag_type == axis)
+        ) or 0
+        tag_axis_coverage[axis] = {
+            "document_count": tagged_documents,
+            "document_rate": round(tagged_documents / document_total, 4) if document_total else 0.0,
+        }
     return {
         "total": total,
         "status_distribution": distribution(FieldComment.status),
@@ -900,17 +1089,27 @@ def field_comment_quality_metrics(
         "error_type_distribution": distribution(FieldComment.category),
         "report_linked_count": linked,
         "report_link_rate": round(linked / total, 4) if total else 0.0,
+        "connection_quality": {
+            "document_total": document_total,
+            "documents_with_field_comments": documents_with_comments,
+            "document_field_comment_rate": round(documents_with_comments / document_total, 4) if document_total else 0.0,
+            "field_comment_total": total,
+            "field_comments_linked_to_reports": linked,
+            "field_comment_report_rate": round(linked / total, 4) if total else 0.0,
+            "work_sequence_report_source_count": work_sequence_source_count,
+            "report_total": report_total,
+            "reports_with_two_or_more_source_types": multi_source_reports,
+            "multi_source_report_rate": round(multi_source_reports / report_total, 4) if report_total else 0.0,
+            "report_source_total": report_source_total,
+            "report_source_type_count": source_type_count,
+            "orphan_report_source_count": orphan_count,
+            "orphan_report_source_rate": round(orphan_count / report_source_total, 4) if report_source_total else 0.0,
+        },
+        "tag_axis_coverage": tag_axis_coverage,
     }
 
 
-@router.get("/{comment_id}/audit", response_model=list[FieldCommentAuditResponse])
-def list_field_comment_audit(
-    comment_id: str,
-    _current_user: FieldCommentAnalyzeUser,
-    session: Annotated[Session, Depends(get_db_session)],
-) -> list[FieldCommentAuditResponse]:
-    if session.scalar(select(FieldComment.id).where(FieldComment.comment_id == comment_id)) is None:
-        raise HTTPException(status_code=404, detail="Field comment not found.")
+def _audit_responses(session: Session, comment_id: str) -> list[FieldCommentAuditResponse]:
     rows = session.scalars(
         select(ActivityHistory).where(
             ActivityHistory.target_type == "field_comment",
@@ -926,6 +1125,74 @@ def list_field_comment_audit(
         change_reason=row.change_reason,
         created_at=row.created_at,
     ) for row in rows]
+
+
+@router.get("/{comment_id}/traceability", response_model=FieldCommentTraceResponse)
+def get_field_comment_traceability(
+    comment_id: str,
+    _current_user: FieldCommentAnalyzeUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> FieldCommentTraceResponse:
+    note = session.scalar(select(FieldComment).where(FieldComment.comment_id == comment_id))
+    if note is None:
+        raise HTTPException(status_code=404, detail="Field comment not found.")
+    source_rows = session.execute(
+        select(ReportSource, Report)
+        .join(Report, Report.report_id == ReportSource.report_id)
+        .where(ReportSource.source_type == "FIELD_COMMENT", ReportSource.source_id == comment_id)
+        .order_by(Report.created_at, Report.report_id)
+    ).all()
+    reports: list[FieldCommentTraceReportResponse] = []
+    for source, report in source_rows:
+        document_response = None
+        if report.generated_document_id:
+            document = session.scalar(
+                select(Document).where(Document.document_id == report.generated_document_id)
+            )
+            if document is not None:
+                version_ids = list(session.scalars(
+                    select(DocumentVersion.version_id)
+                    .where(DocumentVersion.document_id == document.document_id)
+                    .order_by(DocumentVersion.version_no)
+                ).all())
+                document_response = FieldCommentTraceDocumentResponse(
+                    document_id=document.document_id,
+                    title=document.title,
+                    status=document.status,
+                    latest_version_id=document.latest_version_id,
+                    published_version_id=document.published_version_id,
+                    generated_version_ids=version_ids,
+                )
+        reports.append(FieldCommentTraceReportResponse(
+            report_id=report.report_id,
+            report_type=report.report_type,
+            title=report.title,
+            status=report.status,
+            relation_type=source.relation_type,
+            source_version_id=source.source_version_id,
+            generated_document=document_response,
+        ))
+    flags = _workbench_flags(session, note, datetime.now(timezone.utc))
+    return FieldCommentTraceResponse(
+        field_comment=_field_comment_response(
+            note,
+            workbench_flags=flags,
+            workbench_priority=_workbench_priority(flags),
+        ),
+        audit=_audit_responses(session, comment_id),
+        reports=reports,
+    )
+
+
+@router.get("/{comment_id}/audit", response_model=list[FieldCommentAuditResponse])
+def list_field_comment_audit(
+    comment_id: str,
+    _current_user: FieldCommentAnalyzeUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> list[FieldCommentAuditResponse]:
+    if session.scalar(select(FieldComment.id).where(FieldComment.comment_id == comment_id)) is None:
+        raise HTTPException(status_code=404, detail="Field comment not found.")
+    return _audit_responses(session, comment_id)
 
 
 @router.get("/{comment_id}", response_model=FieldCommentResponse)

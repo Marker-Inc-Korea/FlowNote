@@ -30,7 +30,7 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
 2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 3. 실행 전 `git status --porcelain=v1 --untracked-files=all`과 `git ls-files`에서 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-4. `services/api`에서 FastAPI pytest 수집 개수를 확인한다. 현재 테스트 코드와 스크립트 기준선은 120개다.
+4. `services/api`에서 FastAPI pytest 수집 개수를 확인한다. 현재 테스트 코드는 128개를 수집하지만 스크립트 기준선은 120개이므로, 기준을 갱신하기 전 표준 실행은 이 단계에서 실패한다.
 5. FastAPI pytest를 실행하고 실행 ID별 JUnit을 보존한다.
 6. WPF Core 테스트를 실행하고 TRX를 보존한다.
 7. WPF 앱을 빌드한다.
@@ -57,17 +57,38 @@ git status --short
 
 WPF 통합 스모크는 같은 실행 ID로 반장·조장·조원·문서관리자·system-admin·viewer와 승인 Android 단말을 추적한다. 오늘 사진/인수인계 문서의 날짜 폴더 생성·등록·목록 조회, 기존 과거 날짜 사진/인수인계 문서 중 무작위 1건의 버전 증가, FieldComment 검토 상태와 보고서 source, 채널 알림·receipt, 사용자별 cursor 재시작 복구를 연결한다. 과거 날짜 폴더나 문서는 새로 만들지 않으며 기존 과거 문서가 하나도 없으면 환경 준비 누락으로 실패한다. 또한 이번 실행에서 만든 구 `create` FAILED 큐를 dry-run하고 plan hash로 승인한 뒤 같은 row를 다시 승인해 target 큐·감사 중복이 생기지 않는지 확인한다. 서버 viewer는 임시 비밀번호 변경 후 Windows/승인 Android 세션을 만들고 `DISABLED` 전환 직후 access/refresh가 모두 차단되는지 확인한다. AI ground-truth 평가는 계속 통과하면서 외부 provider 호출은 `AI_EXTERNAL_CALL_DISABLED`로 차단되는지를 같은 흐름에서 검증한다.
 
+FieldComment 정제 스모크는 실행마다 다음 6개 시나리오를 같은 수로 배분한다. 각 행은 `scenario_id`, 생성 또는 재사용한 데이터 ID, 기대 포함/제외 근거, 실제 결과, 원천 hash 전후 값을 증거 JSON에 남긴다.
+
+| 시나리오 | 허용 근거 | 반드시 제외할 근거 |
+| --- | --- | --- |
+| `SAFETY` 안전 | 현재 공개 안전 문서, 선정 FieldComment, 관련 작업순서 이력 | 비공개 안전 초안, 권한 밖 채널 기록 |
+| `QUALITY` 품질 | 공개 검사 기준, 선정 품질 FieldComment | 상충 미해결 기록, 제외 판정 기록 |
+| `EQUIPMENT` 설비 이상 | 공개 점검 기준, 설비 태그 FieldComment | 오래된 비공개 버전, 다른 설비의 동명이력 |
+| `WORK_HOLD` 작업 보류 | 보류 사유 FieldComment, 인수인계 또는 작업순서 이력 | 사유 없는 보류, 담당 채널 밖 기록 |
+| `REWORK` 재작업 | 재작업 전후 기록과 현재 검사 기준 | 원문 없는 요약, `EXCLUDED` 오입력 |
+| `HANDOVER` 인수인계 | 인수인계 문서, 수신 확인, 선정 후속 FieldComment | 미수신 개인 메모, 공개되지 않은 초안 |
+
+재실행은 같은 시나리오 idempotency key를 사용해 기존 원천과 보고서를 재사용하고 새 중복 row를 만들지 않는다. 실행별 증거 파일은 덮어쓰거나 삭제하지 않는다. 오늘 사진/인수인계 등록과 기존 과거 문서 무작위 버전 증가는 이 배분과 별도로 계속 필수다. SQL/API 점검은 총 건수 외에 상태 분포, source type 수, 문서·FieldComment·작업순서·보고서 source 연결률, 태그 축 커버리지, orphan 비율을 기록한다.
+
 마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. `wpf-smoke-database-evidence.json`에는 주요 테이블 실행 전후 통계, 오늘 문서 ID, 과거 기존 문서의 이전·신규 버전과 무결성 결과가 저장된다. 통제된 기준선은 실행마다 설정이 식별되는 관리형 FastAPI를 사용하므로 시작 전에 `5184` 포트를 비워야 한다. 해당 포트에 이미 건강한 서버가 있으면 환경 실패로 중단하고 외부 프로세스는 종료하지 않는다.
 
-한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. FastAPI JUnit의 tests 수는 현재 수집 코드와 일치하는 120이어야 하고 failure/error는 0, WPF TRX와 Android JUnit도 failure 0이어야 한다. WPF·Android build 로그에는 build error가 없어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. FastAPI JUnit의 tests 수는 실행 시점의 수집 코드와 스크립트 기준이 일치해야 하고 failure/error는 0, WPF TRX와 Android JUnit도 failure 0이어야 한다. 현재 코드는 128건, 스크립트는 120건이므로 아직 이 조건을 충족하지 않는다. WPF·Android build 로그에는 build error가 없어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
 
+## 2026-07-16 후보 5 FieldComment 정제 검증
+
+- FastAPI 전체 `128 passed`, Ruff 통과. 원천 hash 전후 일치, 단계별 감사, 작업함 6종 필터·우선순위, report source 역추적, 미선정·비공개·현재 공개본이 아닌 버전·권한 밖 채널 제외를 자동 검증했다.
+- WPF Core 테스트 `21 passed`, Core·WPF 앱·스모크 프로젝트 빌드는 경고 0/오류 0이었다.
+- 통합 스모크 run `candidate5-20260716-final`, `-final2`, `-final3`의 DB·파일은 삭제하지 않았다. 세 실행 모두 오늘 사진/인수인계 등록과 기존 과거 사진 또는 인수인계 문서 무작위 버전 증가를 완료했다. 첫 실행은 구 단말 모드 `field` 계약 불일치로 중단되어 `viewer`로 바로잡았고, 이후 실행은 계정·승인 단말까지 통과했다.
+- 최종 실행은 누적 큐 985건 가운데 구 형식 653건, 선행 문서 미동기화 260건 등 과거 backlog가 남은 상태에서 이번 run 전용 row만 모두 동기화됐다고 가정한 기존 검증 블록에서 중단됐다. 과거 큐를 삭제·재분류하지 않았으며 통합 전체 `PASSED` 증거로 승격하지 않는다.
+- 13:26 KST 이후 공통 SQLite의 FieldComment 상태는 `NEW 2026`, `ANALYZED 255`, `REVIEWED 246`, `SELECTED 246`, `EXCLUDED 23`, `ARCHIVED 20`이다. 로컬 report source 표기는 현행 대문자 기준 `FIELD_COMMENT 354`, `DOCUMENT 212`, `WORK_SEQUENCE_HISTORY 120`, `WORK_SEQUENCE_ITEM 20`이며 구 소문자 호환 row도 그대로 보존했다.
+
 ## 2026-07-16 작업 102 현재 코드와 개발 문서 재대조
 
-깨끗한 작업 트리의 현재 구현을 제품·시스템·데이터 모델·API·보안·배포·클라이언트·서버 개발 문서와 다시 대조했다. 코드가 문서보다 우선한다는 기준으로 전역 FastAPI OpenAPI 104개 method/path 조합, ORM 46개 테이블, `Settings` 36개 항목을 확인했다. Android 전용 grant/stream 두 경로와 `android_document_view_grants`, 보안 뷰어 설정은 API·데이터·보안 문서에 반영되어 있었지만, 제품 개요·MVP 범위·구현 로드맵과 루트 기능 목록에는 여전히 Android 문서 본문 뷰어가 없다는 설명이 남아 있어 현재 구현으로 바로잡았다. 배포 설정 표에는 Android grant 만료, 자동 닫힘, 전체/TXT 크기와 PDF 페이지 한도를 추가했다. 과거 일일 기록과 기존 결정·검증 이력의 당시 날짜와 수치는 보존했다.
+깨끗한 작업 트리의 현재 구현을 제품·시스템·데이터 모델·API·보안·배포·클라이언트·서버 개발 문서와 다시 대조했다. 코드가 문서보다 우선한다는 기준으로 전역 FastAPI OpenAPI 105개 method/path 조합, ORM 46개 테이블, `Settings` 36개 항목을 확인했다. 서버 API 목록에서 빠진 문서 soft delete를 보강하고, Android 보안 본문 열람·Keystore 보호 outbox·로그인 세션 foreground service 알림 복구가 메타데이터 조회와 전경 Activity polling으로 남아 있던 현재 상태 요약·MVP·파일럿 문구를 구현에 맞게 바로잡았다. 현재 FastAPI 수집값 126건과 표준 스크립트 고정값 120건의 불일치도 활성 검증·배포 문서에 명시했다. 기존 결정과 과거 검증 이력의 당시 날짜와 수치는 보존했다.
 
-`services/api/.venv/bin/python`으로 현재 OpenAPI·ORM·설정 수를 확인하고, OpenAPI 104개 조합과 서버 README의 API 표가 누락·초과 0건임을 비교했다. `pytest --collect-only -q`로 FastAPI 테스트 120건 수집도 확인했다. 문서 정합성 작업이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았고, 기존 SQLite·로그·캐시·테스트 산출물은 삭제하지 않았다.
+`services/api/.venv/bin/python`으로 현재 OpenAPI 105개 조합, ORM 46개 테이블, `Settings` 36개 항목을 확인했다. `pytest --collect-only -q`로 FastAPI 테스트 126건 수집도 확인했다. 문서 정합성 작업이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았고, 기존 SQLite·로그·캐시·테스트 산출물은 삭제하지 않았다.
 
 ## 2026-07-15 작업 207 전체 Markdown 코드 정합성 갱신
 

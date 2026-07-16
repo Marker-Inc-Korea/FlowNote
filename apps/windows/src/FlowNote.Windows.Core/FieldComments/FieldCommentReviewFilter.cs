@@ -13,6 +13,12 @@ public sealed record FieldCommentReviewFilter(
     int? OlderThanDays = null,
     bool? HasAttachments = null,
     bool? ReportLinked = null,
+    bool? Unreviewed = null,
+    bool? Overdue = null,
+    bool? Unassigned = null,
+    bool? MissingEvidence = null,
+    bool? DuplicateSuspected = null,
+    bool PriorityOrder = true,
     DateTime? CreatedFrom = null,
     DateTime? CreatedTo = null,
     int Limit = 300);

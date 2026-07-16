@@ -31,4 +31,4 @@
 
 - 최신 구조는 `docs/product-overview.md`, `docs/system-map.md`, `docs/data-model.md`, `docs/api.md`를 기준으로 한다.
 - 이 파일은 작업 기록이며, 현재 동작 기준을 판단할 때는 상위 문서를 우선한다.
-- Android 현재 구현은 승인 단말 로그인, 공개 문서 목록·상세 메타데이터 조회, FieldComment/사진 outbox, 채널 알림과 인수인계 확인까지다. 문서 파일 본문 뷰어는 없다.
+- Android 현재 구현은 승인 단말 로그인, 공개 문서 목록·상세와 PDF/이미지/UTF-8 TXT 앱 내부 보안 열람, Keystore 보호 FieldComment/사진 outbox, foreground service 채널 알림과 인수인계 확인까지다.

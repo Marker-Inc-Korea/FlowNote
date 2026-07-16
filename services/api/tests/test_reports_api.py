@@ -8,7 +8,14 @@ from sqlalchemy import select
 
 from app.core.config import Settings
 from app.db.init_db import hash_password_for_dev
-from app.db.models import Document, DocumentVersion, Report, ReportSource, UserAccount
+from app.db.models import (
+    Document,
+    DocumentVersion,
+    NotificationChannel,
+    Report,
+    ReportSource,
+    UserAccount,
+)
 from app.main import create_app
 
 
@@ -69,7 +76,14 @@ def create_document(client: TestClient, headers: dict[str, str]) -> dict:
         files={"file": (f"report-source-{suffix}.txt", b"report source document", "text/plain")},
     )
     assert response.status_code == 201, response.text
-    return response.json()
+    document = response.json()
+    publish_response = client.post(
+        f"/api/v1/documents/{document['document_id']}/versions/{document['latest_version']['version_id']}/publish",
+        headers=headers,
+        json={"changeReason": "보고서 근거 적격성 검증용 공개"},
+    )
+    assert publish_response.status_code == 200, publish_response.text
+    return publish_response.json()
 
 
 def create_field_comment(client: TestClient, headers: dict[str, str], document: dict) -> dict:
@@ -86,7 +100,26 @@ def create_field_comment(client: TestClient, headers: dict[str, str], document: 
         },
     )
     assert response.status_code == 201, response.text
-    return response.json()
+    comment = response.json()
+    transitions = (
+        ("ANALYZED", "보고서 근거 분석 완료"),
+        ("REVIEWED", "보고서 근거 검토 완료"),
+        ("SELECTED", "보고서 근거 선정 완료"),
+    )
+    for target, reason in transitions:
+        transition = client.patch(
+            f"/api/v1/field-comments/{comment['comment_id']}",
+            headers=headers,
+            json={
+                "status": target,
+                "normalizedContent": "보고서용 정리 내용",
+                "analysisContent": "공개 문서와 대조한 관리자 분석 내용",
+                "transitionReason": reason,
+            },
+        )
+        assert transition.status_code == 200, transition.text
+        comment = transition.json()
+    return comment
 
 
 def create_work_sequence_sources(client: TestClient, headers: dict[str, str]) -> tuple[str, str]:
@@ -194,6 +227,10 @@ def test_report_draft_final_document_and_source_traceability() -> None:
             source["source_type"] == "FIELD_COMMENT" and source["summary"] == field_comment["raw_content"]
             for source in detail["sources"]
         )
+        field_comment_source = next(
+            source for source in detail["sources"] if source["source_type"] == "FIELD_COMMENT"
+        )
+        assert field_comment_source["source_version_id"] == field_comment["document_version_id"]
         assert any(
             source["source_type"] == "DOCUMENT" and source["source_version_id"] == document["latest_version"]["version_id"]
             for source in detail["sources"]
@@ -224,6 +261,24 @@ def test_report_draft_final_document_and_source_traceability() -> None:
             assert saved_version.version_no == 1
             assert saved_version.version_status == "APPROVED"
             assert saved_version.created_by == "user-admin"
+
+        trace_response = client.get(
+            f"/api/v1/field-comments/{field_comment['comment_id']}/traceability",
+            headers=headers,
+        )
+        assert trace_response.status_code == 200, trace_response.text
+        trace = trace_response.json()
+        assert trace["field_comment"]["raw_content"] == field_comment["raw_content"]
+        assert trace["field_comment"]["source_hash_sha256"] == field_comment["source_hash_sha256"]
+        assert len(trace["audit"]) >= 3
+        assert all(
+            item["after_snapshot"]["source_hash_sha256"] == field_comment["source_hash_sha256"]
+            for item in trace["audit"]
+        )
+        linked_report = next(item for item in trace["reports"] if item["report_id"] == saved["report_id"])
+        assert linked_report["source_version_id"] == field_comment["document_version_id"]
+        assert linked_report["generated_document"]["document_id"] == saved["generated_document_id"]
+        assert linked_report["generated_document"]["generated_version_ids"]
 
 
 def test_report_save_idempotency_key_returns_existing_report() -> None:
@@ -308,7 +363,7 @@ def test_report_rejects_excluded_field_comment_source() -> None:
         )
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "FIELD_COMMENT source is excluded from report sources."
+    assert response.json()["detail"] == "FIELD_COMMENT report source must be SELECTED."
 
 
 def test_report_draft_requires_manager_role() -> None:
@@ -345,3 +400,103 @@ def test_report_rejects_unknown_source() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == "FIELD_COMMENT source is unknown."
+
+
+def test_report_source_eligibility_rejects_unselected_private_stale_and_out_of_channel_evidence() -> None:
+    with create_test_client() as client:
+        admin_headers = auth_headers(client)
+        published = create_document(client, admin_headers)
+
+        unselected_response = client.post(
+            "/api/v1/field-comments",
+            headers=admin_headers,
+            json={
+                "documentId": published["document_id"],
+                "documentVersionId": published["published_version_id"],
+                "rawContent": f"미선정 근거 {uuid4().hex}",
+                "authorId": "user-admin",
+            },
+        )
+        assert unselected_response.status_code == 201
+        unselected = unselected_response.json()
+        rejected_unselected = client.post(
+            "/api/v1/reports/drafts",
+            headers=admin_headers,
+            json={
+                "reportType": "eligibility",
+                "title": "미선정 근거 거부",
+                "sources": [{"sourceType": "FIELD_COMMENT", "sourceId": unselected["comment_id"]}],
+            },
+        )
+        assert rejected_unselected.status_code == 422
+
+        private_response = client.post(
+            "/api/v1/documents",
+            headers=admin_headers,
+            data={
+                "title": f"비공개 근거 {uuid4().hex[:8]}",
+                "documentType": "work_instruction",
+                "changeReason": "비공개 근거 제외 검증",
+            },
+            files={"file": ("private-evidence.txt", b"private evidence", "text/plain")},
+        )
+        assert private_response.status_code == 201
+        private = private_response.json()
+        rejected_private = client.post(
+            "/api/v1/reports/drafts",
+            headers=admin_headers,
+            json={
+                "reportType": "eligibility",
+                "title": "비공개 근거 거부",
+                "sources": [{"sourceType": "DOCUMENT", "sourceId": private["document_id"]}],
+            },
+        )
+        assert rejected_private.status_code == 422
+        assert rejected_private.json()["detail"] == "DOCUMENT report source must be published."
+
+        v2_response = client.post(
+            f"/api/v1/documents/{published['document_id']}/versions",
+            headers=admin_headers,
+            data={"versionLabel": "v2", "changeReason": "비공개 최신 버전으로 오래된 근거 구분"},
+            files={"file": ("stale-evidence-v2.txt", b"stale evidence v2", "text/plain")},
+        )
+        assert v2_response.status_code == 201, v2_response.text
+        rejected_stale = client.post(
+            "/api/v1/reports/drafts",
+            headers=admin_headers,
+            json={
+                "reportType": "eligibility",
+                "title": "현재 공개본이 아닌 버전 거부",
+                "sources": [{
+                    "sourceType": "DOCUMENT",
+                    "sourceId": published["document_id"],
+                    "sourceVersionId": v2_response.json()["version_id"],
+                }],
+            },
+        )
+        assert rejected_stale.status_code == 422
+        assert rejected_stale.json()["detail"] == "DOCUMENT report source must use the current published version."
+
+        selected = create_field_comment(client, admin_headers, published)
+        manager = create_role_user(client, "manager")
+        with client.app.state.database.session() as session:
+            session.add(NotificationChannel(
+                channel_id=f"channel-{uuid4().hex}",
+                name="권한 밖 근거 채널",
+                channel_type="LINE",
+                source_type="FIELD_COMMENT",
+                source_id=selected["comment_id"],
+                status="ACTIVE",
+                created_by="user-admin",
+            ))
+            session.commit()
+        rejected_channel = client.post(
+            "/api/v1/reports/drafts",
+            headers=auth_headers(client, manager.username, TEST_PASSWORD),
+            json={
+                "reportType": "eligibility",
+                "title": "권한 밖 채널 근거 거부",
+                "sources": [{"sourceType": "FIELD_COMMENT", "sourceId": selected["comment_id"]}],
+            },
+        )
+        assert rejected_channel.status_code == 403

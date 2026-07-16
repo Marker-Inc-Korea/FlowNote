@@ -258,6 +258,76 @@ def test_bulk_review_preserves_source_and_quality_metrics_are_available() -> Non
         assert workbench.status_code == 200, workbench.text
 
 
+def test_review_workbench_filters_and_priority_flags_are_explicit() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        raw_content = f"중복 의심 작업함 검증 {uuid4().hex}"
+        created = []
+        for _ in range(2):
+            response = client.post(
+                "/api/v1/field-comments",
+                headers=headers,
+                json={
+                    "documentId": document["document_id"],
+                    "documentVersionId": document["latest_version"]["version_id"],
+                    "rawContent": raw_content,
+                    "authorId": "user-admin",
+                },
+            )
+            assert response.status_code == 201, response.text
+            created.append(response.json())
+
+        overdue = client.patch(
+            f"/api/v1/field-comments/{created[0]['comment_id']}",
+            headers=headers,
+            json={"reviewDueAt": "2000-01-01T00:00:00Z"},
+        )
+        assert overdue.status_code == 200, overdue.text
+
+        response = client.get(
+            "/api/v1/field-comments",
+            headers=headers,
+            params={
+                "documentId": document["document_id"],
+                "unreviewed": True,
+                "unassigned": True,
+                "missingEvidence": True,
+                "duplicateSuspected": True,
+                "reportLinked": False,
+                "priorityOrder": True,
+            },
+        )
+        assert response.status_code == 200, response.text
+        rows = response.json()
+        assert {item["comment_id"] for item in rows} >= {item["comment_id"] for item in created}
+        assert rows[0]["comment_id"] == created[0]["comment_id"]
+        assert set(rows[0]["workbench_flags"]) >= {
+            "UNREVIEWED",
+            "OVERDUE",
+            "UNASSIGNED",
+            "MISSING_EVIDENCE",
+            "DUPLICATE_SUSPECTED",
+            "REPORT_UNLINKED",
+        }
+
+        overdue_only = client.get(
+            "/api/v1/field-comments",
+            headers=headers,
+            params={"documentId": document["document_id"], "overdue": True},
+        )
+        assert overdue_only.status_code == 200
+        assert [item["comment_id"] for item in overdue_only.json()] == [created[0]["comment_id"]]
+
+        metrics = client.get("/api/v1/field-comments/quality-metrics", headers=headers)
+        assert metrics.status_code == 200, metrics.text
+        quality = metrics.json()
+        assert "connection_quality" in quality
+        assert "tag_axis_coverage" in quality
+        assert quality["connection_quality"]["report_source_type_count"] >= 0
+        assert quality["connection_quality"]["orphan_report_source_rate"] >= 0
+
+
 def test_field_comment_source_fields_are_immutable_in_database() -> None:
     with create_test_client() as client:
         document = create_document(client)

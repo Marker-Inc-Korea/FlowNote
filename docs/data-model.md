@@ -95,6 +95,8 @@ Android 로컬 DB `flownote_android_outbox.db`는 장기 기준 데이터가 아
 
 `field_comments`의 원천 핵심 필드는 생성 후 ORM 수준에서 불변이며, 원천 row 자체의 ORM 삭제도 거부한다. 오입력·중복·근거 부적합 기록은 삭제하지 않고 검토 상태 `EXCLUDED`로 분류해 이력을 보존한다. API 응답의 `source_hash_sha256`은 원천 snapshot을 정렬 JSON으로 직렬화해 계산한다. 관리자 검토 변경은 `activity_history.before_value/after_value`에 검토 snapshot과 같은 원천 hash를 저장하고 `actor_id`, `change_reason`으로 전이와 되돌림을 추적한다.
 
+보고서 `FIELD_COMMENT` source는 `SELECTED` 상태만 저장하며 `source_version_id`에 FieldComment가 관찰한 문서 버전을 복사한다. `DOCUMENT` source는 문서의 현재 `published_version_id`와 같은 공개 버전만 저장한다. 따라서 `field_comments → activity_history → report_sources → reports.generated_document_id → document_versions`를 ID와 hash 손실 없이 역추적할 수 있다. 활성 `notification_channels`가 원천에 연결된 경우 보고서 저장 actor의 활성 멤버십도 검사한다.
+
 `controlled_copy_grants`는 원본 토큰 대신 `token_hash`만 저장한다. 각 grant는 공개 문서와 정확한 공개 버전, 요청 사용자, `auth_sessions.session_id`, 선택적 승인 단말 ID, 발급 시점의 파일 크기와 SHA-256에 묶인다. 상태는 `ISSUED`, `CONSUMED`, `EXPIRED`, `FAILED`이며 기본 60초(설정값은 5~300초로 정규화) 안에 한 번만 소비할 수 있다. 스트리밍 시작 전 상태를 원자적으로 `CONSUMED`로 바꾸고, 이후 공개 상태·저장 경로·크기·SHA-256 검사가 실패하면 `FAILED`와 정제된 실패 사유를 남긴다.
 
 `android_document_view_grants`도 원본 token을 저장하지 않고 SHA-256 hash만 보존한다. controlled copy와 달리 `device_id`가 필수이며 `media_kind`, 정규화 MIME type, 발급 시 파일 크기와 SHA-256을 고정한다. 상태는 `ISSUED`, `CONSUMED`, `EXPIRED`, `FAILED`이고 1회 스트림 시작 전에 원자적으로 소비한다. `document_access_logs`와 `activity_history`에는 grant 발급, 스트림 시작·완료, 실패·차단·만료를 사용자·단말·문서 버전과 함께 남긴다. Android 내부 난수 캐시 파일은 서버 기준 데이터가 아니며 DB 모델로 관리하지 않는다.

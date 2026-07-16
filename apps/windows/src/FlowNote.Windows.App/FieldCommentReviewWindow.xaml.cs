@@ -59,7 +59,17 @@ public partial class FieldCommentReviewWindow : Window
         {
             new StatusOption("ALL", "전체"), new StatusOption("YES", "연결됨"), new StatusOption("NO", "미연결")
         };
-        foreach (var combo in new[] { AgingFilterComboBox, AttachmentFilterComboBox, ReportLinkFilterComboBox })
+        WorkbenchFilterComboBox.ItemsSource = new[]
+        {
+            new StatusOption("ALL", "전체"),
+            new StatusOption("UNREVIEWED", "미검토"),
+            new StatusOption("OVERDUE", "기한 초과"),
+            new StatusOption("UNASSIGNED", "담당자 없음"),
+            new StatusOption("MISSING_EVIDENCE", "근거 누락"),
+            new StatusOption("DUPLICATE_SUSPECTED", "중복 의심"),
+            new StatusOption("REPORT_UNLINKED", "보고서 미연결")
+        };
+        foreach (var combo in new[] { AgingFilterComboBox, AttachmentFilterComboBox, ReportLinkFilterComboBox, WorkbenchFilterComboBox })
         {
             combo.DisplayMemberPath = nameof(StatusOption.Label);
             combo.SelectedValuePath = nameof(StatusOption.Value);
@@ -171,6 +181,50 @@ public partial class FieldCommentReviewWindow : Window
         }
     }
 
+    private async void TraceabilityButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (FieldCommentGrid.SelectedItem is not FieldCommentReviewRecord selected)
+        {
+            StatusTextBlock.Text = "역추적할 FieldComment를 선택하세요.";
+            return;
+        }
+        if (serverClient is null)
+        {
+            StatusTextBlock.Text = "서버 연결이 없어 역추적 이력을 조회할 수 없습니다.";
+            return;
+        }
+        var serverCommentId = fieldComments.GetServerCommentId(selected.CommentId);
+        if (string.IsNullOrWhiteSpace(serverCommentId))
+        {
+            StatusTextBlock.Text = "아직 서버 FieldComment ID가 연결되지 않았습니다.";
+            return;
+        }
+        try
+        {
+            var trace = await serverClient.GetFieldCommentTraceabilityAsync(serverCommentId);
+            var reportLines = trace.Reports.Count == 0
+                ? "보고서 연결 없음"
+                : string.Join(Environment.NewLine, trace.Reports.Select(report =>
+                    $"- {report.Title} ({report.Status}) → " +
+                    (report.GeneratedDocument is null
+                        ? "최종 문서 없음"
+                        : $"{report.GeneratedDocument.Title} / 버전 {report.GeneratedDocument.GeneratedVersionIds.Count}개")));
+            MessageBox.Show(
+                this,
+                $"원천 hash: {trace.FieldComment.SourceHashSha256}{Environment.NewLine}" +
+                $"감사 이력: {trace.Audit.Count}건{Environment.NewLine}" +
+                $"보고서 연결: {trace.Reports.Count}건{Environment.NewLine}{reportLines}",
+                "FieldComment → 보고서 → 최종 문서 역추적",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            StatusTextBlock.Text = "서버 감사 이력과 최종 문서 연결을 확인했습니다.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            StatusTextBlock.Text = $"서버 역추적 조회에 실패했습니다. {exception.Message}";
+        }
+    }
+
     private void OpenAttachmentButton_Click(object sender, RoutedEventArgs e)
     {
         if (AttachmentGrid.SelectedItem is not FieldCommentAttachmentRecord attachment)
@@ -192,6 +246,7 @@ public partial class FieldCommentReviewWindow : Window
     private void RefreshComments(string statusText, string? selectedCommentId = null)
     {
         workspace.FieldComments.Clear();
+        var workbench = WorkbenchFilterComboBox.SelectedValue?.ToString();
         var filter = new FieldCommentReviewFilter(
             Status: StatusFilterComboBox.SelectedValue?.ToString(),
             DocumentText: DocumentFilterTextBox.Text,
@@ -204,7 +259,15 @@ public partial class FieldCommentReviewWindow : Window
             ErrorTypeText: ErrorTypeFilterTextBox.Text,
             OlderThanDays: int.TryParse(AgingFilterComboBox.SelectedValue?.ToString(), out var agingDays) ? agingDays : null,
             HasAttachments: ChoiceToBool(AttachmentFilterComboBox.SelectedValue?.ToString()),
-            ReportLinked: ChoiceToBool(ReportLinkFilterComboBox.SelectedValue?.ToString()),
+            ReportLinked: workbench == "REPORT_UNLINKED"
+                ? false
+                : ChoiceToBool(ReportLinkFilterComboBox.SelectedValue?.ToString()),
+            Unreviewed: workbench == "UNREVIEWED" ? true : null,
+            Overdue: workbench == "OVERDUE" ? true : null,
+            Unassigned: workbench == "UNASSIGNED" ? true : null,
+            MissingEvidence: workbench == "MISSING_EVIDENCE" ? true : null,
+            DuplicateSuspected: workbench == "DUPLICATE_SUSPECTED" ? true : null,
+            PriorityOrder: true,
             CreatedFrom: CreatedFromDatePicker.SelectedDate,
             CreatedTo: CreatedToDatePicker.SelectedDate);
         foreach (var comment in fieldComments.ListForReview(filter))
@@ -212,7 +275,7 @@ public partial class FieldCommentReviewWindow : Window
             workspace.FieldComments.Add(comment);
         }
 
-        FilterHintTextBlock.Text = $"표시 {workspace.FieldComments.Count}건 · 보고서선정/검토완료/분석완료는 보고서 후보에서 우선 사용";
+        FilterHintTextBlock.Text = $"표시 {workspace.FieldComments.Count}건 · 기한 초과→담당 없음→근거 누락→중복 의심 순으로 우선 처리";
         StatusTextBlock.Text = statusText;
 
         if (!string.IsNullOrWhiteSpace(selectedCommentId))

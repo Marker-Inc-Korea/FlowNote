@@ -1944,7 +1944,7 @@ try
             {
                 DeviceId = androidDeviceId,
                 DeviceName = $"승인 Android 통합 스모크 {runId}",
-                DeviceMode = "field",
+                DeviceMode = "viewer",
                 LocationCode = "line-a",
                 GroupId = "group-line-a",
                 Status = "ACTIVE"
@@ -2025,7 +2025,7 @@ try
                     WHERE entity_type = 'document'
                       AND entity_id = $document_id
                       AND status = 'FAILED'
-                      AND last_error LIKE '%로그인%'
+                      AND (last_error LIKE '%로그인%' OR last_error LIKE '%서버 URL%')
                       AND synced_at IS NULL;
                     """,
                     ("$document_id", authExpiredDocument.DocumentId)) == authExpiredQueueCountBefore,
@@ -3161,6 +3161,13 @@ try
                 orderedQueueDocument.DocumentId,
                 $"Ordered retry field comment {runId}.",
                 smokeActorName);
+            orderedQueueFieldComment = services.FieldComments.UpdateReview(
+                orderedQueueFieldComment.CommentId,
+                "정방향 큐 재시도 보고서 근거",
+                "공개된 v2 문서와 대조해 보고서 source로 선정함.",
+                "SELECTED",
+                smokeActorName,
+                "정방향 큐 보고서 근거 선정");
             var orderedQueueAttachmentFile = Path.Combine(testDirectory, $"server-ordered-field-comment-attachment-{runId}.txt");
             File.WriteAllText(orderedQueueAttachmentFile, $"Server ordered FieldComment attachment smoke test {runId}.");
             var orderedQueueAttachment = services.FieldComments.AddAttachment(
@@ -3185,15 +3192,7 @@ try
                     orderedQueueDocument.Title,
                     orderedQueueFieldComment.RawContent,
                     orderedQueueFieldComment.CreatedAt,
-                    RelationType: "primary"),
-                new ReportSourceCandidateRecord(
-                    "DOCUMENT",
-                    orderedQueueDocument.DocumentId,
-                    orderedQueueDocument.Title,
-                    orderedQueueDocument.FileName,
-                    orderedQueueDocument.UpdatedAt,
-                    orderedQueueVersion.VersionNo.ToString(CultureInfo.InvariantCulture),
-                    "related_document")
+                    RelationType: "primary")
             };
             var orderedReportContent = services.Reports.BuildDraftContent(
                 $"Server ordered retry report {runStamp}",
@@ -3212,6 +3211,7 @@ try
             _ = await services.ServerSync.QueueAndTrySyncAccessLogAsync(orderedQueueClosedAccessLog, "view_closed", null);
             _ = await services.ServerSync.QueueAndTrySyncAccessLogAsync(orderedQueueStartedAccessLog, "view_started", null);
             _ = await services.ServerSync.QueueAndTrySyncFieldCommentAttachmentAsync(orderedQueueAttachment, null);
+            _ = await services.ServerSync.QueueAndTrySyncFieldCommentReviewAsync(orderedQueueFieldComment, null, serverLogin.UserId);
             _ = await services.ServerSync.QueueAndTrySyncFieldCommentAsync(orderedQueueFieldComment, null);
             _ = await services.ServerSync.QueueAndTrySyncDocumentStatusAsync(orderedQueueArchived, null);
             _ = await services.ServerSync.QueueAndTrySyncDocumentPublishAsync(orderedQueuePublished, null);
@@ -3220,7 +3220,7 @@ try
 
             var orderedRetryStartedAt = DateTime.UtcNow;
             var orderedRetryResult = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
-            Require(orderedRetryResult.Synced >= 9, "document queue retry should process the reverse-queued document, FieldComment, access log, and report flow");
+            Require(orderedRetryResult.Synced >= 10, "document queue retry should process the reverse-queued document, FieldComment review, access log, and report flow");
             Require(
                 ScalarLong(
                     syncConnection,
@@ -3247,7 +3247,7 @@ try
                             entity_id = $document_id
                             AND entity_type IN ('document', 'document_version', 'document_publish', 'document_status')
                         )
-                        OR (entity_type = 'field_comment' AND entity_id = $comment_id)
+                        OR (entity_type IN ('field_comment', 'field_comment_review') AND entity_id = $comment_id)
                         OR (entity_type = 'field_comment_attachment' AND entity_id = $attachment_id)
                         OR (entity_type = 'document_access_log' AND entity_id = $log_id)
                         OR (entity_type = 'report' AND entity_id = $report_id)
@@ -3258,8 +3258,8 @@ try
                     ("$comment_id", orderedQueueFieldComment.CommentId),
                     ("$attachment_id", orderedQueueAttachment.AttachmentId),
                     ("$log_id", orderedQueueAccessLogId.ToString()),
-                    ("$report_id", orderedReportDocument.DocumentId)) == 9,
-                "full ordered retry should mark document, version, publish, status, FieldComment, attachment, access logs, and report as synced");
+                    ("$report_id", orderedReportDocument.DocumentId)) == 10,
+                "full ordered retry should mark document, version, publish, status, FieldComment review, attachment, access logs, and report as synced");
 
             var orderedAttemptOrder = ScalarString(
                 syncConnection,
@@ -3298,11 +3298,12 @@ try
                     "document_publish:publish_document_version|" +
                     "document_status:update_document_status|" +
                     "field_comment:register_field_comment|" +
+                    "field_comment_review:update_field_comment_review|" +
                     "field_comment_attachment:register_field_comment_attachment|" +
                     "document_access_log:register_access_log_started|" +
                     "document_access_log:register_access_log_closed|" +
                     "report:register_report",
-                "full queue retry attempts should run document, version, publish, status, FieldComment, attachment, access logs, then report");
+                "full queue retry attempts should run document, version, publish, status, FieldComment review, attachment, access logs, then report");
             Require(
                 ScalarLong(
                     syncConnection,
@@ -3374,9 +3375,6 @@ try
             Require(
                 orderedReportDetail.Sources.Any(item => item.SourceType == "FIELD_COMMENT" && item.SourceId == orderedServerCommentId),
                 "ordered report retry should trace the synced server FieldComment source");
-            Require(
-                orderedReportDetail.Sources.Any(item => item.SourceType == "DOCUMENT" && item.SourceId == orderedServerDocumentId),
-                "ordered report retry should trace the synced server document source");
             Require(
                 ScalarLong(
                     syncConnection,
@@ -3487,12 +3485,17 @@ try
         var serverVersions = await serverDocuments.ListVersionsAsync(serverDocument.DocumentId);
         Require(serverVersions.Count == 1, "server document should have one version after initial upload");
         Require(serverVersions[0].ChangeReason.Contains("FastAPI", StringComparison.Ordinal), "server version should preserve the change reason");
+        serverDocument = await serverDocuments.PublishVersionAsync(
+            serverDocument.DocumentId,
+            latestServerVersion.VersionId,
+            "보고서 source 적격성 스모크용 현재 공개 버전 지정");
 
         {
             var serverFieldComment = await serverDocuments.RegisterFieldCommentAsync(
                 fieldComment,
                 documentId: serverDocument.DocumentId,
-                documentVersionId: latestServerVersion.VersionId);
+                documentVersionId: latestServerVersion.VersionId,
+                authorId: serverLogin.UserId);
             Require(!string.IsNullOrWhiteSpace(serverFieldComment.CommentId), "server field comment should receive an id");
             Require(serverFieldComment.DocumentId == serverDocument.DocumentId, "server field comment should reference the uploaded document");
             Require(
@@ -3502,6 +3505,21 @@ try
                 serverFieldComment.RawContent == "Program test field comment stored separately from document versions.",
                 "server field comment should preserve raw content");
             Require(serverFieldComment.Status == "NEW", "server field comment should start in NEW status");
+            foreach (var targetStatus in new[] { "ANALYZED", "REVIEWED", "SELECTED" })
+            {
+                serverFieldComment = await serverDocuments.UpdateFieldCommentReviewAsync(
+                    serverFieldComment.CommentId,
+                    new ServerFieldCommentReviewRequest
+                    {
+                        Status = targetStatus,
+                        NormalizedContent = "Windows 스모크 보고서 근거로 정리한 FieldComment",
+                        AnalysisContent = "현재 공개 문서 버전과 원천 기록을 대조함.",
+                        ReviewedBy = serverLogin.UserId,
+                        AnalyzedBy = serverLogin.UserId,
+                        TransitionReason = $"Windows 스모크 {targetStatus} 전이"
+                    });
+            }
+            Require(serverFieldComment.Status == "SELECTED", "report source FieldComment should be selected through audited transitions");
             var serverFieldCommentAttachment = await serverDocuments.RegisterFieldCommentAttachmentAsync(
                 serverFieldComment.CommentId,
                 fieldCommentAttachmentFile,
@@ -3831,6 +3849,15 @@ try
                 aiServerReviewedComment.CommentId,
                 new ServerFieldCommentReviewRequest
                 {
+                    Status = "ANALYZED",
+                    NormalizedContent = "보류 발생 사항은 다음 조 인수인계 대상으로 분류됨.",
+                    AnalysisContent = "보류 사유와 전달 누락 여부를 보고서 근거로 남긴다.",
+                    AnalyzedBy = serverLogin.UserId
+                });
+            aiServerReviewedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
+                aiServerReviewedComment.CommentId,
+                new ServerFieldCommentReviewRequest
+                {
                     Status = "REVIEWED",
                     NormalizedContent = "보류 발생 사항은 다음 조 인수인계 대상으로 분류됨.",
                     AnalysisContent = "보류 사유와 전달 누락 여부를 보고서 근거로 남긴다.",
@@ -3853,6 +3880,25 @@ try
                     LocationCode = "line-a",
                     Category = "sensor-zeroing",
                     IdempotencyKey = $"wpf-smoke-ai-selected-{runId}"
+                });
+            aiServerSelectedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
+                aiServerSelectedComment.CommentId,
+                new ServerFieldCommentReviewRequest
+                {
+                    Status = "ANALYZED",
+                    NormalizedContent = "센서 재영점 절차 누락 위험을 관리자 검토 대상으로 선정함.",
+                    AnalysisContent = "AI 검색 후보에서 절차 누락 위험 사례로 역추적 가능해야 한다.",
+                    AnalyzedBy = serverLogin.UserId
+                });
+            aiServerSelectedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
+                aiServerSelectedComment.CommentId,
+                new ServerFieldCommentReviewRequest
+                {
+                    Status = "REVIEWED",
+                    NormalizedContent = "센서 재영점 절차 누락 위험을 관리자 검토 대상으로 선정함.",
+                    AnalysisContent = "AI 검색 후보에서 절차 누락 위험 사례로 역추적 가능해야 한다.",
+                    ReviewedBy = serverLogin.UserId,
+                    AnalyzedBy = serverLogin.UserId
                 });
             aiServerSelectedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
                 aiServerSelectedComment.CommentId,
@@ -3972,9 +4018,9 @@ try
                         },
                         new ServerReportSourceRequest
                         {
-                            SourceType = "FIELD_COMMENT",
-                            SourceId = aiServerReviewedComment.CommentId,
-                            RelationType = "reviewed"
+                            SourceType = "WORK_SEQUENCE_ITEM",
+                            SourceId = aiServerSecondItem.ItemId,
+                            RelationType = "work_sequence"
                         },
                         new ServerReportSourceRequest
                         {

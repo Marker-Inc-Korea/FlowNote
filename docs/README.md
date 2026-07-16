@@ -45,7 +45,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-16 현재 pytest 125건이 수집된다. AI 근거 검색·provider 경계·운영 제어·자동 보존, controlled copy, Android secure view, 서버 계정 수명주기·권한·세션·감사와 문서 revision·파일 hash 충돌 회귀가 포함된다. `scripts/verify-preserved-tests.ps1`의 수집/JUnit 고정값은 아직 120건이므로 현재 코드와 일치하지 않으며, 125건으로 갱신하기 전에는 표준 통합 검증이 이 단계에서 중단된다.
+- FastAPI 코드는 2026-07-16 현재 pytest 126건이 수집된다. AI 근거 검색·provider 경계·운영 제어·자동 보존, controlled copy, Android secure view, 서버 계정 수명주기·권한·세션·감사와 문서 revision·파일 hash 충돌 회귀가 포함된다. `scripts/verify-preserved-tests.ps1`의 수집/JUnit 고정값은 아직 120건이므로 현재 코드와 일치하지 않으며, 126건으로 갱신하기 전에는 표준 통합 검증이 이 단계에서 중단된다.
 
 ## 일일 기록
 

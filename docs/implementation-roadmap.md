@@ -36,7 +36,7 @@
 - Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 채널 알림, 인수인계 확인
 - Android 전용 단기 1회 grant/stream, 현재 공개 버전·사용자·세션·승인 단말 바인딩, 파일 무결성 재검사와 접근 감사
 - Android 내부 난수 캐시, 수신 크기·SHA-256 검증, `FLAG_SECURE`, 외부 열기·공유 미제공, 종료·백그라운드 전환·오류·로그아웃·다음 시작 시 캐시 정리
-- Windows/Android 사내망 HTTPS 전경 polling, cursor 기반 증분 조회와 연결 실패 backoff
+- Windows 창 활성 중 polling과 Android 로그인 세션 foreground service polling, cursor 기반 증분 조회·연결 실패 backoff·재부팅 복구
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
 - 공개 문서 버전의 60초 1회성 controlled copy 발급·스트리밍, 서버 무결성 재검사, 감사 로그와 WPF 저장·SHA-256 검증
 
@@ -61,13 +61,13 @@
 
 ## 다음 우선순위
 
-1. `scripts/verify-preserved-tests.ps1`의 FastAPI 고정 기준을 현재 수집값 125건으로 갱신한 뒤, WPF 빌드·스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 포함한 Windows 표준 검증을 생략 없이 실행하고 단일 `PASSED` 실행 ID를 남긴다.
+1. `scripts/verify-preserved-tests.ps1`의 FastAPI 고정 기준을 현재 수집값 126건으로 갱신한 뒤, WPF 빌드·스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 포함한 Windows 표준 검증을 생략 없이 실행하고 단일 `PASSED` 실행 ID를 남긴다.
 2. [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
 4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다.
 5. 별도 PC에서 서버 DB+`storage`, WPF DB+`Files`를 복구하고 원천 개수·파일 hash·DB 무결성을 전후 비교한다.
 6. 관리자·반장·조장·작업자의 핵심 업무 성공률과 시간을 측정하고 단말 위치·장갑·입력 가능 순간·단절 UX 관찰을 개발 항목으로 변환한다.
-7. Android 백그라운드 알림 정책과 Windows/Android 채널 polling 운영 UX 검증. WPF 서버 scope·사용자별 cursor 영구 보존, 전경 polling과 읽음/수신 확인은 구현되어 있다.
+7. Android foreground service의 Doze·재부팅·강제 중지/MDM kiosk 복구와 Windows/Android 채널 polling 운영 UX를 승인 실단말·고객 유사망에서 검증한다. WPF 사용자별 cursor 보존과 창 활성 polling, Android 로그인 세션 polling·재부팅 복구, 읽음/수신 확인은 구현되어 있다.
 8. 구현된 사용자/역할 UI와 서버 계정 보호 규칙의 현장 운영 검증 및 오류 UX 보강
 9. 문서 버전/상태/공개 상태의 서버-WPF 동기화 정책 고도화
 10. FieldComment 관리자 검토/분석/선정 운영 화면 보강

@@ -37,4 +37,25 @@ public sealed record FieldCommentReviewRecord(
         "ARCHIVED" => "보관",
         _ => Status
     };
+
+    public string PriorityLabel
+    {
+        get
+        {
+            var flags = new List<string>();
+            if (ReviewDueAt is not null && ReviewDueAt.Value < DateTime.UtcNow && Status is not ("SELECTED" or "EXCLUDED" or "ARCHIVED"))
+            {
+                flags.Add("기한초과");
+            }
+            if (string.IsNullOrWhiteSpace(AssignedTo))
+            {
+                flags.Add("담당없음");
+            }
+            if (DocumentVersionNo is null || string.IsNullOrWhiteSpace(AuthorName) || string.IsNullOrWhiteSpace(AnalysisContent))
+            {
+                flags.Add("근거누락");
+            }
+            return flags.Count == 0 ? "일반" : string.Join("·", flags);
+        }
+    }
 }
