@@ -90,6 +90,14 @@ provider 심사는 계약, 데이터 보존, 학습 사용, 전송 지역, TLS, 
 
 구현 검증은 `services/api/.venv/bin/python -m ruff check services/api/app services/api/tests` 통과 후 AI 검색·운영·질의 집중 회귀 22건과 FastAPI 전체 회귀 128건을 실행해 모두 통과했다. 테스트 SQLite와 adapter 기록은 삭제하거나 초기화하지 않았다. 이번 개발 DB의 누적 테스트 case와 provider review는 실제 고객/법무 승인 세트로 승격하지 않는다.
 
+## 2026-07-16 작업 207 전체 Markdown 코드 정합성 갱신
+
+작업 정책 원문 `AGENTS.md`를 제외한 Git 추적 제품·구현 Markdown 40개를 현재 FastAPI, Windows WPF, Android와 운영 스크립트에 다시 대조했다. 시작 시 존재하던 문서 4개의 사용자 변경은 되돌리지 않고 함께 보존했다. 현재 정량 기준은 루트 `GET /`와 문서별 보조 router를 포함한 API 108개 method/path 조합, 서버 ORM 47개 테이블, `Settings` 36개 항목, FastAPI 테스트 수집 128건이다. API 전체 표는 `services/api/README.md`와 실제 route 집합이 일치하고 설정 항목은 API·서버·배포 문서에 모두 반영되어 있다.
+
+코드보다 오래된 Android 데이터 모델의 “사진 URI” 설명은 현재 Keystore AES-GCM 암호문 payload와 앱 내부 암호화 첨부 참조, 구 persist URI 읽기 호환 계약으로 갱신했다. 최상위·제품·서비스·Windows 문서에는 구현된 `verify-pilot-restore.py`의 서버 DB+`storage` 및 WPF DB+`Files` 복구 전후 증거 비교 범위를 보강했다. 과거 일일 기록과 검증 이력의 당시 수치·실패 결과는 현재 상태로 덮어쓰지 않고 시점 기록으로 유지했다.
+
+이번 작업에서는 `services/api/.venv/bin/python -m pytest --collect-only -q`로 128건 수집을 확인했다. 전체 pytest, WPF·Android 빌드와 통합 스모크는 문서 갱신 범위에서 새로 실행하지 않았다. `scripts/verify-preserved-tests.ps1`의 고정 기준은 여전히 120건이므로 현재 코드와 불일치하며, 이를 고치기 전 표준 통합 실행은 유효한 `PASSED` 기준선이 아니다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
+
 ## 2026-07-16 후보 5 FieldComment 정제 검증
 
 - FastAPI 전체 `128 passed`, Ruff 통과. 원천 hash 전후 일치, 단계별 감사, 작업함 6종 필터·우선순위, report source 역추적, 미선정·비공개·현재 공개본이 아닌 버전·권한 밖 채널 제외를 자동 검증했다.
@@ -100,11 +108,11 @@ provider 심사는 계약, 데이터 보존, 학습 사용, 전송 지역, TLS, 
 
 ## 2026-07-16 작업 102 현재 코드 문서 갱신
 
-깨끗한 `main` 작업 트리에서 최근 Android 보안 문서 열람, 문서 revision 충돌, 채널 알림·동기화, FieldComment 검토 역추적, AI 검색 readiness 구현을 개발 문서와 다시 대조했다. 전역 OpenAPI는 루트 `GET /`를 포함한 108개 method/path 조합이고 `docs/api.md`와 `services/api/README.md`의 API 표는 누락·초과 없이 같은 집합을 설명한다. 두 문서에 107개로 남아 있던 총계를 108개로 바로잡았다.
+깨끗한 `main` 작업 트리에서 최근 Android 보안 문서 열람, 문서 revision 충돌, 채널 알림·동기화, FieldComment 검토 역추적, AI 검색 readiness와 복구 증거 수집/비교 CLI 구현을 개발 문서와 다시 대조했다. 전역 OpenAPI는 루트 `GET /`를 포함한 108개 method/path 조합이고 `docs/api.md`와 `services/api/README.md`의 API 표는 누락·초과 없이 같은 집합을 설명한다. 두 문서에 107개로 남아 있던 총계를 108개로 바로잡았다. 상위 문서에는 `verify-pilot-restore.py`가 서버 DB+`storage`와 WPF DB+`Files`의 전후 무결성 증거를 비교하는 현재 구현임을 반영했다.
 
 서버 ORM은 47개 테이블을 생성한다. DB 개요의 46개 총계를 47개로 수정하고, 상위 데이터 모델 표에 `ai_operational_policies`, `ai_operation_audit_events`, `ai_retention_audits`를, 초기 스키마 설명에 `android_document_view_grants`를 보강했다. `Settings` 36개 항목은 API·서버 설정 문서에 모두 반영되어 있다.
 
-`services/api/.venv/bin/python -m pytest --collect-only -q`로 FastAPI 128건 수집을 확인했다. 이번 요청은 문서 갱신이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았다. 스크립트의 FastAPI 고정 기준은 여전히 120건이므로 현재 128건 코드와 일치하지 않는다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
+`services/api/.venv/bin/python -m pytest --collect-only -q`로 FastAPI 128건 수집을 확인했다. 120건 기준과 일치한다고 남아 있던 `services/api/tests/README.md`는 실제 코드와 표준 스크립트의 불일치를 설명하도록 수정했다. 이번 요청은 문서 갱신이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았다. 스크립트의 FastAPI 고정 기준은 여전히 120건이므로 현재 128건 코드와 일치하지 않는다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
 
 ## 2026-07-16 작업 102 초기 코드·문서 재대조 기록
 

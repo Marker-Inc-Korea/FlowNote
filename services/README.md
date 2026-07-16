@@ -52,4 +52,6 @@ provider별 운영 연동을 통한 실제 외부 AI 검색/작업 조언, MES/E
 
 provider 직전 게이트는 `ai_sensitive_data_policies`의 활성 고객·현장 정책을 읽어 금칙어와 고객 식별자를 원천 단위로 차단한다. 이 민감정보 정책의 등록·변경 API/UI는 현재 서비스 범위에 없다. 별도로 구현된 `ai_operational_policies` API/UI는 kill switch, 호출 한도, 보존 기간과 감사 내보내기 허용 여부를 관리한다.
 
+운영 보조 도구 중 `scripts/verify-pilot-restore.py`는 서버 쓰기 중지·SQLite checkpoint 뒤 서버 DB와 `storage`의 복구 전후 증거를 수집·비교한다. 이 도구는 DB 무결성, 테이블별 row 수와 파일 manifest를 확인하지만 별도 PC 복구 및 업무 시나리오 검증을 대신하지 않는다.
+
 테스트 DB, 테스트 업로드 파일, 로그, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
