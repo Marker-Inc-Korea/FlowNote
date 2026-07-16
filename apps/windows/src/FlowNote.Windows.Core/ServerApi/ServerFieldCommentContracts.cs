@@ -63,7 +63,8 @@ public sealed record ServerFieldCommentCreateRequest
         FieldCommentRecord fieldComment,
         string? documentId = null,
         string? documentVersionId = null,
-        string? idempotencyKey = null)
+        string? idempotencyKey = null,
+        string? authorId = null)
     {
         return new ServerFieldCommentCreateRequest
         {
@@ -73,6 +74,7 @@ public sealed record ServerFieldCommentCreateRequest
             InputMode = fieldComment.InputMode,
             SignalLevel = Clean(fieldComment.SignalLevel),
             RawContent = fieldComment.RawContent,
+            AuthorId = Clean(authorId),
             ReportedBy = Clean(fieldComment.ReportedBy) ?? Clean(fieldComment.AuthorName),
             EntrySource = fieldComment.EntrySource,
             DeviceId = Clean(fieldComment.DeviceId),
@@ -151,6 +153,9 @@ public sealed record ServerFieldCommentResponse
 
     [JsonPropertyName("status")]
     public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("source_hash_sha256")]
+    public string SourceHashSha256 { get; init; } = string.Empty;
 
     [JsonPropertyName("reviewed_by")]
     public string? ReviewedBy { get; init; }
@@ -277,4 +282,64 @@ public sealed record ServerFieldCommentAttachmentResponse
 
     [JsonPropertyName("file")]
     public ServerFieldCommentAttachmentFileResponse File { get; init; } = new();
+}
+
+public sealed record ServerFieldCommentAuditResponse
+{
+    [JsonPropertyName("history_id")]
+    public string HistoryId { get; init; } = string.Empty;
+
+    [JsonPropertyName("event_type")]
+    public string EventType { get; init; } = string.Empty;
+
+    [JsonPropertyName("change_reason")]
+    public string? ChangeReason { get; init; }
+
+    [JsonPropertyName("created_at")]
+    public DateTime CreatedAt { get; init; }
+}
+
+public sealed record ServerFieldCommentTraceDocumentResponse
+{
+    [JsonPropertyName("document_id")]
+    public string DocumentId { get; init; } = string.Empty;
+
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("generated_version_ids")]
+    public IReadOnlyList<string> GeneratedVersionIds { get; init; } = [];
+}
+
+public sealed record ServerFieldCommentTraceReportResponse
+{
+    [JsonPropertyName("report_id")]
+    public string ReportId { get; init; } = string.Empty;
+
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("source_version_id")]
+    public string? SourceVersionId { get; init; }
+
+    [JsonPropertyName("generated_document")]
+    public ServerFieldCommentTraceDocumentResponse? GeneratedDocument { get; init; }
+}
+
+public sealed record ServerFieldCommentTraceResponse
+{
+    [JsonPropertyName("field_comment")]
+    public ServerFieldCommentResponse FieldComment { get; init; } = new();
+
+    [JsonPropertyName("audit")]
+    public IReadOnlyList<ServerFieldCommentAuditResponse> Audit { get; init; } = [];
+
+    [JsonPropertyName("reports")]
+    public IReadOnlyList<ServerFieldCommentTraceReportResponse> Reports { get; init; } = [];
 }

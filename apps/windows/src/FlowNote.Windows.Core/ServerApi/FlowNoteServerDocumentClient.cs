@@ -239,13 +239,15 @@ public sealed class FlowNoteServerDocumentClient
         string? documentId = null,
         string? documentVersionId = null,
         string? idempotencyKey = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? authorId = null)
     {
         var request = ServerFieldCommentCreateRequest.FromLocal(
             fieldComment,
             documentId,
             documentVersionId,
-            idempotencyKey);
+            idempotencyKey,
+            authorId);
         return await RegisterFieldCommentAsync(request, cancellationToken);
     }
 
@@ -304,6 +306,16 @@ public sealed class FlowNoteServerDocumentClient
     {
         using var response = await httpClient.GetAsync($"api/v1/field-comments/{commentId}", cancellationToken);
         return await ReadJsonResponse<ServerFieldCommentResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerFieldCommentTraceResponse> GetFieldCommentTraceabilityAsync(
+        string commentId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/field-comments/{commentId}/traceability",
+            cancellationToken);
+        return await ReadJsonResponse<ServerFieldCommentTraceResponse>(response, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ServerFieldCommentAttachmentResponse>> ListFieldCommentAttachmentsAsync(

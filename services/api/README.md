@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-07-16 현재 전역 FastAPI 앱에 등록된 104개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-07-16 현재 전역 FastAPI 앱에 등록된 105개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -41,6 +41,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/documents/{document_id}/versions` | Register new version; optional multipart `idempotencyKey` returns the existing version on retry |
 | PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | Change version status |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | Publish selected version |
+| DELETE | `/api/v1/documents/{document_id}` | Soft-delete a document using its base revision and change reason |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | Issue one-time controlled copy grant for the current published version |
 | GET | `/api/v1/controlled-copies/{token}` | Stream the session-bound controlled copy once |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/android-view-grants` | Issue an approved-device Android secure view grant |
@@ -117,6 +118,8 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 
 The server uses HMAC-signed Bearer access tokens plus the `auth_sessions` table. Login creates a session. Refresh rotates the access token ID and refresh token hash. Logout revokes the session.
 
+Document write responses carry the server-authoritative aggregate `revision`. Version registration, status changes, publish, tag replacement, and soft delete compare the caller's base revision and relevant latest/published version before committing. Stale state, deleted documents, reused idempotency keys, and file-hash mismatches return structured HTTP 409 details; clients must preserve these as administrator-resolved conflicts instead of ordinary automatic retries.
+
 Development defaults such as `admin / 1234` and the default token secret are local development values only.
 
 Server account lifecycle APIs require `admin` or `system-admin`. Temporary passwords are request-only sensitive values, force a password change after first login, and are never returned. The `python -m app.ops.server_accounts` command remains an emergency/server-console path.
@@ -176,7 +179,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-07-16, the FastAPI suite collects 120 tests. `scripts/verify-preserved-tests.ps1` uses the same 120-test collection and JUnit baseline. The complete Windows baseline also runs WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID; a FastAPI-only run is partial evidence.
+As of 2026-07-16, the FastAPI suite collects 126 tests. `scripts/verify-preserved-tests.ps1` still expects a 120-test collection and JUnit baseline, so the standard run currently stops at that mismatch and cannot produce a valid integrated `PASSED` result. After aligning the script baseline with the code, the complete Windows baseline must also run WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID; a FastAPI-only run is partial evidence.
 
 The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no management API for that sensitive-data policy. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. The server lifespan runs expired-query retention on the configured interval by default, while the `system-admin` endpoint remains available for an immediate run.
 

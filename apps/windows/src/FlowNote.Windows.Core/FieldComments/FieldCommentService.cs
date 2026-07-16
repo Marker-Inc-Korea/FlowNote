@@ -265,6 +265,34 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
                 ? "EXISTS (SELECT 1 FROM report_sources r WHERE r.source_type = 'FIELD_COMMENT' AND r.local_source_id = comment.comment_id)"
                 : "NOT EXISTS (SELECT 1 FROM report_sources r WHERE r.source_type = 'FIELD_COMMENT' AND r.local_source_id = comment.comment_id)");
         }
+        if (filter.Unreviewed is not null)
+        {
+            clauses.Add(filter.Unreviewed.Value
+                ? "comment.status IN ('NEW', 'NEEDS_REVIEW')"
+                : "comment.status NOT IN ('NEW', 'NEEDS_REVIEW')");
+        }
+        if (filter.Overdue is not null)
+        {
+            var overdueClause = "comment.review_due_at IS NOT NULL AND comment.review_due_at < $review_now AND comment.status NOT IN ('SELECTED', 'EXCLUDED', 'ARCHIVED')";
+            clauses.Add(filter.Overdue.Value ? $"({overdueClause})" : $"NOT ({overdueClause})");
+            command.Parameters.AddWithValue("$review_now", DateTime.UtcNow.ToString("O"));
+        }
+        if (filter.Unassigned is not null)
+        {
+            clauses.Add(filter.Unassigned.Value
+                ? "(comment.assigned_to IS NULL OR trim(comment.assigned_to) = '')"
+                : "(comment.assigned_to IS NOT NULL AND trim(comment.assigned_to) <> '')");
+        }
+        if (filter.MissingEvidence is not null)
+        {
+            var missingClause = "comment.document_version_no IS NULL OR trim(comment.author_name) = '' OR comment.analysis_content IS NULL OR trim(comment.analysis_content) = ''";
+            clauses.Add(filter.MissingEvidence.Value ? $"({missingClause})" : $"NOT ({missingClause})");
+        }
+        if (filter.DuplicateSuspected is not null)
+        {
+            var duplicateClause = "EXISTS (SELECT 1 FROM field_comments duplicate WHERE duplicate.comment_id <> comment.comment_id AND duplicate.raw_content = comment.raw_content)";
+            clauses.Add(filter.DuplicateSuspected.Value ? duplicateClause : $"NOT {duplicateClause}");
+        }
 
         if (filter.CreatedFrom is not null)
         {
@@ -317,6 +345,14 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             LEFT JOIN documents AS document ON document.document_id = comment.document_id
             {where}
             ORDER BY
+                CASE WHEN $priority_order = 1 THEN
+                    (CASE WHEN comment.review_due_at IS NOT NULL AND comment.review_due_at < $priority_now AND comment.status NOT IN ('SELECTED', 'EXCLUDED', 'ARCHIVED') THEN 64 ELSE 0 END)
+                    + (CASE WHEN comment.assigned_to IS NULL OR trim(comment.assigned_to) = '' THEN 32 ELSE 0 END)
+                    + (CASE WHEN comment.document_version_no IS NULL OR trim(comment.author_name) = '' OR comment.analysis_content IS NULL OR trim(comment.analysis_content) = '' THEN 16 ELSE 0 END)
+                    + (CASE WHEN EXISTS (SELECT 1 FROM field_comments duplicate WHERE duplicate.comment_id <> comment.comment_id AND duplicate.raw_content = comment.raw_content) THEN 8 ELSE 0 END)
+                    + (CASE WHEN comment.status IN ('NEW', 'NEEDS_REVIEW') THEN 4 ELSE 0 END)
+                    + (CASE WHEN NOT EXISTS (SELECT 1 FROM report_sources r WHERE r.source_type = 'FIELD_COMMENT' AND r.local_source_id = comment.comment_id) THEN 2 ELSE 0 END)
+                  ELSE 0 END DESC,
                 CASE comment.status
                     WHEN 'SELECTED' THEN 0
                     WHEN 'REVIEWED' THEN 1
@@ -332,6 +368,8 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$limit", Math.Clamp(filter.Limit, 1, 500));
+        command.Parameters.AddWithValue("$priority_order", filter.PriorityOrder ? 1 : 0);
+        command.Parameters.AddWithValue("$priority_now", DateTime.UtcNow.ToString("O"));
 
         using var reader = command.ExecuteReader();
         var records = new List<FieldCommentReviewRecord>();
@@ -341,6 +379,16 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         }
 
         return records;
+    }
+
+    public string? GetServerCommentId(string commentId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT server_comment_id FROM field_comments WHERE comment_id = $comment_id LIMIT 1;";
+        command.Parameters.AddWithValue("$comment_id", commentId);
+        var value = command.ExecuteScalar();
+        return value is null or DBNull ? null : Convert.ToString(value);
     }
 
     public FieldCommentRecord UpdateReview(

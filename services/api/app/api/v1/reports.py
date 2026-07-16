@@ -23,6 +23,8 @@ from app.db.models import (
     FileObject,
     Report,
     ReportSource,
+    NotificationChannel,
+    NotificationChannelMember,
     TagDefinition,
     WorkRecord,
     WorkRecordVersion,
@@ -41,7 +43,7 @@ REPORT_SOURCE_TYPES = {
     "WORK_RECORD",
     "WORK_RECORD_VERSION",
 }
-FIELD_COMMENT_SOURCE_EXCLUDED_STATUSES = {"EXCLUDED", "ARCHIVED"}
+FIELD_COMMENT_REPORT_SOURCE_STATUS = "SELECTED"
 DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "PUBLISHED", "ARCHIVED"}
 
 
@@ -189,7 +191,42 @@ def _validate_work_record(session: Session, work_record_id: str | None) -> str |
     return cleaned
 
 
-def _validate_source(session: Session, source: ReportSourceRequest) -> tuple[str, str, str | None, str | None]:
+def _ensure_source_channel_access(
+    session: Session,
+    current_user: CurrentUser,
+    source_type: str,
+    source_id: str,
+) -> None:
+    if current_user.role in {"admin", "system-admin"}:
+        return
+    channel_ids = list(session.scalars(
+        select(NotificationChannel.channel_id).where(
+            NotificationChannel.status == "ACTIVE",
+            NotificationChannel.source_type == source_type,
+            NotificationChannel.source_id == source_id,
+        )
+    ).all())
+    if not channel_ids:
+        return
+    membership = session.scalar(
+        select(NotificationChannelMember.id).where(
+            NotificationChannelMember.channel_id.in_(channel_ids),
+            NotificationChannelMember.user_id == current_user.user_id,
+            NotificationChannelMember.status == "ACTIVE",
+        ).limit(1)
+    )
+    if membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Current user cannot use a source linked to an out-of-scope channel.",
+        )
+
+
+def _validate_source(
+    session: Session,
+    source: ReportSourceRequest,
+    current_user: CurrentUser,
+) -> tuple[str, str, str | None, str | None]:
     source_type = _normalize_source_type(source.source_type)
     source_id = source.source_id.strip()
     source_version_id = _clean_optional(source.source_version_id)
@@ -199,24 +236,35 @@ def _validate_source(session: Session, source: ReportSourceRequest) -> tuple[str
         field_comment = session.scalar(select(FieldComment).where(FieldComment.comment_id == source_id))
         if field_comment is None:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="FIELD_COMMENT source is unknown.")
-        if field_comment.status in FIELD_COMMENT_SOURCE_EXCLUDED_STATUSES:
+        if field_comment.status != FIELD_COMMENT_REPORT_SOURCE_STATUS:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="FIELD_COMMENT source is excluded from report sources.",
+                detail="FIELD_COMMENT report source must be SELECTED.",
             )
+        source_version_id = field_comment.document_version_id
     elif source_type == "DOCUMENT":
         document = session.scalar(
             select(Document).where(Document.document_id == source_id, Document.deleted_at.is_(None))
         )
         if document is None:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="DOCUMENT source is unknown.")
-        if source_version_id is not None:
-            version = session.scalar(select(DocumentVersion).where(DocumentVersion.version_id == source_version_id))
-            if version is None or version.document_id != document.document_id:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail="sourceVersionId must belong to the DOCUMENT source.",
-                )
+        if document.status != "PUBLISHED" or document.published_version_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="DOCUMENT report source must be published.",
+            )
+        source_version_id = source_version_id or document.published_version_id
+        version = session.scalar(select(DocumentVersion).where(DocumentVersion.version_id == source_version_id))
+        if version is None or version.document_id != document.document_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="sourceVersionId must belong to the DOCUMENT source.",
+            )
+        if source_version_id != document.published_version_id or not version.is_published:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="DOCUMENT report source must use the current published version.",
+            )
     elif source_type == "WORK_SEQUENCE_ITEM":
         exists = session.scalar(select(WorkSequenceItem.id).where(WorkSequenceItem.item_id == source_id))
         if exists is None:
@@ -243,15 +291,21 @@ def _validate_source(session: Session, source: ReportSourceRequest) -> tuple[str
                 detail="WORK_RECORD_VERSION source is unknown.",
             )
 
+    _ensure_source_channel_access(session, current_user, source_type, source_id)
     return source_type, source_id, source_version_id, relation_type
 
 
-def _replace_report_sources(session: Session, report_id: str, sources: list[ReportSourceRequest]) -> list[ReportSource]:
+def _replace_report_sources(
+    session: Session,
+    report_id: str,
+    sources: list[ReportSourceRequest],
+    current_user: CurrentUser,
+) -> list[ReportSource]:
     session.query(ReportSource).filter(ReportSource.report_id == report_id).delete(synchronize_session=False)
     session.flush()
     report_sources: list[ReportSource] = []
     for source in sources:
-        source_type, source_id, source_version_id, relation_type = _validate_source(session, source)
+        source_type, source_id, source_version_id, relation_type = _validate_source(session, source, current_user)
         report_source = ReportSource(
             report_id=report_id,
             source_type=source_type,
@@ -524,7 +578,7 @@ def create_report_draft(
     )
     session.add(report)
     session.flush()
-    _replace_report_sources(session, report.report_id, request.sources)
+    _replace_report_sources(session, report.report_id, request.sources, current_user)
     _record_activity(session, "report.draft_created", current_user.user_id, report, f"Report draft created: {report.title}.")
     try:
         session.commit()
@@ -570,7 +624,7 @@ def save_report(
 
     saved_sources: list[ReportSource] | None = None
     if request.sources is not None:
-        saved_sources = _replace_report_sources(session, report.report_id, request.sources)
+        saved_sources = _replace_report_sources(session, report.report_id, request.sources, current_user)
 
     report.report_type = _clean_optional(request.report_type) or report.report_type
     report.title = _clean_optional(request.title) or report.title

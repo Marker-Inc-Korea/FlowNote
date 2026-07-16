@@ -223,7 +223,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                         await SyncDocumentStatusAsync(item, serverClient, cancellationToken);
                         break;
                     case "register_field_comment":
-                        await SyncFieldCommentAsync(item, serverClient, cancellationToken);
+                        await SyncFieldCommentAsync(item, serverClient, serverUserId, cancellationToken);
                         break;
                     case "update_field_comment_review":
                         await SyncFieldCommentReviewAsync(item, serverClient, serverUserId, cancellationToken);
@@ -1400,6 +1400,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
     private async Task SyncFieldCommentAsync(
         QueueItem item,
         FlowNoteServerDocumentClient serverClient,
+        string? serverUserId,
         CancellationToken cancellationToken)
     {
         if (TryGetFieldCommentServerId(item.EntityId) is { } existingServerCommentId)
@@ -1429,7 +1430,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             documentMapping.ServerDocumentId,
             documentMapping.ServerVersionId,
             item.IdempotencyKey,
-            cancellationToken);
+            cancellationToken,
+            serverUserId);
 
         var now = DateTime.UtcNow;
         using var connection = database.OpenConnection();
@@ -1464,10 +1466,33 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             throw new InvalidOperationException(SyncFailureMessages.FieldCommentDependencyNotSynced);
         }
 
-        var response = await serverClient.UpdateFieldCommentReviewAsync(
-            serverCommentId,
-            ServerFieldCommentReviewRequest.FromLocal(fieldComment, serverUserId),
-            cancellationToken);
+        var serverComment = await serverClient.GetFieldCommentAsync(serverCommentId, cancellationToken);
+        var request = ServerFieldCommentReviewRequest.FromLocal(fieldComment, serverUserId);
+        var mainFlow = new[] { "NEW", "ANALYZED", "REVIEWED", "SELECTED" };
+        var currentIndex = Array.IndexOf(mainFlow, serverComment.Status);
+        var targetIndex = Array.IndexOf(mainFlow, fieldComment.Status);
+        ServerFieldCommentResponse response = serverComment;
+        if (currentIndex >= 0 && targetIndex > currentIndex)
+        {
+            for (var index = currentIndex + 1; index <= targetIndex; index++)
+            {
+                response = await serverClient.UpdateFieldCommentReviewAsync(
+                    serverCommentId,
+                    request with
+                    {
+                        Status = mainFlow[index],
+                        TransitionReason = $"{request.TransitionReason} ({mainFlow[index]} 단계 동기화)"
+                    },
+                    cancellationToken);
+            }
+        }
+        else
+        {
+            response = await serverClient.UpdateFieldCommentReviewAsync(
+                serverCommentId,
+                request,
+                cancellationToken);
+        }
 
         var now = DateTime.UtcNow;
         using var connection = database.OpenConnection();

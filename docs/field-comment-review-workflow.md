@@ -24,6 +24,14 @@
 
 ## 관리자 작업함
 
-- 목록은 상태, 담당자, 문서, 작성자, 라인, 설비, 공정, 오류 유형, 기간, 오래된 NEW, 첨부 유무, 보고서 연결 여부로 필터링한다.
+- 목록은 상태, 담당자, 문서, 작성자, 라인, 설비, 공정, 오류 유형, 기간, 오래된 NEW, 첨부 유무, 보고서 연결 여부와 `UNREVIEWED`, `OVERDUE`, `UNASSIGNED`, `MISSING_EVIDENCE`, `DUPLICATE_SUSPECTED`, `REPORT_UNLINKED` 작업함 플래그로 필터링한다.
+- `priorityOrder=true`일 때 기한 초과, 담당자 없음, 근거 누락, 중복 의심, 미검토, 보고서 미연결 순으로 가중치를 합산하고 높은 항목부터 표시한다. 이 점수는 사실 판정이 아니라 관리자 처리 순서다.
 - 품질 작업함은 `OLD_NEW`, `WEAK_SELECTED`, `MISSING_REPORT_SOURCE`를 제공한다.
-- 품질 지표는 상태·신호등·actor·라인·오류 유형 분포와 보고서 연결률을 산출한다. 스모크는 정상·보류·재작업·안전 우려·품질 이상·오입력/제외를 양 라인에 배치하고 편향 점검 결과를 이력에 남긴다.
+- 품질 지표는 상태·신호등·actor·라인·오류 유형 분포, 문서↔FieldComment와 FieldComment↔보고서 연결률, 2종 이상 source 보고서 비율, source type 수, orphan 비율, 라인·설비·품목·공정·오류 유형 태그 축 커버리지를 산출한다.
+
+## 보고서 선정과 역추적
+
+- 보고서의 `FIELD_COMMENT` source는 `SELECTED`만 허용하며 연결 시 해당 FieldComment의 `document_version_id`를 `report_sources.source_version_id`에 고정한다.
+- `DOCUMENT` source는 현재 `PUBLISHED` 버전만 허용한다. 비공개 문서와 최신 작업중 버전, 과거 공개본이 아닌 버전은 후보에 섞지 않는다.
+- source에 연결된 활성 업무 채널이 있으면 `admin`, `system-admin` 외 사용자는 활성 채널 멤버여야 한다.
+- `GET /field-comments/{comment_id}/traceability`와 WPF `서버 역추적`은 원천 hash, 상태 전이 감사, 보고서 source, 생성된 최종 문서와 모든 문서 버전 ID를 한 흐름으로 보여준다.

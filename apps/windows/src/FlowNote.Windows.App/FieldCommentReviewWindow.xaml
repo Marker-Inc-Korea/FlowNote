@@ -115,6 +115,10 @@
                         <TextBlock Text="보고서 연결" Foreground="{StaticResource SecondaryTextBrush}" />
                         <ComboBox x:Name="ReportLinkFilterComboBox" Height="28" Margin="0,3,0,0" />
                     </StackPanel>
+                    <StackPanel Width="128" Margin="8,0,0,0">
+                        <TextBlock Text="우선 처리 작업함" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <ComboBox x:Name="WorkbenchFilterComboBox" Height="28" Margin="0,3,0,0" />
+                    </StackPanel>
                 </WrapPanel>
             </Grid>
         </Border>
@@ -142,6 +146,7 @@
                           SelectionChanged="FieldCommentGrid_SelectionChanged">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="상태" Binding="{Binding StatusLabel}" Width="94" />
+                        <DataGridTextColumn Header="처리 우선 사유" Binding="{Binding PriorityLabel}" Width="142" />
                         <DataGridTextColumn Header="문서" Binding="{Binding DocumentTitle}" Width="*" />
                         <DataGridTextColumn Header="작성자" Binding="{Binding AuthorName}" Width="96" />
                         <DataGridTextColumn Header="태그" Binding="{Binding DocumentTags}" Width="132" />
@@ -242,6 +247,12 @@
                                     Content="선택 일괄 저장"
                                     DockPanel.Dock="Left"
                                     Click="BulkSaveReviewButton_Click" />
+                            <Button Width="116"
+                                    Height="30"
+                                    Margin="10,0,0,0"
+                                    Content="서버 역추적"
+                                    DockPanel.Dock="Left"
+                                    Click="TraceabilityButton_Click" />
                         </DockPanel>
                     </Grid>
                 </Border>
