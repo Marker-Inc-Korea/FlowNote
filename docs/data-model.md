@@ -81,6 +81,9 @@
 | `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations` | 외부 AI 질의 상태와 질의 시점 근거 snapshot, 검증된 주장별 인용 연결 |
 | `ai_prompt_versions`, `ai_call_attempts`, `ai_transfer_approvals` | 승인 프롬프트 버전, 정제된 호출 시도 감사, 고객·현장별 외부 전송 승인 |
 | `ai_sensitive_data_policies` | 고객·현장별 활성 금칙어와 고객 식별자 정책 버전 |
+| `ai_operational_policies` | 전역·현장별 kill switch, 요청·동시성·timeout·비용 한도, 보존과 감사 내보내기 정책 |
+| `ai_operation_audit_events` | 승인·프롬프트·운영 정책 변경과 호출 전 차단의 정제 감사 이벤트 |
+| `ai_retention_audits` | 만료 질의 payload 비식별화와 응답 원문 삭제 결과, 보존 hash 감사 |
 | `document_access_logs` | 서버 문서 접근 로그 |
 | `controlled_copy_grants` | SHA-256으로 저장한 1회성 토큰, 사용자·세션·단말·문서 버전, 만료·소비·실패 상태 |
 | `android_document_view_grants` | Android 앱 내부 열람용 token hash, 사용자·세션·필수 승인 단말·공개 버전·미디어 종류·크기·SHA-256, 만료·소비·실패 상태 |

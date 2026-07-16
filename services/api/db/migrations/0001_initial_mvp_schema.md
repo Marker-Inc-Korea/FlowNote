@@ -50,6 +50,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `ai_retention_audits` | Query-payload de-identification and response-text deletion audit metadata |
 | `document_access_logs` | Document view/download/auto-close access logs |
 | `controlled_copy_grants` | Hashed one-time token bound to a published version, user, auth session, expiry, size, and hash |
+| `android_document_view_grants` | Hashed one-time Android secure-view token bound to the user, auth session, approved device, published version, media limits, expiry, size, and hash |
 | `activity_history` | Server activity history |
 
 ## Notes

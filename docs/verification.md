@@ -98,6 +98,14 @@ provider 심사는 계약, 데이터 보존, 학습 사용, 전송 지역, TLS, 
 - 최종 실행은 누적 큐 985건 가운데 구 형식 653건, 선행 문서 미동기화 260건 등 과거 backlog가 남은 상태에서 이번 run 전용 row만 모두 동기화됐다고 가정한 기존 검증 블록에서 중단됐다. 과거 큐를 삭제·재분류하지 않았으며 통합 전체 `PASSED` 증거로 승격하지 않는다.
 - 13:26 KST 이후 공통 SQLite의 FieldComment 상태는 `NEW 2026`, `ANALYZED 255`, `REVIEWED 246`, `SELECTED 246`, `EXCLUDED 23`, `ARCHIVED 20`이다. 로컬 report source 표기는 현행 대문자 기준 `FIELD_COMMENT 354`, `DOCUMENT 212`, `WORK_SEQUENCE_HISTORY 120`, `WORK_SEQUENCE_ITEM 20`이며 구 소문자 호환 row도 그대로 보존했다.
 
+## 2026-07-16 작업 102 현재 코드 문서 갱신
+
+깨끗한 `main` 작업 트리에서 최근 Android 보안 문서 열람, 문서 revision 충돌, 채널 알림·동기화, FieldComment 검토 역추적, AI 검색 readiness 구현을 개발 문서와 다시 대조했다. 전역 OpenAPI는 루트 `GET /`를 포함한 108개 method/path 조합이고 `docs/api.md`와 `services/api/README.md`의 API 표는 누락·초과 없이 같은 집합을 설명한다. 두 문서에 107개로 남아 있던 총계를 108개로 바로잡았다.
+
+서버 ORM은 47개 테이블을 생성한다. DB 개요의 46개 총계를 47개로 수정하고, 상위 데이터 모델 표에 `ai_operational_policies`, `ai_operation_audit_events`, `ai_retention_audits`를, 초기 스키마 설명에 `android_document_view_grants`를 보강했다. `Settings` 36개 항목은 API·서버 설정 문서에 모두 반영되어 있다.
+
+`services/api/.venv/bin/python -m pytest --collect-only -q`로 FastAPI 128건 수집을 확인했다. 이번 요청은 문서 갱신이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았다. 스크립트의 FastAPI 고정 기준은 여전히 120건이므로 현재 128건 코드와 일치하지 않는다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
+
 ## 2026-07-16 작업 102 초기 코드·문서 재대조 기록
 
 이 기록은 같은 날 후보 5 FieldComment 정제 변경 전의 재대조 결과다. 당시 깨끗한 작업 트리의 구현을 제품·시스템·데이터 모델·API·보안·배포·클라이언트·서버 개발 문서와 대조했다. 코드가 문서보다 우선한다는 기준으로 전역 FastAPI OpenAPI 105개 method/path 조합, ORM 46개 테이블, `Settings` 36개 항목을 확인했다. 서버 API 목록에서 빠진 문서 soft delete를 보강하고, Android 보안 본문 열람·Keystore 보호 outbox·로그인 세션 foreground service 알림 복구가 메타데이터 조회와 전경 Activity polling으로 남아 있던 당시 상태 요약·MVP·파일럿 문구를 구현에 맞게 바로잡았다. 그 시점의 FastAPI 수집값 126건과 표준 스크립트 고정값 120건의 불일치도 활성 검증·배포 문서에 명시했다. 후속 후보 5 변경 이후의 현재 기준은 위 절의 `128 passed` 기록을 따른다.

@@ -201,23 +201,66 @@ MDM 정책 보고서에서 단말 전체 암호화, 6자리 이상 화면 잠금
 
 ## 실행 결과표
 
-| 게이트 | 상태 | 증거 | 담당자 | 후속 기한 |
-| --- | --- | --- | --- | --- |
-| Windows 서버 신규 설치·재부팅·자동 시작 | 대기 |  |  |  |
-| WPF framework-dependent/self-contained 설치 | 대기 |  |  |  |
-| WPF 업그레이드·제거·rollback | 대기 |  |  |  |
-| EXE/MSI hash·서명과 WebView2 | 대기 |  |  |  |
-| HTTPS·방화벽·주소 변경·시간 동기화 | 대기 |  |  |  |
-| 인증서 발급·배포·갱신·폐기 | 대기 |  |  |  |
-| Android 서명·MDM/승인 배포 정책 | 대기 |  |  |  |
-| `deviceId` 발급·교체·분실·비활성화 | 대기 |  |  |  |
-| Android outbox 보호 정책 | 대기 |  |  |  |
-| 서버 DB+`storage` 별도 PC 복구 | 대기 |  |  |  |
-| WPF DB+`Files` 별도 PC 복구 | 대기 |  |  |  |
-| 역할별 업무·권한 역검증 | 대기 |  |  |  |
-| 네트워크 단절·알림/outbox 복구 | 대기 |  |  |  |
-| 제한형 AI 또는 비활성 증거 | 대기 |  |  |  |
-| UX 관찰과 개발 항목 변환 | 대기 |  |  |  |
-| 중단·rollback·지원·정보처리 승인 | 대기 |  |  |  |
+실행 전 `run_id`, 시험 현장/라인 코드, 시작·종료 시각, 증거 저장소, 보존 만료일을 표 위에 기록한다. `상태`는 `미실행/실행중/완료`, `판정`은 `대기/통과/실패`만 사용한다. 담당자는 개인 이름 대신 먼저 책임 역할을 지정하고 승인된 증거 저장소의 대응표에서 실제 담당자와 연결한다. 아래 초기값은 2026-07-16 저장소 점검 결과이며 실기 완료 증거가 아니므로 모두 `대기`다.
+
+| 게이트 | 상태 | 증거 | 담당자 | 후속 기한 | 판정 |
+| --- | --- | --- | --- | --- | --- |
+| Windows 서버 신규 설치·재부팅·자동 시작 | 미실행 | `<run_id>/install/server-*` | 서버 운영 책임자 | 파일럿 시작 전 | 대기 |
+| WPF framework-dependent/self-contained 설치 | 미실행 | `<run_id>/install/wpf-fd-*`, `wpf-sc-*` | Windows 배포 책임자 | 파일럿 시작 전 | 대기 |
+| WPF 업그레이드·제거·rollback | 미실행 | `<run_id>/install/wpf-lifecycle-*` | Windows 배포 책임자 | 파일럿 시작 전 | 대기 |
+| EXE/MSI hash·서명과 WebView2 | 미실행 | `<run_id>/packages/*`, `<run_id>/install/webview2-*` | Windows 배포 책임자 | 파일럿 시작 전 | 대기 |
+| HTTPS·방화벽·주소 변경·시간 동기화 | 미실행 | `<run_id>/network-and-certificate/network-*` | 서버 운영 책임자 | 현장 연결 전 | 대기 |
+| 인증서 발급·배포·갱신·폐기 | 미실행 | `<run_id>/network-and-certificate/certificate-*` | 인증서 책임자 | 현장 연결 전 | 대기 |
+| Android 서명·MDM/승인 배포 정책 | 미실행 | `<run_id>/packages/android-*`, `<run_id>/android-logs/mdm-*` | Android 운영 책임자 | 운영 로그인 발급 전 | 대기 |
+| `deviceId` 발급·교체·분실·비활성화 | 미실행 | `<run_id>/scenario-results/device-lifecycle-*` | Android 운영 책임자 | 운영 로그인 발급 전 | 대기 |
+| Android outbox 보호 정책 | 미실행 | `<run_id>/integrity/android-outbox-*` | Android 운영·정보보호 책임자 | 운영 로그인 발급 전 | 대기 |
+| 서버 DB+`storage` 별도 PC 복구 | 미실행 | `<run_id>/backup-restore/server-*.json` | 데이터 보호 책임자 | 파일럿 시작 전 | 대기 |
+| WPF DB+`Files` 별도 PC 복구 | 미실행 | `<run_id>/backup-restore/wpf-*.json` | 데이터 보호 책임자 | 파일럿 시작 전 | 대기 |
+| 역할별 업무·권한 역검증 | 미실행 | `<run_id>/scenario-results/role-metrics.*` | 현장 운영 책임자 | 확대 판정 전 | 대기 |
+| 네트워크 단절·알림/outbox 복구 | 미실행 | `<run_id>/scenario-results/disconnect-*` | 서버·Android 운영 책임자 | 확대 판정 전 | 대기 |
+| 제한형 AI 또는 비활성 증거 | 미실행 | `<run_id>/integrity/ai-scope-or-disabled-*` | AI 승인·정보보호 책임자 | 최초 시나리오 전 | 대기 |
+| UX 관찰과 개발 항목 변환 | 미실행 | `<run_id>/observations/observation-*`, `development-items.*` | 현장 관찰 책임자 | 확대 판정 전 | 대기 |
+| 중단·rollback·지원·정보처리 승인 | 미실행 | `<run_id>/approvals/operations-approval.*` | 파일럿 책임자 | 리허설 착수 전 | 대기 |
+
+### 역할별 측정 결과
+
+성공률은 `성공 건수 / 필수 시나리오 분모 × 100`으로 계산한다. 중앙값과 최대 시간은 성공·실패를 포함한 모든 시도에서 따로 계산하지 않고, 원시 시도 행을 보존한 뒤 `전체 시도` 기준으로 산출한다. 재시도와 도움 요청은 성공 처리에서 숨기지 않고 별도 합계로 남긴다.
+
+| 역할 | 참여자 수 | 필수 시나리오 분모 | 성공 | 성공률 | 중앙값 | 최대 | 재시도 | 도움 요청 | 치명적 blocker | 판정 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 관리자 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 대기 |
+| 반장 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 대기 |
+| 조장 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 대기 |
+| 작업자 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 대기 |
+
+### 손실·무결성·유출 결과
+
+| 금지 사건 | 결과 | 증거 | 판정 |
+| --- | ---: | --- | --- |
+| 데이터 손실 | 미측정 | `<run_id>/integrity/data-loss-*` | 대기 |
+| DB 무결성 실패 | 미측정 | `<run_id>/backup-restore/*-comparison.json` | 대기 |
+| 권한 우회 | 미측정 | `<run_id>/scenario-results/permission-negative-*` | 대기 |
+| 미승인 파일·비밀·개인정보 유출 | 미측정 | `<run_id>/integrity/disclosure-*` | 대기 |
+
+복구 전후 증거는 쓰기가 중지되고 SQLite checkpoint 또는 앱 종료가 확인된 상태에서 다음처럼 수집한다. `capture`는 DB `quick_check`, foreign key 위반, 모든 업무 테이블의 원천 개수와 파일 상대경로·크기·SHA-256을 JSON으로 남긴다. `compare`는 같은 `run_id`와 대상의 전후 개수 및 파일 manifest가 다르거나 복구 DB 무결성이 실패하면 종료 코드 1을 반환한다. 경로에는 실제 고객명, 서버명, IP를 넣지 않는다.
+
+```powershell
+py -3 scripts\verify-pilot-restore.py capture --run-id <run_id> --target server --phase before --database C:\FlowNote\Server\data\flownote.sqlite3 --files C:\FlowNote\Server\storage --evidence-root D:\FlowNotePilotEvidence
+py -3 scripts\verify-pilot-restore.py capture --run-id <run_id> --target server --phase after --database D:\FlowNoteRestore\Server\data\flownote.sqlite3 --files D:\FlowNoteRestore\Server\storage --evidence-root D:\FlowNotePilotEvidence
+py -3 scripts\verify-pilot-restore.py compare --before D:\FlowNotePilotEvidence\<run_id>\backup-restore\server-before.json --after D:\FlowNotePilotEvidence\<run_id>\backup-restore\server-after.json
+```
+
+WPF도 같은 명령에서 `--target wpf`, 로컬 DB, `Files` 경로로 전후를 수집한다. DB 본파일의 SHA-256은 참고값이며 SQLite가 정상적으로 checkpoint된 서로 다른 복사본이라도 물리 바이트가 달라질 수 있으므로, 통과 판정은 `quick_check`, foreign key, 테이블별 원천 개수와 참조 파일 manifest 일치로 한다.
+
+### 2026-07-16 준비 점검
+
+`PILOT-20260716-TOOLTEST-001`은 복구 증거 도구의 동작 확인용 `TOOLTEST`이며 실제 설치·복구 또는 현장 파일럿 run이 아니다. 이 실행을 완료 판정의 분자나 통과 증거로 사용하지 않는다. 증거는 Git 제외 로컬 경로 `data/local/pilot-evidence/PILOT-20260716-TOOLTEST-001/backup-restore/`에 보존했다.
+
+| 점검 대상 | 결과 | 근거 | 후속 개발 항목 |
+| --- | --- | --- | --- |
+| 서버 개발 DB와 `storage` 동일 원천 전후 비교 | 도구 시험 통과 | `server-before.json`, `server-after.json`, `server-comparison.json`; `quick_check=ok`, foreign key 위반 0건, 파일 6,498건 | 실제 별도 PC 복구본으로 새 `PILOT` run 재검증 |
+| WPF 공통 DB와 `Files` 동일 원천 전후 비교 | 도구 시험 실패 | `wpf-before.json`, `wpf-after.json`, `wpf-comparison.json`; `quick_check=ok`, 파일 920건, `foreign key mismatch - "controlled_copy_grants" referencing "document_versions"` | P0 데이터 무결성: 누적 DB를 삭제하지 않고 서버용 `controlled_copy_grants`가 WPF 로컬 `document_versions` schema와 충돌한 유입 경로를 규명하고 보존 migration 후 재검증 |
+
+WPF 실패는 복구 실패를 모의한 결과가 아니라 현재 누적 공통 SQLite의 schema 무결성 차단을 발견한 준비 점검이다. 원천 DB와 파일을 수정하거나 삭제하지 않았으며, 이 항목이 해결되어도 별도 PC 복구와 나머지 실기 게이트는 계속 `대기`다.
 
 현재 저장소와 개발 환경만으로는 위 실기 게이트를 통과 처리할 수 없다. 최초 통합 `PASSED` 실행 ID, Windows 배포 준비 PC, 고객 유사 네트워크, 운영 인증서/서명키 정책, 승인 Android 실단말과 현장 책임자가 준비된 뒤 실행한다.

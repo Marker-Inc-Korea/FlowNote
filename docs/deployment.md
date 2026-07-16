@@ -627,6 +627,26 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 
 복구는 서버를 먼저 살리고, 그 다음 WPF 로컬 데이터를 맞춘다. 서버 DB와 서버 `storage\`는 같은 시점의 백업을 우선 사용한다. 다른 시점의 부분 복원은 장애 대응 절차로만 수행하고 정상 복구로 간주하지 않는다.
 
+### 현장 확정 값 기록
+
+아래 값은 파일럿 책임자의 승인과 같은 `run_id`의 실기 증거가 생긴 뒤에만 채운다. 문서의 예시 경로나 개발 기본값을 현장 확정 값으로 복사해 통과 처리하지 않는다. 비밀값, 인증서 개인키, 실제 고객명·사용자명·IP는 이 표가 아니라 승인된 운영 저장소에서 관리한다.
+
+| 항목 | 현장 확정 값 | 승인/증거 | 상태 |
+| --- | --- | --- | --- |
+| 서버 설치 경로·서비스 계정·자동 시작 방식 | 미확정 | `<run_id>/install/server-*` | 대기 |
+| 운영 DNS 이름·API URL·TLS 종단 위치 | 미확정 | `<run_id>/network-and-certificate/network-*` | 대기 |
+| 인증서 발급자·SAN·유효기간·갱신 겹침 기간 | 미확정 | `<run_id>/network-and-certificate/certificate-*` | 대기 |
+| 허용 방화벽 원천 구간·포트 | 미확정 | `<run_id>/network-and-certificate/firewall-*` | 대기 |
+| 시간 원천·허용 오차·현장 시간대 | 미확정 | `<run_id>/network-and-certificate/time-*` | 대기 |
+| framework-dependent/self-contained 채택 범위 | 미확정 | `<run_id>/install/wpf-*` | 대기 |
+| .NET Desktop Runtime·WebView2 배포 방식/버전 | 미확정 | `<run_id>/install/prerequisites-*` | 대기 |
+| EXE/MSI 서명 인증서·hash 전달 경로 | 미확정 | `<run_id>/packages/windows-*` | 대기 |
+| 서버 DB+`storage` 백업 주기·보존·RPO/RTO | 미확정 | `<run_id>/approvals/data-protection-*` | 대기 |
+| WPF DB+`Files` 백업 주기·보존·RPO/RTO | 미확정 | `<run_id>/approvals/data-protection-*` | 대기 |
+| 복구 PC·복구 경로·복구 승인자 | 미확정 | `<run_id>/backup-restore/*` | 대기 |
+
+현장 값이 확정되면 예시 명령과 실제 값이 충돌하지 않는지 검토하고 이 표, 설치 전후 점검표, 파일럿 manifest를 함께 갱신한다. 현장별 선호는 공통 기본값으로 올리지 않고 설정·교육 기록으로 분리한다.
+
 ### 서버 복구 순서
 
 1. 서버 작업 스케줄러 `\FlowNote\FlowNoteApi`를 중지하고 WPF 앱을 종료한다.
@@ -635,6 +655,7 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 4. `.env` 또는 서비스 환경 변수를 복원한다. 새 서버 PC의 절대 경로가 다르면 `FLOWNOTE_DATABASE_URL`과 `FLOWNOTE_STORAGE_ROOT`를 먼저 수정한다.
 5. 서버 작업을 시작한 뒤 서버 PC에서 `http://127.0.0.1:5184/api/v1/health`와 `http://127.0.0.1:5184/api/v1/health/db`를 확인한다.
 6. WPF 실행 전 서버 계정 로그인이 가능한지 확인한다.
+7. `scripts\verify-pilot-restore.py`로 복구 전후 `server` 증거를 비교해 테이블별 원천 개수, `storage` 상대경로·크기·SHA-256, `quick_check`, foreign key가 모두 통과했는지 확인한다.
 
 ### WPF 복구 순서
 
@@ -644,6 +665,7 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 4. `FLOWNOTE_LOCAL_DATA_DIR`, `FLOWNOTE_LOCAL_DATABASE_PATH`, `FLOWNOTE_API_BASE_URL` 값이 복구 위치와 맞는지 확인한다.
 5. WPF 앱을 실행해 로그인, 문서 목록, 문서 열람, FieldComment 등록/조회, 보고서 근거 조회를 확인한다.
 6. 복구 후 저장소 루트에서 `.\scripts\verify-preserved-tests.ps1` 또는 운영자가 지정한 동등 점검을 실행한다. 운영 환경에서 전체 개발 테스트를 실행할 수 없으면 최소한 서버 health, DB health, WPF 로그인, 문서 목록, 문서 열람, FieldComment, 보고서 근거 조회를 수동 점검표로 남긴다.
+7. `scripts\verify-pilot-restore.py`로 복구 전후 `wpf` 증거를 비교해 테이블별 원천 개수, `Files` 상대경로·크기·SHA-256, `quick_check`, foreign key가 모두 통과했는지 확인한다.
 
 ### 부분 복원 장애 대응
 
