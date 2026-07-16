@@ -1050,6 +1050,61 @@ class AIOperationalPolicy(Base):
     )
 
 
+class AIProviderOnboardingReview(Base):
+    """Versioned provider due-diligence and four-party start decision."""
+
+    __tablename__ = "ai_provider_onboarding_reviews"
+    __table_args__ = (
+        UniqueConstraint(
+            "customer_scope", "site_scope", "provider", "model_scope", "review_version",
+            name="uq_ai_provider_onboarding_review_version",
+        ),
+        CheckConstraint(
+            "technical_status IN ('PENDING', 'APPROVED', 'REJECTED')",
+            name="ck_ai_provider_review_technical_status",
+        ),
+        CheckConstraint(
+            "security_status IN ('PENDING', 'APPROVED', 'REJECTED')",
+            name="ck_ai_provider_review_security_status",
+        ),
+        CheckConstraint(
+            "legal_status IN ('PENDING', 'APPROVED', 'REJECTED')",
+            name="ck_ai_provider_review_legal_status",
+        ),
+        CheckConstraint(
+            "customer_status IN ('PENDING', 'APPROVED', 'REJECTED')",
+            name="ck_ai_provider_review_customer_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    review_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    customer_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    site_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    provider: Mapped[str] = mapped_column(String(80), nullable=False)
+    model_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    review_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    checklist_json: Mapped[str] = mapped_column(Text, nullable=False)
+    allowed_purposes_json: Mapped[str] = mapped_column(Text, nullable=False)
+    technical_status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    security_status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    legal_status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    customer_status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    technical_reviewed_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    security_reviewed_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    legal_reviewed_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    customer_reviewed_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    technical_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    security_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    legal_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    customer_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class AIOperationAuditEvent(Base):
     __tablename__ = "ai_operation_audit_events"
 

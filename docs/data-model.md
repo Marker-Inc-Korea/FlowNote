@@ -45,7 +45,7 @@
 
 ## FastAPI 서버 SQLite
 
-2026-07-16 현재 ORM은 아래 46개 테이블을 생성 기준으로 사용한다.
+2026-07-16 현재 ORM은 아래 47개 테이블을 생성 기준으로 사용한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -77,6 +77,7 @@
 | `ai_search_evaluation_runs` | 외부 AI 없는 ground-truth 회귀 실행과 provider 착수 판단 지표 |
 | `ai_search_evaluation_cases` | 질문별 기대/실제 근거, 제외 사유, 순위 hash와 통과 여부 |
 | `ai_search_ground_truth_cases` | 고객·현장·라인·DB scope별 사람이 승인한 질문 범주, 정상/제외/상충 유형, 기대/제외 근거, 허용 순위와 시점 기준 |
+| `ai_provider_onboarding_reviews` | provider/model별 계약·데이터 처리·전송·TLS·장애·비용·kill switch 체크리스트와 기술/보안/법무/고객 착수 결정 |
 | `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations` | 외부 AI 질의 상태와 질의 시점 근거 snapshot, 검증된 주장별 인용 연결 |
 | `ai_prompt_versions`, `ai_call_attempts`, `ai_transfer_approvals` | 승인 프롬프트 버전, 정제된 호출 시도 감사, 고객·현장별 외부 전송 승인 |
 | `ai_sensitive_data_policies` | 고객·현장별 활성 금칙어와 고객 식별자 정책 버전 |
@@ -120,9 +121,11 @@ AI 자동 조언과 자동 의사결정은 아직 범위에 넣지 않는다. �
 
 `ai_search_candidates`의 `candidate_id`는 `source_type + source_id + source_version_id`로 결정되는 안정 식별자이고 `content_hash`는 검색 본문의 SHA-256이다. 원문 화면 이동은 `source_type`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `parent_type`, `parent_id`를 함께 사용한다. 보고서 source는 원천의 원천을 직접 후보 ID로 삼지 않고 `report_sources.id`를 후보 `source_id`로 삼아 보고서가 어떤 근거를 어떤 관계로 사용했는지 먼저 추적한다.
 
-`ai_search_ground_truth_cases`는 고객·현장·선택적 라인과 로컬 경로를 노출하지 않는 DB fingerprint scope에 묶인다. 질문 범주는 안전, 품질, 설비 이상, 작업 보류, 재작업, 인수인계, 최신 공개 문서, 상충 기록이고 각 범주에서 `NORMAL`, `EXCLUSION`, `CONFLICT`를 구분한다. 기대 포함/제외 근거, 허용 순위 최소·최대, `as_of`, 승인자·승인 시각을 보존하며 승인 질문 원본을 평가 실행과 분리한다.
+`ai_search_ground_truth_cases`는 고객·현장·선택적 라인과 로컬 경로를 노출하지 않는 DB fingerprint scope에 묶인다. 질문 범주는 안전, 품질, 설비 이상, 작업 보류, 재작업, 인수인계, 최신 공개 문서, 상충 기록이고 각 범주에서 `NORMAL`, `EXCLUSION`, `CONFLICT`를 구분한다. 기대 포함 근거는 승인 시점의 candidate/source/version/trace ID와 content hash, 승인자의 열람 권한, `as_of` 이전 존재를 검증한 뒤 snapshot으로 고정한다. 제외 근거도 실제 원천 row로 역추적되어야 한다. 허용 순위 최소·최대, `as_of`, 승인자·승인 시각을 보존하며 승인 질문 원본을 평가 실행과 분리한다.
 
-`ai_search_evaluation_runs`는 실행 ID/라벨, 요청자와 평가 대상 사용자, ID/hash 안정성, 순위 안정성, scope, precision@k, recall@k, 제외 원천 위반, citation trace 성공률과 provider 착수 가능 지표를 보존한다. `ai_search_evaluation_cases`는 질문, 기대/실제 `SUFFICIENT` 또는 `INSUFFICIENT_EVIDENCE`, 기대 근거 JSON, 실제 candidate/source/version/trace/content hash snapshot, 제외 근거와 사유, ranking hash를 보존한다. 테스트와 사람형 스모크의 회귀 기록이므로 자동 삭제하지 않는다.
+`ai_search_evaluation_runs`는 실행 ID/라벨, 요청자와 평가 대상 사용자, ID/hash·순위 안정성, scope, precision@k, recall@k/top-k 포함률, 제외 원천 노출, 권한 누출, 존재하지 않는 인용, citation trace·의미 일치, 상충 표시율과 provider 착수 가능 지표를 보존한다. `ai_search_evaluation_cases`는 질문, 기대/실제 `SUFFICIENT` 또는 `INSUFFICIENT_EVIDENCE`, 기대 근거 JSON, 실제 candidate/source/version/trace/content hash snapshot, 제외 근거와 사유, ranking hash를 보존한다. 테스트와 사람형 스모크의 회귀 기록이므로 자동 삭제하지 않는다.
+
+`ai_provider_onboarding_reviews`는 고객·현장·provider·model·review version을 유일하게 묶는다. 체크리스트 JSON은 계약 조건, provider 보존 기간, 학습 사용 여부, 전송/처리 지역, TLS, timeout, 429, 5xx, 비용 한도, kill switch, 법무 승인, 고객 승인을 각각 `PENDING`/`PASS`/`FAIL`과 근거 참조로 보존한다. 기술·보안·법무·고객 상태는 `PENDING`/`APPROVED`/`REJECTED`, 검토자와 시각을 별도로 기록한다. 새 심사는 기존 row를 덮어쓰지 않고 새 version을 만들며 체크리스트 전건 `PASS`와 네 영역 `APPROVED`가 함께 있어야 착수 승인이다.
 
 품질 점검은 후보 수와 제외 사유를 함께 산출한다. `REPORT_SOURCE`의 `DOCUMENT` 원천은 `documents.status != DELETED`와 `documents.deleted_at IS NULL`을 모두 만족해야 하며, 버전 ID가 있으면 그 버전이 같은 문서에 속하는지도 확인한다. 조건을 만족하지 않으면 `report_source_missing_origin`으로 집계한다. FieldComment 검토 품질은 전체 상태별 개수, `ANALYZED`/`REVIEWED`/`SELECTED` 합계, AI 착수 최소 기준 100건 대비 부족분을 표시한다. FieldComment가 대부분 `NEW`라면 검색 후보에는 들어갈 수 있어도 요약 신뢰도와 AI 착수 기준은 부족한 것으로 본다.
 

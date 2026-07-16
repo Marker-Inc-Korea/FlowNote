@@ -160,6 +160,7 @@ class AISearchEvidenceReference(BaseModel):
     source_version_id: str | None = Field(default=None, alias="sourceVersionId")
     trace_id: str | None = Field(default=None, alias="traceId")
     trace_version_id: str | None = Field(default=None, alias="traceVersionId")
+    content_hash: str | None = Field(default=None, alias="contentHash")
     exclusion_reason: str | None = Field(default=None, alias="exclusionReason")
 
 
@@ -173,6 +174,8 @@ class AISearchEvaluationCaseRequest(BaseModel):
     allowed_rank_max: int = Field(default=20, alias="allowedRankMax", ge=1, le=100)
     as_of: datetime | None = Field(default=None, alias="asOf")
     limit: int = Field(default=20, ge=1, le=100)
+    category: str | None = Field(default=None, exclude=True)
+    scenario_type: str | None = Field(default=None, exclude=True)
 
 
 class AISearchEvaluationRequest(BaseModel):
@@ -181,6 +184,9 @@ class AISearchEvaluationRequest(BaseModel):
     line_scope: str | None = Field(default=None, alias="lineScope", max_length=64)
     ground_truth_case_ids: list[str] = Field(default_factory=list, alias="groundTruthCaseIds", max_length=100)
     cases: list[AISearchEvaluationCaseRequest] = Field(default_factory=list, max_length=100)
+    evaluator_version: str = Field(default="candidate-ranking-v1", alias="evaluatorVersion", max_length=80)
+    prompt_version_id: str | None = Field(default=None, alias="promptVersionId", max_length=64)
+    policy_version: str | None = Field(default=None, alias="policyVersion", max_length=80)
 
 
 class AISearchGroundTruthCaseRequest(BaseModel):
@@ -945,6 +951,7 @@ def _matches_reference(candidate: AISearchCandidate, reference: AISearchEvidence
         and (reference.source_version_id is None or candidate.source_version_id == reference.source_version_id)
         and (reference.trace_id is None or candidate.trace_id == reference.trace_id)
         and (reference.trace_version_id is None or candidate.trace_version_id == reference.trace_version_id)
+        and (reference.content_hash is None or candidate.content_hash == reference.content_hash)
     )
 
 
@@ -954,6 +961,45 @@ def _reference_key(reference: AISearchEvidenceReference) -> str:
     return "|".join(
         [reference.source_type.strip().upper(), reference.source_id, reference.source_version_id or ""]
     )
+
+
+def _source_reference_exists(session: Session, reference: AISearchEvidenceReference) -> bool:
+    source_type = reference.source_type.strip().upper()
+    if source_type == "PUBLISHED_DOCUMENT_VERSION":
+        statement = select(Document.id).where(Document.document_id == reference.source_id)
+        if reference.source_version_id:
+            statement = (
+                select(DocumentVersion.id)
+                .join(Document, Document.document_id == DocumentVersion.document_id)
+                .where(
+                    Document.document_id == reference.source_id,
+                    DocumentVersion.version_id == reference.source_version_id,
+                )
+            )
+        return session.scalar(statement) is not None
+    if source_type == "FIELD_COMMENT":
+        return session.scalar(select(FieldComment.id).where(FieldComment.comment_id == reference.source_id)) is not None
+    if source_type == "WORK_SEQUENCE_HISTORY":
+        return session.scalar(
+            select(WorkSequenceChangeHistory.id).where(WorkSequenceChangeHistory.change_id == reference.source_id)
+        ) is not None
+    if source_type == "REPORT_SOURCE" and reference.source_id.isdigit():
+        return session.scalar(select(ReportSource.id).where(ReportSource.id == int(reference.source_id))) is not None
+    return False
+
+
+def _approved_reference(candidate: AISearchCandidate, reference: AISearchEvidenceReference) -> dict[str, object]:
+    value = reference.model_dump(by_alias=True, mode="json")
+    value.update({
+        "candidateId": candidate.candidate_id,
+        "sourceType": candidate.source_type,
+        "sourceId": candidate.source_id,
+        "sourceVersionId": candidate.source_version_id,
+        "traceId": candidate.trace_id,
+        "traceVersionId": candidate.trace_version_id,
+        "contentHash": candidate.content_hash,
+    })
+    return value
 
 
 def _excluded_reference_result(
@@ -1050,6 +1096,12 @@ def approve_ground_truth_case(
         raise HTTPException(status_code=422, detail="expectedOutcome must be SUFFICIENT or INSUFFICIENT_EVIDENCE")
     if payload.allowed_rank_min > payload.allowed_rank_max:
         raise HTTPException(status_code=422, detail="allowedRankMin must not exceed allowedRankMax")
+    if scenario_type == "NORMAL" and not payload.expected_evidence:
+        raise HTTPException(status_code=422, detail="NORMAL case requires expectedEvidence")
+    if scenario_type == "EXCLUSION" and not payload.expected_excluded:
+        raise HTTPException(status_code=422, detail="EXCLUSION case requires expectedExcluded")
+    if scenario_type == "CONFLICT" and len(payload.expected_evidence) < 2:
+        raise HTTPException(status_code=422, detail="CONFLICT case requires at least two expectedEvidence items")
     db_scope = database_scope(settings.database_url)
     duplicate = session.scalar(
         select(AISearchGroundTruthCase.id).where(
@@ -1060,6 +1112,28 @@ def approve_ground_truth_case(
     )
     if duplicate is not None:
         raise HTTPException(status_code=409, detail="caseKey already exists in this customer/site scope")
+    content_filter = load_sensitive_filter(session, settings)
+    rebuild_ai_search_candidates(session, content_filter)
+    candidates = session.scalars(select(AISearchCandidate).order_by(AISearchCandidate.candidate_id)).all()
+    approver = session.scalar(select(UserAccount).where(UserAccount.user_id == current_user.user_id))
+    assert approver is not None
+    approved_evidence: list[dict[str, object]] = []
+    for reference in payload.expected_evidence:
+        candidate = next((item for item in candidates if _matches_reference(item, reference)), None)
+        if candidate is None:
+            raise HTTPException(status_code=422, detail=f"expectedEvidence is not an eligible candidate: {_reference_key(reference)}")
+        if not _can_evaluate_candidate(session, candidate, approver):
+            raise HTTPException(status_code=403, detail=f"approver cannot access expectedEvidence: {_reference_key(reference)}")
+        created_at = _candidate_created_at(session, candidate)
+        if created_at is not None:
+            comparable_created = created_at.replace(tzinfo=timezone.utc) if created_at.tzinfo is None else created_at
+            comparable_as_of = payload.as_of.replace(tzinfo=timezone.utc) if payload.as_of.tzinfo is None else payload.as_of
+            if comparable_created > comparable_as_of:
+                raise HTTPException(status_code=422, detail=f"expectedEvidence is newer than asOf: {_reference_key(reference)}")
+        approved_evidence.append(_approved_reference(candidate, reference))
+    for reference in payload.expected_excluded:
+        if not _source_reference_exists(session, reference):
+            raise HTTPException(status_code=422, detail=f"expectedExcluded cannot be traced: {_reference_key(reference)}")
     now = datetime.now(timezone.utc)
     case = AISearchGroundTruthCase(
         ground_truth_case_id=_new_public_id("aigt"),
@@ -1073,7 +1147,7 @@ def approve_ground_truth_case(
         question=payload.question.strip(),
         expected_outcome=expected_outcome,
         expected_evidence_json=json.dumps(
-            [item.model_dump(by_alias=True, mode="json") for item in payload.expected_evidence], ensure_ascii=False
+            approved_evidence, ensure_ascii=False
         ),
         excluded_evidence_json=json.dumps(
             [item.model_dump(by_alias=True, mode="json") for item in payload.expected_excluded], ensure_ascii=False
@@ -1121,6 +1195,8 @@ def get_scope_readiness(
         site_scope=settings.ai_site_scope,
         line_scope=line_scope.strip() if line_scope and line_scope.strip() else None,
         database_scope_value=database_scope(settings.database_url),
+        provider=settings.ai_provider,
+        model_scope=settings.ai_model,
     )
 
 
@@ -1169,6 +1245,8 @@ def run_evaluation(
                     allowedRankMax=stored.allowed_rank_max,
                     asOf=stored.as_of,
                     limit=max(stored.allowed_rank_max, 20),
+                    category=stored.category,
+                    scenario_type=stored.scenario_type,
                 )
             )
     if not cases:
@@ -1217,6 +1295,12 @@ def run_evaluation(
     excluded_source_violations = 0
     trace_success_count = 0
     trace_total_count = 0
+    permission_leak_violations = 0
+    nonexistent_citation_violations = 0
+    semantic_match_count = 0
+    semantic_match_total = 0
+    conflict_case_count = 0
+    conflict_disclosed_count = 0
     for case in cases:
         expected_outcome = case.expected_outcome.strip().upper()
         if expected_outcome not in {"SUFFICIENT", "INSUFFICIENT_EVIDENCE"}:
@@ -1264,6 +1348,23 @@ def run_evaluation(
         case_trace_success = sum(1 for item in actual if _candidate_trace_exists(session, item))
         trace_success_count += case_trace_success
         trace_total_count += len(actual)
+        nonexistent_citation_violations += len(actual) - case_trace_success
+        permission_leak_violations += sum(1 for item in actual if not _can_evaluate_candidate(session, item, evaluate_as))
+        expected_semantic_matches = [
+            candidate
+            for candidate in expected_candidates
+            if candidate is not None and _candidate_rank(candidate, _tokens(case.question), {
+                token: sum(1 for item in all_candidates if token in item.search_text.lower())
+                for token in _tokens(case.question)
+            }) > 0
+        ]
+        semantic_match_count += len(expected_semantic_matches)
+        semantic_match_total += len(case.expected_evidence)
+        conflict_disclosed = None
+        if case.scenario_type == "CONFLICT":
+            conflict_case_count += 1
+            conflict_disclosed = len(expected_ids) >= 2 and not missing_expected
+            conflict_disclosed_count += int(conflict_disclosed)
         passed = bool(
             actual_outcome == expected_outcome
             and not missing_expected
@@ -1317,6 +1418,15 @@ def run_evaluation(
                 "recall_at_k": round(recall_k, 4),
                 "excluded_source_violation": sum(1 for item in excluded if not item["excluded"]),
                 "citation_trace_success_rate": round(case_trace_success / len(actual), 4) if actual else 1.0,
+                "permission_leak_violation": sum(
+                    1 for item in actual if not _can_evaluate_candidate(session, item, evaluate_as)
+                ),
+                "nonexistent_citation_violation": len(actual) - case_trace_success,
+                "citation_semantic_match_rate": (
+                    round(len(expected_semantic_matches) / len(case.expected_evidence), 4)
+                    if case.expected_evidence else 1.0
+                ),
+                "conflict_disclosed": conflict_disclosed,
                 "ranking_hash": ranking_hash,
                 "previous_run_delta": previous_run_delta,
                 "ranking_stable": stable_for_case,
@@ -1334,11 +1444,31 @@ def run_evaluation(
         site_scope=settings.ai_site_scope,
         line_scope=evaluation_line_scope,
         database_scope_value=db_scope,
+        provider=settings.ai_provider,
+        model_scope=settings.ai_model,
+    )
+    top_k_inclusion_rate = round(sum(recall_values) / len(recall_values), 4)
+    citation_semantic_match_rate = (
+        round(semantic_match_count / semantic_match_total, 4) if semantic_match_total else 1.0
+    )
+    conflict_disclosure_rate = (
+        round(conflict_disclosed_count / conflict_case_count, 4) if conflict_case_count else 1.0
+    )
+    quality_gate_passed = bool(
+        top_k_inclusion_rate >= 1.0
+        and excluded_source_violations == 0
+        and permission_leak_violations == 0
+        and nonexistent_citation_violations == 0
+        and citation_semantic_match_rate >= 1.0
+        and conflict_disclosure_rate >= 1.0
     )
     provider_start_ready = bool(
         all_passed and candidate_identity_stable and ranking_stable
+        and quality_gate_passed
         and source_coverage_complete and readiness.missing_reviewed_count == 0
         and scoped_readiness["source_ready"] and scoped_readiness["ground_truth_ready"]
+        and scoped_readiness["provider_review_ready"]
+        and len(payload.ground_truth_case_ids) == len(case_results)
         and len(case_results) >= scoped_readiness["ground_truth_minimum"]
     )
     metrics = {
@@ -1351,15 +1481,28 @@ def run_evaluation(
         "field_comment_missing_reviewed_count": readiness.missing_reviewed_count,
         "precision_at_k": round(sum(precision_values) / len(precision_values), 4),
         "recall_at_k": round(sum(recall_values) / len(recall_values), 4),
+        "top_k_inclusion_rate": top_k_inclusion_rate,
         "excluded_source_violation": excluded_source_violations,
+        "permission_leak_violation": permission_leak_violations,
+        "nonexistent_citation_violation": nonexistent_citation_violations,
         "citation_trace_success_rate": round(trace_success_count / trace_total_count, 4) if trace_total_count else 1.0,
+        "citation_semantic_match_rate": citation_semantic_match_rate,
+        "conflict_disclosure_rate": conflict_disclosure_rate,
+        "quality_gate_passed": quality_gate_passed,
         "customer_scope": settings.ai_customer_scope,
         "site_scope": settings.ai_site_scope,
         "line_scope": evaluation_line_scope,
         "database_scope": db_scope,
+        "evaluator_version": payload.evaluator_version,
+        "prompt_version_id": payload.prompt_version_id,
+        "policy_version": payload.policy_version,
         "provider_start_ready": provider_start_ready,
     }
-    result_status = "PASSED" if all_passed and candidate_identity_stable and ranking_stable else "FAILED"
+    result_status = (
+        "PASSED"
+        if all_passed and candidate_identity_stable and ranking_stable and quality_gate_passed
+        else "FAILED"
+    )
     evaluation_run.status = result_status
     evaluation_run.ranking_stable = ranking_stable
     evaluation_run.metrics_json = json.dumps(metrics, ensure_ascii=False)

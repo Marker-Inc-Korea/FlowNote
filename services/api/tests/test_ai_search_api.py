@@ -885,7 +885,9 @@ def test_scope_readiness_counts_approved_ground_truth_and_category_gaps() -> Non
         assert initial.status_code == 200, initial.text
         initial_body = initial.json()
         initial_ground_truth_count = initial_body["ground_truth_count"]
-        assert initial_body["ground_truth_gap"] == max(50 - initial_ground_truth_count, 0)
+        assert initial_body["ground_truth_gap"] == max(48 - initial_ground_truth_count, 0)
+        assert initial_body["ground_truth_per_category_scenario_minimum"] == 2
+        assert initial_body["provider_review_ready"] is False
         assert initial_body["provider_start_ready"] is False
         assert initial_body["scope"]["customer_scope"] == "DEFAULT"
         assert initial_body["scope"]["site_scope"] == "DEFAULT"
@@ -893,6 +895,10 @@ def test_scope_readiness_counts_approved_ground_truth_and_category_gaps() -> Non
         assert set(initial_body["source_gaps"]) == {
             "PUBLISHED_DOCUMENT_VERSION", "FIELD_COMMENT", "WORK_SEQUENCE_HISTORY", "REPORT_SOURCE"
         }
+        initial_safety_normal = next(
+            item["count"] for item in initial_body["category_scenario_counts"]
+            if item["category"] == "SAFETY" and item["scenario_type"] == "NORMAL"
+        )
 
         approved = client.post("/api/v1/ai-search/ground-truth-cases", headers=headers, json={
             "caseKey": f"safety-normal-{uuid4().hex}",
@@ -915,8 +921,12 @@ def test_scope_readiness_counts_approved_ground_truth_and_category_gaps() -> Non
 
         updated = client.get("/api/v1/ai-search/readiness", headers=headers).json()
         assert updated["ground_truth_count"] == initial_ground_truth_count + 1
-        assert updated["ground_truth_gap"] == max(50 - updated["ground_truth_count"], 0)
-        assert {"category": "SAFETY", "scenario_type": "NORMAL"} not in updated["missing_category_scenarios"]
+        assert updated["ground_truth_gap"] == max(48 - updated["ground_truth_count"], 0)
+        updated_safety_normal = next(
+            item["count"] for item in updated["category_scenario_counts"]
+            if item["category"] == "SAFETY" and item["scenario_type"] == "NORMAL"
+        )
+        assert updated_safety_normal == initial_safety_normal + 1
         listed = client.get("/api/v1/ai-search/ground-truth-cases", headers=headers)
         assert listed.status_code == 200
         assert any(item["ground_truth_case_id"] == approved.json()["ground_truth_case_id"] for item in listed.json())
@@ -931,7 +941,11 @@ def test_scope_readiness_counts_approved_ground_truth_and_category_gaps() -> Non
         assert evaluation_body["precision_at_k"] >= 0
         assert evaluation_body["recall_at_k"] == 1
         assert evaluation_body["excluded_source_violation"] == 0
+        assert evaluation_body["permission_leak_violation"] == 0
+        assert evaluation_body["nonexistent_citation_violation"] == 0
         assert evaluation_body["citation_trace_success_rate"] == 1
+        assert evaluation_body["citation_semantic_match_rate"] == 1
+        assert evaluation_body["conflict_disclosure_rate"] == 1
         assert evaluation_body["provider_start_ready"] is False
 
         repeated = client.post("/api/v1/ai-search/evaluations", headers=headers, json={

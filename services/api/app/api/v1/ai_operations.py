@@ -21,6 +21,7 @@ from app.db.models import (
     AICallAttempt,
     AIOperationAuditEvent,
     AIOperationalPolicy,
+    AIProviderOnboardingReview,
     AIPromptVersion,
     AIQuery,
     AIQueryCitation,
@@ -38,6 +39,11 @@ Cfg = Annotated[Settings, Depends(get_settings)]
 PURPOSES = {"EVIDENCE_SEARCH", "EVIDENCE_SUMMARY"}
 SOURCE_TYPES = {
     "PUBLISHED_DOCUMENT_VERSION", "FIELD_COMMENT", "WORK_SEQUENCE_HISTORY", "REPORT_SOURCE"
+}
+PROVIDER_CHECKLIST_KEYS = {
+    "contract_terms", "data_retention", "training_use", "transfer_region", "tls",
+    "timeout", "rate_limit_429", "server_error_5xx", "cost_limit", "kill_switch",
+    "legal_approval", "customer_approval",
 }
 
 
@@ -106,6 +112,155 @@ class ApprovalCreate(BaseModel):
     @classmethod
     def sources_valid(cls, value: list[str]) -> list[str]:
         return _clean_list(value, SOURCE_TYPES, "sourceTypes")
+
+
+class ProviderChecklistItem(BaseModel):
+    status: Literal["PENDING", "PASS", "FAIL"]
+    note: str = Field(min_length=1, max_length=2000)
+    evidence_reference: str | None = Field(default=None, alias="evidenceReference", max_length=500)
+
+
+class ProviderReviewCreate(BaseModel):
+    customer_scope: str = Field(alias="customerScope", min_length=1, max_length=120)
+    site_scope: str = Field(alias="siteScope", min_length=1, max_length=120)
+    provider: str = Field(min_length=1, max_length=80)
+    model_scope: str = Field(alias="modelScope", min_length=1, max_length=120)
+    review_version: str = Field(alias="reviewVersion", min_length=1, max_length=80)
+    allowed_purposes: list[str] = Field(alias="allowedPurposes")
+    checklist: dict[str, ProviderChecklistItem]
+    technical_status: Literal["PENDING", "APPROVED", "REJECTED"] = Field(alias="technicalStatus")
+    security_status: Literal["PENDING", "APPROVED", "REJECTED"] = Field(alias="securityStatus")
+    legal_status: Literal["PENDING", "APPROVED", "REJECTED"] = Field(alias="legalStatus")
+    customer_status: Literal["PENDING", "APPROVED", "REJECTED"] = Field(alias="customerStatus")
+
+    @field_validator("allowed_purposes")
+    @classmethod
+    def purposes_valid(cls, value: list[str]) -> list[str]:
+        return _clean_list(value, PURPOSES, "allowedPurposes")
+
+    @field_validator("checklist")
+    @classmethod
+    def checklist_complete(cls, value: dict[str, ProviderChecklistItem]) -> dict[str, ProviderChecklistItem]:
+        if set(value) != PROVIDER_CHECKLIST_KEYS:
+            missing = sorted(PROVIDER_CHECKLIST_KEYS - set(value))
+            extra = sorted(set(value) - PROVIDER_CHECKLIST_KEYS)
+            raise ValueError(f"provider checklist keys mismatch; missing={missing}, extra={extra}")
+        if any(item.status == "PASS" and not item.evidence_reference for item in value.values()):
+            raise ValueError("PASS provider checklist items require evidenceReference")
+        return value
+
+
+def _provider_review_dict(row: AIProviderOnboardingReview) -> dict[str, object]:
+    statuses = {
+        "technical": row.technical_status,
+        "security": row.security_status,
+        "legal": row.legal_status,
+        "customer": row.customer_status,
+    }
+    checklist = json.loads(row.checklist_json)
+    checklist_passed = all(item.get("status") == "PASS" for item in checklist.values())
+    return {
+        "reviewId": row.review_id,
+        "customerScope": row.customer_scope,
+        "siteScope": row.site_scope,
+        "provider": row.provider,
+        "modelScope": row.model_scope,
+        "reviewVersion": row.review_version,
+        "allowedPurposes": json.loads(row.allowed_purposes_json),
+        "checklist": checklist,
+        "statuses": statuses,
+        "reviewedBy": {
+            "technical": row.technical_reviewed_by,
+            "security": row.security_reviewed_by,
+            "legal": row.legal_reviewed_by,
+            "customer": row.customer_reviewed_by,
+        },
+        "reviewedAt": {
+            "technical": row.technical_reviewed_at,
+            "security": row.security_reviewed_at,
+            "legal": row.legal_reviewed_at,
+            "customer": row.customer_reviewed_at,
+        },
+        "checklistPassed": checklist_passed,
+        "providerStartApproved": checklist_passed and all(value == "APPROVED" for value in statuses.values()),
+        "createdBy": row.created_by,
+        "createdAt": row.created_at,
+        "updatedAt": row.updated_at,
+    }
+
+
+@router.get("/provider-reviews")
+def list_provider_reviews(
+    _: SystemAdmin,
+    session: Db,
+    customer_scope: Annotated[str | None, Query(alias="customerScope")] = None,
+    site_scope: Annotated[str | None, Query(alias="siteScope")] = None,
+) -> list[dict[str, object]]:
+    statement = select(AIProviderOnboardingReview)
+    if customer_scope:
+        statement = statement.where(AIProviderOnboardingReview.customer_scope == customer_scope)
+    if site_scope:
+        statement = statement.where(AIProviderOnboardingReview.site_scope == site_scope)
+    rows = session.scalars(statement.order_by(AIProviderOnboardingReview.created_at.desc())).all()
+    return [_provider_review_dict(row) for row in rows]
+
+
+@router.post("/provider-reviews", status_code=201)
+def create_provider_review(
+    payload: ProviderReviewCreate,
+    user: SystemAdmin,
+    session: Db,
+) -> dict[str, object]:
+    duplicate = session.scalar(select(AIProviderOnboardingReview.id).where(
+        AIProviderOnboardingReview.customer_scope == payload.customer_scope.strip(),
+        AIProviderOnboardingReview.site_scope == payload.site_scope.strip(),
+        AIProviderOnboardingReview.provider == payload.provider.strip(),
+        AIProviderOnboardingReview.model_scope == payload.model_scope.strip(),
+        AIProviderOnboardingReview.review_version == payload.review_version.strip(),
+    ))
+    if duplicate is not None:
+        raise HTTPException(409, "같은 scope/provider/model/reviewVersion 심사가 이미 있습니다.")
+    checklist = {
+        key: item.model_dump(by_alias=True, mode="json")
+        for key, item in sorted(payload.checklist.items())
+    }
+    if any(status == "APPROVED" for status in (
+        payload.technical_status, payload.security_status, payload.legal_status, payload.customer_status
+    )) and any(item["status"] != "PASS" for item in checklist.values()):
+        raise HTTPException(422, "모든 체크리스트가 PASS이기 전에는 승인 상태를 기록할 수 없습니다.")
+    now = datetime.now(timezone.utc)
+    row = AIProviderOnboardingReview(
+        review_id=f"aipr-{uuid4().hex}",
+        customer_scope=payload.customer_scope.strip(), site_scope=payload.site_scope.strip(),
+        provider=payload.provider.strip(), model_scope=payload.model_scope.strip(),
+        review_version=payload.review_version.strip(),
+        checklist_json=json.dumps(checklist, ensure_ascii=False, sort_keys=True),
+        allowed_purposes_json=json.dumps(payload.allowed_purposes),
+        technical_status=payload.technical_status, security_status=payload.security_status,
+        legal_status=payload.legal_status, customer_status=payload.customer_status,
+        technical_reviewed_by=user.user_id if payload.technical_status != "PENDING" else None,
+        security_reviewed_by=user.user_id if payload.security_status != "PENDING" else None,
+        legal_reviewed_by=user.user_id if payload.legal_status != "PENDING" else None,
+        customer_reviewed_by=user.user_id if payload.customer_status != "PENDING" else None,
+        technical_reviewed_at=now if payload.technical_status != "PENDING" else None,
+        security_reviewed_at=now if payload.security_status != "PENDING" else None,
+        legal_reviewed_at=now if payload.legal_status != "PENDING" else None,
+        customer_reviewed_at=now if payload.customer_status != "PENDING" else None,
+        created_by=user.user_id,
+    )
+    session.add(row)
+    audit_event(
+        session, event_type="PROVIDER_REVIEW_RECORDED", actor_id=user.user_id,
+        customer_scope=row.customer_scope, site_scope=row.site_scope,
+        target_type="PROVIDER_REVIEW", target_id=row.review_id,
+        detail={"provider": row.provider, "modelScope": row.model_scope,
+                "reviewVersion": row.review_version, "statuses": {
+                    "technical": row.technical_status, "security": row.security_status,
+                    "legal": row.legal_status, "customer": row.customer_status,
+                }},
+    )
+    session.commit()
+    return _provider_review_dict(row)
 
 
 @router.get("/approvals")

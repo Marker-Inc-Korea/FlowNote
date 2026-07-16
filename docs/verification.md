@@ -76,6 +76,20 @@ FieldComment 정제 스모크는 실행마다 다음 6개 시나리오를 같은
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
 
+## 2026-07-16 후보 6 AI ground-truth와 provider 착수 게이트
+
+승인 세트의 시작 하한은 `8개 범주 × 3개 유형 × 각 2건 = 48건`이다. 범주는 `SAFETY`, `QUALITY`, `EQUIPMENT_ANOMALY`, `WORK_HOLD`, `REWORK`, `HANDOVER`, `LATEST_PUBLISHED_DOCUMENT`, `CONFLICTING_RECORDS`, 유형은 `NORMAL`, `EXCLUSION`, `CONFLICT`다. 총 48건을 채워도 한 조합이 2건 미만이면 통과하지 않는다. 개발용 복제·랜덤 row는 승인 수량에 넣지 않고, 실제 익명 현장 표본이 확보되면 기존 이력을 비활성화하거나 삭제하지 않은 채 새 승인 version으로 교체·확장한다.
+
+각 case는 질문, 기대 결과, 기대 포함 근거, 반드시 제외할 근거와 제외 사유, 허용 순위, `as_of`, 고객·현장·선택적 라인·DB scope, 승인자와 승인 시각을 기록한다. 포함 근거는 승인 시점의 candidate/source/version/trace ID와 content hash, 승인자 권한, `as_of` 이전 생성 여부를 확인한다. 제외 근거도 실제 원천 row가 있어야 한다. `CONFLICT`는 최소 두 개의 기대 근거를 요구한다. 원천이나 권한으로 역추적할 수 없는 case는 승인 저장 자체를 실패시킨다.
+
+릴리스 게이트 임계값은 candidate ID/content hash 안정성 100%, 동일 snapshot ranking 안정성 100%, 허용 top-k 포함률 100%, citation trace 존재율 100%, citation 의미 일치율 100%, 상충 표시율 100%다. 제외 근거 노출, 권한 누출, 존재하지 않는 인용은 각각 0건이어야 한다. 네 원천 유형을 모두 포함하고 전체 case가 통과해야 한다. 임계값 변경은 평가 결과를 덮어쓰지 않고 결정 기록과 새 run으로 남긴다.
+
+검증은 외부 호출 없이 fake/recording adapter와 로컬 candidate ranking으로 먼저 반복한다. prompt version, policy 또는 검색 구현을 바꾸기 전후에 같은 승인 case ID를 평가하고 `previous_run_delta`의 candidate 추가/제거, content hash와 순위 변경을 비교한다. 실패 run과 case row, fake payload, 로그는 삭제하지 않는다. 사람이 뽑은 표본 응답은 두 검토자가 근거 적합성, 누락, 과장, 상충 표시, `참고 요약` 표현과 자동 조치로 오인될 문구가 없는지를 각각 확인한다. 두 판단이 다르면 `PENDING`으로 두고 합의 근거를 새 검토 기록으로 남긴다.
+
+provider 심사는 계약, 데이터 보존, 학습 사용, 전송 지역, TLS, timeout, 429, 5xx, 비용 한도, kill switch, 법무 승인, 고객 승인 12개 항목과 기술·보안·법무·고객 네 영역을 기록한다. 전건 `PASS`와 네 영역 `APPROVED` 전에는 `provider_review_ready=false`다. 현재 실제 현장 승인 ground-truth와 provider별 계약 증거가 등록되지 않았으므로 운영 착수 판정은 명시적 `대기`이며, 구현된 fake/recording 회귀와 제한형 test adapter가 운영 provider 승인을 뜻하지 않는다. 통과 후 첫 범위도 `EVIDENCE_SEARCH`, `EVIDENCE_SUMMARY`의 근거 검색과 `참고 요약`으로 제한한다.
+
+구현 검증은 `services/api/.venv/bin/python -m ruff check services/api/app services/api/tests` 통과 후 AI 검색·운영·질의 집중 회귀 22건과 FastAPI 전체 회귀 128건을 실행해 모두 통과했다. 테스트 SQLite와 adapter 기록은 삭제하거나 초기화하지 않았다. 이번 개발 DB의 누적 테스트 case와 provider review는 실제 고객/법무 승인 세트로 승격하지 않는다.
+
 ## 2026-07-16 후보 5 FieldComment 정제 검증
 
 - FastAPI 전체 `128 passed`, Ruff 통과. 원천 hash 전후 일치, 단계별 감사, 작업함 6종 필터·우선순위, report source 역추적, 미선정·비공개·현재 공개본이 아닌 버전·권한 밖 채널 제외를 자동 검증했다.
@@ -84,11 +98,11 @@ Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 �
 - 최종 실행은 누적 큐 985건 가운데 구 형식 653건, 선행 문서 미동기화 260건 등 과거 backlog가 남은 상태에서 이번 run 전용 row만 모두 동기화됐다고 가정한 기존 검증 블록에서 중단됐다. 과거 큐를 삭제·재분류하지 않았으며 통합 전체 `PASSED` 증거로 승격하지 않는다.
 - 13:26 KST 이후 공통 SQLite의 FieldComment 상태는 `NEW 2026`, `ANALYZED 255`, `REVIEWED 246`, `SELECTED 246`, `EXCLUDED 23`, `ARCHIVED 20`이다. 로컬 report source 표기는 현행 대문자 기준 `FIELD_COMMENT 354`, `DOCUMENT 212`, `WORK_SEQUENCE_HISTORY 120`, `WORK_SEQUENCE_ITEM 20`이며 구 소문자 호환 row도 그대로 보존했다.
 
-## 2026-07-16 작업 102 현재 코드와 개발 문서 재대조
+## 2026-07-16 작업 102 초기 코드·문서 재대조 기록
 
-깨끗한 작업 트리의 현재 구현을 제품·시스템·데이터 모델·API·보안·배포·클라이언트·서버 개발 문서와 다시 대조했다. 코드가 문서보다 우선한다는 기준으로 전역 FastAPI OpenAPI 105개 method/path 조합, ORM 46개 테이블, `Settings` 36개 항목을 확인했다. 서버 API 목록에서 빠진 문서 soft delete를 보강하고, Android 보안 본문 열람·Keystore 보호 outbox·로그인 세션 foreground service 알림 복구가 메타데이터 조회와 전경 Activity polling으로 남아 있던 현재 상태 요약·MVP·파일럿 문구를 구현에 맞게 바로잡았다. 현재 FastAPI 수집값 126건과 표준 스크립트 고정값 120건의 불일치도 활성 검증·배포 문서에 명시했다. 기존 결정과 과거 검증 이력의 당시 날짜와 수치는 보존했다.
+이 기록은 같은 날 후보 5 FieldComment 정제 변경 전의 재대조 결과다. 당시 깨끗한 작업 트리의 구현을 제품·시스템·데이터 모델·API·보안·배포·클라이언트·서버 개발 문서와 대조했다. 코드가 문서보다 우선한다는 기준으로 전역 FastAPI OpenAPI 105개 method/path 조합, ORM 46개 테이블, `Settings` 36개 항목을 확인했다. 서버 API 목록에서 빠진 문서 soft delete를 보강하고, Android 보안 본문 열람·Keystore 보호 outbox·로그인 세션 foreground service 알림 복구가 메타데이터 조회와 전경 Activity polling으로 남아 있던 당시 상태 요약·MVP·파일럿 문구를 구현에 맞게 바로잡았다. 그 시점의 FastAPI 수집값 126건과 표준 스크립트 고정값 120건의 불일치도 활성 검증·배포 문서에 명시했다. 후속 후보 5 변경 이후의 현재 기준은 위 절의 `128 passed` 기록을 따른다.
 
-`services/api/.venv/bin/python`으로 현재 OpenAPI 105개 조합, ORM 46개 테이블, `Settings` 36개 항목을 확인했다. `pytest --collect-only -q`로 FastAPI 테스트 126건 수집도 확인했다. 문서 정합성 작업이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았고, 기존 SQLite·로그·캐시·테스트 산출물은 삭제하지 않았다.
+`services/api/.venv/bin/python`으로 당시 OpenAPI 105개 조합, ORM 46개 테이블, `Settings` 36개 항목을 확인했다. `pytest --collect-only -q`로 당시 FastAPI 테스트 126건 수집도 확인했다. 문서 정합성 작업이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았고, 기존 SQLite·로그·캐시·테스트 산출물은 삭제하지 않았다.
 
 ## 2026-07-15 작업 207 전체 Markdown 코드 정합성 갱신
 
@@ -187,7 +201,7 @@ FastAPI fake provider/spy 경계로 실제 네트워크 없이 다음을 검증�
 - 권한 없는 채널, 비공개·삭제 문서, 보관/미검토 FieldComment, 보관 보고서·유효하지 않은 보고서 원천은 `SOURCE_FORBIDDEN` 또는 `INSUFFICIENT_EVIDENCE`이며 provider spy에 후보 ID와 내용이 0바이트다.
 - 주민등록번호·전화번호·이메일, 계정/token/경로/고객 식별자와 현장별 금칙어가 든 원천은 후보 생성 단계에서 제외되어 candidate ID와 원문이 provider payload에 0바이트다. 사용자 질의의 주민등록번호·전화번호·이메일만 대체 표식으로 마스킹하며 일반 오류와 호출 감사에는 검출 원문을 남기지 않는다.
 - 승인 철회 직후 신규 질의는 `APPROVAL_REVOKED`로 차단되고 호출 횟수는 증가하지 않는다. 같은 DB의 `/api/v1/ai-search/quality`와 ground-truth 평가는 계속 동작한다.
-- scope readiness가 미달이면 외부 호출 기능과 승인이 켜져 있어도 `AI_READINESS_NOT_MET`이고 provider spy 호출은 0회다. readiness 응답에서 네 원천별 부족 수, 승인 질문 50건 부족 수, 여덟 범주의 정상/제외/상충 누락 조합을 대조한다.
+- scope readiness가 미달이면 외부 호출 기능과 승인이 켜져 있어도 `AI_READINESS_NOT_MET`이고 provider spy 호출은 0회다. readiness 응답에서 네 원천별 부족 수, 승인 질문 48건과 범주×유형별 2건 부족 수, 품질 임계값, provider 심사 대기를 대조한다.
 - 승인 사례 실행은 허용 순위와 `asOf`를 적용하고 run별 precision@k, recall@k, excluded-source violation, citation trace 성공률을 누적 비교한다. 임의 표본은 `trace_table`, `trace_id`, `trace_version_id`로 원문 화면과 DB row까지 역추적한다.
 
 사람형 표본 검토는 테스트용 고객/현장 scope와 운영 scope를 섞지 않는다. 한 현장·한 라인에서 `line + equipment` 또는 `process + error_type`처럼 태그 두 축으로 표본을 고르고, `ANALYZED`/`REVIEWED`/`SELECTED` FieldComment만 원문 품질과 관리자 분석의 일치 여부를 확인한다. 운영 원문은 테스트 DB나 fake provider payload에 복제하지 않고 candidate/source ID와 정제된 점검 결과만 기록한다.

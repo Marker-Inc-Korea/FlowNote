@@ -485,6 +485,9 @@ def create_ai_query(
             site_scope=settings.ai_site_scope,
             line_scope=None,
             database_scope_value=database_scope(settings.database_url),
+            provider=settings.ai_provider,
+            model_scope=settings.ai_model,
+            purpose=payload.purpose,
         )
         if not readiness["provider_start_ready"]:
             gaps = readiness["source_gaps"]

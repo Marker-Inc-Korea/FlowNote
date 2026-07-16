@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-07-16 현재 전역 FastAPI 앱에 등록된 105개 method/path 조합과 요청·응답 코드 기준이다. 본문에 “후속 예외”로 명시한 경로만 미구현이다.
+이 문서는 2026-07-16 현재 전역 FastAPI 앱에 등록된 107개 method/path 조합과 요청·응답 코드 기준이다. 본문에 “후속 예외”로 명시한 경로만 미구현이다.
 
 ## 인증
 
@@ -251,13 +251,13 @@ AI 검색 후보 API는 자동 조언이 아닌 “근거가 있는 검색과 �
 | POST | `/api/v1/ai-search/evaluations` | 외부 AI 호출 없이 질문별 기대 근거와 실제 후보를 비교하고 재현성 snapshot을 누적 저장 |
 | POST | `/api/v1/ai-search/ground-truth-cases` | 범주·정상/제외/상충 유형·기대/제외 근거·허용 순위·시점을 현재 고객/현장/DB scope에 사람 승인 사례로 저장 |
 | GET | `/api/v1/ai-search/ground-truth-cases` | 현재 scope의 활성 승인 질문 조회. `lineScope`가 없으면 현장 공통 사례, 있으면 해당 라인 사례만 조회 |
-| GET | `/api/v1/ai-search/readiness` | 고객·현장·선택적 라인·DB scope별 네 원천 수, 최소 기준과 부족분, 승인 질문 50건 부족분, 범주별 정상/제외/상충 누락, 최근 평가와 provider 착수 가능 여부 조회 |
+| GET | `/api/v1/ai-search/readiness` | 고객·현장·선택적 라인·DB scope별 네 원천 수, 승인 질문 48건 및 범주×유형별 2건 부족분, 품질 임계값, provider 심사와 착수 가능 여부 조회 |
 
 검색 후보 원천은 `PUBLISHED_DOCUMENT_VERSION`, `FIELD_COMMENT`, `WORK_SEQUENCE_HISTORY`, `REPORT_SOURCE` 네 종류만 허용한다. 각 후보 응답은 안정된 `candidate_id`, `content_hash`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `parent_type`, `parent_id`를 포함해 원문 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 근거 row로 역추적할 수 있어야 한다. `candidate_id`는 source type/id/version 조합의 결정적 hash이며 원천 내용이 바뀌지 않으면 재생성 뒤에도 유지되고, 검색 본문 변경은 `content_hash`로 구분한다.
 
-평가 요청은 `runLabel`, 선택적 `evaluateAsUserId`, `lineScope`, `groundTruthCaseIds[]`, 호환용 임시 `cases[]`를 받는다. 승인 사례 평가는 현재 고객·현장·라인·DB scope가 일치하는 ID만 허용한다. 각 case에는 `caseKey`, `question`, `expectedOutcome`, `expectedEvidence[]`, `expectedExcluded[]`, `allowedRankMin`, `allowedRankMax`, `asOf`, `limit`을 둔다. 서버는 후보를 두 번 재생성해 ID·content hash와 순위를 비교하고, 기대/실제 candidate·source·version·trace ID, 내부 원천 URI, 제외 사유, 순위 hash를 `ai_search_evaluation_runs`와 `ai_search_evaluation_cases`에 저장한다. 같은 `caseKey`의 직전 run이 있으면 `previous_run_delta`로 후보 추가/제거, content hash 변경, 순위 변경을 따로 반환해 동일 snapshot 불안정과 원천 변경 뒤 의도된 차이를 구분한다. run 응답은 질문별·전체 `precision_at_k`, `recall_at_k`, `excluded_source_violation`, `citation_trace_success_rate`를 포함한다. 질문과 일치하는 적격 후보가 없으면 답변을 만들지 않고 `INSUFFICIENT_EVIDENCE`로 판정한다. 채널에 연결된 원천은 평가 사용자에게 활성 멤버십이 없으면 `CHANNEL_ACCESS_DENIED`로 제외한다. 이 API는 provider client를 호출하지 않는다.
+평가 요청은 `runLabel`, 선택적 `evaluateAsUserId`, `lineScope`, `groundTruthCaseIds[]`, 호환용 임시 `cases[]`를 받는다. 승인 사례 평가는 현재 고객·현장·라인·DB scope가 일치하는 ID만 허용한다. 각 case에는 `caseKey`, `question`, `expectedOutcome`, `expectedEvidence[]`, `expectedExcluded[]`, `allowedRankMin`, `allowedRankMax`, `asOf`, `limit`을 둔다. 승인 시 포함 근거는 실제 candidate와 원본 version/trace row, content hash, 승인자의 접근권한, `asOf`를 검증해 snapshot으로 고정하며 제외 근거도 실제 원천 row가 있어야 한다. 서버는 후보를 두 번 재생성해 ID·content hash와 순위를 비교하고 결과를 누적 저장한다. run 응답은 질문별·전체 `precision_at_k`, `recall_at_k`, `top_k_inclusion_rate`, `excluded_source_violation`, `permission_leak_violation`, `nonexistent_citation_violation`, `citation_trace_success_rate`, `citation_semantic_match_rate`, `conflict_disclosure_rate`를 포함한다. 질문과 일치하는 적격 후보가 없으면 답변을 만들지 않고 `INSUFFICIENT_EVIDENCE`로 판정한다. 채널에 연결된 원천은 평가 사용자에게 활성 멤버십이 없으면 `CHANNEL_ACCESS_DENIED`로 제외한다. 이 API는 provider client를 호출하지 않는다.
 
-`GET /api/v1/ai-search/readiness`의 착수 가능은 문서 10, 검토 가능한 FieldComment 100, 작업순서 이력 20, 보고서 source 10 후보, 승인 질문 50건, 여덟 범주의 정상/제외/상충 사례, 같은 scope의 50건 이상 최근 평가 통과와 ID/hash·순위 안정성을 모두 요구한다. DB scope는 로컬 경로나 자격정보를 반환하지 않는 driver+hash 식별자다. `FLOWNOTE_AI_READINESS_GATE_ENABLED` 기본값은 `true`이며 readiness 미달 scope의 `POST /api/v1/ai/queries`는 provider 호출 전에 `409 AI_READINESS_NOT_MET`로 차단하고 부족 질문·원천 수를 표시한다. 이 판정은 외부 전송 승인이나 기능 플래그를 자동으로 켜지 않는다.
+`GET /api/v1/ai-search/readiness`의 착수 가능은 문서 10, 검토 가능한 FieldComment 100, 작업순서 이력 20, 보고서 source 10 후보와 승인 질문 48건을 요구한다. 여덟 범주와 `NORMAL`/`EXCLUSION`/`CONFLICT`의 24개 조합은 각각 2건 이상이어야 한다. 같은 scope의 승인 세트 전체 평가에서 candidate ID/content hash와 순위가 안정되고 top-k 포함률·인용 trace·인용 의미 일치율·상충 표시율이 모두 100%, 제외 근거 노출·권한 누출·존재하지 않는 인용이 각각 0건이어야 한다. 현재 provider/model의 기술·보안·법무·고객 심사와 필수 체크리스트까지 모두 승인되어야 `provider_start_ready=true`다. DB scope는 로컬 경로나 자격정보를 반환하지 않는 driver+hash 식별자다. `FLOWNOTE_AI_READINESS_GATE_ENABLED` 기본값은 `true`이며 미달 scope는 provider 호출 전에 `409 AI_READINESS_NOT_MET`로 차단한다. 이 판정은 외부 전송 승인이나 기능 플래그를 자동으로 켜지 않는다.
 
 WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidates/rebuild`로 후보를 재생성한 뒤 `GET /api/v1/ai-search/quality`의 후보/제외/FieldComment 검토 지표와 `GET /api/v1/ai-search/readiness`의 서버 고객·현장·DB scope, 네 원천과 승인 질문 부족분, 범주/유형 누락, 운영 호출 차단 상태를 표시한다. 화면은 이 수치가 서버 DB 기준이며 WPF 공통 로컬 SQLite와 합산되지 않음을 명시한다. 후보 목록에서 운영자는 `trace_table`, `trace_id`, `trace_version_id`로 원문 문서 버전, FieldComment, 작업순서 이력, 보고서 source row로 이동해 근거를 확인하며 선택 후보의 추적값을 클립보드에 복사할 수 있다.
 
@@ -328,6 +328,8 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 
 ## 외부 AI 운영 API
 
+ground-truth 평가 run은 비교 가능한 변경 이력을 위해 선택적 `evaluatorVersion`, `promptVersionId`, `policyVersion`을 metrics snapshot에 보존한다. prompt나 정책 변경 전후 run은 같은 ground-truth case ID를 사용해 비교하며 이전 실패 run을 삭제하거나 덮어쓰지 않는다.
+
 모든 `/api/v1/ai-operations/*` 경로는 `system-admin` 전용이다. 응답은 API key, 질의/응답/근거 원문, provider raw 오류를 포함하지 않는다.
 
 | Method | Path | 용도 |
@@ -335,6 +337,8 @@ WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidate
 | `GET` | `/api/v1/ai-operations/approvals` | 고객·현장·provider·model·목적·source type·만료가 고정된 승인 조회 |
 | `POST` | `/api/v1/ai-operations/approvals` | 범위가 고정된 승인 생성 |
 | `POST` | `/api/v1/ai-operations/approvals/{approval_id}/revoke` | 승인 즉시 폐기 |
+| `GET` | `/api/v1/ai-operations/provider-reviews` | provider/model별 기술·보안·법무·고객 착수 결정과 필수 체크리스트 조회 |
+| `POST` | `/api/v1/ai-operations/provider-reviews` | 불변 review version으로 승인 또는 명시적 대기/거절 상태 기록 |
 | `GET` | `/api/v1/ai-operations/prompts` | 불변 프롬프트 버전 조회 |
 | `POST` | `/api/v1/ai-operations/prompts` | 새 불변 프롬프트 버전 등록 |
 | `POST` | `/api/v1/ai-operations/prompts/{prompt_version_id}/review` | 초안 검토 완료 |
