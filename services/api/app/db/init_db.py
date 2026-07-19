@@ -553,7 +553,35 @@ def _ensure_ai_operations_columns(database: Database) -> None:
                     )
 
 
+def _assert_database_schema_ownership(database: Database) -> None:
+    """Refuse to merge the FastAPI schema into a WPF local SQLite database."""
+    if not database.database_url.startswith("sqlite"):
+        return
+
+    with database.engine.connect() as connection:
+        document_version_columns = {
+            row[1] for row in connection.execute(text("PRAGMA table_info(document_versions)"))
+        }
+        document_columns = {
+            row[1] for row in connection.execute(text("PRAGMA table_info(documents)"))
+        }
+
+    is_wpf_local_schema = (
+        bool(document_version_columns)
+        and "version_no" in document_version_columns
+        and "file_name" in document_version_columns
+        and "version_id" not in document_version_columns
+        and "folder_id" in document_columns
+    )
+    if is_wpf_local_schema:
+        raise RuntimeError(
+            "FLOWNOTE_DATABASE_URL points to a WPF local SQLite database. "
+            "FastAPI and WPF must use separate database files; no server tables were created."
+        )
+
+
 def initialize_database(database: Database) -> None:
+    _assert_database_schema_ownership(database)
     Base.metadata.create_all(bind=database.engine)
     _ensure_user_account_columns(database)
     _ensure_user_account_role_constraint(database)
