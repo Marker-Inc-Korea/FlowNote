@@ -423,11 +423,17 @@ if (-not $SkipFastApiPytest) {
         Push-Location $apiDir
         try {
             $collected = @(& $python -m pytest --collect-only -q)
-            $testCount = @($collected | Where-Object { $_ -match "::" }).Count
-            if ($testCount -ne 120) {
-                throw "Expected 120 FastAPI pytest tests, collected $testCount."
+            $nodeIds = @($collected | Where-Object { $_ -match "::" } | ForEach-Object { $_.Trim() })
+            $nodeIds | Set-Content -Encoding UTF8 (Join-Path $runArtifactDir "fastapi-collected-tests.txt")
+            $testCount = $nodeIds.Count
+            $uniqueTestCount = @($nodeIds | Sort-Object -Unique).Count
+            if ($testCount -ne 128) {
+                throw "Expected 128 FastAPI pytest tests, collected $testCount."
             }
-            Write-Host "Collected FastAPI pytest tests: $testCount"
+            if ($uniqueTestCount -ne $testCount) {
+                throw "FastAPI collection contains duplicate node IDs: total=$testCount, unique=$uniqueTestCount."
+            }
+            Write-Host "Collected FastAPI pytest tests: $testCount (unique node IDs: $uniqueTestCount)"
         }
         finally {
             Pop-Location
@@ -445,10 +451,10 @@ if (-not $SkipFastApiPytest) {
                 throw "FastAPI pytest failed with exit code $LASTEXITCODE."
             }
             $junitCounts = Get-JUnitCounts $junitPath
-            if ($junitCounts.Tests -ne 120 -or $junitCounts.Failures -ne 0 -or $junitCounts.Errors -ne 0) {
-                throw "FastAPI JUnit mismatch: tests=$($junitCounts.Tests), failures=$($junitCounts.Failures), errors=$($junitCounts.Errors)."
+            if ($junitCounts.Tests -ne 128 -or $junitCounts.Failures -ne 0 -or $junitCounts.Errors -ne 0 -or $junitCounts.Skipped -ne 0) {
+                throw "FastAPI JUnit mismatch: tests=$($junitCounts.Tests), failures=$($junitCounts.Failures), errors=$($junitCounts.Errors), skipped=$($junitCounts.Skipped)."
             }
-            Write-Host "FastAPI JUnit: tests=120, failures=0, errors=0"
+            Write-Host "FastAPI JUnit: tests=128, failures=0, errors=0, skipped=0"
         }
         finally {
             Pop-Location
@@ -485,6 +491,19 @@ if (-not $SkipWpfBuild) {
 }
 
 if (-not $SkipWpfSmoke) {
+    Invoke-Step "Check shared WPF SQLite integrity before smoke" {
+        $apiPython = Join-Path $repoRoot "services/api/.venv/Scripts/python.exe"
+        $wpfDatabase = Join-Path $repoRoot "data/local/flownote.local.sqlite"
+        & $apiPython ".\scripts\repair-wpf-controlled-copy-schema.py" `
+            --database $wpfDatabase `
+            --run-id "wpf-integrity-preflight" `
+            --evidence-root $runArtifactDir `
+            --check-only
+        if ($LASTEXITCODE -ne 0) {
+            throw "Shared WPF SQLite preflight integrity check failed with exit code $LASTEXITCODE."
+        }
+    }
+
     Invoke-Step "Run integrated WPF smoke against shared SQLite and preserved FastAPI" {
         $expectedDatabasePath = Join-Path $repoRoot "data/local/flownote.local.sqlite"
         $previousLocalDataDir = $env:FLOWNOTE_LOCAL_DATA_DIR
@@ -578,6 +597,19 @@ if (-not $SkipWpfSmoke) {
             $env:FLOWNOTE_STORAGE_ROOT = $previousStorageRoot
             $env:FLOWNOTE_AI_EXTERNAL_CALL_ENABLED = $previousAiEnabled
             $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $previousSmokeArtifactDir
+        }
+    }
+
+    Invoke-Step "Check shared WPF SQLite integrity after smoke" {
+        $apiPython = Join-Path $repoRoot "services/api/.venv/Scripts/python.exe"
+        $wpfDatabase = Join-Path $repoRoot "data/local/flownote.local.sqlite"
+        & $apiPython ".\scripts\repair-wpf-controlled-copy-schema.py" `
+            --database $wpfDatabase `
+            --run-id "wpf-integrity-postflight" `
+            --evidence-root $runArtifactDir `
+            --check-only
+        if ($LASTEXITCODE -ne 0) {
+            throw "Shared WPF SQLite postflight integrity check failed with exit code $LASTEXITCODE."
         }
     }
 }

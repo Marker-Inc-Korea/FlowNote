@@ -182,7 +182,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-07-16, the FastAPI suite collects and passes 128 tests. `scripts/verify-preserved-tests.ps1` still expects a 120-test collection and JUnit baseline, so the standard run currently stops at that mismatch and cannot produce a valid integrated `PASSED` result. After aligning the script baseline with the code, the complete Windows baseline must also run WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID; a FastAPI-only run is partial evidence.
+As of 2026-07-20, the FastAPI suite collects 128 unique node IDs and passes all 128 tests. `scripts/verify-preserved-tests.ps1` now enforces the same collection/JUnit count, zero skipped tests, and a preserved node-ID list. The complete Windows baseline must still run WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID; a FastAPI-only run is partial evidence.
 
 The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no management API for that sensitive-data policy. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. The server lifespan runs expired-query retention on the configured interval by default, while the `system-admin` endpoint remains available for an immediate run.
 

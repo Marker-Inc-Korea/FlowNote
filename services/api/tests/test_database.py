@@ -1,15 +1,18 @@
 from pathlib import Path
+import sqlite3
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy import func, inspect, select
 
 from app.core.config import Settings
-from app.db.init_db import DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME
+from app.db.init_db import DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME, initialize_database
 from app.db.init_db import INITIAL_SCHEMA_VERSION, hash_password_for_dev
 from app.db.models import Document, DocumentVersion, FieldComment, FileObject, Role
 from app.db.models import SchemaMigration, UserAccount, UserRole
 from app.main import create_app
+from app.db.session import Database
 
 
 API_ROOT = Path(__file__).resolve().parents[1]
@@ -28,7 +31,7 @@ def create_test_client() -> TestClient:
     return TestClient(create_app(app_settings))
 
 
-def test_app_startup_creates_mvp_schema() -> None:
+def test_app_startup_creates_mvp_schema(tmp_path: Path) -> None:
     expected_tables = {
         "ai_search_candidates",
         "ai_search_evaluation_runs",
@@ -97,6 +100,38 @@ def test_app_startup_creates_mvp_schema() -> None:
             assert admin_account.role == "admin"
             assert admin_account.password_hash == hash_password_for_dev(DEFAULT_ADMIN_PASSWORD)
             assert admin_account.is_active is True
+
+    wpf_database_path = tmp_path / "flownote.local.sqlite"
+    with sqlite3.connect(wpf_database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE documents (
+                id INTEGER PRIMARY KEY,
+                document_id TEXT NOT NULL UNIQUE,
+                folder_id INTEGER NOT NULL
+            );
+            CREATE TABLE document_versions (
+                id INTEGER PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                version_no INTEGER NOT NULL,
+                file_name TEXT NOT NULL,
+                local_path TEXT
+            );
+            """
+        )
+
+    misconfigured_database = Database(f"sqlite:///{wpf_database_path.as_posix()}")
+    try:
+        with pytest.raises(RuntimeError, match="WPF local SQLite"):
+            initialize_database(misconfigured_database)
+    finally:
+        misconfigured_database.dispose()
+
+    with sqlite3.connect(wpf_database_path) as connection:
+        controlled_copy_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='controlled_copy_grants'"
+        ).fetchone()
+    assert controlled_copy_table is None
 
 
 def test_app_startup_seeds_default_admin_account_once() -> None:

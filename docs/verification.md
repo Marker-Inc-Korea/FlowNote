@@ -30,14 +30,16 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
 2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 3. 실행 전 `git status --porcelain=v1 --untracked-files=all`과 `git ls-files`에서 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-4. `services/api`에서 FastAPI pytest 수집 개수를 확인한다. 현재 테스트 코드는 128개를 수집하지만 스크립트 기준선은 120개이므로, 기준을 갱신하기 전 표준 실행은 이 단계에서 실패한다.
+4. `services/api`에서 FastAPI pytest node ID 128개를 수집하고 중복 node ID가 0개인지 확인한다. 수집 목록은 `fastapi-collected-tests.txt`로 보존한다.
 5. FastAPI pytest를 실행하고 실행 ID별 JUnit을 보존한다.
 6. WPF Core 테스트를 실행하고 TRX를 보존한다.
 7. WPF 앱을 빌드한다.
-8. `5184` 포트에 서버가 없으면 누적 `flownote.windows-smoke.sqlite3`와 `storage/windows-smoke`를 쓰는 FastAPI를 시작하고, 같은 실행 ID로 WPF 통합 스모크를 실행한다.
-9. Android `testDebugUnitTest`와 `assembleDebug`를 실행하고 JUnit XML을 실행 ID 폴더에도 복사해 보존한다.
-10. `-RunAndroidDeviceSmoke`를 지정하면 연결된 승인 실단말이 정확히 1대인지 확인하고 `connectedDebugAndroidTest`를 실행한다.
-11. 실행 후 `git status --short --untracked-files=all`과 `git ls-files`를 다시 점검한다.
+8. WPF 공통 DB의 스모크 전 `quick_check`와 `foreign_key_check`를 별도 JSON 증거로 확인한다.
+9. `5184` 포트에 서버가 없으면 누적 `flownote.windows-smoke.sqlite3`와 `storage/windows-smoke`를 쓰는 FastAPI를 시작하고, 같은 실행 ID로 WPF 통합 스모크를 실행한다.
+10. WPF 공통 DB의 스모크 후 무결성을 다시 확인한다.
+11. Android `testDebugUnitTest`와 `assembleDebug`를 실행하고 JUnit XML을 실행 ID 폴더에도 복사해 보존한다.
+12. `-RunAndroidDeviceSmoke`를 지정하면 연결된 승인 실단말이 정확히 1대인지 확인하고 `connectedDebugAndroidTest`를 실행한다.
+13. 실행 후 `git status --short --untracked-files=all`과 `git ls-files`를 다시 점검한다.
 
 개별 명령은 다음과 같다.
 
@@ -72,9 +74,17 @@ FieldComment 정제 스모크는 실행마다 다음 6개 시나리오를 같은
 
 마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. `wpf-smoke-database-evidence.json`에는 주요 테이블 실행 전후 통계, 오늘 문서 ID, 과거 기존 문서의 이전·신규 버전과 무결성 결과가 저장된다. 통제된 기준선은 실행마다 설정이 식별되는 관리형 FastAPI를 사용하므로 시작 전에 `5184` 포트를 비워야 한다. 해당 포트에 이미 건강한 서버가 있으면 환경 실패로 중단하고 외부 프로세스는 종료하지 않는다.
 
-한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. FastAPI JUnit의 tests 수는 실행 시점의 수집 코드와 스크립트 기준이 일치해야 하고 failure/error는 0, WPF TRX와 Android JUnit도 failure 0이어야 한다. 현재 코드는 128건, 스크립트는 120건이므로 아직 이 조건을 충족하지 않는다. WPF·Android build 로그에는 build error가 없어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. FastAPI 수집/JUnit 기준은 128건이며 failure/error/skipped와 중복 node ID는 모두 0이어야 한다. WPF TRX와 Android JUnit도 failure/error 0, WPF·Android build 로그도 build error 0이어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
+
+## 2026-07-20 WPF 공통 DB P0 무결성 복구
+
+`controlled_copy_grants`는 FastAPI `Base.metadata.create_all()`이 WPF 공통 DB를 서버 DB URL로 잘못 받은 실행에서 유입된 서버 전용 schema였다. 서버 FK는 `document_versions.version_id`를 참조하지만 WPF 로컬 테이블은 `id` PK와 `(document_id, version_no)` 의미 키를 사용하고 `version_id` 열이 없으므로, 테이블 생성 직후부터 SQLite `foreign key mismatch`가 발생하는 구조였다. FastAPI 초기화는 이제 WPF 로컬 `documents`/`document_versions` 형태를 먼저 판별해 서버 테이블 생성 전에 중단한다.
+
+보존 migration `scripts/repair-wpf-controlled-copy-schema.py`는 원본 SQLite 일관 backup, 전체 테이블 row 수·DDL·FK, DB SHA-256, `document_versions`·controlled copy·접근 감사 row hash를 먼저 저장한다. 서버 전용 grant row는 FK 없는 `preserved_server_controlled_copy_grants`에 원래 열 값과 run ID를 보존하고 `local_schema_migration_audit`에 원래 DDL과 보호 대상 hash를 남긴 뒤 충돌하는 활성 테이블만 제거한다. 실제 공통 DB run `WPF-P0-20260720-0840`은 원래 grant 0행, 문서 버전 3,384행, 접근 감사 0행을 보존했고 `quick_check=ok`, FK 검사 오류 없음, 위반 0건으로 끝났다. 별도 비영(非零) TOOLTEST는 소비 완료 grant 1행과 접근 감사 1행의 값·hash 보존을 확인했다. 원본 DB backup과 전후 JSON은 `data/local/wpf-schema-repair/<run-id>/`에 남아 있으며 Git 제외 대상이다.
+
+FastAPI 수집 목록은 128개 node ID, 중복 0개로 대조했고 macOS 보조 run `p0-recovery-macos-20260720-0850`에서 JUnit `128 passed`를 보존했다. 이 호스트에는 `dotnet`, JDK, Android SDK가 없어 WPF Core/TRX·WPF 앱 build·누적 스모크·Android 단위/debug build를 실행할 수 없었다. 따라서 이 보조 run은 Windows 표준 `PASSED` 기준선이 아니며, 128 기준으로 갱신된 `verify-preserved-tests.ps1`을 표준 Windows x64 환경에서 옵션 생략 없이 새 run ID로 실행하기 전까지 최신 통합 기준선 재확립 판정은 `대기`다.
 
 ## 2026-07-16 후보 6 AI ground-truth와 provider 착수 게이트
 
