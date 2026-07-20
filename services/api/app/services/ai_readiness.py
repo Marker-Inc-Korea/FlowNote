@@ -9,6 +9,8 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    AIEvaluationDatasetBinding,
+    AIGroundTruthDatasetVersion,
     AIProviderOnboardingReview,
     AISearchCandidate,
     AISearchEvaluationRun,
@@ -117,6 +119,19 @@ def scope_readiness(
     ground_truth = field_ground_truth
     coverage = Counter((case.category, case.scenario_type) for case in ground_truth)
     smoke_coverage = Counter((case.category, case.scenario_type) for case in smoke_ground_truth)
+    latest_approved_dataset = session.scalar(
+        select(AIGroundTruthDatasetVersion).where(
+            AIGroundTruthDatasetVersion.customer_scope == customer_scope,
+            AIGroundTruthDatasetVersion.site_scope == site_scope,
+            AIGroundTruthDatasetVersion.database_scope == database_scope_value,
+            AIGroundTruthDatasetVersion.line_scope == line_scope,
+            AIGroundTruthDatasetVersion.readiness_track == "FIELD_READINESS",
+            AIGroundTruthDatasetVersion.status == "APPROVED",
+        ).order_by(
+            desc(AIGroundTruthDatasetVersion.second_approved_at),
+            desc(AIGroundTruthDatasetVersion.version),
+        )
+    )
     category_scenario_gaps = [
         {
             "category": category,
@@ -145,6 +160,15 @@ def scope_readiness(
             and metrics.get("database_scope") == database_scope_value
             and metrics.get("line_scope") == line_scope
         )
+        binding = session.scalar(select(AIEvaluationDatasetBinding).where(
+            AIEvaluationDatasetBinding.run_id == run.run_id
+        ))
+        dataset_matches = bool(
+            latest_approved_dataset
+            and binding
+            and binding.dataset_version_id == latest_approved_dataset.dataset_version_id
+            and binding.dataset_snapshot_hash == latest_approved_dataset.snapshot_hash
+        )
         if scope_matches:
             evaluation_summary = {
                 "run_id": run.run_id,
@@ -160,8 +184,14 @@ def scope_readiness(
                 "citation_trace_success_rate": metrics.get("citation_trace_success_rate", 0),
                 "citation_semantic_match_rate": metrics.get("citation_semantic_match_rate", 0),
                 "conflict_disclosure_rate": metrics.get("conflict_disclosure_rate", 0),
+                "dataset_version_id": binding.dataset_version_id if binding else None,
+                "dataset_snapshot_hash": binding.dataset_snapshot_hash if binding else None,
             }
-            if metrics.get("readiness_track") == "FIELD_READINESS" and latest_evaluation is None:
+            if (
+                metrics.get("readiness_track") == "FIELD_READINESS"
+                and dataset_matches
+                and latest_evaluation is None
+            ):
                 latest_evaluation = evaluation_summary
             elif metrics.get("readiness_track") == "SMOKE_REGRESSION" and latest_smoke_evaluation is None:
                 latest_smoke_evaluation = evaluation_summary
@@ -243,7 +273,19 @@ def scope_readiness(
         and latest_evaluation["citation_semantic_match_rate"] >= CITATION_SEMANTIC_MATCH_THRESHOLD
         and latest_evaluation["conflict_disclosure_rate"] >= CONFLICT_DISCLOSURE_THRESHOLD
     )
-    ready = source_ready and ground_truth_ready and evaluation_ready and provider_review_ready
+    dataset_ready = latest_approved_dataset is not None
+    ready = source_ready and ground_truth_ready and dataset_ready and evaluation_ready and provider_review_ready
+    readiness_failures = []
+    if not source_ready:
+        readiness_failures.append("SOURCE_COVERAGE_INCOMPLETE")
+    if not ground_truth_ready:
+        readiness_failures.append("GROUND_TRUTH_COVERAGE_INCOMPLETE")
+    if not dataset_ready:
+        readiness_failures.append("NO_APPROVED_DATASET_VERSION")
+    if dataset_ready and not evaluation_ready:
+        readiness_failures.append("LATEST_APPROVED_DATASET_EVALUATION_MISSING_OR_FAILED")
+    if not provider_review_ready:
+        readiness_failures.append("PROVIDER_REVIEW_INCOMPLETE")
     return {
         "scope": {
             "customer_scope": customer_scope,
@@ -304,6 +346,13 @@ def scope_readiness(
             "conflict_disclosure_rate": CONFLICT_DISCLOSURE_THRESHOLD,
         },
         "latest_evaluation": latest_evaluation,
+        "latest_approved_dataset": None if latest_approved_dataset is None else {
+            "dataset_version_id": latest_approved_dataset.dataset_version_id,
+            "dataset_key": latest_approved_dataset.dataset_key,
+            "version": latest_approved_dataset.version,
+            "snapshot_hash": latest_approved_dataset.snapshot_hash,
+            "approved_at": latest_approved_dataset.second_approved_at,
+        },
         "provider_review": provider_review or {
             "review_id": None,
             "review_version": None,
@@ -315,6 +364,15 @@ def scope_readiness(
         "source_ready": source_ready,
         "ground_truth_ready": ground_truth_ready,
         "evaluation_ready": evaluation_ready,
+        "dataset_ready": dataset_ready,
         "provider_review_ready": provider_review_ready,
         "provider_start_ready": ready,
+        "ai_provider_readiness_status": (
+            "PASS" if ready else "FAIL" if dataset_ready and latest_evaluation is not None else "PENDING"
+        ),
+        "readiness_failures": readiness_failures,
+        "external_ai_calls_blocked": not ready,
+        "non_ai_core_flows_blocked": False,
+        "candidate_regeneration_allowed": True,
+        "quality_inspection_allowed": True,
     }

@@ -78,6 +78,12 @@ FieldComment 정제 스모크는 실행마다 다음 6개 시나리오를 같은
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
 
+## 2026-07-20 작업 102 현재 코드 문서 갱신
+
+작업 시작 시 Git 작업 트리는 깨끗해 미커밋 변경은 없었다. 최근 구현을 다시 대조해 FastAPI ground-truth 첫 승인, 서로 다른 사용자의 2차 승인, 고정 원천 snapshot/provenance, 실제 현장/스모크 준비도 분리를 제품 개요·MVP·로드맵·서버 API 목록에 반영했다. 합성/시험 48건 회귀는 실제 현장 준비도와 운영 provider 승인을 대신하지 않는다는 경계도 명시했다.
+
+현재 앱의 OpenAPI schema에서 다시 산출한 값은 루트 `GET /`를 포함한 109개 method/path 조합이고 ORM은 48개 테이블이다. 기존 서버 API README의 108개 총계와 누락된 `POST /api/v1/ai-search/ground-truth-cases/{ground_truth_case_id}/second-approval` 항목을 현재 코드에 맞게 수정했으며, README 표와 OpenAPI의 109개 조합이 누락·초과 없이 일치함을 확인했다. `pytest --collect-only -q`는 130건을 수집했다. 이번 요청은 문서 갱신이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았고 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
+
 ## 2026-07-20 작업 102 보고서 근거 코드 재대조
 
 작업 시작 시 Git 작업 트리는 깨끗해 반영할 미커밋 변경은 없었다. 최근 구현된 보고서 근거 계약을 FastAPI, WPF와 상위 문서에 다시 대조했다. 현재 WPF 후보는 `SELECTED` FieldComment, 현재 공개 문서, 작업순서 항목/이력으로 제한되며, 이전 문서에 남아 있던 `REVIEWED`·`ANALYZED` FieldComment 후보 설명을 제거했다. 보고서 초안과 최종 저장은 서로 다른 source type 2종 이상, source별 고정 version, type/ID/version 중복 금지를 적용한다. 각 source의 독립 trace ID와 저장 시점 SHA-256을 보존하고 최종 문서 저장 전에 같은 version의 현재 원천 hash를 다시 검사한다.

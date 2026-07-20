@@ -15,6 +15,9 @@ from sqlalchemy.orm import Session
 from app.core.auth import CurrentUser, get_current_user
 from app.core.config import Settings, get_settings
 from app.db.models import (
+    AIEvaluationDatasetBinding,
+    AIGroundTruthDatasetCase,
+    AIGroundTruthDatasetVersion,
     AISearchCandidate,
     AISearchEvaluationCase,
     AISearchEvaluationRun,
@@ -39,11 +42,14 @@ from app.db.models import (
 from app.db.session import get_db_session
 from app.services.ai_provider_gate import BLOCK_RULES, MASK_RULES, SensitiveContentFilter, load_sensitive_filter
 from app.services.ai_readiness import (
+    GROUND_TRUTH_MINIMUM,
+    GROUND_TRUTH_PER_CATEGORY_SCENARIO_MINIMUM,
     QUESTION_CATEGORIES,
     SCENARIO_TYPES,
     database_scope,
     scope_readiness,
 )
+from app.services.ai_operations import audit_event
 
 router = APIRouter(prefix="/ai-search", tags=["ai-search"], dependencies=[Depends(get_current_user)])
 
@@ -189,6 +195,7 @@ class AISearchEvaluationRequest(BaseModel):
     evaluator_version: str = Field(default="candidate-ranking-v1", alias="evaluatorVersion", max_length=80)
     prompt_version_id: str | None = Field(default=None, alias="promptVersionId", max_length=64)
     policy_version: str | None = Field(default=None, alias="policyVersion", max_length=80)
+    dataset_version_id: str | None = Field(default=None, alias="datasetVersionId", max_length=64)
 
 
 class AISearchGroundTruthCaseRequest(BaseModel):
@@ -205,6 +212,28 @@ class AISearchGroundTruthCaseRequest(BaseModel):
     line_scope: str | None = Field(default=None, alias="lineScope", max_length=64)
     data_classification: str = Field(alias="dataClassification")
     provenance_note: str = Field(alias="provenanceNote", min_length=1, max_length=1000)
+
+
+class AIGroundTruthDatasetCreateRequest(BaseModel):
+    dataset_key: str = Field(alias="datasetKey", min_length=1, max_length=100)
+    title: str = Field(min_length=1, max_length=200)
+    readiness_track: str = Field(alias="readinessTrack")
+    line_scope: str | None = Field(default=None, alias="lineScope", max_length=64)
+    ground_truth_case_ids: list[str] = Field(alias="groundTruthCaseIds", min_length=1, max_length=100)
+    change_reason: str = Field(alias="changeReason", min_length=1, max_length=2000)
+    replaces_dataset_version_id: str | None = Field(
+        default=None, alias="replacesDatasetVersionId", max_length=64
+    )
+
+
+class AIGroundTruthDatasetCasesRequest(BaseModel):
+    ground_truth_case_ids: list[str] = Field(alias="groundTruthCaseIds", min_length=1, max_length=100)
+    change_reason: str = Field(alias="changeReason", min_length=1, max_length=2000)
+
+
+class AIGroundTruthDatasetTransitionRequest(BaseModel):
+    action: str
+    reason: str = Field(min_length=1, max_length=2000)
 
 
 def _new_public_id(prefix: str) -> str:
@@ -1432,6 +1461,337 @@ def list_ground_truth_cases(
     return [_ground_truth_response(case, provenance_by_case.get(case.ground_truth_case_id)) for case in cases]
 
 
+GROUND_TRUTH_OPERATOR_ROLES = {
+    "admin", "system-admin", "document-admin", "manager", "assistant-manager", "department-manager"
+}
+GROUND_TRUTH_APPROVER_ROLES = {
+    "admin", "system-admin", "document-admin", "department-manager"
+}
+
+
+def _require_ground_truth_role(user: CurrentUser, *, approver: bool = False) -> None:
+    allowed = GROUND_TRUTH_APPROVER_ROLES if approver else GROUND_TRUTH_OPERATOR_ROLES
+    if user.role not in allowed:
+        raise HTTPException(status_code=403, detail="ground-truth dataset operation role required")
+
+
+def _case_snapshot(case: AISearchGroundTruthCase) -> dict[str, object]:
+    return {
+        "ground_truth_case_id": case.ground_truth_case_id,
+        "case_key": case.case_key,
+        "category": case.category,
+        "scenario_type": case.scenario_type,
+        "question": case.question,
+        "expected_outcome": case.expected_outcome,
+        "expected_evidence": json.loads(case.expected_evidence_json),
+        "expected_excluded": json.loads(case.excluded_evidence_json),
+        "allowed_rank_min": case.allowed_rank_min,
+        "allowed_rank_max": case.allowed_rank_max,
+        "as_of": _snapshot_iso(case.as_of),
+    }
+
+
+def _dataset_members(
+    session: Session, dataset_version_id: str
+) -> list[tuple[AIGroundTruthDatasetCase, AISearchGroundTruthCase]]:
+    return session.execute(
+        select(AIGroundTruthDatasetCase, AISearchGroundTruthCase)
+        .join(
+            AISearchGroundTruthCase,
+            AISearchGroundTruthCase.ground_truth_case_id == AIGroundTruthDatasetCase.ground_truth_case_id,
+        )
+        .where(AIGroundTruthDatasetCase.dataset_version_id == dataset_version_id)
+        .order_by(AIGroundTruthDatasetCase.case_key)
+    ).all()
+
+
+def _dataset_snapshot_hash(members: list[tuple[AIGroundTruthDatasetCase, AISearchGroundTruthCase]]) -> str:
+    snapshots = [_case_snapshot(case) for _, case in members]
+    return _hash(json.dumps(snapshots, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+
+
+def _dataset_response(
+    session: Session, dataset: AIGroundTruthDatasetVersion, *, include_cases: bool = True
+) -> dict[str, object]:
+    members = _dataset_members(session, dataset.dataset_version_id)
+    coverage = {
+        (category, scenario): 0 for category in QUESTION_CATEGORIES for scenario in SCENARIO_TYPES
+    }
+    for _, case in members:
+        coverage[(case.category, case.scenario_type)] += 1
+    coverage_rows = [
+        {
+            "category": category,
+            "scenario_type": scenario,
+            "count": coverage[(category, scenario)],
+            "required": GROUND_TRUTH_PER_CATEGORY_SCENARIO_MINIMUM,
+            "missing": max(GROUND_TRUTH_PER_CATEGORY_SCENARIO_MINIMUM - coverage[(category, scenario)], 0),
+        }
+        for category in QUESTION_CATEGORIES for scenario in SCENARIO_TYPES
+    ]
+    response: dict[str, object] = {
+        "dataset_version_id": dataset.dataset_version_id,
+        "dataset_key": dataset.dataset_key,
+        "version": dataset.version,
+        "title": dataset.title,
+        "status": dataset.status,
+        "readiness_track": dataset.readiness_track,
+        "customer_scope": dataset.customer_scope,
+        "site_scope": dataset.site_scope,
+        "line_scope": dataset.line_scope,
+        "database_scope": dataset.database_scope,
+        "author_id": dataset.author_id,
+        "reviewer_id": dataset.reviewer_id,
+        "first_approved_by": dataset.first_approved_by,
+        "second_approved_by": dataset.second_approved_by,
+        "snapshot_hash": dataset.snapshot_hash,
+        "replaces_dataset_version_id": dataset.replaces_dataset_version_id,
+        "change_reason": dataset.change_reason,
+        "case_count": len(members),
+        "coverage": coverage_rows,
+        "coverage_complete": len(members) >= GROUND_TRUTH_MINIMUM and not any(
+            item["missing"] for item in coverage_rows
+        ),
+        "submitted_at": dataset.submitted_at,
+        "reviewed_at": dataset.reviewed_at,
+        "first_approved_at": dataset.first_approved_at,
+        "second_approved_at": dataset.second_approved_at,
+        "retired_at": dataset.retired_at,
+        "created_at": dataset.created_at,
+        "updated_at": dataset.updated_at,
+    }
+    if include_cases:
+        response["cases"] = [
+            {**_ground_truth_response(case), "dataset_case_snapshot_hash": member.snapshot_hash}
+            for member, case in members
+        ]
+    return response
+
+
+def _replace_dataset_members(
+    session: Session,
+    dataset: AIGroundTruthDatasetVersion,
+    case_ids: list[str],
+    actor_id: str,
+) -> None:
+    if dataset.status != "DRAFT":
+        raise HTTPException(status_code=409, detail="only a DRAFT dataset version can be changed")
+    unique_ids = list(dict.fromkeys(case_ids))
+    if len(unique_ids) != len(case_ids):
+        raise HTTPException(status_code=422, detail="groundTruthCaseIds must be unique")
+    cases = session.scalars(select(AISearchGroundTruthCase).where(
+        AISearchGroundTruthCase.ground_truth_case_id.in_(unique_ids),
+        AISearchGroundTruthCase.customer_scope == dataset.customer_scope,
+        AISearchGroundTruthCase.site_scope == dataset.site_scope,
+        AISearchGroundTruthCase.database_scope == dataset.database_scope,
+        AISearchGroundTruthCase.line_scope == dataset.line_scope,
+        AISearchGroundTruthCase.is_active.is_(True),
+    )).all()
+    if len(cases) != len(unique_ids):
+        raise HTTPException(status_code=422, detail="one or more cases are not active in the dataset scope")
+    provenance = {
+        item.ground_truth_case_id: item
+        for item in session.scalars(select(AISearchGroundTruthProvenance).where(
+            AISearchGroundTruthProvenance.ground_truth_case_id.in_(unique_ids),
+            AISearchGroundTruthProvenance.approval_status == "APPROVED",
+            AISearchGroundTruthProvenance.readiness_track == dataset.readiness_track,
+        )).all()
+    }
+    if len(provenance) != len(unique_ids):
+        raise HTTPException(status_code=422, detail="all cases must be approved in the dataset readiness track")
+    session.query(AIGroundTruthDatasetCase).filter(
+        AIGroundTruthDatasetCase.dataset_version_id == dataset.dataset_version_id
+    ).delete(synchronize_session=False)
+    by_id = {case.ground_truth_case_id: case for case in cases}
+    for case_id in unique_ids:
+        case = by_id[case_id]
+        snapshot_hash = _hash(json.dumps(
+            _case_snapshot(case), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ))
+        session.add(AIGroundTruthDatasetCase(
+            dataset_version_id=dataset.dataset_version_id,
+            ground_truth_case_id=case_id,
+            case_key=case.case_key,
+            snapshot_hash=snapshot_hash,
+            added_by=actor_id,
+        ))
+    session.flush()
+
+
+@router.get("/ground-truth-datasets")
+def list_ground_truth_datasets(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_db_session)],
+    line_scope: Annotated[str | None, Query(alias="lineScope")] = None,
+) -> list[dict[str, object]]:
+    normalized_line = line_scope.strip() if line_scope and line_scope.strip() else None
+    rows = session.scalars(select(AIGroundTruthDatasetVersion).where(
+        AIGroundTruthDatasetVersion.customer_scope == settings.ai_customer_scope,
+        AIGroundTruthDatasetVersion.site_scope == settings.ai_site_scope,
+        AIGroundTruthDatasetVersion.database_scope == database_scope(settings.database_url),
+        AIGroundTruthDatasetVersion.line_scope == normalized_line,
+    ).order_by(desc(AIGroundTruthDatasetVersion.created_at))).all()
+    return [_dataset_response(session, row, include_cases=False) for row in rows]
+
+
+@router.get("/ground-truth-datasets/{dataset_version_id}")
+def get_ground_truth_dataset(
+    dataset_version_id: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, object]:
+    row = session.scalar(select(AIGroundTruthDatasetVersion).where(
+        AIGroundTruthDatasetVersion.dataset_version_id == dataset_version_id,
+        AIGroundTruthDatasetVersion.customer_scope == settings.ai_customer_scope,
+        AIGroundTruthDatasetVersion.site_scope == settings.ai_site_scope,
+        AIGroundTruthDatasetVersion.database_scope == database_scope(settings.database_url),
+    ))
+    if row is None:
+        raise HTTPException(status_code=404, detail="ground-truth dataset version does not exist")
+    return _dataset_response(session, row)
+
+
+@router.post("/ground-truth-datasets", status_code=201)
+def create_ground_truth_dataset(
+    payload: AIGroundTruthDatasetCreateRequest,
+    current_user: CurrentUser,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, object]:
+    _require_ground_truth_role(current_user)
+    track = payload.readiness_track.strip().upper()
+    if track not in {"SMOKE_REGRESSION", "FIELD_READINESS"}:
+        raise HTTPException(status_code=422, detail="invalid readinessTrack")
+    normalized_line = payload.line_scope.strip() if payload.line_scope and payload.line_scope.strip() else None
+    latest_version = session.scalar(select(func.max(AIGroundTruthDatasetVersion.version)).where(
+        AIGroundTruthDatasetVersion.customer_scope == settings.ai_customer_scope,
+        AIGroundTruthDatasetVersion.site_scope == settings.ai_site_scope,
+        AIGroundTruthDatasetVersion.dataset_key == payload.dataset_key.strip(),
+    )) or 0
+    if payload.replaces_dataset_version_id:
+        replaced = session.scalar(select(AIGroundTruthDatasetVersion).where(
+            AIGroundTruthDatasetVersion.dataset_version_id == payload.replaces_dataset_version_id,
+            AIGroundTruthDatasetVersion.status.in_(("APPROVED", "SUPERSEDED", "RETIRED")),
+        ))
+        if replaced is None:
+            raise HTTPException(status_code=422, detail="replacement target must be an approved immutable version")
+        if replaced.dataset_key != payload.dataset_key.strip():
+            raise HTTPException(status_code=422, detail="replacement must use the same datasetKey")
+    row = AIGroundTruthDatasetVersion(
+        dataset_version_id=_new_public_id("aigtds"),
+        dataset_key=payload.dataset_key.strip(), version=latest_version + 1,
+        title=payload.title.strip(), customer_scope=settings.ai_customer_scope,
+        site_scope=settings.ai_site_scope, line_scope=normalized_line,
+        database_scope=database_scope(settings.database_url), readiness_track=track,
+        status="DRAFT", author_id=current_user.user_id,
+        replaces_dataset_version_id=payload.replaces_dataset_version_id,
+        change_reason=payload.change_reason.strip(),
+    )
+    session.add(row)
+    session.flush()
+    _replace_dataset_members(session, row, payload.ground_truth_case_ids, current_user.user_id)
+    audit_event(session, event_type="GROUND_TRUTH_DATASET_CREATED", actor_id=current_user.user_id,
+                customer_scope=row.customer_scope, site_scope=row.site_scope,
+                target_type="GROUND_TRUTH_DATASET", target_id=row.dataset_version_id,
+                detail={"datasetKey": row.dataset_key, "version": row.version})
+    session.commit()
+    return _dataset_response(session, row)
+
+
+@router.put("/ground-truth-datasets/{dataset_version_id}/cases")
+def update_ground_truth_dataset_cases(
+    dataset_version_id: str,
+    payload: AIGroundTruthDatasetCasesRequest,
+    current_user: CurrentUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, object]:
+    _require_ground_truth_role(current_user)
+    row = session.scalar(select(AIGroundTruthDatasetVersion).where(
+        AIGroundTruthDatasetVersion.dataset_version_id == dataset_version_id
+    ))
+    if row is None:
+        raise HTTPException(status_code=404, detail="ground-truth dataset version does not exist")
+    if row.author_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="only the dataset author can change a draft")
+    _replace_dataset_members(session, row, payload.ground_truth_case_ids, current_user.user_id)
+    row.change_reason = payload.change_reason.strip()
+    audit_event(session, event_type="GROUND_TRUTH_DATASET_CASES_CHANGED", actor_id=current_user.user_id,
+                customer_scope=row.customer_scope, site_scope=row.site_scope,
+                target_type="GROUND_TRUTH_DATASET", target_id=row.dataset_version_id,
+                detail={"caseCount": len(payload.ground_truth_case_ids)})
+    session.commit()
+    return _dataset_response(session, row)
+
+
+@router.post("/ground-truth-datasets/{dataset_version_id}/transition")
+def transition_ground_truth_dataset(
+    dataset_version_id: str,
+    payload: AIGroundTruthDatasetTransitionRequest,
+    current_user: CurrentUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, object]:
+    action = payload.action.strip().upper()
+    _require_ground_truth_role(current_user, approver=action in {"FIRST_APPROVE", "SECOND_APPROVE", "RETIRE"})
+    row = session.scalar(select(AIGroundTruthDatasetVersion).where(
+        AIGroundTruthDatasetVersion.dataset_version_id == dataset_version_id
+    ))
+    if row is None:
+        raise HTTPException(status_code=404, detail="ground-truth dataset version does not exist")
+    now = datetime.now(timezone.utc)
+    if action == "SUBMIT_REVIEW":
+        if row.status != "DRAFT" or row.author_id != current_user.user_id:
+            raise HTTPException(status_code=409, detail="only the author can submit a DRAFT dataset")
+        row.status, row.submitted_at = "IN_REVIEW", now
+    elif action == "REVIEW":
+        if row.status != "IN_REVIEW":
+            raise HTTPException(status_code=409, detail="dataset is not waiting for review")
+        if current_user.user_id == row.author_id:
+            raise HTTPException(status_code=409, detail="reviewer must differ from author")
+        row.status, row.reviewer_id, row.reviewed_at = "PENDING_FIRST_APPROVAL", current_user.user_id, now
+    elif action == "FIRST_APPROVE":
+        if row.status != "PENDING_FIRST_APPROVAL":
+            raise HTTPException(status_code=409, detail="dataset is not waiting for first approval")
+        if current_user.user_id in {row.author_id, row.reviewer_id}:
+            raise HTTPException(status_code=409, detail="first approver must differ from author and reviewer")
+        row.status, row.first_approved_by, row.first_approved_at = (
+            "PENDING_SECOND_APPROVAL", current_user.user_id, now
+        )
+    elif action == "SECOND_APPROVE":
+        if row.status != "PENDING_SECOND_APPROVAL":
+            raise HTTPException(status_code=409, detail="dataset is not waiting for second approval")
+        if current_user.user_id in {row.author_id, row.reviewer_id, row.first_approved_by}:
+            raise HTTPException(status_code=409, detail="second approver must be independent")
+        response = _dataset_response(session, row, include_cases=False)
+        if not response["coverage_complete"]:
+            raise HTTPException(status_code=422, detail="48-case category/scenario coverage is incomplete")
+        members = _dataset_members(session, row.dataset_version_id)
+        row.snapshot_hash = _dataset_snapshot_hash(members)
+        if any(member.snapshot_hash != _hash(json.dumps(
+            _case_snapshot(case), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )) for member, case in members):
+            raise HTTPException(status_code=409, detail="a ground-truth case changed after dataset composition")
+        row.status, row.second_approved_by, row.second_approved_at = "APPROVED", current_user.user_id, now
+        if row.replaces_dataset_version_id:
+            replaced = session.scalar(select(AIGroundTruthDatasetVersion).where(
+                AIGroundTruthDatasetVersion.dataset_version_id == row.replaces_dataset_version_id,
+                AIGroundTruthDatasetVersion.status == "APPROVED",
+            ))
+            if replaced is not None:
+                replaced.status = "SUPERSEDED"
+    elif action == "RETIRE":
+        if row.status != "APPROVED":
+            raise HTTPException(status_code=409, detail="only an APPROVED dataset can be retired")
+        row.status, row.retired_at = "RETIRED", now
+    else:
+        raise HTTPException(status_code=422, detail="invalid dataset transition action")
+    audit_event(session, event_type=f"GROUND_TRUTH_DATASET_{action}", actor_id=current_user.user_id,
+                customer_scope=row.customer_scope, site_scope=row.site_scope,
+                target_type="GROUND_TRUTH_DATASET", target_id=row.dataset_version_id,
+                detail={"reason": payload.reason, "status": row.status})
+    session.commit()
+    return _dataset_response(session, row)
+
+
 @router.get("/readiness")
 def get_scope_readiness(
     settings: Annotated[Settings, Depends(get_settings)],
@@ -1470,10 +1830,31 @@ def run_evaluation(
     selected_readiness_tracks: set[str] = set()
     db_scope = database_scope(settings.database_url)
     evaluation_line_scope = payload.line_scope.strip() if payload.line_scope and payload.line_scope.strip() else None
-    if payload.ground_truth_case_ids:
+    selected_dataset: AIGroundTruthDatasetVersion | None = None
+    selected_ground_truth_ids = list(payload.ground_truth_case_ids)
+    if payload.dataset_version_id:
+        if payload.cases or payload.ground_truth_case_ids:
+            raise HTTPException(status_code=422, detail="datasetVersionId cannot be mixed with cases or groundTruthCaseIds")
+        selected_dataset = session.scalar(select(AIGroundTruthDatasetVersion).where(
+            AIGroundTruthDatasetVersion.dataset_version_id == payload.dataset_version_id,
+            AIGroundTruthDatasetVersion.customer_scope == settings.ai_customer_scope,
+            AIGroundTruthDatasetVersion.site_scope == settings.ai_site_scope,
+            AIGroundTruthDatasetVersion.database_scope == db_scope,
+            AIGroundTruthDatasetVersion.line_scope == evaluation_line_scope,
+            AIGroundTruthDatasetVersion.status == "APPROVED",
+        ))
+        if selected_dataset is None:
+            raise HTTPException(status_code=404, detail="approved dataset version does not exist in this scope")
+        selected_ground_truth_ids = [
+            member.ground_truth_case_id
+            for member, _ in _dataset_members(session, selected_dataset.dataset_version_id)
+        ]
+        if _dataset_snapshot_hash(_dataset_members(session, selected_dataset.dataset_version_id)) != selected_dataset.snapshot_hash:
+            raise HTTPException(status_code=409, detail="approved dataset snapshot integrity check failed")
+    if selected_ground_truth_ids:
         stored_cases = session.scalars(
             select(AISearchGroundTruthCase).where(
-                AISearchGroundTruthCase.ground_truth_case_id.in_(payload.ground_truth_case_ids),
+                AISearchGroundTruthCase.ground_truth_case_id.in_(selected_ground_truth_ids),
                 AISearchGroundTruthCase.customer_scope == settings.ai_customer_scope,
                 AISearchGroundTruthCase.site_scope == settings.ai_site_scope,
                 AISearchGroundTruthCase.database_scope == db_scope,
@@ -1481,12 +1862,12 @@ def run_evaluation(
                 AISearchGroundTruthCase.is_active.is_(True),
             )
         ).all()
-        if len(stored_cases) != len(set(payload.ground_truth_case_ids)):
+        if len(stored_cases) != len(set(selected_ground_truth_ids)):
             raise HTTPException(status_code=404, detail="one or more approved ground-truth cases do not exist in this scope")
         selected_readiness_tracks = set(
             session.scalars(
                 select(AISearchGroundTruthProvenance.readiness_track).where(
-                    AISearchGroundTruthProvenance.ground_truth_case_id.in_(payload.ground_truth_case_ids),
+                    AISearchGroundTruthProvenance.ground_truth_case_id.in_(selected_ground_truth_ids),
                     AISearchGroundTruthProvenance.approval_status == "APPROVED",
                 )
             ).all()
@@ -1549,6 +1930,12 @@ def run_evaluation(
     )
     session.add(evaluation_run)
     session.flush()
+    if selected_dataset is not None:
+        session.add(AIEvaluationDatasetBinding(
+            run_id=run_id,
+            dataset_version_id=selected_dataset.dataset_version_id,
+            dataset_snapshot_hash=selected_dataset.snapshot_hash or "",
+        ))
     case_results: list[dict[str, object]] = []
     source_types: set[str] = set()
     excluded_reasons: set[str] = set()
@@ -1735,7 +2122,8 @@ def run_evaluation(
         and source_coverage_complete and readiness.missing_reviewed_count == 0
         and scoped_readiness["source_ready"] and scoped_readiness["ground_truth_ready"]
         and scoped_readiness["provider_review_ready"]
-        and len(payload.ground_truth_case_ids) == len(case_results)
+        and selected_dataset is not None
+        and len(selected_ground_truth_ids) == len(case_results)
         and len(case_results) >= scoped_readiness["ground_truth_minimum"]
         and readiness_track == "FIELD_READINESS"
     )
@@ -1766,6 +2154,8 @@ def run_evaluation(
         "policy_version": payload.policy_version,
         "provider_start_ready": provider_start_ready,
         "readiness_track": readiness_track,
+        "dataset_version_id": selected_dataset.dataset_version_id if selected_dataset else None,
+        "dataset_snapshot_hash": selected_dataset.snapshot_hash if selected_dataset else None,
     }
     result_status = (
         "PASSED"
@@ -1785,6 +2175,110 @@ def run_evaluation(
         **metrics,
         "cases": case_results,
     }
+
+
+def _evaluation_response(session: Session, run: AISearchEvaluationRun) -> dict[str, object]:
+    try:
+        metrics = json.loads(run.metrics_json)
+    except (TypeError, ValueError):
+        metrics = {}
+    binding = session.scalar(select(AIEvaluationDatasetBinding).where(
+        AIEvaluationDatasetBinding.run_id == run.run_id
+    ))
+    cases = session.scalars(select(AISearchEvaluationCase).where(
+        AISearchEvaluationCase.run_id == run.run_id
+    ).order_by(AISearchEvaluationCase.case_key)).all()
+    case_rows = []
+    for case in cases:
+        actual = json.loads(case.actual_evidence_json or "[]")
+        excluded = json.loads(case.excluded_evidence_json or "[]")
+        failures: list[str] = []
+        if case.expected_outcome != case.actual_outcome:
+            failures.append("EXPECTED_OUTCOME_MISMATCH")
+        if not case.passed:
+            failures.append("EXPECTED_SOURCE_MISSING_OR_RANK_OUTSIDE_ALLOWED_RANGE")
+        if any(not item.get("excluded", False) for item in excluded if isinstance(item, dict)):
+            failures.append("EXCLUDED_SOURCE_EXPOSED")
+        case_rows.append({
+            "evaluation_case_id": case.evaluation_case_id,
+            "case_key": case.case_key,
+            "question": case.question,
+            "expected_outcome": case.expected_outcome,
+            "actual_outcome": case.actual_outcome,
+            "expected_evidence": json.loads(case.expected_evidence_json or "[]"),
+            "actual_evidence": actual,
+            "excluded_evidence": excluded,
+            "ranking_hash": case.ranking_hash,
+            "passed": case.passed,
+            "failure_reasons": failures,
+        })
+    return {
+        "run_id": run.run_id,
+        "run_label": run.run_label,
+        "status": run.status,
+        "requested_by": run.requested_by,
+        "evaluated_as_user_id": run.evaluated_as_user_id,
+        "candidate_identity_stable": run.candidate_identity_stable,
+        "ranking_stable": run.ranking_stable,
+        "dataset_version_id": binding.dataset_version_id if binding else metrics.get("dataset_version_id"),
+        "dataset_snapshot_hash": binding.dataset_snapshot_hash if binding else metrics.get("dataset_snapshot_hash"),
+        "metrics": metrics,
+        "cases": case_rows,
+        "created_at": run.created_at,
+    }
+
+
+@router.get("/evaluations")
+def list_evaluations(
+    session: Annotated[Session, Depends(get_db_session)],
+    dataset_version_id: Annotated[str | None, Query(alias="datasetVersionId")] = None,
+    limit: int = 100,
+) -> list[dict[str, object]]:
+    statement = select(AISearchEvaluationRun).order_by(
+        desc(AISearchEvaluationRun.created_at), desc(AISearchEvaluationRun.id)
+    )
+    if dataset_version_id:
+        statement = statement.join(
+            AIEvaluationDatasetBinding,
+            AIEvaluationDatasetBinding.run_id == AISearchEvaluationRun.run_id,
+        ).where(AIEvaluationDatasetBinding.dataset_version_id == dataset_version_id)
+    rows = session.scalars(statement.limit(min(max(limit, 1), 500))).all()
+    return [_evaluation_response(session, row) for row in rows]
+
+
+@router.get("/evaluations/{run_id}")
+def get_evaluation(
+    run_id: str,
+    session: Annotated[Session, Depends(get_db_session)],
+    compare_to_run_id: Annotated[str | None, Query(alias="compareToRunId")] = None,
+) -> dict[str, object]:
+    run = session.scalar(select(AISearchEvaluationRun).where(AISearchEvaluationRun.run_id == run_id))
+    if run is None:
+        raise HTTPException(status_code=404, detail="evaluation run does not exist")
+    response = _evaluation_response(session, run)
+    if compare_to_run_id:
+        previous = session.scalar(select(AISearchEvaluationRun).where(
+            AISearchEvaluationRun.run_id == compare_to_run_id
+        ))
+        if previous is None:
+            raise HTTPException(status_code=404, detail="comparison evaluation run does not exist")
+        previous_response = _evaluation_response(session, previous)
+        previous_cases = {item["case_key"]: item for item in previous_response["cases"]}
+        response["comparison"] = {
+            "run_id": compare_to_run_id,
+            "status_changed": run.status != previous.status,
+            "case_deltas": [
+                {
+                    "case_key": item["case_key"],
+                    "previous_passed": previous_cases.get(item["case_key"], {}).get("passed"),
+                    "current_passed": item["passed"],
+                    "ranking_changed": previous_cases.get(item["case_key"], {}).get("ranking_hash")
+                    not in {None, item["ranking_hash"]},
+                }
+                for item in response["cases"]
+            ],
+        }
+    return response
 
 
 @router.post("/candidates/rebuild", response_model=AISearchRebuildResponse)

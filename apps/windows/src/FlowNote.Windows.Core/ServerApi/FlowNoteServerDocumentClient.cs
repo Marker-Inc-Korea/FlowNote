@@ -538,6 +538,74 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerAISearchEvaluationResponse>(response, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ServerAIGroundTruthCase>> ListAIGroundTruthCasesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync("api/v1/ai-search/ground-truth-cases", cancellationToken);
+        return await ReadJsonResponse<List<ServerAIGroundTruthCase>>(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ServerAIGroundTruthDatasetSummary>> ListAIGroundTruthDatasetsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync("api/v1/ai-search/ground-truth-datasets", cancellationToken);
+        return await ReadJsonResponse<List<ServerAIGroundTruthDatasetSummary>>(response, cancellationToken);
+    }
+
+    public async Task<ServerAIGroundTruthDataset> GetAIGroundTruthDatasetAsync(
+        string datasetVersionId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/ai-search/ground-truth-datasets/{Uri.EscapeDataString(datasetVersionId)}",
+            cancellationToken);
+        return await ReadJsonResponse<ServerAIGroundTruthDataset>(response, cancellationToken);
+    }
+
+    public async Task<ServerAIGroundTruthDataset> CreateAIGroundTruthDatasetAsync(
+        ServerAIGroundTruthDatasetCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            "api/v1/ai-search/ground-truth-datasets", request, cancellationToken);
+        return await ReadJsonResponse<ServerAIGroundTruthDataset>(response, cancellationToken);
+    }
+
+    public async Task<ServerAIGroundTruthDataset> TransitionAIGroundTruthDatasetAsync(
+        string datasetVersionId,
+        string action,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/v1/ai-search/ground-truth-datasets/{Uri.EscapeDataString(datasetVersionId)}/transition",
+            new ServerAIGroundTruthDatasetTransitionRequest(action, reason), cancellationToken);
+        return await ReadJsonResponse<ServerAIGroundTruthDataset>(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ServerAISearchEvaluationResponse>> ListAISearchEvaluationsAsync(
+        string? datasetVersionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var path = "api/v1/ai-search/evaluations";
+        if (!string.IsNullOrWhiteSpace(datasetVersionId))
+            path += $"?datasetVersionId={Uri.EscapeDataString(datasetVersionId)}";
+        using var response = await httpClient.GetAsync(path, cancellationToken);
+        return await ReadJsonResponse<List<ServerAISearchEvaluationResponse>>(response, cancellationToken);
+    }
+
+    public async Task<ServerAISearchEvaluationResponse> GetAISearchEvaluationAsync(
+        string runId,
+        string? compareToRunId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var path = $"api/v1/ai-search/evaluations/{Uri.EscapeDataString(runId)}";
+        if (!string.IsNullOrWhiteSpace(compareToRunId))
+            path += $"?compareToRunId={Uri.EscapeDataString(compareToRunId)}";
+        using var response = await httpClient.GetAsync(path, cancellationToken);
+        return await ReadJsonResponse<ServerAISearchEvaluationResponse>(response, cancellationToken);
+    }
+
     private static void AddString(MultipartFormDataContent form, string name, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))

@@ -162,6 +162,14 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 
 `ai_provider_onboarding_reviews`는 위 12개 항목과 기술·보안·법무·고객 네 영역의 `PENDING`/`APPROVED`/`REJECTED`, 검토자·검토 시각을 불변 review version으로 보존한다. 체크리스트 전건 `PASS`와 네 영역 `APPROVED`가 모두 있어야 provider 착수 게이트를 통과한다. 별도의 `ai_transfer_approvals`, 활성 프롬프트, 비용/timeout 정책, 기능 플래그와 kill switch는 이후에도 각각 유효해야 하며 이 심사 하나가 다른 통제를 대체하지 않는다. 현재 provider별 운영 client는 승인되지 않았으므로 기술·보안·법무·고객 상태를 모두 `PENDING`으로 해석하고 외부 호출을 계속 차단한다.
 
+### Ground-truth dataset 권한·감사 경계
+
+- dataset 작성·구성·검토는 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`에 허용한다. 최종 2단계 승인은 `admin`, `system-admin`, `document-admin`, `department-manager`만 허용한다.
+- 역할만으로 자기 승인을 허용하지 않는다. 작성자, 검토자, 1차 승인자, 2차 승인자의 사용자 ID가 모두 달라야 하며 서버가 상태 전이마다 검사한다. WPF 버튼 비활성화는 안내일 뿐 서버 검사를 대체하지 않는다.
+- 생성, 구성 변경, 검토 요청, 검토, 각 승인, 폐기는 `ai_operation_audit_events`에 actor, dataset version, 사유와 결과 상태를 남긴다. 승인 snapshot과 과거 evaluation run은 보존하며 앱 재시작이나 새 version 생성으로 덮어쓰지 않는다.
+- 승인 dataset의 구성 변경은 `409`로 거부한다. 대체 version은 이전 승인본을 참조하고 최종 승인 때만 이전 상태를 `SUPERSEDED`로 전환한다. 이는 삭제가 아니며 과거 run의 dataset/hash 결합은 유지된다.
+- 릴리스 readiness의 `FAIL/PENDING`은 외부 provider 요청 생성 단계에서 차단한다. 내부 후보 재생성·품질 점검은 민감정보 필터와 원천 권한을 계속 적용하면서 허용하고, 비AI 핵심 업무 API에는 readiness 의존성을 추가하지 않는다.
+
 ## 보존과 커밋 주의
 
 보존과 커밋 제외는 충돌하지 않는다.

@@ -299,7 +299,7 @@ AI 검색 후보 API는 자동 조언이 아닌 “근거가 있는 검색과 �
 | GET | `/api/v1/ai-search/quality` | 후보 수, 원천별 개수, 제외 사유, FieldComment 검토 상태 부족분과 최근 회귀 평가 요약 조회 |
 | POST | `/api/v1/ai-search/evaluations` | 외부 AI 호출 없이 질문별 기대 근거와 실제 후보를 비교하고 재현성 snapshot을 누적 저장 |
 | POST | `/api/v1/ai-search/ground-truth-cases` | 범주·유형·근거·순위·시점과 데이터 분류/provenance를 첫 승인 상태로 저장. 아직 비활성 |
-| POST | `/api/v1/ai-search/ground-truth-cases/{groundTruthCaseId}/second-approval` | 첫 승인자와 다른 권한 사용자가 독립 승인해 사례를 활성화 |
+| POST | `/api/v1/ai-search/ground-truth-cases/{ground_truth_case_id}/second-approval` | 첫 승인자와 다른 권한 사용자가 고정 근거와 접근권한을 다시 검증해 사례를 활성화 |
 | GET | `/api/v1/ai-search/ground-truth-cases` | 현재 scope의 활성 승인 질문 조회. `lineScope`가 없으면 현장 공통 사례, 있으면 해당 라인 사례만 조회 |
 | GET | `/api/v1/ai-search/readiness` | 고객·현장·선택적 라인·DB scope별 네 원천 수, 승인 질문 48건 및 범주×유형별 2건 부족분, 품질 임계값, provider 심사와 착수 가능 여부 조회 |
 
@@ -486,3 +486,23 @@ WPF `RolePermissionPolicy`와의 대조:
 - `FLOWNOTE_AI_PROVIDER_RESPONSE_MAX_BYTES` (기본 65536바이트, 1024~1048576바이트)
 - `FLOWNOTE_AI_RETENTION_SCHEDULER_ENABLED` (기본 `true`)
 - `FLOWNOTE_AI_RETENTION_SCHEDULER_INTERVAL_SECONDS` (기본 3600초, 60~86400초)
+
+## AI ground-truth WPF 운영 API
+
+WPF `AI 정답셋` 화면은 다음 서버 API만 사용한다. 응답의 `dataset_version_id`, `snapshot_hash`, 평가 `run_id`는 릴리스 준비도 재현 키다.
+
+| Method | Path | 계약 |
+| --- | --- | --- |
+| `GET` | `/api/v1/ai-search/ground-truth-cases` | 현재 scope의 독립 2인 승인 사례와 범주/유형, `as_of`, 허용 순위, 포함/제외 원천 snapshot 조회 |
+| `GET` | `/api/v1/ai-search/ground-truth-datasets` | dataset version 목록과 24칸 coverage 집계 조회 |
+| `GET` | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}` | 불변 version의 사례·coverage·작성/검토/승인·대체 이력 조회 |
+| `POST` | `/api/v1/ai-search/ground-truth-datasets` | 승인 사례를 묶은 새 `DRAFT` version 생성. 대체본은 `replacesDatasetVersionId` 사용 |
+| `PUT` | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}/cases` | 작성자만 `DRAFT`의 사례 구성 변경. 이후 상태는 `409` |
+| `POST` | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}/transition` | `SUBMIT_REVIEW`, `REVIEW`, `FIRST_APPROVE`, `SECOND_APPROVE`, `RETIRE` 수행 |
+| `POST` | `/api/v1/ai-search/evaluations` | `datasetVersionId`로 승인 snapshot 전체 평가. ad-hoc `cases`/`groundTruthCaseIds`와 혼용 금지 |
+| `GET` | `/api/v1/ai-search/evaluations` | 저장된 run 목록. `datasetVersionId` 필터 지원 |
+| `GET` | `/api/v1/ai-search/evaluations/{run_id}` | 사례별 실패 코드와 기대·실제·제외 원천 trace 조회. `compareToRunId` 비교 지원 |
+
+dataset 상태는 `DRAFT → IN_REVIEW → PENDING_FIRST_APPROVAL → PENDING_SECOND_APPROVAL → APPROVED`다. 작성자, 검토자, 1차 승인자, 2차 승인자는 모두 달라야 한다. 최종 승인은 총 48건과 8범주×3유형 각 2건을 요구하고 사례 snapshot hash를 다시 확인한다. 대체 version 승인 시 이전 승인본은 삭제·수정하지 않고 `SUPERSEDED`, 명시적 폐기는 `RETIRED`가 된다.
+
+`GET /ai-search/readiness`는 `latest_approved_dataset`, 그 version에 정확히 결합된 `latest_evaluation`, `ai_provider_readiness_status`, `readiness_failures`, `external_ai_calls_blocked`, `non_ai_core_flows_blocked=false`를 반환한다. 승인 dataset 또는 해당 평가가 없으면 `PENDING`, 평가가 존재하지만 임계값 미달이면 `FAIL`, 모든 결합 게이트 통과 시 `PASS`다. `FAIL/PENDING`은 외부 provider 호출만 차단하며 후보 재생성·품질 점검과 문서·FieldComment 등 비AI API는 차단하지 않는다.

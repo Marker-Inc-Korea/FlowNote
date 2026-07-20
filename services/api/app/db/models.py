@@ -928,6 +928,94 @@ class AISearchGroundTruthProvenance(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class AIGroundTruthDatasetVersion(Base):
+    __tablename__ = "ai_ground_truth_dataset_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "customer_scope", "site_scope", "dataset_key", "version",
+            name="uq_ai_ground_truth_dataset_version",
+        ),
+        CheckConstraint(
+            "status IN ('DRAFT', 'IN_REVIEW', 'PENDING_FIRST_APPROVAL', "
+            "'PENDING_SECOND_APPROVAL', 'APPROVED', 'SUPERSEDED', 'RETIRED')",
+            name="ck_ai_ground_truth_dataset_status",
+        ),
+        CheckConstraint(
+            "readiness_track IN ('SMOKE_REGRESSION', 'FIELD_READINESS')",
+            name="ck_ai_ground_truth_dataset_track",
+        ),
+        Index(
+            "ix_ai_ground_truth_dataset_scope_status",
+            "customer_scope", "site_scope", "line_scope", "status", "version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    dataset_version_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    dataset_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    customer_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    site_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    line_scope: Mapped[str | None] = mapped_column(String(64))
+    database_scope: Mapped[str] = mapped_column(String(120), nullable=False)
+    readiness_track: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="DRAFT")
+    author_id: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
+    reviewer_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    first_approved_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    second_approved_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    snapshot_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    replaces_dataset_version_id: Mapped[str | None] = mapped_column(String(64))
+    change_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    second_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class AIGroundTruthDatasetCase(Base):
+    __tablename__ = "ai_ground_truth_dataset_cases"
+    __table_args__ = (
+        UniqueConstraint("dataset_version_id", "ground_truth_case_id", name="uq_ai_dataset_case"),
+        UniqueConstraint("dataset_version_id", "case_key", name="uq_ai_dataset_case_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    dataset_version_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_ground_truth_dataset_versions.dataset_version_id"),
+        nullable=False, index=True,
+    )
+    ground_truth_case_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_search_ground_truth_cases.ground_truth_case_id"),
+        nullable=False, index=True,
+    )
+    case_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    added_by: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIEvaluationDatasetBinding(Base):
+    __tablename__ = "ai_evaluation_dataset_bindings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_search_evaluation_runs.run_id"), unique=True, nullable=False, index=True
+    )
+    dataset_version_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_ground_truth_dataset_versions.dataset_version_id"),
+        nullable=False, index=True,
+    )
+    dataset_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class AIPromptVersion(Base):
     __tablename__ = "ai_prompt_versions"
     __table_args__ = (

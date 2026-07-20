@@ -109,6 +109,12 @@
                             Margin="0,0,8,0"
                             Content="AI 점검"
                             Click="AISearchQualityButton_Click" />
+                    <Button x:Name="AIGroundTruthButton"
+                            Width="112"
+                            Height="34"
+                            Margin="0,0,8,0"
+                            Content="AI 정답셋"
+                            Click="AIGroundTruthButton_Click" />
                     <Button x:Name="AIOperationsButton"
                             Width="92"
                             Height="34"

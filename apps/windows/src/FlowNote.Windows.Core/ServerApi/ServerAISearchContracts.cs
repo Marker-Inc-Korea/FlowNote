@@ -161,7 +161,86 @@ public sealed record ServerAISearchReadinessResponse
 
     [JsonPropertyName("provider_start_ready")]
     public bool ProviderStartReady { get; init; }
+
+    [JsonPropertyName("ai_provider_readiness_status")]
+    public string AIProviderReadinessStatus { get; init; } = "PENDING";
+
+    [JsonPropertyName("readiness_failures")]
+    public IReadOnlyList<string> ReadinessFailures { get; init; } = [];
+
+    [JsonPropertyName("latest_approved_dataset")]
+    public ServerAIGroundTruthDatasetSummary? LatestApprovedDataset { get; init; }
 }
+
+public sealed record ServerAIGroundTruthCoverage
+{
+    [JsonPropertyName("category")] public string Category { get; init; } = string.Empty;
+    [JsonPropertyName("scenario_type")] public string ScenarioType { get; init; } = string.Empty;
+    [JsonPropertyName("count")] public int Count { get; init; }
+    [JsonPropertyName("required")] public int Required { get; init; }
+    [JsonPropertyName("missing")] public int Missing { get; init; }
+}
+
+public sealed record ServerAIGroundTruthProvenance
+{
+    [JsonPropertyName("approval_status")] public string ApprovalStatus { get; init; } = string.Empty;
+    [JsonPropertyName("readiness_track")] public string ReadinessTrack { get; init; } = string.Empty;
+    [JsonPropertyName("source_snapshot_hash")] public string SourceSnapshotHash { get; init; } = string.Empty;
+}
+
+public sealed record ServerAIGroundTruthCase
+{
+    [JsonPropertyName("ground_truth_case_id")] public string GroundTruthCaseId { get; init; } = string.Empty;
+    [JsonPropertyName("case_key")] public string CaseKey { get; init; } = string.Empty;
+    [JsonPropertyName("category")] public string Category { get; init; } = string.Empty;
+    [JsonPropertyName("scenario_type")] public string ScenarioType { get; init; } = string.Empty;
+    [JsonPropertyName("question")] public string Question { get; init; } = string.Empty;
+    [JsonPropertyName("expected_outcome")] public string ExpectedOutcome { get; init; } = string.Empty;
+    [JsonPropertyName("allowed_rank_min")] public int AllowedRankMin { get; init; }
+    [JsonPropertyName("allowed_rank_max")] public int AllowedRankMax { get; init; }
+    [JsonPropertyName("as_of")] public DateTimeOffset AsOf { get; init; }
+    [JsonPropertyName("expected_evidence")] public IReadOnlyList<Dictionary<string, object>> ExpectedEvidence { get; init; } = [];
+    [JsonPropertyName("expected_excluded")] public IReadOnlyList<Dictionary<string, object>> ExpectedExcluded { get; init; } = [];
+    [JsonPropertyName("provenance")] public ServerAIGroundTruthProvenance? Provenance { get; init; }
+}
+
+public record ServerAIGroundTruthDatasetSummary
+{
+    [JsonPropertyName("dataset_version_id")] public string DatasetVersionId { get; init; } = string.Empty;
+    [JsonPropertyName("dataset_key")] public string DatasetKey { get; init; } = string.Empty;
+    [JsonPropertyName("version")] public int Version { get; init; }
+    [JsonPropertyName("title")] public string Title { get; init; } = string.Empty;
+    [JsonPropertyName("status")] public string Status { get; init; } = string.Empty;
+    [JsonPropertyName("readiness_track")] public string ReadinessTrack { get; init; } = string.Empty;
+    [JsonPropertyName("author_id")] public string AuthorId { get; init; } = string.Empty;
+    [JsonPropertyName("reviewer_id")] public string? ReviewerId { get; init; }
+    [JsonPropertyName("first_approved_by")] public string? FirstApprovedBy { get; init; }
+    [JsonPropertyName("second_approved_by")] public string? SecondApprovedBy { get; init; }
+    [JsonPropertyName("snapshot_hash")] public string? SnapshotHash { get; init; }
+    [JsonPropertyName("replaces_dataset_version_id")] public string? ReplacesDatasetVersionId { get; init; }
+    [JsonPropertyName("case_count")] public int CaseCount { get; init; }
+    [JsonPropertyName("coverage_complete")] public bool CoverageComplete { get; init; }
+    [JsonPropertyName("coverage")] public IReadOnlyList<ServerAIGroundTruthCoverage> Coverage { get; init; } = [];
+}
+
+public sealed record ServerAIGroundTruthDataset : ServerAIGroundTruthDatasetSummary
+{
+    [JsonPropertyName("cases")] public IReadOnlyList<ServerAIGroundTruthCase> Cases { get; init; } = [];
+}
+
+public sealed record ServerAIGroundTruthDatasetCreateRequest
+{
+    [JsonPropertyName("datasetKey")] public string DatasetKey { get; init; } = string.Empty;
+    [JsonPropertyName("title")] public string Title { get; init; } = string.Empty;
+    [JsonPropertyName("readinessTrack")] public string ReadinessTrack { get; init; } = string.Empty;
+    [JsonPropertyName("groundTruthCaseIds")] public IReadOnlyList<string> GroundTruthCaseIds { get; init; } = [];
+    [JsonPropertyName("changeReason")] public string ChangeReason { get; init; } = string.Empty;
+    [JsonPropertyName("replacesDatasetVersionId")] public string? ReplacesDatasetVersionId { get; init; }
+}
+
+public sealed record ServerAIGroundTruthDatasetTransitionRequest(
+    [property: JsonPropertyName("action")] string Action,
+    [property: JsonPropertyName("reason")] string Reason);
 
 public sealed record ServerAISearchEvidenceReferenceRequest
 {
@@ -218,10 +297,16 @@ public sealed record ServerAISearchEvaluationRequest
 
     [JsonPropertyName("cases")]
     public IReadOnlyList<ServerAISearchEvaluationCaseRequest> Cases { get; init; } = [];
+
+    [JsonPropertyName("datasetVersionId")]
+    public string? DatasetVersionId { get; init; }
 }
 
 public sealed record ServerAISearchEvaluationCaseResponse
 {
+    [JsonPropertyName("evaluation_case_id")]
+    public string EvaluationCaseId { get; init; } = string.Empty;
+
     [JsonPropertyName("case_key")]
     public string CaseKey { get; init; } = string.Empty;
 
@@ -236,6 +321,18 @@ public sealed record ServerAISearchEvaluationCaseResponse
 
     [JsonPropertyName("passed")]
     public bool Passed { get; init; }
+
+    [JsonPropertyName("failure_reasons")]
+    public IReadOnlyList<string> FailureReasons { get; init; } = [];
+
+    [JsonPropertyName("expected_evidence")]
+    public IReadOnlyList<Dictionary<string, object>> ExpectedEvidence { get; init; } = [];
+
+    [JsonPropertyName("actual_evidence")]
+    public IReadOnlyList<Dictionary<string, object>> ActualEvidence { get; init; } = [];
+
+    [JsonPropertyName("excluded_evidence")]
+    public IReadOnlyList<Dictionary<string, object>> ExcludedEvidence { get; init; } = [];
 }
 
 public sealed record ServerAISearchEvaluationResponse
@@ -245,6 +342,12 @@ public sealed record ServerAISearchEvaluationResponse
 
     [JsonPropertyName("status")]
     public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("run_label")]
+    public string RunLabel { get; init; } = string.Empty;
+
+    [JsonPropertyName("dataset_version_id")]
+    public string? DatasetVersionId { get; init; }
 
     [JsonPropertyName("candidate_identity_stable")]
     public bool CandidateIdentityStable { get; init; }

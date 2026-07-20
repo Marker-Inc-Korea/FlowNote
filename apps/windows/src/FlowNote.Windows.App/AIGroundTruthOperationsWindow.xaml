@@ -1,0 +1,125 @@
+<Window x:Class="FlowNote.Windows.App.AIGroundTruthOperationsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AI ground-truth 운영" Width="1380" Height="860" MinWidth="1120" MinHeight="700"
+        Background="{StaticResource WindowBackgroundBrush}">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="32"/>
+        </Grid.RowDefinitions>
+        <Border Padding="12" Background="{StaticResource PanelMutedBrush}" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="4">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Left">
+                    <TextBlock Text="AI ground-truth 운영과 릴리스 게이트" FontSize="17" FontWeight="SemiBold"/>
+                    <TextBlock Margin="0,4,0,0" Text="48건 coverage 구성, 독립 검토·2인 승인, 평가와 실패 원천 추적을 dataset version 단위로 관리합니다." Foreground="{StaticResource SecondaryTextBrush}"/>
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock x:Name="ReadinessTextBlock" Margin="0,0,14,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                    <Button Width="90" Height="32" Content="새로 고침" Click="RefreshButton_Click"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <TabControl Grid.Row="1" Margin="0,10,0,0">
+            <TabItem Header="dataset 버전">
+                <Grid Margin="8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="470"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <Grid>
+                        <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="190"/></Grid.RowDefinitions>
+                        <DataGrid x:Name="DatasetGrid" ItemsSource="{Binding Datasets}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="DatasetGrid_SelectionChanged">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="키" Binding="{Binding DatasetKey}" Width="*"/>
+                                <DataGridTextColumn Header="버전" Binding="{Binding Version}" Width="52"/>
+                                <DataGridTextColumn Header="상태" Binding="{Binding StatusLabel}" Width="108"/>
+                                <DataGridTextColumn Header="건수" Binding="{Binding CaseCount}" Width="52"/>
+                                <DataGridCheckBoxColumn Header="coverage" Binding="{Binding CoverageComplete}" Width="72"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <Border Grid.Row="1" Margin="0,8,0,0" Padding="10" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1">
+                            <Grid>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                <TextBlock Text="새 draft / 대체 버전" FontWeight="SemiBold"/>
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBox x:Name="DatasetKeyTextBox" Width="150" ToolTip="dataset key"/>
+                                    <TextBox x:Name="DatasetTitleTextBox" Width="180" Margin="6,0,0,0" ToolTip="제목"/>
+                                    <ComboBox x:Name="TrackComboBox" Width="120" Margin="6,0,0,0" SelectedIndex="0"><ComboBoxItem Content="SMOKE_REGRESSION"/><ComboBoxItem Content="FIELD_READINESS"/></ComboBox>
+                                </StackPanel>
+                                <TextBox Grid.Row="2" x:Name="ChangeReasonTextBox" Margin="0,7,0,0" Height="28" Text="운영 검토용 새 dataset version"/>
+                                <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Button Width="148" Content="전체 승인 사례로 생성" Click="CreateDatasetButton_Click"/>
+                                    <Button Width="126" Margin="6,0,0,0" Content="선택본 대체 생성" Click="CreateReplacementButton_Click"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                    <Grid Grid.Column="2">
+                        <Grid.RowDefinitions><RowDefinition Height="145"/><RowDefinition Height="*"/><RowDefinition Height="150"/></Grid.RowDefinitions>
+                        <Border Padding="10" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1">
+                            <Grid>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                <TextBlock x:Name="DatasetSummaryTextBlock" Text="dataset version을 선택하세요." TextWrapping="Wrap"/>
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                                    <Button x:Name="SubmitButton" Width="92" Content="검토 요청" Click="TransitionButton_Click" Tag="SUBMIT_REVIEW"/>
+                                    <Button x:Name="ReviewButton" Width="92" Margin="6,0,0,0" Content="검토 완료" Click="TransitionButton_Click" Tag="REVIEW"/>
+                                    <Button x:Name="FirstApproveButton" Width="92" Margin="6,0,0,0" Content="1차 승인" Click="TransitionButton_Click" Tag="FIRST_APPROVE"/>
+                                    <Button x:Name="SecondApproveButton" Width="92" Margin="6,0,0,0" Content="2차 승인" Click="TransitionButton_Click" Tag="SECOND_APPROVE"/>
+                                    <Button x:Name="RetireButton" Width="82" Margin="6,0,0,0" Content="폐기" Click="TransitionButton_Click" Tag="RETIRE"/>
+                                    <Button x:Name="EvaluateButton" Width="104" Margin="14,0,0,0" Content="평가 실행" Click="EvaluateButton_Click"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <DataGrid Grid.Row="1" x:Name="CaseGrid" ItemsSource="{Binding Cases}" Margin="0,8,0,0" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="case key" Binding="{Binding CaseKey}" Width="155"/>
+                                <DataGridTextColumn Header="범주" Binding="{Binding CategoryLabel}" Width="120"/>
+                                <DataGridTextColumn Header="유형" Binding="{Binding ScenarioLabel}" Width="80"/>
+                                <DataGridTextColumn Header="질문" Binding="{Binding Question}" Width="*"/>
+                                <DataGridTextColumn Header="as_of" Binding="{Binding AsOfText}" Width="140"/>
+                                <DataGridTextColumn Header="허용 순위" Binding="{Binding RankRange}" Width="80"/>
+                                <DataGridTextColumn Header="포함/제외" Binding="{Binding SourceCounts}" Width="80"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding Coverage}" Margin="0,8,0,0" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="범주" Binding="{Binding CategoryLabel}" Width="*"/>
+                                <DataGridTextColumn Header="유형" Binding="{Binding ScenarioLabel}" Width="100"/>
+                                <DataGridTextColumn Header="현재" Binding="{Binding Count}" Width="58"/>
+                                <DataGridTextColumn Header="필수" Binding="{Binding Required}" Width="58"/>
+                                <DataGridTextColumn Header="부족" Binding="{Binding Missing}" Width="58"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Grid>
+            </TabItem>
+            <TabItem Header="평가 run·실패 추적">
+                <Grid Margin="8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="440"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <DataGrid x:Name="RunGrid" ItemsSource="{Binding Runs}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="RunGrid_SelectionChanged">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="run" Binding="{Binding RunId}" Width="*"/>
+                            <DataGridTextColumn Header="상태" Binding="{Binding StatusLabel}" Width="70"/>
+                            <DataGridTextColumn Header="dataset" Binding="{Binding DatasetVersionId}" Width="140"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <Grid Grid.Column="2">
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="150"/></Grid.RowDefinitions>
+                        <DockPanel>
+                            <TextBlock x:Name="RunSummaryTextBlock" Text="run을 선택하세요." TextWrapping="Wrap"/>
+                            <Button DockPanel.Dock="Right" Width="112" Height="30" Content="이전 run 비교" Click="ComparePreviousButton_Click"/>
+                        </DockPanel>
+                        <DataGrid Grid.Row="1" x:Name="FailureGrid" ItemsSource="{Binding EvaluationCases}" Margin="0,8,0,0" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionChanged="FailureGrid_SelectionChanged">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="case key" Binding="{Binding CaseKey}" Width="180"/>
+                                <DataGridCheckBoxColumn Header="통과" Binding="{Binding Passed}" Width="54"/>
+                                <DataGridTextColumn Header="실패 원인" Binding="{Binding FailureText}" Width="*"/>
+                                <DataGridTextColumn Header="ranking hash" Binding="{Binding RankingHash}" Width="220"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <TextBox Grid.Row="2" x:Name="SourceTraceTextBox" Margin="0,8,0,0" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                    </Grid>
+                </Grid>
+            </TabItem>
+        </TabControl>
+        <TextBlock Grid.Row="2" x:Name="StatusTextBlock" Margin="2,8,0,0" Foreground="{StaticResource SecondaryTextBrush}"/>
+    </Grid>
+</Window>

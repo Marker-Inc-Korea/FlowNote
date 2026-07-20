@@ -24,6 +24,14 @@
 - ground-truth 최초 등록자는 첫 승인자로 기록하며 사례는 비활성으로 둔다. 첫 승인자와 다른 권한 사용자의 두 번째 승인 뒤에만 활성화한다.
 - `SYNTHETIC`, `TEST`는 스모크 회귀, `ANONYMOUS_FIELD`, `PILOT`은 실제 현장 준비도로 고정해 서로 합산하거나 한 평가 run에 섞지 않는다.
 - provider 착수 게이트의 48건은 실제 현장 준비도만 사용한다. 합성 48건 통과는 회귀 기준선일 뿐 현장 자료 확보로 간주하지 않는다.
+
+## 2026-07-20. AI ground-truth 운영은 불변 dataset version과 평가 run 결합을 사용
+
+- 개별 사례의 독립 2인 승인은 유지하되, 릴리스 단위는 승인 사례 48건을 묶은 `dataset_version_id`로 고정한다.
+- dataset 작성자, 검토자, 1차 승인자, 2차 승인자는 모두 분리한다. 일반 운영 role은 작성·검토할 수 있지만 승인 단계는 `admin`, `system-admin`, `document-admin`, `department-manager`로 좁힌다.
+- 최종 승인 시 8범주×3유형×2건 coverage와 각 사례 snapshot hash를 검증한다. 승인본은 수정하지 않고 대체 version을 만들어 이전 version을 `SUPERSEDED`로 남긴다.
+- 모든 provider 준비도 판정은 최신 `FIELD_READINESS` 승인 dataset version과 정확히 결합된 evaluation `run_id`를 요구한다. 다른 version이나 ad-hoc 평가의 성공을 재사용하지 않는다.
+- 승인본 평가가 없으면 `PENDING`, 결합 평가가 임계값에 미달하면 `FAIL`이다. 두 상태 모두 외부 provider 경계만 닫고 후보 재생성, 내부 품질 점검, 문서·FieldComment·작업순서·보고서 입력은 계속 허용한다.
 - 포함·제외 reference 모두 재검증 가능한 content hash와 근거 설명을 갖고, 제외 reference는 제외 사유도 필수다. provenance는 전체 source snapshot hash와 두 승인자를 질문 원본과 별도로 보존한다.
 
 ## 2026-06-30. 현재 문서 기준
