@@ -4,7 +4,7 @@
 
 Windows WPF 앱은 서버 연결 여부와 관계없이 현장 문서와 기록을 로컬 SQLite에 먼저 남긴다. 서버가 설정되어 있으면 이후 동기화를 시도한다.
 
-테이블과 동기화 설명은 2026-07-16 현재 `FlowNoteLocalDatabase`와 연결 서비스 코드 기준이다.
+테이블과 동기화 설명은 2026-07-20 현재 `FlowNoteLocalDatabase`와 연결 서비스 코드 기준이다.
 
 ## 경로
 
@@ -38,6 +38,8 @@ Windows WPF 앱은 서버 연결 여부와 관계없이 현장 문서와 기록�
 - `server_id_mappings`: 로컬 ID와 서버 ID 연결
 - `server_sync_migration_audit`: 승인 전환한 보존 FAILED 큐와 신규 큐의 무손실 연결. 일반 DB 초기화가 아니라 전환 CLI 승인 실행 시 필요한 경우 생성
 
+2026-07-20 controlled copy schema 보존 복구를 적용한 DB에는 `preserved_server_controlled_copy_grants`와 `local_schema_migration_audit`도 남는다. 두 테이블은 앱 기능이나 정상 초기화 대상이 아니라 잘못 유입된 서버 grant 값, 원래 DDL, 복구 run ID와 보호 대상 row hash를 보존하는 감사 증거다.
+
 기존 공통 SQLite에는 FieldComment 명칭 전환 전 테스트 이력인 `field_notes`, `field_note_attachments`가 남아 있을 수 있다. 이 테이블과 관련 `server_sync_queue`의 `field_note/register_field_note`, `field_note_attachment/register_field_note_attachment` 항목은 새 기능의 작성 대상이 아니다. 현재 WPF는 이를 구 FieldNote 큐로 분류하고 자동 서버 전송하지 않으며, 운영자가 FieldComment 전환 또는 별도 마이그레이션 대상으로 검토한다.
 
 ## 기본 시드
@@ -62,7 +64,7 @@ Windows WPF 앱은 서버 연결 여부와 관계없이 현장 문서와 기록�
 
 보고서는 로컬 보고서 문서와 `report_sources`를 먼저 만든 뒤 서버 저장을 시도한다. 서버 저장이 성공하면 `server_report_id`, `server_document_id`, `server_version_id`, `server_id_mappings`를 함께 남기고, 실패하면 `server_sync_queue`에 `report/register_report` 재시도 항목을 보존한다. 작업순서 보드/항목/이력은 현재 단계에서 로컬 큐 대상이 아니라 로컬 기록과 서버 직접 API 검증, 보고서 근거 source 연결 범위로 둔다.
 
-controlled copy grant는 FastAPI 서버의 `controlled_copy_grants`에만 저장한다. WPF 로컬 SQLite에는 grant 토큰을 보존하지 않고 `server_id_mappings`로 서버 문서/버전을 찾은 뒤 즉시 발급·다운로드·SHA-256 검증하며, 실패를 `server_sync_queue`에 넣지 않는다.
+controlled copy grant는 FastAPI 서버의 `controlled_copy_grants`에만 저장한다. WPF 로컬 SQLite에는 활성 grant 테이블이나 grant 토큰을 보존하지 않고 `server_id_mappings`로 서버 문서/버전을 찾은 뒤 즉시 발급·다운로드·SHA-256 검증하며, 실패를 `server_sync_queue`에 넣지 않는다. FastAPI 서버 DB와 WPF 로컬 DB는 서로 다른 파일이어야 하며, 이미 잘못 생성된 서버 grant 테이블은 DB 삭제 없이 `scripts/repair-wpf-controlled-copy-schema.py`로 보존 격리한다.
 
 ## 검증
 

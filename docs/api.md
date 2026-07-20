@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-07-16 현재 전역 FastAPI 앱에 등록된 108개 method/path 조합과 요청·응답 코드 기준이다. 본문에 “후속 예외”로 명시한 경로만 미구현이다.
+이 문서는 2026-07-20 현재 전역 FastAPI 앱에 등록된 method/path 조합과 요청·응답 코드 기준이다. 아래 `수렴 제어 API`와 각 도메인에서 `목표`로 표시한 revision/idempotency 확장은 미구현 계약이며, 구현 전에는 현재 endpoint가 해당 필드를 지원한다고 가정하지 않는다.
 
 ## 인증
 
@@ -72,6 +72,41 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 | GET | `/` | 서비스 이름과 현재 환경 확인 |
 | GET | `/api/v1/health` | API 상태 확인 |
 | GET | `/api/v1/health/db` | DB 연결 확인 |
+
+## 수렴 제어 API
+
+아래 경로는 WPF 로컬 원천과 서버 권위 원천의 복구·호환 판정을 위한 목표 계약이다.
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/api/v1/sync/manifest` | `serverInstanceId`, `serverEpoch`, `serverSchemaVersion`, `apiContractVersion`, 지원 client contract 범위, 알림 high-water 반환 |
+| POST | `/api/v1/sync/reconcile` | 최대 500개 로컬 mapping/idempotency key/revision/hash를 서버 mutation receipt·도메인 row와 대조 |
+| GET | `/api/v1/sync/mutations/{idempotency_key}` | 단일 mutation의 `intentHash`, 결과 domain/entity ID, revision, content/file hash 조회 |
+
+모든 WPF 동기화 요청은 `X-FlowNote-Client-Instance`, `X-FlowNote-Client-Contract`, `X-FlowNote-Local-Schema`를 보낸다. 서버 응답은 `X-FlowNote-Server-Instance`, `X-FlowNote-Server-Epoch`, `X-FlowNote-Server-Schema`, `X-FlowNote-API-Contract`를 보낸다. 앱은 저장한 instance/epoch와 응답이 달라진 시점부터 일반 mutation과 cursor 전진을 중지한다.
+
+reconcile 항목은 `domain`, `localId`, `idempotencyKey`, 선택적 `serverId`, `baseRevision`, `intentHash`, `contentHash`, `sourceVersionId`를 받는다. 응답 결과는 다음 셋만 허용한다.
+
+| 결과 | 의미 | WPF 조치 |
+| --- | --- | --- |
+| `CONFIRMED` | 같은 key·intent/hash의 서버 결과가 존재 | 응답의 현재 server ID/revision/hash로 mapping 재결합 |
+| `ABSENT` | key와 서버 ID 모두 존재하지 않음 | 기존 로컬 원천·동일 key를 `PENDING`으로 재사용 |
+| `DIVERGED` | key 재사용, hash 불일치, orphan source 또는 다른 parent | `SERVER_RECOVERY_DIVERGED` `CONFLICT`로 보존, 관리자 해결 |
+
+reconcile은 mutation을 만들거나 수정하지 않는 read-only 판정이다. 서버가 복구되어 ID가 달라졌더라도 key와 hash가 같으면 `CONFIRMED`로 새 ID를 반환할 수 있다. WPF는 한 run의 결과와 mapping 갱신을 한 로컬 transaction에 저장한다. 모든 항목의 결과가 저장된 뒤 관리자 확인을 거쳐서만 알림 cursor 0 재추적을 시작하며 기존 처리 `message_id`는 삭제하지 않는다.
+
+공통 오류 응답의 `detail`은 `code`, `message`, `retryable`, 선택적 `currentRevision`, `currentEntityId`, `serverEpoch`를 갖는다. 처리 규칙은 다음과 같다.
+
+| HTTP/code | 자동 재시도 | 규칙 |
+| --- | --- | --- |
+| 401/403 | 아니요 | 현재 묶음 중단, 로그인/권한 해결. 로컬 원천 보존 |
+| 409 `STALE_*`, `*_CHANGED`, `*_ORPHAN`, `IDEMPOTENCY_KEY_REUSED`, `SERVER_RECOVERY_DIVERGED` | 아니요 | `CONFLICT` 저장, 최신값 추정·자동 병합 금지 |
+| 422 | 아니요 | payload/로컬 원천 검증 실패를 보존 `FAILED`로 기록 |
+| 426 `CLIENT_CONTRACT_UNSUPPORTED` | 아니요 | 앱/서버 호환 버전 조정 전 sync 중지 |
+| 503 `SCHEMA_MIGRATION_IN_PROGRESS` 또는 일시 장애 | 예 | `Retry-After` 우선, 없으면 5초~5분 exponential backoff+jitter |
+| timeout/연결 끊김/응답 유실 | 예 | 동일 idempotency key와 intent hash 재사용 |
+
+서버가 2xx를 반환해도 WPF가 서버 결과 ID·revision·hash와 로컬 mapping을 같은 transaction에 저장하기 전에는 `SYNCED`가 아니다. 같은 idempotency key가 서버 도메인 테이블 또는 mutation receipt에 둘 이상 존재하면 서버 health와 reconciliation은 실패해야 한다.
 
 ## 문서
 
@@ -167,6 +202,10 @@ FieldComment 원천 삭제 API는 제공하지 않는다. 서버 ORM도 `field_c
 
 WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `analysis_content`, `status`를 수정하고 `server_sync_queue`에 `entity_type = field_comment_review`, `action = update_field_comment_review`로 서버 PATCH 재시도 항목을 남긴다. 서버 ID가 아직 없는 로컬 FieldComment는 선행 등록 동기화가 끝난 뒤 검토 변경 PATCH를 재시도한다.
 
+목표 수렴 계약에서 FieldComment 응답은 원천 `sourceHashSha256`와 `reviewRevision`을 반환한다. 검토 PATCH·bulk-review 각 항목은 `idempotencyKey`, `baseReviewRevision`, `expectedSourceHashSha256`를 필수로 보내며, 서버는 개별 FieldComment 변경과 mutation receipt를 같은 transaction에 저장한다. 같은 key·같은 intent는 현재 결과를 반환하고 검토 revision 불일치는 409 `STALE_REVIEW_REVISION`, 원천 hash 불일치는 `REVIEW_SOURCE_CHANGED`, 허용되지 않은 전이는 `INVALID_REVIEW_TRANSITION`이다. WPF는 서버 상태를 따라잡기 위해 중간 단계를 자동 생성하지 않는다.
+
+목표 첨부 요청은 기존 `idempotencyKey`와 함께 `fileHashSha256`을 필수로 보낸다. 같은 key는 같은 부모 comment ID, 첨부 유형, caption, file hash에만 재사용할 수 있다. 서버가 계산한 hash와 요청이 다르면 409 `ATTACHMENT_HASH_MISMATCH`이며 임시 file object와 최종 첨부 row를 남기지 않는다.
+
 ## 태그
 
 | Method | Path | 설명 |
@@ -189,6 +228,10 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 | GET | `/api/v1/work-sequence-boards/{board_id}/history` | 변경 이력 조회 |
 | GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | 알림 후보 조회 |
 | PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | 알림 후보 상태 변경 |
+
+작업순서는 서버 직접 운영으로 확정한다. WPF는 연결된 서버의 목록·상세를 읽고 mutation API를 직접 호출하며 새 작업순서 mutation을 로컬 `server_sync_queue`에 넣지 않는다. 서버가 없거나 호환 contract를 만족하지 못하면 로컬 초안 조회는 가능하지만 생성·순서·상태의 운영 확정은 비활성화한다.
+
+목표 계약에서 보드 응답은 `revision`을 포함한다. 보드 생성, 항목 추가, 전체 순서 변경, 항목 상태 변경은 `idempotencyKey`와 기존 보드에는 `baseBoardRevision`을 필수로 받는다. 서버는 보드/항목 mutation, 정확히 한 `work_sequence_change_history` row, notification candidate와 mutation receipt를 한 transaction에 저장한다. revision 불일치는 409 `WORK_SEQUENCE_STALE_REVISION`이고, 동일 mutation key로 history가 둘 이상 생기면 transaction과 무결성 검사를 실패시킨다. 클라이언트 응답 유실 시 같은 key를 다시 보내며 서버는 새 history를 만들지 않고 기존 결과를 반환한다.
 
 ## 채널 알림과 인수인계
 
@@ -238,6 +281,10 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 | GET | `/api/v1/reports/{report_id}` | 보고서 상세 |
 
 보고서 source 타입은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `WORK_RECORD_VERSION`을 사용한다. 서버 저장은 `SELECTED` FieldComment와 현재 공개 문서 버전만 허용하며 FieldComment의 관찰 문서 버전을 source에 자동 고정한다. 활성 업무 채널에 연결된 source는 actor의 활성 멤버십을 검사한다. WPF 로컬 초안 후보는 검토 편의를 위해 `SELECTED`, `REVIEWED`, `ANALYZED` 순으로 노출하지만 서버 보고서 source 확정 전에는 `SELECTED` 전이가 필요하다.
+
+목표 수렴 계약에서 보고서 저장은 `idempotencyKey`, 선택적 기존 보고서의 `baseRevision`, `contentHashSha256`, `sourceSetHashSha256`을 받는다. 각 source는 `sourceType`, `sourceId`, 필수 시점의 `sourceVersionId`, `sourceHashSha256`, `relationType`을 보낸다. source 집합 hash는 source type/ID/version/hash/relation을 정렬한 canonical JSON의 SHA-256이다. 서버는 모든 source의 존재·상태·version/hash를 다시 검사한 뒤 report, report source 전부, 선택적 생성 document/version과 mutation receipt를 한 transaction으로 저장한다.
+
+검사 시 원천 revision/hash가 달라졌으면 409 `REPORT_SOURCE_STALE`, 원천이나 필수 version이 없으면 `REPORT_SOURCE_ORPHAN`, 같은 key의 content/source-set hash가 다르면 `IDEMPOTENCY_KEY_REUSED`다. 보고서 응답은 `reportId`, `revision`, `contentHashSha256`, `sourceSetHashSha256`, 생성 `documentId`/`versionId`와 source별 확정 ID/version/hash를 반환한다. WPF는 이 전체 read-back을 매핑한 경우에만 큐를 `SYNCED`로 종결한다.
 
 ## AI 검색 근거 후보
 

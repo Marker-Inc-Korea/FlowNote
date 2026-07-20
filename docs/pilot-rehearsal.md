@@ -263,4 +263,10 @@ WPF도 같은 명령에서 `--target wpf`, 로컬 DB, `Files` 경로로 전후�
 
 WPF 실패는 복구 실패를 모의한 결과가 아니라 현재 누적 공통 SQLite의 schema 무결성 차단을 발견한 준비 점검이다. 원천 DB와 파일을 수정하거나 삭제하지 않았으며, 이 항목이 해결되어도 별도 PC 복구와 나머지 실기 게이트는 계속 `대기`다.
 
+### 2026-07-20 P0 후속 조치
+
+위 `PILOT-20260716-TOOLTEST-001` 실패 증거는 당시 발견 기록으로 유지한다. 이후 FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하는 경로를 `Base.metadata.create_all()` 전에 차단했고, `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·FK·row hash를 보존한 뒤 서버 전용 grant 테이블을 격리했다. 공통 DB 복구 run `WPF-P0-20260720-0840`은 `document_versions` 3,384행의 hash를 유지하고 `quick_check=ok`, foreign key 위반 0건으로 끝났다.
+
+따라서 “유입 경로 규명과 보존 migration” P0 개발 조치는 완료됐다. 다만 이 결과는 같은 원천 DB의 보존 복구 증거이며 별도 PC 복구 훈련이나 최신 Windows 무생략 통합 `PASSED`를 대신하지 않는다. WPF DB+`Files` 파일럿 게이트는 새 `PILOT` run에서 별도 PC 복구 전후를 비교할 때까지 계속 `대기`다.
+
 현재 저장소와 개발 환경만으로는 위 실기 게이트를 통과 처리할 수 없다. 최초 통합 `PASSED` 실행 ID, Windows 배포 준비 PC, 고객 유사 네트워크, 운영 인증서/서명키 정책, 승인 Android 실단말과 현장 책임자가 준비된 뒤 실행한다.

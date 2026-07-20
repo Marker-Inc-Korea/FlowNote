@@ -1,6 +1,6 @@
 # 0001 Initial FlowNote API Schema
 
-FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기준은 2026-07-16 현재 `services/api/app/db/models.py`이며, 앱 시작 시 `services/api/app/db/init_db.py`가 `Base.metadata.create_all()`로 테이블을 보장한다.
+FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기준은 2026-07-20 현재 `services/api/app/db/models.py`다. 앱 시작 시 `services/api/app/db/init_db.py`가 기존 WPF 로컬 스키마가 아닌지 먼저 확인한 뒤 `Base.metadata.create_all()`로 서버 테이블을 보장한다.
 
 ## Version
 

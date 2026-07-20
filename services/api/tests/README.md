@@ -2,11 +2,12 @@
 
 이 디렉터리는 FlowNote FastAPI 서버 테스트를 보관한다.
 
-범위와 수집 기준선은 2026-07-16 현재 테스트 코드 기준이다.
+범위와 수집 기준선은 2026-07-20 현재 테스트 코드 기준이다.
 
 ## 현재 테스트 범위
 
 - SQLite MVP 스키마 생성과 `schema_migrations` 기록
+- WPF 로컬 `documents`/`document_versions` schema를 서버 DB로 지정했을 때 초기화 거부와 서버 전용 테이블 미생성
 - DB 상태 확인 API
 - 로그인, Bearer Access Token 발급, Refresh Token 발급, 현재 사용자 조회
 - 만료된 Access Token 거부

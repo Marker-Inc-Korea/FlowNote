@@ -1,6 +1,6 @@
 # FlowNote 시스템 맵
 
-이 시스템 맵은 2026-07-16 현재 실행 코드와 저장소 경계를 기준으로 한다. 후속 연동은 마지막 절에서만 예외로 표시한다.
+이 시스템 맵은 2026-07-20 현재 실행 코드와 저장소 경계를 기준으로 한다. 수렴 경계의 미구현 항목은 `목표 계약`으로, 후속 외부 연동은 마지막 절에서 구분한다.
 
 ## 실행 구성
 
@@ -26,11 +26,71 @@ FastAPI Server
   -> /api/v1 REST API
 ```
 
+FastAPI 서버 SQLite와 WPF 로컬 SQLite는 서로 대체하거나 공유하는 파일이 아니다. 같은 이름의 문서 테이블도 서버는 `document_versions.version_id`, WPF는 로컬 `id`와 문서별 `version_no`를 기준으로 하므로 각 프로세스가 자기 DB만 초기화해야 한다. FastAPI는 기존 WPF 테이블 형태를 감지하면 `Base.metadata.create_all()` 전에 시작을 거부한다.
+
 WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 보고서는 로컬 보고서 문서와 `report_sources`를 먼저 남긴 뒤 `server_sync_queue`의 `register_report` 항목으로 서버 `/api/v1/reports` 저장을 재시도한다. 큐 재시도는 단순 생성 순서가 아니라 같은 문서 또는 보고서 근거 단위로 묶고, 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다. 문서 버전과 FieldComment 첨부도 큐의 idempotency key를 서버 multipart 요청에 전달해 응답 유실 뒤 재시도가 중복 버전이나 파일을 만들지 않게 한다.
 
 `작업내역`의 동기화 큐 화면은 각 row를 완료, 보존 구 형식, 선행 조건 대기, 수동 조치 필요, 재시도 가능의 운영 상태로 구분한다. 전체 보존 건수는 `PENDING`, `FAILED`/`CONFLICT`, `SYNCED`, `DISCARDED`를 모두 세며, 서버본 유지로 종결한 `DISCARDED`는 삭제하지 않되 처리 대기 깊이에서는 제외한다. 요약은 `SYNCED`와 `DISCARDED`가 아닌 큐 깊이, 그중 가장 오래된 `created_at` 기준 대기 시간, 최근 1시간 `SYNCED` 처리량, `FAILED` 진단 분포를 표시한다. 인증 만료와 서버 연결 실패·시간 초과는 뒤 항목도 같은 원인으로 연속 실패시키지 않도록 현재 재시도 묶음을 즉시 중단하고, 항목 자체의 검증·로컬 파일 오류는 실패를 기록한 뒤 다음 독립 항목을 계속 처리한다.
 
 과거 구 `create` action과 FieldNote/첨부가 남은 FAILED 큐는 일반 재시도가 현재 계약으로 자동 해석하지 않는다. `FlowNote.Windows.SyncMigrationTool`이 먼저 SQLite read-only dry-run으로 전체 FAILED 큐를 배타적으로 분류하고 안정된 plan hash를 만든다. 운영자가 plan hash와 row ID를 명시해 승인하면 전환 가능한 항목만 현재 action의 별도 `PENDING` 큐로 만들고 `server_sync_migration_audit`에 원천 snapshot과 연결을 남긴다. 기존 큐, 원천 행과 파일은 수정·삭제하지 않는다.
+
+## 로컬 우선 데이터와 서버 권위 원천의 수렴 경계
+
+아래 표는 구현 여부와 관계없이 새 동기화 작업이 따라야 하는 단일 운영 계약이다. `로컬 원천`은 서버 확인 전까지 삭제할 수 없는 입력·파일·큐를 뜻하고, `서버 권위`는 두 WPF 인스턴스, Android, AI 검색과 보고서가 최종 판정에 사용하는 값이다. 현재 코드에 없는 revision이나 reconciliation API는 구현 전 목표 계약으로 표시하며, 해당 행의 검증을 통과하기 전에는 다중 WPF 쓰기를 허용하지 않는다.
+
+| 대상 | 로컬 원천과 방향 | 서버 권위·동시성 키 | 멱등 키와 충돌 | 종결·수렴 조건 |
+| --- | --- | --- | --- | --- |
+| 문서 등록 | WPF 문서 메타데이터·최초 파일 → 서버 | `document_id`, `revision`, `latest_version_id`, 파일 SHA-256 | 안정된 문서 등록 key. 같은 key의 핵심 메타/hash 차이는 `IDEMPOTENCY_KEY_REUSED` | 서버 문서/버전 ID, revision, hash를 같은 로컬 transaction에서 매핑하고 큐 `SYNCED` |
+| 문서 버전 | WPF 버전 파일 → 서버 | 문서 revision, 기준 latest version ID, 서버 배정 `version_no` | 버전 key+파일 hash. 기준 불일치는 `STALE_REVISION`/`STALE_BASE_VERSION`, hash 불일치는 `FILE_HASH_MISMATCH` | 서버 version ID·revision·hash read-back과 로컬 원천 hash가 모두 일치 |
+| 공개·문서/버전 상태·태그 | WPF 명시 mutation → 서버, 이후 서버 snapshot → WPF | 문서 revision, `published_version_id`, 상태와 태그 집합 | 요청별 안정 key와 base revision. `PUBLISHED_VERSION_CHANGED`, `DOCUMENT_DELETED` 포함 409는 `CONFLICT` | 공개 포인터와 상태가 같은 revision에 속하고 서버 snapshot을 로컬에 반영 |
+| FieldComment 원천 | WPF/Android 불변 입력 → 서버 | 서버 `comment_id`, 원천 hash, 연결 document/version ID | 원천 생성 key. 같은 key의 원천/연결 hash 차이는 `IDEMPOTENCY_KEY_REUSED` | 서버 comment ID·원천 hash·연결 ID 매핑 확인. 원천은 이후 수정·삭제하지 않음 |
+| FieldComment 검토 | WPF 검토 mutation → 서버 | 목표 `review_revision`과 원천 hash. 서버가 상태·담당·기한·정리·분석의 권위 원천 | 요청 key+`baseReviewRevision`; `STALE_REVIEW_REVISION`, `REVIEW_SOURCE_CHANGED`, `INVALID_REVIEW_TRANSITION` | 서버 검토 snapshot과 revision을 다시 읽고 매핑한 뒤 `SYNCED`; 자동 단계 보간 금지 |
+| FieldComment 첨부 | 로컬 파일 → 서버 | 서버 attachment ID, 부모 comment ID, file object hash | 첨부 key+부모 ID+SHA-256; `ATTACHMENT_HASH_MISMATCH`, `IDEMPOTENCY_KEY_REUSED` | 서버 attachment/file hash를 확인하고 매핑. 로컬 파일은 보존 정책 전까지 유지 |
+| 접근 로그 | WPF append-only 이벤트 → 서버 | 서버 log ID와 이벤트 payload hash | 시작·종료·차단 이벤트별 key; 동일 key payload 차이는 `IDEMPOTENCY_KEY_REUSED` | 서버 log ID 매핑 1개. 유실 응답 재시도에도 서버 row 1개 |
+| 보고서와 source 집합 | WPF 보고서 파일/본문과 source snapshot → 서버 | 서버 report ID·revision, 생성 문서/버전 ID, 순서가 정규화된 source ID/version/hash 집합 | 보고서 save key+content/source-set hash; `REPORT_SOURCE_STALE`, `REPORT_SOURCE_ORPHAN`, `IDEMPOTENCY_KEY_REUSED` | report·생성 document/version·모든 source가 한 서버 transaction에 있고 read-back hash가 일치 |
+| 작업순서 보드·항목 | WPF가 서버 API를 직접 호출. 로컬 테이블은 초안/캐시·기존 기록만 보존 | 서버 `board_revision`, 항목 ID·순서·상태 | mutation key+`baseBoardRevision`; `WORK_SEQUENCE_STALE_REVISION`, `IDEMPOTENCY_KEY_REUSED` | 서버가 보드 mutation과 change history를 한 transaction으로 저장하고 새 revision 반환. 로컬 큐 없음 |
+| 작업순서 이력 | 클라이언트가 별도 생성하지 않고 서버 mutation에서 파생 | 서버 append-only `change_id`, board revision | 부모 mutation key에서 1회 생성 | mutation 1건당 의미상 이력 1건, orphan 0건 |
+| 알림 cursor | 서버 → WPF/Android | 서버 scope·user별 high-water cursor와 공개 `message_id` | `message_id` 유일 처리. cursor 역행은 `SERVER_EPOCH_CHANGED` 복구 절차 | 표시/처리 row와 cursor 전진이 한 로컬 transaction에 완료 |
+
+재시도기는 같은 aggregate를 직렬화하고 다음 순서로 처리한다.
+
+```text
+문서 등록
+  -> 문서 버전
+  -> 공개 포인터
+  -> 문서/버전 상태와 태그
+  -> FieldComment 원천
+  -> FieldComment 검토
+  -> FieldComment 첨부
+  -> 접근 로그
+  -> 보고서와 source 집합
+```
+
+`503`, 연결 실패, timeout과 응답 유실은 현재 row를 `FAILED`로 보존하고 `Retry-After`가 있으면 우선 적용하며, 없으면 5초부터 5분까지 지수 backoff와 jitter를 적용한다. 인증 401/403은 묶음을 중단한다. 선행 매핑 누락은 서버 호출과 `attempt_count` 증가 없이 보류한다. 409, 로컬 파일/hash 불일치와 계약 오류는 자동 재시도하지 않고 `CONFLICT` 또는 보존 `FAILED`로 남긴다. `SYNCED`와 관리자가 서버본 유지 사유를 남긴 `DISCARDED`만 종결 상태이며 어느 상태에서도 원천·큐·감사 row를 자동 삭제하지 않는다.
+
+### 서버 복구·초기화 뒤 재검증
+
+서버는 설치 시 만든 불변 `server_instance_id`, DB를 복구하거나 새 DB로 초기화할 때마다 바뀌는 `server_epoch`, 현재 server schema/API contract 범위를 health와 sync manifest에 제공한다. WPF는 정규화한 서버 URL별로 이 값을 저장한다. 기존 저장값과 `server_instance_id` 또는 `server_epoch`가 다르거나 high-water cursor가 역행하면 일반 전송과 polling을 즉시 멈추고 `RECONCILIATION_REQUIRED`로 전환한다.
+
+관리자 재검증은 기존 cursor, `server_id_mappings`, `SYNCED`/`FAILED` 큐를 삭제하거나 0으로 덮어쓰지 않는다. 서버 reconciliation 조회에 로컬 entity ID, idempotency key, 서버 ID, revision, source/version ID와 hash를 묶어 보내고 각 항목을 다음 중 하나로 분류한다.
+
+- 같은 idempotency key와 hash의 서버 row가 있으면 새 server ID/revision으로 매핑을 재결합한다.
+- 서버 row가 없으면 기존 로컬 원천과 같은 key로 재전송 가능 상태로 되돌린다.
+- 같은 key의 payload/hash가 다르거나 source가 orphan이면 `SERVER_RECOVERY_DIVERGED` 충돌로 보존한다.
+
+전 항목의 reconciliation 결과와 관리자, 시각, 이전/새 epoch를 감사한 뒤에만 현재 서버 scope의 cursor를 0부터 다시 따라잡는다. 기존 처리 `message_id`는 보존한다. 수렴 완료는 비종결 큐 0건, 동일 idempotency key의 서버 중복 row 0건, mapping의 orphan 0건, 문서 공개 포인터·보고서 source/version·파일 hash 일치와 cursor 재추적 완료를 모두 만족할 때다.
+
+### 수렴 검증 게이트
+
+자동 통합 검증은 빈 임시 DB 대신 보존 대상 검증 DB의 복사본을 사용하고, 원본과 실행 산출물을 삭제하지 않는다. 두 WPF client instance ID와 한 서버를 사용해 같은 aggregate에 다음 순서로 장애를 주입한다.
+
+1. 두 WPF가 같은 문서 revision에서 서로 다른 새 버전·상태·공개 요청을 만들고 한쪽만 성공하는지 확인한다.
+2. 같은 FieldComment에 동시 검토를 요청하고 stale review가 409로 보존되는지, 첨부 응답을 유실한 뒤 같은 key 재시도에서 서버 첨부가 한 건인지 확인한다.
+3. 보고서 source를 선택한 뒤 원천 version/hash를 바꾸어 stale 저장을 차단하고, 고정된 source snapshot 저장의 report/document/version/source 매핑을 확인한다.
+4. 작업순서 같은 board revision에서 순서 변경과 상태 변경을 경쟁시켜 하나만 성공하고 성공 mutation의 이력이 정확히 한 건인지 확인한다.
+5. 각 단계에 503, 응답 유실과 WPF 재시작을 주입한 뒤 재시도하고, server DB 복구/초기화로 epoch를 바꾼 뒤 mapping reconciliation과 cursor 0 재추적을 수행한다.
+
+각 경계에서 WPF 2개와 서버 DB의 row count, revision, `published_version_id`, report source ID/version/hash, file hash, idempotency key를 정렬 CSV/JSON과 SHA-256으로 남긴다. 최종 판정 SQL은 `PRAGMA quick_check = ok`, 빈 `foreign_key_check`, idempotency/mutation key 중복 0건, published pointer orphan 0건, report source orphan 0건, mapping orphan 0건을 요구한다. migration 검증은 같은 검사에 구/신규 DB의 보호 원천 count/hash와 모든 상태의 큐 count/hash 비교를 추가한다. 단일 run에서 하나라도 다르면 수렴 계약 구현은 미완료다.
 
 WPF 앱은 로컬 `notifications` 테이블과 알림 창으로 문서, FieldComment, 작업순서 이벤트 알림을 확인하고 읽음 처리한다. 서버 URL과 로그인이 있으면 `채널함`, `채널 관리`, `인수인계 확인 현황` 화면에서 FastAPI 채널/인수인계 API를 직접 호출한다. 채널함은 내 채널, 사용자별 알림, 인수인계 목록을 조회하고 메시지 읽음, 내 receipt 상태 변경, 원천 링크 복사, 후속 FieldComment 생성을 수행한다. 주 창이 열려 있는 동안 `server_notification_cursors`의 서버 scope·사용자별 마지막 성공 cursor 다음 알림을 기본 15초 간격으로 조회하고, `server_notification_messages`의 `message_id`로 멱등 처리한 뒤 같은 트랜잭션에서 cursor를 전진시킨다. 연결 실패 시 최대 120초까지 backoff하며 401이면 cursor를 유지한 채 중단한다. 저장 row가 없는 사용자는 cursor 0부터 최대 100건씩 빠르게 따라잡고 한글 진행 상태를 표시한다. 서버 cursor 역행은 자동 복구하지 않고 polling을 중지하며 Core 서비스가 `admin`, `system-admin` role을 다시 확인한 경우에만 현재 scope·사용자의 cursor 초기화를 허용한다. 초기화 뒤에도 기존 처리 `message_id`는 보존해 재조회 부작용을 막는다. 채널 관리는 채널 생성, 멤버 추가/제외를 제공하고, 인수인계 확인 현황은 수신자별 receipt 상태 변경과 후속 FieldComment 생성을 제공한다. 서버 로그인한 `admin`, `system-admin`은 `사용자 관리` 화면에서 서버 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기를 수행한다. 로컬 로그인은 별도 로컬 계정 화면을 사용한다. `admin`, `system-admin`은 `승인 단말` 화면에서 서버 단말 목록·상세·마지막 접속을 조회하고 등록, 정보/상태 변경, 교체를 수행한다.
 

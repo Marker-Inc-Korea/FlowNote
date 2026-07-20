@@ -1,6 +1,6 @@
 # API Database
 
-FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 코드이며, 문서는 2026-07-16 현재 모델을 따라간다.
+FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 코드이며, 문서는 2026-07-20 현재 모델을 따라간다.
 
 ## 현재 코드 기준
 
@@ -9,11 +9,11 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 - 초기화 모듈: `app/db/init_db.py`
 - 스키마 설명: `migrations/0001_initial_mvp_schema.md`
 
-앱 시작 시 `Base.metadata.create_all()`로 테이블을 보장하고, `schema_migrations`에 `0001_initial_mvp_schema`를 기록한다. 기존 SQLite DB 호환을 위해 일부 컬럼과 제약은 초기화 과정에서 보정한다.
+앱 시작 시 먼저 DB 스키마 소유권을 확인한 뒤 `Base.metadata.create_all()`로 테이블을 보장하고, `schema_migrations`에 `0001_initial_mvp_schema`를 기록한다. 기존 WPF `documents`/`document_versions` 형태를 감지하면 서버 테이블 생성 전에 시작을 거부한다. 기존 서버 SQLite DB 호환을 위해 일부 컬럼과 제약은 초기화 과정에서 보정한다.
 
 ## 주요 테이블
 
-2026-07-16 현재 ORM 생성 기준은 다음 47개 테이블이다.
+2026-07-20 현재 ORM 생성 기준은 다음 47개 테이블이다.
 
 - `schema_migrations`
 - `user_accounts`, `roles`, `user_roles`
@@ -51,5 +51,7 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 - 개발 DB 기본값: `services/api/data/flownote.sqlite3`
 - 테스트 DB 기본값: `services/api/data/flownote.test.sqlite3`
 - 파일 저장소 기본값: `services/api/storage/`
+
+서버 DB 경로는 WPF `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`로 결정되는 로컬 DB 경로와 달라야 한다. 두 DB는 문서 테이블 이름이 일부 같아도 PK와 FK 계약이 다른 독립 스키마다.
 
 실제 SQLite DB, 테스트 로그, 업로드 파일은 검증 산출물이므로 사용자가 명시적으로 삭제를 지시하지 않는 한 삭제하지 않는다.
