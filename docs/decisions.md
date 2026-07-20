@@ -10,6 +10,22 @@
 - FieldComment 원천 row는 삭제하지 않는다. 서버 ORM은 직접 삭제도 거부하며 오입력·중복·근거 부적합 기록은 사유와 함께 `EXCLUDED`로 분류해 추적성을 유지한다.
 - 일괄 검토는 요청당 최대 200건이며 개별 항목이 모두 같은 정책을 통과할 때만 저장하고 각 원천별 감사 이력을 남긴다. 오래된 NEW, 빈약한 SELECTED, 누락 report source는 품질 작업함에서 운영한다.
 
+## 2026-07-20. 보고서 근거는 선정 상태·고정 버전·원천 hash로 확정
+
+- 보고서 초안과 최종 저장은 서로 다른 source type을 최소 2종 요구하며 같은 `source_type + source_id + source_version_id` 중복을 거부한다.
+- FieldComment source는 `SELECTED` 상태, 관찰 문서 버전과 원천 작성자가 모두 있어야 한다. 문서 source는 현재 공개 버전만 허용한다.
+- 작업순서 항목은 최신 변경 ID 또는 항목 ID, 작업순서 이력은 변경 ID, 작업내역은 최신 버전 ID를 `source_version_id`로 고정한다.
+- 각 `report_sources` row는 독립 `trace_id`와 저장 시점 `source_hash_sha256`를 가진다. 최종 문서 저장 직전에 원천 version과 hash를 다시 계산해 달라졌으면 `409`로 차단한다.
+- 승인·보관 상태 보고서는 기존 draft ID를 통한 source 교체를 허용하지 않는다. WPF 로컬 보고서도 같은 2종·version·중복 조건을 먼저 검사하고 trace/hash를 보존한다.
+- 기존 2026-07-01 결정의 보고서 후보 범위는 유지하되 FieldComment 후보 상태는 현재 코드의 `SELECTED` 전용 조건으로 좁힌다.
+
+## 2026-07-20. AI ground-truth는 2인 승인과 준비도 계열을 분리
+
+- ground-truth 최초 등록자는 첫 승인자로 기록하며 사례는 비활성으로 둔다. 첫 승인자와 다른 권한 사용자의 두 번째 승인 뒤에만 활성화한다.
+- `SYNTHETIC`, `TEST`는 스모크 회귀, `ANONYMOUS_FIELD`, `PILOT`은 실제 현장 준비도로 고정해 서로 합산하거나 한 평가 run에 섞지 않는다.
+- provider 착수 게이트의 48건은 실제 현장 준비도만 사용한다. 합성 48건 통과는 회귀 기준선일 뿐 현장 자료 확보로 간주하지 않는다.
+- 포함·제외 reference 모두 재검증 가능한 content hash와 근거 설명을 갖고, 제외 reference는 제외 사유도 필수다. provenance는 전체 source snapshot hash와 두 승인자를 질문 원본과 별도로 보존한다.
+
 ## 2026-06-30. 현재 문서 기준
 
 - 문서는 현재 코드에 맞춰 작성한다.
@@ -168,7 +184,8 @@
 
 ## 2026-07-01. WPF 보고서 저장 흐름
 
-- WPF 보고서 창은 FieldComment, 문서, 작업순서 이력을 보고서 근거 후보로 사용한다.
+- WPF 보고서 창은 `SELECTED` FieldComment, 현재 공개 문서, 작업순서 항목/이력을 보고서 근거 후보로 사용한다.
+- 서로 다른 source type 2종 이상과 source별 고정 version이 있어야 초안과 로컬 보고서 문서를 만들 수 있으며 같은 type/ID/version 중복은 거부한다.
 - WPF 보고서 저장은 로컬 보고서 문서와 `report_sources`를 먼저 만든 뒤 서버 `/api/v1/reports` 저장을 시도한다.
 - 보고서 저장 실패는 보고서 전용 큐를 새로 만들지 않고 기존 `server_sync_queue`에 `entity_type = report`, `action = register_report`로 남긴다.
 - 큐에는 한글 실패 사유, 마지막 시도 시간, 시도 횟수를 기존 동기화 항목과 같은 방식으로 기록한다.

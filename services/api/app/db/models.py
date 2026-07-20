@@ -812,6 +812,7 @@ class AISearchEvaluationCase(Base):
     __tablename__ = "ai_search_evaluation_cases"
     __table_args__ = (
         UniqueConstraint("run_id", "case_key", name="uq_ai_search_evaluation_case"),
+        Index("ix_ai_search_evaluation_cases_case_key_id", "case_key", "id"),
         CheckConstraint(
             "expected_outcome IN ('SUFFICIENT', 'INSUFFICIENT_EVIDENCE')",
             name="ck_ai_search_evaluation_expected_outcome",
@@ -882,6 +883,48 @@ class AISearchGroundTruthCase(Base):
     approved_by: Mapped[str] = mapped_column(String(64), ForeignKey("user_accounts.user_id"), nullable=False)
     approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AISearchGroundTruthProvenance(Base):
+    __tablename__ = "ai_search_ground_truth_provenance"
+    __table_args__ = (
+        CheckConstraint(
+            "data_classification IN ('SYNTHETIC', 'TEST', 'ANONYMOUS_FIELD', 'PILOT')",
+            name="ck_ai_ground_truth_provenance_classification",
+        ),
+        CheckConstraint(
+            "readiness_track IN ('SMOKE_REGRESSION', 'FIELD_READINESS')",
+            name="ck_ai_ground_truth_provenance_track",
+        ),
+        CheckConstraint(
+            "approval_status IN ('PENDING_SECOND_APPROVAL', 'APPROVED', 'REJECTED')",
+            name="ck_ai_ground_truth_provenance_approval",
+        ),
+        CheckConstraint(
+            "second_approved_by IS NULL OR second_approved_by <> first_approved_by",
+            name="ck_ai_ground_truth_distinct_approvers",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provenance_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    ground_truth_case_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_search_ground_truth_cases.ground_truth_case_id"),
+        unique=True, nullable=False, index=True
+    )
+    data_classification: Mapped[str] = mapped_column(String(30), nullable=False)
+    readiness_track: Mapped[str] = mapped_column(String(30), nullable=False)
+    provenance_note: Mapped[str] = mapped_column(Text, nullable=False)
+    source_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    contains_sensitive_data: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    approval_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    first_approved_by: Mapped[str] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id"), nullable=False
+    )
+    first_approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    second_approved_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    second_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

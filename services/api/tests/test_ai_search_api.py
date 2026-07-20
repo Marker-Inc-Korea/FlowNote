@@ -885,6 +885,7 @@ def test_scope_readiness_counts_approved_ground_truth_and_category_gaps() -> Non
         assert initial.status_code == 200, initial.text
         initial_body = initial.json()
         initial_ground_truth_count = initial_body["ground_truth_count"]
+        initial_smoke_ground_truth_count = initial_body["smoke_regression_readiness"]["ground_truth_count"]
         assert initial_body["ground_truth_gap"] == max(48 - initial_ground_truth_count, 0)
         assert initial_body["ground_truth_per_category_scenario_minimum"] == 2
         assert initial_body["provider_review_ready"] is False
@@ -910,23 +911,60 @@ def test_scope_readiness_counts_approved_ground_truth_and_category_gaps() -> Non
                 "sourceType": "PUBLISHED_DOCUMENT_VERSION",
                 "sourceId": seeded["published_document_id"],
                 "sourceVersionId": seeded["published_version_id"],
+                "rationale": "현재 공개 버전이 안전 질문의 직접 근거임",
             }],
             "expectedExcluded": [],
             "allowedRankMin": 1,
             "allowedRankMax": 10,
             "asOf": datetime.now(timezone.utc).isoformat(),
+            "dataClassification": "TEST",
+            "provenanceNote": "비민감 회귀 사례이며 실제 현장 준비도에서 제외",
         })
         assert approved.status_code == 201, approved.text
         assert approved.json()["approved_by"] == "user-admin"
+        assert approved.json()["is_active"] is False
+        assert approved.json()["provenance"]["approval_status"] == "PENDING_SECOND_APPROVAL"
+        same_approver = client.post(
+            f"/api/v1/ai-search/ground-truth-cases/{approved.json()['ground_truth_case_id']}/second-approval",
+            headers=headers,
+        )
+        assert same_approver.status_code == 409
+
+        suffix = uuid4().hex
+        with client.app.state.database.session() as session:
+            session.add(UserAccount(
+                user_id=f"user-ground-truth-reviewer-{suffix}",
+                username=f"ground-truth-reviewer-{suffix}",
+                login_id=f"ground-truth-reviewer-{suffix}",
+                display_name="AI ground-truth 독립 검토자",
+                role="manager",
+                password_hash=hash_password_for_dev("1234"),
+                is_active=True,
+                status="ACTIVE",
+            ))
+            session.commit()
+        second_login = client.post("/api/v1/auth/login", json={
+            "username": f"ground-truth-reviewer-{suffix}", "password": "1234"
+        })
+        second_headers = {"Authorization": f"Bearer {second_login.json()['access_token']}"}
+        second_approval = client.post(
+            f"/api/v1/ai-search/ground-truth-cases/{approved.json()['ground_truth_case_id']}/second-approval",
+            headers=second_headers,
+        )
+        assert second_approval.status_code == 200, second_approval.text
+        assert second_approval.json()["is_active"] is True
+        assert second_approval.json()["provenance"]["approval_status"] == "APPROVED"
+        assert second_approval.json()["provenance"]["first_approved_by"] != second_approval.json()["provenance"]["second_approved_by"]
 
         updated = client.get("/api/v1/ai-search/readiness", headers=headers).json()
-        assert updated["ground_truth_count"] == initial_ground_truth_count + 1
+        assert updated["ground_truth_count"] == initial_ground_truth_count
+        assert updated["smoke_regression_readiness"]["ground_truth_count"] == initial_smoke_ground_truth_count + 1
         assert updated["ground_truth_gap"] == max(48 - updated["ground_truth_count"], 0)
         updated_safety_normal = next(
             item["count"] for item in updated["category_scenario_counts"]
             if item["category"] == "SAFETY" and item["scenario_type"] == "NORMAL"
         )
-        assert updated_safety_normal == initial_safety_normal + 1
+        assert updated_safety_normal == initial_safety_normal
         listed = client.get("/api/v1/ai-search/ground-truth-cases", headers=headers)
         assert listed.status_code == 200
         assert any(item["ground_truth_case_id"] == approved.json()["ground_truth_case_id"] for item in listed.json())
@@ -946,6 +984,7 @@ def test_scope_readiness_counts_approved_ground_truth_and_category_gaps() -> Non
         assert evaluation_body["citation_trace_success_rate"] == 1
         assert evaluation_body["citation_semantic_match_rate"] == 1
         assert evaluation_body["conflict_disclosure_rate"] == 1
+        assert evaluation_body["readiness_track"] == "SMOKE_REGRESSION"
         assert evaluation_body["provider_start_ready"] is False
 
         repeated = client.post("/api/v1/ai-search/evaluations", headers=headers, json={

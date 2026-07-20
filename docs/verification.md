@@ -30,7 +30,7 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
 2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 3. 실행 전 `git status --porcelain=v1 --untracked-files=all`과 `git ls-files`에서 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-4. `services/api`에서 FastAPI pytest node ID 128개를 수집하고 중복 node ID가 0개인지 확인한다. 수집 목록은 `fastapi-collected-tests.txt`로 보존한다.
+4. `services/api`에서 FastAPI pytest node ID를 수집하고 중복 node ID가 0개인지 확인한다. 수집 목록은 `fastapi-collected-tests.txt`로 보존한다. 현재 코드는 130개지만 스크립트는 아직 128개를 강제하므로 기준 갱신 전에는 이 단계에서 실패한다.
 5. FastAPI pytest를 실행하고 실행 ID별 JUnit을 보존한다.
 6. WPF Core 테스트를 실행하고 TRX를 보존한다.
 7. WPF 앱을 빌드한다.
@@ -74,9 +74,23 @@ FieldComment 정제 스모크는 실행마다 다음 6개 시나리오를 같은
 
 마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. `wpf-smoke-database-evidence.json`에는 주요 테이블 실행 전후 통계, 오늘 문서 ID, 과거 기존 문서의 이전·신규 버전과 무결성 결과가 저장된다. 통제된 기준선은 실행마다 설정이 식별되는 관리형 FastAPI를 사용하므로 시작 전에 `5184` 포트를 비워야 한다. 해당 포트에 이미 건강한 서버가 있으면 환경 실패로 중단하고 외부 프로세스는 종료하지 않는다.
 
-한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. FastAPI 수집/JUnit 기준은 128건이며 failure/error/skipped와 중복 node ID는 모두 0이어야 한다. WPF TRX와 Android JUnit도 failure/error 0, WPF·Android build 로그도 build error 0이어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. 현재 FastAPI 수집/JUnit 목표 기준은 130건이며 failure/error/skipped와 중복 node ID는 모두 0이어야 한다. 표준 스크립트의 128건 guard를 먼저 130건으로 맞춰야 한다. WPF TRX와 Android JUnit도 failure/error 0, WPF·Android build 로그도 build error 0이어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
+
+## 2026-07-20 작업 102 보고서 근거 코드 재대조
+
+작업 시작 시 Git 작업 트리는 깨끗해 반영할 미커밋 변경은 없었다. 최근 구현된 보고서 근거 계약을 FastAPI, WPF와 상위 문서에 다시 대조했다. 현재 WPF 후보는 `SELECTED` FieldComment, 현재 공개 문서, 작업순서 항목/이력으로 제한되며, 이전 문서에 남아 있던 `REVIEWED`·`ANALYZED` FieldComment 후보 설명을 제거했다. 보고서 초안과 최종 저장은 서로 다른 source type 2종 이상, source별 고정 version, type/ID/version 중복 금지를 적용한다. 각 source의 독립 trace ID와 저장 시점 SHA-256을 보존하고 최종 문서 저장 전에 같은 version의 현재 원천 hash를 다시 검사한다.
+
+현재 코드에서 다시 산출한 정량 기준은 전역 OpenAPI 108개 method/path 조합, ORM 47개 테이블, `Settings` 36개 항목이다. `services/api/.venv/bin/python -m pytest --collect-only -q`는 중복 없는 130건을 수집했고 전체 `pytest -q`도 130건 모두 통과했다. 최근 보고서 근거 회귀 2건이 추가됐지만 `scripts/verify-preserved-tests.ps1`은 아직 128건을 강제하므로 표준 Windows 검증은 현재 수집 단계에서 실패한다. 이번 요청은 문서 갱신이므로 스크립트 코드는 변경하지 않았고 WPF·Android 빌드와 통합 스모크도 새로 실행하지 않았다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
+
+## 2026-07-20 후보 4 AI 준비 데이터셋과 48건 승인 기초
+
+`smoke48-v1` 비민감 시험 세트를 공용 FastAPI 테스트 SQLite에 누적했다. 8범주×3유형×2건의 48건은 모두 중복 없는 case key, source/version/trace ID, content hash, 포함·제외 근거, `as_of`, 허용 순위, `TEST/SMOKE_REGRESSION` provenance와 서로 다른 두 승인자를 가진다. 민감정보 형태, 합성 고객 식별자, 로컬 경로, 권한 밖 채널, 삭제/비공개 문서, `EXCLUDED`/`ARCHIVED` 원천을 부정 사례로 포함한다. 실제 현장 준비도에는 합산하지 않는다.
+
+`scripts/sql/verify-ai-ground-truth-48.sql` 결과는 case 48, 매트릭스 빈 칸·case key 중복·승인 위반·provenance 위반·snapshot/reference hash 위반·근거 누락·원천 orphan이 모두 0이었다. 제외 원천의 현재 content hash도 평가 시 snapshot과 다시 비교한다. 같은 snapshot의 두 평가 run `aiseval_1041239657ce4f639940120dec0e3a78`, `aiseval_a3ff5b191d684c0a880f5566544dec5c`는 각각 48/48 `PASSED`였다. 두 run 모두 candidate ID/content hash와 순위가 안정됐고 top-k 포함, 인용 trace, 의미 일치, 상충 표시가 100%였으며 권한 누출, 존재하지 않는 인용, 제외 원천 노출은 0건이었다.
+
+후보 4 반영 후 전역 OpenAPI는 108개 method/path 조합, ORM은 48개 테이블이다. 최종 `ruff check`는 통과했고 FastAPI 전체 회귀는 130건 모두 통과했다. 최종 로그는 `services/api/data/local/integration-logs/fastapi-ai-ground-truth-48-20260720-final.log`에 보존했다. 기존 SQLite, 평가 run/case, 로그와 테스트 산출물은 삭제하지 않았다. Windows/Android 통합 스모크는 이번 작업에서 실행하지 않았으며 오늘 사진/인수인계와 기존 과거 문서 버전 증가 규칙은 기존 통합 스모크 책임으로 유지한다.
 
 ## 2026-07-20 작업 102 현재 코드 문서 재대조
 

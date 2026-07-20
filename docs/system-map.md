@@ -187,7 +187,9 @@ Windows와 Android의 알림은 장기적으로 개인 메신저가 아니라 �
 
 ## 보고서
 
-보고서는 FieldComment, 문서, 작업순서 항목/이력을 근거로 수동 초안을 만들고 문서로 저장하는 최소 흐름이 구현되어 있다. WPF는 로컬 보고서 문서를 먼저 만들고 source를 `report_sources`에 보존한 뒤 `/api/v1/reports` 저장을 시도한다. 실패하면 `server_sync_queue`에 남기고, 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다. FieldComment 보고서 후보는 `SELECTED`, `REVIEWED`, `ANALYZED`를 우선 노출하고 `EXCLUDED`, `ARCHIVED`는 제외한다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
+보고서는 FieldComment, 문서, 작업순서 항목/이력을 근거로 수동 초안을 만들고 문서로 저장하는 최소 흐름이 구현되어 있다. WPF는 로컬 보고서 문서를 먼저 만들고 source를 `report_sources`에 보존한 뒤 `/api/v1/reports` 저장을 시도한다. 실패하면 `server_sync_queue`에 남기고, 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다.
+
+초안 생성과 최종 저장에는 서로 다른 source type이 최소 2종 필요하며 같은 type/ID/version 중복은 거부한다. WPF 후보는 `SELECTED` FieldComment, 현재 공개 문서, 작업순서 항목/이력만 사용한다. FieldComment의 `SELECTED` 전이에는 관찰 문서 버전과 원천 작성자가 필요하다. 서버는 FieldComment의 관찰 버전, 문서의 현재 공개 버전, 작업순서·작업내역의 최신 불변 식별자를 `source_version_id`로 확정하고 각 source에 독립 `trace_id`와 저장 시점 `source_hash_sha256`를 남긴다. 최종 문서 저장 직전에 같은 version의 원천 hash를 다시 계산해 달라졌으면 `409`로 차단하며 승인·보관 보고서의 source 교체도 거부한다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
 
 ## 후속 연동
 
@@ -197,7 +199,7 @@ MES/ERP는 후속 연동 대상이다. 현재 코드는 내부 작업순서와 �
 
 AI 관련 현재 구현은 외부 AI 호출이 아니라 서버 DB에서 `ai_search_candidates` 근거 후보를 재생성하고 목록/품질을 점검하는 read model이다. 공개 문서 후보는 삭제되지 않은 공개 문서 버전만 사용하고, 보고서 source도 실제 원천을 다시 확인한다. 특히 `DOCUMENT` 원천이 삭제 상태이거나 `deleted_at`이 설정되어 있으면 보고서가 남아 있어도 검색 후보로 만들지 않는다. WPF `AI 근거 후보 운영 점검` 화면은 서버 후보 재생성, source별 후보 수, 제외 사유와 운영 조치, FieldComment 검토 준비도, 후보 목록, 원천 추적값 복사를 제공한다. 운영 점검 흐름은 후보 재생성, source별 후보 수 확인, 제외 사유와 운영 조치 확인, 후보 row에서 원천 문서 버전/FieldComment/작업순서 이력/보고서 source로 역추적하는 순서다. FieldComment 검토 준비도는 분석/검토/선정 상태 100건 기준의 부족분을 먼저 보여주며, 이 수치가 부족하면 AI 답변 생성보다 FieldComment 검토와 보고서 source 정리를 우선한다.
 
-외부 provider 착수 전 회귀 흐름은 질문 ground-truth → 권한을 반영한 후보 순위 → 기대 candidate/source/version/trace ID 비교 → 원천 URI 확인 → 재생성 전후 ID/content hash와 순위 비교 순서다. 실행과 케이스 snapshot은 공통 SQLite에 누적하며, 삭제·비공개·보관/제외·사라진 보고서 원천·권한 없는 채널은 부정 근거로 기록한다. 근거가 없는 질문은 답변 생성 대상이 아니라 `INSUFFICIENT_EVIDENCE`로 고정한다.
+외부 provider 착수 전 회귀 흐름은 질문 ground-truth → 독립 2인 승인 → 권한을 반영한 후보 순위 → 기대 candidate/source/version/trace ID 비교 → 원천 URI 확인 → 재생성 전후 ID/content hash와 순위 비교 순서다. 실행과 케이스 snapshot은 공통 SQLite에 누적하며, 삭제·비공개·보관/제외·민감정보·고객 식별자·로컬 경로·사라진 보고서 원천·권한 없는 채널은 부정 근거로 기록한다. 합성/시험 스모크와 익명 현장/파일럿 준비도는 별도 지표이며 provider 착수에는 실제 현장 계열만 사용한다. 근거가 없는 질문은 답변 생성 대상이 아니라 `INSUFFICIENT_EVIDENCE`로 고정한다.
 
 외부 AI 1단계는 위 read model과 분리된 후속 쓰기 흐름이다. 현재 구현은 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`를 기본값으로 두고, 보고서 작성 role, 허용 목적, 고객·현장·provider·model 승인, 승인 프롬프트, 원천 상태, 작성자 role, 채널 멤버십, 승인 source type, 민감정보 정책과 응답 인용 ID를 검사한다. provider 중립 adapter 뒤에서 JSON 구조·크기·중복·prompt injection과 claim/summary의 규칙 기반 의미 일치를 검사하고, 호출 전후 원천·권한·승인이 달라지면 결과를 폐기한다. 적격·제외 후보를 원문 없이 질의 시점 snapshot으로 남기고, 근거 없음·상충·최신성 불명·낮은 확신은 정상 `INSUFFICIENT_EVIDENCE`로 종료한다. 결과는 작업순서·문서 상태·보고서 승인·설비를 변경하지 않는다.
 
