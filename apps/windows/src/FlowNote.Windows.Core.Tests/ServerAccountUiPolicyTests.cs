@@ -42,4 +42,19 @@ public sealed class ServerAccountUiPolicyTests
     {
         Assert.Equal(expected, RolePermissionPolicy.CanGovernDocuments(role));
     }
+
+    [Theory]
+    [InlineData("admin", true, true)]
+    [InlineData("system-admin", true, true)]
+    [InlineData("document-admin", true, true)]
+    [InlineData("department-manager", true, true)]
+    [InlineData("manager", true, false)]
+    [InlineData("assistant-manager", true, false)]
+    [InlineData("viewer", false, false)]
+    public void GroundTruthUiSeparatesOperatorsAndApprovers(
+        string role, bool canOperate, bool canApprove)
+    {
+        Assert.Equal(canOperate, RolePermissionPolicy.CanOperateGroundTruth(role));
+        Assert.Equal(canApprove, RolePermissionPolicy.CanApproveGroundTruth(role));
+    }
 }

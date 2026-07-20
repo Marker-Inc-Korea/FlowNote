@@ -80,6 +80,11 @@ public static class RolePermissionPolicy
         "system-admin"
     };
 
+    private static readonly HashSet<string> GroundTruthApprovalRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "admin", "system-admin", "document-admin", "department-manager"
+    };
+
     public static bool CanRegisterDocuments(string? role)
     {
         return !string.IsNullOrWhiteSpace(role) && DocumentRegistrationRoles.Contains(role);
@@ -118,6 +123,13 @@ public static class RolePermissionPolicy
     public static bool CanManageUsers(string? role)
     {
         return !string.IsNullOrWhiteSpace(role) && UserManagementRoles.Contains(role);
+    }
+
+    public static bool CanOperateGroundTruth(string? role) => CanWriteReports(role);
+
+    public static bool CanApproveGroundTruth(string? role)
+    {
+        return !string.IsNullOrWhiteSpace(role) && GroundTruthApprovalRoles.Contains(role);
     }
 
     public static bool IsAllowedUserRole(string? role)

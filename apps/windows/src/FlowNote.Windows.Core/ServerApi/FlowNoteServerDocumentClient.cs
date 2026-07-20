@@ -539,10 +539,31 @@ public sealed class FlowNoteServerDocumentClient
     }
 
     public async Task<IReadOnlyList<ServerAIGroundTruthCase>> ListAIGroundTruthCasesAsync(
+        bool includePending = false,
         CancellationToken cancellationToken = default)
     {
-        using var response = await httpClient.GetAsync("api/v1/ai-search/ground-truth-cases", cancellationToken);
+        var path = $"api/v1/ai-search/ground-truth-cases?includePending={includePending.ToString().ToLowerInvariant()}";
+        using var response = await httpClient.GetAsync(path, cancellationToken);
         return await ReadJsonResponse<List<ServerAIGroundTruthCase>>(response, cancellationToken);
+    }
+
+    public async Task<ServerAIGroundTruthCase> CreateAIGroundTruthCaseAsync(
+        ServerAIGroundTruthCaseCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            "api/v1/ai-search/ground-truth-cases", request, cancellationToken);
+        return await ReadJsonResponse<ServerAIGroundTruthCase>(response, cancellationToken);
+    }
+
+    public async Task<ServerAIGroundTruthCase> SecondApproveAIGroundTruthCaseAsync(
+        string groundTruthCaseId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsync(
+            $"api/v1/ai-search/ground-truth-cases/{Uri.EscapeDataString(groundTruthCaseId)}/second-approval",
+            null, cancellationToken);
+        return await ReadJsonResponse<ServerAIGroundTruthCase>(response, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ServerAIGroundTruthDatasetSummary>> ListAIGroundTruthDatasetsAsync(

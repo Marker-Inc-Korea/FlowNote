@@ -264,6 +264,28 @@ public sealed record ServerAISearchEvidenceReferenceRequest
 
     [JsonPropertyName("exclusionReason")]
     public string? ExclusionReason { get; init; }
+
+    [JsonPropertyName("contentHash")]
+    public string? ContentHash { get; init; }
+
+    [JsonPropertyName("rationale")]
+    public string? Rationale { get; init; }
+}
+
+public sealed record ServerAIGroundTruthCaseCreateRequest
+{
+    [JsonPropertyName("caseKey")] public string CaseKey { get; init; } = string.Empty;
+    [JsonPropertyName("category")] public string Category { get; init; } = string.Empty;
+    [JsonPropertyName("scenarioType")] public string ScenarioType { get; init; } = string.Empty;
+    [JsonPropertyName("question")] public string Question { get; init; } = string.Empty;
+    [JsonPropertyName("expectedOutcome")] public string ExpectedOutcome { get; init; } = "SUFFICIENT";
+    [JsonPropertyName("expectedEvidence")] public IReadOnlyList<ServerAISearchEvidenceReferenceRequest> ExpectedEvidence { get; init; } = [];
+    [JsonPropertyName("expectedExcluded")] public IReadOnlyList<ServerAISearchEvidenceReferenceRequest> ExpectedExcluded { get; init; } = [];
+    [JsonPropertyName("allowedRankMin")] public int AllowedRankMin { get; init; } = 1;
+    [JsonPropertyName("allowedRankMax")] public int AllowedRankMax { get; init; } = 20;
+    [JsonPropertyName("asOf")] public DateTimeOffset AsOf { get; init; }
+    [JsonPropertyName("dataClassification")] public string DataClassification { get; init; } = "ANONYMOUS_FIELD";
+    [JsonPropertyName("provenanceNote")] public string ProvenanceNote { get; init; } = string.Empty;
 }
 
 public sealed record ServerAISearchEvaluationCaseRequest
