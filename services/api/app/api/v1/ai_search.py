@@ -19,6 +19,7 @@ from app.db.models import (
     AISearchEvaluationCase,
     AISearchEvaluationRun,
     AISearchGroundTruthCase,
+    AISearchGroundTruthProvenance,
     Document,
     DocumentTag,
     DocumentVersion,
@@ -162,6 +163,7 @@ class AISearchEvidenceReference(BaseModel):
     trace_version_id: str | None = Field(default=None, alias="traceVersionId")
     content_hash: str | None = Field(default=None, alias="contentHash")
     exclusion_reason: str | None = Field(default=None, alias="exclusionReason")
+    rationale: str | None = Field(default=None, min_length=1, max_length=1000)
 
 
 class AISearchEvaluationCaseRequest(BaseModel):
@@ -201,6 +203,8 @@ class AISearchGroundTruthCaseRequest(BaseModel):
     allowed_rank_max: int = Field(default=20, alias="allowedRankMax", ge=1, le=100)
     as_of: datetime = Field(alias="asOf")
     line_scope: str | None = Field(default=None, alias="lineScope", max_length=64)
+    data_classification: str = Field(alias="dataClassification")
+    provenance_note: str = Field(alias="provenanceNote", min_length=1, max_length=1000)
 
 
 def _new_public_id(prefix: str) -> str:
@@ -209,6 +213,11 @@ def _new_public_id(prefix: str) -> str:
 
 def _hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _snapshot_iso(value: datetime) -> str:
+    normalized = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    return normalized.isoformat()
 
 
 def _candidate_public_id(source_type: str, source_id: str, source_version_id: str | None) -> str:
@@ -840,6 +849,52 @@ def _candidate_created_at(session: Session, candidate: AISearchCandidate) -> dat
     return None
 
 
+def _candidate_created_at_map(
+    session: Session, candidates: list[AISearchCandidate]
+) -> dict[str, datetime | None]:
+    result: dict[str, datetime | None] = {candidate.candidate_id: None for candidate in candidates}
+    document_versions = {
+        candidate.source_version_id for candidate in candidates
+        if candidate.source_type == "PUBLISHED_DOCUMENT_VERSION" and candidate.source_version_id
+    }
+    comments = {
+        candidate.source_id for candidate in candidates if candidate.source_type == "FIELD_COMMENT"
+    }
+    histories = {
+        candidate.source_id for candidate in candidates if candidate.source_type == "WORK_SEQUENCE_HISTORY"
+    }
+    report_sources = {
+        int(candidate.source_id) for candidate in candidates
+        if candidate.source_type == "REPORT_SOURCE" and candidate.source_id.isdigit()
+    }
+    version_times = dict(session.execute(
+        select(DocumentVersion.version_id, DocumentVersion.created_at).where(
+            DocumentVersion.version_id.in_(document_versions)
+        )
+    ).all()) if document_versions else {}
+    comment_times = dict(session.execute(
+        select(FieldComment.comment_id, FieldComment.created_at).where(FieldComment.comment_id.in_(comments))
+    ).all()) if comments else {}
+    history_times = dict(session.execute(
+        select(WorkSequenceChangeHistory.change_id, WorkSequenceChangeHistory.created_at).where(
+            WorkSequenceChangeHistory.change_id.in_(histories)
+        )
+    ).all()) if histories else {}
+    report_times = dict(session.execute(
+        select(ReportSource.id, ReportSource.created_at).where(ReportSource.id.in_(report_sources))
+    ).all()) if report_sources else {}
+    for candidate in candidates:
+        if candidate.source_type == "PUBLISHED_DOCUMENT_VERSION":
+            result[candidate.candidate_id] = version_times.get(candidate.source_version_id)
+        elif candidate.source_type == "FIELD_COMMENT":
+            result[candidate.candidate_id] = comment_times.get(candidate.source_id)
+        elif candidate.source_type == "WORK_SEQUENCE_HISTORY":
+            result[candidate.candidate_id] = history_times.get(candidate.source_id)
+        elif candidate.source_type == "REPORT_SOURCE" and candidate.source_id.isdigit():
+            result[candidate.candidate_id] = report_times.get(int(candidate.source_id))
+    return result
+
+
 def _rank_candidates(
     session: Session,
     question: str,
@@ -849,6 +904,7 @@ def _rank_candidates(
 ) -> tuple[list[AISearchCandidate], dict[str, str]]:
     question_tokens = _tokens(question)
     candidates = session.scalars(select(AISearchCandidate).order_by(AISearchCandidate.candidate_id)).all()
+    created_at_by_candidate = _candidate_created_at_map(session, candidates) if as_of is not None else {}
     document_frequency = {
         token: sum(1 for candidate in candidates if token in candidate.search_text.lower())
         for token in question_tokens
@@ -856,7 +912,7 @@ def _rank_candidates(
     denied: dict[str, str] = {}
     ranked: list[tuple[float, AISearchCandidate]] = []
     for candidate in candidates:
-        created_at = _candidate_created_at(session, candidate)
+        created_at = created_at_by_candidate.get(candidate.candidate_id)
         if as_of is not None and created_at is not None:
             comparable_created_at = created_at.replace(tzinfo=timezone.utc) if created_at.tzinfo is None else created_at
             comparable_as_of = as_of.replace(tzinfo=timezone.utc) if as_of.tzinfo is None else as_of
@@ -902,12 +958,11 @@ def _previous_case_delta(
 ) -> dict[str, object] | None:
     previous = session.scalar(
         select(AISearchEvaluationCase)
-        .join(AISearchEvaluationRun, AISearchEvaluationRun.run_id == AISearchEvaluationCase.run_id)
         .where(
             AISearchEvaluationCase.case_key == case_key,
             AISearchEvaluationCase.run_id != run_id,
         )
-        .order_by(desc(AISearchEvaluationRun.created_at), desc(AISearchEvaluationRun.id))
+        .order_by(desc(AISearchEvaluationCase.id))
     )
     if previous is None:
         return None
@@ -988,6 +1043,49 @@ def _source_reference_exists(session: Session, reference: AISearchEvidenceRefere
     return False
 
 
+def _source_reference_snapshot(session: Session, reference: AISearchEvidenceReference) -> dict[str, object]:
+    value = reference.model_dump(by_alias=True, mode="json")
+    source_type = reference.source_type.strip().upper()
+    source_text = ""
+    if source_type == "PUBLISHED_DOCUMENT_VERSION":
+        row = session.execute(
+            select(Document, DocumentVersion)
+            .join(DocumentVersion, DocumentVersion.document_id == Document.document_id)
+            .where(
+                Document.document_id == reference.source_id,
+                DocumentVersion.version_id == reference.source_version_id,
+            )
+        ).first()
+        if row is not None:
+            document, version = row
+            source_text = _clean_text(document.title, document.description, version.version_label, version.change_reason)
+    elif source_type == "FIELD_COMMENT":
+        comment = session.scalar(select(FieldComment).where(FieldComment.comment_id == reference.source_id))
+        if comment is not None:
+            source_text = _clean_text(_field_comment_content_text(comment), comment.category, comment.signal_level)
+            value["sourceVersionId"] = comment.document_version_id
+            value["traceId"] = comment.comment_id
+            value["traceVersionId"] = comment.document_version_id
+    elif source_type == "WORK_SEQUENCE_HISTORY":
+        history = session.scalar(
+            select(WorkSequenceChangeHistory).where(WorkSequenceChangeHistory.change_id == reference.source_id)
+        )
+        if history is not None:
+            source_text = _clean_text(history.change_type, _work_sequence_history_trace_text(history))
+            value["traceId"] = history.change_id
+    elif source_type == "REPORT_SOURCE" and reference.source_id.isdigit():
+        source = session.scalar(select(ReportSource).where(ReportSource.id == int(reference.source_id)))
+        report = session.scalar(select(Report).where(Report.report_id == source.report_id)) if source else None
+        if source is not None and report is not None:
+            source_text = _report_source_text(source, report)
+            value["sourceVersionId"] = source.source_version_id
+            value["traceId"] = str(source.id)
+            value["traceVersionId"] = source.source_version_id
+    value["sourceType"] = source_type
+    value["contentHash"] = _hash(source_text)
+    return value
+
+
 def _approved_reference(candidate: AISearchCandidate, reference: AISearchEvidenceReference) -> dict[str, object]:
     value = reference.model_dump(by_alias=True, mode="json")
     value.update({
@@ -1012,6 +1110,11 @@ def _excluded_reference_result(
     matching = next((item for item in all_candidates if _matches_reference(item, reference)), None)
     actual_match = next((item for item in actual if _matches_reference(item, reference)), None)
     actual_reason = None
+    current_snapshot = _source_reference_snapshot(session, reference)
+    content_hash_matches = (
+        reference.content_hash is None
+        or current_snapshot.get("contentHash") == reference.content_hash
+    )
     if matching is not None and matching.candidate_id in denied:
         actual_reason = denied[matching.candidate_id]
     elif matching is None:
@@ -1050,11 +1153,15 @@ def _excluded_reference_result(
         "excluded": actual_match is None,
         "actual_reason": actual_reason,
         "reason_matches": reference.exclusion_reason is None or reference.exclusion_reason == actual_reason,
+        "content_hash_matches": content_hash_matches,
     }
 
 
-def _ground_truth_response(case: AISearchGroundTruthCase) -> dict[str, object]:
-    return {
+def _ground_truth_response(
+    case: AISearchGroundTruthCase,
+    provenance: AISearchGroundTruthProvenance | None = None,
+) -> dict[str, object]:
+    response = {
         "ground_truth_case_id": case.ground_truth_case_id,
         "case_key": case.case_key,
         "customer_scope": case.customer_scope,
@@ -1074,6 +1181,20 @@ def _ground_truth_response(case: AISearchGroundTruthCase) -> dict[str, object]:
         "approved_at": case.approved_at,
         "is_active": case.is_active,
     }
+    response["provenance"] = None if provenance is None else {
+        "provenance_id": provenance.provenance_id,
+        "data_classification": provenance.data_classification,
+        "readiness_track": provenance.readiness_track,
+        "provenance_note": provenance.provenance_note,
+        "source_snapshot_hash": provenance.source_snapshot_hash,
+        "contains_sensitive_data": provenance.contains_sensitive_data,
+        "approval_status": provenance.approval_status,
+        "first_approved_by": provenance.first_approved_by,
+        "first_approved_at": provenance.first_approved_at,
+        "second_approved_by": provenance.second_approved_by,
+        "second_approved_at": provenance.second_approved_at,
+    }
+    return response
 
 
 @router.post("/ground-truth-cases", status_code=status.HTTP_201_CREATED)
@@ -1088,12 +1209,18 @@ def approve_ground_truth_case(
     category = payload.category.strip().upper()
     scenario_type = payload.scenario_type.strip().upper()
     expected_outcome = payload.expected_outcome.strip().upper()
+    data_classification = payload.data_classification.strip().upper().replace("-", "_")
     if category not in QUESTION_CATEGORIES:
         raise HTTPException(status_code=422, detail=f"category must be one of {', '.join(QUESTION_CATEGORIES)}")
     if scenario_type not in SCENARIO_TYPES:
         raise HTTPException(status_code=422, detail=f"scenarioType must be one of {', '.join(SCENARIO_TYPES)}")
     if expected_outcome not in {"SUFFICIENT", "INSUFFICIENT_EVIDENCE"}:
         raise HTTPException(status_code=422, detail="expectedOutcome must be SUFFICIENT or INSUFFICIENT_EVIDENCE")
+    if data_classification not in {"SYNTHETIC", "TEST", "ANONYMOUS_FIELD", "PILOT"}:
+        raise HTTPException(
+            status_code=422,
+            detail="dataClassification must be SYNTHETIC, TEST, ANONYMOUS_FIELD, or PILOT",
+        )
     if payload.allowed_rank_min > payload.allowed_rank_max:
         raise HTTPException(status_code=422, detail="allowedRankMin must not exceed allowedRankMax")
     if scenario_type == "NORMAL" and not payload.expected_evidence:
@@ -1119,6 +1246,8 @@ def approve_ground_truth_case(
     assert approver is not None
     approved_evidence: list[dict[str, object]] = []
     for reference in payload.expected_evidence:
+        if not reference.rationale:
+            raise HTTPException(status_code=422, detail="every expectedEvidence item requires rationale")
         candidate = next((item for item in candidates if _matches_reference(item, reference)), None)
         if candidate is None:
             raise HTTPException(status_code=422, detail=f"expectedEvidence is not an eligible candidate: {_reference_key(reference)}")
@@ -1132,9 +1261,31 @@ def approve_ground_truth_case(
                 raise HTTPException(status_code=422, detail=f"expectedEvidence is newer than asOf: {_reference_key(reference)}")
         approved_evidence.append(_approved_reference(candidate, reference))
     for reference in payload.expected_excluded:
+        if not reference.rationale or not reference.exclusion_reason:
+            raise HTTPException(
+                status_code=422,
+                detail="every expectedExcluded item requires rationale and exclusionReason",
+            )
         if not _source_reference_exists(session, reference):
             raise HTTPException(status_code=422, detail=f"expectedExcluded cannot be traced: {_reference_key(reference)}")
+    excluded_snapshots = [_source_reference_snapshot(session, item) for item in payload.expected_excluded]
     now = datetime.now(timezone.utc)
+    readiness_track = (
+        "SMOKE_REGRESSION" if data_classification in {"SYNTHETIC", "TEST"} else "FIELD_READINESS"
+    )
+    snapshot_payload = {
+        "caseKey": payload.case_key,
+        "scope": {
+            "customer": settings.ai_customer_scope,
+            "site": settings.ai_site_scope,
+            "line": payload.line_scope.strip() if payload.line_scope and payload.line_scope.strip() else None,
+            "database": db_scope,
+        },
+        "asOf": _snapshot_iso(payload.as_of),
+        "expectedEvidence": approved_evidence,
+        "expectedExcluded": excluded_snapshots,
+    }
+    source_snapshot_hash = _hash(json.dumps(snapshot_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
     case = AISearchGroundTruthCase(
         ground_truth_case_id=_new_public_id("aigt"),
         case_key=payload.case_key,
@@ -1150,18 +1301,106 @@ def approve_ground_truth_case(
             approved_evidence, ensure_ascii=False
         ),
         excluded_evidence_json=json.dumps(
-            [item.model_dump(by_alias=True, mode="json") for item in payload.expected_excluded], ensure_ascii=False
+            excluded_snapshots, ensure_ascii=False
         ),
         allowed_rank_min=payload.allowed_rank_min,
         allowed_rank_max=payload.allowed_rank_max,
         as_of=payload.as_of,
         approved_by=current_user.user_id,
         approved_at=now,
-        is_active=True,
+        is_active=False,
     )
     session.add(case)
+    provenance = AISearchGroundTruthProvenance(
+        provenance_id=_new_public_id("aigtprov"),
+        ground_truth_case_id=case.ground_truth_case_id,
+        data_classification=data_classification,
+        readiness_track=readiness_track,
+        provenance_note=payload.provenance_note.strip(),
+        source_snapshot_hash=source_snapshot_hash,
+        contains_sensitive_data=False,
+        approval_status="PENDING_SECOND_APPROVAL",
+        first_approved_by=current_user.user_id,
+        first_approved_at=now,
+    )
+    session.add(provenance)
     session.commit()
-    return _ground_truth_response(case)
+    return _ground_truth_response(case, provenance)
+
+
+@router.post("/ground-truth-cases/{ground_truth_case_id}/second-approval")
+def second_approve_ground_truth_case(
+    ground_truth_case_id: str,
+    current_user: CurrentUser,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, object]:
+    if current_user.role not in {"admin", "system-admin", "document-admin", "manager", "department-manager"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="ground-truth approval role required")
+    case = session.scalar(
+        select(AISearchGroundTruthCase).where(
+            AISearchGroundTruthCase.ground_truth_case_id == ground_truth_case_id,
+            AISearchGroundTruthCase.customer_scope == settings.ai_customer_scope,
+            AISearchGroundTruthCase.site_scope == settings.ai_site_scope,
+            AISearchGroundTruthCase.database_scope == database_scope(settings.database_url),
+        )
+    )
+    provenance = session.scalar(
+        select(AISearchGroundTruthProvenance).where(
+            AISearchGroundTruthProvenance.ground_truth_case_id == ground_truth_case_id
+        )
+    )
+    if case is None or provenance is None:
+        raise HTTPException(status_code=404, detail="ground-truth case does not exist")
+    if provenance.first_approved_by == current_user.user_id:
+        raise HTTPException(status_code=409, detail="second approver must differ from first approver")
+    if provenance.approval_status == "APPROVED":
+        raise HTTPException(status_code=409, detail="ground-truth case is already approved")
+    content_filter = load_sensitive_filter(session, settings)
+    rebuild_ai_search_candidates(session, content_filter)
+    candidates = session.scalars(select(AISearchCandidate).order_by(AISearchCandidate.candidate_id)).all()
+    second_approver = session.scalar(select(UserAccount).where(UserAccount.user_id == current_user.user_id))
+    assert second_approver is not None
+    expected_evidence = json.loads(case.expected_evidence_json)
+    expected_excluded = json.loads(case.excluded_evidence_json)
+    for stored in expected_evidence:
+        reference = AISearchEvidenceReference.model_validate(stored)
+        candidate = next((item for item in candidates if _matches_reference(item, reference)), None)
+        if candidate is None:
+            raise HTTPException(status_code=409, detail=f"expectedEvidence changed after first approval: {_reference_key(reference)}")
+        if not _can_evaluate_candidate(session, candidate, second_approver):
+            raise HTTPException(status_code=403, detail=f"second approver cannot access expectedEvidence: {_reference_key(reference)}")
+    for stored in expected_excluded:
+        reference = AISearchEvidenceReference.model_validate(stored)
+        if not _source_reference_exists(session, reference):
+            raise HTTPException(status_code=409, detail=f"expectedExcluded changed after first approval: {_reference_key(reference)}")
+        current_snapshot = _source_reference_snapshot(session, reference)
+        if current_snapshot.get("contentHash") != stored.get("contentHash"):
+            raise HTTPException(status_code=409, detail=f"expectedExcluded hash changed after first approval: {_reference_key(reference)}")
+    snapshot_payload = {
+        "caseKey": case.case_key,
+        "scope": {
+            "customer": case.customer_scope,
+            "site": case.site_scope,
+            "line": case.line_scope,
+            "database": case.database_scope,
+        },
+        "asOf": _snapshot_iso(case.as_of),
+        "expectedEvidence": expected_evidence,
+        "expectedExcluded": expected_excluded,
+    }
+    current_snapshot_hash = _hash(json.dumps(
+        snapshot_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ))
+    if current_snapshot_hash != provenance.source_snapshot_hash:
+        raise HTTPException(status_code=409, detail="ground-truth source snapshot changed after first approval")
+    now = datetime.now(timezone.utc)
+    provenance.second_approved_by = current_user.user_id
+    provenance.second_approved_at = now
+    provenance.approval_status = "APPROVED"
+    case.is_active = True
+    session.commit()
+    return _ground_truth_response(case, provenance)
 
 
 @router.get("/ground-truth-cases")
@@ -1180,7 +1419,17 @@ def list_ground_truth_cases(
         AISearchGroundTruthCase.line_scope == line_scope if line_scope else AISearchGroundTruthCase.line_scope.is_(None)
     )
     cases = session.scalars(statement.order_by(AISearchGroundTruthCase.case_key)).all()
-    return [_ground_truth_response(case) for case in cases]
+    provenance_by_case = {
+        item.ground_truth_case_id: item
+        for item in session.scalars(
+            select(AISearchGroundTruthProvenance).where(
+                AISearchGroundTruthProvenance.ground_truth_case_id.in_(
+                    [case.ground_truth_case_id for case in cases]
+                )
+            )
+        ).all()
+    } if cases else {}
+    return [_ground_truth_response(case, provenance_by_case.get(case.ground_truth_case_id)) for case in cases]
 
 
 @router.get("/readiness")
@@ -1218,6 +1467,7 @@ def run_evaluation(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="evaluateAsUserId does not exist")
 
     cases = list(payload.cases)
+    selected_readiness_tracks: set[str] = set()
     db_scope = database_scope(settings.database_url)
     evaluation_line_scope = payload.line_scope.strip() if payload.line_scope and payload.line_scope.strip() else None
     if payload.ground_truth_case_ids:
@@ -1233,6 +1483,19 @@ def run_evaluation(
         ).all()
         if len(stored_cases) != len(set(payload.ground_truth_case_ids)):
             raise HTTPException(status_code=404, detail="one or more approved ground-truth cases do not exist in this scope")
+        selected_readiness_tracks = set(
+            session.scalars(
+                select(AISearchGroundTruthProvenance.readiness_track).where(
+                    AISearchGroundTruthProvenance.ground_truth_case_id.in_(payload.ground_truth_case_ids),
+                    AISearchGroundTruthProvenance.approval_status == "APPROVED",
+                )
+            ).all()
+        )
+        if not selected_readiness_tracks or len(selected_readiness_tracks) != 1:
+            raise HTTPException(
+                status_code=422,
+                detail="groundTruthCaseIds must all have approved provenance in one readiness track",
+            )
         for stored in stored_cases:
             cases.append(
                 AISearchEvaluationCaseRequest(
@@ -1332,7 +1595,10 @@ def run_evaluation(
             if isinstance(reason, str):
                 excluded_reasons.add(reason)
         actual_outcome = "SUFFICIENT" if actual else "INSUFFICIENT_EVIDENCE"
-        excluded_passed = all(item["excluded"] and item["reason_matches"] for item in excluded)
+        excluded_passed = all(
+            item["excluded"] and item["reason_matches"] and item["content_hash_matches"]
+            for item in excluded
+        )
         excluded_source_violations += sum(1 for item in excluded if not item["excluded"])
         expected_id_set = set(expected_ids)
         precision_k = (
@@ -1462,6 +1728,7 @@ def run_evaluation(
         and citation_semantic_match_rate >= 1.0
         and conflict_disclosure_rate >= 1.0
     )
+    readiness_track = next(iter(selected_readiness_tracks), "AD_HOC")
     provider_start_ready = bool(
         all_passed and candidate_identity_stable and ranking_stable
         and quality_gate_passed
@@ -1470,6 +1737,7 @@ def run_evaluation(
         and scoped_readiness["provider_review_ready"]
         and len(payload.ground_truth_case_ids) == len(case_results)
         and len(case_results) >= scoped_readiness["ground_truth_minimum"]
+        and readiness_track == "FIELD_READINESS"
     )
     metrics = {
         "case_count": len(case_results),
@@ -1497,6 +1765,7 @@ def run_evaluation(
         "prompt_version_id": payload.prompt_version_id,
         "policy_version": payload.policy_version,
         "provider_start_ready": provider_start_ready,
+        "readiness_track": readiness_track,
     }
     result_status = (
         "PASSED"

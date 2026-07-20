@@ -43,6 +43,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-07-20 현재 FastAPI 테스트 코드는 중복 없는 node ID 128개를 수집하며 전체 128개가 통과했다. 저장소 루트의 `scripts/verify-preserved-tests.ps1`도 수집/JUnit 기준 128개와 skipped 0을 강제하고 수집 목록을 보존한다. WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 Git 산출물 점검을 포함한 전체 표준 검증은 Windows 기준 환경에서 옵션 생략 없이 별도 확인한다.
+2026-07-20 현재 FastAPI 테스트 코드는 중복 없는 node ID 130개를 수집하며 전체 130개가 통과했다. 저장소 루트의 `scripts/verify-preserved-tests.ps1`은 아직 수집/JUnit 기준 128개를 강제하므로 현재 코드와 불일치한다. 기준을 130개로 고친 뒤 WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 Git 산출물 점검을 포함한 전체 표준 검증을 Windows 기준 환경에서 옵션 생략 없이 다시 실행한다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.

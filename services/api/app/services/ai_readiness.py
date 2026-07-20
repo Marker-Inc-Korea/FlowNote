@@ -13,6 +13,7 @@ from app.db.models import (
     AISearchCandidate,
     AISearchEvaluationRun,
     AISearchGroundTruthCase,
+    AISearchGroundTruthProvenance,
 )
 
 
@@ -91,19 +92,31 @@ def scope_readiness(
         for source_type, required in SOURCE_MINIMUMS.items()
     }
 
-    ground_truth_statement = select(AISearchGroundTruthCase).where(
+    ground_truth_statement = select(AISearchGroundTruthCase, AISearchGroundTruthProvenance).join(
+        AISearchGroundTruthProvenance,
+        AISearchGroundTruthProvenance.ground_truth_case_id == AISearchGroundTruthCase.ground_truth_case_id,
+    ).where(
         AISearchGroundTruthCase.customer_scope == customer_scope,
         AISearchGroundTruthCase.site_scope == site_scope,
         AISearchGroundTruthCase.database_scope == database_scope_value,
         AISearchGroundTruthCase.is_active.is_(True),
         AISearchGroundTruthCase.approved_at.is_not(None),
+        AISearchGroundTruthProvenance.approval_status == "APPROVED",
     )
     if line_scope is None:
         ground_truth_statement = ground_truth_statement.where(AISearchGroundTruthCase.line_scope.is_(None))
     else:
         ground_truth_statement = ground_truth_statement.where(AISearchGroundTruthCase.line_scope == line_scope)
-    ground_truth = session.scalars(ground_truth_statement).all()
+    ground_truth_rows = session.execute(ground_truth_statement).all()
+    field_ground_truth = [
+        case for case, provenance in ground_truth_rows if provenance.readiness_track == "FIELD_READINESS"
+    ]
+    smoke_ground_truth = [
+        case for case, provenance in ground_truth_rows if provenance.readiness_track == "SMOKE_REGRESSION"
+    ]
+    ground_truth = field_ground_truth
     coverage = Counter((case.category, case.scenario_type) for case in ground_truth)
+    smoke_coverage = Counter((case.category, case.scenario_type) for case in smoke_ground_truth)
     category_scenario_gaps = [
         {
             "category": category,
@@ -118,6 +131,7 @@ def scope_readiness(
     ]
 
     latest_evaluation = None
+    latest_smoke_evaluation = None
     for run in session.scalars(
         select(AISearchEvaluationRun).order_by(desc(AISearchEvaluationRun.created_at), desc(AISearchEvaluationRun.id))
     ).all():
@@ -125,13 +139,14 @@ def scope_readiness(
             metrics = json.loads(run.metrics_json)
         except (TypeError, ValueError):
             continue
-        if (
+        scope_matches = (
             metrics.get("customer_scope") == customer_scope
             and metrics.get("site_scope") == site_scope
             and metrics.get("database_scope") == database_scope_value
             and metrics.get("line_scope") == line_scope
-        ):
-            latest_evaluation = {
+        )
+        if scope_matches:
+            evaluation_summary = {
                 "run_id": run.run_id,
                 "status": run.status,
                 "candidate_identity_stable": run.candidate_identity_stable,
@@ -146,7 +161,12 @@ def scope_readiness(
                 "citation_semantic_match_rate": metrics.get("citation_semantic_match_rate", 0),
                 "conflict_disclosure_rate": metrics.get("conflict_disclosure_rate", 0),
             }
-            break
+            if metrics.get("readiness_track") == "FIELD_READINESS" and latest_evaluation is None:
+                latest_evaluation = evaluation_summary
+            elif metrics.get("readiness_track") == "SMOKE_REGRESSION" and latest_smoke_evaluation is None:
+                latest_smoke_evaluation = evaluation_summary
+            if latest_evaluation is not None and latest_smoke_evaluation is not None:
+                break
 
     provider_review = None
     if provider and model_scope:
@@ -195,6 +215,20 @@ def scope_readiness(
     ground_truth_gap = max(GROUND_TRUTH_MINIMUM - len(ground_truth), 0)
     source_ready = not any(source_gaps.values())
     ground_truth_ready = ground_truth_gap == 0 and not category_scenario_gaps
+    smoke_category_scenario_gaps = [
+        {
+            "category": category,
+            "scenario_type": scenario,
+            "count": smoke_coverage[(category, scenario)],
+            "required": GROUND_TRUTH_PER_CATEGORY_SCENARIO_MINIMUM,
+            "missing": max(GROUND_TRUTH_PER_CATEGORY_SCENARIO_MINIMUM - smoke_coverage[(category, scenario)], 0),
+        }
+        for category in QUESTION_CATEGORIES
+        for scenario in SCENARIO_TYPES
+        if smoke_coverage[(category, scenario)] < GROUND_TRUTH_PER_CATEGORY_SCENARIO_MINIMUM
+    ]
+    smoke_ground_truth_gap = max(GROUND_TRUTH_MINIMUM - len(smoke_ground_truth), 0)
+    smoke_ground_truth_ready = smoke_ground_truth_gap == 0 and not smoke_category_scenario_gaps
     evaluation_ready = bool(
         latest_evaluation
         and latest_evaluation["status"] == "PASSED"
@@ -224,6 +258,18 @@ def scope_readiness(
         "ground_truth_minimum": GROUND_TRUTH_MINIMUM,
         "ground_truth_per_category_scenario_minimum": GROUND_TRUTH_PER_CATEGORY_SCENARIO_MINIMUM,
         "ground_truth_gap": ground_truth_gap,
+        "field_readiness": {
+            "ground_truth_count": len(field_ground_truth),
+            "ground_truth_gap": ground_truth_gap,
+            "ground_truth_ready": ground_truth_ready,
+            "latest_evaluation": latest_evaluation,
+        },
+        "smoke_regression_readiness": {
+            "ground_truth_count": len(smoke_ground_truth),
+            "ground_truth_gap": smoke_ground_truth_gap,
+            "ground_truth_ready": smoke_ground_truth_ready,
+            "latest_evaluation": latest_smoke_evaluation,
+        },
         "category_scenario_counts": [
             {
                 "category": category,
@@ -234,6 +280,16 @@ def scope_readiness(
             for scenario in SCENARIO_TYPES
         ],
         "category_scenario_gaps": category_scenario_gaps,
+        "smoke_category_scenario_counts": [
+            {
+                "category": category,
+                "scenario_type": scenario,
+                "count": smoke_coverage[(category, scenario)],
+            }
+            for category in QUESTION_CATEGORIES
+            for scenario in SCENARIO_TYPES
+        ],
+        "smoke_category_scenario_gaps": smoke_category_scenario_gaps,
         "missing_category_scenarios": [
             {"category": item["category"], "scenario_type": item["scenario_type"]}
             for item in category_scenario_gaps

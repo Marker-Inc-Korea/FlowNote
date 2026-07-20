@@ -37,6 +37,7 @@ def test_app_startup_creates_mvp_schema(tmp_path: Path) -> None:
         "ai_search_evaluation_runs",
         "ai_search_evaluation_cases",
         "ai_search_ground_truth_cases",
+        "ai_search_ground_truth_provenance",
         "ai_queries",
         "ai_query_evidence_candidates",
         "ai_query_citations",
