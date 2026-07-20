@@ -16,6 +16,14 @@
 
 첫 승인만 받은 사례는 비활성이고 준비도·평가 세트에 포함하지 않는다. 두 번째 승인자가 첫 승인자와 다를 때만 활성화한다. 서로 다른 준비도 계열의 사례를 한 평가 run에 섞지 않는다. 스모크 회귀 48건 통과는 실제 현장 자료 48건 확보를 뜻하지 않으며 provider 착수 판정에는 `FIELD_READINESS`만 사용한다.
 
+## Windows 운영 흐름
+
+WPF `AI 정답셋` 화면의 `사례·원천 구성` 창은 서버 `ai_search_candidates`와 현재 scope의 사례 풀을 함께 조회한다. 포함 근거는 후보 목록에서 선택하고, 제외 근거는 실제 source type/ID와 선택적 version ID, 서버가 판정하는 제외 사유 코드, 운영자 근거 설명을 입력한다. 사례 등록 시 서버가 후보 적격성, 승인자의 접근권한, `as_of`, 원천 존재, content hash와 provenance를 검증하며 등록자는 첫 승인자로 기록된다. `NORMAL`은 포함 근거 1건 이상, `EXCLUSION`은 제외 근거 1건 이상, `CONFLICT`는 포함 근거 2건 이상이 필요하다.
+
+사례 등록과 사례 2차 승인은 보고서 작성 role인 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`가 수행할 수 있다. 사례 풀은 기본적으로 활성 사례만 반환하고 운영 창에서는 `includePending=true`로 미승인 사례까지 조회한다. 두 번째 승인자는 첫 승인자와 달라야 하며, 서버는 고정된 포함·제외 원천과 접근권한을 다시 검사한 뒤 사례를 활성화한다.
+
+dataset 운영은 사례 승인과 별도 권한 경계를 사용한다. 위 보고서 작성 role은 dataset 작성·구성·검토를 수행할 수 있지만 `FIRST_APPROVE`, `SECOND_APPROVE`, `RETIRE`는 `admin`, `system-admin`, `document-admin`, `department-manager`만 수행한다. 작성자·검토자·두 승인자는 모두 서로 달라야 하고 이 분리는 서버 상태 전이와 DB 제약으로 함께 보호된다. 대체본은 같은 고객·현장·DB·라인·준비도 계열과 같은 dataset key의 승인·대체·폐기 version만 참조할 수 있다.
+
 ## 비민감 48건 시드와 검증
 
 다음 명령은 이름에 `test`가 포함된 DB만 허용한다. 기존 DB와 실행 이력은 지우지 않고 `smoke48-v1` 고정 case key로 수렴한다. 별도 업무 폴더나 고객 식별자를 만들지 않는다.

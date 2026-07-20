@@ -33,6 +33,8 @@
 - 모든 provider 준비도 판정은 최신 `FIELD_READINESS` 승인 dataset version과 정확히 결합된 evaluation `run_id`를 요구한다. 다른 version이나 ad-hoc 평가의 성공을 재사용하지 않는다.
 - 승인본 평가가 없으면 `PENDING`, 결합 평가가 임계값에 미달하면 `FAIL`이다. 두 상태 모두 외부 provider 경계만 닫고 후보 재생성, 내부 품질 점검, 문서·FieldComment·작업순서·보고서 입력은 계속 허용한다.
 - 포함·제외 reference 모두 재검증 가능한 content hash와 근거 설명을 갖고, 제외 reference는 제외 사유도 필수다. provenance는 전체 source snapshot hash와 두 승인자를 질문 원본과 별도로 보존한다.
+- WPF 사례 운영은 서버 후보 선택과 수동 제외 원천 입력을 분리하고 `includePending=true`로 첫 승인 대기 사례를 조회한다. 개별 사례의 등록·2차 승인은 보고서 작성 role에 허용하되 동일 사용자 재승인은 금지한다. dataset 최종 승인·폐기는 더 좁은 승인 role을 유지한다.
+- dataset ID 기반 구성 변경·상태 전이는 고객·현장·DB scope를 다시 확인하고, 대체 대상은 라인·준비도 계열·dataset key까지 같은 불변 version만 허용한다. 승인자 분리 규칙은 API 검사뿐 아니라 DB 제약으로도 유지한다.
 
 ## 2026-06-30. 현재 문서 기준
 

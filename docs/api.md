@@ -300,7 +300,7 @@ AI 검색 후보 API는 자동 조언이 아닌 “근거가 있는 검색과 �
 | POST | `/api/v1/ai-search/evaluations` | 외부 AI 호출 없이 질문별 기대 근거와 실제 후보를 비교하고 재현성 snapshot을 누적 저장 |
 | POST | `/api/v1/ai-search/ground-truth-cases` | 범주·유형·근거·순위·시점과 데이터 분류/provenance를 첫 승인 상태로 저장. 아직 비활성 |
 | POST | `/api/v1/ai-search/ground-truth-cases/{ground_truth_case_id}/second-approval` | 첫 승인자와 다른 권한 사용자가 고정 근거와 접근권한을 다시 검증해 사례를 활성화 |
-| GET | `/api/v1/ai-search/ground-truth-cases` | 현재 scope의 활성 승인 질문 조회. `lineScope`가 없으면 현장 공통 사례, 있으면 해당 라인 사례만 조회 |
+| GET | `/api/v1/ai-search/ground-truth-cases` | 현재 scope의 질문 조회. 기본은 활성 승인 사례만 반환하고 운영용 `includePending=true`이면 미승인 사례도 포함한다. `lineScope`가 없으면 현장 공통 사례, 있으면 해당 라인 사례만 조회 |
 | GET | `/api/v1/ai-search/readiness` | 고객·현장·선택적 라인·DB scope별 네 원천 수, 승인 질문 48건 및 범주×유형별 2건 부족분, 품질 임계값, provider 심사와 착수 가능 여부 조회 |
 
 검색 후보 원천은 `PUBLISHED_DOCUMENT_VERSION`, `FIELD_COMMENT`, `WORK_SEQUENCE_HISTORY`, `REPORT_SOURCE` 네 종류만 허용한다. 각 후보 응답은 안정된 `candidate_id`, `content_hash`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `parent_type`, `parent_id`를 포함해 원문 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 근거 row로 역추적할 수 있어야 한다. `candidate_id`는 source type/id/version 조합의 결정적 hash이며 원천 내용이 바뀌지 않으면 재생성 뒤에도 유지되고, 검색 본문 변경은 `content_hash`로 구분한다.
@@ -310,6 +310,8 @@ AI 검색 후보 API는 자동 조언이 아닌 “근거가 있는 검색과 �
 `GET /api/v1/ai-search/readiness`는 `field_readiness`와 `smoke_regression_readiness`를 별도 반환한다. provider 착수 가능은 실제 현장 계열에서 문서 10, 검토 가능한 FieldComment 100, 작업순서 이력 20, 보고서 source 10 후보와 독립 2인 승인 질문 48건을 요구한다. 여덟 범주와 `NORMAL`/`EXCLUSION`/`CONFLICT`의 24개 조합은 각각 2건 이상이어야 한다. 같은 scope의 실제 현장 승인 세트 전체 평가에서 candidate ID/content hash와 순위가 안정되고 top-k 포함률·인용 trace·인용 의미 일치율·상충 표시율이 모두 100%, 제외 근거 노출·권한 누출·존재하지 않는 인용이 각각 0건이어야 한다. 스모크 48건이 통과해도 실제 현장 건수로 합산하지 않는다. 현재 provider/model의 기술·보안·법무·고객 심사와 필수 체크리스트까지 모두 승인되어야 `provider_start_ready=true`다. DB scope는 로컬 경로나 자격정보를 반환하지 않는 driver+hash 식별자다. `FLOWNOTE_AI_READINESS_GATE_ENABLED` 기본값은 `true`이며 미달 scope는 provider 호출 전에 `409 AI_READINESS_NOT_MET`로 차단한다. 이 판정은 외부 전송 승인이나 기능 플래그를 자동으로 켜지 않는다.
 
 WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidates/rebuild`로 후보를 재생성한 뒤 `GET /api/v1/ai-search/quality`의 후보/제외/FieldComment 검토 지표와 `GET /api/v1/ai-search/readiness`의 서버 고객·현장·DB scope, 네 원천과 승인 질문 부족분, 범주/유형 누락, 운영 호출 차단 상태를 표시한다. 화면은 이 수치가 서버 DB 기준이며 WPF 공통 로컬 SQLite와 합산되지 않음을 명시한다. 후보 목록에서 운영자는 `trace_table`, `trace_id`, `trace_version_id`로 원문 문서 버전, FieldComment, 작업순서 이력, 보고서 source row로 이동해 근거를 확인하며 선택 후보의 추적값을 클립보드에 복사할 수 있다.
+
+WPF `AI 정답셋 > 사례·원천 구성` 창은 후보 목록에서 포함 근거를 선택하고 제외 원천 ID·선택적 version ID·제외 사유·근거 설명을 입력해 `POST /ground-truth-cases`를 호출한다. 사례 등록/2차 승인 role은 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`다. 운영 창은 `GET /ground-truth-cases?includePending=true`로 첫 승인 대기 사례까지 표시하고, 첫 승인자와 다른 사용자가 2차 승인해야 활성 사례가 된다.
 
 후보 재생성의 제외 사유는 공개되지 않은 문서 버전, 제외/보관 FieldComment, MES 통합 입력 FieldComment, 내용 없는 FieldComment, 역추적 텍스트 없는 작업순서 이력, 누락/보관 보고서 source, 원천이 사라진 보고서 source를 구분해 반환한다. 보고서 source가 `DOCUMENT`를 가리키면 해당 문서와 선택한 버전의 존재 여부를 확인하며, 문서가 `status = DELETED`이거나 `deleted_at`이 설정된 경우도 `report_source_missing_origin`으로 분류해 후보에서 제외한다. 각 제외 사유에는 운영자가 문서 공개, FieldComment 검토/분석, 보고서 source 정리 중 무엇을 해야 하는지 판단할 수 있는 `label`, `operator_action`, `source_type` 안내를 포함한다. `EXCLUDED`, `ARCHIVED` FieldComment는 AI 검색 후보와 보고서 초안 후보 양쪽에서 제외한다.
 
@@ -489,20 +491,20 @@ WPF `RolePermissionPolicy`와의 대조:
 
 ## AI ground-truth WPF 운영 API
 
-WPF `AI 정답셋` 화면은 다음 서버 API만 사용한다. 응답의 `dataset_version_id`, `snapshot_hash`, 평가 `run_id`는 릴리스 준비도 재현 키다.
+WPF `AI 정답셋` 화면이 사용하는 API와 dataset 운영을 위해 서버가 제공하는 API는 다음과 같다. 응답의 `dataset_version_id`, `snapshot_hash`, 평가 `run_id`는 릴리스 준비도 재현 키다.
 
 | Method | Path | 계약 |
 | --- | --- | --- |
-| `GET` | `/api/v1/ai-search/ground-truth-cases` | 현재 scope의 독립 2인 승인 사례와 범주/유형, `as_of`, 허용 순위, 포함/제외 원천 snapshot 조회 |
+| `GET` | `/api/v1/ai-search/ground-truth-cases` | 현재 scope의 독립 2인 승인 사례와 범주/유형, `as_of`, 허용 순위, 포함/제외 원천 snapshot 조회. `includePending=true`는 사례 운영 창에서만 미승인 사례를 포함 |
 | `GET` | `/api/v1/ai-search/ground-truth-datasets` | dataset version 목록과 24칸 coverage 집계 조회 |
 | `GET` | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}` | 불변 version의 사례·coverage·작성/검토/승인·대체 이력 조회 |
 | `POST` | `/api/v1/ai-search/ground-truth-datasets` | 승인 사례를 묶은 새 `DRAFT` version 생성. 대체본은 `replacesDatasetVersionId` 사용 |
-| `PUT` | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}/cases` | 작성자만 `DRAFT`의 사례 구성 변경. 이후 상태는 `409` |
+| `PUT` | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}/cases` | 작성자만 `DRAFT`의 사례 구성 변경. 이후 상태는 `409`. 서버는 제공하지만 현재 WPF 화면은 직접 호출하지 않음 |
 | `POST` | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}/transition` | `SUBMIT_REVIEW`, `REVIEW`, `FIRST_APPROVE`, `SECOND_APPROVE`, `RETIRE` 수행 |
 | `POST` | `/api/v1/ai-search/evaluations` | `datasetVersionId`로 승인 snapshot 전체 평가. ad-hoc `cases`/`groundTruthCaseIds`와 혼용 금지 |
 | `GET` | `/api/v1/ai-search/evaluations` | 저장된 run 목록. `datasetVersionId` 필터 지원 |
 | `GET` | `/api/v1/ai-search/evaluations/{run_id}` | 사례별 실패 코드와 기대·실제·제외 원천 trace 조회. `compareToRunId` 비교 지원 |
 
-dataset 상태는 `DRAFT → IN_REVIEW → PENDING_FIRST_APPROVAL → PENDING_SECOND_APPROVAL → APPROVED`다. 작성자, 검토자, 1차 승인자, 2차 승인자는 모두 달라야 한다. 최종 승인은 총 48건과 8범주×3유형 각 2건을 요구하고 사례 snapshot hash를 다시 확인한다. 대체 version 승인 시 이전 승인본은 삭제·수정하지 않고 `SUPERSEDED`, 명시적 폐기는 `RETIRED`가 된다.
+dataset 상태는 `DRAFT → IN_REVIEW → PENDING_FIRST_APPROVAL → PENDING_SECOND_APPROVAL → APPROVED`다. 작성자, 검토자, 1차 승인자, 2차 승인자는 모두 달라야 하며 서버 상태 전이와 DB 제약이 이를 함께 강제한다. 최종 승인은 총 48건과 8범주×3유형 각 2건을 요구하고 사례 snapshot hash를 다시 확인한다. 대체 version은 같은 고객·현장·DB·라인·준비도 계열과 같은 `datasetKey`의 불변 version만 참조할 수 있다. 대체 version 승인 시 이전 승인본은 삭제·수정하지 않고 `SUPERSEDED`, 명시적 폐기는 `RETIRED`가 된다. dataset 상세·구성 변경·상태 전이는 현재 고객·현장·DB scope 밖의 ID를 `404`로 처리한다.
 
 `GET /ai-search/readiness`는 `latest_approved_dataset`, 그 version에 정확히 결합된 `latest_evaluation`, `ai_provider_readiness_status`, `readiness_failures`, `external_ai_calls_blocked`, `non_ai_core_flows_blocked=false`를 반환한다. 승인 dataset 또는 해당 평가가 없으면 `PENDING`, 평가가 존재하지만 임계값 미달이면 `FAIL`, 모든 결합 게이트 통과 시 `PASS`다. `FAIL/PENDING`은 외부 provider 호출만 차단하며 후보 재생성·품질 점검과 문서·FieldComment 등 비AI API는 차단하지 않는다.

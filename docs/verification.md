@@ -2,6 +2,14 @@
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
 
+## 2026-07-20 현재 코드 기반 문서 갱신
+
+현재 HEAD의 AI ground-truth 사례 운영·승인 경계 코드를 상위 개발 문서와 대조했다. WPF 사례·원천 구성 화면, `includePending` 사례 조회, 사례 등록·2차 승인 role, dataset 승인 role 분리, 대체본 scope 조건, dataset ID 기반 변경·전이의 scope 재검사와 DB 승인자 분리 제약을 문서에 반영했다. 최상위·Windows·FastAPI README의 구현 요약과 API 설명도 같은 기준으로 갱신했다. 이번 요청은 문서 갱신이므로 코드 테스트·빌드·스모크는 새로 실행하지 않았고 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
+
+## 2026-07-20 파일럿 실행 준비 게이트
+
+`scripts/manage-pilot-run.py`를 추가해 실제 파일럿 증거 구조 생성과 완료 판정을 분리했다. `PILOT-20260720-1500-LOCAL-001`로 초기 판정표 생성과 누락 게이트 검출을 시험했으며 예상대로 종료 코드 1과 `FAIL` 판정이 나왔다. 잘못된 `PILOT-bad` 실행 ID는 종료 코드 2로 거부됐다. 결과와 로그는 Git 제외 경로 `data/local/pilot-evidence/PILOT-20260720-1500-LOCAL-001/`에 보존했다. Python compile, 저장소 FastAPI 가상환경의 Ruff check와 `git diff --check`는 통과했다. 이 실행은 고객 유사망·Windows·Android·별도 PC 복구가 없는 로컬 준비 점검이므로 실제 파일럿 통과 증거가 아니며 모든 실기 게이트는 계속 `대기`다.
+
 ## 표준 실행
 
 Windows 배포 준비·통합 검증 PC의 표준 도구 기준은 다음과 같다. `verify-preserved-tests.ps1`은 실행 시작 단계에서 이 기준을 검사하고 실제 버전을 실행 ID 폴더의 `environment.json`에 남긴다.

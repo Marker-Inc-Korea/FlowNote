@@ -179,7 +179,7 @@ AI 자동 조언과 자동 의사결정은 아직 범위에 넣지 않는다. �
 
 `ai_search_ground_truth_provenance`는 질문과 1:1이며 `SYNTHETIC`, `TEST`, `ANONYMOUS_FIELD`, `PILOT` 분류를 가진다. 앞의 두 분류는 `SMOKE_REGRESSION`, 뒤의 두 분류는 `FIELD_READINESS`로 고정한다. source snapshot hash, 비민감 여부와 설명, 서로 다른 첫/두 번째 승인자와 시각을 보존한다. 첫 승인 상태는 `PENDING_SECOND_APPROVAL`이며 독립 두 번째 승인 뒤 `APPROVED`가 되어야 질문이 활성화된다. 실제 현장 준비도와 스모크 회귀 준비도는 별도 집계하고 provider 착수에는 실제 현장 계열만 사용한다.
 
-`ai_ground_truth_dataset_versions`는 승인 사례 집합의 운영 version이다. `dataset_key + version`, scope, 준비도 계열, 작성자, 검토자, 서로 다른 두 승인자, 전체 snapshot hash, 변경 사유와 `replaces_dataset_version_id`를 보존한다. 상태는 `DRAFT`, `IN_REVIEW`, `PENDING_FIRST_APPROVAL`, `PENDING_SECOND_APPROVAL`, `APPROVED`, `SUPERSEDED`, `RETIRED`다. `APPROVED` 이후에는 row와 구성원을 수정하지 않고 새 version을 만든다.
+`ai_ground_truth_dataset_versions`는 승인 사례 집합의 운영 version이다. `dataset_key + version`, scope, 준비도 계열, 작성자, 검토자, 서로 다른 두 승인자, 전체 snapshot hash, 변경 사유와 `replaces_dataset_version_id`를 보존한다. 상태는 `DRAFT`, `IN_REVIEW`, `PENDING_FIRST_APPROVAL`, `PENDING_SECOND_APPROVAL`, `APPROVED`, `SUPERSEDED`, `RETIRED`다. DB check constraint도 검토자와 작성자, 1차 승인자와 작성자·검토자, 2차 승인자와 작성자·검토자·1차 승인자가 서로 다르도록 강제한다. `APPROVED` 이후에는 row와 구성원을 수정하지 않고 새 version을 만든다. 대체 대상은 같은 고객·현장·DB·라인·준비도 계열 및 같은 dataset key의 불변 version으로 제한하고, ID 기반 상세·변경·전이는 현재 고객·현장·DB scope 안에서만 찾는다.
 
 `ai_ground_truth_dataset_cases`는 dataset version과 사례의 다대다 구성 snapshot이다. version 안에서 사례 ID와 case key는 각각 유일하며, 구성 시 사례 본문·범주/유형·포함/제외 근거·허용 순위·`as_of`의 hash를 저장한다. 최종 승인 시 현재 사례 hash와 다시 비교한다. `ai_evaluation_dataset_bindings`는 평가 `run_id`를 정확한 `dataset_version_id`와 dataset snapshot hash에 1:1로 결합한다. 따라서 준비도 판정과 과거 run 조회는 최신 사례 집합을 추정하지 않고 당시 승인본으로 재현한다.
 
@@ -387,6 +387,8 @@ FastAPI 서버의 `app/core/auth.py`와 WPF `RolePermissionPolicy`는 다음 기
 | FieldComment 등록 | 문서 쓰기 role + `team-member`, `viewer` | 문서 뷰어의 현장 코멘트 작성은 기본 role 전체 허용 |
 | 접근 로그 조회 | `admin`, `system-admin` | WPF는 로컬 열람/다운로드 차단 로그를 기록하고 서버 조회 UI는 아직 두지 않는다 |
 | 보고서 작성 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | 보고서 버튼 활성 |
+| AI ground-truth 사례 등록·2차 승인, dataset 작성·구성·검토 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | `AI 정답셋`과 `사례·원천 구성` 화면 사용 |
+| AI ground-truth dataset 1·2차 승인·폐기 | `admin`, `system-admin`, `document-admin`, `department-manager` | 독립 사용자 조건을 만족하는 상태에서만 승인/폐기 버튼 활성 |
 | 채널 관리/인수인계 확인 현황 | 채널 생성은 문서/작업순서 쓰기 role, 조회와 수신확인은 채널 멤버십 또는 `admin`, `system-admin` 기준 | 채널 관리와 인수인계 확인 현황 버튼은 문서 등록 권한과 같은 role에서 활성 |
 | 파일 감시 | 서버 전용 권한 그룹은 아직 없음 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
 | controlled copy 다운로드 | 현재 공개 버전, 1회성 티켓, 사용자·세션 일치, 경로·크기·SHA-256 재검증 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |

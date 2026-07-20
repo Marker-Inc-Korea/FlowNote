@@ -39,13 +39,14 @@
 - 보고서 초안과 최종 저장은 서로 다른 source type 2종 이상을 요구한다. FieldComment는 `SELECTED`이면서 관찰 문서 버전과 원천 작성자가 있어야 하고 문서는 현재 공개 버전만 사용할 수 있다. 각 source는 version, 독립 trace ID와 저장 시점 SHA-256을 고정하며 최종 문서 저장 직전에 원천을 다시 검증한다.
 - WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다. 문서 버전과 FieldComment 첨부도 서버 idempotency key를 사용하며, 작업내역 화면에서 큐 깊이·최장 대기·최근 처리량·실패 분포와 row별 운영 상태를 확인한다. 서버본 유지로 종결한 `DISCARDED`도 전체 보존 건수에는 포함하되 재시도 대상 큐 깊이에서는 제외한다.
 - Windows 보존 동기화 전환 CLI는 FAILED 큐를 읽기 전용 dry-run으로 분류하고 plan hash와 row별 승인을 요구한다. 승인된 구 `create`/FieldNote 항목은 기존 원천·큐·파일을 수정하지 않고 현재 action의 신규 큐와 감사 이력으로 연결한다.
-- WPF에는 AI 근거 후보 운영 점검 화면이 있으며, 서버의 `ai_search_candidates` 재생성/품질/목록/준비도 API를 직접 조회한다. FastAPI는 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth를 첫 승인 상태로 저장하고, 서로 다른 두 번째 승인자가 고정된 원천 snapshot과 접근권한을 다시 확인한 뒤에만 활성화한다. WPF 서버 클라이언트와 스모크 테스트는 오프라인 회귀 평가 API도 호출해 후보 ID·내용 hash·순위·원천 커버의 재현성을 검증한다.
+- WPF에는 AI 근거 후보 운영 점검 화면과 `AI 정답셋` 화면이 있다. `AI 정답셋`의 `사례·원천 구성` 창은 서버 후보를 포함 근거로 선택하고 실제 원천 ID·제외 사유를 제외 근거로 입력해 사례를 첫 승인 상태로 등록하며, `includePending=true`로 조회한 미승인 사례를 다른 사용자가 2차 승인할 수 있게 한다. 이어서 승인 사례를 불변 dataset version으로 구성하고 작성·검토·독립 2단계 승인·평가 run 비교를 수행한다. FastAPI는 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth를 저장하고 고정 원천 snapshot과 접근권한을 재검증한 뒤에만 활성화한다.
 - AI 준비도는 `ANONYMOUS_FIELD`/`PILOT`의 `FIELD_READINESS`와 `SYNTHETIC`/`TEST`의 `SMOKE_REGRESSION`을 분리한다. 합성 48건 회귀 통과는 실제 현장 준비도나 운영 provider 착수 승인이 아니다.
 - 서버와 WPF에는 `system-admin` 전용 외부 AI 운영 제어면이 구현되어 있다. 전송 승인 생성·철회, 프롬프트 불변 버전의 검토·승인·활성화·폐기, 전역/현장 kill switch와 요청·동시성·timeout·비용·보존 한도, 정제 감사 조회/CSV 내보내기와 만료 보존 작업을 관리한다. provider 비밀값은 반환하지 않고 설정 여부만 표시한다.
 - 외부 AI 질의·요약은 `/api/v1/ai/queries` 생성·조회, provider 중립 fake/recording adapter, 호출 로그 모델, 기능 플래그·승인·목적·원천 권한·민감정보·최소 payload·근거 snapshot·응답 의미 검증 게이트까지 구현되었다. generic 네트워크 adapter는 명시적 test scope로 제한되고 기본값은 비활성이다.
 - 고객·현장별 AI 금칙어와 고객 식별자는 `ai_sensitive_data_policies`에 버전별로 저장하고 활성 정책을 provider 직전 필터에 적용한다. 이를 관리하는 운영 API/UI는 아직 없다.
 - WPF MSI 패키징과 FastAPI 작업 스케줄러 등록/관리는 `scripts/`의 PowerShell 스크립트로 문서화되어 있다.
 - `scripts/verify-pilot-restore.py`는 서버 DB+`storage`와 WPF DB+`Files`의 복구 전후 증거를 수집·비교한다. DB `quick_check`, foreign key, 테이블별 row 수와 파일 상대경로·크기·SHA-256이 일치해야 통과하며, 실제 별도 PC 복구 리허설을 대신하지는 않는다.
+- `scripts/manage-pilot-run.py`는 실제 파일럿의 단일 `run_id` 증거 구조를 만들고 필수 게이트, 역할 지표, 0건 기준, rollback 업무 재개와 운영·보안·현장 최종 승인을 검증한다. 초기 판정표는 `PENDING`이며 실기 증거가 없으면 PASS를 만들지 않는다.
 - 사용자 역할은 코드와 DB에서 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`, `viewer`를 사용한다.
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
