@@ -417,6 +417,11 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         var analysis = CleanNullable(analysisContent);
         var reason = CleanNullable(transitionReason);
         ValidateTransition(existingComment.Status, status, normalized, analysis, reason);
+        if (status == "SELECTED" &&
+            (existingComment.DocumentVersionNo is null || string.IsNullOrWhiteSpace(existingComment.AuthorName)))
+        {
+            throw new InvalidOperationException("보고서선정에는 관찰 문서 버전과 원천 작성자가 필요합니다.");
+        }
 
         using var update = connection.CreateCommand();
         update.CommandText = """

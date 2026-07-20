@@ -4,7 +4,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.core.config import Settings
 from app.db.init_db import hash_password_for_dev
@@ -231,6 +231,11 @@ def test_report_draft_final_document_and_source_traceability() -> None:
             source for source in detail["sources"] if source["source_type"] == "FIELD_COMMENT"
         )
         assert field_comment_source["source_version_id"] == field_comment["document_version_id"]
+        assert field_comment_source["trace_id"].startswith("trace_")
+        assert field_comment_source["source_hash_sha256"] == field_comment["source_hash_sha256"]
+        assert len({source["trace_id"] for source in detail["sources"]}) == len(detail["sources"])
+        assert all(source["source_version_id"] for source in detail["sources"])
+        assert all(len(source["source_hash_sha256"]) == 64 for source in detail["sources"])
         assert any(
             source["source_type"] == "DOCUMENT" and source["source_version_id"] == document["latest_version"]["version_id"]
             for source in detail["sources"]
@@ -285,6 +290,7 @@ def test_report_save_idempotency_key_returns_existing_report() -> None:
     with create_test_client() as client:
         headers = auth_headers(client)
         document = create_document(client, headers)
+        field_comment = create_field_comment(client, headers, document)
         report_suffix = uuid4().hex
         idempotency_key = f"pytest:report:{report_suffix}"
         document_title = f"Idempotent report document {report_suffix}"
@@ -300,7 +306,12 @@ def test_report_save_idempotency_key_returns_existing_report() -> None:
                     "sourceId": document["document_id"],
                     "sourceVersionId": document["latest_version"]["version_id"],
                     "relationType": "related_document",
-                }
+                },
+                {
+                    "sourceType": "FIELD_COMMENT",
+                    "sourceId": field_comment["comment_id"],
+                    "relationType": "primary",
+                },
             ],
             "saveAsDocument": True,
             "documentTitle": document_title,
@@ -325,6 +336,73 @@ def test_report_save_idempotency_key_returns_existing_report() -> None:
                 select(Document).where(Document.title == document_title)
             ).all()
             assert len(generated_documents) == 1
+            sources = session.scalars(
+                select(ReportSource).where(ReportSource.report_id == first["report_id"])
+            ).all()
+            assert len(sources) == 2
+            assert len({source.trace_id for source in sources}) == 2
+
+
+def test_report_requires_two_distinct_source_types() -> None:
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        document = create_document(client, headers)
+        response = client.post(
+            "/api/v1/reports",
+            headers=headers,
+            json={
+                "reportType": "field_review",
+                "title": "단일 근거 유형 차단",
+                "sources": [{
+                    "sourceType": "DOCUMENT",
+                    "sourceId": document["document_id"],
+                    "sourceVersionId": document["latest_version"]["version_id"],
+                }],
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "A report requires at least two distinct source types."
+
+
+def test_report_approval_rejects_field_comment_source_hash_mismatch() -> None:
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        document = create_document(client, headers)
+        field_comment = create_field_comment(client, headers, document)
+        draft_response = client.post(
+            "/api/v1/reports/drafts",
+            headers=headers,
+            json={
+                "reportType": "field_review",
+                "title": "원천 hash 불일치 차단",
+                "sources": [
+                    {"sourceType": "FIELD_COMMENT", "sourceId": field_comment["comment_id"]},
+                    {
+                        "sourceType": "DOCUMENT",
+                        "sourceId": document["document_id"],
+                        "sourceVersionId": document["latest_version"]["version_id"],
+                    },
+                ],
+            },
+        )
+        assert draft_response.status_code == 201, draft_response.text
+        draft = draft_response.json()
+
+        with client.app.state.database.engine.begin() as connection:
+            connection.execute(
+                text("UPDATE field_comments SET raw_content = :content WHERE comment_id = :comment_id"),
+                {"content": "DB 우회 변조 원문", "comment_id": field_comment["comment_id"]},
+            )
+
+        save_response = client.post(
+            "/api/v1/reports",
+            headers=headers,
+            json={"draftReportId": draft["report_id"], "saveAsDocument": True},
+        )
+
+    assert save_response.status_code == 409
+    assert save_response.json()["detail"].startswith("Report source hash mismatch: trace_")
 
 
 def test_report_rejects_excluded_field_comment_source() -> None:

@@ -78,6 +78,12 @@ FieldComment 정제 스모크는 실행마다 다음 6개 시나리오를 같은
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
 
+## 2026-07-20 작업 102 현재 코드 문서 재대조
+
+작업 시작 시 Git 작업 트리는 깨끗해 반영할 미커밋 코드 변경은 없었다. 최근 2026-07-20 구현 변경은 FastAPI 초기화의 WPF 로컬 SQLite 오접속 차단, 보존형 controlled copy 스키마 복구 도구, 표준 검증의 FastAPI 128건 기준 정렬이며, 상세 계약은 이미 서버·데이터 모델·배포·Windows SQLite 문서에 반영되어 있었다. 이번 재대조에서는 최상위 README와 서비스 개요에 남아 있던 2026-07-16 코드 기준일을 현재 기준으로 맞추고, 두 구현 목록에 서버/WPF SQLite 스키마 경계 검사를 명시했다.
+
+현재 코드에서 다시 산출한 정량 기준은 전역 OpenAPI 108개 method/path 조합, ORM 47개 테이블, `Settings` 36개 항목이다. `services/api/.venv/bin/python -m pytest --collect-only -q`도 중복 없는 128건 수집을 확인했다. 문서 갱신 요청이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았고 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
+
 ## 2026-07-20 WPF 공통 DB P0 무결성 복구
 
 `controlled_copy_grants`는 FastAPI `Base.metadata.create_all()`이 WPF 공통 DB를 서버 DB URL로 잘못 받은 실행에서 유입된 서버 전용 schema였다. 서버 FK는 `document_versions.version_id`를 참조하지만 WPF 로컬 테이블은 `id` PK와 `(document_id, version_no)` 의미 키를 사용하고 `version_id` 열이 없으므로, 테이블 생성 직후부터 SQLite `foreign key mismatch`가 발생하는 구조였다. FastAPI 초기화는 이제 WPF 로컬 `documents`/`document_versions` 형태를 먼저 판별해 서버 테이블 생성 전에 중단한다.

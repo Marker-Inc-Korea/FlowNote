@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime, timezone
 from typing import Annotated
 from uuid import uuid4
@@ -97,6 +98,8 @@ class ReportSourceResponse(BaseModel):
     source_type: str
     source_id: str
     source_version_id: str | None
+    trace_id: str
+    source_hash_sha256: str
     relation_type: str | None
     summary: str | None
     created_at: datetime
@@ -226,7 +229,7 @@ def _validate_source(
     session: Session,
     source: ReportSourceRequest,
     current_user: CurrentUser,
-) -> tuple[str, str, str | None, str | None]:
+) -> tuple[str, str, str, str | None, str]:
     source_type = _normalize_source_type(source.source_type)
     source_id = source.source_id.strip()
     source_version_id = _clean_optional(source.source_version_id)
@@ -242,6 +245,7 @@ def _validate_source(
                 detail="FIELD_COMMENT report source must be SELECTED.",
             )
         source_version_id = field_comment.document_version_id
+        source_hash = _field_comment_source_hash(field_comment)
     elif source_type == "DOCUMENT":
         document = session.scalar(
             select(Document).where(Document.document_id == source_id, Document.deleted_at.is_(None))
@@ -265,34 +269,154 @@ def _validate_source(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="DOCUMENT report source must use the current published version.",
             )
+        file_object = session.scalar(select(FileObject).where(FileObject.id == version.file_object_id))
+        source_hash = file_object.hash_sha256 if file_object is not None else None
     elif source_type == "WORK_SEQUENCE_ITEM":
-        exists = session.scalar(select(WorkSequenceItem.id).where(WorkSequenceItem.item_id == source_id))
-        if exists is None:
+        item = session.scalar(select(WorkSequenceItem).where(WorkSequenceItem.item_id == source_id))
+        if item is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="WORK_SEQUENCE_ITEM source is unknown.",
             )
+        latest_change = session.scalar(
+            select(WorkSequenceChangeHistory)
+            .where(WorkSequenceChangeHistory.item_id == source_id)
+            .order_by(desc(WorkSequenceChangeHistory.created_at), desc(WorkSequenceChangeHistory.id))
+            .limit(1)
+        )
+        source_version_id = latest_change.change_id if latest_change is not None else item.item_id
+        source_hash = _hash_payload(_work_sequence_item_snapshot(item))
     elif source_type == "WORK_SEQUENCE_HISTORY":
-        exists = session.scalar(select(WorkSequenceChangeHistory.id).where(WorkSequenceChangeHistory.change_id == source_id))
-        if exists is None:
+        history = session.scalar(
+            select(WorkSequenceChangeHistory).where(WorkSequenceChangeHistory.change_id == source_id)
+        )
+        if history is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="WORK_SEQUENCE_HISTORY source is unknown.",
             )
+        source_version_id = history.change_id
+        source_hash = _hash_payload(_work_sequence_history_snapshot(history))
     elif source_type == "WORK_RECORD":
-        exists = session.scalar(select(WorkRecord.id).where(WorkRecord.work_record_id == source_id))
-        if exists is None:
+        work_record = session.scalar(select(WorkRecord).where(WorkRecord.work_record_id == source_id))
+        if work_record is None:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="WORK_RECORD source is unknown.")
+        if work_record.latest_version_id is None:
+            raise HTTPException(status_code=422, detail="WORK_RECORD source requires a latest version.")
+        version = session.scalar(
+            select(WorkRecordVersion).where(WorkRecordVersion.version_id == work_record.latest_version_id)
+        )
+        if version is None:
+            raise HTTPException(status_code=422, detail="WORK_RECORD latest version is unknown.")
+        source_version_id = version.version_id
+        source_hash = _hash_payload(_work_record_version_snapshot(version))
     elif source_type == "WORK_RECORD_VERSION":
-        exists = session.scalar(select(WorkRecordVersion.id).where(WorkRecordVersion.version_id == source_id))
-        if exists is None:
+        version = session.scalar(select(WorkRecordVersion).where(WorkRecordVersion.version_id == source_id))
+        if version is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="WORK_RECORD_VERSION source is unknown.",
             )
+        source_version_id = version.version_id
+        source_hash = _hash_payload(_work_record_version_snapshot(version))
 
     _ensure_source_channel_access(session, current_user, source_type, source_id)
-    return source_type, source_id, source_version_id, relation_type
+    if not source_version_id:
+        raise HTTPException(status_code=422, detail=f"{source_type} source requires a fixed source version.")
+    if not source_hash:
+        raise HTTPException(status_code=422, detail=f"{source_type} source requires a verifiable source hash.")
+    return source_type, source_id, source_version_id, relation_type, source_hash
+
+
+def _hash_payload(payload: dict) -> str:
+    value = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _field_comment_source_hash(note: FieldComment) -> str:
+    return _hash_payload({
+        "comment_id": note.comment_id,
+        "document_id": note.document_id,
+        "document_version_id": note.document_version_id,
+        "structure_item_id": note.structure_item_id,
+        "work_record_id": note.work_record_id,
+        "comment_type": note.comment_type,
+        "input_mode": note.input_mode,
+        "signal_level": note.signal_level,
+        "template_id": note.template_id,
+        "raw_content": note.raw_content,
+        "author_id": note.author_id,
+        "reported_by": note.reported_by,
+        "operator_id": note.operator_id,
+        "entry_source": note.entry_source,
+        "device_id": note.device_id,
+        "location_code": note.location_code,
+        "created_at": note.created_at.isoformat() if note.created_at else None,
+    })
+
+
+def _work_sequence_item_snapshot(item: WorkSequenceItem) -> dict:
+    return {
+        "item_id": item.item_id,
+        "board_id": item.board_id,
+        "title": item.title,
+        "description": item.description,
+        "work_order_no": item.work_order_no,
+        "document_id": item.document_id,
+        "status": item.status,
+        "hold_reason": item.hold_reason,
+        "sort_order": item.sort_order,
+        "assigned_to": item.assigned_to,
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+    }
+
+
+def _work_sequence_history_snapshot(history: WorkSequenceChangeHistory) -> dict:
+    return {
+        "change_id": history.change_id,
+        "board_id": history.board_id,
+        "item_id": history.item_id,
+        "change_type": history.change_type,
+        "actor_id": history.actor_id,
+        "before_value": history.before_value,
+        "after_value": history.after_value,
+        "change_reason": history.change_reason,
+        "created_at": history.created_at.isoformat() if history.created_at else None,
+    }
+
+
+def _work_record_version_snapshot(version: WorkRecordVersion) -> dict:
+    return {
+        "version_id": version.version_id,
+        "work_record_id": version.work_record_id,
+        "version_no": version.version_no,
+        "summary": version.summary,
+        "result_note": version.result_note,
+        "issue_note": version.issue_note,
+        "action_note": version.action_note,
+        "change_reason": version.change_reason,
+        "created_by": version.created_by,
+        "created_at": version.created_at.isoformat() if version.created_at else None,
+    }
+
+
+def _validate_source_set(sources: list[ReportSourceRequest]) -> None:
+    distinct_types = {_normalize_source_type(source.source_type) for source in sources}
+    if len(distinct_types) < 2:
+        raise HTTPException(
+            status_code=422,
+            detail="A report requires at least two distinct source types.",
+        )
+    identities = [
+        (
+            _normalize_source_type(source.source_type),
+            source.source_id.strip(),
+            _clean_optional(source.source_version_id) or "",
+        )
+        for source in sources
+    ]
+    if len(identities) != len(set(identities)):
+        raise HTTPException(status_code=409, detail="Duplicate report sources are not allowed.")
 
 
 def _replace_report_sources(
@@ -301,22 +425,56 @@ def _replace_report_sources(
     sources: list[ReportSourceRequest],
     current_user: CurrentUser,
 ) -> list[ReportSource]:
+    validated_sources = [
+        _validate_source(session, source, current_user)
+        for source in sources
+    ]
+    _validate_source_set(sources)
     session.query(ReportSource).filter(ReportSource.report_id == report_id).delete(synchronize_session=False)
     session.flush()
     report_sources: list[ReportSource] = []
-    for source in sources:
-        source_type, source_id, source_version_id, relation_type = _validate_source(session, source, current_user)
+    for source_type, source_id, source_version_id, relation_type, source_hash in validated_sources:
         report_source = ReportSource(
             report_id=report_id,
             source_type=source_type,
             source_id=source_id,
             source_version_id=source_version_id,
+            trace_id=_new_public_id("trace"),
+            source_hash_sha256=source_hash,
             relation_type=relation_type,
         )
         session.add(report_source)
         report_sources.append(report_source)
     session.flush()
     return report_sources
+
+
+def _validate_frozen_sources(
+    session: Session,
+    sources: list[ReportSource],
+    current_user: CurrentUser,
+) -> None:
+    if len({source.source_type for source in sources}) < 2:
+        raise HTTPException(status_code=422, detail="A report requires at least two distinct source types.")
+    for source in sources:
+        validated_type, validated_id, validated_version, _, current_hash = _validate_source(
+            session,
+            ReportSourceRequest(
+                sourceType=source.source_type,
+                sourceId=source.source_id,
+                sourceVersionId=source.source_version_id,
+                relationType=source.relation_type,
+            ),
+            current_user,
+        )
+        if (validated_type, validated_id, validated_version) != (
+            source.source_type,
+            source.source_id,
+            source.source_version_id,
+        ):
+            raise HTTPException(status_code=409, detail=f"Report source version changed: {source.trace_id}.")
+        if current_hash != source.source_hash_sha256:
+            raise HTTPException(status_code=409, detail=f"Report source hash mismatch: {source.trace_id}.")
 
 
 def _source_summary(session: Session, source: ReportSource) -> str | None:
@@ -534,6 +692,8 @@ def _report_response(session: Session, report: Report) -> ReportResponse:
                 source_type=source.source_type,
                 source_id=source.source_id,
                 source_version_id=source.source_version_id,
+                trace_id=source.trace_id,
+                source_hash_sha256=source.source_hash_sha256,
                 relation_type=source.relation_type,
                 summary=_source_summary(session, source),
                 created_at=source.created_at,
@@ -607,6 +767,11 @@ def save_report(
         report = session.scalar(select(Report).where(Report.report_id == request.draft_report_id))
         if report is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report draft not found.")
+        if report.status not in {"DRAFT", "AI_DRAFTED"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Approved or archived report sources cannot be replaced.",
+            )
     else:
         if not request.sources:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="sources is required.")
@@ -647,6 +812,7 @@ def save_report(
         sources = session.scalars(
             select(ReportSource).where(ReportSource.report_id == report.report_id).order_by(ReportSource.id)
         ).all()
+    _validate_frozen_sources(session, list(sources), current_user)
     if request.save_as_document:
         document = _save_report_document(
             session,
