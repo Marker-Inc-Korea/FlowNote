@@ -28,6 +28,7 @@ public final class NotificationPollingService extends Service {
     static final String MESSAGE_CHANNEL_ID = "flownote_field_notifications";
     private static final int SERVICE_NOTIFICATION_ID = 4100;
     private static final long POLL_SECONDS = 15L;
+    private static final int PAGE_LIMIT = 100;
     private static final String TAG = "FlowNoteDelivery";
 
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
@@ -92,46 +93,70 @@ public final class NotificationPollingService extends Service {
 
         FlowNoteApiClient client = new FlowNoteApiClient(serverUrl, getContentResolver());
         client.setAccessToken(sessionStore.accessToken());
-        JSONArray items;
-        try {
-            items = client.pollNotifications(cursor, 100);
-        } catch (IOException exc) {
-            if (allowRefresh && isUnauthorized(exc)) {
-                refreshSession(client);
-                pollWithCurrentSession(false);
-                return;
-            }
-            throw exc;
-        }
-
         boolean caughtUp = preferences.getBoolean(caughtUpKey, false);
-        long nextCursor = cursor;
-        for (int index = 0; index < items.length(); index++) {
-            JSONObject item = items.optJSONObject(index);
-            if (item == null) {
-                continue;
+        NotificationCursorTracker tracker = new NotificationCursorTracker(cursor, caughtUp);
+        int pageNumber = 0;
+        int totalReceived = 0;
+        int totalAdvanced = 0;
+        int totalStale = 0;
+        while (true) {
+            pageNumber++;
+            tracker.beginPage();
+            JSONArray items;
+            try {
+                items = client.pollNotifications(tracker.cursor(), PAGE_LIMIT);
+            } catch (IOException exc) {
+                if (allowRefresh && isUnauthorized(exc)) {
+                    refreshSession(client);
+                    pollWithCurrentSession(false);
+                    return;
+                }
+                throw exc;
             }
-            long itemCursor = item.optLong("cursor", 0L);
-            if (itemCursor <= nextCursor) {
-                continue;
+
+            for (int index = 0; index < items.length(); index++) {
+                JSONObject item = items.optJSONObject(index);
+                if (item == null) {
+                    continue;
+                }
+                long itemCursor = item.optLong("cursor", 0L);
+                long cursorBeforeItem = tracker.cursor();
+                boolean shouldDisplay = tracker.accept(itemCursor);
+                if (tracker.cursor() == cursorBeforeItem) {
+                    continue;
+                }
+                if (shouldDisplay) {
+                    display(item);
+                }
+                // Commit after each displayed or catch-up item. A crash can duplicate at most
+                // one visual alert, while the server receipt remains unique and idempotent.
+                preferences.edit().putLong(cursorKey, tracker.cursor()).commit();
             }
-            if (caughtUp) {
-                display(item);
+            totalReceived += items.length();
+            totalAdvanced += tracker.advancedCount();
+            totalStale += tracker.staleCount();
+            Log.i(TAG, runId + " page_ok page=" + pageNumber
+                    + " cursor_before=" + tracker.pageStartCursor()
+                    + " cursor_after=" + tracker.cursor()
+                    + " received=" + items.length()
+                    + " advanced=" + tracker.advancedCount()
+                    + " stale_or_duplicate=" + tracker.staleCount()
+                    + " at=" + Instant.now());
+            if (!tracker.finishPage(items.length(), PAGE_LIMIT)) {
+                break;
             }
-            nextCursor = itemCursor;
-            // Commit after each displayed notification. A crash can duplicate at most one
-            // visual alert, while the server receipt remains unique and idempotent.
-            preferences.edit().putLong(cursorKey, nextCursor).commit();
         }
-        if (!caughtUp && items.length() < 100) {
-            preferences.edit().putBoolean(caughtUpKey, true).commit();
-        }
+        preferences.edit()
+                .putLong(cursorKey, tracker.cursor())
+                .putBoolean(caughtUpKey, tracker.caughtUp())
+                .commit();
         updateServiceNotification("마지막 확인 " + Instant.now());
-        Log.i(TAG, runId + " poll_ok cursor=" + nextCursor + " count=" + items.length()
+        Log.i(TAG, runId + " poll_ok cursor=" + tracker.cursor()
+                + " pages=" + pageNumber
+                + " received=" + totalReceived
+                + " advanced=" + totalAdvanced
+                + " stale_or_duplicate=" + totalStale
                 + " at=" + Instant.now());
-        if (items.length() == 100) {
-            executor.execute(this::pollOnce);
-        }
     }
 
     private void refreshSession(FlowNoteApiClient client) throws Exception {

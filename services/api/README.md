@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-07-20 현재 전역 FastAPI 앱에 등록된 108개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-07-20 현재 전역 FastAPI 앱에 등록된 115개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -92,10 +92,18 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/ai-search/candidates/rebuild` | Rebuild traceable AI search evidence candidates |
 | GET | `/api/v1/ai-search/candidates` | List AI search evidence candidates |
 | GET | `/api/v1/ai-search/quality` | Candidate counts, exclusion reasons, and FieldComment review readiness |
-| POST | `/api/v1/ai-search/ground-truth-cases` | Save a human-approved scoped regression question |
+| POST | `/api/v1/ai-search/ground-truth-cases` | Save the first approval and provenance for a scoped regression question; the case remains inactive |
+| POST | `/api/v1/ai-search/ground-truth-cases/{ground_truth_case_id}/second-approval` | Revalidate the frozen evidence snapshot and activate it with a different second approver |
 | GET | `/api/v1/ai-search/ground-truth-cases` | List active approved questions for the current scope |
+| GET | `/api/v1/ai-search/ground-truth-datasets` | List immutable scoped ground-truth dataset versions and coverage |
+| POST | `/api/v1/ai-search/ground-truth-datasets` | Create a draft dataset version from approved ground-truth cases |
+| GET | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}` | Read a dataset version, its cases, coverage, and approval history |
+| PUT | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}/cases` | Replace the case composition of a draft dataset version |
+| POST | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}/transition` | Submit, review, approve, supersede, or retire a dataset version |
 | GET | `/api/v1/ai-search/readiness` | Read scoped evidence, ground-truth, regression, and stability readiness |
 | POST | `/api/v1/ai-search/evaluations` | Persist offline ground-truth evidence, exclusion, and ranking regression results |
+| GET | `/api/v1/ai-search/evaluations` | List stored evaluation runs with an optional dataset-version filter |
+| GET | `/api/v1/ai-search/evaluations/{run_id}` | Read a stored evaluation run and optionally compare it with another run |
 | POST | `/api/v1/ai/queries` | Create an evidence search/summary request through the disabled-by-default safety boundary |
 | GET | `/api/v1/ai/queries/{query_id}` | Read sanitized AI query status and evidence snapshot |
 | GET | `/api/v1/ai-operations/approvals` | List scoped external-transfer approvals (`system-admin`) |

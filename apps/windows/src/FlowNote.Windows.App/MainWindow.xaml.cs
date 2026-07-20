@@ -500,6 +500,12 @@ public partial class MainWindow : Window
         new AIOperationsWindow(serverAIOperationsClient) { Owner = this }.ShowDialog();
     }
 
+    private void AIGroundTruthButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureReportWriteAllowed()) return;
+        new AIGroundTruthOperationsWindow(serverDocumentClient, GetCurrentUserId()) { Owner = this }.ShowDialog();
+    }
+
     private void FieldCommentReviewButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureReportWriteAllowed())
@@ -863,6 +869,7 @@ public partial class MainWindow : Window
         FieldCommentReviewButton.IsEnabled = canWriteReports;
         ReportDraftButton.IsEnabled = canWriteReports;
         AISearchQualityButton.IsEnabled = canWriteReports;
+        AIGroundTruthButton.IsEnabled = canWriteReports;
         AIOperationsButton.Visibility = string.Equals(
             currentUser.Role, "system-admin", StringComparison.OrdinalIgnoreCase)
             ? Visibility.Visible : Visibility.Collapsed;
@@ -897,6 +904,7 @@ public partial class MainWindow : Window
             FieldCommentReviewButton.ToolTip = noReportWritePermission;
             ReportDraftButton.ToolTip = noReportWritePermission;
             AISearchQualityButton.ToolTip = noReportWritePermission;
+            AIGroundTruthButton.ToolTip = noReportWritePermission;
         }
 
         if (!canManageFileWatch)

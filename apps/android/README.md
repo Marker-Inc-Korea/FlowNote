@@ -2,7 +2,7 @@
 
 `apps/android/`는 FlowNote Android 현장 단말 클라이언트이다. 승인된 현장 태블릿 또는 러기드 단말에서 공개 문서 목록·상세와 PDF/이미지/TXT 앱 내부 보안 열람, FieldComment, 사진 기록, 신호등식 기록, 채널 알림 확인, 인수인계 확인을 수행한다.
 
-기능 목록은 2026-07-16 현재 `app/src/main` 코드 기준이며, 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
+기능 목록은 2026-07-20 현재 `app/src/main` 코드 기준이며, 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
 
 ## 기술 기준
 
@@ -30,6 +30,8 @@
 목표는 정상 사내망·서비스 실행 상태에서 서버 생성 후 30초 이내 표시, 5분 이상 단절 복구 후 30초+전송 시간 이내 따라잡기다. 동일 `message_id`는 같은 시스템 알림 ID를 사용하고 cursor를 각 표시 뒤 확정하므로 프로세스가 정확히 그 경계에서 죽을 때 허용되는 시각 중복은 최대 1건이다. 서버 알림 읽음과 인수인계 receipt는 기존 공개 ID/receipt row에 대한 멱등 갱신이어서 중복 서버 receipt는 0건이어야 한다. Android 사용자가 앱을 강제 중지하면 OS가 receiver와 service 재시작을 막으므로 MDM kiosk 재실행 또는 사용자 명시 재실행 전까지 목표 시간을 보장하지 않는다.
 
 service 실행마다 `ANDROID-DELIVERY-{uuid}` run ID를 만들고 Logcat에 서버 `created_at`, Android `displayed_at`, message ID를 남긴다. 앱의 읽음/receipt 요청도 현재 run ID를 보내 서버 `activity_history` 처리 시각과 같은 실행으로 비교할 수 있게 한다.
+
+한 page는 100건이며 응답이 정확히 100건이면 같은 polling cycle에서 다음 page를 계속 받는다. 각 `page_ok` 로그는 `cursor_before`, `cursor_after`, `received`, `advanced`, `stale_or_duplicate`를 기록한다. 가득 찬 page에서 cursor가 전진하지 않으면 무한 반복하지 않고 연결 복구 실패로 남긴다. 최초 과거 알림 catch-up과 101건 이상 단절 backlog는 승인 실단말에서 마지막 message ID까지 별도로 검증한다.
 
 ## 승인 단말 정책
 

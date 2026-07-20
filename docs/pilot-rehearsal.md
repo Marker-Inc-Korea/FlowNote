@@ -104,6 +104,20 @@ MDM 정책 보고서에서 단말 전체 암호화, 6자리 이상 화면 잠금
 
 단말 교체 시험은 기존 단말 비활성화, 활성 세션 폐기, 새 `deviceId` 등록, 새 단말 로그인, 기존 단말 재로그인 거부, 미전송 outbox 처리 결정을 모두 포함한다. 미전송 항목을 새 단말로 임의 복사하지 않으며 전송·폐기·증거 보존 책임자가 판단한다.
 
+착수 승인에는 개인 이름 대신 먼저 `Android 운영 책임자`, `MDM 책임자`, `인증서 책임자`, `서버 운영 책임자`, `정보보호 책임자`, `현장 운영 책임자`를 지정한다. 실제 담당자는 접근 통제된 대응표에 연결하고, 아래 항목마다 승인자·승인 시각·근거 문서·재검토 기한을 남긴다. 조직 소유 운영 서명키 보관/복구, APK 배포·allowlist·kiosk, 사내 CA trust 배포/갱신, `deviceId` 발급·`INACTIVE`·`RETIRED`·교체, 분실 원격 격리·잠금·초기화, 미전송 outbox의 전송/보존/폐기 판단 중 하나라도 책임자가 비어 있으면 실단말 시험을 시작하지 않는다.
+
+문서 열람은 다음 매트릭스를 승인 실단말에서 모두 수행한다. `대용량`은 서버 계약의 byte/page 상한 바로 아래 정상 파일과 상한을 넘는 거부 파일을 각각 뜻한다.
+
+| 시나리오 ID | 입력·상태 | 필수 동작 | 통과 기준 |
+| --- | --- | --- | --- |
+| `AND-DOC-PDF-*` | 정상·손상·대용량 PDF | 열기, page 이동, 홈 전환, 자동 닫힘 | 정상만 내부 렌더링, 손상·초과는 한글 실패 UX, 부분 파일 0건 |
+| `AND-DOC-IMAGE-*` | 정상·손상·대용량 PNG/JPEG/WebP | 열기, 홈 전환, 자동 닫힘 | 원본명 미노출, 외부 앱/공유 없음, 종료 후 cache 0건 |
+| `AND-DOC-TXT-*` | 정상·손상·대용량 UTF-8 TXT | 열기, 스크롤, 홈 전환, 자동 닫힘 | 정상 UTF-8만 표시, 오류 원문·원본명 미노출, cache 0건 |
+| `AND-DOC-OFFLINE-*` | 다운로드 전·중 네트워크 단절 | 재시도, 홈 전환, 앱 재시작 | 부분 파일 즉시 제거, 소비 grant 재사용 없음, 복구 안내 표시 |
+| `AND-DOC-LIFECYCLE-*` | 뒤로가기·홈·자동 닫힘·로그아웃·process 종료·재시작 | 파일 앱, 최근 화면, 앱 cache 검사 | `FLAG_SECURE` 캡처 차단, 최근 화면 본문 없음, cache/외부 파일/공유 target 0건 |
+
+각 행은 성공 화면만 확인하지 않는다. `run-as` 또는 MDM 승인 진단으로 `cacheDir/secure-document-viewer/`, 외부/공용 저장소, 파일 앱 최근 항목을 검사하고, `dumpsys package`의 exported component와 intent resolver에서 본문 공유·외부 열기 경로가 없음을 남긴다. 화면 캡처·최근 화면 검사는 고객 원문 대신 승인된 비민감 파일로 수행한다.
+
 ### Android 알림·절전·보안 실단말 시나리오
 
 각 시나리오는 앱이 만든 `ANDROID-DELIVERY-{uuid}`를 파일럿 `run_id` manifest에 연결하고 서버 메시지 `created_at`, Android `displayed_at`, 사용자 읽음/receipt 서버 처리 시각을 UTC와 현장 시간대로 함께 비교한다. 정상 연결과 Doze의 목표는 생성 후 30초, 5분 이상 단절·서버 주소 변경·재부팅 복구는 연결/부팅/설정 완료 후 30초+page 전송 시간이다.
@@ -116,6 +130,12 @@ MDM 정책 보고서에서 단말 전체 암호화, 6자리 이상 화면 잠금
 6. 단말을 `INACTIVE`, 사용자를 비활성화한 직후 기존 access API와 refresh가 401, 재로그인이 403인지 각각 확인한다. 분실 시 MDM 잠금/초기화 보고서를 연결한다.
 7. 로그인 token과 outbox 본문/새 첨부를 `run-as` 또는 MDM 승인 저장소 검사로 확인해 평문 검색 결과 0건, backup 불가, Keystore key 비반출을 기록한다. 키 무효화 모의 후 단말 격리·미전송 판정 절차를 수행한다.
 8. 서명 APK 신규 설치, 같은 키 업그레이드, 승인 이전 APK rollback을 수행하고 `apksigner` 인증서 SHA-256, APK SHA-256, package/versionCode/versionName과 설치 로그를 보존한다.
+
+알림 계측 CSV는 최소 `scenario_id`, `condition`, `delivery_run_id`, `message_id`, `created_at_utc`, `recovery_ready_at_utc`, `displayed_at_utc`, `receipt_at_utc`, `page_seconds`, `result`, `evidence`를 가진다. 정상·Doze는 `displayed_at-created_at <= 30초`, 5분 단절·재부팅·주소 변경·kiosk 재실행은 `displayed_at-recovery_ready_at <= 30초+page_seconds`로 계산한다. Logcat의 각 `page_ok`에 대해 `cursor_before`, `cursor_after`, `received`, `advanced`, `stale_or_duplicate`를 서버 응답/감사 로그와 대조한다. full page가 연속되는 101건 이상 backlog도 만들어 마지막 `message_id`까지 도달해야 하며, 누락 메시지·서버 receipt 중복 row는 각각 0건이어야 한다.
+
+실단말 업무 묶음은 같은 `run_id`에서 공개 문서 열람, FieldComment, 새 사진 첨부, 정상/Doze 알림, 인수인계 읽음·확인을 순서대로 수행한다. 네트워크 단절 중 FieldComment/사진 outbox를 만든 뒤 복구하고 서버 원천·첨부가 idempotency key별 1건인지 확인한다. 단말 교체 때는 기존 단말의 outbox 건별 `서버 반영 확인 후 폐기`, `기존 단말 재연결 후 전송`, `정보보호 승인 보존` 중 하나를 기록하고 새 단말로 암호문·Keystore key를 복사하지 않는다.
+
+현장 관찰은 장갑 착용/미착용을 분리해 성공률·오입력·소요 시간·도움 요청을 기록하고, 배터리는 충전 상태, 화면 on/off, Doze, foreground service 실행 시간과 시험 전후 잔량/전류 근거를 함께 남긴다. 결함은 `공통 제품`, `MDM/단말 설정`, `현장 배치·교육` 중 하나로 분류하며 보안·손실·핵심 업무 차단은 현장 설정으로 축소 판정하지 않는다.
 
 `scripts/verify-android-release.sh`의 결과, MDM 정책 PDF/JSON, `adb bugreport` 또는 제한된 logcat, 서버 감사 조회와 시각 비교표를 `pilot-evidence/<run_id>/android-logs`, `packages`, `scenario-results`, `integrity`에 보존한다. token, keystore, 암호와 고객 원문은 증거에서 제외한다.
 

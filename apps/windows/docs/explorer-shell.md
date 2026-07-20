@@ -56,7 +56,7 @@ Windows WPF 메인 화면은 현장/관리자가 폴더 트리에서 문서를 �
 
 서버 URL과 Bearer token이 있으면 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장을 서버로 전송한다. 실패하면 로컬 저장은 유지되고 `server_sync_queue`에 실패 사유가 남는다. 재시도는 문서 등록, 버전, 공개, 상태, FieldComment, 검토, 첨부, 접근 로그, 보고서 순서의 선행 조건을 따른다.
 
-AI 근거 후보 운영 점검 화면은 서버 URL과 로그인 토큰이 있을 때 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`를 호출한다. 이 화면은 외부 AI 호출을 하지 않고 서버 DB의 후보 수, 제외 사유, FieldComment 검토 준비도, 원천 추적값을 확인하는 운영 화면이다.
+AI 근거 후보 운영 점검 화면은 서버 URL과 로그인 토큰이 있을 때 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`, `/api/v1/ai-search/readiness`를 호출한다. 이 화면은 외부 AI 호출을 하지 않고 서버 DB의 후보 수, 제외 사유, FieldComment 검토 준비도, 원천 추적값과 고객·현장·DB scope별 실제 현장/스모크 준비도를 확인하는 운영 화면이다. ground-truth 작성·2차 승인과 회귀 실행 UI는 제공하지 않는다.
 
 채널함, 채널 관리, 인수인계 확인 현황 화면은 서버 URL과 로그인 토큰이 있을 때 FastAPI 채널/인수인계 API를 직접 호출한다. 채널함은 내 채널, 알림, 인수인계를 조회하고 읽음/수신 확인과 후속 FieldComment 생성을 수행한다. 채널 관리와 인수인계 확인 현황은 문서 등록 권한이 있는 관리자/반장/조장 계열 role에서 활성화된다.
 
