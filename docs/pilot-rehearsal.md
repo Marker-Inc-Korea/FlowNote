@@ -58,6 +58,12 @@ pilot-evidence/<run_id>/
 - Android의 release 서명 인증서 SHA-256 지문과 설치 후 package/versionCode/versionName
 - 서버 배포 코드 또는 패키지의 버전 식별자와 파일 목록. `.env`, 비밀값과 고객 데이터는 패키지에 포함하지 않는다.
 
+실행을 시작할 때 다음 명령으로 단일 `run_id`의 증거 폴더와 기계 판정표를 만든다. 생성된 `pilot-run.json`은 모두 `PENDING`이므로 실제 담당자, 현장 측정값과 증거 상대경로를 채우기 전에는 통과할 수 없다. 기존 실행은 기본적으로 덮어쓰지 않는다.
+
+```powershell
+py -3 scripts\manage-pilot-run.py prepare --run-id PILOT-YYYYMMDD-HHMM-SITE-001 --evidence-root D:\FlowNotePilotEvidence
+```
+
 ## 1. Windows 서버와 WPF 배포 리허설
 
 다음 순서 전체를 같은 `run_id`로 수행한다.
@@ -218,6 +224,12 @@ MDM 정책 보고서에서 단말 전체 암호화, 6자리 이상 화면 잠금
 - 모든 필수 증거가 같은 `run_id`로 연결되고 승인자가 최종 판정과 남은 제한 사항에 서명했다.
 
 하나라도 만족하지 않으면 결과는 `조건부 통과`가 아니라 `대기` 또는 `실패`다. 범위를 줄여 다시 시도할 때는 새 `run_id`를 발급하고 이전 실패 증거와 연결한다.
+
+운영·보안·현장 서명 후에는 다음 명령을 실행한다. 도구는 필수 책임 영역, 고객 유사 장비 수, 모든 필수 게이트, 증거 파일 존재, 역할별 승인 성공률/중앙 시간, 0건 지표, 서버/WPF/Android rollback과 정상 업무 재개, 남은 항목의 책임자·기한·중단 영향, 3자 최종 승인을 같은 `run_id` 안에서 확인한다. 종료 코드 0과 `pilot-verification.json`의 `PASS`가 함께 있어야 하며, 이 결과는 서명 내용과 원천 증거의 사람 교차 검토를 대체하지 않는다.
+
+```powershell
+py -3 scripts\manage-pilot-run.py verify --run-id PILOT-YYYYMMDD-HHMM-SITE-001 --evidence-root D:\FlowNotePilotEvidence
+```
 
 ## 실행 결과표
 

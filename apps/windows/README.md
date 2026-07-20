@@ -31,13 +31,14 @@
 - 인수인계 확인 현황: 수신자별 receipt 상태 변경, 후속 FieldComment 생성
 - FastAPI 서버 인증과 승인 단말/문서/controlled copy/FieldComment/첨부/접근 로그/보고서/작업순서/채널·인수인계/AI 검색 근거·회귀 평가/외부 AI 운영 API 클라이언트
 - AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
+- `AI 정답셋`: 후보 포함 근거와 수동 제외 원천으로 사례 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·대체·폐기, 평가 run 실행·이전 run 비교
 - `system-admin` 전용 `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현재 현장 kill switch와 호출·비용·보존 정책, 정제 감사 조회/CSV 내보내기, 서버 자동 보존과 별개인 만료 보존 작업 즉시 실행
 - 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장. 문서 버전·첨부 idempotency key 전달과 큐 깊이·최장 대기·최근 처리량·실패 분포·row별 운영 상태 표시 포함
 - 보존 동기화 실패 전환 CLI: FAILED 큐를 읽기 전용 dry-run으로 분류하고, plan hash와 row별 운영자 승인을 받은 구 `create`/FieldNote 항목만 현재 action의 별도 큐로 무손실 전환
 
-WPF에는 `/api/v1/ai/queries`를 호출하는 실제 외부 AI 질의 실행 화면이나 운영 provider client가 없다. AI 화면은 외부 호출 없는 근거 후보 운영 점검 화면과 `system-admin` 전용 운영 제어 화면으로 분리되어 있다.
+WPF에는 `/api/v1/ai/queries`를 호출하는 실제 외부 AI 질의 실행 화면이나 운영 provider client가 없다. AI 화면은 외부 호출 없는 근거 후보 운영 점검, `AI 정답셋`, `system-admin` 전용 운영 제어 화면으로 분리되어 있다.
 
-AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트, `AI 근거 후보 운영 점검` 화면에 구현되어 있다. 이 화면은 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`, `/api/v1/ai-search/readiness`를 호출해 외부 AI 호출 전 데이터 품질, 원천 추적 가능성, 서버 scope별 실제 현장/스모크 준비도를 확인한다. WPF 서버 클라이언트는 `/api/v1/ai-search/evaluations` 계약도 구현하며, 스모크 테스트가 기대 근거·제외 근거와 재생성 전후 candidate ID/content hash/순위 안정성을 검증한다. 회귀 평가나 ground-truth 승인을 직접 구성·실행하는 WPF 운영 UI는 아직 없다.
+AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트, `AI 근거 후보 운영 점검` 화면에 구현되어 있다. 이 화면은 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`, `/api/v1/ai-search/readiness`를 호출해 외부 AI 호출 전 데이터 품질, 원천 추적 가능성, 서버 scope별 실제 현장/스모크 준비도를 확인한다. `AI 정답셋`의 `사례·원천 구성` 창은 후보를 포함 근거로 선택하고 실제 source ID·선택적 version ID·제외 사유·설명을 제외 근거로 입력한다. 첫 등록 사례는 비활성으로 남고 다른 사용자가 2차 승인해야 활성화된다. 승인 사례는 dataset version으로 묶어 작성자·검토자·두 승인자를 분리하고, 승인 snapshot에 결합한 평가 run을 실행·비교한다. 합성/시험 회귀와 실제 현장 준비도는 별도 계열로 유지한다.
 
 `AI 운영` 화면은 `/api/v1/ai-operations`를 통해 승인, 프롬프트, 전역/현장 운영 정책과 질의 감사 메타데이터를 조회·변경한다. provider 자격증명·질의 원문·응답 원문은 표시하지 않으며 provider 자격증명은 설정 여부만 표시한다. 감사 CSV는 현장 정책에서 내보내기를 허용한 경우에만 저장할 수 있다. 서버는 설정된 주기로 만료 보존을 자동 처리하며, 화면의 실행 버튼은 다음 주기를 기다리지 않고 같은 처리를 즉시 요청한다.
 

@@ -94,7 +94,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/ai-search/quality` | Candidate counts, exclusion reasons, and FieldComment review readiness |
 | POST | `/api/v1/ai-search/ground-truth-cases` | Save the first approval and provenance for a scoped regression question; the case remains inactive |
 | POST | `/api/v1/ai-search/ground-truth-cases/{ground_truth_case_id}/second-approval` | Revalidate the frozen evidence snapshot and activate it with a different second approver |
-| GET | `/api/v1/ai-search/ground-truth-cases` | List active approved questions for the current scope |
+| GET | `/api/v1/ai-search/ground-truth-cases` | List active approved questions for the current scope; `includePending=true` also returns inactive cases awaiting second approval |
 | GET | `/api/v1/ai-search/ground-truth-datasets` | List immutable scoped ground-truth dataset versions and coverage |
 | POST | `/api/v1/ai-search/ground-truth-datasets` | Create a draft dataset version from approved ground-truth cases |
 | GET | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}` | Read a dataset version, its cases, coverage, and approval history |

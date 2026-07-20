@@ -164,8 +164,10 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 
 ### Ground-truth dataset 권한·감사 경계
 
+- 개별 ground-truth 사례의 첫 등록과 2차 승인은 보고서 작성 role인 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`에 허용한다. 첫 등록자는 첫 승인자가 되고, 같은 사용자의 2차 승인은 서버가 거부한다. `includePending=true` 조회는 운영 화면에서 대기 사례를 찾기 위한 것이며 사례를 활성화하거나 준비도에 포함하지 않는다.
 - dataset 작성·구성·검토는 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`에 허용한다. 최종 2단계 승인은 `admin`, `system-admin`, `document-admin`, `department-manager`만 허용한다.
-- 역할만으로 자기 승인을 허용하지 않는다. 작성자, 검토자, 1차 승인자, 2차 승인자의 사용자 ID가 모두 달라야 하며 서버가 상태 전이마다 검사한다. WPF 버튼 비활성화는 안내일 뿐 서버 검사를 대체하지 않는다.
+- 역할만으로 자기 승인을 허용하지 않는다. 작성자, 검토자, 1차 승인자, 2차 승인자의 사용자 ID가 모두 달라야 하며 서버가 상태 전이마다 검사하고 DB check constraint도 동일한 분리를 강제한다. WPF 버튼 비활성화는 안내일 뿐 서버 검사를 대체하지 않는다.
+- dataset 조회·구성 변경·상태 전이는 고객·현장·DB scope를 ID 조건과 함께 검사한다. 대체 version 생성은 라인과 준비도 계열까지 같아야 하므로 다른 scope의 ID를 이용한 교차 운영을 허용하지 않는다.
 - 생성, 구성 변경, 검토 요청, 검토, 각 승인, 폐기는 `ai_operation_audit_events`에 actor, dataset version, 사유와 결과 상태를 남긴다. 승인 snapshot과 과거 evaluation run은 보존하며 앱 재시작이나 새 version 생성으로 덮어쓰지 않는다.
 - 승인 dataset의 구성 변경은 `409`로 거부한다. 대체 version은 이전 승인본을 참조하고 최종 승인 때만 이전 상태를 `SUPERSEDED`로 전환한다. 이는 삭제가 아니며 과거 run의 dataset/hash 결합은 유지된다.
 - 릴리스 readiness의 `FAIL/PENDING`은 외부 provider 요청 생성 단계에서 차단한다. 내부 후보 재생성·품질 점검은 민감정보 필터와 원천 권한을 계속 적용하면서 허용하고, 비AI 핵심 업무 API에는 readiness 의존성을 추가하지 않는다.
