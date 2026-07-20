@@ -1,6 +1,6 @@
 # FlowNote 설계 결정
 
-이 문서는 2026-07-16 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
+이 문서는 2026-07-20 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
 
 ## 2026-07-15. FieldComment 원천 불변과 단계형 검토 결정
 
@@ -42,6 +42,30 @@
 - 생성 시점의 서버 revision이 없는 구 공개·문서 상태 큐는 최신 revision을 추정하지 않는다. 서버 호출 전에 `LEGACY_BASE_MISSING`으로 충돌 전환해 관리자가 최신 서버본을 확인한 뒤 처리하게 한다.
 - 서버 확인 응답과 로컬 매핑 저장이 끝난 항목만 `SYNCED`다. `PENDING`, `FAILED`, `CONFLICT`가 남아 있으면 화면은 “동기화 완료”를 표시하지 않는다.
 - 네트워크 실패 뒤 앱을 재시작해도 같은 큐와 안정된 idempotency key를 재사용한다. 성공 응답을 받은 문서·버전 서버 ID 매핑은 유일하게 유지하며 같은 재시도를 반복해도 큐나 매핑을 추가하지 않는다.
+
+## 2026-07-20. WPF 로컬 우선 원장과 서버 권위 원천은 revision·mutation receipt로 수렴
+
+- WPF 공통 SQLite는 불안정한 사내망에서도 파일·입력·큐를 잃지 않기 위한 로컬 작업 원장이다. FastAPI DB는 운영 상태, 공개 포인터, FieldComment 검토, 보고서 source, 작업순서와 AI 근거 판정의 권위 원천이다. 로컬 row 수와 서버 row 수가 같다는 사실만으로 수렴을 판정하지 않는다.
+- 서버 수락 전 로컬 원천·파일·큐를 삭제하지 않는다. 서버가 2xx를 반환해도 entity ID, revision, file/content/source hash를 read-back하고 `server_id_mappings`와 큐 종결을 같은 로컬 transaction에 저장하기 전에는 `SYNCED`가 아니다.
+- 모든 재전송 가능한 mutation은 안정된 idempotency key와 canonical payload의 `intent_hash`를 갖는다. 서버는 도메인 row의 UNIQUE key와 공통 `sync_mutation_receipts`를 같은 transaction에 저장한다. 응답 유실, 503, timeout, 앱 재시작은 같은 key/hash로 재시도하며 서버 결과 row와 의미상 이력은 각각 한 번만 생성한다.
+- 409 충돌은 자동 최신값 추정, 단계 보간, last-write-wins로 해결하지 않는다. `STALE_REVISION` 계열, source/hash 변경, orphan, key 재사용을 구조화된 코드로 보존하고 관리자가 최신 서버본 기준 재시도 또는 사유가 있는 `DISCARDED`를 선택한다. `SYNCED`, `DISCARDED`만 종결 상태이며 원천·큐·감사는 어느 상태에서도 자동 삭제하지 않는다.
+- FieldComment 원천은 불변 `source_hash`로, 검토 영역은 별도 `review_revision`으로 관리한다. 검토 PATCH는 base review revision과 예상 원천 hash를 요구하며 서버 상태를 맞추기 위한 WPF의 자동 중간 상태 생성은 금지한다. 첨부는 부모 ID와 파일 SHA-256까지 idempotency 의도에 포함한다.
+- 보고서는 본문 hash와 정렬된 source ID/version/hash 집합 hash를 하나의 저장 의도로 취급한다. report, 모든 source, 생성 문서/버전과 mutation receipt는 한 서버 transaction에 저장한다. source가 바뀌었거나 사라졌으면 보고서를 낡은 근거로 자동 저장하지 않는다.
+- 작업순서는 WPF 동기화 큐에 넣지 않고 서버 직접 API로 운영한다. 보드 revision이 보드·항목의 동시성을 직렬화하고 서버 mutation transaction이 change history를 정확히 한 번 만든다. WPF 로컬 작업순서 테이블은 전환 기간의 오프라인 초안·읽기 캐시와 기존 테스트 기록으로 보존하며 서버 미연결 상태의 운영 확정은 금지한다.
+- 재시도 순서는 문서 등록 → 버전 → 공개 → 상태/태그 → FieldComment 원천 → 검토 → 첨부 → 접근 로그 → 보고서/source다. 같은 aggregate는 직렬화한다. 선행 ID 누락은 attempt를 늘리지 않고 보류하고, 공통 인증·연결 장애는 묶음을 중단한다.
+- 서버는 설치 ID와 복구 epoch를 분리한다. instance/epoch 변경이나 cursor 역행을 감지하면 WPF는 mutation과 polling을 중지하고 기존 cursor·mapping을 보존한 채 reconciliation을 실행한다. 같은 key/hash는 새 ID에 재결합하고, 서버에 없으면 같은 key로 재전송하며, 불일치는 `SERVER_RECOVERY_DIVERGED`로 보존한다. 관리자 감사 후에만 cursor 0 재추적을 허용하고 처리한 `message_id`는 유지한다.
+- 수렴 완료는 비종결 큐 0건, 동일 idempotency key 서버 중복 0건, orphan mapping/source 0건, 문서 공개 포인터·source/version ID·hash 일치와 cursor 재추적 완료를 모두 요구한다. AI 후보 재생성과 보고서 운영은 이 gate 뒤에 수행한다.
+
+이 결정의 revision, mutation receipt, server manifest/reconciliation, 작업순서 직접 운영 확장은 목표 계약이며 2026-07-20 현재 전부 구현된 상태가 아니다. 구현 완료 판정은 두 WPF 인스턴스와 한 서버에서 동시 문서 수정/공개, FieldComment 검토/첨부, 보고서 저장, 작업순서 변경을 수행하고 503·응답 유실·stale revision·서버 복구·앱 재시작을 주입한 뒤 SQL 증거를 비교해야 한다.
+
+## 2026-07-20. DB schema 호환은 additive versioned migration과 무손실 증거로 판정
+
+- WPF `EnsureColumn`과 서버 초기화 보완 로직에 의존하던 schema 변경을 local/server 단조 version과 고유 migration ID로 일반화한다. 클라이언트와 서버는 각자 지원 schema 범위와 API contract 범위를 교환하며 교집합이 없으면 쓰기를 중지한다.
+- 기본 migration은 additive다. 파괴적 변경은 expand, backfill, verify, contract 단계로 나누며 실행 전 backup과 명시적 운영 승인이 필요하다. 새 버전의 앱이 구 DB를 열 때 순차 migration할 수 있지만, 지원 최대보다 새로운 DB에는 쓰지 않는다.
+- 각 migration은 한 transaction에서 실행하고 적용 version을 마지막에 기록한다. 실행 전후 `quick_check`, `foreign_key_check`, 보호 원천 count/hash, idempotency 중복, mapping/report source orphan을 검사한다. 실패 transaction, DB, backup, 로그와 테스트 산출물은 삭제하지 않는다.
+- WPF 보호 집합에는 모든 큐 상태가 포함된다. 특히 누적 `FAILED`/`CONFLICT`/`DISCARDED` row 수와 canonical hash, 로컬 파일 hash, FieldComment·첨부, 보고서 source, 작업순서 이력을 migration 전후 동일하게 유지한다.
+- 서버 보호 집합에는 문서/버전/file object, FieldComment/첨부, 보고서/source, 작업순서/이력, 접근 로그와 mutation receipt를 포함한다. 공개 포인터와 source/version 관계의 orphan은 0건이어야 한다.
+- 구 DB → 신규 DB 업그레이드 완료는 schema version 기록만으로 판정하지 않는다. 보호 원천 count/hash와 보존 FAILED 큐가 같고 모든 무결성 SQL이 통과한 단일 run 증거가 있어야 한다.
 
 ## 2026-06-30. FieldComment 명칭
 
@@ -248,6 +272,13 @@
 - 외부 FCM 의존은 두지 않는다. 현장 MDM이 허용하고 사내 relay의 인증·재연결·감사가 검증되면 relay push를 저전력 후속 대안으로 추가하되 cursor polling을 missed notification 복구 원천으로 유지한다.
 - 정상 연결 목표 표시 지연은 30초, 5분 이상 단절 복구는 연결 회복 후 30초+page 전송 시간이다. 시각 알림 중복 허용은 crash 경계 최대 1건, 서버 read/receipt 중복 row 허용은 0건이다.
 - cursor는 서버 주소와 사용자 ID scope로 분리하고 각 항목 표시 뒤 전진한다. 첫 로그인은 과거 page를 따라잡되 새 시스템 알림을 만들지 않는다. 재부팅은 저장 세션으로 서비스를 재개하지만 사용자의 Android 강제 중지는 OS 정책상 MDM kiosk 또는 명시적 앱 재실행 전까지 복구할 수 없는 운영 예외다.
+
+## 2026-07-20. FastAPI 서버 DB와 WPF 로컬 DB의 schema 소유권을 분리하고 교차 초기화를 거부
+
+- FastAPI `FLOWNOTE_DATABASE_URL`과 `FLOWNOTE_LOCAL_DATA_DIR`/`FLOWNOTE_LOCAL_DATABASE_PATH`로 결정되는 WPF 로컬 DB는 서로 다른 SQLite 파일이어야 한다. 이미 WPF `documents`/`document_versions` 형태인 DB를 감지한 FastAPI 초기화는 `Base.metadata.create_all()` 전에 실패하며 서버 테이블을 추가하지 않는다.
+- WPF 로컬 `document_versions`는 로컬 `id` PK와 문서별 `version_no`를 사용한다. 서버 `document_versions.version_id`를 참조하는 `controlled_copy_grants`를 WPF DB에 맞추려고 로컬 schema에 가짜 서버 key를 추가하지 않는다.
+- 이미 교차 생성된 서버 전용 grant 테이블은 DB 삭제나 초기화로 처리하지 않는다. 원본 SQLite backup, 전체 DDL·FK·row 수, 보호 대상 row hash를 먼저 보존하고 grant row를 별도 무참조 보존 테이블과 migration 감사에 복사한 뒤 충돌하는 활성 테이블만 제거한다.
+- 표준 WPF 스모크는 실행 전후 `quick_check`와 `foreign_key_check`를 별도 증거로 남기며, 오류 또는 위반이 있으면 기능 스모크 결과와 무관하게 실패한다.
 
 ## 2026-07-16. Android 비밀과 outbox는 Keystore 앱 수준 암호화를 기본 통제로 사용
 

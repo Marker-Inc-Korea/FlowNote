@@ -1,6 +1,6 @@
 # FlowNote 배포
 
-이 문서는 2026-07-16 현재 저장소의 실행 코드와 배포 스크립트 기준이다. 서명, MDM, 현장 인증서처럼 실제 운영 환경에서만 확정 가능한 내용은 후속 점검 항목으로 구분한다.
+이 문서는 2026-07-20 현재 저장소의 실행 코드와 배포 스크립트 기준이다. 서명, MDM, 현장 인증서처럼 실제 운영 환경에서만 확정 가능한 내용은 후속 점검 항목으로 구분한다.
 
 ## 기준
 
@@ -479,6 +479,8 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | WPF | `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS` | 문서 뷰어 자동 닫힘 시간. 5초-3600초로 정규화 |
 
 `FLOWNOTE_LOCAL_DATABASE_PATH`를 지정하면 WPF DB 파일 위치가 그 값으로 고정된다. 다만 로컬 파일 저장 위치는 `FLOWNOTE_LOCAL_DATA_DIR` 기준으로 관리하는 편이 운영자가 백업 대상을 이해하기 쉽다. 운영에서는 특별한 이유가 없으면 `FLOWNOTE_LOCAL_DATA_DIR`만 지정한다.
+
+`FLOWNOTE_DATABASE_URL`의 서버 SQLite와 WPF 로컬 SQLite는 반드시 서로 다른 파일이어야 한다. 서버와 WPF에 같은 경로를 넣어 하나의 DB를 공유하지 않는다. 기존 WPF schema를 서버 URL로 잘못 지정하면 FastAPI는 서버 테이블 생성 전에 시작을 거부하며, 이미 서버 전용 테이블이 유입된 WPF DB는 아래 검증 자동화 절의 보존 복구 절차를 따른다.
 
 ## 운영 설치 전 점검
 

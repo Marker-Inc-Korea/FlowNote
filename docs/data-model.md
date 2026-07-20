@@ -1,6 +1,6 @@
 # FlowNote 데이터 모델
 
-이 문서는 2026-07-16 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 구현 전 모델은 “후속 외부 연동” 절에서만 예외로 다룬다.
+이 문서는 2026-07-20 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 현재 코드에 없는 수렴 계약 필드는 아래에서 `목표`로 명시하며, 구현·migration 전에는 실제 열로 간주하지 않는다.
 
 ## WPF 로컬 SQLite
 
@@ -34,6 +34,28 @@
 | `server_id_mappings` | 로컬 ID와 서버 ID 매핑 |
 | `server_sync_migration_audit` | 보존 FAILED 큐의 승인 전환 감사. 원천 큐/ID/action/idempotency key와 신규 큐/ID/action/idempotency key, 승인자, plan hash, 원천 JSON snapshot, 구 명칭을 무손실 연결. dry-run이나 일반 앱 초기화에서는 만들지 않고 승인 실행 시 필요한 경우 생성 |
 
+수렴 계약 구현 시 WPF DB에는 다음 additive 모델을 추가한다. 기존 큐·매핑·테스트 row를 새 테이블로 옮기거나 삭제하지 않는다.
+
+| 목표 테이블/열 | 역할 |
+| --- | --- |
+| `local_schema_versions` | 단조 증가 local schema version, migration ID, 적용 시각, 앱 build. 한 migration ID는 한 번만 기록 |
+| `server_sync_scopes` | 정규화 서버 URL별 `server_instance_id`, `server_epoch`, server schema/API contract 범위, 마지막 검증 시각과 `ACTIVE`/`RECONCILIATION_REQUIRED` 상태 |
+| `server_reconciliation_runs` | 이전/새 epoch, 시작·완료 상태, 확인 관리자, 원천/매핑/큐 count와 hash, 결과 요약 |
+| `server_reconciliation_items` | 로컬 entity/idempotency key와 이전/새 서버 ID·revision·hash, `REBOUND`/`REQUEUE`/`CONFLICT` 판정과 사유 |
+| `server_sync_queue.intent_hash` | action, 부모 ID, source/version ID, 파일/content hash를 정렬 직렬화한 SHA-256. 같은 idempotency key가 다른 의도로 재사용되는 것을 로컬에서도 차단 |
+| `server_sync_queue.base_domain_revision` | 문서 외 FieldComment 검토·보고서 mutation의 생성 시점 서버 revision |
+| `server_sync_queue.source_set_hash` | 보고서 source ID/version/hash의 정렬 집합 hash |
+| `server_id_mappings.server_epoch` | 이 매핑을 확인한 서버 epoch. 현재 scope epoch와 다르면 사용 전에 reconciliation 필요 |
+
+FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_versions` 테이블이 있어도 열과 키 계약이 다른 별도 스키마다. WPF `document_versions`는 로컬 `id`를 PK로 사용하고 문서별 `version_no`와 선택적 `server_version_id`를 보존하며, 서버의 `version_id` 열이나 서버 grant FK를 소유하지 않는다. `FLOWNOTE_DATABASE_URL`은 `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`로 결정되는 WPF DB 파일을 가리키면 안 된다.
+
+2026-07-20 보존 복구가 적용된 공통 SQLite에는 다음 두 테이블이 추가로 남는다. 정상 WPF 초기화가 만드는 기능 테이블이 아니라, 잘못 유입된 서버 schema와 원천 row를 삭제 없이 격리한 복구 증거다.
+
+| 테이블 | 역할 |
+| --- | --- |
+| `preserved_server_controlled_copy_grants` | 잘못 생성된 서버 `controlled_copy_grants`의 원래 열 값과 보존 시각·복구 run ID를 FK 없이 보존 |
+| `local_schema_migration_audit` | 복구 migration ID, 원래 DDL, 원천/grant 행 수와 SHA-256, 보호 대상 `document_versions`·`document_access_logs` 행 수와 SHA-256을 보존 |
+
 기존 공통 SQLite에는 FieldComment 명칭 전환 전에 만들어진 호환/잔존 테이블도 남아 있을 수 있다.
 
 | 테이블 | 역할 |
@@ -45,7 +67,7 @@
 
 ## FastAPI 서버 SQLite
 
-2026-07-16 현재 ORM은 아래 47개 테이블을 생성 기준으로 사용한다.
+2026-07-20 현재 ORM은 아래 47개 테이블을 생성 기준으로 사용한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -89,6 +111,20 @@
 | `android_document_view_grants` | Android 앱 내부 열람용 token hash, 사용자·세션·필수 승인 단말·공개 버전·미디어 종류·크기·SHA-256, 만료·소비·실패 상태 |
 | `activity_history` | 서버 활동 이력 |
 
+수렴 계약 구현 시 서버 DB에는 다음 additive 모델과 열을 추가한다.
+
+| 목표 테이블/열 | 불변식 |
+| --- | --- |
+| `server_identity` | 설치 단위 불변 `server_instance_id` 1개와 DB 복구·초기화 때 변경하는 `server_epoch`, 현재 schema/API contract 범위를 1 row로 보존 |
+| `sync_mutation_receipts` | `idempotency_key` UNIQUE, domain/action, `intent_hash`, 결과 entity/server ID·revision·hash를 보존. 응답 유실 뒤 reconciliation의 공통 조회 원천 |
+| `field_comments.review_revision` | 원천 생성 시 1, 검토 영역이 실제 변경될 때만 1 증가. 원천 hash는 별도 계산하며 변경 금지 |
+| `reports.revision`, `reports.content_hash`, `reports.source_set_hash` | 보고서 본문과 source 집합의 조건부 mutation 및 read-back 검증 기준 |
+| `report_sources.source_hash` | 저장 시점 원천의 hash. `source_id`와 해당 시점 `source_version_id`를 함께 고정 |
+| `work_sequence_boards.revision` | 항목 추가·순서·상태 mutation을 직렬화하는 board aggregate revision |
+| `work_sequence_change_history.mutation_key` | 부모 작업순서 mutation key와 UNIQUE. mutation 1건에서 이력 1건만 생성 |
+
+`sync_mutation_receipts`는 도메인 row를 대체하지 않는다. 도메인 transaction 안에서 도메인 row와 함께 기록하며, 같은 key·같은 `intent_hash` 요청은 저장된 결과를 반환하고 다른 hash는 `IDEMPOTENCY_KEY_REUSED`로 거부한다. 문서·버전·FieldComment·첨부·접근 로그·보고서에 이미 있는 개별 `idempotency_key` UNIQUE도 유지해 이중으로 중복을 차단한다.
+
 채널 메시지는 별도 개인 DM이나 개인 메신저 수집이 아니라 업무 채널 멤버십 기준으로 조회된다. 사용자별 알림 목록과 읽음 처리는 `channel_messages`와 `notification_channel_members.last_read_message_id`, `last_read_at`를 함께 사용한다.
 
 `terminal_devices`는 개인 휴대폰 자동 등록 테이블이 아니라 승인된 현장 태블릿 또는 러기드 단말의 운영 기준이다. 단말 용도 `device_mode`는 현장 열람용 `viewer`와 관리 지원용 `admin_support`를 사용한다. 상태는 `ACTIVE`, `INACTIVE`, `RETIRED`이고 폐기 단말은 재활성화하지 않는다. `registered_by`, `updated_by`는 등록자와 마지막 변경자, `replaced_device_id`는 교체 단말이 대체한 기존 단말 ID를 보존한다. Android 앱은 로그인 시 `deviceId`를 보내며, 서버는 같은 ID가 `terminal_devices.device_id`에 있고 `status = ACTIVE`일 때만 세션을 만든다. 성공한 Android 세션은 `auth_sessions.device_id`에 단말 ID를 남기고 로그인 성공 때마다 `terminal_devices.last_seen_at`을 갱신한다. 등록, 정보 변경, 비활성화, 폐기, 교체 이력은 `activity_history`의 `terminal_device.*` 이벤트로 추적한다.
@@ -108,6 +144,20 @@ Android 로컬 DB `flownote_android_outbox.db`는 장기 기준 데이터가 아
 보고서 서버 저장 실패는 WPF 전용 큐를 새로 만들지 않고 기존 `server_sync_queue`에 `entity_type = report`, `action = register_report`로 남긴다. 큐는 한글 실패 사유, `last_attempt_at`, `attempt_count`를 기존 동기화 항목과 같은 방식으로 기록한다.
 
 로컬 보고서 문서는 `documents.document_type = Report`인 문서이며, 선택한 근거는 로컬 `report_sources.local_report_document_id`로 연결한다. 재시도 성공 시 `documents.server_report_id`, `documents.server_document_id`, 최신 `document_versions.server_version_id`, `server_id_mappings(entity_type IN ('report', 'document', 'document_version'))`를 채운다.
+
+## Schema version과 클라이언트·서버 호환 정책
+
+현재 서버는 `schema_migrations`에 `0001_initial_mvp_schema`를 기록하고 WPF는 `CREATE TABLE IF NOT EXISTS`와 `EnsureColumn`을 사용한다. 수렴 계약 도입 뒤에는 이 방식을 아래 공통 정책으로 일반화한다.
+
+- local/server schema version은 단조 증가 정수와 고유 migration ID를 함께 쓴다. 앱 build 번호나 파일 생성 시각을 schema version으로 사용하지 않는다.
+- migration은 기본적으로 새 nullable 열, 기본값이 있는 열, 새 테이블·인덱스를 추가하는 additive 방식이다. rename, type 변경, NOT NULL 강화와 테이블 재작성은 별도 expand/backfill/verify/contract 단계와 직전 DB backup이 필요하다.
+- 앱은 지원하는 `minLocalSchema..maxLocalSchema`, `minServerSchema..maxServerSchema`, `apiContractVersion`을 가진다. DB가 최소보다 낮으면 순서대로 migration하고 최대보다 높으면 쓰기를 거부한다. 서버 API 범위가 맞지 않으면 로컬 저장은 허용하되 server sync와 서버 직접 작업순서 mutation은 중지한다.
+- 서버는 자신의 `minClientContract..maxClientContract`를 manifest로 반환한다. 교집합이 없으면 426 `CLIENT_CONTRACT_UNSUPPORTED`, schema migration 중이면 503 `SCHEMA_MIGRATION_IN_PROGRESS`를 반환한다.
+- 각 migration은 한 transaction 안에서 적용하고 migration row를 마지막에 기록한다. 시작 전후 `PRAGMA quick_check`, `PRAGMA foreign_key_check`, 도메인별 count/hash, 중복 key와 orphan source 검사를 남긴다. 실패하면 transaction을 rollback하고 원본 DB·backup·실패 로그를 보존한다.
+- WPF migration의 보호 집합은 모든 로컬 원천 파일 참조, `field_comments`, 첨부, 보고서와 `report_sources`, 작업순서·이력, `server_sync_queue` 전 상태, `server_id_mappings`, 알림 cursor/message다. 특히 `FAILED`/`CONFLICT`/`DISCARDED` 큐도 count와 row hash가 같아야 한다.
+- server migration의 보호 집합은 문서/버전/file object, FieldComment/첨부, 보고서/source, 작업순서/이력, mutation receipt와 접근 로그다. 공개 포인터 orphan, report source orphan, 동일 idempotency key 중복은 0건이어야 한다.
+
+migration 전후 원천 hash는 테이블마다 안정 PK 순으로 정렬한 핵심 열의 canonical JSON과 파일 SHA-256을 사용한다. 새 nullable/default 열 때문에 전체 row byte 표현이 달라질 수 있으므로 기존 핵심 열 projection의 hash를 비교한다. 구 DB를 신규 DB로 올린 뒤 보호 원천 count/hash, 보존 FAILED 큐 count/hash가 하나라도 달라지면 호환 완료로 판정하지 않는다.
 
 ## AI 검색 근거 후보 read model
 
@@ -259,7 +309,11 @@ FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관�
 - `SYNCED`
 - `DISCARDED`
 
-`server_sync_queue`는 문서 작업에 대해 `base_server_revision`, `expected_server_version_id`, `expected_published_version_id`, `local_file_hash_sha256`를 생성 시점 snapshot으로 보존한다. 409는 일반 전송 실패와 분리해 `CONFLICT`와 `conflict_code`, 원 응답을 기록한다. 공개·문서 상태 구 큐의 `base_server_revision`이 null이면 WPF가 서버 호출 전에 `LEGACY_BASE_MISSING` 충돌을 만들며 현재 revision을 임의 대입하지 않는다. 관리자 해결 뒤 로컬 요청을 최신 서버 revision에서 다시 보내면 `resolution_action = RETRY_LOCAL_ON_LATEST`, 서버본 유지로 폐기하면 `DISCARDED`와 `resolution_action = KEEP_SERVER`를 사용한다. 두 경로 모두 사유, 해결자, 해결 시각과 `activity_history` 감사를 남기며 앱 재시작 뒤에도 유지한다. 큐 요약의 전체 건수에는 감사 종결 상태인 `DISCARDED`를 포함하지만 운영 지표의 처리 대기 깊이에서는 제외한다.
+`PENDING`은 전송 가능 또는 선행 조건 대기, `FAILED`는 원인을 해결한 뒤 같은 key로 재시도 가능하거나 로컬 원천 오류로 보존 중, `CONFLICT`는 관리자 판정 전 자동 재시도 금지다. `SYNCED`와 `DISCARDED`만 종결 상태다. `DISCARDED`는 서버본 유지 사유가 있는 감사 종결이며 삭제를 뜻하지 않는다.
+
+`server_sync_queue`는 문서 작업에 대해 `base_server_revision`, `expected_server_version_id`, `expected_published_version_id`, `local_file_hash_sha256`를 생성 시점 snapshot으로 보존한다. 목표 계약에서는 문서 외 mutation의 `base_domain_revision`, 공통 `intent_hash`, 보고서 `source_set_hash`도 보존한다. 409는 일반 전송 실패와 분리해 `CONFLICT`와 `conflict_code`, 원 응답을 기록한다. 공개·문서 상태 구 큐의 `base_server_revision`이 null이면 WPF가 서버 호출 전에 `LEGACY_BASE_MISSING` 충돌을 만들며 현재 revision을 임의 대입하지 않는다. 관리자 해결 뒤 로컬 요청을 최신 서버 revision에서 다시 보내면 `resolution_action = RETRY_LOCAL_ON_LATEST`, 서버본 유지로 폐기하면 `DISCARDED`와 `resolution_action = KEEP_SERVER`를 사용한다. 두 경로 모두 사유, 해결자, 해결 시각과 `activity_history` 감사를 남기며 앱 재시작 뒤에도 유지한다. 큐 요약의 전체 건수에는 감사 종결 상태인 `DISCARDED`를 포함하지만 운영 지표의 처리 대기 깊이에서는 제외한다.
+
+서버 scope 상태는 `ACTIVE`, `RECONCILIATION_REQUIRED`를 사용한다. reconciliation item 결과는 `CONFIRMED`, `ABSENT`, `DIVERGED`, 로컬 적용 결과는 각각 `REBOUND`, `REQUEUE`, `CONFLICT`를 사용한다. reconciliation run은 `RUNNING`, `COMPLETED`, `FAILED`이며 실패 run과 item은 삭제하지 않는다.
 
 문서·공개 버전 불변조건:
 
