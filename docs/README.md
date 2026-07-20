@@ -1,6 +1,6 @@
 # FlowNote 문서
 
-이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-20 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
+이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-21 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
 
 전체 문서 갱신 범위는 Git이 추적하는 제품·구현 Markdown이다. `AGENTS.md`는 작업 정책 원문이므로 제품 코드 설명과 분리하고, 가상환경·빌드 캐시·테스트 산출물 안의 Markdown은 생성·보존 기록이므로 갱신 대상에서 제외한다.
 
@@ -51,7 +51,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-20 현재 pytest node ID 131건이 중복 없이 수집되고 전부 통과한다. AI 근거 검색·독립 2인 승인 사례·불변 dataset version·provider 경계·운영 제어·자동 보존, controlled copy, Android secure view, 서버 계정 수명주기·권한·세션·감사, 문서 revision·파일 hash 충돌, FieldComment 작업함·보고서 source version/hash 고정 회귀가 포함된다. `scripts/verify-preserved-tests.ps1`은 수집/JUnit 128건을 강제하므로 현재 코드와 불일치하며, 131건으로 고친 뒤 Windows 무생략 실행의 `verification-summary.json=PASSED`를 새로 확보해야 한다.
+- FastAPI 코드는 2026-07-21 현재 pytest node ID 131건이 중복 없이 수집되고 전부 통과한다. AI 근거 검색·독립 2인 승인 사례·불변 dataset version·provider 경계·운영 제어·자동 보존, controlled copy, Android secure view, 서버 계정 수명주기·권한·세션·감사, 문서 revision·파일 hash 충돌, FieldComment 작업함·보고서 source version/hash 고정 회귀가 포함된다. `scripts/verify-preserved-tests.ps1`의 수집/JUnit guard도 131건으로 정렬했으며, Windows 무생략 실행의 새 `verification-summary.json=PASSED`는 아직 확보해야 한다.
 
 ## 일일 기록
 

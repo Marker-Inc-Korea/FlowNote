@@ -1,6 +1,6 @@
 # FlowNote 데이터 모델
 
-이 문서는 2026-07-20 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 현재 코드에 없는 수렴 계약 필드는 아래에서 `목표`로 명시하며, 구현·migration 전에는 실제 열로 간주하지 않는다.
+이 문서는 2026-07-21 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 현재 코드에 없는 수렴 계약 필드는 아래에서 `목표`로 명시하며, 구현·migration 전에는 실제 열로 간주하지 않는다.
 
 ## WPF 로컬 SQLite
 
@@ -67,7 +67,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-07-20 현재 ORM은 아래 51개 테이블을 생성 기준으로 사용한다.
+2026-07-21 현재 ORM은 아래 51개 테이블을 생성 기준으로 사용한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 

@@ -30,6 +30,7 @@ if ((Test-Path $runArtifactDir -PathType Container) -and
 New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
 $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
+$expectedFastApiTestCount = 131
 $script:stepNumber = 0
 $script:stepResults = New-Object System.Collections.Generic.List[object]
 $script:isPartialRun = $SkipFastApiPytest -or $SkipWpfBuild -or $SkipWpfSmoke -or $SkipAndroidBuild -or $SkipGitArtifactCheck
@@ -427,8 +428,8 @@ if (-not $SkipFastApiPytest) {
             $nodeIds | Set-Content -Encoding UTF8 (Join-Path $runArtifactDir "fastapi-collected-tests.txt")
             $testCount = $nodeIds.Count
             $uniqueTestCount = @($nodeIds | Sort-Object -Unique).Count
-            if ($testCount -ne 128) {
-                throw "Expected 128 FastAPI pytest tests, collected $testCount."
+            if ($testCount -ne $expectedFastApiTestCount) {
+                throw "Expected $expectedFastApiTestCount FastAPI pytest tests, collected $testCount."
             }
             if ($uniqueTestCount -ne $testCount) {
                 throw "FastAPI collection contains duplicate node IDs: total=$testCount, unique=$uniqueTestCount."
@@ -451,10 +452,10 @@ if (-not $SkipFastApiPytest) {
                 throw "FastAPI pytest failed with exit code $LASTEXITCODE."
             }
             $junitCounts = Get-JUnitCounts $junitPath
-            if ($junitCounts.Tests -ne 128 -or $junitCounts.Failures -ne 0 -or $junitCounts.Errors -ne 0 -or $junitCounts.Skipped -ne 0) {
+            if ($junitCounts.Tests -ne $expectedFastApiTestCount -or $junitCounts.Failures -ne 0 -or $junitCounts.Errors -ne 0 -or $junitCounts.Skipped -ne 0) {
                 throw "FastAPI JUnit mismatch: tests=$($junitCounts.Tests), failures=$($junitCounts.Failures), errors=$($junitCounts.Errors), skipped=$($junitCounts.Skipped)."
             }
-            Write-Host "FastAPI JUnit: tests=128, failures=0, errors=0, skipped=0"
+            Write-Host "FastAPI JUnit: tests=$expectedFastApiTestCount, failures=0, errors=0, skipped=0"
         }
         finally {
             Pop-Location
