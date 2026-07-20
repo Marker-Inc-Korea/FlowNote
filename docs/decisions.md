@@ -1,6 +1,6 @@
 # FlowNote 설계 결정
 
-이 문서는 2026-07-20 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
+이 문서는 2026-07-21 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
 
 ## 2026-07-15. FieldComment 원천 불변과 단계형 검토 결정
 
@@ -82,7 +82,7 @@
 - 서버는 설치 ID와 복구 epoch를 분리한다. instance/epoch 변경이나 cursor 역행을 감지하면 WPF는 mutation과 polling을 중지하고 기존 cursor·mapping을 보존한 채 reconciliation을 실행한다. 같은 key/hash는 새 ID에 재결합하고, 서버에 없으면 같은 key로 재전송하며, 불일치는 `SERVER_RECOVERY_DIVERGED`로 보존한다. 관리자 감사 후에만 cursor 0 재추적을 허용하고 처리한 `message_id`는 유지한다.
 - 수렴 완료는 비종결 큐 0건, 동일 idempotency key 서버 중복 0건, orphan mapping/source 0건, 문서 공개 포인터·source/version ID·hash 일치와 cursor 재추적 완료를 모두 요구한다. AI 후보 재생성과 보고서 운영은 이 gate 뒤에 수행한다.
 
-이 결정의 revision, mutation receipt, server manifest/reconciliation, 작업순서 직접 운영 확장은 목표 계약이며 2026-07-20 현재 전부 구현된 상태가 아니다. 구현 완료 판정은 두 WPF 인스턴스와 한 서버에서 동시 문서 수정/공개, FieldComment 검토/첨부, 보고서 저장, 작업순서 변경을 수행하고 503·응답 유실·stale revision·서버 복구·앱 재시작을 주입한 뒤 SQL 증거를 비교해야 한다.
+이 결정의 revision, mutation receipt, server manifest/reconciliation, 작업순서 직접 운영 확장은 목표 계약이며 2026-07-21 현재 전부 구현된 상태가 아니다. 구현 완료 판정은 두 WPF 인스턴스와 한 서버에서 동시 문서 수정/공개, FieldComment 검토/첨부, 보고서 저장, 작업순서 변경을 수행하고 503·응답 유실·stale revision·서버 복구·앱 재시작을 주입한 뒤 SQL 증거를 비교해야 한다.
 
 ## 2026-07-20. DB schema 호환은 additive versioned migration과 무손실 증거로 판정
 

@@ -1,6 +1,6 @@
 # FlowNote 구현 로드맵
 
-이 문서는 2026-07-20 현재 코드에서 완료된 범위와, 아직 구현되지 않은 예외 작업을 분리한다. “완료된 기반”은 코드가 존재하는 항목이며 운영 실기 통과를 뜻하지 않는다.
+이 문서는 2026-07-21 현재 코드에서 완료된 범위와, 아직 구현되지 않은 예외 작업을 분리한다. “완료된 기반”은 코드가 존재하는 항목이며 운영 실기 통과를 뜻하지 않는다.
 
 ## 완료된 기반
 
@@ -63,7 +63,7 @@
 
 ## 다음 우선순위
 
-1. `scripts/verify-preserved-tests.ps1`의 FastAPI 고정 기준을 현재 수집값 131건으로 갱신한 뒤, WPF 빌드·스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 포함한 Windows 표준 검증을 생략 없이 실행하고 단일 `PASSED` 실행 ID를 남긴다.
+1. 현재 수집값과 같은 FastAPI 131건 guard가 적용된 `scripts/verify-preserved-tests.ps1`로 WPF 빌드·스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 포함한 Windows 표준 검증을 생략 없이 실행하고 단일 `PASSED` 실행 ID를 남긴다. macOS 보조 run은 FastAPI 131건만 통과했으므로 통합 기준선으로 보지 않는다.
 2. [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
 4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다.

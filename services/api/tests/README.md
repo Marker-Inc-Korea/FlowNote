@@ -2,7 +2,7 @@
 
 이 디렉터리는 FlowNote FastAPI 서버 테스트를 보관한다.
 
-범위와 수집 기준선은 2026-07-20 현재 테스트 코드 기준이다.
+범위와 수집 기준선은 2026-07-21 현재 테스트 코드 기준이다.
 
 ## 현재 테스트 범위
 
@@ -44,6 +44,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-07-20 현재 FastAPI 테스트 코드는 중복 없는 node ID 131개를 수집하며 전체 131개가 통과했다. 저장소 루트의 `scripts/verify-preserved-tests.ps1`은 수집/JUnit 기준 128개를 강제하므로 현재 코드와 불일치한다. 기준을 131개로 고친 뒤 WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 Git 산출물 점검을 포함한 전체 표준 검증을 Windows 기준 환경에서 옵션 생략 없이 다시 실행한다.
+2026-07-21 현재 FastAPI 테스트 코드와 저장소 루트 `scripts/verify-preserved-tests.ps1`의 수집/JUnit 기준은 모두 중복 없는 node ID 131개다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1` 한 번으로 FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존한다. macOS 보조 run `baseline-131-macos-precheck-20260721-001`은 FastAPI 131 passed와 failure/error/skipped 0만 확인했으며 WPF/Android 실제 테스트 수는 모두 `NOT_RUN`이다. 최신 통합 `PASSED` run은 Windows 실행 결과를 `docs/verification.md`와 `docs/deployment.md`에 기록하기 전까지 확정하지 않는다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
