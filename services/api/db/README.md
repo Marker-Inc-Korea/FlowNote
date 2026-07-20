@@ -13,7 +13,7 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 
 ## 주요 테이블
 
-2026-07-20 현재 ORM 생성 기준은 다음 47개 테이블이다.
+2026-07-20 현재 ORM 생성 기준은 다음 51개 테이블이다.
 
 - `schema_migrations`
 - `user_accounts`, `roles`, `user_roles`
@@ -35,6 +35,10 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 - `ai_search_evaluation_runs`
 - `ai_search_evaluation_cases`
 - `ai_search_ground_truth_cases`
+- `ai_search_ground_truth_provenance`
+- `ai_ground_truth_dataset_versions`
+- `ai_ground_truth_dataset_cases`
+- `ai_evaluation_dataset_bindings`
 - `ai_prompt_versions`, `ai_queries`
 - `ai_query_evidence_candidates`, `ai_query_citations`
 - `ai_call_attempts`, `ai_transfer_approvals`, `ai_sensitive_data_policies`

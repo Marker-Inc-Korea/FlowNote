@@ -12,19 +12,21 @@
 
 ## 스키마 범위
 
-- 사용자와 세션: `user_accounts`, `roles`, `user_roles`, `auth_sessions`
+- 사용자와 세션: `user_accounts`, `roles`, `user_roles`, `auth_sessions`, `operator_profiles`
 - 문서와 버전: `documents`, `document_versions`
 - 파일 객체: `file_objects`
 - 태그: `tag_definitions`, `document_tags`
 - 승인 단말: `terminal_devices`
 - 현장 코멘트: `field_comments`, `field_comment_attachments`
+- 현장 입력과 작업내역 기반: `comment_templates`, `work_records`, `work_record_versions`
 - 열람 이력: `document_access_logs`
 - 작업순서: `work_sequence_boards`, `work_sequence_items`, `work_sequence_change_history`, `work_sequence_notification_candidates`
 - 채널/인수인계: `notification_channels`, `notification_channel_members`, `channel_messages`, `handovers`, `handover_receipts`
 - 보고서: `reports`, `report_sources`
-- AI 검색 후보·평가: `ai_search_candidates`, `ai_search_ground_truth_cases`, `ai_search_evaluation_runs`, `ai_search_evaluation_cases`
-- 외부 AI 안전장치·운영·감사: `ai_prompt_versions`, `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations`, `ai_call_attempts`, `ai_transfer_approvals`, `ai_sensitive_data_policies`, `ai_operational_policies`, `ai_operation_audit_events`, `ai_retention_audits`
+- AI 검색 후보·평가: `ai_search_candidates`, `ai_search_ground_truth_cases`, `ai_search_ground_truth_provenance`, `ai_ground_truth_dataset_versions`, `ai_ground_truth_dataset_cases`, `ai_search_evaluation_runs`, `ai_search_evaluation_cases`, `ai_evaluation_dataset_bindings`
+- 외부 AI 안전장치·운영·감사: `ai_prompt_versions`, `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations`, `ai_call_attempts`, `ai_transfer_approvals`, `ai_sensitive_data_policies`, `ai_operational_policies`, `ai_provider_onboarding_reviews`, `ai_operation_audit_events`, `ai_retention_audits`
 - 제한 다운로드: `controlled_copy_grants`
+- Android 앱 내부 열람: `android_document_view_grants`
 - 마이그레이션 기록: `schema_migrations`
 - 공통 감사: `activity_history`
 
@@ -37,6 +39,7 @@
 - 공개 문서는 명시적으로 공개 버전을 지정해야 조회할 수 있다.
 - controlled copy는 현재 공개 버전에만 발급되며 사용자·세션에 묶인 짧은 만료의 1회성 티켓과 SHA-256 검증을 사용한다.
 - AI 검색 근거 후보는 공개 문서 버전, FieldComment, 작업순서 이력, 보고서 source에서 재생성한다.
+- ground-truth 사례는 서로 다른 두 사용자의 승인을 거쳐 활성화하고, 승인 사례 집합은 불변 dataset version으로 묶어 평가 run에 고정한다.
 - FieldComment 원천 핵심 필드는 생성 뒤 불변이며 검토 변경은 담당자·기한·전이 사유와 원천 hash를 포함한 감사 snapshot으로 분리한다.
 - 외부 AI provider 직전 경계는 활성 고객·현장 민감정보 정책, 원천 권한, 최소 발췌·최대 원천 수와 인용 ID를 검사한다. generic 네트워크 adapter는 명시적 test scope에만 있고 provider별 운영 client는 없다.
 - 서버 lifespan 스케줄러와 `system-admin` 즉시 실행 API는 만료된 질의 payload를 비식별화하고 저장 응답 원문을 삭제하면서 hash와 감사 메타데이터를 보존한다.
