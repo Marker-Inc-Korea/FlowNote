@@ -184,7 +184,7 @@ grant 응답은 `grant_id`, 상대 `stream_url`, 문서/버전 ID, 만료 시각
 | POST | `/api/v1/field-comments/bulk-review` | 최대 200건 담당 지정·기한·상태 일괄 변경 |
 | GET | `/api/v1/field-comments/{comment_id}/audit` | 원천 hash를 포함한 검토 변경 전·후 감사 snapshot |
 | GET | `/api/v1/field-comments/{comment_id}/traceability` | FieldComment, 감사, report source, 생성 최종 문서·버전 통합 역추적 |
-| GET | `/api/v1/field-comments/quality-workbench` | 오래된 NEW, 근거가 빈약한 SELECTED, 원천 누락 report source 작업함 |
+| GET | `/api/v1/field-comments/quality-workbench` | 오래된 NEW, 근거가 빈약한 SELECTED, 원천·trace/version 누락, source hash 불일치 작업함 |
 | GET | `/api/v1/field-comments/quality-metrics` | 상태·신호등·actor·라인·오류 유형 분포와 보고서 연결률 |
 | POST | `/api/v1/field-comments/{comment_id}/attachments` | 첨부 파일 등록. multipart `idempotencyKey`를 보내면 같은 키의 재시도는 기존 첨부를 반환 |
 | GET | `/api/v1/field-comments/{comment_id}/attachments` | 첨부 파일 목록 조회 |
@@ -279,6 +279,8 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 | POST | `/api/v1/reports` | 보고서 저장, 선택 시 문서로 저장. `idempotencyKey`를 보내면 같은 키의 재시도는 기존 보고서를 반환 |
 | GET | `/api/v1/reports` | 보고서 목록 |
 | GET | `/api/v1/reports/{report_id}` | 보고서 상세 |
+
+보고서 draft와 최종 저장은 서로 다른 `sourceType` 최소 2종을 요구하며 같은 type/id/version 중복을 거부한다. 응답의 각 source는 `source_type`, `source_id`, 고정 `source_version_id`, 독립 `trace_id`, 저장 시점 `source_hash_sha256`를 반환한다. 최종 승인 직전에 같은 version의 원천 hash를 다시 계산하며 불일치하면 `409`로 차단한다. 승인된 보고서의 draft ID로 source를 교체할 수 없고 동일 `idempotencyKey` 재시도는 기존 보고서·생성 문서·source를 반환한다.
 
 보고서 source 타입은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `WORK_RECORD_VERSION`을 사용한다. 서버 저장은 `SELECTED` FieldComment와 현재 공개 문서 버전만 허용하며 FieldComment의 관찰 문서 버전을 source에 자동 고정한다. 활성 업무 채널에 연결된 source는 actor의 활성 멤버십을 검사한다. WPF 로컬 초안 후보는 검토 편의를 위해 `SELECTED`, `REVIEWED`, `ANALYZED` 순으로 노출하지만 서버 보고서 source 확정 전에는 `SELECTED` 전이가 필요하다.
 

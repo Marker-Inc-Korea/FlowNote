@@ -3,6 +3,8 @@ using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
 using FlowNote.Windows.Core.Sync;
 using Microsoft.Data.Sqlite;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace FlowNote.Windows.Core.Reports;
 
@@ -24,20 +26,12 @@ public sealed class ReportDraftService(
                            THEN char(10) || '분석: ' || comment.analysis_content
                            ELSE ''
                        END AS detail,
-                   comment.created_at
+                   comment.created_at,
+                   comment.document_version_no
             FROM field_comments AS comment
             LEFT JOIN documents AS document ON document.document_id = comment.document_id
-            WHERE comment.status NOT IN ('EXCLUDED', 'ARCHIVED')
-            ORDER BY
-                CASE comment.status
-                    WHEN 'SELECTED' THEN 0
-                    WHEN 'REVIEWED' THEN 1
-                    WHEN 'ANALYZED' THEN 2
-                    WHEN 'NEEDS_REVIEW' THEN 3
-                    WHEN 'NEW' THEN 4
-                    ELSE 5
-                END,
-                comment.created_at DESC,
+            WHERE comment.status = 'SELECTED'
+            ORDER BY comment.created_at DESC,
                 comment.id DESC
             LIMIT $limit;
             """;
@@ -52,7 +46,8 @@ public sealed class ReportDraftService(
                 reader.GetString(0),
                 reader.GetString(1),
                 reader.GetString(2),
-                DateTime.Parse(reader.GetString(3))));
+                DateTime.Parse(reader.GetString(3)),
+                reader.IsDBNull(4) ? null : reader.GetInt32(4).ToString()));
         }
 
         return records;
@@ -63,8 +58,11 @@ public sealed class ReportDraftService(
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT document_id, title, file_name, updated_at
+            SELECT document_id, title, file_name, updated_at,
+                   COALESCE(server_version_id, CAST(published_version_no AS TEXT), CAST(version_no AS TEXT))
             FROM documents
+            WHERE status = 'PUBLISHED'
+              AND published_version_no IS NOT NULL
             ORDER BY updated_at DESC, id DESC
             LIMIT $limit;
             """;
@@ -79,7 +77,8 @@ public sealed class ReportDraftService(
                 reader.GetString(0),
                 reader.GetString(1),
                 reader.GetString(2),
-                DateTime.Parse(reader.GetString(3))));
+                DateTime.Parse(reader.GetString(3)),
+                reader.IsDBNull(4) ? null : reader.GetString(4)));
         }
 
         return records;
@@ -113,7 +112,8 @@ public sealed class ReportDraftService(
                 reader.GetString(0),
                 reader.GetString(1),
                 reader.GetString(2),
-                DateTime.Parse(reader.GetString(3))));
+                DateTime.Parse(reader.GetString(3)),
+                reader.GetString(0)));
         }
 
         return records;
@@ -126,6 +126,7 @@ public sealed class ReportDraftService(
         string actorName)
     {
         var selected = sources.ToList();
+        ValidateSourceSet(selected);
         var lines = new List<string>
         {
             $"# {Clean(title, "Field report draft")}",
@@ -172,6 +173,8 @@ public sealed class ReportDraftService(
         IEnumerable<ReportSourceCandidateRecord>? selectedSources = null,
         string? summary = null)
     {
+        var sources = (selectedSources ?? []).ToList();
+        ValidateSourceSet(sources);
         var now = DateTime.UtcNow;
         var dataDirectory = Path.GetDirectoryName(database.DatabasePath)!;
         var reportRoot = Path.Combine(dataDirectory, "Files", "Reports", now.ToString("yyyy-MM-dd"));
@@ -190,7 +193,7 @@ public sealed class ReportDraftService(
             relativePath,
             new[] { "Report", "FieldComment" });
         var updatedDocument = documents.UpdateDocumentStatus(document.DocumentId, "IN_REVIEW", actorName);
-        SaveLocalReportSources(updatedDocument.DocumentId, selectedSources ?? []);
+        SaveLocalReportSources(updatedDocument.DocumentId, sources);
         SaveReportSummary(updatedDocument.DocumentId, summary);
         return updatedDocument;
     }
@@ -255,6 +258,30 @@ public sealed class ReportDraftService(
         return string.IsNullOrWhiteSpace(cleaned) ? fallback : cleaned;
     }
 
+    private static void ValidateSourceSet(IReadOnlyCollection<ReportSourceCandidateRecord> sources)
+    {
+        if (sources.Select(source => Clean(source.SourceType, string.Empty).ToUpperInvariant()).Distinct().Count() < 2)
+        {
+            throw new InvalidOperationException("보고서는 서로 다른 근거 유형을 최소 2종 선택해야 합니다.");
+        }
+        if (sources.Any(source => string.IsNullOrWhiteSpace(source.SourceVersionId)))
+        {
+            throw new InvalidOperationException("모든 보고서 근거는 고정된 원천 버전이 필요합니다.");
+        }
+        var hasDuplicate = sources
+            .GroupBy(source => new
+            {
+                Type = Clean(source.SourceType, string.Empty).ToUpperInvariant(),
+                Id = Clean(source.SourceId, string.Empty),
+                Version = Clean(source.SourceVersionId, string.Empty)
+            })
+            .Any(group => group.Count() > 1);
+        if (hasDuplicate)
+        {
+            throw new InvalidOperationException("같은 보고서 근거와 버전을 중복 선택할 수 없습니다.");
+        }
+    }
+
     private static string GetUniqueTargetPath(string directory, string fileName)
     {
         var candidate = Path.Combine(directory, fileName);
@@ -298,6 +325,8 @@ public sealed class ReportDraftService(
                     source_type,
                     local_source_id,
                     source_version_id,
+                    trace_id,
+                    source_hash_sha256,
                     relation_type,
                     title,
                     detail,
@@ -308,6 +337,8 @@ public sealed class ReportDraftService(
                     $source_type,
                     $local_source_id,
                     $source_version_id,
+                    $trace_id,
+                    $source_hash_sha256,
                     $relation_type,
                     $title,
                     $detail,
@@ -318,6 +349,10 @@ public sealed class ReportDraftService(
             insert.Parameters.AddWithValue("$source_type", Clean(source.SourceType, string.Empty).ToUpperInvariant());
             insert.Parameters.AddWithValue("$local_source_id", Clean(source.SourceId, string.Empty));
             insert.Parameters.AddWithValue("$source_version_id", string.IsNullOrWhiteSpace(source.SourceVersionId) ? DBNull.Value : source.SourceVersionId);
+            insert.Parameters.AddWithValue("$trace_id", $"trace_{Guid.NewGuid():N}");
+            insert.Parameters.AddWithValue(
+                "$source_hash_sha256",
+                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.Detail))).ToLowerInvariant());
             insert.Parameters.AddWithValue("$relation_type", string.IsNullOrWhiteSpace(source.RelationType) ? DBNull.Value : source.RelationType);
             insert.Parameters.AddWithValue("$title", string.IsNullOrWhiteSpace(source.Title) ? DBNull.Value : source.Title);
             insert.Parameters.AddWithValue("$detail", string.IsNullOrWhiteSpace(source.Detail) ? DBNull.Value : source.Detail);

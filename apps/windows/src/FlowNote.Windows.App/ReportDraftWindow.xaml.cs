@@ -34,7 +34,7 @@ public partial class ReportDraftWindow : Window
     private void ReportDraftWindow_Loaded(object sender, RoutedEventArgs e)
     {
         RefreshSources();
-        StatusTextBlock.Text = "현장 코멘트 원천을 하나 이상 선택한 뒤 초안을 생성하세요.";
+        StatusTextBlock.Text = "보고서 선정 FieldComment를 포함해 서로 다른 근거 유형을 최소 2종 선택하세요.";
     }
 
     private void BuildDraftButton_Click(object sender, RoutedEventArgs e)
@@ -43,6 +43,11 @@ public partial class ReportDraftWindow : Window
         if (!selected.Any(source => source.SourceType == "FIELD_COMMENT"))
         {
             StatusTextBlock.Text = "현장 코멘트 원천을 하나 이상 선택하세요.";
+            return;
+        }
+        if (selected.Select(source => source.SourceType).Distinct(StringComparer.OrdinalIgnoreCase).Count() < 2)
+        {
+            StatusTextBlock.Text = "서로 다른 근거 유형을 최소 2종 선택하세요.";
             return;
         }
 
@@ -83,6 +88,19 @@ public partial class ReportDraftWindow : Window
             StatusTextBlock.Text = result.SyncResult.Success && !string.IsNullOrWhiteSpace(result.ReportId)
                 ? $"서버 보고서를 저장했습니다: {result.ReportId} / {result.GeneratedDocumentId ?? "생성 문서 없음"}"
                 : $"보고서 문서를 로컬에 저장하고 서버 저장 재시도 큐에 보관했습니다. {result.SyncResult.Message}";
+            if (result.Saved is not null)
+            {
+                var traceLines = string.Join(Environment.NewLine, result.Saved.Sources.Select(source =>
+                    $"- {source.SourceType} · {source.SourceId} · 버전 {source.SourceVersionId} · " +
+                    $"trace {source.TraceId} · hash {source.SourceHashSha256}"));
+                MessageBox.Show(
+                    this,
+                    $"보고서 {result.Saved.ReportId} → 생성 문서 {result.Saved.GeneratedDocumentId ?? "없음"}{Environment.NewLine}" +
+                    $"고정 근거 {result.Saved.Sources.Count}건{Environment.NewLine}{traceLines}",
+                    "보고서 → 원천/버전 역추적",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
             return;
         }
         catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException)

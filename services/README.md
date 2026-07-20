@@ -1,6 +1,6 @@
 # Services
 
-이 문서는 2026-07-16 현재 `services/api` 코드 기준이다. 구현되지 않은 서비스는 마지막 후속 범위에서만 예외로 다룬다.
+이 문서는 2026-07-20 현재 `services/api` 코드 기준이다. 구현되지 않은 서비스는 마지막 후속 범위에서만 예외로 다룬다.
 
 FlowNote 서버 구성 요소를 보관하는 영역이다.
 
@@ -37,6 +37,7 @@ FlowNote 서버 구성 요소를 보관하는 영역이다.
 - 외부 AI 질의 생성·조회, 기본 비활성, 보고서 작성 role, 허용 목적, 전송 승인, 프롬프트, 원천 권한·민감정보·최소 payload, 근거 snapshot, 인용 검증과 호출 감사 게이트
 - `system-admin` 전용 외부 AI 운영 API: 전송 승인 생성·철회, 불변 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 요청·동시성·timeout·비용·보존 정책, 정제 감사 조회/내보내기, 만료 보존 즉시 실행
 - 서버 lifespan의 만료 보존 스케줄러: 기본 1시간 간격 실행, 설정으로 활성 여부와 간격 제어
+- FastAPI 서버 DB와 WPF 로컬 DB의 SQLite 스키마 경계 검사: WPF `documents`/`document_versions` 구조를 감지하면 서버 테이블 생성 전에 초기화 중단
 - 초기·비상 운영용 서버 계정 생성, 비밀번호 재설정, 상태 변경, role 변경 스크립트
 
 Android는 공개 문서 목록·상세 API와 승인 단말 전용 1회성 secure view grant/stream API를 사용한다. PDF/이미지/TXT는 앱 내부에서만 열고 controlled copy는 별도의 허용 role을 사용하는 Windows WPF 흐름으로 유지한다.

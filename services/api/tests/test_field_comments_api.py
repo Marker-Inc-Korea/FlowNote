@@ -326,6 +326,9 @@ def test_review_workbench_filters_and_priority_flags_are_explicit() -> None:
         assert "tag_axis_coverage" in quality
         assert quality["connection_quality"]["report_source_type_count"] >= 0
         assert quality["connection_quality"]["orphan_report_source_rate"] >= 0
+        assert quality["connection_quality"]["incomplete_report_trace_count"] >= 0
+        assert quality["connection_quality"]["field_comment_source_hash_mismatch_count"] >= 0
+        assert quality["connection_quality"]["duplicate_report_source_count"] >= 0
 
 
 def test_field_comment_source_fields_are_immutable_in_database() -> None:

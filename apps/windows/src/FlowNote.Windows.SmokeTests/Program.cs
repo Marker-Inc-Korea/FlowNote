@@ -1776,17 +1776,12 @@ try
         .Where(source => humanLikeComments.Contains(source.SourceId))
         .ToList();
     Require(
-        new[] { humanLikeComments[1], humanLikeComments[3], humanLikeComments[4] }
-            .All(commentId => aiFieldCommentSources.Any(source => source.SourceId == commentId)),
-        "AI readiness report sources should include this run's ANALYZED, REVIEWED, and SELECTED FieldComments even when accumulated NEW rows exceed the list limit");
+        aiFieldCommentSources.Select(source => source.SourceId).SequenceEqual(new[] { humanLikeComments[4] }),
+        "report sources should expose only this run's SELECTED FieldComment");
     Require(
-        aiFieldCommentSources.Take(3).Select(source => source.SourceId).SequenceEqual(new[]
-        {
-            humanLikeComments[4],
-            humanLikeComments[3],
-            humanLikeComments[1]
-        }),
-        "AI readiness report sources should show SELECTED, REVIEWED, and ANALYZED field comments first");
+        new[] { humanLikeComments[1], humanLikeComments[3] }
+            .All(commentId => aiFieldCommentSources.All(source => source.SourceId != commentId)),
+        "ANALYZED and REVIEWED FieldComments should not be report source candidates before selection");
     var excludedAiFieldCommentSources = services.Reports.ListFieldCommentSources(limit: 500)
         .Where(source => source.SourceId == excludedAiComment.CommentId || source.SourceId == archivedAiComment.CommentId)
         .ToList();
@@ -1794,7 +1789,6 @@ try
         excludedAiFieldCommentSources.Count == 0,
         "AI readiness report sources should exclude EXCLUDED and ARCHIVED field comments");
     var aiReportSources = aiFieldCommentSources
-        .Take(3)
         .Concat(new[]
         {
             new ReportSourceCandidateRecord(
@@ -1828,10 +1822,13 @@ try
                 SELECT COUNT(*)
                 FROM report_sources
                 WHERE local_report_document_id = $document_id
-                  AND source_type IN ('FIELD_COMMENT', 'DOCUMENT');
+                  AND source_type IN ('FIELD_COMMENT', 'DOCUMENT')
+                  AND source_version_id IS NOT NULL
+                  AND trace_id IS NOT NULL
+                  AND source_hash_sha256 IS NOT NULL;
                 """,
-                ("$document_id", aiReportDocument.DocumentId)) == 4,
-            "AI readiness report should preserve FieldComment and document source links");
+                ("$document_id", aiReportDocument.DocumentId)) == 2,
+            "AI readiness report should preserve two source types with version, trace id, and hash");
         Require(
             ScalarLong(
                 aiReportConnection,
@@ -3192,7 +3189,16 @@ try
                     orderedQueueDocument.Title,
                     orderedQueueFieldComment.RawContent,
                     orderedQueueFieldComment.CreatedAt,
-                    RelationType: "primary")
+                    orderedQueueFieldComment.DocumentVersionNo?.ToString(CultureInfo.InvariantCulture),
+                    RelationType: "primary"),
+                new ReportSourceCandidateRecord(
+                    "DOCUMENT",
+                    statusNoPublishMappingDocument.DocumentId,
+                    statusNoPublishMappingDocument.Title,
+                    statusNoPublishMappingDocument.FileName,
+                    statusNoPublishMappingDocument.UpdatedAt,
+                    statusNoPublishMappingDocument.PublishedVersionNo?.ToString(CultureInfo.InvariantCulture) ?? "1",
+                    "related_document")
             };
             var orderedReportContent = services.Reports.BuildDraftContent(
                 $"Server ordered retry report {runStamp}",
@@ -3569,6 +3575,7 @@ try
                     serverDocument.Title,
                     serverFieldComment.RawContent,
                     serverFieldComment.CreatedAt,
+                    serverFieldComment.DocumentVersionId,
                     RelationType: "primary"),
                 new ReportSourceCandidateRecord(
                     "DOCUMENT",
@@ -3584,6 +3591,7 @@ try
                     reportSequenceItem.Title,
                     reportSequenceItem.Status,
                     reportSequenceItem.CreatedAt,
+                    reportSequenceHistorySource.ChangeId,
                     RelationType: "work_sequence"),
                 new ReportSourceCandidateRecord(
                     "WORK_SEQUENCE_HISTORY",
@@ -3591,6 +3599,7 @@ try
                     reportSequenceItem.Title,
                     reportSequenceHistorySource.ChangeType,
                     reportSequenceHistorySource.CreatedAt,
+                    reportSequenceHistorySource.ChangeId,
                     RelationType: "work_sequence_history")
             };
             var reportContent = services.Reports.BuildDraftContent(

@@ -115,6 +115,12 @@ public sealed record ServerReportSourceResponse
     [JsonPropertyName("source_version_id")]
     public string? SourceVersionId { get; init; }
 
+    [JsonPropertyName("trace_id")]
+    public string TraceId { get; init; } = string.Empty;
+
+    [JsonPropertyName("source_hash_sha256")]
+    public string SourceHashSha256 { get; init; } = string.Empty;
+
     [JsonPropertyName("relation_type")]
     public string? RelationType { get; init; }
 

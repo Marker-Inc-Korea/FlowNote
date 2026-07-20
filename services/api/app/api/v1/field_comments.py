@@ -995,15 +995,30 @@ def field_comment_quality_workbench(
 
     sources = session.scalars(select(ReportSource).where(ReportSource.source_type == "FIELD_COMMENT")).all()
     for source in sources:
-        exists_comment = session.scalar(
-            select(FieldComment.id).where(FieldComment.comment_id == source.source_id)
+        source_comment = session.scalar(
+            select(FieldComment).where(FieldComment.comment_id == source.source_id)
         )
-        if exists_comment is None:
+        if source_comment is None:
             result.append(FieldCommentQualityItemResponse(
                 issue_type="MISSING_REPORT_SOURCE",
                 comment_id=source.source_id,
                 report_id=source.report_id,
                 detail="보고서 source가 존재하지 않는 FieldComment를 참조함",
+            ))
+            continue
+        if not source.trace_id or not source.source_version_id:
+            result.append(FieldCommentQualityItemResponse(
+                issue_type="INCOMPLETE_REPORT_TRACE",
+                comment_id=source.source_id,
+                report_id=source.report_id,
+                detail="보고서 source의 trace ID 또는 관찰 문서 버전이 누락됨",
+            ))
+        if source.source_hash_sha256 != _source_hash(source_comment):
+            result.append(FieldCommentQualityItemResponse(
+                issue_type="SOURCE_HASH_MISMATCH",
+                comment_id=source.source_id,
+                report_id=source.report_id,
+                detail="보고서에 고정한 원천 hash와 현재 FieldComment 원천 hash가 다름",
             ))
     return result
 
@@ -1069,6 +1084,32 @@ def field_comment_quality_metrics(
         if session.scalar(select(Report.id).where(Report.report_id == source.report_id)) is None
         or not source_origin_exists(source)
     )
+    incomplete_trace_count = sum(
+        1 for source in report_sources
+        if not source.trace_id or not source.source_version_id or not source.source_hash_sha256
+    )
+    field_comment_hash_mismatch_count = 0
+    for source in report_sources:
+        if source.source_type != "FIELD_COMMENT" or not source.source_hash_sha256:
+            continue
+        comment = session.scalar(
+            select(FieldComment).where(FieldComment.comment_id == source.source_id)
+        )
+        if comment is not None and source.source_hash_sha256 != _source_hash(comment):
+            field_comment_hash_mismatch_count += 1
+    duplicate_report_source_count = session.scalar(
+        select(func.count()).select_from(
+            select(ReportSource.report_id)
+            .group_by(
+                ReportSource.report_id,
+                ReportSource.source_type,
+                ReportSource.source_id,
+                ReportSource.source_version_id,
+            )
+            .having(func.count() > 1)
+            .subquery()
+        )
+    ) or 0
     tag_axis_coverage: dict[str, dict[str, int | float]] = {}
     for axis in ("line", "equipment", "item", "process", "error_type"):
         tagged_documents = session.scalar(
@@ -1104,6 +1145,9 @@ def field_comment_quality_metrics(
             "report_source_type_count": source_type_count,
             "orphan_report_source_count": orphan_count,
             "orphan_report_source_rate": round(orphan_count / report_source_total, 4) if report_source_total else 0.0,
+            "incomplete_report_trace_count": incomplete_trace_count,
+            "field_comment_source_hash_mismatch_count": field_comment_hash_mismatch_count,
+            "duplicate_report_source_count": duplicate_report_source_count,
         },
         "tag_axis_coverage": tag_axis_coverage,
     }

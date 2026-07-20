@@ -119,7 +119,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `sync_mutation_receipts` | `idempotency_key` UNIQUE, domain/action, `intent_hash`, 결과 entity/server ID·revision·hash를 보존. 응답 유실 뒤 reconciliation의 공통 조회 원천 |
 | `field_comments.review_revision` | 원천 생성 시 1, 검토 영역이 실제 변경될 때만 1 증가. 원천 hash는 별도 계산하며 변경 금지 |
 | `reports.revision`, `reports.content_hash`, `reports.source_set_hash` | 보고서 본문과 source 집합의 조건부 mutation 및 read-back 검증 기준 |
-| `report_sources.source_hash` | 저장 시점 원천의 hash. `source_id`와 해당 시점 `source_version_id`를 함께 고정 |
+| `report_sources.trace_id`, `report_sources.source_hash_sha256` | source row 추적 ID와 저장 시점 원천의 SHA-256. `source_id`와 해당 시점 `source_version_id`를 함께 고정 |
 | `work_sequence_boards.revision` | 항목 추가·순서·상태 mutation을 직렬화하는 board aggregate revision |
 | `work_sequence_change_history.mutation_key` | 부모 작업순서 mutation key와 UNIQUE. mutation 1건에서 이력 1건만 생성 |
 
@@ -135,7 +135,7 @@ Android 로컬 DB `flownote_android_outbox.db`는 장기 기준 데이터가 아
 
 `field_comments`의 원천 핵심 필드는 생성 후 ORM 수준에서 불변이며, 원천 row 자체의 ORM 삭제도 거부한다. 오입력·중복·근거 부적합 기록은 삭제하지 않고 검토 상태 `EXCLUDED`로 분류해 이력을 보존한다. API 응답의 `source_hash_sha256`은 원천 snapshot을 정렬 JSON으로 직렬화해 계산한다. 관리자 검토 변경은 `activity_history.before_value/after_value`에 검토 snapshot과 같은 원천 hash를 저장하고 `actor_id`, `change_reason`으로 전이와 되돌림을 추적한다.
 
-보고서 `FIELD_COMMENT` source는 `SELECTED` 상태만 저장하며 `source_version_id`에 FieldComment가 관찰한 문서 버전을 복사한다. `DOCUMENT` source는 문서의 현재 `published_version_id`와 같은 공개 버전만 저장한다. 따라서 `field_comments → activity_history → report_sources → reports.generated_document_id → document_versions`를 ID와 hash 손실 없이 역추적할 수 있다. 활성 `notification_channels`가 원천에 연결된 경우 보고서 저장 actor의 활성 멤버십도 검사한다.
+보고서 `FIELD_COMMENT` source는 `SELECTED` 상태만 저장하며 `source_version_id`에 FieldComment가 관찰한 문서 버전을 복사한다. `DOCUMENT` source는 문서의 현재 `published_version_id`와 같은 공개 버전만 저장한다. 보고서는 distinct source type 2종 이상을 요구하고 같은 type/id/version 중복을 거부한다. 각 source는 독립 `trace_id`, 고정 version, 저장 시점 `source_hash_sha256`를 가지며 승인 전에 원천 hash를 다시 검증한다. 따라서 `field_comments → activity_history → report_sources → reports.generated_document_id → document_versions`를 ID와 hash 손실 없이 역추적할 수 있다. 활성 `notification_channels`가 원천에 연결된 경우 보고서 저장 actor의 활성 멤버십도 검사한다.
 
 `controlled_copy_grants`는 원본 토큰 대신 `token_hash`만 저장한다. 각 grant는 공개 문서와 정확한 공개 버전, 요청 사용자, `auth_sessions.session_id`, 선택적 승인 단말 ID, 발급 시점의 파일 크기와 SHA-256에 묶인다. 상태는 `ISSUED`, `CONSUMED`, `EXPIRED`, `FAILED`이며 기본 60초(설정값은 5~300초로 정규화) 안에 한 번만 소비할 수 있다. 스트리밍 시작 전 상태를 원자적으로 `CONSUMED`로 바꾸고, 이후 공개 상태·저장 경로·크기·SHA-256 검사가 실패하면 `FAILED`와 정제된 실패 사유를 남긴다.
 

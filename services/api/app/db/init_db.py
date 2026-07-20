@@ -270,6 +270,53 @@ def _ensure_field_comment_review_columns(database: Database) -> None:
                 connection.execute(text(f"ALTER TABLE field_comments ADD COLUMN {name} {definition}"))
 
 
+def _ensure_report_source_trace_columns(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+    with database.engine.begin() as connection:
+        existing = {row[1] for row in connection.execute(text("PRAGMA table_info(report_sources)"))}
+        if not existing:
+            return
+        if "trace_id" not in existing:
+            connection.execute(text("ALTER TABLE report_sources ADD COLUMN trace_id VARCHAR(64)"))
+        if "source_hash_sha256" not in existing:
+            connection.execute(text("ALTER TABLE report_sources ADD COLUMN source_hash_sha256 VARCHAR(64)"))
+        missing_trace_count = connection.scalar(
+            text("SELECT COUNT(*) FROM report_sources WHERE trace_id IS NULL OR trace_id = ''")
+        ) or 0
+        if missing_trace_count:
+            connection.execute(
+                text(
+                    "UPDATE report_sources "
+                    "SET trace_id = 'legacy-report-source-' || id "
+                    "WHERE trace_id IS NULL OR trace_id = ''"
+                )
+            )
+        missing_hash_count = connection.scalar(
+            text(
+                "SELECT COUNT(*) FROM report_sources "
+                "WHERE source_hash_sha256 IS NULL OR source_hash_sha256 = ''"
+            )
+        ) or 0
+        if missing_hash_count:
+            connection.execute(
+                text(
+                    "UPDATE report_sources "
+                    "SET source_hash_sha256 = lower(hex(randomblob(32))) "
+                    "WHERE source_hash_sha256 IS NULL OR source_hash_sha256 = ''"
+                )
+            )
+        connection.execute(
+            text("CREATE UNIQUE INDEX IF NOT EXISTS ix_report_sources_trace_id ON report_sources (trace_id)")
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_report_sources_source_hash_sha256 "
+                "ON report_sources (source_hash_sha256)"
+            )
+        )
+
+
 def _ensure_auth_session_device_column(database: Database) -> None:
     if not database.database_url.startswith("sqlite"):
         return
@@ -587,6 +634,7 @@ def initialize_database(database: Database) -> None:
     _ensure_user_account_role_constraint(database)
     _ensure_idempotency_columns(database)
     _ensure_field_comment_review_columns(database)
+    _ensure_report_source_trace_columns(database)
     _ensure_terminal_device_schema(database)
     _ensure_auth_session_device_column(database)
     _ensure_document_access_log_reason_column(database)

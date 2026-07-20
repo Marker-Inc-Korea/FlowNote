@@ -618,6 +618,8 @@ public sealed class FlowNoteLocalDatabase
                 source_type TEXT NOT NULL,
                 local_source_id TEXT NOT NULL,
                 source_version_id TEXT NULL,
+                trace_id TEXT NULL,
+                source_hash_sha256 TEXT NULL,
                 relation_type TEXT NULL,
                 title TEXT NULL,
                 detail TEXT NULL,
@@ -676,6 +678,48 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "server_id_mappings", "server_report_id", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_revision", "INTEGER NULL");
         EnsureColumn(connection, "server_id_mappings", "server_file_hash_sha256", "TEXT NULL");
+        EnsureColumn(connection, "report_sources", "trace_id", "TEXT NULL");
+        EnsureColumn(connection, "report_sources", "source_hash_sha256", "TEXT NULL");
+        using (var reportSourceBackfill = connection.CreateCommand())
+        {
+            reportSourceBackfill.CommandText = """
+                UPDATE report_sources
+                SET trace_id = 'legacy-report-source-' || id
+                WHERE trace_id IS NULL OR trim(trace_id) = '';
+
+                UPDATE report_sources
+                SET source_hash_sha256 = lower(hex(randomblob(32)))
+                WHERE source_hash_sha256 IS NULL OR trim(source_hash_sha256) = '';
+
+                UPDATE report_sources
+                SET source_version_id = CASE source_type
+                    WHEN 'FIELD_COMMENT' THEN (
+                        SELECT CAST(comment.document_version_no AS TEXT)
+                        FROM field_comments AS comment
+                        WHERE comment.comment_id = report_sources.local_source_id
+                    )
+                    WHEN 'DOCUMENT' THEN (
+                        SELECT COALESCE(
+                            document.server_version_id,
+                            CAST(document.published_version_no AS TEXT),
+                            CAST(document.version_no AS TEXT))
+                        FROM documents AS document
+                        WHERE document.document_id = report_sources.local_source_id
+                    )
+                    WHEN 'WORK_SEQUENCE_HISTORY' THEN local_source_id
+                    WHEN 'WORK_SEQUENCE_ITEM' THEN COALESCE((
+                        SELECT history.change_id
+                        FROM work_sequence_change_history AS history
+                        WHERE history.item_id = report_sources.local_source_id
+                        ORDER BY history.created_at DESC, history.id DESC
+                        LIMIT 1
+                    ), local_source_id)
+                    ELSE source_version_id
+                END
+                WHERE source_version_id IS NULL OR trim(source_version_id) = '';
+                """;
+            reportSourceBackfill.ExecuteNonQuery();
+        }
         EnsureColumn(connection, "document_view_logs", "server_start_log_id", "INTEGER NULL");
         EnsureColumn(connection, "document_view_logs", "server_close_log_id", "INTEGER NULL");
         EnsureColumn(connection, "document_view_logs", "synced_at", "TEXT NULL");

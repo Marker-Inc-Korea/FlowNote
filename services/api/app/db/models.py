@@ -724,7 +724,16 @@ class Report(TimestampMixin, Base):
 
 class ReportSource(Base):
     __tablename__ = "report_sources"
-    __table_args__ = (Index("ix_report_sources_report", "report_id", "source_type"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "report_id",
+            "source_type",
+            "source_id",
+            "source_version_id",
+            name="uq_report_sources_report_source_version",
+        ),
+        Index("ix_report_sources_report", "report_id", "source_type"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     report_id: Mapped[str] = mapped_column(
@@ -733,6 +742,8 @@ class ReportSource(Base):
     source_type: Mapped[str] = mapped_column(String(50), nullable=False)
     source_id: Mapped[str] = mapped_column(String(64), nullable=False)
     source_version_id: Mapped[str | None] = mapped_column(String(64))
+    trace_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    source_hash_sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     relation_type: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
