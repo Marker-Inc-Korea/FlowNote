@@ -1233,7 +1233,9 @@ def approve_ground_truth_case(
     settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, object]:
-    if current_user.role not in {"admin", "system-admin", "document-admin", "manager", "department-manager"}:
+    if current_user.role not in {
+        "admin", "system-admin", "document-admin", "manager", "assistant-manager", "department-manager"
+    }:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="ground-truth approval role required")
     category = payload.category.strip().upper()
     scenario_type = payload.scenario_type.strip().upper()
@@ -1364,7 +1366,9 @@ def second_approve_ground_truth_case(
     settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, object]:
-    if current_user.role not in {"admin", "system-admin", "document-admin", "manager", "department-manager"}:
+    if current_user.role not in {
+        "admin", "system-admin", "document-admin", "manager", "assistant-manager", "department-manager"
+    }:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="ground-truth approval role required")
     case = session.scalar(
         select(AISearchGroundTruthCase).where(
@@ -1437,13 +1441,15 @@ def list_ground_truth_cases(
     settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
     line_scope: Annotated[str | None, Query(alias="lineScope")] = None,
+    include_pending: Annotated[bool, Query(alias="includePending")] = False,
 ) -> list[dict[str, object]]:
     statement = select(AISearchGroundTruthCase).where(
         AISearchGroundTruthCase.customer_scope == settings.ai_customer_scope,
         AISearchGroundTruthCase.site_scope == settings.ai_site_scope,
         AISearchGroundTruthCase.database_scope == database_scope(settings.database_url),
-        AISearchGroundTruthCase.is_active.is_(True),
     )
+    if not include_pending:
+        statement = statement.where(AISearchGroundTruthCase.is_active.is_(True))
     statement = statement.where(
         AISearchGroundTruthCase.line_scope == line_scope if line_scope else AISearchGroundTruthCase.line_scope.is_(None)
     )
@@ -1671,6 +1677,11 @@ def create_ground_truth_dataset(
     if payload.replaces_dataset_version_id:
         replaced = session.scalar(select(AIGroundTruthDatasetVersion).where(
             AIGroundTruthDatasetVersion.dataset_version_id == payload.replaces_dataset_version_id,
+            AIGroundTruthDatasetVersion.customer_scope == settings.ai_customer_scope,
+            AIGroundTruthDatasetVersion.site_scope == settings.ai_site_scope,
+            AIGroundTruthDatasetVersion.database_scope == database_scope(settings.database_url),
+            AIGroundTruthDatasetVersion.line_scope == normalized_line,
+            AIGroundTruthDatasetVersion.readiness_track == track,
             AIGroundTruthDatasetVersion.status.in_(("APPROVED", "SUPERSEDED", "RETIRED")),
         ))
         if replaced is None:
@@ -1703,11 +1714,15 @@ def update_ground_truth_dataset_cases(
     dataset_version_id: str,
     payload: AIGroundTruthDatasetCasesRequest,
     current_user: CurrentUser,
+    settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, object]:
     _require_ground_truth_role(current_user)
     row = session.scalar(select(AIGroundTruthDatasetVersion).where(
-        AIGroundTruthDatasetVersion.dataset_version_id == dataset_version_id
+        AIGroundTruthDatasetVersion.dataset_version_id == dataset_version_id,
+        AIGroundTruthDatasetVersion.customer_scope == settings.ai_customer_scope,
+        AIGroundTruthDatasetVersion.site_scope == settings.ai_site_scope,
+        AIGroundTruthDatasetVersion.database_scope == database_scope(settings.database_url),
     ))
     if row is None:
         raise HTTPException(status_code=404, detail="ground-truth dataset version does not exist")
@@ -1728,12 +1743,16 @@ def transition_ground_truth_dataset(
     dataset_version_id: str,
     payload: AIGroundTruthDatasetTransitionRequest,
     current_user: CurrentUser,
+    settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, object]:
     action = payload.action.strip().upper()
     _require_ground_truth_role(current_user, approver=action in {"FIRST_APPROVE", "SECOND_APPROVE", "RETIRE"})
     row = session.scalar(select(AIGroundTruthDatasetVersion).where(
-        AIGroundTruthDatasetVersion.dataset_version_id == dataset_version_id
+        AIGroundTruthDatasetVersion.dataset_version_id == dataset_version_id,
+        AIGroundTruthDatasetVersion.customer_scope == settings.ai_customer_scope,
+        AIGroundTruthDatasetVersion.site_scope == settings.ai_site_scope,
+        AIGroundTruthDatasetVersion.database_scope == database_scope(settings.database_url),
     ))
     if row is None:
         raise HTTPException(status_code=404, detail="ground-truth dataset version does not exist")

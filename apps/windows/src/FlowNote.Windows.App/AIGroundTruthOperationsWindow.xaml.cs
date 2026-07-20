@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using FlowNote.Windows.Core.ServerApi;
+using FlowNote.Windows.Core.Auth;
 
 namespace FlowNote.Windows.App;
 
@@ -11,15 +12,17 @@ public partial class AIGroundTruthOperationsWindow : Window
 {
     private readonly FlowNoteServerDocumentClient? client;
     private readonly string currentUserId;
+    private readonly string currentRole;
     private readonly GroundTruthWorkspace workspace = new();
     private ServerAIGroundTruthDataset? selectedDataset;
     private ServerAISearchEvaluationResponse? selectedRun;
 
-    public AIGroundTruthOperationsWindow(FlowNoteServerDocumentClient? client, string currentUserId)
+    public AIGroundTruthOperationsWindow(FlowNoteServerDocumentClient? client, string currentUserId, string currentRole)
     {
         InitializeComponent();
         this.client = client;
         this.currentUserId = currentUserId;
+        this.currentRole = currentRole;
         DataContext = workspace;
         Loaded += async (_, _) => await RefreshAsync();
     }
@@ -62,7 +65,7 @@ public partial class AIGroundTruthOperationsWindow : Window
             DatasetSummaryTextBlock.Text =
                 $"{selectedDataset.Title} · {selectedDataset.DatasetKey} v{selectedDataset.Version} · {FormatStatus(selectedDataset.Status)}\n" +
                 $"작성 {selectedDataset.AuthorId} / 검토 {selectedDataset.ReviewerId ?? "-"} / 승인 {selectedDataset.FirstApprovedBy ?? "-"}, {selectedDataset.SecondApprovedBy ?? "-"}\n" +
-                $"snapshot {selectedDataset.SnapshotHash ?? "승인 전"} · 48건 coverage {(selectedDataset.CoverageComplete ? "충족" : "미충족")}";
+                $"snapshot {selectedDataset.SnapshotHash ?? "승인 전"} · 48건 coverage {(selectedDataset.CoverageComplete ? "충족" : "미충족")} · 대체 원본 {selectedDataset.ReplacesDatasetVersionId ?? "없음"}";
             UpdateActionButtons();
         }
         catch (Exception ex) { StatusTextBlock.Text = $"dataset 상세 조회 실패: {ex.Message}"; }
@@ -70,6 +73,10 @@ public partial class AIGroundTruthOperationsWindow : Window
 
     private async void CreateDatasetButton_Click(object sender, RoutedEventArgs e) => await CreateDatasetAsync(null);
     private async void CreateReplacementButton_Click(object sender, RoutedEventArgs e) => await CreateDatasetAsync(selectedDataset);
+    private void OpenCaseEditorButton_Click(object sender, RoutedEventArgs e)
+    {
+        new AIGroundTruthCaseEditorWindow(client, currentUserId) { Owner = this }.ShowDialog();
+    }
 
     private async Task CreateDatasetAsync(ServerAIGroundTruthDataset? replacement)
     {
@@ -168,11 +175,11 @@ public partial class AIGroundTruthOperationsWindow : Window
         var status = selectedDataset?.Status;
         SubmitButton.IsEnabled = status == "DRAFT" && selectedDataset?.AuthorId == currentUserId;
         ReviewButton.IsEnabled = status == "IN_REVIEW" && selectedDataset?.AuthorId != currentUserId;
-        FirstApproveButton.IsEnabled = status == "PENDING_FIRST_APPROVAL" &&
+        FirstApproveButton.IsEnabled = RolePermissionPolicy.CanApproveGroundTruth(currentRole) && status == "PENDING_FIRST_APPROVAL" &&
             currentUserId != selectedDataset?.AuthorId && currentUserId != selectedDataset?.ReviewerId;
-        SecondApproveButton.IsEnabled = status == "PENDING_SECOND_APPROVAL" &&
+        SecondApproveButton.IsEnabled = RolePermissionPolicy.CanApproveGroundTruth(currentRole) && status == "PENDING_SECOND_APPROVAL" &&
             currentUserId != selectedDataset?.AuthorId && currentUserId != selectedDataset?.ReviewerId && currentUserId != selectedDataset?.FirstApprovedBy;
-        RetireButton.IsEnabled = status == "APPROVED";
+        RetireButton.IsEnabled = RolePermissionPolicy.CanApproveGroundTruth(currentRole) && status == "APPROVED";
         EvaluateButton.IsEnabled = status == "APPROVED";
     }
 

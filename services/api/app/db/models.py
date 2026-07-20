@@ -944,6 +944,20 @@ class AIGroundTruthDatasetVersion(Base):
             "readiness_track IN ('SMOKE_REGRESSION', 'FIELD_READINESS')",
             name="ck_ai_ground_truth_dataset_track",
         ),
+        CheckConstraint(
+            "reviewer_id IS NULL OR reviewer_id <> author_id",
+            name="ck_ai_ground_truth_dataset_reviewer_distinct",
+        ),
+        CheckConstraint(
+            "first_approved_by IS NULL OR (first_approved_by <> author_id AND "
+            "first_approved_by <> reviewer_id)",
+            name="ck_ai_ground_truth_dataset_first_approver_distinct",
+        ),
+        CheckConstraint(
+            "second_approved_by IS NULL OR (second_approved_by <> author_id AND "
+            "second_approved_by <> reviewer_id AND second_approved_by <> first_approved_by)",
+            name="ck_ai_ground_truth_dataset_second_approver_distinct",
+        ),
         Index(
             "ix_ai_ground_truth_dataset_scope_status",
             "customer_scope", "site_scope", "line_scope", "status", "version",
