@@ -30,6 +30,7 @@
 - 보고서 초안 생성 보조, 보고서 등록, 목록, 상세 조회
 - AI 검색 근거 후보 재생성, 목록 조회, 제외 사유, FieldComment 검토 준비도, 삭제 문서와 원천 누락 보고서 source 제외 품질 점검
 - AI 검색 ground-truth 회귀 평가의 기대/제외 근거, 권한 필터, 네 원천 커버와 후보 ID·내용 hash·순위 재현성
+- scope별 ground-truth 사례의 원천 provenance 고정·독립 2인 승인과 불변 dataset version 작성·검토·2단계 승인·대체·폐기·평가 결합
 - 외부 AI 질의의 기본 비활성, 금지 목적, 보고서 작성 role, 전송 승인·철회, 승인 프롬프트 불변성, 네 원천 권한 snapshot, 민감정보 마스킹/차단, 최소 payload byte 검사, 인용 검증과 응답 본문 미저장
 - 고객·현장별 `ai_sensitive_data_policies` 활성 정책의 금칙어·고객 식별자 차단과 provider payload 원문 비노출
 - fake/recording/제한형 network adapter의 성공·timeout·429/5xx 재시도·비재시도 오류, 응답 구조·크기·중복·prompt injection·의미 일치 검증
@@ -43,6 +44,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-07-20 현재 FastAPI 테스트 코드는 중복 없는 node ID 130개를 수집하며 전체 130개가 통과했다. 저장소 루트의 `scripts/verify-preserved-tests.ps1`은 아직 수집/JUnit 기준 128개를 강제하므로 현재 코드와 불일치한다. 기준을 130개로 고친 뒤 WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 Git 산출물 점검을 포함한 전체 표준 검증을 Windows 기준 환경에서 옵션 생략 없이 다시 실행한다.
+2026-07-20 현재 FastAPI 테스트 코드는 중복 없는 node ID 131개를 수집하며 전체 131개가 통과했다. 저장소 루트의 `scripts/verify-preserved-tests.ps1`은 수집/JUnit 기준 128개를 강제하므로 현재 코드와 불일치한다. 기준을 131개로 고친 뒤 WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 Git 산출물 점검을 포함한 전체 표준 검증을 Windows 기준 환경에서 옵션 생략 없이 다시 실행한다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
