@@ -30,10 +30,26 @@ if ((Test-Path $runArtifactDir -PathType Container) -and
 New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
 $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
-$expectedFastApiTestCount = 131
+$expectedFastApiTestCount = 144
 $script:stepNumber = 0
 $script:stepResults = New-Object System.Collections.Generic.List[object]
 $script:isPartialRun = $SkipFastApiPytest -or $SkipWpfBuild -or $SkipWpfSmoke -or $SkipAndroidBuild -or $SkipGitArtifactCheck
+$script:fastApiEvidence = [ordered]@{
+    expected = $expectedFastApiTestCount
+    collected = $null
+    unique_node_ids = $null
+    passed = $null
+    failures = $null
+    errors = $null
+    skipped = $null
+    collection_matches_junit = $null
+}
+$script:gitArtifactEvidence = [ordered]@{
+    new_forbidden_tracked_files = $null
+    staged_forbidden_artifacts = $null
+    staged_personal_paths = $null
+}
+$script:trackedFilesBefore = @()
 Write-Host "Integrated verification run ID: $RunId"
 Write-Host "Preserved run artifacts: $runArtifactDir"
 
@@ -59,6 +75,8 @@ function Write-RunSummary {
             run_android_device_smoke = $RunAndroidDeviceSmoke.IsPresent
             skip_git_artifact_check = $SkipGitArtifactCheck.IsPresent
         }
+        fastapi = $script:fastApiEvidence
+        git_artifacts = $script:gitArtifactEvidence
         steps = @($script:stepResults)
     }
     $summary | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $runArtifactDir "verification-summary.json")
@@ -369,6 +387,20 @@ function Assert-NoForbiddenGitArtifacts {
     }
 }
 
+function Write-GitEvidence {
+    param([ValidateSet("before", "after")][string]$Phase)
+
+    $statusLines = @(& git status --short --untracked-files=all)
+    $trackedFiles = @(& git ls-files)
+    $stagedFiles = @(& git diff --cached --name-only)
+    Set-Content -Encoding UTF8 -Path (Join-Path $runArtifactDir "git-status-$Phase.txt") `
+        -Value ($statusLines -join [Environment]::NewLine)
+    Set-Content -Encoding UTF8 -Path (Join-Path $runArtifactDir "git-ls-files-$Phase.txt") `
+        -Value ($trackedFiles -join [Environment]::NewLine)
+    Set-Content -Encoding UTF8 -Path (Join-Path $runArtifactDir "git-staged-$Phase.txt") `
+        -Value ($stagedFiles -join [Environment]::NewLine)
+}
+
 function Assert-KnownArtifactIgnoreRules {
     $artifactProbes = @(
         "services/api/storage/.artifact-ignore-probe",
@@ -409,6 +441,8 @@ if (-not $SkipGitArtifactCheck) {
     }
 
     Invoke-Step "Check current git status before verification" {
+        Write-GitEvidence -Phase "before"
+        $script:trackedFilesBefore = @(& git ls-files)
         Assert-NoForbiddenGitArtifacts
     }
 }
@@ -428,6 +462,8 @@ if (-not $SkipFastApiPytest) {
             $nodeIds | Set-Content -Encoding UTF8 (Join-Path $runArtifactDir "fastapi-collected-tests.txt")
             $testCount = $nodeIds.Count
             $uniqueTestCount = @($nodeIds | Sort-Object -Unique).Count
+            $script:fastApiEvidence.collected = $testCount
+            $script:fastApiEvidence.unique_node_ids = $uniqueTestCount
             if ($testCount -ne $expectedFastApiTestCount) {
                 throw "Expected $expectedFastApiTestCount FastAPI pytest tests, collected $testCount."
             }
@@ -452,10 +488,23 @@ if (-not $SkipFastApiPytest) {
                 throw "FastAPI pytest failed with exit code $LASTEXITCODE."
             }
             $junitCounts = Get-JUnitCounts $junitPath
-            if ($junitCounts.Tests -ne $expectedFastApiTestCount -or $junitCounts.Failures -ne 0 -or $junitCounts.Errors -ne 0 -or $junitCounts.Skipped -ne 0) {
+            $script:fastApiEvidence.passed = $junitCounts.Tests - $junitCounts.Failures - $junitCounts.Errors - $junitCounts.Skipped
+            $script:fastApiEvidence.failures = $junitCounts.Failures
+            $script:fastApiEvidence.errors = $junitCounts.Errors
+            $script:fastApiEvidence.skipped = $junitCounts.Skipped
+            $script:fastApiEvidence.collection_matches_junit = (
+                $null -ne $script:fastApiEvidence.collected -and
+                $junitCounts.Tests -eq $script:fastApiEvidence.collected
+            )
+            if (-not $script:fastApiEvidence.collection_matches_junit -or
+                $junitCounts.Tests -ne $expectedFastApiTestCount -or
+                $junitCounts.Failures -ne 0 -or
+                $junitCounts.Errors -ne 0 -or
+                $junitCounts.Skipped -ne 0) {
                 throw "FastAPI JUnit mismatch: tests=$($junitCounts.Tests), failures=$($junitCounts.Failures), errors=$($junitCounts.Errors), skipped=$($junitCounts.Skipped)."
             }
-            Write-Host "FastAPI JUnit: tests=$expectedFastApiTestCount, failures=0, errors=0, skipped=0"
+            Write-Host "FastAPI collection/JUnit match: collected=$($script:fastApiEvidence.collected), unique=$($script:fastApiEvidence.unique_node_ids), tests=$($junitCounts.Tests)"
+            Write-Host "FastAPI JUnit: passed=$($script:fastApiEvidence.passed), failures=0, errors=0, skipped=0"
         }
         finally {
             Pop-Location
@@ -682,7 +731,30 @@ if ($RunAndroidDeviceSmoke) {
 
 if (-not $SkipGitArtifactCheck) {
     Invoke-Step "Check git status after verification" {
+        Write-GitEvidence -Phase "after"
+        $trackedFilesAfter = @(& git ls-files)
+        $newTrackedFiles = @($trackedFilesAfter | Where-Object { $_ -notin $script:trackedFilesBefore })
+        $newForbiddenTrackedFiles = @($newTrackedFiles | Where-Object { Test-ForbiddenArtifactPath $_ })
+        $stagedFiles = @(& git diff --cached --name-only)
+        $stagedForbiddenArtifacts = @($stagedFiles | Where-Object { Test-ForbiddenArtifactPath $_ })
+        $stagedDiff = @(& git diff --cached --)
+        $personalPathPatterns = @(
+            ("[A-Za-z]:\\" + "Users\\"),
+            ("[A-Za-z]:/" + "Users/"),
+            ("/" + "Users/"),
+            ([regex]::Escape("C:") + "[\\/]" + [regex]::Escape("Projects") + "[\\/]")
+        )
+        $stagedPersonalPaths = @($stagedDiff | Where-Object {
+            $line = $_
+            @($personalPathPatterns | Where-Object { $line -match $_ }).Count -gt 0
+        })
+        $script:gitArtifactEvidence.new_forbidden_tracked_files = $newForbiddenTrackedFiles.Count
+        $script:gitArtifactEvidence.staged_forbidden_artifacts = $stagedForbiddenArtifacts.Count
+        $script:gitArtifactEvidence.staged_personal_paths = $stagedPersonalPaths.Count
         Assert-NoForbiddenGitArtifacts
+        if ($newForbiddenTrackedFiles.Count -ne 0) {
+            throw "Verification newly added forbidden tracked artifacts: $($newForbiddenTrackedFiles -join ', ')."
+        }
         Write-Host "git status --short --untracked-files=all"
         & git status --short --untracked-files=all
         Write-Host "git ls-files"

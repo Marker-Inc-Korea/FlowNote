@@ -48,6 +48,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-07-21 현재 FastAPI 테스트 코드는 중복 없는 node ID 144개를 수집한다. 직전 전체 143건과 Ruff 정적 검사는 통과했지만, 새 AI scope·legal hold 회귀가 추가된 뒤에는 이번 문서 작업에서 수집만 확인했으며 전체 144건을 다시 실행하지 않았다. 131건 기준 뒤 작업순서 서버 권위 회귀 3건, FieldComment 검토·첨부/보고서 수렴 회귀 3건, 서버 복구 manifest/reconciliation 회귀 6건, AI scope·legal hold 보존 회귀 1건이 추가되었다. 저장소 루트 `scripts/verify-preserved-tests.ps1`의 수집/JUnit guard는 131개에 머물러 있어 현재 코드와 일치하지 않는다. 전체 표준 검증은 guard를 144개로 갱신한 뒤 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1` 한 번으로 FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존한다. `baseline-131-macos-precheck-20260721-001`은 과거 FastAPI 131 passed만 확인한 보조 run이며 WPF/Android는 `NOT_RUN`이다. 새 Windows 통합 `PASSED` run을 확보하기 전까지 최신 통합 기준선으로 승격하지 않는다.
+2026-07-22 현재 FastAPI 테스트 코드는 중복 없는 node ID 144개를 수집하고 저장소 루트 `scripts/verify-preserved-tests.ps1`의 수집/JUnit guard도 144개다. macOS 보조 run `p0-baseline-144-macos-precheck-20260722-002`에서 수집 144·고유 144와 JUnit 144 passed, failure/error/skipped 0의 직접 일치를 확인했다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1 -RunId <승인된-run-id>` 한 번으로 FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존한다. 보조 run은 WPF/Android가 `NOT_RUN`이고 `partial_run=true`, `FAILED_ENVIRONMENT`이므로 새 Windows 통합 `PASSED` run을 확보하기 전까지 최신 통합 기준선으로 승격하지 않는다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.

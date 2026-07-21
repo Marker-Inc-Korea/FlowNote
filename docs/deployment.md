@@ -717,11 +717,11 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files` 금지 산출물을 함께 확인한다. 현재 FastAPI 코드 수집값은 144건이지만 스크립트 guard는 131건이므로, guard를 144건으로 갱신하기 전에는 현재 Windows 통합 기준선을 만들 수 없다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. FastAPI guard는 현재 수집값과 같은 144건이며 수집 총수·고유 node ID·JUnit 실행 수가 모두 일치해야 통과한다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 
-2026-07-20 WPF 공통 DB의 서버형 `controlled_copy_grants` FK 충돌은 `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·row 수·hash를 먼저 보존한 뒤 복구했다. 실제 복구 run `WPF-P0-20260720-0840`은 `quick_check=ok`, FK 위반 0건이며 문서 버전 3,384행의 원천 hash를 유지한다. FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하려는 경우도 `create_all` 전에 거부한다. 2026-07-21 macOS 보조 run `baseline-131-macos-precheck-20260721-001`은 당시 FastAPI 131건 통과만 확인했고 WPF/Android는 `NOT_RUN`이다. 현재 코드는 144건이므로 이 run을 최신 기준선으로 승격하지 않는다. guard 갱신과 새 Windows 무생략 `verification-summary.json=PASSED`가 생성되기 전까지 배포 통합 기준선은 `대기`다.
+2026-07-20 WPF 공통 DB의 서버형 `controlled_copy_grants` FK 충돌은 `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·row 수·hash를 먼저 보존한 뒤 복구했다. 실제 복구 run `WPF-P0-20260720-0840`은 `quick_check=ok`, FK 위반 0건이며 문서 버전 3,384행의 원천 hash를 유지한다. FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하려는 경우도 `create_all` 전에 거부한다. 2026-07-22 macOS 보조 run `p0-baseline-144-macos-precheck-20260722-002`은 FastAPI 수집 144·고유 144·통과 144, failure/error/skipped 0과 Git 신규 추적/staged 0을 확인했다. 그러나 WPF/Android/공통 DB 스모크는 도구 부재로 `NOT_RUN`이므로 `partial_run=true`, `FAILED_ENVIRONMENT`이며 배포 기준선이 아니다. 새 Windows 무생략 실행이 `partial_run=false`, `verification-summary.json=PASSED`가 되기 전까지 배포 통합 기준선은 `대기`다.
 ## DB 복구·초기화 후 운영 절차
 
 1. 모든 WPF를 종료하거나 자동 전송/polling이 중지됐음을 확인한다.

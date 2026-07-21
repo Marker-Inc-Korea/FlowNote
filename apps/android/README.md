@@ -98,4 +98,6 @@ JDK와 Android SDK가 필요하다. macOS 기본 SDK 경로 `$HOME/Library/Andro
 
 Windows 배포 준비 PC의 통합 기준선은 x64 JDK 17, Android Platform 35와 Build Tools 35.0.0을 사용한다. `scripts/verify-preserved-tests.ps1`은 단위 테스트와 debug build를 실행하고 JUnit XML과 단계 로그를 같은 실행 ID에 복사한 뒤 failure/error가 0인지 확인한다. 승인 실단말이 정확히 1대 연결된 경우에만 `-RunAndroidDeviceSmoke`를 추가한다. 이 자동 단계만으로 카메라 선택, 네트워크 단절 뒤 outbox 재시도, 사내 HTTPS 인증서 신뢰, foreground service/Doze/재부팅을 완료 판정하지 않으며 같은 실행 ID의 수동 실기 로그를 함께 남긴다.
 
+2026-07-22 macOS 보조 run `p0-baseline-144-macos-precheck-20260722-002`은 FastAPI 144건만 통과했고 JDK/Android SDK 부재로 Android `testDebugUnitTest`와 `assembleDebug`는 `NOT_RUN`이다. 이 결과는 Android 기준선이 아니며 Windows x64 표준 환경의 같은 `run_id` 통합 실행에서 Android JUnit과 debug build가 통과해야 한다.
+
 현재 단위 테스트는 API 경로·로그인/FieldComment payload, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구와 outbox 재시도 정책을 검증한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리가 동작하는지 확인한다. 실제 단말의 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절은 승인 실단말 수동 검증 대상이다.
