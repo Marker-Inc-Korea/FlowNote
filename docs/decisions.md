@@ -82,7 +82,7 @@
 - 서버는 설치 ID와 복구 epoch를 분리한다. instance/epoch 변경이나 cursor 역행을 감지하면 WPF는 mutation과 polling을 중지하고 기존 cursor·mapping을 보존한 채 reconciliation을 실행한다. 같은 key/hash는 새 ID에 재결합하고, 서버에 없으면 같은 key로 재전송하며, 불일치는 `SERVER_RECOVERY_DIVERGED`로 보존한다. 관리자 감사 후에만 cursor 0 재추적을 허용하고 처리한 `message_id`는 유지한다.
 - 수렴 완료는 비종결 큐 0건, 동일 idempotency key 서버 중복 0건, orphan mapping/source 0건, 문서 공개 포인터·source/version ID·hash 일치와 cursor 재추적 완료를 모두 요구한다. AI 후보 재생성과 보고서 운영은 이 gate 뒤에 수행한다.
 
-이 결정의 revision, mutation receipt, server manifest/reconciliation, 작업순서 직접 운영 확장은 목표 계약이며 2026-07-21 현재 전부 구현된 상태가 아니다. 구현 완료 판정은 두 WPF 인스턴스와 한 서버에서 동시 문서 수정/공개, FieldComment 검토/첨부, 보고서 저장, 작업순서 변경을 수행하고 503·응답 유실·stale revision·서버 복구·앱 재시작을 주입한 뒤 SQL 증거를 비교해야 한다.
+2026-07-21 구현 상태에서 작업순서 직접 운영 경계는 완료되었다. FastAPI는 `board_revision`, mutation key·intent hash receipt, stale revision 조건부 갱신, mutation당 의미상 이력 1건을 구현했고, WPF 관리자·TV 화면은 서버 snapshot을 권위 원천으로 사용하며 오프라인 확정 변경을 차단한다. 작업순서 API의 동일 key 재시도, stale revision 경쟁, 서버 재시작 후 receipt 재사용은 자동 테스트로 검증한다. 다만 공통 `sync_mutation_receipts`, server manifest/reconciliation과 FieldComment·보고서 전체 수렴 확장은 여전히 목표 계약이다. 제품 전체의 운영 완료 판정은 두 WPF 인스턴스와 한 서버에서 동시 문서 수정/공개, FieldComment 검토/첨부, 보고서 저장, 작업순서 변경을 수행하고 503·응답 유실·stale revision·서버 복구·앱 재시작을 주입한 뒤 SQL 증거를 비교해야 한다.
 
 ## 2026-07-20. DB schema 호환은 additive versioned migration과 무손실 증거로 판정
 
@@ -212,7 +212,7 @@
 - 공개 버전은 해당 로컬 버전의 서버 버전 ID가 있을 때만 서버 publish API에 반영한다.
 - 문서 상태는 현재 로컬 `documents.status`를 서버에 반영한다. `PUBLISHED` 상태는 공개 버전 동기화가 선행되어야 한다.
 - 서버 미동작, 인증 만료, 선행 문서/버전 미동기화 상황에서도 로컬 데이터와 큐는 삭제하지 않는다.
-- 작업순서 보드/항목/이력은 현재 단계에서 WPF 로컬 큐 대상이 아니다. 서버 직접 API 검증과 보고서 source 추적 범위로 유지한다.
+- 작업순서 보드/항목/이력은 WPF 로컬 큐 대상이 아니다. 이 결정의 당시 범위는 2026-07-21 서버 권위 직접 운영 구현으로 확장되었다. WPF 관리자·TV 화면은 서버 snapshot을 읽고, 관리 화면은 `board_revision`과 mutation key로 직접 변경하며, 로컬 row는 읽기 캐시·초안으로만 보존한다.
 
 ## 2026-06-30. 관리자 파일 감시
 

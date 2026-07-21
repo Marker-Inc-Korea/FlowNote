@@ -454,6 +454,7 @@ class WorkSequenceBoard(TimestampMixin, Base):
     line_code: Mapped[str | None] = mapped_column(String(64), index=True)
     board_date: Mapped[date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    board_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
 
 
@@ -493,6 +494,8 @@ class WorkSequenceChangeHistory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     change_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    mutation_key: Mapped[str] = mapped_column(String(160), unique=True, nullable=False, index=True)
+    board_revision: Mapped[int] = mapped_column(Integer, nullable=False)
     board_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("work_sequence_boards.board_id"), nullable=False, index=True
     )
@@ -502,6 +505,30 @@ class WorkSequenceChangeHistory(Base):
     before_value: Mapped[str | None] = mapped_column(Text)
     after_value: Mapped[str | None] = mapped_column(Text)
     change_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class WorkSequenceMutationReceipt(Base):
+    __tablename__ = "work_sequence_mutation_receipts"
+    __table_args__ = (
+        UniqueConstraint("board_id", "board_revision", name="uq_work_sequence_receipt_board_revision"),
+        Index("ix_work_sequence_receipts_board_created", "board_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mutation_key: Mapped[str] = mapped_column(String(160), unique=True, nullable=False, index=True)
+    mutation_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    intent_hash_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    board_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("work_sequence_boards.board_id"), nullable=False, index=True
+    )
+    board_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    change_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("work_sequence_change_history.change_id"), unique=True, nullable=False
+    )
+    response_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

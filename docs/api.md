@@ -219,19 +219,21 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 
 | Method | Path | 설명 |
 | --- | --- | --- |
-| POST | `/api/v1/work-sequence-boards` | 작업순서 보드 생성 |
-| GET | `/api/v1/work-sequence-boards` | 작업순서 보드 목록 |
-| GET | `/api/v1/work-sequence-boards/{board_id}` | 작업순서 보드 상세 |
-| POST | `/api/v1/work-sequence-boards/{board_id}/items` | 항목 추가 |
-| PUT | `/api/v1/work-sequence-boards/{board_id}/items/order` | 항목 전체 순서 변경 |
-| PATCH | `/api/v1/work-sequence-boards/{board_id}/items/{item_id}/status` | 항목 상태 변경 |
-| GET | `/api/v1/work-sequence-boards/{board_id}/history` | 변경 이력 조회 |
+| POST | `/api/v1/work-sequence-boards` | 작업순서 보드 생성. `idempotencyKey` 필수 |
+| GET | `/api/v1/work-sequence-boards` | 작업순서 보드 목록. `lineCode`, `status` 필터 선택 |
+| GET | `/api/v1/work-sequence-boards/{board_id}` | 작업순서 보드와 정렬된 항목 상세 |
+| POST | `/api/v1/work-sequence-boards/{board_id}/items` | 항목 추가. `idempotencyKey`, `baseBoardRevision` 필수 |
+| PUT | `/api/v1/work-sequence-boards/{board_id}/items/order` | 항목 전체 순서 변경. 전체 item ID와 `idempotencyKey`, `baseBoardRevision` 필수 |
+| PATCH | `/api/v1/work-sequence-boards/{board_id}/items/{item_id}/status` | 항목 상태·보류 사유 변경. `idempotencyKey`, `baseBoardRevision` 필수 |
+| GET | `/api/v1/work-sequence-boards/{board_id}/history` | mutation key·적용 revision을 포함한 변경 이력 조회 |
 | GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | 알림 후보 조회 |
 | PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | 알림 후보 상태 변경 |
 
 작업순서는 서버 직접 운영으로 확정한다. WPF는 연결된 서버의 목록·상세를 읽고 mutation API를 직접 호출하며 새 작업순서 mutation을 로컬 `server_sync_queue`에 넣지 않는다. 서버가 없거나 호환 contract를 만족하지 못하면 로컬 초안 조회는 가능하지만 생성·순서·상태의 운영 확정은 비활성화한다.
 
-목표 계약에서 보드 응답은 `revision`을 포함한다. 보드 생성, 항목 추가, 전체 순서 변경, 항목 상태 변경은 `idempotencyKey`와 기존 보드에는 `baseBoardRevision`을 필수로 받는다. 서버는 보드/항목 mutation, 정확히 한 `work_sequence_change_history` row, notification candidate와 mutation receipt를 한 transaction에 저장한다. revision 불일치는 409 `WORK_SEQUENCE_STALE_REVISION`이고, 동일 mutation key로 history가 둘 이상 생기면 transaction과 무결성 검사를 실패시킨다. 클라이언트 응답 유실 시 같은 key를 다시 보내며 서버는 새 history를 만들지 않고 기존 결과를 반환한다.
+구현된 계약에서 보드 상세와 목록 응답은 `board_revision`을 포함한다. 보드 생성, 항목 추가, 전체 순서 변경, 항목 상태 변경은 `idempotencyKey`를 필수로 받고 기존 보드 mutation은 `baseBoardRevision`도 필수로 받는다. 생성 revision은 1이며 항목 추가·순서·상태의 의미 있는 변경마다 조건부로 정확히 1 증가한다. 같은 revision의 경쟁 요청은 조건부 갱신에 성공한 한 요청만 저장되고 나머지는 409 `WORK_SEQUENCE_STALE_REVISION`과 `expectedRevision`, `currentRevision`을 받는다. 쓰기는 문서 편집 권한 role, 조회는 인증된 사용자를 요구한다.
+
+서버는 보드/항목 mutation, 정확히 한 `work_sequence_change_history` row와 `work_sequence_mutation_receipts` row를 같은 transaction에 저장하고, 순서·상태 변경처럼 알림 대상인 경우 notification candidate도 함께 저장한다. 상태와 보류 사유를 함께 바꾸어도 `ITEM_STATUS_CHANGED` 이력 1건만 만든다. 같은 key·같은 intent의 재요청은 receipt에 보존된 최초 성공 응답을 반환하고 revision·이력·알림을 다시 만들지 않는다. 같은 key를 다른 intent에 쓰면 409 `IDEMPOTENCY_KEY_REUSED`다. 현재 순서나 상태와 같은 no-op 요청은 422로 거부하여 revision과 이력을 소비하지 않는다.
 
 ## 채널 알림과 인수인계
 

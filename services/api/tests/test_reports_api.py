@@ -127,14 +127,22 @@ def create_work_sequence_sources(client: TestClient, headers: dict[str, str]) ->
     board_response = client.post(
         "/api/v1/work-sequence-boards",
         headers=headers,
-        json={"title": f"Report source board {suffix}", "lineCode": "line-a"},
+        json={
+            "title": f"Report source board {suffix}",
+            "lineCode": "line-a",
+            "idempotencyKey": f"report-board:{suffix}",
+        },
     )
     assert board_response.status_code == 201, board_response.text
     board = board_response.json()
     item_response = client.post(
         f"/api/v1/work-sequence-boards/{board['board_id']}/items",
         headers=headers,
-        json={"title": f"Report source sequence item {suffix}"},
+        json={
+            "title": f"Report source sequence item {suffix}",
+            "idempotencyKey": f"report-item:{suffix}",
+            "baseBoardRevision": board["board_revision"],
+        },
     )
     assert item_response.status_code == 201, item_response.text
     item = item_response.json()["items"][0]

@@ -2,7 +2,7 @@
 
 ## 목적
 
-Windows WPF 앱은 서버 연결 여부와 관계없이 현장 문서와 기록을 로컬 SQLite에 먼저 남긴다. 서버가 설정되어 있으면 이후 동기화를 시도한다.
+Windows WPF 앱은 문서, FieldComment, 첨부, 접근 로그, 보고서 같은 로컬 원천을 SQLite에 먼저 남기고 서버가 설정되어 있으면 동기화를 시도한다. 작업순서는 예외로 FastAPI snapshot을 권위 원천으로 직접 사용하며, 이 문서의 로컬 작업순서 테이블은 기존 기록·오프라인 읽기 캐시·초안으로만 보존한다.
 
 테이블과 동기화 설명은 2026-07-21 현재 `FlowNoteLocalDatabase`와 연결 서비스 코드 기준이다.
 
@@ -62,7 +62,7 @@ Windows WPF 앱은 서버 연결 여부와 관계없이 현장 문서와 기록�
 
 문서 최신 버전은 `documents.version_no`와 `document_versions.is_latest`를 기준으로 서버 최신 버전에 연결한다. 이미 서버에 같은 `version_no`가 있으면 중복 업로드하지 않고 매핑을 복구한다. 공개 버전은 `documents.published_version_no`와 `document_versions.is_published`를 기준으로 서버 publish API에 반영한다. 상태 변경은 현재 로컬 `documents.status`를 서버에 반영하며, `PUBLISHED` 상태는 공개 버전 동기화가 선행되어야 한다.
 
-보고서는 로컬 보고서 문서와 `report_sources`를 먼저 만든 뒤 서버 저장을 시도한다. 서버 저장이 성공하면 `server_report_id`, `server_document_id`, `server_version_id`, `server_id_mappings`를 함께 남기고, 실패하면 `server_sync_queue`에 `report/register_report` 재시도 항목을 보존한다. 작업순서 보드/항목/이력은 현재 단계에서 로컬 큐 대상이 아니라 로컬 기록과 서버 직접 API 검증, 보고서 근거 source 연결 범위로 둔다.
+보고서는 로컬 보고서 문서와 `report_sources`를 먼저 만든 뒤 서버 저장을 시도한다. 서버 저장이 성공하면 `server_report_id`, `server_document_id`, `server_version_id`, `server_id_mappings`를 함께 남기고, 실패하면 `server_sync_queue`에 `report/register_report` 재시도 항목을 보존한다. 작업순서 보드/항목/이력은 로컬 큐 대상이 아니다. WPF 화면은 서버 snapshot과 `board_revision`으로 직접 변경하고, 로컬 테이블은 기존 기록과 오프라인 읽기 캐시/초안으로만 보존한다. 서버 미연결 또는 조회 실패 상태에서는 생성·항목 추가·순서·상태 확정을 허용하지 않는다.
 
 controlled copy grant는 FastAPI 서버의 `controlled_copy_grants`에만 저장한다. WPF 로컬 SQLite에는 활성 grant 테이블이나 grant 토큰을 보존하지 않고 `server_id_mappings`로 서버 문서/버전을 찾은 뒤 즉시 발급·다운로드·SHA-256 검증하며, 실패를 `server_sync_queue`에 넣지 않는다. FastAPI 서버 DB와 WPF 로컬 DB는 서로 다른 파일이어야 하며, 이미 잘못 생성된 서버 grant 테이블은 DB 삭제 없이 `scripts/repair-wpf-controlled-copy-schema.py`로 보존 격리한다.
 

@@ -399,6 +399,23 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerWorkSequenceBoardResponse>(response, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ServerWorkSequenceBoardListItem>> ListWorkSequenceBoardsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync("api/v1/work-sequence-boards", cancellationToken);
+        return await ReadJsonResponse<List<ServerWorkSequenceBoardListItem>>(response, cancellationToken);
+    }
+
+    public async Task<ServerWorkSequenceBoardResponse> GetWorkSequenceBoardAsync(
+        string boardId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/work-sequence-boards/{Uri.EscapeDataString(boardId)}",
+            cancellationToken);
+        return await ReadJsonResponse<ServerWorkSequenceBoardResponse>(response, cancellationToken);
+    }
+
     public async Task<ServerWorkSequenceBoardResponse> AddWorkSequenceItemAsync(
         string boardId,
         ServerWorkSequenceItemCreateRequest request,

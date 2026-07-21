@@ -13,7 +13,7 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 
 ## 주요 테이블
 
-2026-07-21 현재 ORM 생성 기준은 다음 51개 테이블이다.
+2026-07-21 현재 ORM 생성 기준은 다음 52개 테이블이다.
 
 - `schema_migrations`
 - `user_accounts`, `roles`, `user_roles`
@@ -27,7 +27,7 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 - `comment_templates`
 - `work_records`, `work_record_versions`
 - `work_sequence_boards`, `work_sequence_items`
-- `work_sequence_change_history`, `work_sequence_notification_candidates`
+- `work_sequence_change_history`, `work_sequence_mutation_receipts`, `work_sequence_notification_candidates`
 - `notification_channels`, `notification_channel_members`, `channel_messages`
 - `handovers`, `handover_receipts`
 - `reports`, `report_sources`
@@ -49,6 +49,8 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 - `activity_history`
 
 `ai_queries` 계열은 운영 provider 구현이 아니라 기본 비활성 외부 호출 경계의 질의, 근거 snapshot, 인용, 호출 시도와 전송 승인 감사 모델이다. `ai_sensitive_data_policies`는 고객·현장별 금칙어와 고객 식별자 정책 버전을 저장하고, 현재 활성 정책을 provider 경계의 원천 필터에 적용한다. `ai_operational_policies`는 전역/현장 kill switch, 호출·비용 한도, 보존 기간과 감사 내보내기 허용 여부를 저장한다. `ai_provider_onboarding_reviews`는 provider/model별 계약·보존·학습·지역·TLS·장애·비용·kill switch 체크리스트와 기술·보안·법무·고객의 승인 또는 대기 결정을 version별로 보존한다. `ai_operation_audit_events`는 승인·프롬프트·정책 변경을 정제 메타데이터로 남기고, `ai_retention_audits`는 만료 질의 payload 비식별화와 응답 원문 삭제 결과를 보존한다. `controlled_copy_grants`는 원본 티켓 대신 SHA-256 hash를 저장하고 공개 문서 버전, 사용자, 인증 세션, 선택적 승인 단말, 만료와 소비 상태를 연결한다. `android_document_view_grants`는 승인 단말에 묶인 Android 앱 내부 열람용 1회 grant와 무결성 계약을 보존한다.
+
+`work_sequence_boards.board_revision`은 보드 aggregate 변경을 직렬화한다. `work_sequence_change_history`는 mutation key와 적용 revision을 정확히 한 건씩 보존하고, `work_sequence_mutation_receipts`는 intent hash·결과 revision·change ID·최초 응답 snapshot을 저장해 동일 key 재시도가 새 이력을 만들지 않게 한다.
 
 ## 로컬 경로
 

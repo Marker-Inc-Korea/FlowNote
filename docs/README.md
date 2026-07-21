@@ -38,6 +38,7 @@
 - FieldComment 원천 핵심 필드는 생성 후 수정·삭제하지 않고, 관리자 해석은 담당자·기한·정리·분석·상태·전이 사유와 원천 hash 감사로 분리한다. WPF에는 상세 필터와 다중 선택 검토·품질 작업함·서버 역추적 화면이 있고, FastAPI에는 요청당 최대 200건 일괄 검토, 감사·품질 API, 보고서 source와 생성 최종 문서·버전을 잇는 통합 역추적 API가 구현되어 있다.
 - 보고서 초안과 최종 저장은 서로 다른 source type 2종 이상을 요구한다. FieldComment는 `SELECTED`이면서 관찰 문서 버전과 원천 작성자가 있어야 하고 문서는 현재 공개 버전만 사용할 수 있다. 각 source는 version, 독립 trace ID와 저장 시점 SHA-256을 고정하며 최종 문서 저장 직전에 원천을 다시 검증한다.
 - WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다. 문서 버전과 FieldComment 첨부도 서버 idempotency key를 사용하며, 작업내역 화면에서 큐 깊이·최장 대기·최근 처리량·실패 분포와 row별 운영 상태를 확인한다. 서버본 유지로 종결한 `DISCARDED`도 전체 보존 건수에는 포함하되 재시도 대상 큐 깊이에서는 제외한다.
+- 작업순서는 동기화 큐 대상이 아니다. WPF 관리자·TV 화면은 FastAPI snapshot을 권위 원천으로 읽고, 관리 화면은 `board_revision`, mutation key, `baseBoardRevision`으로 서버를 직접 변경한다. 서버 미연결·조회 실패에서는 로컬 row를 읽기 캐시·초안으로만 표시하고 확정 변경을 차단한다.
 - Windows 보존 동기화 전환 CLI는 FAILED 큐를 읽기 전용 dry-run으로 분류하고 plan hash와 row별 승인을 요구한다. 승인된 구 `create`/FieldNote 항목은 기존 원천·큐·파일을 수정하지 않고 현재 action의 신규 큐와 감사 이력으로 연결한다.
 - WPF에는 AI 근거 후보 운영 점검 화면과 `AI 정답셋` 화면이 있다. `AI 정답셋`의 `사례·원천 구성` 창은 서버 후보를 포함 근거로 선택하고 실제 원천 ID·제외 사유를 제외 근거로 입력해 사례를 첫 승인 상태로 등록하며, `includePending=true`로 조회한 미승인 사례를 다른 사용자가 2차 승인할 수 있게 한다. 이어서 승인 사례를 불변 dataset version으로 구성하고 작성·검토·독립 2단계 승인·평가 run 비교를 수행한다. FastAPI는 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth를 저장하고 고정 원천 snapshot과 접근권한을 재검증한 뒤에만 활성화한다.
 - AI 준비도는 `ANONYMOUS_FIELD`/`PILOT`의 `FIELD_READINESS`와 `SYNTHETIC`/`TEST`의 `SMOKE_REGRESSION`을 분리한다. 합성 48건 회귀 통과는 실제 현장 준비도나 운영 provider 착수 승인이 아니다.
@@ -51,7 +52,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-21 현재 pytest node ID 131건이 중복 없이 수집되고 전부 통과한다. AI 근거 검색·독립 2인 승인 사례·불변 dataset version·provider 경계·운영 제어·자동 보존, controlled copy, Android secure view, 서버 계정 수명주기·권한·세션·감사, 문서 revision·파일 hash 충돌, FieldComment 작업함·보고서 source version/hash 고정 회귀가 포함된다. `scripts/verify-preserved-tests.ps1`의 수집/JUnit guard도 131건으로 정렬했으며, Windows 무생략 실행의 새 `verification-summary.json=PASSED`는 아직 확보해야 한다.
+- FastAPI 코드는 2026-07-21 현재 pytest node ID 134건을 중복 없이 수집한다. 작업순서의 동일 key 재시도, stale revision 경쟁, API 재시작 후 receipt 재사용 회귀 3건이 131건 기준에 추가되었다. 저장소 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 guard는 아직 131건이므로 현재 코드와 일치하지 않으며, 134건으로 갱신한 뒤 Windows 무생략 `verification-summary.json=PASSED` 기준선을 새로 확보해야 한다.
 
 ## 일일 기록
 

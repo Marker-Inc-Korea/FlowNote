@@ -122,6 +122,7 @@ FieldComment
 WorkSequenceBoard
   -> WorkSequenceItem
   -> WorkSequenceChangeHistory
+  -> WorkSequenceMutationReceipt
   -> WorkSequenceNotificationCandidate
   -> Notification (WPF local)
 
@@ -173,7 +174,9 @@ FieldComment는 문서 파일 개정이 아니라 현장 원천 기록이다. �
 
 작업순서는 루트의 `작업순서` 폴더에 둘 수 있는 문서와 별개인 운영 보드이다. `work_sequence_boards`와 `work_sequence_items`가 현재 작업순서와 상태를 관리하고, 순서/상태 변경은 이력과 알림 후보를 만든다.
 
-현재 단계의 서버-WPF 동기화 큐는 작업순서 보드/항목/이력을 대상으로 하지 않는다. 서버 작업순서 API는 직접 호출 스모크로 검증하고, WPF 보고서는 작업순서 항목/이력을 보고서 source로 연결한다.
+WPF 작업순서 관리자와 TV 화면은 FastAPI의 목록·상세 snapshot을 직접 읽는다. 관리 화면은 snapshot의 `board_revision`을 `baseBoardRevision`으로 보내고 사용자 동작마다 새 mutation key를 생성한다. 응답 유실 가능성이 있는 전송 오류는 같은 key로 한 번 재시도하며, 409 `WORK_SEQUENCE_STALE_REVISION`이면 한글 충돌 안내 후 서버 snapshot을 다시 읽어 사용자가 내용을 확인하고 재시도하게 한다.
+
+서버-WPF 동기화 큐는 작업순서 보드/항목/이력을 대상으로 하지 않는다. 서버 URL·로그인·호환 응답이 없거나 조회가 실패하면 WPF 로컬 테이블과 화면에 남은 값은 `읽기 캐시/초안`으로만 표시하고 생성·항목 추가·순서·상태 확정 버튼을 차단한다. 기존 로컬 row와 테스트 기록은 보존한다. 서버는 mutation, revision 증가, 의미상 change history 1건과 mutation receipt를 한 transaction으로 commit하고, 순서·상태 변경에는 알림 후보도 함께 저장한다.
 
 ## 채널 알림과 인수인계
 

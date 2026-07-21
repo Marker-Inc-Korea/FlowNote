@@ -23,7 +23,7 @@ Approved Android field devices
   -> API connection to Server PC through configured server URL
 ```
 
-WPF 앱은 로컬 SQLite에 먼저 기록하고 서버 URL이 설정되어 있으면 서버 동기화를 시도한다. 서버 호출 실패는 로컬 저장을 되돌리지 않고 동기화 큐와 이력으로 남긴다.
+WPF 앱은 문서·FieldComment·첨부·접근 로그·보고서 원천을 로컬 SQLite에 먼저 기록하고 서버 URL이 설정되어 있으면 서버 동기화를 시도한다. 이 도메인의 서버 호출 실패는 로컬 저장을 되돌리지 않고 동기화 큐와 이력으로 남긴다. 작업순서는 예외로 FastAPI snapshot을 권위 원천으로 직접 사용하고 로컬 큐에 넣지 않으며, 서버 미연결·조회 실패에서는 확정 변경을 차단한다.
 
 Android 앱은 현장 입력과 알림 확인을 서버 기준으로 처리한다. 네트워크가 불안정할 때 FieldComment와 사진 첨부만 Keystore AES-GCM 보호 outbox에 임시 저장하며, 채널 메시지·인수인계·문서 메타데이터는 outbox 대상이 아니다. 장기 원천 데이터는 서버 SQLite와 `storage/`에 남긴다. 개인 휴대폰은 제외하고 MDM 등록 승인 단말만 배포하며, 채널 알림은 로그인 동안 15초 foreground service가 사내 HTTPS polling으로 복구한다.
 
@@ -710,8 +710,8 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 131건 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files` 금지 산출물을 함께 확인한다. 스크립트의 FastAPI 수집/JUnit guard도 현재 코드와 같은 131건이다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files` 금지 산출물을 함께 확인한다. 현재 FastAPI 코드 수집값은 134건이지만 스크립트 guard는 131건이므로, guard를 134건으로 갱신하기 전에는 현재 Windows 통합 기준선을 만들 수 없다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 
-2026-07-20 WPF 공통 DB의 서버형 `controlled_copy_grants` FK 충돌은 `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·row 수·hash를 먼저 보존한 뒤 복구했다. 실제 복구 run `WPF-P0-20260720-0840`은 `quick_check=ok`, FK 위반 0건이며 문서 버전 3,384행의 원천 hash를 유지한다. FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하려는 경우도 이제 `create_all` 전에 거부한다. 2026-07-21 macOS 보조 run `baseline-131-macos-precheck-20260721-001`은 FastAPI 131건 통과만 확인했고 WPF/Android 실제 테스트 수는 `NOT_RUN`이다. 현재 개발 호스트에는 Windows/.NET/JDK/Android SDK가 없어 전체 표준 실행을 완료하지 못했으므로, 새 Windows 무생략 `verification-summary.json=PASSED`가 생성되기 전까지 배포 통합 기준선은 `대기`다.
+2026-07-20 WPF 공통 DB의 서버형 `controlled_copy_grants` FK 충돌은 `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·row 수·hash를 먼저 보존한 뒤 복구했다. 실제 복구 run `WPF-P0-20260720-0840`은 `quick_check=ok`, FK 위반 0건이며 문서 버전 3,384행의 원천 hash를 유지한다. FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하려는 경우도 `create_all` 전에 거부한다. 2026-07-21 macOS 보조 run `baseline-131-macos-precheck-20260721-001`은 당시 FastAPI 131건 통과만 확인했고 WPF/Android는 `NOT_RUN`이다. 현재 코드는 134건이므로 이 run을 최신 기준선으로 승격하지 않는다. guard 갱신과 새 Windows 무생략 `verification-summary.json=PASSED`가 생성되기 전까지 배포 통합 기준선은 `대기`다.

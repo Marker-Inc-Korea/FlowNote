@@ -11,4 +11,6 @@ public sealed record WorkSequenceBoardRecord(
     string CreatedBy,
     DateTime CreatedAt,
     DateTime UpdatedAt,
-    int ItemCount);
+    int ItemCount,
+    int BoardRevision = 0,
+    bool IsServerSnapshot = false);

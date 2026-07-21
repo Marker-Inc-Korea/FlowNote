@@ -430,23 +430,39 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new WorkSequenceAdminWindow(services.WorkSequences, GetCurrentActorName())
+        var window = new WorkSequenceAdminWindow(
+            services.WorkSequences,
+            serverDocumentClient,
+            GetCurrentUserId())
         {
             Owner = this
         };
         window.ShowDialog();
     }
 
-    private void WorkSequenceTvButton_Click(object sender, RoutedEventArgs e)
+    private async void WorkSequenceTvButton_Click(object sender, RoutedEventArgs e)
     {
-        var board = services.WorkSequences.ListBoards().FirstOrDefault();
-        if (board is null)
+        string? boardId = null;
+        if (serverDocumentClient is not null)
+        {
+            try
+            {
+                boardId = (await serverDocumentClient.ListWorkSequenceBoardsAsync()).FirstOrDefault()?.BoardId;
+            }
+            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
+            {
+                workspace.StatusText = $"서버 작업순서 조회 실패: 로컬 읽기 캐시를 확인합니다. ({exception.Message})";
+            }
+        }
+        var localBoard = services.WorkSequences.ListBoards().FirstOrDefault();
+        boardId ??= localBoard?.BoardId;
+        if (boardId is null)
         {
             workspace.StatusText = "현황판을 열기 전에 작업판을 먼저 생성하세요.";
             return;
         }
 
-        var window = new WorkSequenceTvWindow(services.WorkSequences, board.BoardId)
+        var window = new WorkSequenceTvWindow(services.WorkSequences, serverDocumentClient, boardId)
         {
             Owner = this
         };

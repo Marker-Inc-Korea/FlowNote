@@ -62,13 +62,13 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/field-comments/{comment_id}/attachments` | Attachment create; optional multipart `idempotencyKey` returns the existing attachment on retry |
 | GET | `/api/v1/field-comments/{comment_id}/attachments` | Attachment list |
 | GET | `/api/v1/documents/{document_id}/field-comments` | FieldComments by document |
-| POST | `/api/v1/work-sequence-boards` | Work sequence board create |
-| GET | `/api/v1/work-sequence-boards` | Work sequence board list |
-| GET | `/api/v1/work-sequence-boards/{board_id}` | Work sequence board detail |
-| POST | `/api/v1/work-sequence-boards/{board_id}/items` | Add item |
-| PUT | `/api/v1/work-sequence-boards/{board_id}/items/order` | Reorder items |
-| PATCH | `/api/v1/work-sequence-boards/{board_id}/items/{item_id}/status` | Change item status |
-| GET | `/api/v1/work-sequence-boards/{board_id}/history` | Change history |
+| POST | `/api/v1/work-sequence-boards` | Create board with required `idempotencyKey` |
+| GET | `/api/v1/work-sequence-boards` | List boards with optional `lineCode` and `status` filters |
+| GET | `/api/v1/work-sequence-boards/{board_id}` | Board snapshot with ordered items and `board_revision` |
+| POST | `/api/v1/work-sequence-boards/{board_id}/items` | Add item with mutation key and base board revision |
+| PUT | `/api/v1/work-sequence-boards/{board_id}/items/order` | Reorder the complete item set with mutation key and base revision |
+| PATCH | `/api/v1/work-sequence-boards/{board_id}/items/{item_id}/status` | Change item status/hold reason with mutation key and base revision |
+| GET | `/api/v1/work-sequence-boards/{board_id}/history` | Change history with mutation key and applied revision |
 | GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | Notification candidates |
 | PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | Change notification candidate status |
 | POST | `/api/v1/notification-channels` | Create notification channel |
@@ -137,6 +137,8 @@ Server account lifecycle APIs require `admin` or `system-admin`. Temporary passw
 
 `GET /api/v1/tags` is currently readable without authentication. Creating tags and all document, FieldComment, access log, work sequence, report, and AI search candidate endpoints use the authentication and role policies described in [docs/api.md](../../docs/api.md).
 
+Work sequence reads require an authenticated user and writes use the document-write role policy. The server is authoritative for the board aggregate: meaningful item add, reorder, and status mutations conditionally advance `board_revision`, store exactly one change-history row and one `work_sequence_mutation_receipts` row in the same transaction, and return `WORK_SEQUENCE_STALE_REVISION` when another client wins the base revision. Retrying the same intent with the same mutation key returns the stored first response; reusing the key for another intent returns `IDEMPOTENCY_KEY_REUSED`. No-op reorder or status requests are rejected without consuming a revision.
+
 ## Local Development
 
 ```powershell
@@ -192,7 +194,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-07-21, the FastAPI suite collects 131 unique node IDs and passes all 131 tests, and `scripts/verify-preserved-tests.ps1` enforces the same 131 collection/JUnit entries. The macOS auxiliary run `baseline-131-macos-precheck-20260721-001` confirms only that FastAPI result; WPF and Android remain `NOT_RUN` on that host. The complete Windows baseline must still run WPF Core/build/smoke and Android unit/debug build checks under one preserved run ID before a new `verification-summary.json=PASSED` baseline is established.
+As of 2026-07-21, the FastAPI suite collects 134 unique node IDs. The three additions cover work-sequence duplicate retry under concurrency, two clients competing on one board revision, and receipt reuse after API restart. `scripts/verify-preserved-tests.ps1` still enforces the prior 131-entry collection/JUnit count, so it must be aligned to 134 before it can establish a current Windows baseline. The older `baseline-131-macos-precheck-20260721-001` run remains historical FastAPI-only evidence; WPF and Android were `NOT_RUN`. A complete current baseline still requires WPF Core/build/smoke and Android unit/debug build checks under one preserved Windows run ID with `verification-summary.json=PASSED`.
 
 The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no management API for that sensitive-data policy. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. The server lifespan runs expired-query retention on the configured interval by default, while the `system-admin` endpoint remains available for an immediate run.
 
