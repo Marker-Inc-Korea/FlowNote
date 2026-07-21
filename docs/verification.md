@@ -4,13 +4,13 @@
 
 ## 2026-07-21 작업 207 전체 문서 갱신과 작업순서 서버 권위 대조
 
-Git 추적 Markdown 42개를 전부 목록화했다. 작업 정책 원문 `AGENTS.md`는 제품 설명 갱신 대상에서 제외하고, 나머지 제품·구현 Markdown 41개를 FastAPI, Windows WPF, Android와 운영 스크립트에 다시 대조했다. 가상환경·빌드 캐시·`data/local`·`tmp`의 Markdown는 제품 문서가 아니며 누적 테스트 증거이므로 수정하지 않았다. 과거 일일 기록과 검증 절의 당시 수치·실패 결과도 증거로 보존하고, 현재 사양처럼 읽히는 문장만 최신 코드로 갱신했다.
+Git 추적 Markdown 42개를 전부 목록화했다. 작업 정책 원문 `AGENTS.md`는 제품 설명 갱신 대상에서 제외하고, 나머지 제품·구현 Markdown 41개를 FastAPI, Windows WPF, Android와 운영 스크립트에 다시 대조했다. 가상환경·빌드 캐시·`data/local`·`tmp`의 Markdown은 제품 문서가 아니며 누적 테스트 증거이므로 수정하지 않았다. 과거 일일 기록과 검증 절의 당시 수치·실패 결과도 증거로 보존하고, 현재 사양처럼 읽히는 문장만 최신 코드로 갱신했다.
 
-현재 OpenAPI는 루트 `GET /`를 포함한 116개 method/path 조합이며 `services/api/README.md`의 API 표와 누락·초과 없이 일치한다. ORM은 `work_sequence_mutation_receipts`가 추가된 52개 테이블이고 `Settings`는 36개다. 작업순서 보드는 `board_revision`과 mutation receipt를 쓰는 FastAPI 권위 aggregate로 전환되었고, WPF 관리자·TV 화면은 서버 snapshot을 직접 읽으며 오프라인에서 확정 변경을 차단한다. 이 변경을 제품 개요, 시스템 맵, 데이터 모델, API, 의사결정, Windows 로컬 DB·동기화 문서, 서버 DB 스키마와 테스트 개요에 반영했다.
+현재 OpenAPI는 루트 `GET /`를 포함한 116개 method/path 조합이며 `services/api/README.md`의 API 표와 누락·초과 없이 일치한다. ORM은 FieldComment 검토·보고서·작업순서 mutation receipt를 포함한 54개 테이블이고 `Settings`는 36개다. 작업순서는 `board_revision`과 mutation receipt를 쓰는 FastAPI 권위 aggregate이며, FieldComment 검토는 `review_revision`, 보고서는 `report_revision`과 내용/source 집합 hash를 권위값으로 사용한다. WPF는 작업순서 서버 snapshot을 직접 읽고, 검토·첨부·보고서 재시도에는 base revision·mutation key·파일/source hash를 전달해 응답 read-back을 로컬에 보존한다. 이 변경을 제품 개요, 시스템 맵, 데이터 모델, API, 의사결정, Windows 로컬 DB·동기화 문서, 서버 DB 스키마와 테스트 개요에 반영했다.
 
-`pytest --collect-only -q`는 중복 없는 134건을 수집했고 전체 `.venv/bin/python -m pytest -q`는 134 passed로 종료했다. macOS에서 실행 가능한 WPF Core 테스트는 작업순서 서버 권위 정책 5건을 포함해 33 passed, failed/skipped 0이었다. Android `testDebugUnitTest`는 실행을 시도했지만 Java Runtime을 찾지 못해 테스트 시작 전 환경 실패로 종료했다. WPF 앱 build·누적 스모크·Android build는 Windows 표준 기준선으로 실행하지 않았다.
+이번 현재 코드 대조에서 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 137건을 수집했다. 새 3건은 FieldComment 검토 동시성/receipt 재생, 첨부 응답 유실 재시도, 보고서 선정 뒤 source 변경 409 차단이다. 전체 pytest는 이번 문서 갱신 중 새로 실행하지 않았으며, 직전 134 passed는 새 3건 추가 전의 역사적 결과로만 보존한다. 당시 macOS에서 실행 가능한 WPF Core 테스트는 작업순서 서버 권위 정책 5건을 포함해 33 passed, failed/skipped 0이었고 Android `testDebugUnitTest`는 Java Runtime 부재로 테스트 시작 전 환경 실패였다. WPF 앱 build·누적 스모크·Android build도 Windows 표준 기준선으로 새로 실행하지 않았다.
 
-`scripts/verify-preserved-tests.ps1`의 `$expectedFastApiTestCount`는 아직 131이다. 따라서 현재 코드 134건을 수집하는 표준 실행은 수집 단계에서 실패하며, guard 갱신 전에는 새 Windows x64 무생략 `PASSED` 기준선을 확정할 수 없다. 기존 `baseline-131-macos-precheck-20260721-001`은 당시 결과로 보존하지만 현재 코드 기준선으로 승격하지 않는다. 기존 실패 run, SQLite, 로그, 파일은 삭제하거나 초기화하지 않았다.
+`scripts/verify-preserved-tests.ps1`의 `$expectedFastApiTestCount`는 아직 131이다. 따라서 현재 코드 137건을 수집하는 표준 실행은 수집 단계에서 실패하며, guard 갱신 전에는 새 Windows x64 무생략 `PASSED` 기준선을 확정할 수 없다. 기존 `baseline-131-macos-precheck-20260721-001`은 당시 결과로 보존하지만 현재 코드 기준선으로 승격하지 않는다. 기존 실패 run, SQLite, 로그, 파일은 삭제하거나 초기화하지 않았다.
 
 ## 2026-07-20 작업 207 전체 문서 재대조
 
@@ -54,7 +54,7 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
 2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 3. 실행 전 `git status --porcelain=v1 --untracked-files=all`과 `git ls-files`에서 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
-4. `services/api`에서 FastAPI pytest node ID 134개를 수집하고 중복 node ID가 0개인지 확인한다. 수집 목록은 `fastapi-collected-tests.txt`로 보존한다. 현재 스크립트 guard 131개를 134개로 먼저 갱신해야 이 단계가 통과한다.
+4. `services/api`에서 FastAPI pytest node ID 137개를 수집하고 중복 node ID가 0개인지 확인한다. 수집 목록은 `fastapi-collected-tests.txt`로 보존한다. 현재 스크립트 guard 131개를 137개로 먼저 갱신해야 이 단계가 통과한다.
 5. FastAPI pytest를 실행하고 실행 ID별 JUnit을 보존한다.
 6. WPF Core 테스트를 실행하고 TRX를 보존한다.
 7. WPF 앱을 빌드한다.
@@ -98,7 +98,7 @@ FieldComment 정제 스모크는 실행마다 다음 6개 시나리오를 같은
 
 마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. `wpf-smoke-database-evidence.json`에는 주요 테이블 실행 전후 통계, 오늘 문서 ID, 과거 기존 문서의 이전·신규 버전과 무결성 결과가 저장된다. 통제된 기준선은 실행마다 설정이 식별되는 관리형 FastAPI를 사용하므로 시작 전에 `5184` 포트를 비워야 한다. 해당 포트에 이미 건강한 서버가 있으면 환경 실패로 중단하고 외부 프로세스는 종료하지 않는다.
 
-한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. 현재 FastAPI 수집/JUnit 목표는 134건이며 failure/error/skipped와 중복 node ID는 모두 0이어야 한다. 표준 스크립트 guard가 131건인 현재 상태는 기준선 확정 전 해소할 예외 사항이다. WPF TRX와 Android JUnit도 failure/error 0, WPF·Android build 로그도 build error 0이어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+한 run ID의 `verification-summary.json`이 `PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. 현재 FastAPI 수집/JUnit 목표는 137건이며 failure/error/skipped와 중복 node ID는 모두 0이어야 한다. 표준 스크립트 guard가 131건인 현재 상태는 기준선 확정 전 해소할 예외 사항이다. WPF TRX와 Android JUnit도 failure/error 0, WPF·Android build 로그도 build error 0이어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
 

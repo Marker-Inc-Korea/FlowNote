@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import desc, exists, func, or_, select
+from sqlalchemy import desc, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -29,6 +29,7 @@ from app.db.models import (
     DocumentVersion,
     FieldComment,
     FieldCommentAttachment,
+    FieldCommentReviewMutationReceipt,
     FileObject,
     ReportSource,
     Report,
@@ -109,6 +110,8 @@ class FieldCommentReviewRequest(BaseModel):
     assigned_to: str | None = Field(default=None, alias="assignedTo")
     review_due_at: datetime | None = Field(default=None, alias="reviewDueAt")
     transition_reason: str | None = Field(default=None, alias="transitionReason")
+    base_review_revision: int | None = Field(default=None, alias="baseReviewRevision", ge=1)
+    mutation_key: str | None = Field(default=None, alias="mutationKey", max_length=160)
 
 
 class FieldCommentBulkReviewRequest(BaseModel):
@@ -172,6 +175,7 @@ class FieldCommentResponse(BaseModel):
     updated_at: datetime
     reviewed_at: datetime | None
     analyzed_at: datetime | None
+    review_revision: int
     workbench_flags: list[str] = Field(default_factory=list)
     workbench_priority: int = 0
 
@@ -329,6 +333,7 @@ def _field_comment_response(
         updated_at=note.updated_at,
         reviewed_at=note.reviewed_at,
         analyzed_at=note.analyzed_at,
+        review_revision=note.review_revision,
         workbench_flags=workbench_flags or [],
         workbench_priority=workbench_priority,
     )
@@ -418,7 +423,71 @@ def _review_snapshot(note: FieldComment) -> dict:
         "review_due_at": note.review_due_at.isoformat() if note.review_due_at else None,
         "analyzed_by": note.analyzed_by,
         "reviewed_by": note.reviewed_by,
+        "review_revision": note.review_revision,
     }
+
+
+def _review_intent_hash(comment_id: str, request: FieldCommentReviewRequest) -> str:
+    payload = {
+        "commentId": comment_id,
+        **request.model_dump(by_alias=True, exclude={"mutation_key"}),
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _review_idempotent_response(
+    session: Session,
+    comment_id: str,
+    mutation_key: str | None,
+    intent_hash: str,
+) -> FieldCommentResponse | None:
+    if mutation_key is None:
+        return None
+    receipt = session.scalar(
+        select(FieldCommentReviewMutationReceipt).where(
+            FieldCommentReviewMutationReceipt.mutation_key == mutation_key
+        )
+    )
+    if receipt is None:
+        return None
+    if receipt.comment_id != comment_id or receipt.intent_hash_sha256 != intent_hash:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "IDEMPOTENCY_KEY_REUSED",
+                "message": "같은 mutation key를 다른 FieldComment 검토에 사용할 수 없습니다.",
+            },
+        )
+    return FieldCommentResponse.model_validate_json(receipt.response_json)
+
+
+def _claim_review_revision(session: Session, note: FieldComment, base_revision: int) -> int:
+    next_revision = base_revision + 1
+    result = session.execute(
+        update(FieldComment)
+        .where(
+            FieldComment.comment_id == note.comment_id,
+            FieldComment.review_revision == base_revision,
+        )
+        .values(review_revision=next_revision, updated_at=datetime.now(timezone.utc))
+    )
+    if result.rowcount != 1:
+        session.rollback()
+        current_revision = session.scalar(
+            select(FieldComment.review_revision).where(FieldComment.comment_id == note.comment_id)
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "FIELD_COMMENT_STALE_REVIEW_REVISION",
+                "message": "다른 사용자가 FieldComment 검토를 먼저 변경했습니다. 새로고침 후 다시 검토하세요.",
+                "expectedRevision": base_revision,
+                "currentRevision": current_revision,
+            },
+        )
+    note.review_revision = next_revision
+    return next_revision
 
 
 def _load_user_id(session: Session, value: str | None, field_name: str) -> str | None:
@@ -647,8 +716,18 @@ async def create_field_comment_attachment(
     captured_at: Annotated[datetime | None, Form(alias="capturedAt")] = None,
     created_by: Annotated[str | None, Form(alias="createdBy")] = None,
     idempotency_key: Annotated[str | None, Form(alias="idempotencyKey")] = None,
+    parent_comment_id: Annotated[str | None, Form(alias="parentCommentId")] = None,
+    file_sha256: Annotated[str | None, Form(alias="fileSha256")] = None,
     app_settings: Annotated[Settings, Depends(get_settings)] = None,
 ) -> FieldCommentAttachmentResponse:
+    if parent_comment_id is not None and parent_comment_id.strip() != comment_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "ATTACHMENT_PARENT_MISMATCH", "message": "첨부 부모 FieldComment가 요청 경로와 다릅니다."},
+        )
+    expected_hash = _clean_optional(file_sha256)
+    if expected_hash is not None and (len(expected_hash) != 64 or any(c not in "0123456789abcdefABCDEF" for c in expected_hash)):
+        raise HTTPException(status_code=422, detail="fileSha256 must be a 64-character SHA-256 hex value.")
     comment_exists = session.scalar(select(FieldComment.id).where(FieldComment.comment_id == comment_id))
     if comment_exists is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field comment not found.")
@@ -672,6 +751,14 @@ async def create_field_comment_attachment(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Idempotent field comment attachment has no file object.",
                 )
+            if expected_hash is not None and (
+                not existing_file.hash_sha256
+                or existing_file.hash_sha256.lower() != expected_hash.lower()
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "IDEMPOTENCY_KEY_REUSED", "message": "같은 첨부 멱등키의 파일 SHA-256이 다릅니다."},
+                )
             return _attachment_response(existing, existing_file)
 
     _validate_attachment_file(file)
@@ -688,6 +775,12 @@ async def create_field_comment_attachment(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="Attachment file is too large.",
         ) from exc
+    if expected_hash is not None and stored.hash_sha256.lower() != expected_hash.lower():
+        _delete_stored_file(storage_root, stored.storage_key)
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "ATTACHMENT_FILE_HASH_MISMATCH", "message": "업로드 파일 SHA-256이 클라이언트 값과 다릅니다."},
+        )
 
     file_object = FileObject(
         storage_key=stored.storage_key,
@@ -931,6 +1024,7 @@ def bulk_review_field_comments(
         raise HTTPException(status_code=404, detail=f"Field comments not found: {', '.join(missing)}")
     ordered = [by_id[item] for item in comment_ids]
     for note in ordered:
+        _claim_review_revision(session, note, note.review_revision)
         _apply_review_change(session, note, request, current_user.user_id, current_user.role)
     try:
         session.commit()
@@ -1257,13 +1351,31 @@ def review_field_comment(
     current_user: FieldCommentAnalyzeUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> FieldCommentResponse:
+    mutation_key = _clean_idempotency_key(request.mutation_key)
+    intent_hash = _review_intent_hash(comment_id, request)
+    replay = _review_idempotent_response(session, comment_id, mutation_key, intent_hash)
+    if replay is not None:
+        return replay
+
     note = session.scalar(select(FieldComment).where(FieldComment.comment_id == comment_id))
     if note is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field comment not found.")
 
+    base_revision = request.base_review_revision or note.review_revision
+    _claim_review_revision(session, note, base_revision)
     _apply_review_change(session, note, request, current_user.user_id, current_user.role)
 
     try:
+        session.flush()
+        response = _field_comment_response(note)
+        if mutation_key is not None:
+            session.add(FieldCommentReviewMutationReceipt(
+                mutation_key=mutation_key,
+                intent_hash_sha256=intent_hash,
+                comment_id=comment_id,
+                review_revision=note.review_revision,
+                response_json=response.model_dump_json(),
+            ))
         session.commit()
     except (IntegrityError, ValueError) as exc:
         session.rollback()

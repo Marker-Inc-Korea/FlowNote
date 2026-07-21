@@ -174,6 +174,18 @@ public sealed record ServerFieldCommentResponse
 
     [JsonPropertyName("analyzed_at")]
     public DateTime? AnalyzedAt { get; init; }
+
+    [JsonPropertyName("review_revision")]
+    public int ReviewRevision { get; init; } = 1;
+
+    [JsonPropertyName("assigned_to")]
+    public string? AssignedTo { get; init; }
+
+    [JsonPropertyName("review_due_at")]
+    public DateTime? ReviewDueAt { get; init; }
+
+    [JsonPropertyName("last_transition_reason")]
+    public string? LastTransitionReason { get; init; }
 }
 
 public sealed record ServerFieldCommentReviewRequest
@@ -202,9 +214,17 @@ public sealed record ServerFieldCommentReviewRequest
     [JsonPropertyName("transitionReason")]
     public string TransitionReason { get; init; } = "WPF 관리자 검토 동기화";
 
+    [JsonPropertyName("baseReviewRevision")]
+    public int BaseReviewRevision { get; init; }
+
+    [JsonPropertyName("mutationKey")]
+    public string MutationKey { get; init; } = string.Empty;
+
     public static ServerFieldCommentReviewRequest FromLocal(
         FieldCommentRecord fieldComment,
-        string? actorId = null)
+        string? actorId = null,
+        string? mutationKey = null,
+        int? baseReviewRevision = null)
     {
         var status = Clean(fieldComment.Status);
         return new ServerFieldCommentReviewRequest
@@ -220,7 +240,9 @@ public sealed record ServerFieldCommentReviewRequest
                 : null,
             AssignedTo = Clean(fieldComment.AssignedTo),
             ReviewDueAt = fieldComment.ReviewDueAt,
-            TransitionReason = Clean(fieldComment.LastTransitionReason) ?? "WPF 관리자 검토 동기화"
+            TransitionReason = Clean(fieldComment.LastTransitionReason) ?? "WPF 관리자 검토 동기화",
+            BaseReviewRevision = baseReviewRevision ?? fieldComment.ReviewRevision,
+            MutationKey = Clean(mutationKey) ?? throw new ArgumentException("Mutation key is required.", nameof(mutationKey))
         };
     }
 

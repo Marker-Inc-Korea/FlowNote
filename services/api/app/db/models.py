@@ -323,6 +323,27 @@ class FieldComment(TimestampMixin, Base):
     selected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class FieldCommentReviewMutationReceipt(Base):
+    __tablename__ = "field_comment_review_mutation_receipts"
+    __table_args__ = (
+        UniqueConstraint("comment_id", "review_revision", name="uq_field_comment_review_receipt_revision"),
+        Index("ix_field_comment_review_receipts_comment_created", "comment_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mutation_key: Mapped[str] = mapped_column(String(160), unique=True, nullable=False, index=True)
+    intent_hash_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    comment_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("field_comments.comment_id"), nullable=False, index=True
+    )
+    review_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    response_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 @event.listens_for(FieldComment, "before_update")
@@ -747,6 +768,33 @@ class Report(TimestampMixin, Base):
     approved_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    report_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    content_hash_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    source_set_hash_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+
+
+class ReportMutationReceipt(Base):
+    __tablename__ = "report_mutation_receipts"
+    __table_args__ = (
+        UniqueConstraint("report_id", "report_revision", name="uq_report_receipt_revision"),
+        Index("ix_report_receipts_report_created", "report_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mutation_key: Mapped[str] = mapped_column(String(160), unique=True, nullable=False, index=True)
+    intent_hash_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    report_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("reports.report_id"), nullable=False, index=True
+    )
+    report_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_hash_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_set_hash_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    generated_document_id: Mapped[str | None] = mapped_column(String(64))
+    generated_version_id: Mapped[str | None] = mapped_column(String(64))
+    response_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class ReportSource(Base):

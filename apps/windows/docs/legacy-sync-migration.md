@@ -56,6 +56,8 @@ dotnet run --project apps/windows/src/FlowNote.Windows.SyncMigrationTool -- \
 - 구 FieldNote는 결정적 새 FieldComment ID로 복제한다. 작성자, 보고자, 작업자, 본문, 정리/분석 내용, 상태, 생성 시각을 그대로 보존한다.
 - 구 첨부는 결정적 새 첨부 ID와 새 FieldComment ID로 연결하고 파일 경로, 원본 파일명, hash, 작성자, 촬영/생성 시각을 그대로 보존한다.
 - 감사 JSON은 전환 당시 구 원천의 전체 column snapshot과 `legacy_domain_name = FieldNote`를 남겨 구 명칭과 원천 ID를 추적한다.
+- 현재 큐 schema 확장은 기존 행을 재작성하지 않고 `base_domain_revision`, `intent_hash`, `source_set_hash`를 nullable column으로 추가한다. 신규 FieldComment 검토/보고서 큐만 enqueue 시 값을 고정하며 구 큐의 NULL은 migration 증거다.
+- `scripts/verify-field-comment-report-convergence.py`는 지정한 WPF/API SQLite를 출력 폴더에 복사하고 같은 `run_id`의 무결성 JSON을 만든다. 현재 증거는 DB 파일 SHA-256, `integrity_check`/FK 위반, WPF 큐 상태별 count·전체 row canonical hash·idempotency 중복, 원천 파일 경로 집합 hash, 서버 report source orphan·FieldComment source hash 불일치·idempotency 중복이다. 원본 DB, 기존 큐, 원천 row, 파일 경로와 파일은 삭제하지 않는다. 실제 원천 파일 내용 SHA-256과 migration 전후 자동 비교는 아직 이 스크립트의 검증 범위가 아니다.
 
 ## 검증 기준
 

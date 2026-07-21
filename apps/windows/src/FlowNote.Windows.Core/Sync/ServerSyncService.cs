@@ -8,6 +8,8 @@ using FlowNote.Windows.Core.Storage;
 using FlowNote.Windows.Core.Tags;
 using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 
 namespace FlowNote.Windows.Core.Sync;
 
@@ -333,7 +335,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                    synced_at, server_document_id, server_version_id, server_report_id, server_comment_id,
                    server_attachment_id, server_log_id, base_server_revision,
                    expected_server_version_id, expected_published_version_id,
-                   local_file_hash_sha256, conflict_code, conflict_details,
+                   local_file_hash_sha256, base_domain_revision, intent_hash, source_set_hash,
+                   conflict_code, conflict_details,
                    resolution_action, resolution_reason, resolved_by, resolved_at
             FROM server_sync_queue
             ORDER BY
@@ -377,12 +380,15 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 reader.IsDBNull(21) ? null : reader.GetString(21),
                 reader.IsDBNull(22) ? null : reader.GetString(22),
                 reader.IsDBNull(23) ? null : reader.GetString(23),
-                reader.IsDBNull(24) ? null : reader.GetString(24),
+                reader.IsDBNull(24) ? null : reader.GetInt32(24),
                 reader.IsDBNull(25) ? null : reader.GetString(25),
                 reader.IsDBNull(26) ? null : reader.GetString(26),
                 reader.IsDBNull(27) ? null : reader.GetString(27),
                 reader.IsDBNull(28) ? null : reader.GetString(28),
-                reader.IsDBNull(29) ? null : DateTime.Parse(reader.GetString(29))));
+                reader.IsDBNull(29) ? null : reader.GetString(29),
+                reader.IsDBNull(30) ? null : reader.GetString(30),
+                reader.IsDBNull(31) ? null : reader.GetString(31),
+                reader.IsDBNull(32) ? null : DateTime.Parse(reader.GetString(32))));
         }
 
         return records;
@@ -754,6 +760,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         var status = string.IsNullOrWhiteSpace(failureReason) ? Pending : Failed;
         using var connection = database.OpenConnection();
         var snapshot = LoadDocumentSyncSnapshot(connection, localDocumentId, localVersionNo);
+        var baseDomainRevision = LoadBaseDomainRevision(connection, entityType, entityId);
+        var intentHash = ComputeSha256($"{entityType}|{entityId}|{action}|{idempotencyKey}|{baseDomainRevision}");
+        var sourceSetHash = entityType == "report" ? LoadReportSourceSetHash(connection, entityId) : null;
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO server_sync_queue (
@@ -771,7 +780,10 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 base_server_revision,
                 expected_server_version_id,
                 expected_published_version_id,
-                local_file_hash_sha256
+                local_file_hash_sha256,
+                base_domain_revision,
+                intent_hash,
+                source_set_hash
             )
             VALUES (
                 $sync_id,
@@ -788,7 +800,10 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 $base_server_revision,
                 $expected_server_version_id,
                 $expected_published_version_id,
-                $local_file_hash_sha256
+                $local_file_hash_sha256,
+                $base_domain_revision,
+                $intent_hash,
+                $source_set_hash
             )
             ON CONFLICT(idempotency_key) DO UPDATE SET
                 status = CASE
@@ -814,7 +829,10 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 local_file_hash_sha256 = CASE
                     WHEN server_sync_queue.status IN ('SYNCED', 'DISCARDED') THEN server_sync_queue.local_file_hash_sha256
                     ELSE excluded.local_file_hash_sha256
-                END;
+                END,
+                base_domain_revision = COALESCE(server_sync_queue.base_domain_revision, excluded.base_domain_revision),
+                intent_hash = COALESCE(server_sync_queue.intent_hash, excluded.intent_hash),
+                source_set_hash = COALESCE(server_sync_queue.source_set_hash, excluded.source_set_hash);
             """;
         command.Parameters.AddWithValue("$sync_id", $"sync-{Guid.NewGuid():N}");
         command.Parameters.AddWithValue("$entity_type", entityType);
@@ -830,6 +848,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$expected_server_version_id", string.IsNullOrWhiteSpace(snapshot.ServerVersionId) ? DBNull.Value : snapshot.ServerVersionId);
         command.Parameters.AddWithValue("$expected_published_version_id", string.IsNullOrWhiteSpace(snapshot.ServerPublishedVersionId) ? DBNull.Value : snapshot.ServerPublishedVersionId);
         command.Parameters.AddWithValue("$local_file_hash_sha256", string.IsNullOrWhiteSpace(snapshot.LocalFileHashSha256) ? DBNull.Value : snapshot.LocalFileHashSha256);
+        command.Parameters.AddWithValue("$base_domain_revision", baseDomainRevision is null ? DBNull.Value : baseDomainRevision.Value);
+        command.Parameters.AddWithValue("$intent_hash", intentHash);
+        command.Parameters.AddWithValue("$source_set_hash", string.IsNullOrWhiteSpace(sourceSetHash) ? DBNull.Value : sourceSetHash);
         command.ExecuteNonQuery();
 
         if (!string.IsNullOrWhiteSpace(failureReason))
@@ -837,6 +858,42 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             RecordSyncHistory(connection, "server_sync.failed", entityType, entityId, failureReason, now);
         }
     }
+
+    private static int? LoadBaseDomainRevision(SqliteConnection connection, string entityType, string entityId)
+    {
+        if (entityType != "field_comment_review")
+        {
+            return null;
+        }
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT review_revision FROM field_comments WHERE comment_id = $id LIMIT 1;";
+        command.Parameters.AddWithValue("$id", entityId);
+        var value = command.ExecuteScalar();
+        return value is null or DBNull ? null : Convert.ToInt32(value);
+    }
+
+    private static string? LoadReportSourceSetHash(SqliteConnection connection, string reportDocumentId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT source_type, local_source_id, COALESCE(source_version_id, ''),
+                   COALESCE(source_hash_sha256, ''), COALESCE(relation_type, '')
+            FROM report_sources
+            WHERE local_report_document_id = $id
+            ORDER BY source_type, local_source_id, source_version_id, relation_type, source_hash_sha256;
+            """;
+        command.Parameters.AddWithValue("$id", reportDocumentId);
+        using var reader = command.ExecuteReader();
+        var rows = new List<string>();
+        while (reader.Read())
+        {
+            rows.Add(string.Join("|", Enumerable.Range(0, 5).Select(reader.GetString)));
+        }
+        return rows.Count == 0 ? null : ComputeSha256(string.Join("\n", rows));
+    }
+
+    private static string ComputeSha256(string value) =>
+        Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
     private static DocumentSyncSnapshot LoadDocumentSyncSnapshot(
         SqliteConnection connection,
@@ -894,7 +951,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         command.CommandText = """
             SELECT id, entity_type, entity_id, action, local_document_id, local_version_no,
                    idempotency_key, base_server_revision, expected_server_version_id,
-                   expected_published_version_id, local_file_hash_sha256
+                   expected_published_version_id, local_file_hash_sha256,
+                   base_domain_revision, intent_hash, source_set_hash
             FROM server_sync_queue
             WHERE status IN ('PENDING', 'FAILED')
             ORDER BY
@@ -985,7 +1043,10 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
                 reader.IsDBNull(7) ? null : reader.GetInt32(7),
                 reader.IsDBNull(8) ? null : reader.GetString(8),
                 reader.IsDBNull(9) ? null : reader.GetString(9),
-                reader.IsDBNull(10) ? null : reader.GetString(10)));
+                reader.IsDBNull(10) ? null : reader.GetString(10),
+                reader.IsDBNull(11) ? null : reader.GetInt32(11),
+                reader.IsDBNull(12) ? null : reader.GetString(12),
+                reader.IsDBNull(13) ? null : reader.GetString(13)));
         }
 
         return items;
@@ -1467,35 +1528,44 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         }
 
         var serverComment = await serverClient.GetFieldCommentAsync(serverCommentId, cancellationToken);
-        var request = ServerFieldCommentReviewRequest.FromLocal(fieldComment, serverUserId);
-        var mainFlow = new[] { "NEW", "ANALYZED", "REVIEWED", "SELECTED" };
-        var currentIndex = Array.IndexOf(mainFlow, serverComment.Status);
-        var targetIndex = Array.IndexOf(mainFlow, fieldComment.Status);
-        ServerFieldCommentResponse response = serverComment;
-        if (currentIndex >= 0 && targetIndex > currentIndex)
-        {
-            for (var index = currentIndex + 1; index <= targetIndex; index++)
-            {
-                response = await serverClient.UpdateFieldCommentReviewAsync(
-                    serverCommentId,
-                    request with
-                    {
-                        Status = mainFlow[index],
-                        TransitionReason = $"{request.TransitionReason} ({mainFlow[index]} 단계 동기화)"
-                    },
-                    cancellationToken);
-            }
-        }
-        else
-        {
-            response = await serverClient.UpdateFieldCommentReviewAsync(
-                serverCommentId,
-                request,
-                cancellationToken);
-        }
+        var baseRevision = item.BaseDomainRevision ?? serverComment.ReviewRevision;
+        var request = ServerFieldCommentReviewRequest.FromLocal(
+            fieldComment,
+            serverUserId,
+            item.IdempotencyKey,
+            baseRevision);
+        var response = await serverClient.UpdateFieldCommentReviewAsync(
+            serverCommentId,
+            request,
+            cancellationToken);
 
         var now = DateTime.UtcNow;
         using var connection = database.OpenConnection();
+        using (var update = connection.CreateCommand())
+        {
+            update.CommandText = """
+                UPDATE field_comments
+                SET status = $status,
+                    normalized_content = $normalized_content,
+                    analysis_content = $analysis_content,
+                    assigned_to = $assigned_to,
+                    review_due_at = $review_due_at,
+                    last_transition_reason = $transition_reason,
+                    review_revision = $review_revision,
+                    synced_at = $synced_at
+                WHERE comment_id = $comment_id;
+                """;
+            update.Parameters.AddWithValue("$status", response.Status);
+            update.Parameters.AddWithValue("$normalized_content", response.NormalizedContent ?? (object)DBNull.Value);
+            update.Parameters.AddWithValue("$analysis_content", response.AnalysisContent ?? (object)DBNull.Value);
+            update.Parameters.AddWithValue("$assigned_to", response.AssignedTo ?? (object)DBNull.Value);
+            update.Parameters.AddWithValue("$review_due_at", response.ReviewDueAt?.ToString("O") ?? (object)DBNull.Value);
+            update.Parameters.AddWithValue("$transition_reason", response.LastTransitionReason ?? (object)DBNull.Value);
+            update.Parameters.AddWithValue("$review_revision", response.ReviewRevision);
+            update.Parameters.AddWithValue("$synced_at", now.ToString("O"));
+            update.Parameters.AddWithValue("$comment_id", fieldComment.CommentId);
+            update.ExecuteNonQuery();
+        }
         UpsertMapping(
             connection,
             "field_comment_review",
@@ -1551,6 +1621,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             attachment.CapturedAt,
             Clean(serverUserId),
             item.IdempotencyKey,
+            attachment.HashSha256,
             cancellationToken);
 
         var now = DateTime.UtcNow;
@@ -1714,6 +1785,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             new ServerReportSaveRequest
             {
                 IdempotencyKey = item.IdempotencyKey,
+                MutationKey = item.IdempotencyKey,
                 ReportType = "field_review",
                 Title = document.Title,
                 Summary = document.LatestComment,
@@ -1725,7 +1797,47 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             },
             cancellationToken);
 
+        VerifyReportReadBack(response);
         LinkReportDocumentToServer(item, document, response, DateTime.UtcNow);
+    }
+
+    private static void VerifyReportReadBack(ServerReportResponse response)
+    {
+        if (response.ReportRevision < 1 || string.IsNullOrWhiteSpace(response.ContentHashSha256) ||
+            response.ContentHashSha256.Length != 64 || string.IsNullOrWhiteSpace(response.SourceSetHashSha256) ||
+            response.SourceSetHashSha256.Length != 64)
+        {
+            throw new InvalidOperationException("서버 보고서 revision/content/source-set hash read-back이 불완전합니다.");
+        }
+
+        var normalized = response.Sources
+            .Select(source => new SortedDictionary<string, object?>
+            {
+                ["relation_type"] = source.RelationType,
+                ["source_hash_sha256"] = source.SourceHashSha256,
+                ["source_id"] = source.SourceId,
+                ["source_type"] = source.SourceType,
+                ["source_version_id"] = source.SourceVersionId
+            })
+            .OrderBy(item => Convert.ToString(item["source_type"], System.Globalization.CultureInfo.InvariantCulture))
+            .ThenBy(item => Convert.ToString(item["source_id"], System.Globalization.CultureInfo.InvariantCulture))
+            .ThenBy(item => Convert.ToString(item["source_version_id"], System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty)
+            .ThenBy(item => Convert.ToString(item["relation_type"], System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty)
+            .ThenBy(item => Convert.ToString(item["source_hash_sha256"], System.Globalization.CultureInfo.InvariantCulture))
+            .ToList();
+        var canonical = JsonSerializer.Serialize(normalized, new JsonSerializerOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        });
+        var readBackHash = ComputeSha256(canonical);
+        if (!string.Equals(readBackHash, response.SourceSetHashSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new FlowNoteServerConflictException(
+                "REPORT_SOURCE_SET_HASH_MISMATCH",
+                "서버 보고서 source read-back hash가 aggregate hash와 다릅니다.",
+                null, response.ReportRevision, response.Status, null, null,
+                $"server={response.SourceSetHashSha256}; readBack={readBackHash}");
+        }
     }
 
     private DocumentRecord? LoadDocument(string documentId)
@@ -1886,7 +1998,7 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             SELECT id, comment_id, document_id, document_version_no, comment_type, input_mode, signal_level,
                    raw_content, normalized_content, analysis_content, author_name, reported_by,
                    operator_name, entry_source, device_id, location_code, status, created_at, synced_at,
-                   assigned_to, review_due_at, last_transition_reason
+                   assigned_to, review_due_at, last_transition_reason, review_revision
             FROM field_comments
             WHERE comment_id = $comment_id
             LIMIT 1;
@@ -1920,7 +2032,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             reader.IsDBNull(18) ? null : DateTime.Parse(reader.GetString(18)),
             reader.IsDBNull(19) ? null : reader.GetString(19),
             reader.IsDBNull(20) ? null : DateTime.Parse(reader.GetString(20)),
-            reader.IsDBNull(21) ? null : reader.GetString(21));
+            reader.IsDBNull(21) ? null : reader.GetString(21),
+            reader.GetInt32(22));
     }
 
     private FieldCommentAttachmentRecord? LoadFieldCommentAttachment(string attachmentId)
@@ -2173,6 +2286,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         update.CommandText = """
             UPDATE documents
             SET server_report_id = $server_report_id,
+                server_report_revision = $server_report_revision,
+                server_report_content_hash_sha256 = $server_report_content_hash_sha256,
+                server_report_source_set_hash_sha256 = $server_report_source_set_hash_sha256,
                 server_document_id = $server_document_id,
                 server_version_id = $server_version_id,
                 synced_at = $synced_at
@@ -2184,6 +2300,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             WHERE document_id = $document_id AND is_latest = 1;
             """;
         update.Parameters.AddWithValue("$server_report_id", savedReport.ReportId);
+        update.Parameters.AddWithValue("$server_report_revision", savedReport.ReportRevision);
+        update.Parameters.AddWithValue("$server_report_content_hash_sha256", savedReport.ContentHashSha256!);
+        update.Parameters.AddWithValue("$server_report_source_set_hash_sha256", savedReport.SourceSetHashSha256!);
         update.Parameters.AddWithValue("$server_document_id", string.IsNullOrWhiteSpace(serverDocumentId) ? DBNull.Value : serverDocumentId);
         update.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
         update.Parameters.AddWithValue("$synced_at", syncedAt.ToString("O"));
@@ -2504,6 +2623,13 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         return code switch
         {
             "STALE_REVISION" => "서버 revision 변경 충돌",
+            "FIELD_COMMENT_STALE_REVIEW_REVISION" => "FieldComment 검토 revision 충돌",
+            "REPORT_STALE_REVISION" => "보고서 revision 충돌",
+            "REPORT_SOURCE_STALE_OR_ORPHAN" => "보고서 원천 변경/고아 충돌",
+            "REPORT_SOURCE_SET_HASH_MISMATCH" => "보고서 원천 집합 hash 불일치",
+            "REPORT_CONTENT_HASH_MISMATCH" => "보고서 내용 hash 불일치",
+            "ATTACHMENT_PARENT_MISMATCH" => "첨부 부모 FieldComment 불일치",
+            "ATTACHMENT_FILE_HASH_MISMATCH" => "첨부 파일 SHA-256 불일치",
             "STALE_BASE_VERSION" => "기준 버전 변경 충돌",
             "PUBLISHED_VERSION_CHANGED" => "공개본 교체 경쟁 충돌",
             "DOCUMENT_DELETED" => "서버 삭제 문서 재전송 충돌",
@@ -3007,7 +3133,10 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         int? BaseServerRevision,
         string? ExpectedServerVersionId,
         string? ExpectedPublishedVersionId,
-        string? LocalFileHashSha256);
+        string? LocalFileHashSha256,
+        int? BaseDomainRevision,
+        string? IntentHash,
+        string? SourceSetHash);
 
     private sealed record DocumentServerMapping(
         string? ServerDocumentId,

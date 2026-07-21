@@ -25,7 +25,7 @@
 - 알림, 전체 이력
 - 관리자 파일 감시 후보 처리
 - 작업순서 관리자 화면과 TV 화면. 서버 snapshot·`board_revision`을 권위 원천으로 사용하고 mutation key와 `baseBoardRevision`으로 직접 변경하며, 미연결/조회 실패 시 로컬 row는 읽기 캐시·초안으로만 표시하고 모든 확정 변경을 차단
-- 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도
+- 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도. 재시도 큐는 source 집합 hash를 고정하고 서버 응답의 report revision·내용 hash·source 집합 hash를 로컬 문서에 보존
 - 채널함: 서버 내 채널, 채널 메시지/알림, 인수인계 조회, 읽음/수신 확인, 원천 링크 복사, 후속 FieldComment 생성
 - 채널 관리: 서버 채널 생성, 멤버 추가/제외
 - 인수인계 확인 현황: 수신자별 receipt 상태 변경, 후속 FieldComment 생성
@@ -33,7 +33,7 @@
 - AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
 - `AI 정답셋`: 후보 포함 근거와 수동 제외 원천으로 사례 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·대체·폐기, 평가 run 실행·이전 run 비교
 - `system-admin` 전용 `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현재 현장 kill switch와 호출·비용·보존 정책, 정제 감사 조회/CSV 내보내기, 서버 자동 보존과 별개인 만료 보존 작업 즉시 실행
-- 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장. 문서 버전·첨부 idempotency key 전달과 큐 깊이·최장 대기·최근 처리량·실패 분포·row별 운영 상태 표시 포함
+- 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장. FieldComment 검토 base revision·mutation key, 첨부 부모·파일 SHA-256, 보고서 source 집합 hash, 문서 버전·첨부 idempotency key 전달과 큐 깊이·최장 대기·최근 처리량·실패 분포·row별 운영 상태 표시 포함
 - 보존 동기화 실패 전환 CLI: FAILED 큐를 읽기 전용 dry-run으로 분류하고, plan hash와 row별 운영자 승인을 받은 구 `create`/FieldNote 항목만 현재 action의 별도 큐로 무손실 전환
 
 WPF에는 `/api/v1/ai/queries`를 호출하는 실제 외부 AI 질의 실행 화면이나 운영 provider client가 없다. AI 화면은 외부 호출 없는 근거 후보 운영 점검, `AI 정답셋`, `system-admin` 전용 운영 제어 화면으로 분리되어 있다.
@@ -118,7 +118,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-현재 FastAPI 코드는 134건을 수집하지만 표준 스크립트의 수집/JUnit guard는 아직 131건이다. 작업순서 서버 권위 회귀 3건이 추가된 현재 코드에 맞게 guard를 갱신하고 Windows에서 WPF Core·앱 build·누적 스모크·Android build를 한 run으로 완료해야 한다. 새 Windows 무생략 `verification-summary.json=PASSED`가 나올 때까지 통합 기준선 재확립은 `대기`다.
+현재 FastAPI 코드는 137건을 수집하지만 표준 스크립트의 수집/JUnit guard는 아직 131건이다. 과거 131건 기준 뒤 작업순서 서버 권위 회귀 3건과 FieldComment 검토 경합·첨부 응답 유실 재시도·보고서 source 변경 차단 회귀 3건이 추가되었다. guard를 137건으로 갱신하고 Windows에서 WPF Core·앱 build·누적 스모크·Android build를 한 run으로 완료해야 한다. 새 Windows 무생략 `verification-summary.json=PASSED`가 나올 때까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

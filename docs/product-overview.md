@@ -21,9 +21,9 @@ FlowNote는 생산공장 현장의 문서와 현장 경험을 함께 남기는 �
 - 문서 미리보기와 열람 로그
 - 다운로드 차단과 뷰어 자동 닫힘
 - 허용 role이 공개 버전을 서버의 60초 1회성 controlled copy 티켓으로 저장하고 SHA-256을 검증하는 제한 다운로드
-- FieldComment 원천 불변 기록, 첨부, 단계형 검토, 담당자·기한, 일괄 처리, 감사·품질 작업함과 알림
+- FieldComment 원천 불변 기록, 첨부, 단계형 검토, 담당자·기한, 일괄 처리, 감사·품질 작업함과 알림. 개별 검토 revision·mutation receipt와 첨부 부모/파일 hash 검증 포함
 - 작업순서 보드/항목/이력/알림 후보와 TV 화면
-- 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도
+- 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도. 보고서 revision·내용/source 집합 hash·mutation receipt와 원천 재검증 포함
 - FastAPI 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
 - Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인
@@ -41,7 +41,9 @@ FlowNote는 생산공장 현장의 문서와 현장 경험을 함께 남기는 �
 
 운영 판정과 AI·보고서 근거의 권위 원천은 FastAPI 서버다. WPF 로컬 DB는 연결이 불안정한 동안 원천 파일·입력·outbox를 무손실 보존하는 로컬 우선 작업 원장이지, 서버와 별개의 최종 상태 원장이 아니다. 서버가 수락하기 전 로컬 원천은 삭제하지 않고, 서버가 수락한 뒤에는 서버 ID·revision·파일 hash·공개 포인터·보고서 source ID를 다시 읽어 매핑까지 확인한 경우에만 수렴 완료로 판정한다. timeout, 503, 응답 유실과 앱 재시작은 같은 idempotency key로 재시도하고 409는 자동 덮어쓰기하지 않는다.
 
-작업순서의 최종 운영은 서버 직접 API로 구현되었다. WPF 관리자·TV 화면은 서버 목록과 상세 snapshot을 읽고, 관리 화면은 `board_revision`을 `baseBoardRevision`으로 보내며 사용자 동작마다 새 mutation key를 생성한다. 서버는 의미 있는 변경마다 revision을 1 증가시키고 change history 1건과 mutation receipt를 같은 트랜잭션에 저장한다. 응답 유실로 볼 수 있는 전송 오류는 같은 key로 한 번 재시도하고, stale revision은 최신 snapshot을 새로 읽은 뒤 사용자가 확인하고 다시 시도하게 한다. 로컬 작업순서 테이블은 오프라인 읽기 캐시·초안과 기존 테스트 기록으로 보존하며 `server_sync_queue`에 새 작업순서 mutation을 넣지 않는다. 서버 미연결·조회 실패로 권위 snapshot이 없으면 생성·항목 추가·순서·상태 확정을 차단한다. 보고서 source의 고정 version·trace ID·저장 시점 hash와 최종 저장 전 재검증은 구현되었다. FieldComment 검토·첨부와 보고서 aggregate 전체의 revision·mutation receipt·read-back 수렴 계약은 아직 목표 계약이며, migration·장애 주입 검증을 통과하기 전에는 두 WPF 인스턴스의 전체 도메인 동시 쓰기를 운영 승인하지 않는다.
+작업순서의 최종 운영은 서버 직접 API로 구현되었다. WPF 관리자·TV 화면은 서버 목록과 상세 snapshot을 읽고, 관리 화면은 `board_revision`을 `baseBoardRevision`으로 보내며 사용자 동작마다 새 mutation key를 생성한다. 서버는 의미 있는 변경마다 revision을 1 증가시키고 change history 1건과 mutation receipt를 같은 트랜잭션에 저장한다. 응답 유실로 볼 수 있는 전송 오류는 같은 key로 한 번 재시도하고, stale revision은 최신 snapshot을 새로 읽은 뒤 사용자가 확인하고 다시 시도하게 한다. 로컬 작업순서 테이블은 오프라인 읽기 캐시·초안과 기존 테스트 기록으로 보존하며 `server_sync_queue`에 새 작업순서 mutation을 넣지 않는다. 서버 미연결·조회 실패로 권위 snapshot이 없으면 생성·항목 추가·순서·상태 확정을 차단한다.
+
+FieldComment 검토·첨부와 보고서 aggregate의 도메인별 수렴 계약도 구현되었다. 개별 검토는 `review_revision`과 mutation receipt로 직렬화하고 WPF가 성공 revision을 로컬에 반영한다. 첨부는 부모 comment ID와 파일 SHA-256을 검증한다. 보고서는 고정 source version·trace ID·원천 hash를 재검증하고 `report_revision`, 내용/source 집합 hash, mutation receipt, 선택적 생성 문서/버전을 같은 서버 transaction에 저장한다. WPF는 응답 source 집합을 다시 hash해 일치할 때 revision/hash를 로컬 문서에 보존한다. 공통 receipt, 서버 instance/epoch manifest와 reconciliation은 후속 목표이며, 장애 주입 검증을 통과하기 전에는 두 WPF 인스턴스의 전체 도메인 동시 쓰기를 운영 승인하지 않는다.
 
 Android 현장 단말 앱과 Windows 채널/인수인계 전용 화면은 현재 최소 구현이 들어와 있다. 공통 채널과 인수인계 서버 모델/API는 FastAPI에 구현되어 있으며, Windows WPF는 관리자/현장 PC의 문서 운영, 파일 감시, 파일 미리보기, 보고서 정리, 로컬 동기화 보강, 채널 감독, 인수인계 관리, 서버 계정과 승인 단말 운영을 담당한다. Android는 승인된 현장 태블릿 또는 러기드 단말에서 공개 문서 목록·상세와 PDF·이미지·UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 기록, 신호등식 상태 기록, 인수인계 확인, 채널 알림 확인을 담당한다. 문서 본문은 현재 공개 버전만 사용자·세션·승인 단말에 묶인 단기 1회 grant로 받고, 앱 내부 난수 캐시에서 무결성을 확인한 뒤 표시한다. 외부 열기·공유는 제공하지 않으며 종료·백그라운드 전환·오류·로그아웃·다음 시작에 임시 파일을 정리한다. WPF는 창 활성 중, Android는 로그인 세션의 foreground service에서 기본 15초 간격으로 알림을 polling한다. Android는 단절·재부팅 뒤 서버 주소+사용자 scope별 마지막 cursor부터 복구하고, WPF는 서버 scope·사용자별 cursor와 처리한 `message_id`를 로컬 SQLite에 보존해 앱 재시작 후 이어간다. WPF 서버 계정 화면에서는 계정 수명주기와 활성 세션을 관리하고, 승인 단말 화면에서는 서버 단말의 목록·상세·마지막 접속 조회와 등록, 정보/상태 변경, 교체를 수행한다. Android 보안 뷰어의 승인 실단말 검증, 운영 배포 서명, MDM/인증서 적용, 현장별 단말 등록·비활성화 절차, foreground service의 Doze·강제 중지/MDM 복구 실기와 채널 운영 UX 고도화는 후속 범위다.
 

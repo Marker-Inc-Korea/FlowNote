@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -23,6 +23,7 @@ from app.db.models import (
     FieldComment,
     FileObject,
     Report,
+    ReportMutationReceipt,
     ReportSource,
     NotificationChannel,
     NotificationChannelMember,
@@ -92,6 +93,10 @@ class ReportSaveRequest(BaseModel):
     save_as_document: bool = Field(default=False, alias="saveAsDocument")
     document_title: str | None = Field(default=None, alias="documentTitle")
     document_status: str = Field(default="IN_REVIEW", alias="documentStatus")
+    base_report_revision: int | None = Field(default=None, alias="baseReportRevision", ge=1)
+    mutation_key: str | None = Field(default=None, alias="mutationKey", max_length=160)
+    content_hash_sha256: str | None = Field(default=None, alias="contentHashSha256")
+    source_set_hash_sha256: str | None = Field(default=None, alias="sourceSetHashSha256")
 
 
 class ReportSourceResponse(BaseModel):
@@ -137,6 +142,9 @@ class ReportResponse(BaseModel):
     approved_at: datetime | None
     sources: list[ReportSourceResponse]
     generated_document: ReportDocumentSummary | None = None
+    report_revision: int
+    content_hash_sha256: str | None
+    source_set_hash_sha256: str | None
 
 
 def _new_public_id(prefix: str) -> str:
@@ -333,6 +341,49 @@ def _hash_payload(payload: dict) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _report_content_hash(report: Report) -> str:
+    return _hash_payload({
+        "report_type": report.report_type,
+        "title": report.title,
+        "summary": report.summary,
+        "analysis_content": report.analysis_content,
+        "conclusion": report.conclusion,
+        "action_plan": report.action_plan,
+        "work_record_id": report.work_record_id,
+        "structure_item_id": report.structure_item_id,
+        "period_start": report.period_start.isoformat() if report.period_start else None,
+        "period_end": report.period_end.isoformat() if report.period_end else None,
+        "status": report.status,
+    })
+
+
+def _source_set_hash(sources: list[ReportSource]) -> str:
+    normalized = sorted(
+        ({
+            "source_type": source.source_type,
+            "source_id": source.source_id,
+            "source_version_id": source.source_version_id,
+            "source_hash_sha256": source.source_hash_sha256,
+            "relation_type": source.relation_type,
+        } for source in sources),
+        key=lambda item: (
+            item["source_type"], item["source_id"], item["source_version_id"] or "",
+            item["relation_type"] or "", item["source_hash_sha256"],
+        ),
+    )
+    canonical = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _report_intent_hash(request: ReportSaveRequest) -> str:
+    payload = request.model_dump(
+        by_alias=True,
+        exclude={"mutation_key", "idempotency_key"},
+    )
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def _field_comment_source_hash(note: FieldComment) -> str:
     return _hash_payload({
         "comment_id": note.comment_id,
@@ -457,16 +508,27 @@ def _validate_frozen_sources(
     if len({source.source_type for source in sources}) < 2:
         raise HTTPException(status_code=422, detail="A report requires at least two distinct source types.")
     for source in sources:
-        validated_type, validated_id, validated_version, _, current_hash = _validate_source(
-            session,
-            ReportSourceRequest(
-                sourceType=source.source_type,
-                sourceId=source.source_id,
-                sourceVersionId=source.source_version_id,
-                relationType=source.relation_type,
-            ),
-            current_user,
-        )
+        try:
+            validated_type, validated_id, validated_version, _, current_hash = _validate_source(
+                session,
+                ReportSourceRequest(
+                    sourceType=source.source_type,
+                    sourceId=source.source_id,
+                    sourceVersionId=source.source_version_id,
+                    relationType=source.relation_type,
+                ),
+                current_user,
+            )
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_403_FORBIDDEN:
+                raise
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "REPORT_SOURCE_STALE_OR_ORPHAN",
+                    "message": f"보고서 원천이 변경되었거나 더 이상 사용할 수 없습니다: {source.trace_id}.",
+                },
+            ) from exc
         if (validated_type, validated_id, validated_version) != (
             source.source_type,
             source.source_id,
@@ -711,7 +773,55 @@ def _report_response(session: Session, report: Report) -> ReportResponse:
             if document is not None
             else None
         ),
+        report_revision=report.report_revision,
+        content_hash_sha256=report.content_hash_sha256,
+        source_set_hash_sha256=report.source_set_hash_sha256,
     )
+
+
+def _report_idempotent_response(
+    session: Session,
+    mutation_key: str | None,
+    intent_hash: str,
+) -> ReportResponse | None:
+    if mutation_key is None:
+        return None
+    receipt = session.scalar(
+        select(ReportMutationReceipt).where(ReportMutationReceipt.mutation_key == mutation_key)
+    )
+    if receipt is None:
+        return None
+    if receipt.intent_hash_sha256 != intent_hash:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "IDEMPOTENCY_KEY_REUSED", "message": "같은 mutation key를 다른 보고서 저장에 사용할 수 없습니다."},
+        )
+    return ReportResponse.model_validate_json(receipt.response_json)
+
+
+def _claim_report_revision(session: Session, report: Report, base_revision: int) -> int:
+    next_revision = base_revision + 1
+    result = session.execute(
+        update(Report)
+        .where(Report.report_id == report.report_id, Report.report_revision == base_revision)
+        .values(report_revision=next_revision, updated_at=datetime.now(timezone.utc))
+    )
+    if result.rowcount != 1:
+        session.rollback()
+        current_revision = session.scalar(
+            select(Report.report_revision).where(Report.report_id == report.report_id)
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "REPORT_STALE_REVISION",
+                "message": "다른 사용자가 보고서를 먼저 변경했습니다. 새로고침 후 다시 저장하세요.",
+                "expectedRevision": base_revision,
+                "currentRevision": current_revision,
+            },
+        )
+    report.report_revision = next_revision
+    return next_revision
 
 
 @router.post("/drafts", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
@@ -739,6 +849,11 @@ def create_report_draft(
     session.add(report)
     session.flush()
     _replace_report_sources(session, report.report_id, request.sources, current_user)
+    draft_sources = list(session.scalars(
+        select(ReportSource).where(ReportSource.report_id == report.report_id).order_by(ReportSource.id)
+    ).all())
+    report.content_hash_sha256 = _report_content_hash(report)
+    report.source_set_hash_sha256 = _source_set_hash(draft_sources)
     _record_activity(session, "report.draft_created", current_user.user_id, report, f"Report draft created: {report.title}.")
     try:
         session.commit()
@@ -758,6 +873,11 @@ def save_report(
 ) -> ReportResponse:
     now = datetime.now(timezone.utc)
     idempotency_key = _clean_idempotency_key(request.idempotency_key)
+    mutation_key = _clean_idempotency_key(request.mutation_key) or idempotency_key
+    intent_hash = _report_intent_hash(request)
+    replay = _report_idempotent_response(session, mutation_key, intent_hash)
+    if replay is not None:
+        return replay
     if idempotency_key is not None:
         existing = session.scalar(select(Report).where(Report.idempotency_key == idempotency_key))
         if existing is not None:
@@ -772,6 +892,7 @@ def save_report(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Approved or archived report sources cannot be replaced.",
             )
+        _claim_report_revision(session, report, request.base_report_revision or report.report_revision)
     else:
         if not request.sources:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="sources is required.")
@@ -813,6 +934,20 @@ def save_report(
             select(ReportSource).where(ReportSource.report_id == report.report_id).order_by(ReportSource.id)
         ).all()
     _validate_frozen_sources(session, list(sources), current_user)
+    report.content_hash_sha256 = _report_content_hash(report)
+    report.source_set_hash_sha256 = _source_set_hash(list(sources))
+    if request.content_hash_sha256 is not None and request.content_hash_sha256.lower() != report.content_hash_sha256:
+        raise HTTPException(status_code=409, detail={"code": "REPORT_CONTENT_HASH_MISMATCH", "message": "보고서 내용 hash가 서버 정규화 결과와 다릅니다."})
+    if request.source_set_hash_sha256 is not None and request.source_set_hash_sha256.lower() != report.source_set_hash_sha256:
+        raise HTTPException(status_code=409, detail={"code": "REPORT_SOURCE_SET_HASH_MISMATCH", "message": "보고서 원천 집합 hash가 서버 정규화 결과와 다릅니다."})
+
+    # 파일/문서 생성 직전 원천 상태·버전·hash·채널 권한을 다시 읽어 검증한다.
+    session.flush()
+    session.expire_all()
+    sources = list(session.scalars(
+        select(ReportSource).where(ReportSource.report_id == report.report_id).order_by(ReportSource.id)
+    ).all())
+    _validate_frozen_sources(session, sources, current_user)
     if request.save_as_document:
         document = _save_report_document(
             session,
@@ -827,6 +962,20 @@ def save_report(
 
     _record_activity(session, "report.approved", current_user.user_id, report, f"Report approved: {report.title}.")
     try:
+        session.flush()
+        response = _report_response(session, report)
+        if mutation_key is not None:
+            session.add(ReportMutationReceipt(
+                mutation_key=mutation_key,
+                intent_hash_sha256=intent_hash,
+                report_id=report.report_id,
+                report_revision=report.report_revision,
+                content_hash_sha256=report.content_hash_sha256,
+                source_set_hash_sha256=report.source_set_hash_sha256,
+                generated_document_id=report.generated_document_id,
+                generated_version_id=(response.generated_document.latest_version_id if response.generated_document else None),
+                response_json=response.model_dump_json(),
+            ))
         session.commit()
     except IntegrityError as exc:
         session.rollback()

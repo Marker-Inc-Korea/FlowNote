@@ -22,4 +22,5 @@ public sealed record FieldCommentRecord(
     DateTime? SyncedAt,
     string? AssignedTo,
     DateTime? ReviewDueAt,
-    string? LastTransitionReason);
+    string? LastTransitionReason,
+    int ReviewRevision = 1);
