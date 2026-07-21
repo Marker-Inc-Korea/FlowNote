@@ -260,6 +260,7 @@ def _ensure_field_comment_review_columns(database: Database) -> None:
         "review_due_at": "DATETIME",
         "last_transition_reason": "TEXT",
         "selected_at": "DATETIME",
+        "review_revision": "INTEGER NOT NULL DEFAULT 1",
     }
     with database.engine.begin() as connection:
         existing = {row[1] for row in connection.execute(text("PRAGMA table_info(field_comments)"))}
@@ -315,6 +316,23 @@ def _ensure_report_source_trace_columns(database: Database) -> None:
                 "ON report_sources (source_hash_sha256)"
             )
         )
+
+
+def _ensure_report_aggregate_columns(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+    columns = {
+        "report_revision": "INTEGER NOT NULL DEFAULT 1",
+        "content_hash_sha256": "VARCHAR(64)",
+        "source_set_hash_sha256": "VARCHAR(64)",
+    }
+    with database.engine.begin() as connection:
+        existing = {row[1] for row in connection.execute(text("PRAGMA table_info(reports)"))}
+        if not existing:
+            return
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE reports ADD COLUMN {name} {definition}"))
 
 
 def _ensure_auth_session_device_column(database: Database) -> None:
@@ -663,6 +681,7 @@ def initialize_database(database: Database) -> None:
     _ensure_idempotency_columns(database)
     _ensure_field_comment_review_columns(database)
     _ensure_report_source_trace_columns(database)
+    _ensure_report_aggregate_columns(database)
     _ensure_terminal_device_schema(database)
     _ensure_auth_session_device_column(database)
     _ensure_document_access_log_reason_column(database)

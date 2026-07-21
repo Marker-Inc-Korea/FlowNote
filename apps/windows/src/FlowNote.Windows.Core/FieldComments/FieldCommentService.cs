@@ -173,7 +173,7 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             SELECT id, comment_id, document_id, document_version_no, comment_type, input_mode, signal_level,
                    raw_content, normalized_content, analysis_content, author_name, reported_by,
                    operator_name, entry_source, device_id, location_code, status, created_at, synced_at,
-                   assigned_to, review_due_at, last_transition_reason
+                   assigned_to, review_due_at, last_transition_reason, review_revision
             FROM field_comments
             WHERE document_id = $document_id
             ORDER BY created_at DESC, id DESC;
@@ -626,7 +626,8 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             reader.IsDBNull(18) ? null : DateTime.Parse(reader.GetString(18)),
             reader.IsDBNull(19) ? null : reader.GetString(19),
             reader.IsDBNull(20) ? null : DateTime.Parse(reader.GetString(20)),
-            reader.IsDBNull(21) ? null : reader.GetString(21));
+            reader.IsDBNull(21) ? null : reader.GetString(21),
+            reader.GetInt32(22));
     }
 
     private static FieldCommentReviewRecord ReadFieldCommentReview(SqliteDataReader reader)
@@ -665,7 +666,7 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             SELECT id, comment_id, document_id, document_version_no, comment_type, input_mode, signal_level,
                    raw_content, normalized_content, analysis_content, author_name, reported_by,
                    operator_name, entry_source, device_id, location_code, status, created_at, synced_at,
-                   assigned_to, review_due_at, last_transition_reason
+                   assigned_to, review_due_at, last_transition_reason, review_revision
             FROM field_comments
             WHERE comment_id = $comment_id
             LIMIT 1;

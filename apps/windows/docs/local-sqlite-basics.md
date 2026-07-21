@@ -19,9 +19,9 @@ Windows WPF 앱은 문서, FieldComment, 첨부, 접근 로그, 보고서 같은
 - `user_accounts`: 로컬 로그인 계정과 role
 - `user_groups`: 관리자 그룹과 작업조
 - `document_folders`: 폴더 트리
-- `documents`: 문서 메타데이터, 최신/공개 버전, 서버 ID
+- `documents`: 문서 메타데이터, 최신/공개 버전, 서버 ID, 보고서 서버 revision·내용 hash·source 집합 hash read-back
 - `document_versions`: 파일 버전, 변경 사유, 공개 여부, 서버 버전 ID
-- `field_comments`: FieldComment 원천 기록, 서버 코멘트 ID
+- `field_comments`: FieldComment 원천 기록, 서버 코멘트 ID, 마지막 검토 revision
 - `field_comment_attachments`: FieldComment 첨부와 서버 첨부 ID
 - `document_view_logs`: 열람/닫힘/차단 로그와 서버 로그 ID
 - `activity_history`: 전체 활동 이력
@@ -34,7 +34,7 @@ Windows WPF 앱은 문서, FieldComment, 첨부, 접근 로그, 보고서 같은
 - `work_sequence_change_history`: 작업순서 이력
 - `work_sequence_notification_candidates`: 작업순서 알림 후보
 - `report_sources`: 로컬 보고서 문서와 근거 source 연결
-- `server_sync_queue`: 서버 전송 큐
+- `server_sync_queue`: 서버 전송 큐. 문서 aggregate 기준값 외에 FieldComment 검토 `base_domain_revision`·의도 hash와 보고서 source 집합 hash를 additive 열로 보존
 - `server_id_mappings`: 로컬 ID와 서버 ID 연결
 - `server_sync_migration_audit`: 승인 전환한 보존 FAILED 큐와 신규 큐의 무손실 연결. 일반 DB 초기화가 아니라 전환 CLI 승인 실행 시 필요한 경우 생성
 
@@ -62,7 +62,9 @@ Windows WPF 앱은 문서, FieldComment, 첨부, 접근 로그, 보고서 같은
 
 문서 최신 버전은 `documents.version_no`와 `document_versions.is_latest`를 기준으로 서버 최신 버전에 연결한다. 이미 서버에 같은 `version_no`가 있으면 중복 업로드하지 않고 매핑을 복구한다. 공개 버전은 `documents.published_version_no`와 `document_versions.is_published`를 기준으로 서버 publish API에 반영한다. 상태 변경은 현재 로컬 `documents.status`를 서버에 반영하며, `PUBLISHED` 상태는 공개 버전 동기화가 선행되어야 한다.
 
-보고서는 로컬 보고서 문서와 `report_sources`를 먼저 만든 뒤 서버 저장을 시도한다. 서버 저장이 성공하면 `server_report_id`, `server_document_id`, `server_version_id`, `server_id_mappings`를 함께 남기고, 실패하면 `server_sync_queue`에 `report/register_report` 재시도 항목을 보존한다. 작업순서 보드/항목/이력은 로컬 큐 대상이 아니다. WPF 화면은 서버 snapshot과 `board_revision`으로 직접 변경하고, 로컬 테이블은 기존 기록과 오프라인 읽기 캐시/초안으로만 보존한다. 서버 미연결 또는 조회 실패 상태에서는 생성·항목 추가·순서·상태 확정을 허용하지 않는다.
+FieldComment 검토 큐는 생성 시점 `field_comments.review_revision`을 `base_domain_revision`에 고정하고 안정된 큐 key를 서버 `mutationKey`로 보낸다. 서버 성공 응답의 증가한 revision을 로컬에 반영한 뒤에만 큐를 종결한다. 구 큐처럼 base revision이 NULL인 항목은 서버 상세에서 현재 revision을 읽어 요청 기준값으로 사용하되 중간 상태를 자동 생성하지 않는다.
+
+보고서는 로컬 보고서 문서와 `report_sources`를 먼저 만든 뒤 서버 저장을 시도한다. 신규 큐는 source type/local ID/version/hash/relation 정렬값의 hash를 `source_set_hash`에 고정하고 안정된 큐 key를 서버 `idempotencyKey`와 `mutationKey` 양쪽에 보낸다. 서버 저장이 성공하면 응답 source 집합 hash를 재계산해 일치하는 경우에만 `server_report_id`, `server_document_id`, `server_version_id`, report revision·내용 hash·source 집합 hash와 `server_id_mappings`를 함께 남긴다. 실패하거나 hash가 다르면 `server_sync_queue`에 `report/register_report` 항목을 보존한다. 작업순서 보드/항목/이력은 로컬 큐 대상이 아니다. WPF 화면은 서버 snapshot과 `board_revision`으로 직접 변경하고, 로컬 테이블은 기존 기록과 오프라인 읽기 캐시/초안으로만 보존한다. 서버 미연결 또는 조회 실패 상태에서는 생성·항목 추가·순서·상태 확정을 허용하지 않는다.
 
 controlled copy grant는 FastAPI 서버의 `controlled_copy_grants`에만 저장한다. WPF 로컬 SQLite에는 활성 grant 테이블이나 grant 토큰을 보존하지 않고 `server_id_mappings`로 서버 문서/버전을 찾은 뒤 즉시 발급·다운로드·SHA-256 검증하며, 실패를 `server_sync_queue`에 넣지 않는다. FastAPI 서버 DB와 WPF 로컬 DB는 서로 다른 파일이어야 하며, 이미 잘못 생성된 서버 grant 테이블은 DB 삭제 없이 `scripts/repair-wpf-controlled-copy-schema.py`로 보존 격리한다.
 

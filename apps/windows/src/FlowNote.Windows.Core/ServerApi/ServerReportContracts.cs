@@ -102,6 +102,18 @@ public sealed record ServerReportSaveRequest
 
     [JsonPropertyName("documentStatus")]
     public string DocumentStatus { get; init; } = "IN_REVIEW";
+
+    [JsonPropertyName("baseReportRevision")]
+    public int? BaseReportRevision { get; init; }
+
+    [JsonPropertyName("mutationKey")]
+    public string? MutationKey { get; init; }
+
+    [JsonPropertyName("contentHashSha256")]
+    public string? ContentHashSha256 { get; init; }
+
+    [JsonPropertyName("sourceSetHashSha256")]
+    public string? SourceSetHashSha256 { get; init; }
 }
 
 public sealed record ServerReportSourceResponse
@@ -219,4 +231,13 @@ public sealed record ServerReportResponse
 
     [JsonPropertyName("generated_document")]
     public ServerReportDocumentSummary? GeneratedDocument { get; init; }
+
+    [JsonPropertyName("report_revision")]
+    public int ReportRevision { get; init; }
+
+    [JsonPropertyName("content_hash_sha256")]
+    public string? ContentHashSha256 { get; init; }
+
+    [JsonPropertyName("source_set_hash_sha256")]
+    public string? SourceSetHashSha256 { get; init; }
 }

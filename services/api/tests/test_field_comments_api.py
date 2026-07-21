@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import uuid4
 
@@ -9,7 +10,13 @@ from sqlalchemy import func, select
 
 from app.core.config import Settings
 from app.db.init_db import hash_password_for_dev
-from app.db.models import FieldComment, FieldCommentAttachment, FileObject, UserAccount
+from app.db.models import (
+    FieldComment,
+    FieldCommentAttachment,
+    FieldCommentReviewMutationReceipt,
+    FileObject,
+    UserAccount,
+)
 from app.main import create_app
 
 
@@ -193,6 +200,96 @@ def test_field_comment_transition_policy_rejects_skip_and_requires_reason() -> N
             json={"status": "ANALYZED", "analysisContent": "분석"},
         )
         assert no_reason.status_code == 422
+
+
+def test_review_revision_allows_only_one_concurrent_wpf_review_and_replays_receipt() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        created = client.post(
+            "/api/v1/field-comments",
+            headers=headers,
+            json={
+                "documentId": document["document_id"],
+                "documentVersionId": document["latest_version"]["version_id"],
+                "rawContent": f"동시 검토 {uuid4().hex}",
+                "authorId": "user-admin",
+            },
+        ).json()
+        base_revision = created["review_revision"]
+
+        def review(index: int):
+            return client.patch(
+                f"/api/v1/field-comments/{created['comment_id']}",
+                headers=headers,
+                json={
+                    "status": "ANALYZED",
+                    "analysisContent": f"동시 분석 {index}",
+                    "transitionReason": f"동시 검토 단말 {index}",
+                    "baseReviewRevision": base_revision,
+                    "mutationKey": f"wpf-review-{created['comment_id']}-{index}",
+                },
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            responses = list(executor.map(review, (1, 2)))
+        assert sorted(response.status_code for response in responses) == [200, 409]
+        winner = next(response for response in responses if response.status_code == 200)
+        loser = next(response for response in responses if response.status_code == 409)
+        assert winner.json()["review_revision"] == base_revision + 1
+        assert loser.json()["detail"]["code"] == "FIELD_COMMENT_STALE_REVIEW_REVISION"
+
+        winning_index = 1 if winner.json()["analysis_content"] == "동시 분석 1" else 2
+        replay = review(winning_index)
+        assert replay.status_code == 200
+        assert replay.json()["comment_id"] == winner.json()["comment_id"]
+        assert replay.json()["review_revision"] == winner.json()["review_revision"]
+        assert replay.json()["analysis_content"] == winner.json()["analysis_content"]
+        with client.app.state.database.session() as session:
+            receipts = session.scalar(
+                select(func.count()).select_from(FieldCommentReviewMutationReceipt).where(
+                    FieldCommentReviewMutationReceipt.comment_id == created["comment_id"]
+                )
+            )
+            assert receipts == 1
+
+
+def test_attachment_lost_response_retry_keeps_one_attachment_and_file_object() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        created = client.post(
+            "/api/v1/field-comments",
+            headers=headers,
+            json={"documentId": document["document_id"], "rawContent": f"첨부 재시도 {uuid4().hex}"},
+        ).json()
+        content = f"lost response attachment {uuid4().hex}".encode()
+        digest = hashlib.sha256(content).hexdigest()
+        form = {
+            "parentCommentId": created["comment_id"],
+            "fileSha256": digest,
+            "idempotencyKey": f"attachment-retry-{uuid4().hex}",
+        }
+        first = client.post(
+            f"/api/v1/field-comments/{created['comment_id']}/attachments",
+            headers=headers,
+            data=form,
+            files={"file": ("evidence.txt", content, "text/plain")},
+        )
+        retry = client.post(
+            f"/api/v1/field-comments/{created['comment_id']}/attachments",
+            headers=headers,
+            data=form,
+            files={"file": ("evidence.txt", content, "text/plain")},
+        )
+        assert first.status_code == retry.status_code == 201
+        assert first.json() == retry.json()
+        with client.app.state.database.session() as session:
+            attachments = session.scalars(
+                select(FieldCommentAttachment).where(FieldCommentAttachment.comment_id == created["comment_id"])
+            ).all()
+            assert len(attachments) == 1
+            assert session.get(FileObject, attachments[0].file_object_id).hash_sha256 == digest
 
 
 def test_bulk_review_preserves_source_and_quality_metrics_are_available() -> None:

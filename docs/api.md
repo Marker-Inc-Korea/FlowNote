@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-07-21 현재 전역 FastAPI 앱에 등록된 method/path 조합과 요청·응답 코드 기준이다. 아래 `수렴 제어 API`와 각 도메인에서 `목표`로 표시한 revision/idempotency 확장은 미구현 계약이며, 구현 전에는 현재 endpoint가 해당 필드를 지원한다고 가정하지 않는다.
+이 문서는 2026-07-21 현재 전역 FastAPI 앱에 등록된 method/path 조합과 요청·응답 코드 기준이다. FieldComment 검토/첨부와 보고서 aggregate의 revision/idempotency 계약은 구현되었고, 별도로 `목표`라고 표시한 나머지 수렴 제어 API는 구현 전 계약이다.
 
 ## 인증
 
@@ -194,7 +194,7 @@ FieldComment는 `documentId`, `structureItemId`, `workRecordId` 중 하나 이�
 
 FieldComment 원천 삭제 API는 제공하지 않는다. 서버 ORM도 `field_comments` row 삭제를 거부하므로 오입력·중복·근거 부적합은 삭제 대신 사유를 남겨 `EXCLUDED`로 전이한다.
 
-첨부 등록의 선택적 `idempotencyKey`도 공백을 제거한 뒤 최대 160자로 제한하며 서버 `field_comment_attachments.idempotency_key`에 유일하게 저장한다. 같은 키를 같은 FieldComment에 다시 보내면 새 파일이나 첨부 row를 만들지 않고 기존 첨부를 반환한다. 다른 FieldComment에 이미 사용한 키는 409로 거부한다. WPF 재시도 큐는 문서 버전과 FieldComment 첨부 전송에도 큐의 안정된 idempotency key를 그대로 전달한다.
+첨부 등록의 선택적 `idempotencyKey`도 공백을 제거한 뒤 최대 160자로 제한하며 서버 `field_comment_attachments.idempotency_key`에 유일하게 저장한다. WPF는 multipart `parentCommentId`, `fileSha256`, `idempotencyKey`를 함께 보낸다. `parentCommentId`가 경로의 FieldComment와 다르면 409 `ATTACHMENT_PARENT_MISMATCH`, `fileSha256`이 64자 SHA-256 hex가 아니면 422, 저장 파일의 서버 계산 hash와 다르면 파일을 제거하고 409 `ATTACHMENT_FILE_HASH_MISMATCH`로 응답한다. 같은 키를 같은 FieldComment와 같은 파일 hash로 다시 보내면 새 파일·첨부 row를 만들지 않고 기존 첨부와 file object를 반환한다. 다른 FieldComment 또는 다른 파일 hash에 키를 재사용하면 409로 거부한다. WPF 재시도 큐는 문서 버전과 FieldComment 첨부 전송에도 큐의 안정된 idempotency key를 그대로 전달한다.
 
 `GET /api/v1/field-comments`는 관리자 검토 화면 기준으로 `status`, `documentId`, `documentText`, `author`, `assignedTo`, `tag`, `line`, `equipment`, `process`, `errorType`, `createdFrom`, `createdTo`, `oldNewDays`, `hasAttachments`, `reportLinked`, `unreviewed`, `overdue`, `unassigned`, `missingEvidence`, `duplicateSuspected`, `priorityOrder`, `limit` 필터를 지원한다. 응답의 `workbench_flags`, `workbench_priority`는 관리자 처리 순서를 설명한다. WPF 관리자 화면은 같은 기준으로 로컬 `field_comments`, 문서, 문서 태그, 첨부와 보고서 source를 함께 조회한다.
 
@@ -202,9 +202,9 @@ FieldComment 원천 삭제 API는 제공하지 않는다. 서버 ORM도 `field_c
 
 WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `analysis_content`, `status`를 수정하고 `server_sync_queue`에 `entity_type = field_comment_review`, `action = update_field_comment_review`로 서버 PATCH 재시도 항목을 남긴다. 서버 ID가 아직 없는 로컬 FieldComment는 선행 등록 동기화가 끝난 뒤 검토 변경 PATCH를 재시도한다.
 
-목표 수렴 계약에서 FieldComment 응답은 원천 `sourceHashSha256`와 `reviewRevision`을 반환한다. 검토 PATCH·bulk-review 각 항목은 `idempotencyKey`, `baseReviewRevision`, `expectedSourceHashSha256`를 필수로 보내며, 서버는 개별 FieldComment 변경과 mutation receipt를 같은 transaction에 저장한다. 같은 key·같은 intent는 현재 결과를 반환하고 검토 revision 불일치는 409 `STALE_REVIEW_REVISION`, 원천 hash 불일치는 `REVIEW_SOURCE_CHANGED`, 허용되지 않은 전이는 `INVALID_REVIEW_TRANSITION`이다. WPF는 서버 상태를 따라잡기 위해 중간 단계를 자동 생성하지 않는다.
+FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revision`을 반환한다. 검토 PATCH의 `baseReviewRevision`, `mutationKey`는 선택 필드지만 WPF는 큐 생성 시 읽은 revision과 안정된 큐 key를 항상 보낸다. 서버는 조건부 UPDATE로 base revision과 현재 revision이 같은 요청 하나만 성공시키고 revision을 1 증가시키며, 검토 변경과 `field_comment_review_mutation_receipts`를 같은 transaction에 저장한다. 같은 key·같은 comment·같은 intent 재시도는 영수증의 최초 응답 snapshot을 반환한다. 같은 key의 다른 comment/intent는 409 `IDEMPOTENCY_KEY_REUSED`, revision 불일치는 현재 revision을 포함한 409 `FIELD_COMMENT_STALE_REVIEW_REVISION`이다. `baseReviewRevision`을 생략한 직접 API 요청은 서버가 조회한 현재 revision을 기준으로 처리하므로 클라이언트가 읽은 시점의 낙관적 잠금을 제공하지 않는다. WPF는 서버 상태를 따라잡기 위해 중간 상태를 자동 생성하지 않는다.
 
-목표 첨부 요청은 기존 `idempotencyKey`와 함께 `fileHashSha256`을 필수로 보낸다. 같은 key는 같은 부모 comment ID, 첨부 유형, caption, file hash에만 재사용할 수 있다. 서버가 계산한 hash와 요청이 다르면 409 `ATTACHMENT_HASH_MISMATCH`이며 임시 file object와 최종 첨부 row를 남기지 않는다.
+`POST /api/v1/field-comments/bulk-review`도 각 대상의 현재 `review_revision`을 조건부 갱신해 1씩 증가시킨 뒤 기존 상태 전이 정책을 적용한다. 이 일괄 요청에는 항목별 base revision이나 mutation key/receipt가 없으며, 대상 누락이나 항목 하나의 검증·동시성 갱신 실패가 있으면 전체 transaction을 저장하지 않는다.
 
 ## 태그
 
@@ -286,9 +286,9 @@ WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `
 
 보고서 source 타입은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `WORK_RECORD_VERSION`을 사용한다. 서버 저장은 `SELECTED` FieldComment와 현재 공개 문서 버전만 허용하며 FieldComment의 관찰 문서 버전을 source에 자동 고정한다. 활성 업무 채널에 연결된 source는 actor의 활성 멤버십을 검사한다. 현재 WPF 로컬 초안 후보도 `SELECTED` FieldComment, 공개 문서, 작업순서 항목/이력만 노출하며, `SELECTED` 전이에는 관찰 문서 버전과 원천 작성자가 필요하다.
 
-목표 수렴 계약에서 보고서 저장은 `idempotencyKey`, 선택적 기존 보고서의 `baseRevision`, `contentHashSha256`, `sourceSetHashSha256`을 받는다. 각 source는 `sourceType`, `sourceId`, 필수 시점의 `sourceVersionId`, `sourceHashSha256`, `relationType`을 보낸다. source 집합 hash는 source type/ID/version/hash/relation을 정렬한 canonical JSON의 SHA-256이다. 서버는 모든 source의 존재·상태·version/hash를 다시 검사한 뒤 report, report source 전부, 선택적 생성 document/version과 mutation receipt를 한 transaction으로 저장한다.
+구현된 보고서 저장 계약은 `idempotencyKey`, `mutationKey`, 기존 초안의 선택적 `baseReportRevision`, 선택적 `contentHashSha256`, `sourceSetHashSha256`을 받는다. 각 source 요청은 `sourceType`, `sourceId`, 선택적 `sourceVersionId`, `relationType`을 보내며 서버가 현재 원천을 검증해 `source_hash_sha256`를 고정한다. 내용 hash는 보고서 유형·제목·본문·작업/구조/기간·상태의 정규화 JSON, source 집합 hash는 source type/ID/version/hash/relation의 정렬 canonical JSON을 SHA-256으로 계산한다. 기존 초안 저장은 base revision의 조건부 UPDATE가 성공할 때 `report_revision`을 1 증가시킨다. `baseReportRevision`을 생략하면 서버가 조회한 현재 revision을 사용하므로 클라이언트가 읽은 시점의 낙관적 잠금을 제공하지 않는다.
 
-검사 시 원천 revision/hash가 달라졌으면 409 `REPORT_SOURCE_STALE`, 원천이나 필수 version이 없으면 `REPORT_SOURCE_ORPHAN`, 같은 key의 content/source-set hash가 다르면 `IDEMPOTENCY_KEY_REUSED`다. 보고서 응답은 `reportId`, `revision`, `contentHashSha256`, `sourceSetHashSha256`, 생성 `documentId`/`versionId`와 source별 확정 ID/version/hash를 반환한다. WPF는 이 전체 read-back을 매핑한 경우에만 큐를 `SYNCED`로 종결한다.
+서버는 문서/파일 생성 직전에 모든 source의 존재·상태·version·hash와 채널 권한을 다시 읽는다. 변경되거나 사라진 원천은 409 `REPORT_SOURCE_STALE_OR_ORPHAN`, 기존 초안 revision 경합은 409 `REPORT_STALE_REVISION`, 클라이언트가 보낸 두 hash와 서버 계산값 불일치는 각각 `REPORT_CONTENT_HASH_MISMATCH`, `REPORT_SOURCE_SET_HASH_MISMATCH`다. `mutationKey`가 없으면 `idempotencyKey`를 mutation key로 사용하며 같은 key·같은 intent는 `report_mutation_receipts`의 최초 응답을 반환하고 다른 intent는 409 `IDEMPOTENCY_KEY_REUSED`다. 보고서, source, 선택적 생성 document/version, 두 hash와 mutation receipt는 한 transaction으로 확정된다. 응답은 `report_revision`, `content_hash_sha256`, `source_set_hash_sha256`, `generated_document`와 source별 확정 ID/version/hash를 반환한다. 현재 WPF는 report/document/version ID를 로컬에 매핑한 뒤 큐를 `SYNCED`로 종결하지만 응답의 report revision과 두 hash를 로컬에 보존하거나 enqueue 시 source-set hash와 대조하지는 않는다.
 
 ## AI 검색 근거 후보
 

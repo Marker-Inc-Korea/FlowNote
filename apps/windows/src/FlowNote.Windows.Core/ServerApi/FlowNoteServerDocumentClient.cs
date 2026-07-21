@@ -267,6 +267,7 @@ public sealed class FlowNoteServerDocumentClient
         DateTime? capturedAt = null,
         string? createdBy = null,
         string? idempotencyKey = null,
+        string? fileSha256 = null,
         CancellationToken cancellationToken = default)
     {
         using var form = new MultipartFormDataContent();
@@ -275,6 +276,8 @@ public sealed class FlowNoteServerDocumentClient
         AddString(form, "capturedAt", capturedAt?.ToString("O"));
         AddString(form, "createdBy", createdBy);
         AddString(form, "idempotencyKey", idempotencyKey);
+        AddString(form, "parentCommentId", commentId);
+        AddString(form, "fileSha256", fileSha256);
 
         await using var stream = File.OpenRead(filePath);
         using var fileContent = new StreamContent(stream);

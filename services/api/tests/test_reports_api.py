@@ -13,6 +13,7 @@ from app.db.models import (
     DocumentVersion,
     NotificationChannel,
     Report,
+    ReportMutationReceipt,
     ReportSource,
     UserAccount,
 )
@@ -244,6 +245,9 @@ def test_report_draft_final_document_and_source_traceability() -> None:
         assert len({source["trace_id"] for source in detail["sources"]}) == len(detail["sources"])
         assert all(source["source_version_id"] for source in detail["sources"])
         assert all(len(source["source_hash_sha256"]) == 64 for source in detail["sources"])
+        assert saved["report_revision"] == draft["report_revision"] + 1
+        assert len(saved["content_hash_sha256"]) == 64
+        assert len(saved["source_set_hash_sha256"]) == 64
         assert any(
             source["source_type"] == "DOCUMENT" and source["source_version_id"] == document["latest_version"]["version_id"]
             for source in detail["sources"]
@@ -292,6 +296,62 @@ def test_report_draft_final_document_and_source_traceability() -> None:
         assert linked_report["source_version_id"] == field_comment["document_version_id"]
         assert linked_report["generated_document"]["document_id"] == saved["generated_document_id"]
         assert linked_report["generated_document"]["generated_version_ids"]
+
+
+def test_report_save_rejects_source_changed_after_selection_with_409() -> None:
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        document = create_document(client, headers)
+        field_comment = create_field_comment(client, headers, document)
+        draft = client.post(
+            "/api/v1/reports/drafts",
+            headers=headers,
+            json={
+                "reportType": "field_review",
+                "title": "오래된 원천 차단 보고서",
+                "sources": [
+                    {"sourceType": "FIELD_COMMENT", "sourceId": field_comment["comment_id"]},
+                    {
+                        "sourceType": "DOCUMENT",
+                        "sourceId": document["document_id"],
+                        "sourceVersionId": document["latest_version"]["version_id"],
+                    },
+                ],
+            },
+        ).json()
+        changed = client.patch(
+            f"/api/v1/field-comments/{field_comment['comment_id']}",
+            headers=headers,
+            json={
+                "status": "REVIEWED",
+                "normalizedContent": "재검토 정리",
+                "analysisContent": "선정 후 원천 재검토",
+                "transitionReason": "보고서 선정 후 원천 변경",
+                "baseReviewRevision": field_comment["review_revision"],
+                "mutationKey": f"reopen-{uuid4().hex}",
+            },
+        )
+        assert changed.status_code == 200, changed.text
+
+        saved = client.post(
+            "/api/v1/reports",
+            headers=headers,
+            json={
+                "draftReportId": draft["report_id"],
+                "baseReportRevision": draft["report_revision"],
+                "mutationKey": f"stale-report-{uuid4().hex}",
+                "saveAsDocument": True,
+            },
+        )
+        assert saved.status_code == 409, saved.text
+        assert saved.json()["detail"]["code"] == "REPORT_SOURCE_STALE_OR_ORPHAN"
+        with client.app.state.database.session() as session:
+            report = session.scalar(select(Report).where(Report.report_id == draft["report_id"]))
+            assert report.status == "DRAFT"
+            assert report.generated_document_id is None
+            assert session.scalar(
+                select(ReportMutationReceipt.id).where(ReportMutationReceipt.report_id == draft["report_id"])
+            ) is None
 
 
 def test_report_save_idempotency_key_returns_existing_report() -> None:

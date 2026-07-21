@@ -288,6 +288,9 @@ public sealed class FlowNoteLocalDatabase
                 published_version_no INTEGER NULL,
                 latest_comment TEXT NULL,
                 server_report_id TEXT NULL,
+                server_report_revision INTEGER NULL,
+                server_report_content_hash_sha256 TEXT NULL,
+                server_report_source_set_hash_sha256 TEXT NULL,
                 server_document_id TEXT NULL,
                 server_version_id TEXT NULL,
                 server_revision INTEGER NULL,
@@ -332,7 +335,8 @@ public sealed class FlowNoteLocalDatabase
                 last_transition_reason TEXT NULL,
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                synced_at TEXT NULL
+                synced_at TEXT NULL,
+                review_revision INTEGER NOT NULL DEFAULT 1
             );
 
             CREATE INDEX IF NOT EXISTS ix_field_comments_document_created
@@ -590,6 +594,9 @@ public sealed class FlowNoteLocalDatabase
                 ,resolution_reason TEXT NULL
                 ,resolved_by TEXT NULL
                 ,resolved_at TEXT NULL
+                ,base_domain_revision INTEGER NULL
+                ,intent_hash TEXT NULL
+                ,source_set_hash TEXT NULL
             );
 
             CREATE INDEX IF NOT EXISTS ix_server_sync_queue_status
@@ -641,6 +648,9 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "documents", "published_version_no", "INTEGER NULL");
         EnsureColumn(connection, "documents", "latest_comment", "TEXT NULL");
         EnsureColumn(connection, "documents", "server_report_id", "TEXT NULL");
+        EnsureColumn(connection, "documents", "server_report_revision", "INTEGER NULL");
+        EnsureColumn(connection, "documents", "server_report_content_hash_sha256", "TEXT NULL");
+        EnsureColumn(connection, "documents", "server_report_source_set_hash_sha256", "TEXT NULL");
         EnsureColumn(connection, "documents", "server_document_id", "TEXT NULL");
         EnsureColumn(connection, "documents", "server_version_id", "TEXT NULL");
         EnsureColumn(connection, "documents", "server_revision", "INTEGER NULL");
@@ -658,6 +668,7 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "field_comments", "review_due_at", "TEXT NULL");
         EnsureColumn(connection, "field_comments", "last_transition_reason", "TEXT NULL");
         EnsureColumn(connection, "field_comments", "synced_at", "TEXT NULL");
+        EnsureColumn(connection, "field_comments", "review_revision", "INTEGER NOT NULL DEFAULT 1");
         EnsureColumn(connection, "field_comment_attachments", "server_attachment_id", "TEXT NULL");
         EnsureColumn(connection, "field_comment_attachments", "synced_at", "TEXT NULL");
         EnsureColumn(connection, "server_sync_queue", "server_comment_id", "TEXT NULL");
@@ -673,6 +684,9 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "server_sync_queue", "resolution_reason", "TEXT NULL");
         EnsureColumn(connection, "server_sync_queue", "resolved_by", "TEXT NULL");
         EnsureColumn(connection, "server_sync_queue", "resolved_at", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "base_domain_revision", "INTEGER NULL");
+        EnsureColumn(connection, "server_sync_queue", "intent_hash", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "source_set_hash", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_comment_id", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_attachment_id", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_report_id", "TEXT NULL");

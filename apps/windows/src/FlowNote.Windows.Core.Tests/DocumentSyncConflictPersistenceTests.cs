@@ -44,6 +44,10 @@ public sealed class DocumentSyncConflictPersistenceTests
         Assert.True(ColumnExists(verify, "documents", "server_revision"));
         Assert.True(ColumnExists(verify, "server_sync_queue", "conflict_code"));
         Assert.True(ColumnExists(verify, "server_sync_queue", "resolution_reason"));
+        Assert.True(ColumnExists(verify, "server_sync_queue", "base_domain_revision"));
+        Assert.True(ColumnExists(verify, "server_sync_queue", "intent_hash"));
+        Assert.True(ColumnExists(verify, "server_sync_queue", "source_set_hash"));
+        Assert.True(ColumnExists(verify, "field_comments", "review_revision"));
         Assert.True(ColumnExists(verify, "server_id_mappings", "server_file_hash_sha256"));
     }
 

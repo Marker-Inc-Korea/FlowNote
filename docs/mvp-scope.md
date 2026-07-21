@@ -13,13 +13,13 @@
 - 문서 태그
 - 문서 미리보기, 열람 로그, 자동 닫힘, 다운로드 차단
 - WPF 허용 role의 공개 버전 controlled copy 1회성 저장과 SHA-256 검증
-- FieldComment 원천 불변 기록과 첨부, 단계형 검토·담당/기한·일괄 처리·감사·품질 작업함
+- FieldComment 원천 불변 기록과 첨부, 단계형 검토·담당/기한·일괄 처리·감사·품질 작업함, 개별 검토 revision·mutation receipt와 첨부 부모/파일 hash 검증
 - 알림과 활동 이력
 - WPF 로컬 계정 추가/수정/역할 변경/비밀번호 변경
 - FastAPI 서버 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기 API와 WPF 운영 화면
 - 서버 임시 비밀번호 계정의 첫 로그인 비밀번호 변경 강제, 기존 세션 전체 폐기와 재로그인 흐름
 - 작업순서 보드, 항목, 순서 변경, 상태 변경, 이력, 알림 후보, 관리자·TV 화면. FastAPI `board_revision`·mutation receipt를 권위 원천으로 쓰고, WPF 로컬 row는 초안·읽기 캐시로만 보존하며 오프라인 확정 변경을 차단
-- 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도
+- 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도, report revision·내용/source 집합 hash·mutation receipt와 source 재검증
 - 관리자 파일 감시 후보와 버전 확정
 - AI 자동 조언 전 단계의 `ai_search_candidates` 근거 후보 재생성, 목록, 품질 점검 API와 WPF 운영 점검 화면
 - 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth 첫 승인과 서로 다른 사용자의 2차 승인, WPF 사례·원천 구성, 고정 원천 snapshot/provenance, 실제 현장/스모크 준비도 분리, 불변 dataset version의 작성·검토·독립 2단계 승인, dataset 결합 회귀 평가 API와 48건 비민감 스모크 검증 도구

@@ -52,7 +52,11 @@
 
 공개는 항상 특정 로컬 버전 번호의 서버 버전 ID가 확인된 뒤 서버 publish API를 호출한다. 문서 상태는 현재 로컬 `documents.status`를 서버 상태 API에 반영한다. 상태가 `PUBLISHED`이면 공개 대상 버전의 서버 버전 ID가 먼저 있어야 한다.
 
-보고서 서버 저장은 로컬 보고서 문서와 `report_sources`를 먼저 남긴 뒤 `/api/v1/reports` 저장을 시도한다. 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 연결한다. 실패하면 기존 `server_sync_queue`에 `entity_type = report`, `action = register_report`로 남기고, 재시도 시 같은 idempotency key로 서버 저장을 다시 시도한다.
+FieldComment 검토 큐는 enqueue 시점의 `review_revision`을 `base_domain_revision`에 고정하고 큐의 안정된 idempotency key를 서버 `mutationKey`로 보낸다. 서버가 409 `FIELD_COMMENT_STALE_REVIEW_REVISION` 또는 `IDEMPOTENCY_KEY_REUSED`를 반환하면 자동 재시도하지 않고 원 응답과 충돌 코드를 보존한다. 성공할 때는 응답 `review_revision`을 로컬 FieldComment에 반영한 뒤 큐를 종결한다.
+
+FieldComment 첨부는 경로의 서버 comment ID를 multipart `parentCommentId`로, 로컬 파일의 SHA-256을 `fileSha256`으로 함께 보낸다. 부모 불일치, 요청/실파일 hash 불일치, 같은 key의 다른 파일 재사용은 충돌로 보존한다.
+
+보고서 서버 저장은 로컬 보고서 문서와 `report_sources`를 먼저 남긴 뒤 `/api/v1/reports` 저장을 시도한다. enqueue 시 source 집합 hash를 고정하고 같은 안정 key를 `idempotencyKey`와 `mutationKey`로 보낸다. 성공 응답 source를 정규화해 응답 `source_set_hash_sha256`과 다시 대조한 뒤에만 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, report revision·내용/source 집합 hash와 `server_id_mappings`를 연결한다. 실패나 read-back 불일치는 기존 `server_sync_queue`의 `report/register_report` 항목과 원천 파일을 그대로 보존한다.
 
 작업순서 보드/항목/이력은 WPF 로컬 큐의 양방향 동기화 대상이 아니다. 관리 화면은 서버 목록·상세 snapshot의 `board_revision`을 읽고 mutation key와 `baseBoardRevision`을 서버 API에 직접 보낸다. 409 `WORK_SEQUENCE_STALE_REVISION`이면 “다른 사용자가 먼저 변경”했다는 한글 안내와 최신 snapshot을 표시하며, 사용자가 확인한 뒤 다시 시도한다. 서버 미연결·503·시간 초과·호환 응답 실패에서는 로컬 row를 읽기 캐시/초안으로만 표시하고 확정 생성·순서·상태 변경을 비활성화한다. 실패 요청을 `server_sync_queue`에 넣지 않으며 기존 로컬 row와 테스트 기록은 삭제하지 않는다.
 
