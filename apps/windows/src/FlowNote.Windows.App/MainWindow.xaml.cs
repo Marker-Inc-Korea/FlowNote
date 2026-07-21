@@ -117,6 +117,23 @@ public partial class MainWindow : Window
             var savedState = services.ServerNotificationCursors.Get(
                 notificationServerScope,
                 notificationUserId);
+            if (serverDocumentClient is null)
+            {
+                return;
+            }
+            var manifest = await serverDocumentClient.GetSyncManifestAsync();
+            var binding = services.ServerEpochGuard.Observe(
+                notificationServerScope,
+                manifest,
+                savedState.LastSuccessCursor);
+            if (binding.ReconciliationRequired)
+            {
+                notificationPollingTimer.Stop();
+                workspace.StatusText =
+                    $"서버 복구 경계가 감지되어 알림 polling과 자동 전송을 중지했습니다. {binding.BlockReason} " +
+                    "이력 > 서버 재결합에서 관리자가 판정을 검토하고 승인하세요.";
+                return;
+            }
             var page = await serverChannelClient.PollMyNotificationsAsync(
                 unreadOnly: false,
                 limit: 100,
@@ -187,6 +204,11 @@ public partial class MainWindow : Window
             notificationUserId is null)
         {
             workspace.StatusText = "알림 위치 초기화는 로그인한 관리자만 확인 후 실행할 수 있습니다.";
+            return;
+        }
+        if (services.ServerEpochGuard.Get(notificationServerScope)?.ReconciliationRequired == true)
+        {
+            workspace.StatusText = "서버 복구 경계 검토가 끝나지 않아 알림 위치만 따로 초기화할 수 없습니다. 서버 재결합을 먼저 승인하세요.";
             return;
         }
 
@@ -369,6 +391,7 @@ public partial class MainWindow : Window
         var window = new HistoryWindow(
             services.History,
             services.ServerSync,
+            services.ServerReconciliation,
             serverDocumentClient,
             currentUser.UserId)
         {

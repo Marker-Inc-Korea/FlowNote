@@ -15,6 +15,7 @@ namespace FlowNote.Windows.Core.Sync;
 
 public sealed class ServerSyncService(FlowNoteLocalDatabase database)
 {
+    private readonly ServerEpochGuardService epochGuard = new(database);
     private const string Pending = "PENDING";
     private const string Failed = "FAILED";
     private const string Synced = "SYNCED";
@@ -180,6 +181,33 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
         string? serverUserId = null,
         CancellationToken cancellationToken = default)
     {
+        try
+        {
+            await epochGuard.EnsureReadyAsync(serverClient, cancellationToken: cancellationToken);
+        }
+        catch (ServerReconciliationRequiredException exception)
+        {
+            return new ServerSyncResult(
+                false,
+                $"서버 복구 경계가 감지되어 자동 전송을 중지했습니다. {exception.Message} 관리자 reconciliation 승인 전에는 서버 데이터가 변경되지 않습니다. 로컬 mapping, cursor, message_id와 큐는 보존됩니다.",
+                Failed: 1);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            var reason = $"서버 sync manifest를 확인하지 못해 전송을 중지했습니다: {SummarizeFailure(exception)}";
+            using var connection = database.OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE server_sync_queue
+                SET status = 'FAILED', last_error = $reason, last_attempt_at = $now
+                WHERE status = 'PENDING';
+                """;
+            command.Parameters.AddWithValue("$reason", reason);
+            command.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
+            command.ExecuteNonQuery();
+            return new ServerSyncResult(false, $"{reason} 로컬 데이터와 큐는 보존됩니다.", Failed: 1);
+        }
+
         var items = LoadRetryItems();
         var attempted = 0;
         var synced = 0;

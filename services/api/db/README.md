@@ -13,9 +13,11 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 
 ## 주요 테이블
 
-2026-07-21 현재 ORM 생성 기준은 다음 54개 테이블이다.
+2026-07-21 현재 ORM 생성 기준은 다음 57개 테이블이다.
 
 - `schema_migrations`
+- `server_identity`
+- `reconciliation_runs`, `reconciliation_items`
 - `user_accounts`, `roles`, `user_roles`
 - `auth_sessions`
 - `operator_profiles`
@@ -54,6 +56,8 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 `work_sequence_boards.board_revision`은 보드 aggregate 변경을 직렬화한다. `work_sequence_change_history`는 mutation key와 적용 revision을 정확히 한 건씩 보존하고, `work_sequence_mutation_receipts`는 intent hash·결과 revision·change ID·최초 응답 snapshot을 저장해 동일 key 재시도가 새 이력을 만들지 않게 한다.
 
 `field_comments.review_revision`은 관리자 검토 aggregate의 낙관적 잠금 기준이다. `field_comment_review_mutation_receipts`는 mutation key·intent hash·결과 revision·최초 응답 snapshot을 같은 검토 transaction에 보존한다. `reports.report_revision`, `content_hash_sha256`, `source_set_hash_sha256`은 보고서와 고정 근거 집합의 수렴 기준이고, `report_mutation_receipts`는 생성 문서/버전을 포함한 최초 결과를 보존한다. 기존 서버 SQLite에는 초기화 과정에서 새 열을 additive 방식으로 보완하고 새 receipt 테이블은 ORM metadata로 생성한다.
+
+`server_identity`는 singleton 설치 ID, 명시적 복구 epoch, schema/API contract 범위를 보존한다. `reconciliation_runs`와 `reconciliation_items`는 WPF 큐 inventory를 서버 도메인 row의 idempotency key·hash와 대조한 판정, 제안 조치, 관리자 승인과 해결 사유를 삭제 없이 보존한다.
 
 ## 로컬 경로
 

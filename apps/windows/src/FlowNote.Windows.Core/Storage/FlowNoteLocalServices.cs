@@ -28,6 +28,8 @@ public sealed class FlowNoteLocalServices
         History = new HistoryService(Database);
         Notifications = new NotificationService(Database);
         ServerNotificationCursors = new ServerNotificationCursorService(Database);
+        ServerEpochGuard = new ServerEpochGuardService(Database);
+        ServerReconciliation = new ServerReconciliationService(Database, ServerEpochGuard);
         ServerSync = new ServerSyncService(Database);
         Reports = new ReportDraftService(Database, Documents, ServerSync);
         Tags = new TagService(Database);
@@ -55,6 +57,10 @@ public sealed class FlowNoteLocalServices
     public NotificationService Notifications { get; }
 
     public ServerNotificationCursorService ServerNotificationCursors { get; }
+
+    public ServerEpochGuardService ServerEpochGuard { get; }
+
+    public ServerReconciliationService ServerReconciliation { get; }
 
     public ReportDraftService Reports { get; }
 

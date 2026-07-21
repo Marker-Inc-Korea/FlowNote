@@ -14,6 +14,7 @@ from app.api.v1.field_comments import router as field_comments_router
 from app.api.v1.health import router as health_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.server_accounts import router as server_accounts_router
+from app.api.v1.sync_reconciliation import router as sync_reconciliation_router
 from app.api.v1.tags import router as tags_router
 from app.api.v1.terminal_devices import router as terminal_devices_router
 from app.api.v1.work_sequences import router as work_sequences_router
@@ -22,6 +23,7 @@ api_v1_router = APIRouter()
 api_v1_router.include_router(health_router)
 api_v1_router.include_router(auth_router)
 api_v1_router.include_router(server_accounts_router)
+api_v1_router.include_router(sync_reconciliation_router)
 api_v1_router.include_router(documents_router)
 api_v1_router.include_router(android_document_views_router)
 api_v1_router.include_router(controlled_copies_router)

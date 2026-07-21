@@ -493,6 +493,73 @@ public sealed class FlowNoteLocalDatabase
             CREATE INDEX IF NOT EXISTS ix_server_notification_messages_scope_cursor
                 ON server_notification_messages (server_scope, user_id, cursor);
 
+            CREATE TABLE IF NOT EXISTS server_bindings (
+                server_scope TEXT PRIMARY KEY,
+                server_instance_id TEXT NOT NULL,
+                server_epoch INTEGER NOT NULL,
+                schema_contract INTEGER NOT NULL,
+                api_contract_min INTEGER NOT NULL,
+                api_contract_max INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                observed_server_instance_id TEXT NULL,
+                observed_server_epoch INTEGER NULL,
+                block_reason TEXT NULL,
+                updated_at TEXT NOT NULL,
+                approved_by TEXT NULL,
+                approved_at TEXT NULL,
+                CHECK(server_epoch >= 1),
+                CHECK(status IN ('ACTIVE', 'RECONCILIATION_REQUIRED'))
+            );
+
+            CREATE TABLE IF NOT EXISTS reconciliation_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL UNIQUE,
+                server_scope TEXT NOT NULL,
+                previous_server_instance_id TEXT NULL,
+                previous_server_epoch INTEGER NULL,
+                server_instance_id TEXT NOT NULL,
+                server_epoch INTEGER NOT NULL,
+                trigger_reason TEXT NOT NULL,
+                status TEXT NOT NULL,
+                client_cursor INTEGER NOT NULL,
+                server_cursor INTEGER NOT NULL,
+                created_by TEXT NOT NULL,
+                approval_reason TEXT NULL,
+                created_at TEXT NOT NULL,
+                completed_at TEXT NULL,
+                CHECK(status IN ('REVIEW_REQUIRED', 'APPLIED', 'FAILED'))
+            );
+
+            CREATE TABLE IF NOT EXISTS reconciliation_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id TEXT NOT NULL UNIQUE,
+                run_id TEXT NOT NULL REFERENCES reconciliation_runs(run_id),
+                client_item_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                local_id TEXT NOT NULL,
+                local_version_no INTEGER NOT NULL DEFAULT 0,
+                idempotency_key TEXT NOT NULL,
+                local_hash_sha256 TEXT NULL,
+                verdict TEXT NOT NULL,
+                proposed_action TEXT NOT NULL,
+                server_document_id TEXT NULL,
+                server_version_id TEXT NULL,
+                server_revision INTEGER NULL,
+                server_hash_sha256 TEXT NULL,
+                details TEXT NULL,
+                resolution_action TEXT NULL,
+                resolution_reason TEXT NULL,
+                resolved_by TEXT NULL,
+                resolved_at TEXT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(run_id, client_item_id),
+                CHECK(verdict IN ('CONFIRMED', 'ABSENT', 'DIVERGED')),
+                CHECK(proposed_action IN ('REBOUND', 'REQUEUE', 'CONFLICT'))
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_reconciliation_items_run
+                ON reconciliation_items (run_id, id);
+
             CREATE TABLE IF NOT EXISTS work_sequence_boards (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 board_id TEXT NOT NULL UNIQUE,

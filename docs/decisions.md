@@ -42,6 +42,14 @@
 - 아직 구현되지 않은 기능은 제품 방향 또는 후속 범위로 분리한다.
 - 과거 일일 기록보다 `README.md`와 `docs/` 상위 문서를 최신 기준으로 본다.
 
+## 2026-07-21. 서버 복구 경계는 자동 전송 차단과 관리자 재결합으로 처리
+
+- FastAPI는 `server_identity` singleton의 설치 instance ID, 명시적으로 증가시키는 epoch, schema/API contract 범위와 알림 high-water cursor를 manifest로 제공한다.
+- WPF는 정규화 서버 URL별 binding을 보존한다. 다른 서버 URL, instance/epoch 변경, cursor 역행을 관측하면 기존 승인 binding을 자동으로 덮어쓰지 않고 `RECONCILIATION_REQUIRED`로 전환해 polling과 서버 mutation을 중지한다.
+- reconciliation은 전체 로컬 서버 큐를 idempotency key와 선택적 hash로 서버 원천에 대조해 `REBOUND`, `REQUEUE`, `CONFLICT`를 제안한다. 관리자는 모든 항목과 사유를 승인해야 하며 임의의 다른 조치로 바꿀 수 없다.
+- 승인 적용은 `REBOUND` 큐와 mapping을 서버 식별자에 다시 묶고, `REQUEUE`는 기존 key를 유지한 채 `PENDING`으로 되돌린다. `CONFLICT`는 자동 병합하지 않고 `DISCARDED`와 `RECONCILIATION_DIVERGED` 감사로 종결한다.
+- 승인 뒤에만 binding을 새 instance/epoch로 활성화하고 알림 cursor를 0부터 재추적한다. 처리 완료 `message_id`, 로컬 원천, 큐와 과거 mapping 이력은 삭제하지 않는다.
+
 ## 2026-07-15. 단일 실행 ID 기반 Windows 통합 검증 증거
 
 - 배포 통합 기준선은 Windows x64에서 표준 PowerShell/.NET/Python/JDK/Android SDK/Git 도구 조건을 먼저 통과한 실행만 인정한다.
@@ -82,7 +90,7 @@
 - 서버는 설치 ID와 복구 epoch를 분리한다. instance/epoch 변경이나 cursor 역행을 감지하면 WPF는 mutation과 polling을 중지하고 기존 cursor·mapping을 보존한 채 reconciliation을 실행한다. 같은 key/hash는 새 ID에 재결합하고, 서버에 없으면 같은 key로 재전송하며, 불일치는 `SERVER_RECOVERY_DIVERGED`로 보존한다. 관리자 감사 후에만 cursor 0 재추적을 허용하고 처리한 `message_id`는 유지한다.
 - 수렴 완료는 비종결 큐 0건, 동일 idempotency key 서버 중복 0건, orphan mapping/source 0건, 문서 공개 포인터·source/version ID·hash 일치와 cursor 재추적 완료를 모두 요구한다. AI 후보 재생성과 보고서 운영은 이 gate 뒤에 수행한다.
 
-2026-07-21 구현 상태에서 작업순서 직접 운영 경계와 FieldComment 검토·첨부, 보고서 저장의 도메인별 서버 수렴 계약이 구현되었다. FastAPI는 FieldComment `review_revision`과 검토 receipt, 보고서 `report_revision`·내용/source 집합 hash와 보고서 receipt, 첨부 부모·파일 hash 검증을 사용한다. WPF는 검토 큐의 base revision/mutation key, 첨부 SHA-256을 보내고 자동 중간 상태 생성을 하지 않으며 성공 응답의 검토 revision을 로컬에 반영한다. 보고서 큐는 안정 key를 `idempotencyKey`와 `mutationKey`로 보내고, 응답 source를 정규화해 source-set hash를 대조한 뒤 report revision과 두 hash를 로컬에 보존한다. 공통 `sync_mutation_receipts`, server manifest/reconciliation은 여전히 목표 계약이다. 제품 전체의 운영 완료 판정은 두 WPF 인스턴스와 한 서버에서 동시 문서 수정/공개, FieldComment 검토/첨부, 보고서 저장, 작업순서 변경을 수행하고 503·응답 유실·stale revision·서버 복구·앱 재시작을 주입한 뒤 SQL 증거를 비교해야 한다.
+2026-07-21 구현 상태에서 작업순서 직접 운영 경계와 FieldComment 검토·첨부, 보고서 저장의 도메인별 서버 수렴 계약에 더해 server manifest, WPF URL별 binding, instance/epoch/cursor 복구 경계 차단과 관리자 reconciliation 적용까지 구현되었다. FastAPI는 FieldComment `review_revision`과 검토 receipt, 보고서 `report_revision`·내용/source 집합 hash와 보고서 receipt, 첨부 부모·파일 hash 검증을 사용한다. WPF는 검토 큐의 base revision/mutation key, 첨부 SHA-256을 보내고 자동 중간 상태 생성을 하지 않으며 성공 응답의 검토 revision을 로컬에 반영한다. 보고서 큐는 안정 key를 `idempotencyKey`와 `mutationKey`로 보내고, 응답 source를 정규화해 source-set hash를 대조한 뒤 report revision과 두 hash를 로컬에 보존한다. 공통 `sync_mutation_receipts`는 여전히 목표 계약이다. 제품 전체의 운영 완료 판정은 두 WPF 인스턴스와 한 서버에서 동시 문서 수정/공개, FieldComment 검토/첨부, 보고서 저장, 작업순서 변경을 수행하고 503·응답 유실·stale revision·서버 복구·앱 재시작을 주입한 뒤 SQL 증거를 비교해야 한다.
 
 ## 2026-07-20. DB schema 호환은 additive versioned migration과 무손실 증거로 판정
 
@@ -427,3 +435,8 @@
 - controlled copy 대상은 삭제되지 않은 현재 `PUBLISHED` 문서의 정확한 공개 버전 하나로 제한한다. 저장 경로 경계, 크기 제한, 파일 SHA-256은 발급과 전송 시점에 다시 검사한다.
 - 요청·허용·완료·실패·차단은 `document_access_logs`와 `activity_history`에 사용자, 세션 단말, 문서 버전, 접속 정보, 사유와 함께 남긴다. 존재하지 않는 문서 요청은 문서 외래키가 없으므로 `activity_history`에 남긴다.
 - WPF 허용 role 버튼은 서버 API와 서버 ID 매핑을 사용하고 비허용 role은 기존 로컬 차단 안내와 접근 로그 흐름을 유지한다.
+## 2026-07-21. 서버 epoch와 승인형 reconciliation
+
+- 서버 URL만으로 동기화 연속성을 판단하지 않고, DB에 보존되는 불변 instance ID와 운영 복구 때 증가시키는 epoch를 함께 사용한다.
+- epoch 변경이나 cursor 역행은 자동 복구하지 않는다. 전송과 polling을 함께 멈추고, idempotency key/hash 기반 전수 판정 후 관리자 승인으로만 binding을 교체한다.
+- `CONFIRMED`는 새 ID/revision에 재결합하고 `ABSENT`는 기존 key로 재전송한다. `DIVERGED`는 충돌로 영구 보존하며 서버 또는 로컬 payload를 암묵적으로 선택하지 않는다.

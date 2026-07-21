@@ -194,3 +194,9 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 - 운영 AI 감사 메타데이터의 장기 archive/purge와 법적 보존 hold 정책
 
 운영 파일럿 전 보안 게이트, 책임자, 장애 중단 기준과 증거 보존 형식은 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)을 따른다. 앱 암호화와 별개로 MDM은 단말 전체 암호화, 6자리 이상 화면 잠금, 개발자 옵션·USB 디버깅·USB 파일 전송·ADB backup 차단, 알 수 없는 출처 차단, 원격 잠금·초기화, 앱 allowlist와 kiosk 자동 재실행을 강제한다. 정책 예외 단말은 운영 데이터 사용을 금지한다.
+
+## 복구 시 fail-closed 동기화
+
+- instance/epoch 변경, cursor 역행, 기존 binding과 다른 서버 URL은 정상 연결로 간주하지 않는다. WPF는 한글 차단 사유를 표시하고 관리자 승인 전 서버 mutation과 알림 polling을 중지한다.
+- reconciliation 생성·조회·승인은 `admin` 또는 `system-admin` 권한과 유효한 세션이 필요하다. manifest에는 식별자·계약 범위·cursor 외의 데이터나 비밀값을 싣지 않는다.
+- `DIVERGED`는 자동 덮어쓰기하지 않고 충돌 원문, 양쪽 hash, 승인자와 사유를 남긴다. 처리 message_id, 실패 run, divergence row, 기존 큐를 삭제하여 복구하지 않는다.

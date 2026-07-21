@@ -1,8 +1,8 @@
 # FlowNote API
 
-FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
+FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `/api/v1/health/sync-manifest`, `GET /api/v1/sync/manifest`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-07-21 현재 전역 FastAPI 앱에 등록된 method/path 조합과 요청·응답 코드 기준이다. FieldComment 검토/첨부와 보고서 aggregate의 revision/idempotency 계약은 구현되었고, 별도로 `목표`라고 표시한 나머지 수렴 제어 API는 구현 전 계약이다.
+이 문서는 2026-07-21 현재 전역 FastAPI 앱에 등록된 method/path 조합과 요청·응답 코드 기준이다. FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -72,28 +72,31 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 | GET | `/` | 서비스 이름과 현재 환경 확인 |
 | GET | `/api/v1/health` | API 상태 확인 |
 | GET | `/api/v1/health/db` | DB 연결 확인 |
+| GET | `/api/v1/health/sync-manifest` | DB 연결 확인 뒤 `status`와 sync manifest 반환 |
 
 ## 수렴 제어 API
 
-아래 경로는 WPF 로컬 원천과 서버 권위 원천의 복구·호환 판정을 위한 목표 계약이다.
+아래 경로는 WPF 로컬 원천과 서버 권위 원천의 복구·호환 판정을 위한 현재 구현이다. manifest 조회는 인증 없이 사용할 수 있고 reconciliation run 조회·생성·적용과 epoch 증가는 `admin`, `system-admin`만 허용한다.
 
 | Method | Path | 설명 |
 | --- | --- | --- |
-| GET | `/api/v1/sync/manifest` | `serverInstanceId`, `serverEpoch`, `serverSchemaVersion`, `apiContractVersion`, 지원 client contract 범위, 알림 high-water 반환 |
-| POST | `/api/v1/sync/reconcile` | 최대 500개 로컬 mapping/idempotency key/revision/hash를 서버 mutation receipt·도메인 row와 대조 |
-| GET | `/api/v1/sync/mutations/{idempotency_key}` | 단일 mutation의 `intentHash`, 결과 domain/entity ID, revision, content/file hash 조회 |
+| GET | `/api/v1/sync/manifest` | `server_instance_id`, `server_epoch`, `schema_contract`, `api_contract_min/max`, `server_cursor` 반환 |
+| POST | `/api/v1/sync/reconciliation-runs` | WPF 큐 inventory를 서버 원천과 대조하고 `REVIEW_REQUIRED` run 생성 |
+| GET | `/api/v1/sync/reconciliation-runs/{run_id}` | run과 항목별 판정·조치 조회 |
+| POST | `/api/v1/sync/reconciliation-runs/{run_id}/apply` | 모든 항목의 판정 조치와 관리자 사유를 확인하고 run을 `APPLIED`로 종결 |
+| POST | `/api/v1/sync/server-epoch/increment` | 명시적 복구 경계 표시를 위해 epoch를 1 증가시키고 감사 이력 저장 |
 
-모든 WPF 동기화 요청은 `X-FlowNote-Client-Instance`, `X-FlowNote-Client-Contract`, `X-FlowNote-Local-Schema`를 보낸다. 서버 응답은 `X-FlowNote-Server-Instance`, `X-FlowNote-Server-Epoch`, `X-FlowNote-Server-Schema`, `X-FlowNote-API-Contract`를 보낸다. 앱은 저장한 instance/epoch와 응답이 달라진 시점부터 일반 mutation과 cursor 전진을 중지한다.
+서버는 `server_identity` singleton row의 설치 식별자와 epoch를 manifest에 제공한다. `server_cursor`는 현재 `channel_messages.id` 최댓값이며 메시지가 없으면 0이다. WPF는 서버 URL별 binding을 저장하고 API contract 1이 서버의 `api_contract_min`~`api_contract_max` 범위에 포함되는지 검사한다. 처음 확인한 서버는 활성화하지만, 이미 다른 서버 URL binding이 있는 상태에서 새 URL을 확인하거나 저장한 instance/epoch가 달라지거나 서버 cursor가 로컬 cursor보다 낮으면 `RECONCILIATION_REQUIRED`로 전환한다. 이때 알림 polling과 `server_sync_queue` 자동 전송을 중지하며 기존 mapping, cursor, 처리 `message_id`, 큐를 보존한다.
 
-reconcile 항목은 `domain`, `localId`, `idempotencyKey`, 선택적 `serverId`, `baseRevision`, `intentHash`, `contentHash`, `sourceVersionId`를 받는다. 응답 결과는 다음 셋만 허용한다.
+run 생성 요청은 `clientId`, 선택적 `previousServerInstanceId`·`previousServerEpoch`, `triggerReason`, `clientCursor`, 최대 10,000개의 `items`를 받는다. 각 항목은 `clientItemId`, `entityType`, `localId`, `localVersionNo`, `idempotencyKey`, 선택적 `localHashSha256`·이전 서버 문서/버전 ID를 포함한다. 현재 판정 대상은 `document`, `document_version`, `field_comment`, `field_comment_attachment`, `document_access_log`, `report`다. 응답 결과와 제안 조치는 다음 셋이다.
 
 | 결과 | 의미 | WPF 조치 |
 | --- | --- | --- |
-| `CONFIRMED` | 같은 key·intent/hash의 서버 결과가 존재 | 응답의 현재 server ID/revision/hash로 mapping 재결합 |
-| `ABSENT` | key와 서버 ID 모두 존재하지 않음 | 기존 로컬 원천·동일 key를 `PENDING`으로 재사용 |
-| `DIVERGED` | key 재사용, hash 불일치, orphan source 또는 다른 parent | `SERVER_RECOVERY_DIVERGED` `CONFLICT`로 보존, 관리자 해결 |
+| `CONFIRMED` / `REBOUND` | 같은 idempotency key가 있고 제공된 hash도 일치 | 응답의 현재 server ID/revision/hash로 mapping 재결합하고 큐를 `SYNCED`로 종결 |
+| `ABSENT` / `REQUEUE` | 같은 idempotency key의 서버 row가 없음 | 기존 큐의 서버 ID를 비우고 `PENDING`으로 되돌려 동일 key로 재전송 |
+| `DIVERGED` / `CONFLICT` | 지원하지 않는 entity이거나 비교 hash 부재·불일치 | 큐를 `DISCARDED`로 종결하되 `RECONCILIATION_DIVERGED`, 상세, 해결자·시각을 보존 |
 
-reconcile은 mutation을 만들거나 수정하지 않는 read-only 판정이다. 서버가 복구되어 ID가 달라졌더라도 key와 hash가 같으면 `CONFIRMED`로 새 ID를 반환할 수 있다. WPF는 한 run의 결과와 mapping 갱신을 한 로컬 transaction에 저장한다. 모든 항목의 결과가 저장된 뒤 관리자 확인을 거쳐서만 알림 cursor 0 재추적을 시작하며 기존 처리 `message_id`는 삭제하지 않는다.
+run 생성은 업무 도메인 원천을 수정하지 않고 서버와 WPF 양쪽에 판정 이력을 추가한다. 적용 요청은 run의 모든 항목을 한 번씩 포함하고 각 `action`이 서버 제안 조치와 같아야 한다. 서버는 승인자·항목별 사유·승인 사유와 `sync.reconciliation.approved` 활동 이력을 저장한다. 그 응답을 받은 WPF는 한 로컬 transaction에서 큐·mapping·binding을 갱신하고 해당 서버 scope의 알림 cursor를 0으로 되돌려 재추적한다. 기존 처리 `message_id`는 삭제하지 않는다. 이후 `PENDING` 재전송을 재개한다.
 
 공통 오류 응답의 `detail`은 `code`, `message`, `retryable`, 선택적 `currentRevision`, `currentEntityId`, `serverEpoch`를 갖는다. 처리 규칙은 다음과 같다.
 
@@ -510,3 +513,12 @@ WPF `AI 정답셋` 화면이 사용하는 API와 dataset 운영을 위해 서버
 dataset 상태는 `DRAFT → IN_REVIEW → PENDING_FIRST_APPROVAL → PENDING_SECOND_APPROVAL → APPROVED`다. 작성자, 검토자, 1차 승인자, 2차 승인자는 모두 달라야 하며 서버 상태 전이와 DB 제약이 이를 함께 강제한다. 최종 승인은 총 48건과 8범주×3유형 각 2건을 요구하고 사례 snapshot hash를 다시 확인한다. 대체 version은 같은 고객·현장·DB·라인·준비도 계열과 같은 `datasetKey`의 불변 version만 참조할 수 있다. 대체 version 승인 시 이전 승인본은 삭제·수정하지 않고 `SUPERSEDED`, 명시적 폐기는 `RETIRED`가 된다. dataset 상세·구성 변경·상태 전이는 현재 고객·현장·DB scope 밖의 ID를 `404`로 처리한다.
 
 `GET /ai-search/readiness`는 `latest_approved_dataset`, 그 version에 정확히 결합된 `latest_evaluation`, `ai_provider_readiness_status`, `readiness_failures`, `external_ai_calls_blocked`, `non_ai_core_flows_blocked=false`를 반환한다. 승인 dataset 또는 해당 평가가 없으면 `PENDING`, 평가가 존재하지만 임계값 미달이면 `FAIL`, 모든 결합 게이트 통과 시 `PASS`다. `FAIL/PENDING`은 외부 provider 호출만 차단하며 후보 재생성·품질 점검과 문서·FieldComment 등 비AI API는 차단하지 않는다.
+## 서버 식별과 무손실 reconciliation
+
+- `GET /api/v1/health/sync-manifest`, `GET /api/v1/sync/manifest`: `server_instance_id`, `server_epoch`, `schema_contract`, `api_contract_min/max`, 현재 `server_cursor`를 반환한다. health 경로는 전송 차단 판단을 위해 인증 없이 읽을 수 있지만 비밀값이나 운영 데이터는 포함하지 않는다.
+- `POST /api/v1/sync/server-epoch/increment`: `admin`/`system-admin`만 실행한다. DB 복구·부분 복원 직후 일반 클라이언트를 연결하기 전에 epoch를 1 증가시키며 감사 이력을 남긴다.
+- `POST /api/v1/sync/reconciliation-runs`: 관리자 인증과 WPF inventory를 받아 각 항목을 `CONFIRMED`, `ABSENT`, `DIVERGED`로 판정하고 `REBOUND`, `REQUEUE`, `CONFLICT`를 제안한다. 새 `run_id`를 매번 만들며 실패·불일치 항목도 삭제하지 않는다.
+- `GET /api/v1/sync/reconciliation-runs/{run_id}`: 저장된 run과 모든 판정·승인 결과를 조회한다.
+- `POST /api/v1/sync/reconciliation-runs/{run_id}/apply`: 모든 item에 대한 관리자 승인 조치와 사유가 있어야 종결한다. 동일 적용 요청은 멱등하게 기존 결과를 반환한다.
+
+동일 idempotency key와 payload/file hash이면 새 server ID/revision을 반환해 재결합한다. key가 없으면 같은 key를 유지해 재전송하고, 같은 key의 hash가 다르면 자동 덮어쓰기 없이 divergence로 보존한다.

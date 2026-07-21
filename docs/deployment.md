@@ -516,7 +516,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 
 - 복구 시 서버 DB와 `storage`는 같은 시점의 백업본을 사용한다.
 - 새 서버 PC 경로가 다르면 `.env`의 절대 경로를 먼저 수정한다.
-- 서버 복구 후 WPF를 실행하기 전에 `/api/v1/health/db`를 먼저 확인한다.
+- 서버 복구 후 WPF를 실행하기 전에 `/api/v1/health/db`와 `/api/v1/health/sync-manifest`를 먼저 확인한다.
 - WPF 로컬 데이터 복구는 DB와 `Files`를 같은 시점으로 맞춘다.
 
 ## 운영 설치 후 점검
@@ -526,6 +526,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - 작업 스케줄러의 `\FlowNote\FlowNoteApi` 작업이 실행 중인지 확인한다.
 - `http://127.0.0.1:5184/api/v1/health`가 서버 PC에서 성공하는지 확인한다.
 - `http://127.0.0.1:5184/api/v1/health/db`가 서버 PC에서 성공하는지 확인한다.
+- `http://127.0.0.1:5184/api/v1/health/sync-manifest`가 서버 instance/epoch와 contract, cursor를 반환하는지 확인한다.
 - `http://<서버IP>:5184/api/v1/health`와 `http://<서버IP>:5184/api/v1/health/db`가 클라이언트 PC에서 성공하는지 확인한다.
 - `C:\FlowNote\Server\data\flownote.sqlite3`가 생성되었고 서버 실행 계정이 계속 쓸 수 있는지 확인한다.
 - `C:\FlowNote\Server\storage`에 테스트 문서 등록 시 파일이 저장되는지 확인한다.
@@ -549,6 +550,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS` 기준으로 뷰어 자동 닫힘이 동작하는지 확인한다.
 - FieldComment를 등록하고 서버 목록 또는 문서별 FieldComment 조회에서 확인한다.
 - 서버 호출 실패 시 로컬 저장이 유지되고 동기화 이력이 남는지 장애 테스트에서 별도로 확인한다.
+- 서버 URL, instance/epoch 또는 cursor 복구 경계가 달라지면 자동 전송과 알림 polling이 중지되고 `이력 > 서버 재결합` 안내가 표시되는지 확인한다.
 
 ### 백업
 
@@ -655,9 +657,12 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 2. `C:\FlowNote\Server\data`를 백업본의 서버 데이터 세트로 복원한다.
 3. `C:\FlowNote\Server\storage`를 같은 시점의 서버 파일 세트로 복원한다.
 4. `.env` 또는 서비스 환경 변수를 복원한다. 새 서버 PC의 절대 경로가 다르면 `FLOWNOTE_DATABASE_URL`과 `FLOWNOTE_STORAGE_ROOT`를 먼저 수정한다.
-5. 서버 작업을 시작한 뒤 서버 PC에서 `http://127.0.0.1:5184/api/v1/health`와 `http://127.0.0.1:5184/api/v1/health/db`를 확인한다.
-6. WPF 실행 전 서버 계정 로그인이 가능한지 확인한다.
-7. `scripts\verify-pilot-restore.py`로 복구 전후 `server` 증거를 비교해 테이블별 원천 개수, `storage` 상대경로·크기·SHA-256, `quick_check`, foreign key가 모두 통과했는지 확인한다.
+5. 서버 작업을 시작한 뒤 서버 PC에서 `http://127.0.0.1:5184/api/v1/health`, `http://127.0.0.1:5184/api/v1/health/db`, `http://127.0.0.1:5184/api/v1/health/sync-manifest`를 확인하고 복구 전후 instance/epoch/cursor를 기록한다.
+6. 복구가 클라이언트가 알고 있던 운영 시점과 다른 명시적 경계라면 `admin` 또는 `system-admin`이 `POST /api/v1/sync/server-epoch/increment`를 한 번 실행한다. 같은 정상 백업을 단순 재기동한 경우에는 임의로 증가시키지 않는다.
+7. WPF 실행 전 서버 계정 로그인이 가능한지 확인한다.
+8. WPF가 `RECONCILIATION_REQUIRED`를 표시하면 자동 전송·polling이 중지된 상태에서 `이력 > 서버 재결합`의 모든 `REBOUND`/`REQUEUE`/`CONFLICT` 항목과 승인 사유를 검토해 적용한다. 기존 큐·mapping·처리 `message_id`를 삭제하거나 수동 초기화하지 않는다.
+9. 승인 적용 뒤 cursor 0 재추적과 `PENDING` 재전송이 재개되는지 확인한다.
+10. `scripts\verify-pilot-restore.py`로 복구 전후 `server` 증거를 비교해 테이블별 원천 개수, `storage` 상대경로·크기·SHA-256, `quick_check`, foreign key가 모두 통과했는지 확인한다.
 
 ### WPF 복구 순서
 
@@ -710,8 +715,19 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files` 금지 산출물을 함께 확인한다. 현재 FastAPI 코드 수집값은 137건이지만 스크립트 guard는 131건이므로, guard를 137건으로 갱신하기 전에는 현재 Windows 통합 기준선을 만들 수 없다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files` 금지 산출물을 함께 확인한다. 현재 FastAPI 코드 수집값은 143건이지만 스크립트 guard는 131건이므로, guard를 143건으로 갱신하기 전에는 현재 Windows 통합 기준선을 만들 수 없다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 
-2026-07-20 WPF 공통 DB의 서버형 `controlled_copy_grants` FK 충돌은 `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·row 수·hash를 먼저 보존한 뒤 복구했다. 실제 복구 run `WPF-P0-20260720-0840`은 `quick_check=ok`, FK 위반 0건이며 문서 버전 3,384행의 원천 hash를 유지한다. FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하려는 경우도 `create_all` 전에 거부한다. 2026-07-21 macOS 보조 run `baseline-131-macos-precheck-20260721-001`은 당시 FastAPI 131건 통과만 확인했고 WPF/Android는 `NOT_RUN`이다. 현재 코드는 137건이므로 이 run을 최신 기준선으로 승격하지 않는다. guard 갱신과 새 Windows 무생략 `verification-summary.json=PASSED`가 생성되기 전까지 배포 통합 기준선은 `대기`다.
+2026-07-20 WPF 공통 DB의 서버형 `controlled_copy_grants` FK 충돌은 `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·row 수·hash를 먼저 보존한 뒤 복구했다. 실제 복구 run `WPF-P0-20260720-0840`은 `quick_check=ok`, FK 위반 0건이며 문서 버전 3,384행의 원천 hash를 유지한다. FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하려는 경우도 `create_all` 전에 거부한다. 2026-07-21 macOS 보조 run `baseline-131-macos-precheck-20260721-001`은 당시 FastAPI 131건 통과만 확인했고 WPF/Android는 `NOT_RUN`이다. 현재 코드는 143건이므로 이 run을 최신 기준선으로 승격하지 않는다. guard 갱신과 새 Windows 무생략 `verification-summary.json=PASSED`가 생성되기 전까지 배포 통합 기준선은 `대기`다.
+## DB 복구·초기화 후 운영 절차
+
+1. 모든 WPF를 종료하거나 자동 전송/polling이 중지됐음을 확인한다.
+2. 서버 DB와 `storage/`를 같은 백업 시점으로 복원한다. 부분 복원이라면 어떤 영역이 다른 시점인지 기록한다.
+3. 서버를 단독 기동해 `quick_check`, foreign key, orphan, 중복 idempotency key, 공개 포인터, report source/file hash 검사를 실행한다.
+4. 관리자 계정으로 `POST /api/v1/sync/server-epoch/increment`를 한 번 실행한다. 빈 DB 초기화는 새 instance ID가 생성되므로 별도 epoch 증가가 필수는 아니지만 동일 검사를 수행한다.
+5. WPF 한 대를 연결한다. "서버 복구 경계가 감지되어 자동 전송을 중지했습니다" 또는 "다른 서버 연결 또는 빈 DB 초기화 여부를 확인하세요"가 표시되는지 확인한다.
+6. 이력 > 서버 재결합에서 새 run을 생성한다. 모든 `REBOUND`, `REQUEUE`, `CONFLICT`와 양쪽 hash를 검토하고 승인 사유를 입력해 적용한다.
+7. cursor 0 재추적과 재전송이 끝난 뒤 비종결 큐, mapping orphan, 중복 key, 공개 포인터와 hash 검사를 다시 실행한다. 첫 WPF가 통과한 다음 두 번째 WPF도 별도 run으로 반복한다.
+
+정상 복구, 이전 시점 복구, 빈 DB 초기화, 다른 server instance/잘못된 URL 연결은 각각 새 `run_id`로 기록한다. URL 오입력 때는 승인하지 말고 올바른 URL로 되돌린 후 운영 책임자가 잘못 생성된 실패 run을 보존한다.

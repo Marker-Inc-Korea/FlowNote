@@ -5,13 +5,16 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 ## Version
 
 - `schema_migrations.version`: `0001_initial_mvp_schema`
-- 목적: 문서, 파일 객체, 버전, 사용자/권한, 인증 세션, 태그, FieldComment, 첨부, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가, 외부 AI 안전장치·감사, controlled copy, 접근 로그, 활동 이력을 위한 서버 메타데이터 테이블 생성
+- 목적: 문서, 파일 객체, 버전, 사용자/권한, 인증 세션, 태그, FieldComment, 첨부, 작업순서, 채널/인수인계, 보고서, 서버 복구 reconciliation, AI 검색 근거 후보·회귀 평가, 외부 AI 안전장치·감사, controlled copy, 접근 로그, 활동 이력을 위한 서버 메타데이터 테이블 생성
 
 ## Tables
 
 | Table | Purpose |
 | --- | --- |
 | `schema_migrations` | Applied schema version record |
+| `server_identity` | Singleton server instance ID, explicit recovery epoch, and schema/API contract range |
+| `reconciliation_runs` | WPF inventory reconciliation run, recovery boundary, cursors, status, and administrator approval |
+| `reconciliation_items` | Per-queue-item verdict, proposed/resolved action, server mapping/hash, and resolution audit |
 | `user_accounts` | Login account, password hash, role, status |
 | `roles`, `user_roles` | Role reference tables |
 | `auth_sessions` | Server auth sessions, access token ID, refresh token hash |
@@ -67,6 +70,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 - Controlled copy can only target the current published version; grants expire quickly and are consumed once.
 - FieldComment must reference at least one of document, structure item, or work record.
 - FieldComment review writes and report saves use domain revisions plus immutable mutation receipts; report/source/document creation commits as one transaction.
+- Sync manifest identifies the server installation and explicit recovery epoch. Reconciliation records classify WPF queue inventory without rewriting domain source rows and require administrator approval for every proposed action.
 - External AI calls are disabled by default. A generic HTTPS JSON adapter exists only for explicit `test` scope; no provider-specific production client or production activation is configured.
 - The active `ai_sensitive_data_policies` row for a customer/site scope adds deny terms and customer identifiers to the provider-boundary content filter.
 - External AI operational policy, approval, prompt lifecycle, audit, and retention APIs are restricted to `system-admin`; provider credentials remain outside these tables.
