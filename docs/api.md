@@ -120,7 +120,7 @@ run 생성은 업무 도메인 원천을 수정하지 않고 서버와 WPF 양�
 | GET | `/api/v1/documents/published` | 공개 문서 목록 |
 | GET | `/api/v1/documents/{document_id}` | 문서 상세 |
 | GET | `/api/v1/documents/{document_id}/published` | 공개 버전 조회 |
-| PUT | `/api/v1/documents/{document_id}/tags?baseRevision={revision}` | 기준 revision이 일치할 때 문서 태그 교체 |
+| PUT | `/api/v1/documents/{document_id}/tags` | `baseRevision` query 기준이 일치할 때 문서 태그 교체 |
 | PATCH | `/api/v1/documents/{document_id}/status` | JSON `baseRevision` 기준 문서 상태 변경 |
 | GET | `/api/v1/documents/{document_id}/versions` | 문서 버전 목록 |
 | POST | `/api/v1/documents/{document_id}/versions` | 새 파일 버전 등록. multipart `idempotencyKey`를 보내면 같은 키의 재시도는 기존 버전을 반환 |
@@ -512,7 +512,7 @@ WPF `AI 정답셋` 화면이 사용하는 API와 dataset 운영을 위해 서버
 
 dataset 상태는 `DRAFT → IN_REVIEW → PENDING_FIRST_APPROVAL → PENDING_SECOND_APPROVAL → APPROVED`다. 작성자, 검토자, 1차 승인자, 2차 승인자는 모두 달라야 하며 서버 상태 전이와 DB 제약이 이를 함께 강제한다. 최종 승인은 총 48건과 8범주×3유형 각 2건을 요구하고 사례 snapshot hash를 다시 확인한다. 대체 version은 같은 고객·현장·DB·라인·준비도 계열과 같은 `datasetKey`의 불변 version만 참조할 수 있다. 대체 version 승인 시 이전 승인본은 삭제·수정하지 않고 `SUPERSEDED`, 명시적 폐기는 `RETIRED`가 된다. dataset 상세·구성 변경·상태 전이는 현재 고객·현장·DB scope 밖의 ID를 `404`로 처리한다.
 
-`GET /ai-search/readiness`는 `latest_approved_dataset`, 그 version에 정확히 결합된 `latest_evaluation`, `ai_provider_readiness_status`, `readiness_failures`, `external_ai_calls_blocked`, `non_ai_core_flows_blocked=false`를 반환한다. 승인 dataset 또는 해당 평가가 없으면 `PENDING`, 평가가 존재하지만 임계값 미달이면 `FAIL`, 모든 결합 게이트 통과 시 `PASS`다. `FAIL/PENDING`은 외부 provider 호출만 차단하며 후보 재생성·품질 점검과 문서·FieldComment 등 비AI API는 차단하지 않는다.
+`GET /api/v1/ai-search/readiness`는 `latest_approved_dataset`, 그 version에 정확히 결합된 `latest_evaluation`, `ai_provider_readiness_status`, `readiness_failures`, `external_ai_calls_blocked`, `non_ai_core_flows_blocked=false`를 반환한다. 승인 dataset 또는 해당 평가가 없으면 `PENDING`, 평가가 존재하지만 임계값 미달이면 `FAIL`, 모든 결합 게이트 통과 시 `PASS`다. `FAIL/PENDING`은 외부 provider 호출만 차단하며 후보 재생성·품질 점검과 문서·FieldComment 등 비AI API는 차단하지 않는다.
 ## 서버 식별과 무손실 reconciliation
 
 - `GET /api/v1/health/sync-manifest`, `GET /api/v1/sync/manifest`: `server_instance_id`, `server_epoch`, `schema_contract`, `api_contract_min/max`, 현재 `server_cursor`를 반환한다. health 경로는 전송 차단 판단을 위해 인증 없이 읽을 수 있지만 비밀값이나 운영 데이터는 포함하지 않는다.
@@ -521,4 +521,4 @@ dataset 상태는 `DRAFT → IN_REVIEW → PENDING_FIRST_APPROVAL → PENDING_SE
 - `GET /api/v1/sync/reconciliation-runs/{run_id}`: 저장된 run과 모든 판정·승인 결과를 조회한다.
 - `POST /api/v1/sync/reconciliation-runs/{run_id}/apply`: 모든 item에 대한 관리자 승인 조치와 사유가 있어야 종결한다. 동일 적용 요청은 멱등하게 기존 결과를 반환한다.
 
-동일 idempotency key와 payload/file hash이면 새 server ID/revision을 반환해 재결합한다. key가 없으면 같은 key를 유지해 재전송하고, 같은 key의 hash가 다르면 자동 덮어쓰기 없이 divergence로 보존한다.
+동일 idempotency key와 payload/file hash의 서버 원천이 있으면 그 server ID/revision을 반환해 재결합한다. 같은 key의 서버 원천이 없으면 기존 key를 유지한 재전송 대상으로 판정하고, 같은 key의 hash가 다르면 자동 덮어쓰기 없이 divergence로 보존한다.

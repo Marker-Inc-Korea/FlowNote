@@ -64,16 +64,18 @@ adb shell dumpsys package com.flownote.fieldapp > "$packages_dir/android-package
 adb shell dumpsys deviceidle > "$android_logs_dir/deviceidle-after.txt"
 adb logcat -d -v threadtime FlowNoteDelivery:I '*:S' > "$android_logs_dir/delivery-log.txt" || true
 
-scenario_template="$scenario_dir/android-scenarios.csv"
+scenario_template="$scenario_dir/android-delivery.csv"
 if [[ ! -e "$scenario_template" ]]; then
   {
-    echo 'scenario_id,condition,delivery_run_id,message_id,created_at_utc,recovery_ready_at_utc,displayed_at_utc,receipt_at_utc,page_seconds,result,evidence,notes'
-    echo 'AND-NOTIFY-NORMAL,normal,,,,,,,,NOT_RUN,,'
-    echo 'AND-NOTIFY-DOZE,doze,,,,,,,,NOT_RUN,,'
-    echo 'AND-NOTIFY-DISCONNECT,disconnect_5m,,,,,,,,NOT_RUN,,'
-    echo 'AND-NOTIFY-BOOT,reboot,,,,,,,,NOT_RUN,,'
-    echo 'AND-NOTIFY-ADDRESS,address_change,,,,,,,,NOT_RUN,,'
-    echo 'AND-NOTIFY-FORCESTOP,kiosk_restart,,,,,,,,NOT_RUN,,'
+    echo 'scenario_id,condition,delivery_run_id,message_id,created_at_utc,recovery_ready_at_utc,displayed_at_utc,receipt_at_utc,page_seconds,elapsed_seconds,allowed_seconds,result,evidence'
+    echo 'AND-NOTIFY-NORMAL,normal,,,,,,,,,,NOT_RUN,'
+    echo 'AND-NOTIFY-DOZE,doze,,,,,,,,,,NOT_RUN,'
+    echo 'AND-NOTIFY-DISCONNECT,disconnect_5m,,,,,,,,,,NOT_RUN,'
+    echo 'AND-NOTIFY-BOOT,reboot,,,,,,,,,,NOT_RUN,'
+    echo 'AND-NOTIFY-ADDRESS,address_change,,,,,,,,,,NOT_RUN,'
+    echo 'AND-NOTIFY-ACCESS-EXPIRY,access_token_expiry,,,,,,,,,,NOT_RUN,'
+    echo 'AND-NOTIFY-REFRESH-REJECTED,refresh_rejected,,,,,,,,,,NOT_RUN,'
+    echo 'AND-NOTIFY-FORCESTOP,force_stop_kiosk_restart,,,,,,,,,,NOT_RUN,'
   } > "$scenario_template"
 fi
 

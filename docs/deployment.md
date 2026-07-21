@@ -88,7 +88,7 @@ MDM 기준은 단말 전체 암호화, 6자리 이상 화면 잠금과 짧은 �
 4. 교체는 기존 단말을 `RETIRED`로 만드는 replace API와 새 임의 `deviceId`를 사용한다. 기존 outbox/Keystore 키를 복사하지 않고 미전송 건은 idempotency key와 서버 원천을 대조해 전송·보존·폐기를 승인한다.
 5. 폐기 단말은 `RETIRED`에서 재활성화하지 않으며 MDM wipe 증거와 자산 폐기 기록을 연결한다.
 
-서명 APK 생성 뒤 `scripts/verify-android-release.sh <run_id> <apk> data/local/pilot-evidence`로 인증서 지문과 SHA-256을 보존한다. `--install`은 동일 키 신규 설치/업그레이드를, `--rollback <이전.apk>`는 승인된 이전 versionCode 설치를 수행한다. 정확히 한 대의 승인 단말 연결, 현재/이전 APK의 동일 인증서, `PENDING`/`FAILED` outbox 0건, 서버/API·로컬 schema 하위 호환성과 rollback 승인 없이는 실행하지 않는다. 이전 APK는 새 암호화 outbox를 해석하지 못할 수 있으므로 미전송 항목이 있으면 rollback을 중단한다. 운영 패키지와 모든 실행 증거는 Git 제외 상태로 보존한다.
+서명 APK 생성 뒤 `scripts/verify-android-release.sh <run_id> <apk> data/local/pilot-evidence`로 인증서 지문과 SHA-256을 보존한다. `--install`은 동일 키 신규 설치/업그레이드를, `--rollback <이전.apk>`는 승인된 이전 versionCode 설치를 수행한다. 시나리오 CSV가 없으면 정상, Doze, 5분 단절, 재부팅, 서버 주소 변경, access token 만료, refresh 거부, 강제 중지 뒤 kiosk 재실행의 8개 `NOT_RUN` 행과 측정/허용 시간 열을 만든다. 정확히 한 대의 승인 단말 연결, 현재/이전 APK의 동일 인증서, `PENDING`/`FAILED` outbox 0건, 서버/API·로컬 schema 하위 호환성과 rollback 승인 없이는 실행하지 않는다. 이전 APK는 새 암호화 outbox를 해석하지 못할 수 있으므로 미전송 항목이 있으면 rollback을 중단한다. 운영 패키지와 모든 실행 증거는 Git 제외 상태로 보존한다.
 
 서명키 분실은 기존 설치 앱 업그레이드 불가 사건으로 처리해 outbox 판정, 앱 제거, 새 키/필요 시 새 applicationId 배포와 새 `deviceId` 등록을 수행한다. 키 유출은 해당 인증서 빌드 허용 중단, MDM blocklist, 영향 버전·단말 파악과 승인된 Android 키 업그레이드 또는 새 applicationId 재배포 절차를 따른다.
 

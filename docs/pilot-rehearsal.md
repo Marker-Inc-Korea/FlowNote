@@ -35,6 +35,7 @@
 ```text
 pilot-evidence/<run_id>/
   manifest.md
+  pilot-run.json
   approvals/
   packages/
   install/
@@ -63,6 +64,8 @@ pilot-evidence/<run_id>/
 ```powershell
 py -3 scripts\manage-pilot-run.py prepare --run-id PILOT-YYYYMMDD-HHMM-SITE-001 --evidence-root D:\FlowNotePilotEvidence
 ```
+
+준비 명령은 `scenario-results/android-delivery.csv`, `scenario-results/role-metrics.csv`, `observations/role-observations.csv`, `observations/development-items.csv`도 기존 파일을 덮어쓰지 않고 만든다. 익명 참여자 ID만 사용해 원시 관찰값을 적고, 집계한 분모·성공·중앙값·최대 시간·재시도·도움 요청은 `pilot-run.json` schema version 2에 옮긴다. Android 전달 항목은 정상, Doze, 5분 단절, 재부팅, 서버 주소 변경, access token 만료, refresh 거부, 강제 중지 뒤 kiosk 재실행을 각각 전건 성공과 허용 시간 이내로 기록해야 한다. 정상·Doze의 `allowed_seconds`는 30, 5분 단절의 값은 `30 + page_seconds`로 고정하며 임의 완화할 수 없다. 나머지 시나리오도 사전 승인한 양수 허용 시간과 측정 최대 시간을 반드시 기록한다.
 
 ## 1. Windows 서버와 WPF 배포 리허설
 
@@ -137,7 +140,7 @@ MDM 정책 보고서에서 단말 전체 암호화, 6자리 이상 화면 잠금
 7. 로그인 token과 outbox 본문/새 첨부를 `run-as` 또는 MDM 승인 저장소 검사로 확인해 평문 검색 결과 0건, backup 불가, Keystore key 비반출을 기록한다. 키 무효화 모의 후 단말 격리·미전송 판정 절차를 수행한다.
 8. 서명 APK 신규 설치, 같은 키 업그레이드, 승인 이전 APK rollback을 수행하고 `apksigner` 인증서 SHA-256, APK SHA-256, package/versionCode/versionName과 설치 로그를 보존한다.
 
-알림 계측 CSV는 최소 `scenario_id`, `condition`, `delivery_run_id`, `message_id`, `created_at_utc`, `recovery_ready_at_utc`, `displayed_at_utc`, `receipt_at_utc`, `page_seconds`, `result`, `evidence`를 가진다. 정상·Doze는 `displayed_at-created_at <= 30초`, 5분 단절·재부팅·주소 변경·kiosk 재실행은 `displayed_at-recovery_ready_at <= 30초+page_seconds`로 계산한다. Logcat의 각 `page_ok`에 대해 `cursor_before`, `cursor_after`, `received`, `advanced`, `stale_or_duplicate`를 서버 응답/감사 로그와 대조한다. full page가 연속되는 101건 이상 backlog도 만들어 마지막 `message_id`까지 도달해야 하며, 누락 메시지·서버 receipt 중복 row는 각각 0건이어야 한다.
+알림 계측 CSV는 최소 `scenario_id`, `condition`, `delivery_run_id`, `message_id`, `created_at_utc`, `recovery_ready_at_utc`, `displayed_at_utc`, `receipt_at_utc`, `page_seconds`, `elapsed_seconds`, `allowed_seconds`, `result`, `evidence`를 가진다. schema version 2의 기계 판정 대상 condition은 `normal`, `doze`, `disconnect_5m`, `reboot`, `address_change`, `access_token_expiry`, `refresh_rejected`, `force_stop_kiosk_restart`다. 정상·Doze는 `displayed_at-created_at <= 30초`, 5분 단절은 `displayed_at-recovery_ready_at <= 30초+page_seconds`로 계산하고 나머지는 사전 승인한 허용 시간과 비교한다. Logcat의 각 `page_ok`에 대해 `cursor_before`, `cursor_after`, `received`, `advanced`, `stale_or_duplicate`를 서버 응답/감사 로그와 대조한다. full page가 연속되는 101건 이상 backlog도 만들어 마지막 `message_id`까지 도달해야 하며, 누락 메시지·서버 receipt 중복 row는 각각 0건이어야 한다.
 
 실단말 업무 묶음은 같은 `run_id`에서 공개 문서 열람, FieldComment, 새 사진 첨부, 정상/Doze 알림, 인수인계 읽음·확인을 순서대로 수행한다. 네트워크 단절 중 FieldComment/사진 outbox를 만든 뒤 복구하고 서버 원천·첨부가 idempotency key별 1건인지 확인한다. 단말 교체 때는 기존 단말의 outbox 건별 `서버 반영 확인 후 폐기`, `기존 단말 재연결 후 전송`, `정보보호 승인 보존` 중 하나를 기록하고 새 단말로 암호문·Keystore key를 복사하지 않는다.
 
@@ -226,6 +229,8 @@ MDM 정책 보고서에서 단말 전체 암호화, 6자리 이상 화면 잠금
 하나라도 만족하지 않으면 결과는 `조건부 통과`가 아니라 `대기` 또는 `실패`다. 범위를 줄여 다시 시도할 때는 새 `run_id`를 발급하고 이전 실패 증거와 연결한다.
 
 운영·보안·현장 서명 후에는 다음 명령을 실행한다. 도구는 필수 책임 영역, 고객 유사 장비 수, 모든 필수 게이트, 증거 파일 존재, 역할별 승인 성공률/중앙 시간, 0건 지표, 서버/WPF/Android rollback과 정상 업무 재개, 남은 항목의 책임자·기한·중단 영향, 3자 최종 승인을 같은 `run_id` 안에서 확인한다. 종료 코드 0과 `pilot-verification.json`의 `PASS`가 함께 있어야 하며, 이 결과는 서명 내용과 원천 증거의 사람 교차 검토를 대체하지 않는다.
+
+schema version 2 판정은 역할별 최대 시간·재시도·도움 요청, 평문 token/outbox·외부 공유·잔존 secure cache 0건, Android 알림 누락·서버 receipt 중복 0건, crash 경계 표시 중복 최대 1건, 분실·비활성 단말 재접속 차단과 교체 이력 보존도 별도로 강제한다. Keystore token, outbox, 암호화 사진, 잘못된 키 복호화 실패, 종료 후 cache 정리, `FLAG_SECURE`, 공유 경로 부재와 backup 차단은 각각 확인해야 한다. 조치 가능한 UX 관찰은 전건 개발 항목으로 변환하고 P0~P3 합계와 `common_product`·`device_or_mdm_setting`·`site_layout_or_training` 분류 합계가 변환 건수와 일치해야 한다. 게이트·역할·Android 전달/보안/단말 수명주기·UX 변환·rollback·최종 승인의 증거 목록에는 같은 실행 폴더 안에 실제 존재하는 상대경로만 넣는다.
 
 ```powershell
 py -3 scripts\manage-pilot-run.py verify --run-id PILOT-YYYYMMDD-HHMM-SITE-001 --evidence-root D:\FlowNotePilotEvidence
