@@ -68,7 +68,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-07-21 현재 ORM은 FieldComment 검토·보고서·작업순서 mutation receipt와 서버 복구 reconciliation 모델을 포함한 57개 서버 테이블을 생성 기준으로 사용한다.
+2026-07-21 현재 ORM은 FieldComment 검토·보고서·작업순서 mutation receipt, 서버 복구 reconciliation과 AI 질의 legal hold 모델을 포함한 58개 서버 테이블을 생성 기준으로 사용한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -209,7 +209,7 @@ MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_record
 | `ai_transfer_approvals` | `approval_id`, `customer_scope`, `site_scope`, `provider`, `model_scope`, `allowed_source_types`, `data_handling_policy_version`, `approved_by`, `approved_at`, `expires_at`, `revoked_at`, `reason` | 고객·현장별 외부 전송 승인. 만료·철회 시 새 호출을 즉시 차단하며 `admin` 또는 `system-admin`의 승인 주체와 근거를 보존한다. |
 | `ai_sensitive_data_policies` | `policy_id`, `customer_scope`, `site_scope`, `version`, `forbidden_terms_json`, `customer_identifiers_json`, `is_active`, `created_by`, `created_at` | 고객·현장별 사용자 정의 금칙어와 고객 식별자 정책. 최신 활성 정책 하나를 query snapshot 필터에 적용하며 원문 검출값은 감사 로그에 남기지 않는다. |
 
-`response_storage_mode`는 `DO_NOT_STORE`, `STORE_90_DAYS`만 허용한다. 기본값은 `DO_NOT_STORE`이며 이때 응답 본문은 요청 세션에 반환한 뒤 저장하지 않는다. `STORE_90_DAYS`는 본문과 별도 `response_retention_until`을 저장한다. 서버 lifespan 스케줄러와 `system-admin` 전체/단일 즉시 실행 API는 만료된 질의 문구를 `[EXPIRED]`로 비식별화하고 저장 응답 원문을 삭제하되 query/response hash, 근거·인용·호출 메타데이터와 `ai_retention_audits`를 보존한다. 단, 같은 `query_id`의 `ai_query_legal_holds.status = ACTIVE`이면 두 만료 경로 모두 건너뛴다. hold 해제는 `RELEASED` 상태와 해제자·시각·사유를 누적하고 row를 삭제하지 않는다. 질의 재생성 API는 아직 없으며, 후속 재생성은 같은 질의, 불변 프롬프트 버전, 근거 후보 ID와 content hash, provider/model을 다시 사용하되 원천의 권한·공개·외부 전송 승인 상태를 다시 평가해야 한다.
+`response_storage_mode`는 `DO_NOT_STORE`, `STORE_90_DAYS`만 허용한다. 기본값은 `DO_NOT_STORE`이며 이때 응답 본문은 요청 세션에 반환한 뒤 저장하지 않는다. `STORE_90_DAYS`는 본문과 별도 `response_retention_until`을 저장한다. 서버 lifespan 스케줄러와 `system-admin` 일괄/단일 즉시 실행 API는 만료된 질의 문구를 `[EXPIRED]`로 비식별화하고 저장 응답 원문을 삭제하되 query/response hash, 근거·인용·호출 메타데이터와 `ai_retention_audits`를 보존한다. 단, 같은 `query_id`의 `ai_query_legal_holds.status = ACTIVE`이면 정기·수동 일괄·단일의 세 만료 경로가 모두 건너뛴다. hold 해제는 `RELEASED` 상태와 해제자·시각·사유를 누적하고 row를 삭제하지 않는다. 질의 재생성 API는 아직 없으며, 후속 재생성은 같은 질의, 불변 프롬프트 버전, 근거 후보 ID와 content hash, provider/model을 다시 사용하되 원천의 권한·공개·외부 전송 승인 상태를 다시 평가해야 한다.
 
 `ai_query_evidence_candidates.candidate_id`는 재생성 가능한 read model에 대한 논리적 역추적 키이며 물리 FK로 묶지 않는다. `ai_search_candidates` 재생성 뒤에도 질의 시점의 source/version/trace ID와 content hash snapshot을 보존하기 위한 결정이다.
 

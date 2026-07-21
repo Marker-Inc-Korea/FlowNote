@@ -24,7 +24,7 @@
 - AI 자동 조언 전 단계의 `ai_search_candidates` 근거 후보 재생성, 목록, 품질 점검 API와 WPF 운영 점검 화면
 - 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth 첫 승인과 서로 다른 사용자의 2차 승인, WPF 사례·원천 구성, 고정 원천 snapshot/provenance, 실제 현장/스모크 준비도 분리, 불변 dataset version의 작성·검토·독립 2단계 승인, dataset 결합 회귀 평가 API와 48건 비민감 스모크 검증 도구
 - FastAPI `/api/v1/ai/queries` 질의 생성·조회와 기본 비활성, role, 목적, 외부 전송 승인, 프롬프트, 원천 권한·민감정보·최소 payload provider adapter, 근거 snapshot·인용·규칙 기반 의미 일치·호출 후 재검증과 감사 모델. 네트워크 adapter는 명시적 test scope 전용
-- FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 불변 프롬프트 수명주기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 즉시 실행. 서버의 주기적 자동 보존도 구현되어 있다.
+- FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 불변 프롬프트 수명주기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 일괄 즉시 실행. 서버 API에는 고객·현장 scope의 단일 만료와 legal hold 설정·해제도 구현되어 있고 활성 hold는 주기·일괄·단일 만료에서 제외된다. 단일 만료와 hold 조작 WPF UI는 구현되어 있지 않다.
 - FastAPI 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
 - Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인

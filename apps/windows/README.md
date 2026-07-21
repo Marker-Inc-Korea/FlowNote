@@ -32,7 +32,7 @@
 - FastAPI 서버 인증과 승인 단말/문서/controlled copy/FieldComment/첨부/접근 로그/보고서/작업순서/채널·인수인계/AI 검색 근거·회귀 평가/외부 AI 운영 API 클라이언트
 - AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
 - `AI 정답셋`: 후보 포함 근거와 수동 제외 원천으로 사례 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·대체·폐기, 평가 run 실행·이전 run 비교
-- `system-admin` 전용 `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현재 현장 kill switch와 호출·비용·보존 정책, 정제 감사 조회/CSV 내보내기, 서버 자동 보존과 별개인 만료 보존 작업 즉시 실행
+- `system-admin` 전용 `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현재 현장 kill switch와 호출·비용·보존 정책, 정제 감사 조회/CSV 내보내기, 서버 자동 보존과 별개인 만료 보존 일괄 즉시 실행
 - 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장. FieldComment 검토 base revision·mutation key, 첨부 부모·파일 SHA-256, 보고서 source 집합 hash, 문서 버전·첨부 idempotency key 전달과 큐 깊이·최장 대기·최근 처리량·실패 분포·row별 운영 상태 표시 포함
 - 서버 복구 경계 보호: sync manifest의 instance/epoch/API contract와 알림 cursor를 URL별 binding에 저장하고, URL·instance·epoch 변경 또는 cursor 역행 시 자동 전송과 polling 중지
 - 이력 창 `서버 재결합`: 전체 큐 inventory의 `CONFIRMED`/`ABSENT`/`DIVERGED` 판정과 `REBOUND`/`REQUEUE`/`CONFLICT` 제안 검토, 관리자 사유 승인 뒤 mapping·큐·binding 적용과 cursor 0 재추적
@@ -42,7 +42,7 @@ WPF에는 `/api/v1/ai/queries`를 호출하는 실제 외부 AI 질의 실행 �
 
 AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트, `AI 근거 후보 운영 점검` 화면에 구현되어 있다. 이 화면은 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`, `/api/v1/ai-search/readiness`를 호출해 외부 AI 호출 전 데이터 품질, 원천 추적 가능성, 서버 scope별 실제 현장/스모크 준비도를 확인한다. `AI 정답셋`의 `사례·원천 구성` 창은 후보를 포함 근거로 선택하고 실제 source ID·선택적 version ID·제외 사유·설명을 제외 근거로 입력한다. 첫 등록 사례는 비활성으로 남고 다른 사용자가 2차 승인해야 활성화된다. 승인 사례는 dataset version으로 묶어 작성자·검토자·두 승인자를 분리하고, 승인 snapshot에 결합한 평가 run을 실행·비교한다. 합성/시험 회귀와 실제 현장 준비도는 별도 계열로 유지한다.
 
-`AI 운영` 화면은 `/api/v1/ai-operations`를 통해 승인, 프롬프트, 전역/현장 운영 정책과 질의 감사 메타데이터를 조회·변경한다. provider 자격증명·질의 원문·응답 원문은 표시하지 않으며 provider 자격증명은 설정 여부만 표시한다. 감사 CSV는 현장 정책에서 내보내기를 허용한 경우에만 저장할 수 있다. 서버는 설정된 주기로 만료 보존을 자동 처리하며, 화면의 실행 버튼은 다음 주기를 기다리지 않고 같은 처리를 즉시 요청한다.
+`AI 운영` 화면은 `/api/v1/ai-operations`를 통해 승인, 프롬프트, 전역/현장 운영 정책과 질의 감사 메타데이터를 조회·변경한다. provider 자격증명·질의 원문·응답 원문은 표시하지 않으며 provider 자격증명은 설정 여부만 표시한다. 감사 CSV는 현장 정책에서 내보내기를 허용한 경우에만 저장할 수 있다. 서버는 설정된 주기로 만료 보존을 자동 처리하며, 화면의 실행 버튼은 다음 주기를 기다리지 않고 같은 일괄 처리를 즉시 요청한다. 서버에 구현된 단일 질의 즉시 만료와 legal hold 설정·해제는 현재 WPF client 계약과 화면에 연결되어 있지 않다.
 
 `작업내역` 화면의 서버 동기화 큐는 완료, 보존 구 형식, 선행 조건 대기, 수동 조치 필요, 재시도 가능을 별도 운영 상태로 표시한다. 요약에는 `SYNCED`가 아닌 큐 깊이, 최장 대기 시간, 최근 1시간 처리량과 실패 분포가 나온다. 인증 만료나 서버 연결 실패·시간 초과는 현재 재시도 묶음을 중단하며, 개별 항목의 검증·파일 오류는 해당 항목을 실패로 남기고 다음 독립 항목을 계속 처리한다. 모든 경우 로컬 원천과 큐는 유지한다.
 
@@ -120,7 +120,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-현재 FastAPI 코드는 143건을 수집하지만 표준 스크립트의 수집/JUnit guard는 아직 131건이다. 과거 131건 기준 뒤 작업순서 서버 권위 회귀 3건, FieldComment 검토·첨부/보고서 수렴 회귀 3건, 서버 복구 manifest/reconciliation 회귀 6건이 추가되었다. guard를 143건으로 갱신하고 Windows에서 WPF Core·앱 build·누적 스모크·Android build를 한 run으로 완료해야 한다. 새 Windows 무생략 `verification-summary.json=PASSED`가 나올 때까지 통합 기준선 재확립은 `대기`다.
+현재 FastAPI 코드는 144건을 수집하지만 표준 스크립트의 수집/JUnit guard는 아직 131건이다. 과거 131건 기준 뒤 작업순서 서버 권위 회귀 3건, FieldComment 검토·첨부/보고서 수렴 회귀 3건, 서버 복구 manifest/reconciliation 회귀 6건, AI scope·legal hold 보존 회귀 1건이 추가되었다. guard를 144건으로 갱신하고 Windows에서 WPF Core·앱 build·누적 스모크·Android build를 한 run으로 완료해야 한다. 새 Windows 무생략 `verification-summary.json=PASSED`가 나올 때까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 
