@@ -37,6 +37,7 @@ FlowNote는 생산공장 현장의 문서와 현장 지식을 함께 관리하�
 - Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부, 신호등식 기록, 알림/인수인계 조회와 확인, SQLite outbox 재전송
 - FastAPI-WPF role 정책 정합성 검증: 문서 등록, FieldComment 작성, 보고서 작성, 접근 로그 조회, 사용자 관리, controlled copy 다운로드
 - WPF 동기화 큐 대상: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장
+- 서버 복구 경계 보호와 관리자 재결합: instance/epoch/API contract manifest, URL·epoch·cursor 역행 감지, 큐 inventory 판정·승인, mapping/큐/binding 적용과 알림 cursor 재추적
 - 누적 FAILED 큐의 읽기 전용 진단과 승인 기반 무손실 전환 CLI
 
 운영 배포 보조 스크립트는 현재 저장소에 포함되어 있다. WPF MSI 패키징은 `scripts/package-wpf-msi.ps1`, FastAPI 서버 작업 스케줄러 등록과 관리는 `scripts/install-flownote-server-task.ps1`, `scripts/manage-flownote-server-task.ps1`를 기준으로 한다. `scripts/verify-pilot-restore.py`는 파일럿 복구 전후의 서버 DB+`storage`와 WPF DB+`Files` 증거를 수집하고 무결성·테이블별 row 수·파일 상대경로/크기/SHA-256을 비교한다.

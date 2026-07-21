@@ -4,6 +4,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using FlowNote.Windows.Core.FieldComments;
+using FlowNote.Windows.Core.Sync;
 
 namespace FlowNote.Windows.Core.ServerApi;
 
@@ -16,6 +17,37 @@ public sealed class FlowNoteServerDocumentClient
     public FlowNoteServerDocumentClient(HttpClient httpClient)
     {
         this.httpClient = httpClient;
+    }
+
+    public Uri BaseAddress => httpClient.BaseAddress
+        ?? throw new InvalidOperationException("서버 기본 URL이 설정되지 않았습니다.");
+
+    public async Task<ServerSyncManifest> GetSyncManifestAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync("api/v1/sync/manifest", cancellationToken);
+        return await ReadJsonResponse<ServerSyncManifest>(response, cancellationToken);
+    }
+
+    public async Task<ServerReconciliationRun> CreateReconciliationRunAsync(
+        ReconciliationRunCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            "api/v1/sync/reconciliation-runs", request, cancellationToken);
+        return await ReadJsonResponse<ServerReconciliationRun>(response, cancellationToken);
+    }
+
+    public async Task<ServerReconciliationRun> ApplyReconciliationRunAsync(
+        string runId,
+        ReconciliationApplyRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/v1/sync/reconciliation-runs/{Uri.EscapeDataString(runId)}/apply",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerReconciliationRun>(response, cancellationToken);
     }
 
     public async Task<ServerDocumentResponse> RegisterDocumentAsync(

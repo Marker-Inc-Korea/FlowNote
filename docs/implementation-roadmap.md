@@ -21,6 +21,8 @@
 - WPF 서버 계정 운영 화면, 임시 비밀번호 로그인 강제 변경과 재로그인 흐름
 - WPF 서버 전송 큐와 서버 ID 매핑
 - 서버 동기화 실패/재시도 UX
+- 서버 instance/epoch/API contract manifest, WPF 서버 URL binding, cursor 역행 감지와 자동 전송·polling 차단
+- 관리자 `서버 재결합` 화면, 큐 inventory의 `CONFIRMED`/`ABSENT`/`DIVERGED` 판정과 `REBOUND`/`REQUEUE`/`CONFLICT` 승인 적용·감사
 - 보존 FAILED 큐의 읽기 전용 분류, plan hash·row별 승인, 구 `create`/FieldNote 무손실 전환 CLI와 감사 이력
 - TXT/PDF/XLSX/이미지 미리보기 안정화 기준과 스모크 검증
 - 테스트 DB와 산출물 보존 규칙에 맞춘 검증 자동화
@@ -64,7 +66,7 @@
 
 ## 다음 우선순위
 
-1. FastAPI 현재 수집값 137건에 맞게 `scripts/verify-preserved-tests.ps1`의 131건 guard를 갱신한 뒤, WPF 빌드·스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 포함한 Windows 표준 검증을 생략 없이 실행하고 단일 `PASSED` 실행 ID를 남긴다. 기존 macOS `baseline-131` 보조 run은 과거 FastAPI 131건만 통과했으므로 현재 통합 기준선으로 보지 않는다.
+1. FastAPI 현재 수집값 143건에 맞게 `scripts/verify-preserved-tests.ps1`의 131건 guard를 갱신한 뒤, WPF 빌드·스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 포함한 Windows 표준 검증을 생략 없이 실행하고 단일 `PASSED` 실행 ID를 남긴다. 기존 macOS `baseline-131` 보조 run은 과거 FastAPI 131건만 통과했으므로 현재 통합 기준선으로 보지 않는다.
 2. [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
 4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다.

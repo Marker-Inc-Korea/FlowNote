@@ -132,6 +132,51 @@
                     </Border>
                 </Grid>
             </TabItem>
+
+            <TabItem Header="서버 재결합">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Border Background="{StaticResource PanelBackgroundBrush}"
+                            BorderBrush="{StaticResource PanelBorderBrush}"
+                            BorderThickness="1" CornerRadius="4" Padding="12">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <TextBox x:Name="ReconciliationReasonTextBox" Width="250" Height="32"
+                                         Margin="0,0,8,0" VerticalContentAlignment="Center"
+                                         ToolTip="관리자 승인 사유" />
+                                <Button Width="116" Height="32" Margin="0,0,8,0"
+                                        Content="판정 실행" Click="CreateReconciliationButton_Click" />
+                                <Button Width="116" Height="32"
+                                        Content="승인 적용" Click="ApplyReconciliationButton_Click" />
+                            </StackPanel>
+                            <TextBlock x:Name="ReconciliationSummaryTextBlock"
+                                       Foreground="{StaticResource SecondaryTextBrush}"
+                                       VerticalAlignment="Center" TextWrapping="Wrap" />
+                        </DockPanel>
+                    </Border>
+                    <Border Grid.Row="2" Background="{StaticResource PanelBackgroundBrush}"
+                            BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="4">
+                        <DataGrid x:Name="ReconciliationGrid" AutoGenerateColumns="False"
+                                  CanUserAddRows="False" CanUserDeleteRows="False" IsReadOnly="True"
+                                  HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                  BorderThickness="0" RowHeight="46" ColumnHeaderHeight="34">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="run ID" Binding="{Binding RunId}" Width="180" />
+                                <DataGridTextColumn Header="판정" Binding="{Binding VerdictText}" Width="90" />
+                                <DataGridTextColumn Header="승인 조치" Binding="{Binding ActionText}" Width="100" />
+                                <DataGridTextColumn Header="대상" Binding="{Binding TargetText}" Width="220" />
+                                <DataGridTextColumn Header="서버 문서 ID" Binding="{Binding ServerDocumentId}" Width="180" />
+                                <DataGridTextColumn Header="서버 버전 ID" Binding="{Binding ServerVersionId}" Width="180" />
+                                <DataGridTextColumn Header="상세" Binding="{Binding Details}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+                </Grid>
+            </TabItem>
         </TabControl>
 
         <StackPanel Grid.Row="3"

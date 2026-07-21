@@ -34,6 +34,8 @@
 - `AI 정답셋`: 후보 포함 근거와 수동 제외 원천으로 사례 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·대체·폐기, 평가 run 실행·이전 run 비교
 - `system-admin` 전용 `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현재 현장 kill switch와 호출·비용·보존 정책, 정제 감사 조회/CSV 내보내기, 서버 자동 보존과 별개인 만료 보존 작업 즉시 실행
 - 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장. FieldComment 검토 base revision·mutation key, 첨부 부모·파일 SHA-256, 보고서 source 집합 hash, 문서 버전·첨부 idempotency key 전달과 큐 깊이·최장 대기·최근 처리량·실패 분포·row별 운영 상태 표시 포함
+- 서버 복구 경계 보호: sync manifest의 instance/epoch/API contract와 알림 cursor를 URL별 binding에 저장하고, URL·instance·epoch 변경 또는 cursor 역행 시 자동 전송과 polling 중지
+- 이력 창 `서버 재결합`: 전체 큐 inventory의 `CONFIRMED`/`ABSENT`/`DIVERGED` 판정과 `REBOUND`/`REQUEUE`/`CONFLICT` 제안 검토, 관리자 사유 승인 뒤 mapping·큐·binding 적용과 cursor 0 재추적
 - 보존 동기화 실패 전환 CLI: FAILED 큐를 읽기 전용 dry-run으로 분류하고, plan hash와 row별 운영자 승인을 받은 구 `create`/FieldNote 항목만 현재 action의 별도 큐로 무손실 전환
 
 WPF에는 `/api/v1/ai/queries`를 호출하는 실제 외부 AI 질의 실행 화면이나 운영 provider client가 없다. AI 화면은 외부 호출 없는 근거 후보 운영 점검, `AI 정답셋`, `system-admin` 전용 운영 제어 화면으로 분리되어 있다.
@@ -51,7 +53,7 @@ AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트
 - 채널 메시지와 인수인계를 문서, FieldComment, 작업순서, 작업내역, 보고서 근거로 더 쉽게 연결하는 운영 흐름
 - 백그라운드 알림 정책과 현장별 polling 운영 UX 검증
 
-초기 알림 전달 방식은 사내망 REST API 전경 polling으로 구현·확정되어 있다. WPF는 기본 15초 간격으로 `/api/v1/notifications?afterId={cursor}`를 조회하고 연결 실패 시 최대 120초까지 backoff한다. 서버 scope와 사용자 ID별 cursor 및 처리한 `message_id`를 로컬 SQLite에 보존하고, 응답 처리가 끝난 뒤 같은 트랜잭션에서만 cursor를 전진시킨다. 서버 cursor 역행은 자동 초기화하지 않고 polling을 중지하며 Core 서비스가 `admin`, `system-admin` role을 확인한 관리자 동작만 cursor를 초기화한다. 초기화해도 기존 처리 `message_id`는 재조회 멱등 근거로 보존한다. 상세 정책은 [WPF 사용자별 알림 cursor 보존 정책](./docs/notification-cursor.md)을 따른다. 외부 push나 WebSocket은 초기 구현의 대안이 아니라 현장 네트워크 정책과 백그라운드 알림 요구가 확인될 때 검토하는 확장 선택지다.
+초기 알림 전달 방식은 사내망 REST API 전경 polling으로 구현·확정되어 있다. WPF는 기본 15초 간격으로 먼저 sync manifest를 확인한 뒤 `/api/v1/notifications?afterId={cursor}`를 조회하고 연결 실패 시 최대 120초까지 backoff한다. 서버 scope와 사용자 ID별 cursor 및 처리한 `message_id`를 로컬 SQLite에 보존하고, 응답 처리가 끝난 뒤 같은 트랜잭션에서만 cursor를 전진시킨다. 서버 URL·instance·epoch 변경 또는 cursor 역행은 자동 초기화하지 않고 polling을 중지하며, 복구 경계에서는 단독 `알림 위치 초기화`도 차단한다. 관리자가 `서버 재결합`의 모든 판정을 사유와 함께 승인한 뒤에만 cursor를 0으로 재추적하며 기존 처리 `message_id`는 재조회 멱등 근거로 보존한다. 상세 정책은 [WPF 사용자별 알림 cursor 보존 정책](./docs/notification-cursor.md)을 따른다. 외부 push나 WebSocket은 초기 구현의 대안이 아니라 현장 네트워크 정책과 백그라운드 알림 요구가 확인될 때 검토하는 확장 선택지다.
 
 이 기능은 개인 메신저나 사내 메신저 전체 대체가 아니라, 현장 기록과 관리자 검토 흐름을 이어주는 업무 채널 기능이다.
 
@@ -118,7 +120,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-현재 FastAPI 코드는 137건을 수집하지만 표준 스크립트의 수집/JUnit guard는 아직 131건이다. 과거 131건 기준 뒤 작업순서 서버 권위 회귀 3건과 FieldComment 검토 경합·첨부 응답 유실 재시도·보고서 source 변경 차단 회귀 3건이 추가되었다. guard를 137건으로 갱신하고 Windows에서 WPF Core·앱 build·누적 스모크·Android build를 한 run으로 완료해야 한다. 새 Windows 무생략 `verification-summary.json=PASSED`가 나올 때까지 통합 기준선 재확립은 `대기`다.
+현재 FastAPI 코드는 143건을 수집하지만 표준 스크립트의 수집/JUnit guard는 아직 131건이다. 과거 131건 기준 뒤 작업순서 서버 권위 회귀 3건, FieldComment 검토·첨부/보고서 수렴 회귀 3건, 서버 복구 manifest/reconciliation 회귀 6건이 추가되었다. guard를 143건으로 갱신하고 Windows에서 WPF Core·앱 build·누적 스모크·Android build를 한 run으로 완료해야 한다. 새 Windows 무생략 `verification-summary.json=PASSED`가 나올 때까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

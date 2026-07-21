@@ -29,6 +29,110 @@ class SchemaMigration(Base):
     )
 
 
+class ServerIdentity(Base):
+    __tablename__ = "server_identity"
+    __table_args__ = (CheckConstraint("singleton_id = 1", name="ck_server_identity_singleton"),)
+
+    singleton_id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    server_instance_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    server_epoch: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    schema_contract: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    api_contract_min: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    api_contract_max: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+@event.listens_for(ServerIdentity, "before_update")
+def prevent_server_instance_id_update(
+    _mapper: object, _connection: object, target: ServerIdentity
+) -> None:
+    if inspect(target).attrs.server_instance_id.history.has_changes():
+        raise ValueError("server_instance_id is immutable; increment server_epoch instead.")
+
+
+class ReconciliationRun(Base):
+    __tablename__ = "reconciliation_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('REVIEW_REQUIRED', 'APPLIED', 'FAILED')",
+            name="ck_reconciliation_run_status",
+        ),
+        Index("ix_reconciliation_runs_client_created", "client_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    client_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    server_instance_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    server_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_server_instance_id: Mapped[str | None] = mapped_column(String(64))
+    previous_server_epoch: Mapped[int | None] = mapped_column(Integer)
+    trigger_reason: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="REVIEW_REQUIRED")
+    client_cursor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    server_cursor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(64))
+    approval_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ReconciliationItem(Base):
+    __tablename__ = "reconciliation_items"
+    __table_args__ = (
+        CheckConstraint(
+            "verdict IN ('CONFIRMED', 'ABSENT', 'DIVERGED')",
+            name="ck_reconciliation_item_verdict",
+        ),
+        CheckConstraint(
+            "proposed_action IN ('REBOUND', 'REQUEUE', 'CONFLICT')",
+            name="ck_reconciliation_item_action",
+        ),
+        CheckConstraint(
+            "resolution_action IS NULL OR resolution_action IN ('REBOUND', 'REQUEUE', 'CONFLICT')",
+            name="ck_reconciliation_item_resolution",
+        ),
+        UniqueConstraint("run_id", "client_item_id", name="uq_reconciliation_run_client_item"),
+        Index("ix_reconciliation_items_run_verdict", "run_id", "verdict"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("reconciliation_runs.run_id"), nullable=False, index=True
+    )
+    client_item_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    local_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    local_version_no: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    local_hash_sha256: Mapped[str | None] = mapped_column(String(64))
+    previous_server_document_id: Mapped[str | None] = mapped_column(String(64))
+    previous_server_version_id: Mapped[str | None] = mapped_column(String(64))
+    verdict: Mapped[str] = mapped_column(String(20), nullable=False)
+    proposed_action: Mapped[str] = mapped_column(String(20), nullable=False)
+    server_document_id: Mapped[str | None] = mapped_column(String(64))
+    server_version_id: Mapped[str | None] = mapped_column(String(64))
+    server_revision: Mapped[int | None] = mapped_column(Integer)
+    server_hash_sha256: Mapped[str | None] = mapped_column(String(64))
+    details: Mapped[str | None] = mapped_column(Text)
+    resolution_action: Mapped[str | None] = mapped_column(String(20))
+    resolution_reason: Mapped[str | None] = mapped_column(Text)
+    resolved_by: Mapped[str | None] = mapped_column(String(64))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class UserAccount(TimestampMixin, Base):
     __tablename__ = "user_accounts"
     __table_args__ = (

@@ -1,6 +1,6 @@
 # FlowNote 시스템 맵
 
-이 시스템 맵은 2026-07-21 현재 실행 코드와 저장소 경계를 기준으로 한다. 수렴 경계의 미구현 항목은 `목표 계약`으로, 후속 외부 연동은 마지막 절에서 구분한다.
+이 시스템 맵은 2026-07-21 현재 실행 코드와 저장소 경계를 기준으로 한다. 서버 복구 경계 manifest/reconciliation은 구현되었고, 수렴 경계의 나머지 미구현 항목은 `목표 계약`으로, 후속 외부 연동은 마지막 절에서 구분한다.
 
 ## 실행 구성
 
@@ -36,7 +36,7 @@ WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으�
 
 ## 로컬 우선 데이터와 서버 권위 원천의 수렴 경계
 
-아래 표는 구현 여부와 관계없이 새 동기화 작업이 따라야 하는 단일 운영 계약이다. `로컬 원천`은 서버 확인 전까지 삭제할 수 없는 입력·파일·큐를 뜻하고, `서버 권위`는 두 WPF 인스턴스, Android, AI 검색과 보고서가 최종 판정에 사용하는 값이다. 현재 코드에 없는 revision이나 reconciliation API는 구현 전 목표 계약으로 표시하며, 해당 행의 검증을 통과하기 전에는 다중 WPF 쓰기를 허용하지 않는다.
+아래 표는 새 동기화 작업이 따라야 하는 단일 운영 계약이다. `로컬 원천`은 서버 확인 전까지 삭제할 수 없는 입력·파일·큐를 뜻하고, `서버 권위`는 두 WPF 인스턴스, Android, AI 검색과 보고서가 최종 판정에 사용하는 값이다. 현재 코드에 없는 공통 mutation receipt나 versioned migration은 구현 전 목표 계약으로 표시하며, 해당 행의 검증을 통과하기 전에는 다중 WPF 쓰기를 허용하지 않는다.
 
 | 대상 | 로컬 원천과 방향 | 서버 권위·동시성 키 | 멱등 키와 충돌 | 종결·수렴 조건 |
 | --- | --- | --- | --- | --- |
@@ -70,15 +70,15 @@ WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으�
 
 ### 서버 복구·초기화 뒤 재검증
 
-서버는 설치 시 만든 불변 `server_instance_id`, DB를 복구하거나 새 DB로 초기화할 때마다 바뀌는 `server_epoch`, 현재 server schema/API contract 범위를 health와 sync manifest에 제공한다. WPF는 정규화한 서버 URL별로 이 값을 저장한다. 기존 저장값과 `server_instance_id` 또는 `server_epoch`가 다르거나 high-water cursor가 역행하면 일반 전송과 polling을 즉시 멈추고 `RECONCILIATION_REQUIRED`로 전환한다.
+서버 초기화는 `server_identity` singleton row가 없을 때 `srv-` 접두의 난수 `server_instance_id`, `server_epoch = 1`, schema/API contract 1을 만든다. 운영자가 `POST /api/v1/sync/server-epoch/increment`를 호출할 때만 현재 코드가 epoch를 증가시킨다. `/api/v1/sync/manifest`와 `/api/v1/health/sync-manifest`는 이 값과 `channel_messages.id`의 high-water cursor를 제공한다. WPF는 정규화한 서버 URL별로 binding을 저장한다. 최초 binding은 `ACTIVE`지만, 다른 URL binding이 이미 있거나 저장한 instance/epoch가 달라지거나 high-water cursor가 로컬 cursor보다 낮으면 일반 전송과 polling을 즉시 멈추고 `RECONCILIATION_REQUIRED`로 전환한다. API contract 1이 서버 지원 범위에 없거나 manifest가 유효하지 않아도 자동 전송을 시작하지 않는다.
 
-관리자 재검증은 기존 cursor, `server_id_mappings`, `SYNCED`/`FAILED` 큐를 삭제하거나 0으로 덮어쓰지 않는다. 서버 reconciliation 조회에 로컬 entity ID, idempotency key, 서버 ID, revision, source/version ID와 hash를 묶어 보내고 각 항목을 다음 중 하나로 분류한다.
+관리자 재검증은 판정 전에 기존 cursor, `server_id_mappings`, 모든 상태의 큐를 삭제하거나 변경하지 않는다. WPF `작업내역 > 서버 재결합`은 `server_sync_queue` 전체와 기존 mapping에서 로컬 entity ID/version, idempotency key, 이전 서버 문서/버전 ID, 선택적 파일 hash를 모아 최대 10,000건의 run을 만든다. 서버는 `document`, `document_version`, `field_comment`, `field_comment_attachment`, `document_access_log`, `report`를 지원하며 각 항목을 다음 중 하나로 분류한다.
 
-- 같은 idempotency key와 hash의 서버 row가 있으면 새 server ID/revision으로 매핑을 재결합한다.
-- 서버 row가 없으면 기존 로컬 원천과 같은 key로 재전송 가능 상태로 되돌린다.
-- 같은 key의 payload/hash가 다르거나 source가 orphan이면 `SERVER_RECOVERY_DIVERGED` 충돌로 보존한다.
+- `CONFIRMED / REBOUND`: 같은 idempotency key와 제공된 hash가 일치하면 새 server ID/revision/hash로 매핑을 재결합하고 해당 큐를 `SYNCED`로 종결한다.
+- `ABSENT / REQUEUE`: 같은 key의 서버 row가 없으면 해당 큐의 이전 서버 ID를 비우고 `PENDING`으로 되돌려 같은 key로 재전송한다.
+- `DIVERGED / CONFLICT`: 지원하지 않는 entity, 비교 hash 부재 또는 불일치이면 해당 큐를 `DISCARDED`로 종결하되 `RECONCILIATION_DIVERGED`와 상세·해결자·시각을 보존한다.
 
-전 항목의 reconciliation 결과와 관리자, 시각, 이전/새 epoch를 감사한 뒤에만 현재 서버 scope의 cursor를 0부터 다시 따라잡는다. 기존 처리 `message_id`는 보존한다. 수렴 완료는 비종결 큐 0건, 동일 idempotency key의 서버 중복 row 0건, mapping의 orphan 0건, 문서 공개 포인터·보고서 source/version·파일 hash 일치와 cursor 재추적 완료를 모두 만족할 때다.
+관리자는 화면의 전 항목과 승인 사유를 확인한다. 서버가 모든 조치가 제안값과 일치하는지 검증하고 run·항목 해결 감사와 활동 이력을 저장한 뒤, WPF가 한 transaction에서 큐·mapping·binding을 적용한다. 그때만 현재 서버 scope의 모든 알림 cursor를 0으로 되돌리고 초기 따라잡기를 재개하며 기존 처리 `message_id`는 보존한다. 적용 직후 `PENDING` 큐 재전송도 다시 실행한다. 수렴 완료는 비종결 큐 0건, 동일 idempotency key의 서버 중복 row 0건, mapping의 orphan 0건, 문서 공개 포인터·보고서 source/version·파일 hash 일치와 cursor 재추적 완료를 모두 만족할 때다.
 
 ### 수렴 검증 게이트
 
@@ -209,3 +209,7 @@ AI 관련 현재 구현은 외부 AI 호출이 아니라 서버 DB에서 `ai_sea
 외부 AI 운영 제어면은 `system-admin` 전용 `/api/v1/ai-operations`와 WPF `AI 운영` 화면으로 연결된다. 전송 승인은 고객·현장·provider·model·목적·source type과 만료 시각을 고정하고 생성·철회를 감사한다. 프롬프트는 새 불변 버전을 만든 뒤 `DRAFT → REVIEWED → APPROVED → ACTIVE → RETIRED` 순서로 관리하며 목적별 새 버전을 활성화하면 이전 활성 버전을 폐기한다. 전역/현장 정책은 kill switch, 일일 요청·동시성·timeout·비용 한도, 질의·응답·감사 보존 기간과 감사 CSV 허용 여부를 관리한다. 질의 감사는 원문 없이 상태·차단 코드·근거·인용·호출 메타데이터를 보여준다. 서버 lifespan 스케줄러와 `system-admin` 즉시 실행 API는 같은 만료 처리를 사용해 질의 payload를 비식별화하고 응답 원문을 삭제하면서 hash와 참조·처리 감사를 보존한다. provider 자격증명은 환경/비밀 저장소에만 두며 API와 화면은 설정 여부만 노출한다.
 
 provider 경계는 정제 질의, 최소 발췌, candidate/source/version/trace ID, content hash, 순위, prompt version과 허용 출력 형식만 받는다. fake/recording adapter가 기본 검증 경로이고 generic JSON 네트워크 adapter는 명시적 `test` scope에서만 생성된다. 권한 없거나 상태가 바뀐 원천, 전송 금지 정보는 경계 DTO에 포함되지 않는다. 데이터 모델은 [데이터 모델](./data-model.md#외부-ai-질의와-호출-로그-안전장치)와 [외부 AI 운영·보존 모델](./data-model.md#외부-ai-운영보존-모델), API 계약과 테스트 기준은 [API 문서](./api.md#외부-ai-근거-검색과-요약-안전장치)와 [외부 AI 운영 API](./api.md#외부-ai-운영-api), 전송 승인은 [보안 문서](./security.md#외부-ai-전송과-운영자-승인)를 따른다. 착수 기준은 [MVP 범위 문서](./mvp-scope.md#후속-계층-착수-기준)를 따른다.
+
+## 서버 복구 경계 흐름
+
+WPF는 문서 전송과 채널 polling보다 먼저 sync manifest를 조회한다. 정규화 URL의 승인된 instance/epoch와 다르거나 서버 cursor가 역행하면 binding을 `RECONCILIATION_REQUIRED`로 바꾸고 두 흐름을 함께 중지한다. 관리자가 inventory 판정을 생성해 `REBOUND/REQUEUE/CONFLICT` 전 항목을 감사·승인하면 mapping을 갱신하고, 기존 처리 message_id는 유지한 채 cursor만 0으로 만들어 재추적한 다음 재전송을 재개한다.

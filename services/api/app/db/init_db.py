@@ -5,7 +5,7 @@ import secrets
 from sqlalchemy import or_, select, text
 
 from app.db.base import Base
-from app.db.models import SchemaMigration, UserAccount
+from app.db.models import SchemaMigration, ServerIdentity, UserAccount
 from app.db.session import Database
 
 INITIAL_SCHEMA_VERSION = "0001_initial_mvp_schema"
@@ -692,6 +692,18 @@ def initialize_database(database: Database) -> None:
     _ensure_ai_ground_truth_indexes(database)
     _ensure_ai_operations_columns(database)
     with database.session() as session:
+        identity = session.get(ServerIdentity, 1)
+        if identity is None:
+            session.add(
+                ServerIdentity(
+                    singleton_id=1,
+                    server_instance_id=f"srv-{secrets.token_hex(16)}",
+                    server_epoch=1,
+                    schema_contract=1,
+                    api_contract_min=1,
+                    api_contract_max=1,
+                )
+            )
         existing = session.scalar(
             select(SchemaMigration).where(SchemaMigration.version == INITIAL_SCHEMA_VERSION)
         )
@@ -702,5 +714,5 @@ def initialize_database(database: Database) -> None:
                     description="Initial SQLite MVP schema for FlowNote API",
                 )
             )
-            session.commit()
+        session.commit()
     _seed_default_admin_account(database)

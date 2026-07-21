@@ -30,6 +30,8 @@ Windows WPF 앱은 문서, FieldComment, 첨부, 접근 로그, 보고서 같은
 - `notifications`: 알림
 - `server_notification_cursors`: 정규화한 서버 scope와 서버 사용자 ID별 마지막 성공 알림 cursor, 서버 관측 cursor, 상태와 갱신/관리자 초기화 시각
 - `server_notification_messages`: 서버 scope와 사용자별 처리 완료 `message_id`, cursor와 처리 시각. 재조회 멱등 처리 근거
+- `server_bindings`: 서버 scope별 승인 instance/epoch와 관측값, schema/API contract, 복구 경계 차단 상태와 관리자 승인 감사
+- `reconciliation_runs`, `reconciliation_items`: 전체 동기화 큐 inventory의 서버 대조 run, 항목별 판정·제안/적용 조치, 서버 ID/revision/hash와 해결 감사
 - `work_sequence_boards`, `work_sequence_items`: 작업순서
 - `work_sequence_change_history`: 작업순서 이력
 - `work_sequence_notification_candidates`: 작업순서 알림 후보

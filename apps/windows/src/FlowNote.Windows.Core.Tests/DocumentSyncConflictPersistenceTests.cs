@@ -354,6 +354,16 @@ public sealed class DocumentSyncConflictPersistenceTests
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            if (request.RequestUri?.AbsolutePath.EndsWith("/api/v1/sync/manifest", StringComparison.Ordinal) == true)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "{\"server_instance_id\":\"srv-test-recovered\",\"server_epoch\":1,\"schema_contract\":1,\"api_contract_min\":1,\"api_contract_max\":1,\"server_cursor\":0}",
+                        Encoding.UTF8,
+                        "application/json")
+                });
+            }
             var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(filePath))).ToLowerInvariant();
             var now = DateTime.UtcNow.ToString("O");
             var serverDocumentId = $"server-{localDocumentId}";

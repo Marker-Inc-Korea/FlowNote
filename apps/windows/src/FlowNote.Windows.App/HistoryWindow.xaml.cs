@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Windows;
 using FlowNote.Windows.Core.History;
 using FlowNote.Windows.Core.ServerApi;
@@ -9,18 +10,21 @@ public partial class HistoryWindow : Window
 {
     private readonly HistoryService history;
     private readonly ServerSyncService serverSync;
+    private readonly ServerReconciliationService serverReconciliation;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly string? serverUserId;
 
     public HistoryWindow(
         HistoryService history,
         ServerSyncService serverSync,
+        ServerReconciliationService serverReconciliation,
         FlowNoteServerDocumentClient? serverDocumentClient,
         string? serverUserId)
     {
         InitializeComponent();
         this.history = history;
         this.serverSync = serverSync;
+        this.serverReconciliation = serverReconciliation;
         this.serverDocumentClient = serverDocumentClient;
         this.serverUserId = serverUserId;
         RefreshAll();
@@ -30,6 +34,71 @@ public partial class HistoryWindow : Window
     {
         RefreshHistory();
         RefreshSyncQueue();
+        RefreshReconciliation();
+    }
+
+    private void RefreshReconciliation()
+    {
+        var items = serverReconciliation.ListItems()
+            .Select(ReconciliationRow.FromRecord)
+            .ToList();
+        ReconciliationGrid.ItemsSource = items;
+        var reviewRun = serverReconciliation.GetLatestReviewRunId();
+        ReconciliationSummaryTextBlock.Text = reviewRun is null
+            ? $"재결합 판정 이력 {items.Count}건. 검토 대기 run이 없습니다."
+            : $"검토 대기 run: {reviewRun}. REBOUND·REQUEUE·CONFLICT 전 항목을 확인한 뒤 승인 사유를 입력하세요.";
+    }
+
+    private async void CreateReconciliationButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (serverDocumentClient is null)
+        {
+            ReconciliationSummaryTextBlock.Text = "서버 연결과 관리자 로그인이 필요합니다. 기존 mapping, cursor, message_id와 큐는 보존됩니다.";
+            return;
+        }
+        try
+        {
+            var actor = string.IsNullOrWhiteSpace(serverUserId) ? "관리자" : serverUserId!;
+            var run = await serverReconciliation.CreateRunAsync(serverDocumentClient, actor);
+            RefreshReconciliation();
+            ReconciliationSummaryTextBlock.Text = $"{run.RunId} 판정 완료: 전체 {run.Items.Count}건. 관리자 승인 전 서버 mutation은 중지된 상태입니다.";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            RefreshReconciliation();
+            ReconciliationSummaryTextBlock.Text = exception.Message;
+        }
+    }
+
+    private async void ApplyReconciliationButton_Click(object sender, RoutedEventArgs e)
+    {
+        var runId = serverReconciliation.GetLatestReviewRunId();
+        if (serverDocumentClient is null || runId is null)
+        {
+            ReconciliationSummaryTextBlock.Text = "승인할 검토 대기 run 또는 서버 연결이 없습니다.";
+            return;
+        }
+        var reason = ReconciliationReasonTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            ReconciliationSummaryTextBlock.Text = "관리자 승인 사유를 입력하세요.";
+            return;
+        }
+        try
+        {
+            var actor = string.IsNullOrWhiteSpace(serverUserId) ? "관리자" : serverUserId!;
+            var run = await serverReconciliation.ApplyRunAsync(
+                serverDocumentClient, runId, actor, reason);
+            var syncResult = await serverSync.RetryPendingAsync(serverDocumentClient, serverUserId);
+            RefreshAll();
+            ReconciliationSummaryTextBlock.Text =
+                $"{run.RunId} 승인 적용 완료. cursor를 0부터 재추적하며 신규 전송을 재개했습니다. {syncResult.Message}";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            RefreshAll();
+            ReconciliationSummaryTextBlock.Text = exception.Message;
+        }
     }
 
     private void RefreshHistory()
@@ -256,5 +325,36 @@ public partial class HistoryWindow : Window
                 _ => action
             };
         }
+    }
+
+    private sealed record ReconciliationRow(
+        string RunId,
+        string VerdictText,
+        string ActionText,
+        string TargetText,
+        string ServerDocumentId,
+        string ServerVersionId,
+        string Details)
+    {
+        public static ReconciliationRow FromRecord(LocalReconciliationItem item) => new(
+            item.RunId,
+            item.Verdict switch
+            {
+                "CONFIRMED" => "확인",
+                "ABSENT" => "없음",
+                "DIVERGED" => "불일치",
+                _ => item.Verdict
+            },
+            item.ProposedAction switch
+            {
+                "REBOUND" => "재결합",
+                "REQUEUE" => "재전송",
+                "CONFLICT" => "충돌 보존",
+                _ => item.ProposedAction
+            },
+            $"{item.EntityType} / {item.LocalId} / v{item.LocalVersionNo}",
+            item.ServerDocumentId ?? "-",
+            item.ServerVersionId ?? "-",
+            item.Details ?? "-");
     }
 }

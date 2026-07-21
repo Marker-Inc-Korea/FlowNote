@@ -25,6 +25,9 @@
 | `notifications` | 문서/FieldComment/작업순서 알림 |
 | `server_notification_cursors` | WPF 서버 scope·사용자별 마지막 성공 알림 cursor, 서버 관측 cursor, 초기 따라잡기/역행 상태, 갱신·관리자 초기화 정보 |
 | `server_notification_messages` | WPF 서버 scope·사용자별 처리 완료 `message_id` 멱등 이력 |
+| `server_bindings` | 정규화 서버 URL별 승인 instance/epoch, 관측 instance/epoch, schema/API contract 범위와 `ACTIVE`/`RECONCILIATION_REQUIRED` 상태 |
+| `reconciliation_runs` | 서버 복구 경계 판정 run, 이전/현재 instance·epoch, trigger, 양쪽 cursor, 생성자·승인 사유와 상태 |
+| `reconciliation_items` | 로컬 큐 inventory별 `CONFIRMED`/`ABSENT`/`DIVERGED` 판정, 제안·적용 조치, 서버 ID/revision/hash와 해결 감사 |
 | `work_sequence_boards` | 작업순서 보드 |
 | `work_sequence_items` | 작업순서 항목과 상태 |
 | `work_sequence_change_history` | 작업순서 변경 이력 |
@@ -43,7 +46,7 @@ WPF DB에는 다음 수렴 필드가 additive 방식으로 구현되었다. 기�
 | `server_sync_queue.intent_hash` | enqueue 시 `entity_type|entity_id|action|idempotency_key|base_domain_revision` 문자열의 SHA-256. 큐 snapshot/진단용이며 서버 요청 payload 전체 hash는 아님 |
 | `server_sync_queue.source_set_hash` | `report` enqueue 시 source type/local ID/version/hash/relation을 정렬한 줄 단위 문자열의 SHA-256. source가 없거나 다른 entity type이면 NULL |
 
-`local_schema_versions`, `server_sync_scopes`, `server_reconciliation_runs`, `server_reconciliation_items`, `server_id_mappings.server_epoch`은 아직 구현되지 않은 후속 수렴 모델이다.
+`local_schema_versions`, `server_sync_scopes`, `server_id_mappings.server_epoch`은 아직 구현되지 않은 후속 수렴 모델이다. 현재 복구 binding과 판정 이력은 각각 `server_bindings`, `reconciliation_runs`, `reconciliation_items`에 구현되어 있다.
 
 FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_versions` 테이블이 있어도 열과 키 계약이 다른 별도 스키마다. WPF `document_versions`는 로컬 `id`를 PK로 사용하고 문서별 `version_no`와 선택적 `server_version_id`를 보존하며, 서버의 `version_id` 열이나 서버 grant FK를 소유하지 않는다. `FLOWNOTE_DATABASE_URL`은 `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`로 결정되는 WPF DB 파일을 가리키면 안 된다.
 
@@ -65,7 +68,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-07-21 현재 ORM은 FieldComment 검토·보고서·작업순서 mutation receipt를 포함한 54개 서버 테이블을 생성 기준으로 사용한다.
+2026-07-21 현재 ORM은 FieldComment 검토·보고서·작업순서 mutation receipt와 서버 복구 reconciliation 모델을 포함한 57개 서버 테이블을 생성 기준으로 사용한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -74,6 +77,8 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | 테이블 | 역할 |
 | --- | --- |
 | `schema_migrations` | 스키마 적용 버전 기록 |
+| `server_identity` | singleton 설치 식별자, 복구 epoch, schema contract와 지원 API contract 범위 |
+| `reconciliation_runs`, `reconciliation_items` | WPF inventory 대조 run과 항목별 판정·제안 조치·관리자 해결 감사 |
 | `user_accounts`, `roles`, `user_roles` | 계정과 역할 기반 권한 |
 | `auth_sessions` | access token ID, refresh token hash, 세션 만료/폐기 상태, Android 승인 단말 `device_id` |
 | `operator_profiles` | 작업자/작업그룹/대리 입력 주체 |
@@ -117,7 +122,6 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 | 목표 테이블/열 | 불변식 |
 | --- | --- |
-| `server_identity` | 설치 단위 불변 `server_instance_id` 1개와 DB 복구·초기화 때 변경하는 `server_epoch`, 현재 schema/API contract 범위를 1 row로 보존 |
 | `sync_mutation_receipts` | `idempotency_key` UNIQUE, domain/action, `intent_hash`, 결과 entity/server ID·revision·hash를 보존. 응답 유실 뒤 reconciliation의 공통 조회 원천 |
 
 `sync_mutation_receipts`는 도메인 row를 대체하지 않는다. 도메인 transaction 안에서 도메인 row와 함께 기록하며, 같은 key·같은 `intent_hash` 요청은 저장된 결과를 반환하고 다른 hash는 `IDEMPOTENCY_KEY_REUSED`로 거부한다. 문서·버전·FieldComment·첨부·접근 로그·보고서에 이미 있는 개별 `idempotency_key` UNIQUE도 유지해 이중으로 중복을 차단한다.
@@ -403,3 +407,9 @@ WPF 사용자 관리는 서버 로그인 세션이 있으면 서버 계정 운�
 `FLOWNOTE_API_BASE_URL`이 설정되어 있고 서버 로그인이 성공하면 WPF 현재 세션의 사용자 ID, 로그인 ID, 표시 이름, role은 서버 응답을 우선한다. 같은 로그인 ID의 로컬 계정 정보가 다르더라도 서버 사용자 정보를 화면 표시, 버튼 권한, 서버 동기화 작성자 ID에 사용하고 로컬 계정 row는 자동 덮어쓰지 않는다.
 
 서버가 401 또는 403으로 로그인 실패를 명확히 응답한 경우에는 로컬 계정 fallback으로 우회하지 않는다. 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 로컬 계정 로그인을 사용한다.
+## 서버 복구 경계와 재결합 이력
+
+- 서버 `server_identity`는 단일 행이며 불변 `server_instance_id`, 단조 증가시키는 `server_epoch`, schema/API contract 범위를 가진다. DB 백업에는 instance ID가 포함되며 복구 직후 epoch 증가 절차로 복구 경계를 만든다.
+- 서버 `reconciliation_runs`와 `reconciliation_items`는 run, 원래 client item, key/hash, 이전·현재 server ID, 판정, 승인자·사유를 보존한다. 상태는 run `REVIEW_REQUIRED/APPLIED/FAILED`, item 판정 `CONFIRMED/ABSENT/DIVERGED`, 조치 `REBOUND/REQUEUE/CONFLICT`다. 실패 run과 divergence row는 삭제하지 않는다.
+- WPF `server_bindings`는 정규화 URL별 승인된 instance/epoch와 관측값을 함께 둔다. `RECONCILIATION_REQUIRED`에서는 자동 전송과 polling을 금지한다.
+- WPF `reconciliation_runs/items`는 서버 판정 원문과 로컬 적용 결과를 보존한다. 기존 `server_id_mappings`, `server_sync_queue`, `server_notification_cursors`, `server_notification_messages` 행은 삭제하지 않고 갱신 또는 종결 상태로 전환한다.
