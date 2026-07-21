@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `/api/v1/health/sync-manifest`, `GET /api/v1/sync/manifest`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-07-21 현재 전역 FastAPI 앱에 등록된 method/path 조합과 요청·응답 코드 기준이다. FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-07-22 현재 전역 FastAPI 앱에 등록된 method/path 조합과 요청·응답 코드 기준이다. FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 

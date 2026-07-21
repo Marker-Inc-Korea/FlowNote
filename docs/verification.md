@@ -2,6 +2,12 @@
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
 
+## 2026-07-22 작업 102 현재 코드·문서 재확인
+
+작업 시작 시 `main...origin/main`은 동기화되어 있었고 반영할 미커밋 코드 변경은 없었다. 현재 API·구현 범위와 정량 기준을 코드에 대조했으며, 2026-07-22 검증 기준을 이미 반영한 상위 문서의 기준일만 오래된 표기로 남아 있어 현재 날짜로 맞췄다.
+
+`services/api/.venv/bin/python -m pytest -q`는 `144 passed`로 통과했고, 이어서 실행한 `python -m ruff check app tests`도 통과했다. 이번 직접 실행은 FastAPI 회귀와 정적 검사만 대상이며 WPF·Android·공통 SQLite 스모크를 포함한 Windows x64 무생략 통합 기준선은 아니다. 기존 SQLite, 로그, 테스트 파일과 산출물은 삭제하거나 초기화하지 않았다.
+
 ## 2026-07-22 FastAPI 144건 기준선 guard 복구와 보조 실행
 
 `scripts/verify-preserved-tests.ps1`의 FastAPI 수집/JUnit 기대값을 131건에서 144건으로 갱신했다. 수집 총수·고유 node ID 수·JUnit 실행 수를 직접 대조하고, `verification-summary.json`의 `fastapi` 항목에 `expected`, `collected`, `unique_node_ids`, `passed`, failure/error/skipped와 `collection_matches_junit`을 기록하도록 보강했다. 실행 전후 `git-status`, `git-ls-files`, staged 파일 목록도 각각 독립 파일로 보존하며 신규 금지 추적 산출물과 staged 금지 산출물·개인 경로 수를 요약에 기록한다.
