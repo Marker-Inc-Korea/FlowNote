@@ -49,6 +49,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `ai_evaluation_dataset_bindings` | One-to-one binding from an evaluation run to its approved dataset snapshot |
 | `ai_prompt_versions` | Approved immutable prompt versions by allowed purpose |
 | `ai_queries` | AI query text/hash, purpose, status, response storage policy, and retention metadata |
+| `ai_query_legal_holds` | Query preservation order, authority reference, active/released state, and placement/release audit |
 | `ai_query_evidence_candidates` | Query-time evidence snapshots independent of later candidate rebuilds |
 | `ai_query_citations` | Validated claim-to-evidence citation records |
 | `ai_call_attempts` | Sanitized provider/model attempt status and error audit |
@@ -74,4 +75,5 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 - External AI calls are disabled by default. A generic HTTPS JSON adapter exists only for explicit `test` scope; no provider-specific production client or production activation is configured.
 - The active `ai_sensitive_data_policies` row for a customer/site scope adds deny terms and customer identifiers to the provider-boundary content filter.
 - External AI operational policy, approval, prompt lifecycle, audit, and retention APIs are restricted to `system-admin`; provider credentials remain outside these tables.
+- Active `ai_query_legal_holds` rows prevent scheduled, bulk manual, and single-query expiry until a `system-admin` records a release.
 - Current server role values are `admin`, `manager`, `viewer`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`.

@@ -29,8 +29,8 @@ FlowNote는 생산공장 현장의 문서와 현장 지식을 함께 관리하�
 - WPF 서버 scope·사용자별 알림 cursor와 처리 메시지 SQLite 보존, cursor 역행 차단과 관리자 초기화
 - AI 근거 후보 운영 점검 화면: 후보 재생성, 품질 지표, 제외 사유, 원천 추적값 복사
 - AI 정답셋 운영 화면: 사례·원천 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·평가 run 비교
-- 시스템 관리자용 외부 AI 운영 화면: 전송 승인 생성·철회, 불변 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 내보내기와 만료 보존 즉시 실행
-- FastAPI 만료 보존 스케줄러: 기본 1시간 간격으로 질의 payload 비식별화와 저장 응답 원문 삭제
+- 시스템 관리자용 외부 AI 운영 화면: 전송 승인 생성·철회, 불변 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 내보내기와 만료 보존 일괄 즉시 실행
+- FastAPI AI 보존 제어: 고객·현장 scope별 질의 감사, 기본 1시간 간격 만료 처리, 단일 질의 즉시 만료, 근거 번호가 있는 legal hold 설정·해제. 활성 hold는 자동·수동·단일 만료보다 우선한다.
 - FastAPI 서버 DB와 WPF 로컬 DB의 SQLite 스키마 경계 보호: 서버 초기화가 WPF 문서 테이블 구조를 감지하면 테이블 생성 전에 중단
 - 관리자급 파일 감시 후보 등록과 버전 확정
 - FastAPI 인증, 승인 단말, 문서, controlled copy, FieldComment, 첨부, 태그, 접근 로그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가, 외부 AI 질의 안전장치·운영 제어 API
@@ -42,7 +42,7 @@ FlowNote는 생산공장 현장의 문서와 현장 지식을 함께 관리하�
 
 운영 배포 보조 스크립트는 현재 저장소에 포함되어 있다. WPF MSI 패키징은 `scripts/package-wpf-msi.ps1`, FastAPI 서버 작업 스케줄러 등록과 관리는 `scripts/install-flownote-server-task.ps1`, `scripts/manage-flownote-server-task.ps1`를 기준으로 한다. `scripts/verify-pilot-restore.py`는 파일럿 복구 전후의 서버 DB+`storage`와 WPF DB+`Files` 증거를 수집하고 무결성·테이블별 row 수·파일 상대경로/크기/SHA-256을 비교한다.
 
-아직 구현되지 않은 범위는 현장별 설치 검증과 코드 서명 검증, 현장별 런타임 패키징 확정, 서버-WPF 동기화 정책 고도화, Android 보안 본문 뷰어의 승인 실단말 검증과 운영 배포 서명/MDM/인증서 확정, 운영 provider를 통한 실제 외부 AI 검색·요약/작업 조언, MES/ERP 어댑터, 일반 브라우저 사용자 화면, 클라우드 운영이다. 현재 서버에는 외부 호출 없이 DB 원천을 사용하는 `ai_search_candidates` 후보 재생성·목록·품질 점검, 독립 승인 ground-truth 사례와 불변 dataset version 기반 오프라인 회귀 평가, `/api/v1/ai/queries`의 기본 비활성 안전장치·감사 골격, `system-admin` 전용 `/api/v1/ai-operations` 승인·프롬프트·정책·감사·보존 API가 구현되어 있다. WPF에는 근거 후보 운영 점검, `AI 정답셋`, 별도의 `AI 운영` 화면이 있다.
+아직 구현되지 않은 범위는 현장별 설치 검증과 코드 서명 검증, 현장별 런타임 패키징 확정, 서버-WPF 동기화 정책 고도화, Android 보안 본문 뷰어의 승인 실단말 검증과 운영 배포 서명/MDM/인증서 확정, 운영 provider를 통한 실제 외부 AI 검색·요약/작업 조언, MES/ERP 어댑터, 일반 브라우저 사용자 화면, 클라우드 운영이다. 현재 서버에는 외부 호출 없이 DB 원천을 사용하는 `ai_search_candidates` 후보 재생성·목록·품질 점검, 독립 승인 ground-truth 사례와 불변 dataset version 기반 오프라인 회귀 평가, `/api/v1/ai/queries`의 기본 비활성 안전장치·감사 골격, `system-admin` 전용 `/api/v1/ai-operations` 승인·프롬프트·정책·감사·보존·legal hold API가 구현되어 있다. WPF에는 근거 후보 운영 점검, `AI 정답셋`, 별도의 `AI 운영` 화면이 있으나 단일 질의 만료와 legal hold 조작은 현재 서버 API 전용이다.
 
 ## 저장소 구조
 

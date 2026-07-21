@@ -35,7 +35,7 @@
 - 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth 첫 승인·독립 2차 승인, 원천 snapshot/provenance 고정, 실제 현장/스모크 준비도 분리와 48건 비민감 스모크 시드·검증 도구
 - 불변 ground-truth dataset version의 작성·구성·검토·독립 2단계 승인·대체·폐기, 승인 version 결합 평가 run과 scope 격리
 - WPF AI 근거 후보 운영 점검, `AI 정답셋`, 사례·원천 구성 화면과 서버 API 클라이언트
-- FastAPI `system-admin` 전용 외부 AI 전송 승인·프롬프트·운영 정책·감사·보존 API와 WPF `AI 운영` 화면
+- FastAPI `system-admin` 전용 외부 AI 전송 승인·프롬프트·운영 정책·감사·보존 API와 WPF `AI 운영` 화면. 서버 API의 고객·현장 scope별 단일 만료와 legal hold 설정·해제를 포함하며, 이 세 조작은 아직 WPF에 연결되지 않음
 - FastAPI 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인 API
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면과 서버 API 클라이언트
 - Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 채널 알림, 인수인계 확인
@@ -47,7 +47,7 @@
 
 ## 설계 완료, 부분 구현
 
-- 외부 AI 1단계의 범위, 데이터 모델, API, 보안·보존 계약을 정리하고 질의 생성·조회 라우터, ORM 테이블, 기능 플래그·전송 승인, 원천 권한·민감정보 필터, 최소 payload provider adapter와 인용·규칙 기반 의미 검증을 구현했다. fake/recording adapter, timeout/429/5xx 재시도, 응답 JSON·크기·중복·prompt injection 방어, 호출 후 승인·원천·권한 재검증도 포함한다. 전송 승인·프롬프트 수명주기·전역/현장 kill switch와 한도·보존 정책·정제 감사, 자동 만료 보존 스케줄러, 즉시 실행 API 및 WPF 운영 UI도 구현했다. 허용 범위는 근거 검색과 요약이며, provider별 운영 연동은 아직 구현하지 않았다.
+- 외부 AI 1단계의 범위, 데이터 모델, API, 보안·보존 계약을 정리하고 질의 생성·조회 라우터, ORM 테이블, 기능 플래그·전송 승인, 원천 권한·민감정보 필터, 최소 payload provider adapter와 인용·규칙 기반 의미 검증을 구현했다. fake/recording adapter, timeout/429/5xx 재시도, 응답 JSON·크기·중복·prompt injection 방어, 호출 후 승인·원천·권한 재검증도 포함한다. 전송 승인·프롬프트 수명주기·전역/현장 kill switch와 한도·보존 정책·정제 감사, 자동 만료 보존 스케줄러, 일괄·단일 즉시 실행, 활성 legal hold 우선순위 및 WPF 일괄 운영 UI도 구현했다. 허용 범위는 근거 검색과 요약이며, provider별 운영 연동은 아직 구현하지 않았다.
 - 현재 동작하는 AI 기능은 `ai_search_candidates` 재생성·목록·품질 API, scope별 ground-truth 사례·원천 구성과 2인 승인, 실제 현장/스모크 준비도 분리, 불변 dataset version의 작성·검토·독립 승인과 결합 회귀 평가, 결과 누적, WPF 근거 후보 점검·`AI 정답셋` 화면, 외부 질의의 비활성 기본값·승인·목적·원천 권한·민감정보·최소 payload·근거 snapshot·응답 검증·감사 게이트, `system-admin` 전용 운영 제어면이다. generic 네트워크 adapter는 명시적 test scope에서만 동작하며 운영 호출로 간주하지 않는다. 합성/시험 48건 통과는 실제 현장 준비도나 운영 provider 승인을 뜻하지 않는다.
 
 ## 개발 우선순위 원칙
@@ -66,7 +66,7 @@
 
 ## 다음 우선순위
 
-1. FastAPI 현재 수집값 143건에 맞게 `scripts/verify-preserved-tests.ps1`의 131건 guard를 갱신한 뒤, WPF 빌드·스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 포함한 Windows 표준 검증을 생략 없이 실행하고 단일 `PASSED` 실행 ID를 남긴다. 기존 macOS `baseline-131` 보조 run은 과거 FastAPI 131건만 통과했으므로 현재 통합 기준선으로 보지 않는다.
+1. FastAPI 현재 수집값 144건에 맞게 `scripts/verify-preserved-tests.ps1`의 131건 guard를 갱신한 뒤, WPF 빌드·스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 포함한 Windows 표준 검증을 생략 없이 실행하고 단일 `PASSED` 실행 ID를 남긴다. 기존 macOS `baseline-131` 보조 run은 과거 FastAPI 131건만 통과했으므로 현재 통합 기준선으로 보지 않는다.
 2. [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
 4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다.
@@ -85,7 +85,7 @@
 - MES/ERP 어댑터 설계. 착수 전에는 수동 작업지시의 `work_order_no`, 문서 연결, 작업순서, FieldComment, 보고서 근거가 안정적으로 축적되어야 한다.
 - 외부 AI 호출 기반 검색/작업 조언. 착수 기준은 [MVP 범위 문서의 후속 계층 착수 기준](./mvp-scope.md#후속-계층-착수-기준)을 따른다.
   - 원천별 사용자 열람 권한, 민감정보/전송 금지 필터, 최소 텍스트 payload, 운영 승인·프롬프트·kill switch·한도·감사·보존 API/UI, 규칙 기반 응답 의미 검증은 구현됐다. 운영 호출 전 남은 항목은 provider별 계약·전송 지역·법적 조건 승인과 사람 표본 검토다.
-  - 질의 조회 범위와 만료 보존 현장 운영 절차를 확정한다. 서버 자동 스케줄러는 기본 1시간 간격으로 구현되어 있고 `system-admin`은 API/WPF에서 즉시 수동 실행할 수도 있으므로, 운영 주기·모니터링·장애 대응 기준을 검증한다.
+  - 질의 조회와 보존 조작은 현재 고객·현장 scope로 제한되어 있다. 서버 자동 스케줄러는 기본 1시간 간격으로 구현되어 있고 `system-admin`은 API/WPF에서 일괄 즉시 실행하거나 서버 API로 단일 만료·legal hold 설정/해제를 수행할 수 있다. 남은 작업은 운영 주기·근거 번호 승인·모니터링·장애 대응 절차와 WPF 단일/hold UI 필요성을 현장에서 확정하는 것이다.
 - 운영 감사 로그와 보안 정책 고도화
 
 ## 현재 보류

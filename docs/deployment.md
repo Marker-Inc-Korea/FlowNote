@@ -494,6 +494,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - `system-admin`으로 WPF `AI 운영` 화면에 접속해 전역/현장 kill switch가 의도한 상태인지 확인한다. 외부 호출을 준비하지 않은 설치는 기능 플래그뿐 아니라 kill switch도 켠 상태를 유지한다.
 - 전송 승인과 활성 프롬프트가 시험 범위·만료일·목적·원천 유형에 맞는지 확인하고, 감사 CSV 내보내기는 현장 정책상 필요한 경우에만 허용한다.
 - 만료 보존 작업은 서버 시작과 함께 기본 1시간 간격 스케줄러가 실행한다. 운영 주기와 담당자를 정하고, 즉시 처리가 필요하면 `system-admin`의 API/WPF 실행 기능을 사용한다.
+- 고객·현장 scope의 단일 AI 질의 즉시 만료와 legal hold 설정·해제는 현재 서버 API로만 수행한다. hold에는 승인된 근거 번호와 사유를 기록하고, 해제 전에는 주기·일괄·단일 만료가 해당 질의를 처리하지 않는지 확인한다.
 - Windows 방화벽에서 클라이언트 PC가 접근할 포트 `5184`만 허용한다.
 - 실제 고객 파일, 운영 DB, 운영 비밀값을 Git 저장소 또는 배포 준비 폴더에 섞어 두지 않는다.
 
@@ -531,6 +532,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - `C:\FlowNote\Server\data\flownote.sqlite3`가 생성되었고 서버 실행 계정이 계속 쓸 수 있는지 확인한다.
 - `C:\FlowNote\Server\storage`에 테스트 문서 등록 시 파일이 저장되는지 확인한다.
 - `C:\FlowNote\Server\logs`에 실행 로그 또는 오류 로그가 남는지 확인한다.
+- AI 보존을 사용하는 설치는 현재 고객·현장 scope의 질의/보존 감사만 조회되는지 확인하고, 승인된 비민감 시험 질의의 legal hold가 일괄 만료를 차단하며 해제 뒤 단일 만료되는지 서버 API로 검증한다.
 - 최초 서버 관리자 `admin`의 기본 비밀번호 `1234`를 현장 비밀번호로 변경한다.
 - WPF 첫 서버 로그인 전에 서버 관리자 비밀번호 변경 완료 여부와 확인자를 운영 기록에 남긴다.
 - 기본 비밀번호 `1234`로 서버 로그인이 401로 실패하고, WPF가 같은 ID의 로컬 계정으로 우회해 성공하지 않는지 확인한다.
@@ -715,11 +717,11 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files` 금지 산출물을 함께 확인한다. 현재 FastAPI 코드 수집값은 143건이지만 스크립트 guard는 131건이므로, guard를 143건으로 갱신하기 전에는 현재 Windows 통합 기준선을 만들 수 없다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files` 금지 산출물을 함께 확인한다. 현재 FastAPI 코드 수집값은 144건이지만 스크립트 guard는 131건이므로, guard를 144건으로 갱신하기 전에는 현재 Windows 통합 기준선을 만들 수 없다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 
-2026-07-20 WPF 공통 DB의 서버형 `controlled_copy_grants` FK 충돌은 `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·row 수·hash를 먼저 보존한 뒤 복구했다. 실제 복구 run `WPF-P0-20260720-0840`은 `quick_check=ok`, FK 위반 0건이며 문서 버전 3,384행의 원천 hash를 유지한다. FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하려는 경우도 `create_all` 전에 거부한다. 2026-07-21 macOS 보조 run `baseline-131-macos-precheck-20260721-001`은 당시 FastAPI 131건 통과만 확인했고 WPF/Android는 `NOT_RUN`이다. 현재 코드는 143건이므로 이 run을 최신 기준선으로 승격하지 않는다. guard 갱신과 새 Windows 무생략 `verification-summary.json=PASSED`가 생성되기 전까지 배포 통합 기준선은 `대기`다.
+2026-07-20 WPF 공통 DB의 서버형 `controlled_copy_grants` FK 충돌은 `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·row 수·hash를 먼저 보존한 뒤 복구했다. 실제 복구 run `WPF-P0-20260720-0840`은 `quick_check=ok`, FK 위반 0건이며 문서 버전 3,384행의 원천 hash를 유지한다. FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하려는 경우도 `create_all` 전에 거부한다. 2026-07-21 macOS 보조 run `baseline-131-macos-precheck-20260721-001`은 당시 FastAPI 131건 통과만 확인했고 WPF/Android는 `NOT_RUN`이다. 현재 코드는 144건이므로 이 run을 최신 기준선으로 승격하지 않는다. guard 갱신과 새 Windows 무생략 `verification-summary.json=PASSED`가 생성되기 전까지 배포 통합 기준선은 `대기`다.
 ## DB 복구·초기화 후 운영 절차
 
 1. 모든 WPF를 종료하거나 자동 전송/polling이 중지됐음을 확인한다.

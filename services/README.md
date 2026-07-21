@@ -35,8 +35,8 @@ FlowNote 서버 구성 요소를 보관하는 영역이다.
 - 보고서 초안 생성 보조, 보고서 등록, 목록, 상세 조회. `report_revision`, 내용/source 집합 hash와 mutation receipt를 보고서·근거·선택적 생성 문서와 한 transaction에 저장
 - AI 검색 전 단계의 근거 후보 재생성·목록·품질 점검, 독립 승인 ground-truth 사례, 불변 dataset version과 결합 오프라인 회귀 평가 API
 - 외부 AI 질의 생성·조회, 기본 비활성, 보고서 작성 role, 허용 목적, 전송 승인, 프롬프트, 원천 권한·민감정보·최소 payload, 근거 snapshot, 인용 검증과 호출 감사 게이트
-- `system-admin` 전용 외부 AI 운영 API: 전송 승인 생성·철회, 불변 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 요청·동시성·timeout·비용·보존 정책, 정제 감사 조회/내보내기, 만료 보존 즉시 실행
-- 서버 lifespan의 만료 보존 스케줄러: 기본 1시간 간격 실행, 설정으로 활성 여부와 간격 제어
+- `system-admin` 전용 외부 AI 운영 API: 전송 승인 생성·철회, 불변 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 요청·동시성·timeout·비용·보존 정책, 고객·현장 scope별 정제 감사 조회/내보내기, 만료 보존 일괄·단일 즉시 실행, legal hold 설정·해제
+- 서버 lifespan의 만료 보존 스케줄러: 기본 1시간 간격 실행, 설정으로 활성 여부와 간격 제어, 활성 legal hold 질의 제외
 - FastAPI 서버 DB와 WPF 로컬 DB의 SQLite 스키마 경계 검사: WPF `documents`/`document_versions` 구조를 감지하면 서버 테이블 생성 전에 초기화 중단
 - 서버 instance/epoch/API contract와 알림 high-water cursor manifest, 관리자용 WPF 큐 reconciliation 판정·승인·감사 API
 - 초기·비상 운영용 서버 계정 생성, 비밀번호 재설정, 상태 변경, role 변경 스크립트

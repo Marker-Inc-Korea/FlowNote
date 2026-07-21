@@ -140,7 +140,7 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 
 질의 원문과 저장 승인 응답은 기본 90일이며 `DO_NOT_STORE`는 응답 hash만 남긴다. 서버 lifespan의 만료 스케줄러는 기본 1시간 간격으로 질의 payload를 `[EXPIRED]`로 비식별화하고 응답 원문을 삭제한다. `system-admin`은 만료분 전체 처리를 즉시 실행하거나 현재 scope의 단일 질의를 즉시 만료할 수 있다. 두 경로 모두 query/response hash, 근거·인용·호출 메타데이터와 외래키를 보존하고 처리 건마다 `ai_retention_audits`에 삭제·비식별화 동작을 남긴다.
 
-법무·감사 보존 명령은 `ai_query_legal_holds`의 근거 번호, 사유, 설정자와 시각으로 등록한다. 활성 hold가 있는 질의는 정기 보존 작업과 단일 즉시 만료에서 모두 제외한다. 해제는 원래 row를 삭제하지 않고 해제자·시각·사유를 기록한 뒤부터 만료 처리를 허용한다. hold에는 원문을 복제하지 않으며 장기 archive는 원문이 아닌 query/response hash, source/version/trace ID, 승인·프롬프트·호출·인용·보존 감사 metadata를 기준으로 한다. 시스템 관리자 감사 API와 CSV는 질의·응답·근거 원문, 프롬프트 본문, provider raw 오류와 비밀값을 반환하지 않는다.
+법무·감사 보존 명령은 `ai_query_legal_holds`의 근거 번호, 사유, 설정자와 시각으로 등록한다. 활성 hold가 있는 질의는 정기·수동 일괄·단일 즉시 만료에서 모두 제외한다. 해제는 원래 row를 삭제하지 않고 해제자·시각·사유를 기록한 뒤부터 만료 처리를 허용한다. hold에는 원문을 복제하지 않으며 장기 archive는 원문이 아닌 query/response hash, source/version/trace ID, 승인·프롬프트·호출·인용·보존 감사 metadata를 기준으로 한다. 시스템 관리자 감사 API와 CSV는 질의·응답·근거 원문, 프롬프트 본문, provider raw 오류와 비밀값을 반환하지 않는다.
 
 승인 만료, 고객 요청, provider 조건 변경, 정보 유출 의심이 발생하면 운영자는 기능 플래그를 끄고 승인을 철회해 신규 호출을 즉시 차단한다. 기존 원천과 `ai_search_candidates`는 삭제하지 않으며 외부 호출 없는 후보 재생성·목록·품질 점검은 계속 동작한다. 사고 분석에는 정제된 감사 로그를 사용하고 provider에 보낸 원문을 일반 로그에서 복구하려 하지 않는다.
 
@@ -193,7 +193,7 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 - Android MDM 제품 적용, 운영 인증서와 현장별 단말 등록·비활성화·교체 실기 검증
 - Android Keystore/outbox 암호화와 foreground service의 Doze·재부팅·강제 중지 실단말 검사
 - provider별 운영 계약·전송 지역 검증과 운영 네트워크 활성 절차. 현재 generic adapter는 명시적 test scope에서만 허용
-- 운영 AI 감사 메타데이터의 장기 archive/purge와 법적 보존 hold 정책
+- 운영 AI 감사 메타데이터의 장기 archive/purge와 legal hold 승인·모니터링 운영 절차. hold API·DB 계약은 구현되었지만 현장별 책임자·보존 근거 형식·장기 이관 절차는 확정하지 않음
 
 운영 파일럿 전 보안 게이트, 책임자, 장애 중단 기준과 증거 보존 형식은 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)을 따른다. 앱 암호화와 별개로 MDM은 단말 전체 암호화, 6자리 이상 화면 잠금, 개발자 옵션·USB 디버깅·USB 파일 전송·ADB backup 차단, 알 수 없는 출처 차단, 원격 잠금·초기화, 앱 allowlist와 kiosk 자동 재실행을 강제한다. 정책 예외 단말은 운영 데이터 사용을 금지한다.
 

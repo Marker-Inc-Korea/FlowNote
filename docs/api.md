@@ -291,7 +291,7 @@ FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revi
 
 구현된 보고서 저장 계약은 `idempotencyKey`, `mutationKey`, 기존 초안의 선택적 `baseReportRevision`, 선택적 `contentHashSha256`, `sourceSetHashSha256`을 받는다. 각 source 요청은 `sourceType`, `sourceId`, 선택적 `sourceVersionId`, `relationType`을 보내며 서버가 현재 원천을 검증해 `source_hash_sha256`를 고정한다. 내용 hash는 보고서 유형·제목·본문·작업/구조/기간·상태의 정규화 JSON, source 집합 hash는 source type/ID/version/hash/relation의 정렬 canonical JSON을 SHA-256으로 계산한다. 기존 초안 저장은 base revision의 조건부 UPDATE가 성공할 때 `report_revision`을 1 증가시킨다. `baseReportRevision`을 생략하면 서버가 조회한 현재 revision을 사용하므로 클라이언트가 읽은 시점의 낙관적 잠금을 제공하지 않는다.
 
-서버는 문서/파일 생성 직전에 모든 source의 존재·상태·version·hash와 채널 권한을 다시 읽는다. 변경되거나 사라진 원천은 409 `REPORT_SOURCE_STALE_OR_ORPHAN`, 기존 초안 revision 경합은 409 `REPORT_STALE_REVISION`, 클라이언트가 보낸 두 hash와 서버 계산값 불일치는 각각 `REPORT_CONTENT_HASH_MISMATCH`, `REPORT_SOURCE_SET_HASH_MISMATCH`다. `mutationKey`가 없으면 `idempotencyKey`를 mutation key로 사용하며 같은 key·같은 intent는 `report_mutation_receipts`의 최초 응답을 반환하고 다른 intent는 409 `IDEMPOTENCY_KEY_REUSED`다. 보고서, source, 선택적 생성 document/version, 두 hash와 mutation receipt는 한 transaction으로 확정된다. 응답은 `report_revision`, `content_hash_sha256`, `source_set_hash_sha256`, `generated_document`와 source별 확정 ID/version/hash를 반환한다. 현재 WPF는 report/document/version ID를 로컬에 매핑한 뒤 큐를 `SYNCED`로 종결하지만 응답의 report revision과 두 hash를 로컬에 보존하거나 enqueue 시 source-set hash와 대조하지는 않는다.
+서버는 문서/파일 생성 직전에 모든 source의 존재·상태·version·hash와 채널 권한을 다시 읽는다. 변경되거나 사라진 원천은 409 `REPORT_SOURCE_STALE_OR_ORPHAN`, 기존 초안 revision 경합은 409 `REPORT_STALE_REVISION`, 클라이언트가 보낸 두 hash와 서버 계산값 불일치는 각각 `REPORT_CONTENT_HASH_MISMATCH`, `REPORT_SOURCE_SET_HASH_MISMATCH`다. `mutationKey`가 없으면 `idempotencyKey`를 mutation key로 사용하며 같은 key·같은 intent는 `report_mutation_receipts`의 최초 응답을 반환하고 다른 intent는 409 `IDEMPOTENCY_KEY_REUSED`다. 보고서, source, 선택적 생성 document/version, 두 hash와 mutation receipt는 한 transaction으로 확정된다. 응답은 `report_revision`, `content_hash_sha256`, `source_set_hash_sha256`, `generated_document`와 source별 확정 ID/version/hash를 반환한다. 현재 WPF는 enqueue 시 고정한 source-set hash와 서버 응답 source 집합을 다시 계산해 일치할 때만 report/document/version ID, report revision, content hash, source-set hash를 로컬에 보존하고 큐를 `SYNCED`로 종결한다.
 
 ## AI 검색 근거 후보
 
@@ -303,7 +303,7 @@ AI 검색 후보 API는 자동 조언이 아닌 “근거가 있는 검색과 �
 | GET | `/api/v1/ai-search/candidates` | 검색 후보 목록 조회. `sourceType`, `sourceId`, `limit`으로 제한 가능 |
 | GET | `/api/v1/ai-search/quality` | 후보 수, 원천별 개수, 제외 사유, FieldComment 검토 상태 부족분과 최근 회귀 평가 요약 조회 |
 | POST | `/api/v1/ai-search/evaluations` | 외부 AI 호출 없이 질문별 기대 근거와 실제 후보를 비교하고 재현성 snapshot을 누적 저장 |
-| POST | `/api/v1/ai-search/ground-truth-cases` | 범주·유형·근거·순위·시점과 데이터 분류/provenance를 첫 승인 상태로 저장. 아직 비활성 |
+| POST | `/api/v1/ai-search/ground-truth-cases` | 범주·유형·근거·순위·시점과 데이터 분류/provenance를 첫 승인 상태로 저장. 등록 직후는 `PENDING_SECOND_APPROVAL`로 비활성 |
 | POST | `/api/v1/ai-search/ground-truth-cases/{ground_truth_case_id}/second-approval` | 첫 승인자와 다른 권한 사용자가 고정 근거와 접근권한을 다시 검증해 사례를 활성화 |
 | GET | `/api/v1/ai-search/ground-truth-cases` | 현재 scope의 질문 조회. 기본은 활성 승인 사례만 반환하고 운영용 `includePending=true`이면 미승인 사례도 포함한다. `lineScope`가 없으면 현장 공통 사례, 있으면 해당 라인 사례만 조회 |
 | GET | `/api/v1/ai-search/readiness` | 고객·현장·선택적 라인·DB scope별 네 원천 수, 승인 질문 48건 및 범주×유형별 2건 부족분, 품질 임계값, provider 심사와 착수 가능 여부 조회 |
