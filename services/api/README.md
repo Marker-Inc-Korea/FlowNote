@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-07-21 현재 OpenAPI에 등록된 122개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-07-21 현재 OpenAPI에 등록된 125개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -130,6 +130,9 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/ai-operations/audit/export` | Export policy-controlled sanitized query audit CSV |
 | POST | `/api/v1/ai-operations/retention/run` | Manually redact expired query payloads and delete expired response text |
 | GET | `/api/v1/ai-operations/retention/audit` | Read retention processing metadata |
+| POST | `/api/v1/ai-operations/queries/{query_id}/expire` | Immediately expire one query in the configured customer/site scope |
+| POST | `/api/v1/ai-operations/queries/{query_id}/legal-holds` | Place a reasoned legal/audit preservation hold on a scoped query |
+| POST | `/api/v1/ai-operations/legal-holds/{hold_id}/release` | Release a preservation hold without deleting its history |
 
 ## Auth
 

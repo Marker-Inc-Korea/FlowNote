@@ -41,6 +41,7 @@ def test_app_startup_creates_mvp_schema(tmp_path: Path) -> None:
         "ai_queries",
         "ai_query_evidence_candidates",
         "ai_query_citations",
+        "ai_query_legal_holds",
         "ai_prompt_versions",
         "ai_call_attempts",
         "ai_sensitive_data_policies",

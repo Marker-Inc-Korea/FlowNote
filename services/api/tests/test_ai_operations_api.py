@@ -174,3 +174,81 @@ def test_retention_redacts_payload_preserves_hash_references_and_records_history
             assert query.query_hash == "a" * 64 and query.response_hash == "b" * 64
             foreign_keys = session.execute(text("PRAGMA foreign_key_check")).all()
             assert foreign_keys == []
+
+
+def test_legal_hold_blocks_retention_and_release_allows_immediate_expiry() -> None:
+    with create_client() as client:
+        auth = system_admin(client)
+        settings = client.app.state.settings
+        query_id = f"aiq-hold-{uuid4().hex}"
+        other_scope_query_id = f"aiq-other-scope-{uuid4().hex}"
+        now = datetime.now(timezone.utc)
+        with client.app.state.database.session() as session:
+            actor_id = session.scalar(select(UserAccount.user_id).where(
+                UserAccount.role == "system-admin"
+            ).order_by(UserAccount.id.desc()))
+            session.add(AIQuery(
+                query_id=query_id, requested_by=actor_id,
+                customer_scope=settings.ai_customer_scope, site_scope=settings.ai_site_scope,
+                query_text="legal hold 보존 대상 질의", query_hash="c" * 64,
+                purpose="EVIDENCE_SUMMARY", status="SUCCEEDED",
+                response_storage_mode="STORE_90_DAYS", response_text="보존 대상 응답",
+                response_hash="d" * 64, retention_until=now - timedelta(seconds=1),
+                response_retention_until=now - timedelta(seconds=1),
+            ))
+            session.add(AIQuery(
+                query_id=other_scope_query_id, requested_by=actor_id,
+                customer_scope="other-customer", site_scope="other-site",
+                query_text="다른 scope 질의", query_hash="e" * 64,
+                purpose="EVIDENCE_SUMMARY", status="SUCCEEDED",
+                response_storage_mode="DO_NOT_STORE", response_hash="f" * 64,
+                retention_until=now + timedelta(days=90),
+            ))
+            session.commit()
+
+        audit_query_ids = {
+            item["queryId"] for item in client.get(
+                "/api/v1/ai-operations/audit/queries", headers=auth
+            ).json()
+        }
+        assert query_id in audit_query_ids
+        assert other_scope_query_id not in audit_query_ids
+        cross_scope_hold = client.post(
+            f"/api/v1/ai-operations/queries/{other_scope_query_id}/legal-holds", headers=auth,
+            json={"reason": "범위 밖 시도", "authorityReference": "must-not-exist"},
+        )
+        assert cross_scope_hold.status_code == 404
+
+        hold = client.post(
+            f"/api/v1/ai-operations/queries/{query_id}/legal-holds", headers=auth,
+            json={"reason": "분쟁 보존", "authorityReference": "legal-case-test-1"},
+        )
+        assert hold.status_code == 201, hold.text
+        hold_id = hold.json()["holdId"]
+        retained = client.post("/api/v1/ai-operations/retention/run", headers=auth)
+        assert retained.status_code == 200
+        with client.app.state.database.session() as session:
+            query = session.scalar(select(AIQuery).where(AIQuery.query_id == query_id))
+            assert query.query_text == "legal hold 보존 대상 질의"
+            assert query.response_text == "보존 대상 응답"
+
+        blocked = client.post(
+            f"/api/v1/ai-operations/queries/{query_id}/expire", headers=auth,
+            json={"reason": "보존 중 즉시 만료 시도"},
+        )
+        assert blocked.status_code == 409
+        released = client.post(
+            f"/api/v1/ai-operations/legal-holds/{hold_id}/release", headers=auth,
+            json={"reason": "보존 의무 종료"},
+        )
+        assert released.status_code == 200 and released.json()["status"] == "RELEASED"
+        expired = client.post(
+            f"/api/v1/ai-operations/queries/{query_id}/expire", headers=auth,
+            json={"reason": "사용자 즉시 만료 요청"},
+        )
+        assert expired.status_code == 200, expired.text
+        assert expired.json()["queryPayloadsDeidentified"] == 1
+        assert expired.json()["responsesDeleted"] == 1
+        with client.app.state.database.session() as session:
+            query = session.scalar(select(AIQuery).where(AIQuery.query_id == query_id))
+            assert query.query_text == "[EXPIRED]" and query.response_text is None

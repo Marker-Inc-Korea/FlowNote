@@ -38,3 +38,18 @@ services/api/.venv/bin/python scripts/verify-ai-ground-truth-48.py
 `scripts/sql/verify-ai-ground-truth-48.sql`은 48건 수, 24칸×2건, case key 중복, 승인자 중복, provenance·snapshot hash, reference hash·근거, 원천 orphan을 검사한다. Python 검증기는 같은 48건을 두 번 평가하고 candidate ID/content hash/rank 변화가 없는지 확인한다. 두 실행 모두 top-k 포함, 인용 trace, 의미 일치, 상충 표시가 100%이고 권한 누출, 존재하지 않는 인용, 제외 원천 노출이 0건이어야 통과한다.
 
 오늘 사진/인수인계 문서와 기존 과거 문서 버전 증가는 Windows 통합 스모크의 기존 폴더 규칙을 그대로 따른다. 이 AI 시드는 그 문서 구조에 새 스모크 전용 업무 폴더를 만들지 않으며, 부족한 현장 자료를 합성 데이터로 실제 현장 준비도에 올리지 않는다.
+
+## 실제 현장 준비도 검증
+
+실제 익명 현장 또는 제한 파일럿 사례는 시드하지 않는다. 운영자가 승인한 `FIELD_READINESS` dataset version을 만든 뒤 다음 검증기를 실행한다. 비밀번호는 명령행이나 파일에 넣지 않고 지정 환경 변수로만 전달한다.
+
+```bash
+FLOWNOTE_FIELD_READINESS_VERIFY_PASSWORD='...' \
+services/api/.venv/bin/python scripts/verify-ai-field-readiness.py \
+  --database /approved/local/path/flownote.sqlite3 \
+  --dataset-version-id aigdataset_... \
+  --customer-scope CUSTOMER_SCOPE --site-scope SITE_SCOPE \
+  --line-scope LINE_SCOPE --username verifier-account
+```
+
+검증기는 승인 dataset과 고객·현장·선택적 라인·DB fingerprint를 정확히 결합한다. SQL 단계에서 48건, 24칸×2건, case key 중복, 작성자/검토자/1차/2차 승인자 분리, `ANONYMOUS_FIELD`/`PILOT` provenance, snapshot/reference hash, 제외 이유와 네 원천 orphan을 검사한다. 이어 외부 호출을 비활성화한 `FAKE` adapter로 같은 dataset snapshot을 두 번 평가해 candidate ID/content hash/rank의 `previous_run_delta`, top-k, citation trace·의미 일치, 상충 표시와 세 가지 0건 위반 지표를 확인한다. 실제 원천이나 승인자가 부족하면 실패 상태를 그대로 유지하며 합성 사례를 이 dataset에 보충하지 않는다.

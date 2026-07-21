@@ -11,6 +11,7 @@ from app.db.models import (
     AIOperationAuditEvent,
     AIOperationalPolicy,
     AIQuery,
+    AIQueryLegalHold,
     AIRetentionAudit,
 )
 
@@ -63,21 +64,37 @@ def active_policy(
     return global_policy, site_policy
 
 
-def run_retention(session: Session, *, now: datetime | None = None) -> dict[str, int]:
+def run_retention(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    query_id: str | None = None,
+    customer_scope: str | None = None,
+    site_scope: str | None = None,
+) -> dict[str, int]:
     """Redacts expired payloads without deleting referential audit metadata."""
     current = now or datetime.now(timezone.utc)
-    rows = session.scalars(
-        select(AIQuery).where(
-            or_(
-                (AIQuery.retention_until <= current) & (AIQuery.query_text != "[EXPIRED]"),
-                (AIQuery.response_text.is_not(None))
-                & or_(
-                    AIQuery.response_retention_until <= current,
-                    (AIQuery.response_retention_until.is_(None)) & (AIQuery.retention_until <= current),
-                ),
+    statement = select(AIQuery).where(
+        ~select(AIQueryLegalHold.id).where(
+            AIQueryLegalHold.query_id == AIQuery.query_id,
+            AIQueryLegalHold.status == "ACTIVE",
+        ).exists(),
+        or_(
+            (AIQuery.retention_until <= current) & (AIQuery.query_text != "[EXPIRED]"),
+            (AIQuery.response_text.is_not(None))
+            & or_(
+                AIQuery.response_retention_until <= current,
+                (AIQuery.response_retention_until.is_(None)) & (AIQuery.retention_until <= current),
             ),
-        )
-    ).all()
+        ),
+    )
+    if query_id is not None:
+        statement = statement.where(AIQuery.query_id == query_id)
+    if customer_scope is not None:
+        statement = statement.where(AIQuery.customer_scope == customer_scope)
+    if site_scope is not None:
+        statement = statement.where(AIQuery.site_scope == site_scope)
+    rows = session.scalars(statement).all()
     query_redacted = 0
     response_deleted = 0
     for query in rows:
