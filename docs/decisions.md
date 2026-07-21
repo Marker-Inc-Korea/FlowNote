@@ -31,6 +31,8 @@
 - dataset 작성자, 검토자, 1차 승인자, 2차 승인자는 모두 분리한다. 일반 운영 role은 작성·검토할 수 있지만 승인 단계는 `admin`, `system-admin`, `document-admin`, `department-manager`로 좁힌다.
 - 최종 승인 시 8범주×3유형×2건 coverage와 각 사례 snapshot hash를 검증한다. 승인본은 수정하지 않고 대체 version을 만들어 이전 version을 `SUPERSEDED`로 남긴다.
 - 모든 provider 준비도 판정은 최신 `FIELD_READINESS` 승인 dataset version과 정확히 결합된 evaluation `run_id`를 요구한다. 다른 version이나 ad-hoc 평가의 성공을 재사용하지 않는다.
+- AI 질의 감사 조회와 보존 조작은 서버 설정의 고객·현장 scope에 고정한다. 원문과 저장 응답의 기본 보존은 90일이며 단일 즉시 만료를 허용하되, 근거 번호가 있는 활성 `ai_query_legal_holds`는 정기·수동·단일 만료보다 우선한다. hold 설정과 해제는 원문을 복제하지 않고 불변 감사 metadata로 누적한다.
+- 실제 현장 준비도는 승인된 `ANONYMOUS_FIELD`/`PILOT` 사례와 `FIELD_READINESS` dataset만 사용한다. 합성 `SMOKE_REGRESSION` dataset과 evaluation run은 같은 준비도 판정이나 분자에 합치지 않는다. 동일 snapshot 두 번 평가와 사람 2인의 독립 표본 검토가 모두 끝나기 전 provider 심사는 `PENDING`이다.
 - 승인본 평가가 없으면 `PENDING`, 결합 평가가 임계값에 미달하면 `FAIL`이다. 두 상태 모두 외부 provider 경계만 닫고 후보 재생성, 내부 품질 점검, 문서·FieldComment·작업순서·보고서 입력은 계속 허용한다.
 - 포함·제외 reference 모두 재검증 가능한 content hash와 근거 설명을 갖고, 제외 reference는 제외 사유도 필수다. provenance는 전체 source snapshot hash와 두 승인자를 질문 원본과 별도로 보존한다.
 - WPF 사례 운영은 서버 후보 선택과 수동 제외 원천 입력을 분리하고 `includePending=true`로 첫 승인 대기 사례를 조회한다. 개별 사례의 등록·2차 승인은 보고서 작성 role에 허용하되 동일 사용자 재승인은 금지한다. dataset 최종 승인·폐기는 더 좁은 승인 role을 유지한다.

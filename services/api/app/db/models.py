@@ -1474,6 +1474,32 @@ class AIRetentionAudit(Base):
     )
 
 
+class AIQueryLegalHold(Base):
+    """Prevents retention redaction while an authorized preservation order is active."""
+
+    __tablename__ = "ai_query_legal_holds"
+    __table_args__ = (
+        CheckConstraint("status IN ('ACTIVE', 'RELEASED')", name="ck_ai_query_legal_hold_status"),
+        Index("ix_ai_query_legal_holds_query_status", "query_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    hold_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    query_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_queries.query_id"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    authority_reference: Mapped[str] = mapped_column(String(500), nullable=False)
+    placed_by: Mapped[str] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id"), nullable=False
+    )
+    placed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    released_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    release_reason: Mapped[str | None] = mapped_column(Text)
+
+
 class AISensitiveDataPolicy(Base):
     """Site-scoped deny terms and customer identifiers for the provider boundary."""
 

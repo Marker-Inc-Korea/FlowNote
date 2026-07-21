@@ -113,6 +113,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `ai_operational_policies` | 전역·현장별 kill switch, 요청·동시성·timeout·비용 한도, 보존과 감사 내보내기 정책 |
 | `ai_operation_audit_events` | 승인·프롬프트·운영 정책 변경과 호출 전 차단의 정제 감사 이벤트 |
 | `ai_retention_audits` | 만료 질의 payload 비식별화와 응답 원문 삭제 결과, 보존 hash 감사 |
+| `ai_query_legal_holds` | 질의별 법무·감사 보존 근거와 설정/해제 이력 |
 | `document_access_logs` | 서버 문서 접근 로그 |
 | `controlled_copy_grants` | SHA-256으로 저장한 1회성 토큰, 사용자·세션·단말·문서 버전, 만료·소비·실패 상태 |
 | `android_document_view_grants` | Android 앱 내부 열람용 token hash, 사용자·세션·필수 승인 단말·공개 버전·미디어 종류·크기·SHA-256, 만료·소비·실패 상태 |
@@ -199,15 +200,16 @@ MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_record
 
 | 테이블 | 주요 필드 | 역할과 보존 기준 |
 | --- | --- | --- |
-| `ai_queries` | `query_id`, `requested_by`, `query_text`, `query_hash`, `purpose`, `status`, `prompt_version_id`, `response_storage_mode`, `response_text`, `response_hash`, `retention_until`, `response_retention_until`, `regeneration_of_query_id`, `regenerable_until`, `block_code`, `created_at`, `completed_at` | 질의, 호출 사용자, 처리 상태와 응답 저장 여부의 기준 row. 필터 통과 질의는 마스킹된 문구를 저장하고 전송 금지 질의는 `[REDACTED]`와 hash만 남긴다. 응답은 기본 `DO_NOT_STORE`이며 본문 대신 hash를 남긴다. 만료 시 서버 스케줄러 또는 `system-admin` 수동 실행이 질의 payload를 `[EXPIRED]`로 비식별화하고 저장 응답 원문을 삭제한다. |
+| `ai_queries` | `query_id`, `requested_by`, `customer_scope`, `site_scope`, `query_text`, `query_hash`, `purpose`, `status`, `prompt_version_id`, `prompt_snapshot_json`, `approval_snapshot_json`, `response_storage_mode`, `response_text`, `response_hash`, `retention_until`, `response_retention_until`, `regeneration_of_query_id`, `regenerable_until`, `block_code`, `created_at`, `completed_at` | 질의, 호출 사용자, 고객·현장 scope, 처리 상태와 응답 저장 여부의 기준 row. 필터 통과 질의는 마스킹된 문구를 저장하고 전송 금지 질의는 `[REDACTED]`와 hash만 남긴다. 응답은 기본 `DO_NOT_STORE`이며 본문 대신 hash를 남긴다. 만료 시 서버 스케줄러 또는 `system-admin` 수동 실행이 질의 payload를 `[EXPIRED]`로 비식별화하고 저장 응답 원문을 삭제한다. |
 | `ai_query_evidence_candidates` | `id`, `query_id`, `candidate_id`, `source_type`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `rank`, `selected_for_prompt`, `sent_externally`, `content_hash`, `eligibility_result`, `exclusion_reason` | 질의 시점의 적격·제외 후보 ID와 순위, provider 경계 전달 여부, 원천 식별자와 content hash snapshot. 제외 후보도 원문 없이 `EXCLUDED`와 `SOURCE_FORBIDDEN`/`CONTENT_RESTRICTED` 사유를 남기며 provider DTO에는 포함하지 않는다. |
 | `ai_query_citations` | `citation_id`, `query_id`, `claim_key`, `candidate_id`, `source_type`, `source_id`, `source_version_id`, `trace_table`, `trace_id`, `trace_version_id`, `internal_source_uri`, `content_hash`, `validated_at` | 반환한 각 사실 주장과 문서 버전, FieldComment, 작업순서 이력 또는 `report_sources.id`의 연결. 1년 보존은 후속 운영 정책이다. |
+| `ai_query_legal_holds` | `hold_id`, `query_id`, `status`, `reason`, `authority_reference`, `placed_by`, `placed_at`, `released_by`, `released_at`, `release_reason` | 법무·감사 보존 명령. `ACTIVE`인 동안 payload 만료를 중지하고, `RELEASED` 전이는 원래 설정·해제 근거를 보존한다. |
 | `ai_prompt_versions` | `prompt_version_id`, `name`, `version`, `template_hash`, `template_text`, `allowed_purpose`, `created_by`, `approved_by`, `approved_at`, `retired_at` | 재현 가능한 불변 프롬프트 버전. 승인 후 내용을 덮어쓰지 않고 새 버전을 만든다. |
 | `ai_call_attempts` | `attempt_id`, `query_id`, `provider`, `model`, `provider_request_id`, `status`, `started_at`, `finished_at`, `http_status`, `error_code`, `sanitized_error_message`, `input_units`, `output_units` | 최초 호출과 timeout/429/5xx 재시도를 요청 ID에 연결하는 호출 및 오류 로그. 일반 로그에는 원문 프롬프트, 근거 본문, 응답, 자격증명이나 provider raw body를 넣지 않고 정제한 메타데이터를 남긴다. 1년 보존은 후속 운영 정책이다. |
 | `ai_transfer_approvals` | `approval_id`, `customer_scope`, `site_scope`, `provider`, `model_scope`, `allowed_source_types`, `data_handling_policy_version`, `approved_by`, `approved_at`, `expires_at`, `revoked_at`, `reason` | 고객·현장별 외부 전송 승인. 만료·철회 시 새 호출을 즉시 차단하며 `admin` 또는 `system-admin`의 승인 주체와 근거를 보존한다. |
 | `ai_sensitive_data_policies` | `policy_id`, `customer_scope`, `site_scope`, `version`, `forbidden_terms_json`, `customer_identifiers_json`, `is_active`, `created_by`, `created_at` | 고객·현장별 사용자 정의 금칙어와 고객 식별자 정책. 최신 활성 정책 하나를 query snapshot 필터에 적용하며 원문 검출값은 감사 로그에 남기지 않는다. |
 
-`response_storage_mode`는 `DO_NOT_STORE`, `STORE_90_DAYS`만 허용한다. 기본값은 `DO_NOT_STORE`이며 이때 응답 본문은 요청 세션에 반환한 뒤 저장하지 않는다. `STORE_90_DAYS`는 본문과 별도 `response_retention_until`을 저장한다. 서버 lifespan 스케줄러와 `system-admin` 즉시 실행 API는 만료된 질의 문구를 `[EXPIRED]`로 비식별화하고 저장 응답 원문을 삭제하되 query/response hash, 근거·인용·호출 메타데이터와 `ai_retention_audits`를 보존한다. 질의 재생성 API는 아직 없으며, 후속 재생성은 같은 질의, 불변 프롬프트 버전, 근거 후보 ID와 content hash, provider/model을 다시 사용하되 원천의 권한·공개·외부 전송 승인 상태를 다시 평가해야 한다.
+`response_storage_mode`는 `DO_NOT_STORE`, `STORE_90_DAYS`만 허용한다. 기본값은 `DO_NOT_STORE`이며 이때 응답 본문은 요청 세션에 반환한 뒤 저장하지 않는다. `STORE_90_DAYS`는 본문과 별도 `response_retention_until`을 저장한다. 서버 lifespan 스케줄러와 `system-admin` 전체/단일 즉시 실행 API는 만료된 질의 문구를 `[EXPIRED]`로 비식별화하고 저장 응답 원문을 삭제하되 query/response hash, 근거·인용·호출 메타데이터와 `ai_retention_audits`를 보존한다. 단, 같은 `query_id`의 `ai_query_legal_holds.status = ACTIVE`이면 두 만료 경로 모두 건너뛴다. hold 해제는 `RELEASED` 상태와 해제자·시각·사유를 누적하고 row를 삭제하지 않는다. 질의 재생성 API는 아직 없으며, 후속 재생성은 같은 질의, 불변 프롬프트 버전, 근거 후보 ID와 content hash, provider/model을 다시 사용하되 원천의 권한·공개·외부 전송 승인 상태를 다시 평가해야 한다.
 
 `ai_query_evidence_candidates.candidate_id`는 재생성 가능한 read model에 대한 논리적 역추적 키이며 물리 FK로 묶지 않는다. `ai_search_candidates` 재생성 뒤에도 질의 시점의 source/version/trace ID와 content hash snapshot을 보존하기 위한 결정이다.
 
@@ -363,6 +365,7 @@ FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관�
 - `ai_operational_policies`: 전역 `*/*` 또는 정확한 고객/현장 scope별 kill switch, 요청·동시성·timeout·비용, 보존과 감사 내보내기 정책이다. 비밀 컬럼은 없다.
 - `ai_operation_audit_events`: 승인·프롬프트·정책 변경과 호출 전 차단 사유의 원문 없는 감사 이벤트다.
 - `ai_retention_audits`: 만료 질의별 payload 비식별화와 응답 삭제 동작, 보존된 hash를 기록한다.
+- `ai_query_legal_holds`: 현재 고객·현장 질의에 대한 `ACTIVE`/`RELEASED` 보존 명령과 권한 근거, 설정·해제 actor/시각을 기록한다.
 
 ## 역할 값
 

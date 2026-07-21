@@ -2,6 +2,12 @@
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
 
+## 2026-07-21 작업 102 AI 보존·현장 준비도 문서 갱신
+
+현재 작업 트리의 코드를 기준으로 AI 질의 감사·보존 API를 고객·현장 scope에 고정하고, 단일 즉시 만료와 `ACTIVE`/`RELEASED` legal hold 계약을 API·데이터 모델·보안·설계 결정 문서에 반영했다. 정기 스케줄러와 `system-admin` 수동 보존 작업은 활성 hold를 건너뛰고, 해제 이력은 원래 row를 삭제하지 않는다. 실제 현장 준비도 검증기는 승인된 `FIELD_READINESS` dataset과 고객·현장·선택적 라인·DB fingerprint를 결합하고, 외부 호출 없이 동일 snapshot을 두 번 평가한다.
+
+현재 정량 기준은 루트 `GET /`를 포함한 OpenAPI 125개 method/path 조합, SQLAlchemy ORM 58개 테이블, `Settings` 36개 항목, 중복 없는 pytest node ID 144개다. `services/api/README.md`의 API 표는 OpenAPI와 누락·초과 0건이다. 변경 Python·테스트·검증기의 Ruff 검사와 AI 운영·DB 집중 회귀 6건은 통과했다. 실제 현장 dataset·검증 계정·비밀번호가 없어 `verify-ai-field-readiness.py`는 실행하지 않았다. 기존 SQLite, 로그, 테스트 파일과 산출물은 삭제하지 않았다.
+
 ## 2026-07-21 작업 102 파일럿 판정 schema 2 문서 갱신
 
 현재 작업 트리의 코드 변경을 우선해 파일럿 실행 문서를 다시 맞췄다. `manage-pilot-run.py`는 `pilot-run.json` schema version 2와 네 개의 원시 측정 CSV를 만들고, 기존 실행·CSV는 기본적으로 덮어쓰지 않는다. 필수 게이트에는 Android 보안 저장/뷰어, 전달/복구, MDM kiosk 재시작이 추가됐으며 역할별 최대 시간·재시도·도움 요청, 8개 Android 전달 시나리오, 보안 실기 8개 항목, 단말 재접속 차단/교체 이력, UX 관찰의 개발 항목 전환을 증거 파일과 함께 판정한다.
@@ -169,6 +175,10 @@ FastAPI 수집 목록은 128개 node ID, 중복 0개로 대조했고 macOS 보�
 릴리스 게이트 임계값은 candidate ID/content hash 안정성 100%, 동일 snapshot ranking 안정성 100%, 허용 top-k 포함률 100%, citation trace 존재율 100%, citation 의미 일치율 100%, 상충 표시율 100%다. 제외 근거 노출, 권한 누출, 존재하지 않는 인용은 각각 0건이어야 한다. 네 원천 유형을 모두 포함하고 전체 case가 통과해야 한다. 임계값 변경은 평가 결과를 덮어쓰지 않고 결정 기록과 새 run으로 남긴다.
 
 검증은 외부 호출 없이 fake/recording adapter와 로컬 candidate ranking으로 먼저 반복한다. prompt version, policy 또는 검색 구현을 바꾸기 전후에 같은 승인 case ID를 평가하고 `previous_run_delta`의 candidate 추가/제거, content hash와 순위 변경을 비교한다. 실패 run과 case row, fake payload, 로그는 삭제하지 않는다. 사람이 뽑은 표본 응답은 두 검토자가 근거 적합성, 누락, 과장, 상충 표시, `참고 요약` 표현과 자동 조치로 오인될 문구가 없는지를 각각 확인한다. 두 판단이 다르면 `PENDING`으로 두고 합의 근거를 새 검토 기록으로 남긴다.
+
+실제 현장 승인본은 `scripts/verify-ai-field-readiness.py`에 dataset version과 고정 고객·현장·라인·DB scope를 주어 검증한다. 이 도구의 SQL 단계는 48건/24칸, dataset 네 actor와 case 두 승인자 분리, `ANONYMOUS_FIELD`/`PILOT` provenance, 중복·orphan·hash·제외 이유를 검사한다. 이어 같은 승인 snapshot을 두 번 평가하고 두 번째 run의 `previous_run_delta`와 100%/0건 임계값을 비교한다. 비밀번호는 `FLOWNOTE_FIELD_READINESS_VERIFY_PASSWORD`에만 두며 검증기 설정은 `FAKE` adapter와 `ai_external_call_enabled=false`를 강제한다.
+
+사람 표본 검토는 자동 평가와 별개로 두 명이 같은 run/dataset snapshot에서 독립 수행한다. 각 검토자는 근거 적합성, 누락, 과장, 상충 표시, `참고 요약` 표현을 판정하고 reviewer ID·시각·근거를 남긴다. 불일치는 자동 합격으로 병합하지 않고 `PENDING`으로 유지한 채 제3의 합의 기록 또는 새 dataset version으로 종결한다.
 
 provider 심사는 계약, 데이터 보존, 학습 사용, 전송 지역, TLS, timeout, 429, 5xx, 비용 한도, kill switch, 법무 승인, 고객 승인 12개 항목과 기술·보안·법무·고객 네 영역을 기록한다. 전건 `PASS`와 네 영역 `APPROVED` 전에는 `provider_review_ready=false`다. 현재 실제 현장 승인 ground-truth와 provider별 계약 증거가 등록되지 않았으므로 운영 착수 판정은 명시적 `대기`이며, 구현된 fake/recording 회귀와 제한형 test adapter가 운영 provider 승인을 뜻하지 않는다. 통과 후 첫 범위도 `EVIDENCE_SEARCH`, `EVIDENCE_SUMMARY`의 근거 검색과 `참고 요약`으로 제한한다.
 
