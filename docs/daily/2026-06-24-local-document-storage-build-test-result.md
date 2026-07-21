@@ -16,7 +16,7 @@
 - 문서 열람 이력
 - FieldComment 원천과 첨부, 관리자 해석·담당자·기한·전이 사유 및 원천 hash 감사 이력
 - 작업순서, 알림, 보고서, 활동 이력
-- 서버 scope·사용자별 알림 cursor와 처리 완료 메시지, 서버 동기화 큐·ID 매핑·승인 전환 감사
+- 서버 scope·사용자별 알림 cursor와 처리 완료 메시지, 서버 동기화 큐·ID 매핑·승인 전환 감사, URL별 서버 instance/epoch binding과 reconciliation 판정·적용 이력
 
 서버 controlled copy 티켓은 WPF 로컬 SQLite나 동기화 큐에 저장하지 않는다. 서버가 현재 공개 버전과 세션을 확인해 1회 스트리밍하고 WPF가 저장 파일의 SHA-256을 검증한다.
 

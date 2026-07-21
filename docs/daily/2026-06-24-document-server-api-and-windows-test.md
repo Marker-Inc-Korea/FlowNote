@@ -10,6 +10,8 @@
 - 열람 로그는 문서별로 등록하고 관리자 권한에서 조회한다.
 - 현재 공개 버전 controlled copy는 허용 role, 사용자·세션 바인딩, 짧은 만료, 1회 소비, 경로·크기·SHA-256 검사와 감사 로그를 적용한다.
 - 서버 계정 수명주기와 승인 단말 운영은 별도 관리자 API이며 문서 API 권한과 같은 Bearer 세션 검증을 사용한다.
+- 문서 aggregate 변경은 서버 revision과 공개 포인터를 비교하고, stale revision·idempotency key 재사용·파일 hash 불일치를 409 충돌로 반환한다.
+- 서버 복구 뒤에는 sync manifest의 instance/epoch·cursor를 확인하고 관리자 승인형 reconciliation을 완료하기 전까지 WPF 자동 전송과 알림 polling을 재개하지 않는다.
 
 ## Windows 앱 검증 대상
 

@@ -33,6 +33,9 @@ REQUIRED_GATES = (
     "https_renewal",
     "firewall_and_address_change",
     "android_approved_install",
+    "android_secure_storage_and_viewer",
+    "android_delivery_and_recovery",
+    "android_mdm_kiosk_restart",
     "android_device_replacement",
     "server_restore_separate_pc",
     "wpf_restore_separate_pc",
@@ -48,12 +51,26 @@ REQUIRED_APPROVALS = ("operations", "security", "field_operations")
 ZERO_TOLERANCE_METRICS = (
     "data_loss",
     "permission_bypass",
+    "plaintext_token_or_outbox",
+    "external_share_exposure",
+    "residual_secure_viewer_cache",
     "unauthorized_file_disclosure",
     "secret_or_personal_data_disclosure",
     "database_integrity_failure",
     "source_count_mismatch",
     "source_hash_mismatch",
 )
+ANDROID_DELIVERY_CASES = (
+    ("AND-NOTIFY-NORMAL", "normal"),
+    ("AND-NOTIFY-DOZE", "doze"),
+    ("AND-NOTIFY-DISCONNECT", "disconnect_5m"),
+    ("AND-NOTIFY-BOOT", "reboot"),
+    ("AND-NOTIFY-ADDRESS", "address_change"),
+    ("AND-NOTIFY-ACCESS-EXPIRY", "access_token_expiry"),
+    ("AND-NOTIFY-REFRESH-REJECTED", "refresh_rejected"),
+    ("AND-NOTIFY-FORCESTOP", "force_stop_kiosk_restart"),
+)
+ANDROID_DELIVERY_SCENARIOS = tuple(condition for _, condition in ANDROID_DELIVERY_CASES)
 EVIDENCE_DIRECTORIES = (
     "approvals",
     "packages",
@@ -80,7 +97,7 @@ def validate_run_id(value: str) -> str:
 
 def empty_record(run_id: str) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": run_id,
         "status": "PENDING",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -105,10 +122,62 @@ def empty_record(run_id: str) -> dict[str, Any]:
                 "approved_minimum_percent": None,
                 "median_seconds": None,
                 "approved_max_median_seconds": None,
+                "maximum_seconds": None,
+                "approved_maximum_seconds": None,
+                "retry_count": None,
+                "help_request_count": None,
                 "critical_blockers": None,
                 "evidence": [],
             }
             for role in REQUIRED_ROLES
+        },
+        "android_delivery": {
+            "scenarios": {
+                scenario: {
+                    "required_attempts": 0,
+                    "successful_attempts": 0,
+                    "maximum_seconds": None,
+                    "page_seconds": None,
+                    "allowed_seconds": None,
+                    "evidence": [],
+                }
+                for scenario in ANDROID_DELIVERY_SCENARIOS
+            },
+            "lost_messages": None,
+            "server_receipt_duplicates": None,
+            "crash_boundary_display_duplicates": None,
+            "evidence": [],
+        },
+        "android_security": {
+            "keystore_token_ciphertext_verified": None,
+            "outbox_ciphertext_verified": None,
+            "encrypted_photo_verified": None,
+            "wrong_key_decryption_failed": None,
+            "secure_cache_cleared_after_exit": None,
+            "flag_secure_verified": None,
+            "external_share_absent": None,
+            "backup_disabled": None,
+            "evidence": [],
+        },
+        "android_device_lifecycle": {
+            "lost_or_inactive_device_reconnect_blocked": None,
+            "replacement_history_preserved": None,
+            "evidence": [],
+        },
+        "ux_development_items": {
+            "actionable_findings": None,
+            "converted_items": None,
+            "unconverted_actionable_findings": None,
+            "priorities": {priority: None for priority in ("P0", "P1", "P2", "P3")},
+            "classifications": {
+                classification: None
+                for classification in (
+                    "common_product",
+                    "device_or_mdm_setting",
+                    "site_layout_or_training",
+                )
+            },
+            "evidence": [],
         },
         "rollback": {
             target: {
@@ -152,6 +221,34 @@ def prepare(args: argparse.Namespace) -> int:
             "- 최종 판정: 대기\n",
             encoding="utf-8",
         )
+    android_delivery_rows = "".join(
+        ",".join([scenario_id, condition, *("" for _ in range(9)), "NOT_RUN", ""])
+        + "\n"
+        for scenario_id, condition in ANDROID_DELIVERY_CASES
+    )
+    templates = {
+        run_root / "scenario-results" / "android-delivery.csv": (
+            "scenario_id,condition,delivery_run_id,message_id,created_at_utc,"
+            "recovery_ready_at_utc,displayed_at_utc,receipt_at_utc,page_seconds,"
+            "elapsed_seconds,allowed_seconds,result,evidence\n" + android_delivery_rows
+        ),
+        run_root / "scenario-results" / "role-metrics.csv": (
+            "role,participant_id,scenario_id,required,success,elapsed_seconds,"
+            "retry_count,help_request_count,critical_blocker,evidence\n"
+        ),
+        run_root / "observations" / "role-observations.csv": (
+            "observation_id,role,scenario_id,device_id,location,network,gloves,"
+            "one_hand,lighting,input_moment,success,elapsed_seconds,retry_count,"
+            "help_request_count,notes\n"
+        ),
+        run_root / "observations" / "development-items.csv": (
+            "item_id,observation_id,priority,classification,title,acceptance_criteria,"
+            "owner,due_date,status\n"
+        ),
+    }
+    for path, header in templates.items():
+        if not path.exists():
+            path.write_text(header, encoding="utf-8")
     print(f"파일럿 실행 폴더 준비: {run_root}")
     print(f"기계 판정표: {record_path}")
     print("초기 판정: PENDING")
@@ -213,6 +310,8 @@ def verify(args: argparse.Namespace) -> int:
     failures: list[str] = []
     if record.get("run_id") != args.run_id:
         failures.append("판정표 run_id가 실행 폴더 run_id와 다릅니다.")
+    if record.get("schema_version") != 2:
+        failures.append("pilot-run.json schema_version은 2여야 합니다.")
 
     environment = record.get("environment", {})
     if environment.get("customer_like_network") is not True:
@@ -270,6 +369,8 @@ def verify(args: argparse.Namespace) -> int:
         minimum_rate = metric.get("approved_minimum_percent")
         median = metric.get("median_seconds")
         maximum_median = metric.get("approved_max_median_seconds")
+        maximum = metric.get("maximum_seconds")
+        approved_maximum = metric.get("approved_maximum_seconds")
         if not isinstance(required, int) or required <= 0:
             failures.append(f"역할 {role}의 필수 시나리오 분모가 없습니다.")
         if (
@@ -306,11 +407,167 @@ def verify(args: argparse.Namespace) -> int:
             failures.append(
                 f"역할 {role}의 중앙 소요 시간이 승인 기준을 초과하거나 미측정입니다."
             )
+        if (
+            not all(
+                isinstance(value, (int, float)) for value in (maximum, approved_maximum)
+            )
+            or not 0 <= maximum <= approved_maximum
+            or approved_maximum <= 0
+        ):
+            failures.append(
+                f"역할 {role}의 최대 소요 시간이 승인 기준을 초과하거나 미측정입니다."
+            )
+        if (
+            isinstance(median, (int, float))
+            and isinstance(maximum, (int, float))
+            and median > maximum
+        ):
+            failures.append(
+                f"역할 {role}의 중앙 소요 시간이 최대 소요 시간보다 큽니다."
+            )
+        for count_name, count_label in (
+            ("retry_count", "재시도"),
+            ("help_request_count", "도움 요청"),
+        ):
+            count = metric.get(count_name)
+            if not isinstance(count, int) or count < 0:
+                failures.append(f"역할 {role}의 {count_label} 횟수가 미측정입니다.")
         if metric.get("critical_blockers") != 0:
             failures.append(f"역할 {role}의 치명적 blocker가 0이 아닙니다.")
         failures.extend(
             evidence_failures(run_root, metric.get("evidence"), f"역할 {role}")
         )
+
+    android_delivery = record.get("android_delivery", {})
+    delivery_scenarios = android_delivery.get("scenarios", {})
+    for scenario in ANDROID_DELIVERY_SCENARIOS:
+        metric = delivery_scenarios.get(scenario, {})
+        required = metric.get("required_attempts")
+        successful = metric.get("successful_attempts")
+        maximum = metric.get("maximum_seconds")
+        page_seconds = metric.get("page_seconds")
+        allowed = metric.get("allowed_seconds")
+        if not isinstance(required, int) or required <= 0:
+            failures.append(f"Android 전달 시나리오 {scenario}의 분모가 없습니다.")
+        if (
+            not isinstance(successful, int)
+            or not isinstance(required, int)
+            or successful != required
+        ):
+            failures.append(
+                f"Android 전달 시나리오 {scenario}가 전건 성공하지 않았습니다."
+            )
+        if (
+            not all(isinstance(value, (int, float)) for value in (maximum, allowed))
+            or not 0 <= maximum <= allowed
+            or allowed <= 0
+        ):
+            failures.append(
+                f"Android 전달 시나리오 {scenario}가 허용 시간을 초과하거나 미측정입니다."
+            )
+        if scenario in ("normal", "doze") and allowed != 30:
+            failures.append(
+                f"Android 전달 시나리오 {scenario}의 허용 시간은 30초여야 합니다."
+            )
+        if scenario == "disconnect_5m":
+            if not isinstance(page_seconds, (int, float)) or page_seconds < 0:
+                failures.append("Android 5분 단절 복구의 page 시간이 미측정입니다.")
+            elif allowed != 30 + page_seconds:
+                failures.append(
+                    "Android 5분 단절 복구 허용 시간은 30초+page 시간이어야 합니다."
+                )
+        failures.extend(
+            evidence_failures(
+                run_root,
+                metric.get("evidence"),
+                f"Android 전달 시나리오 {scenario}",
+            )
+        )
+    for metric_name, label in (
+        ("lost_messages", "누락 메시지"),
+        ("server_receipt_duplicates", "서버 receipt 중복"),
+    ):
+        if android_delivery.get(metric_name) != 0:
+            failures.append(f"Android {label}가 0건이 아닙니다.")
+    display_duplicates = android_delivery.get("crash_boundary_display_duplicates")
+    if not isinstance(display_duplicates, int) or not 0 <= display_duplicates <= 1:
+        failures.append("Android crash 경계 표시 중복이 0~1건이 아니거나 미측정입니다.")
+    failures.extend(
+        evidence_failures(
+            run_root, android_delivery.get("evidence"), "Android 전달 종합"
+        )
+    )
+
+    android_security = record.get("android_security", {})
+    for check_name in (
+        "keystore_token_ciphertext_verified",
+        "outbox_ciphertext_verified",
+        "encrypted_photo_verified",
+        "wrong_key_decryption_failed",
+        "secure_cache_cleared_after_exit",
+        "flag_secure_verified",
+        "external_share_absent",
+        "backup_disabled",
+    ):
+        if android_security.get(check_name) is not True:
+            failures.append(f"Android 보안 실기 {check_name}가 확인되지 않았습니다.")
+    failures.extend(
+        evidence_failures(
+            run_root, android_security.get("evidence"), "Android 보안 실기"
+        )
+    )
+
+    device_lifecycle = record.get("android_device_lifecycle", {})
+    if device_lifecycle.get("lost_or_inactive_device_reconnect_blocked") is not True:
+        failures.append("분실·비활성 Android 단말의 재접속 차단이 확인되지 않았습니다.")
+    if device_lifecycle.get("replacement_history_preserved") is not True:
+        failures.append("Android 단말 교체 이력 보존이 확인되지 않았습니다.")
+    failures.extend(
+        evidence_failures(
+            run_root,
+            device_lifecycle.get("evidence"),
+            "Android 단말 수명주기",
+        )
+    )
+
+    ux_items = record.get("ux_development_items", {})
+    actionable = ux_items.get("actionable_findings")
+    converted = ux_items.get("converted_items")
+    unconverted = ux_items.get("unconverted_actionable_findings")
+    if (
+        not all(
+            isinstance(value, int) and value >= 0 for value in (actionable, converted)
+        )
+        or actionable != converted
+        or unconverted != 0
+    ):
+        failures.append("UX 조치 가능 관찰이 모두 개발 항목으로 변환되지 않았습니다.")
+    priorities = ux_items.get("priorities", {})
+    classifications = ux_items.get("classifications", {})
+    priority_counts = [
+        priorities.get(priority) for priority in ("P0", "P1", "P2", "P3")
+    ]
+    classification_counts = [
+        classifications.get(classification)
+        for classification in (
+            "common_product",
+            "device_or_mdm_setting",
+            "site_layout_or_training",
+        )
+    ]
+    for counts, label in (
+        (priority_counts, "P0~P3 우선순위"),
+        (classification_counts, "제품/설정/배치·교육 분류"),
+    ):
+        if (
+            not all(isinstance(value, int) and value >= 0 for value in counts)
+            or not isinstance(converted, int)
+            or sum(counts) != converted
+        ):
+            failures.append(f"UX 개발 항목의 {label} 합계가 변환 건수와 다릅니다.")
+    failures.extend(
+        evidence_failures(run_root, ux_items.get("evidence"), "UX 개발 항목 변환")
+    )
 
     rollback = record.get("rollback", {})
     for target in ("server", "wpf", "android"):
@@ -354,7 +611,7 @@ def verify(args: argparse.Namespace) -> int:
         failures.append("pilot-run.json의 최종 status가 PASS가 아닙니다.")
 
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": args.run_id,
         "verified_at_utc": datetime.now(timezone.utc).isoformat(),
         "result": "PASS" if not failures else "FAIL",

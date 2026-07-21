@@ -86,7 +86,7 @@
 - FieldComment 원천은 불변 `source_hash`로, 검토 영역은 별도 `review_revision`으로 관리한다. 검토 PATCH는 WPF에서 base review revision과 mutation key를 보내며 서버 상태를 맞추기 위한 WPF의 자동 중간 상태 생성은 금지한다. 현재 API는 예상 원천 hash를 요청 필드로 받지 않고 응답·감사 snapshot에서 검증한다. 첨부는 부모 ID와 파일 SHA-256을 별도로 검증한다.
 - 보고서는 본문 hash와 정렬된 source ID/version/hash 집합 hash를 하나의 저장 의도로 취급한다. report, 모든 source, 생성 문서/버전과 mutation receipt는 한 서버 transaction에 저장한다. source가 바뀌었거나 사라졌으면 보고서를 낡은 근거로 자동 저장하지 않는다.
 - 작업순서는 WPF 동기화 큐에 넣지 않고 서버 직접 API로 운영한다. 보드 revision이 보드·항목의 동시성을 직렬화하고 서버 mutation transaction이 change history를 정확히 한 번 만든다. WPF 로컬 작업순서 테이블은 전환 기간의 오프라인 초안·읽기 캐시와 기존 테스트 기록으로 보존하며 서버 미연결 상태의 운영 확정은 금지한다.
-- 재시도 순서는 문서 등록 → 버전 → 공개 → 상태/태그 → FieldComment 원천 → 검토 → 첨부 → 접근 로그 → 보고서/source다. 같은 aggregate는 직렬화한다. 선행 ID 누락은 attempt를 늘리지 않고 보류하고, 공통 인증·연결 장애는 묶음을 중단한다.
+- WPF 큐 재시도 순서는 문서 등록 → 버전 → 공개 → 상태 → FieldComment 원천 → 검토 → 첨부 → 접근 로그 → 보고서/source다. 같은 aggregate는 직렬화한다. 태그 교체 서버 API는 구현되어 있지만 현재 WPF `server_sync_queue` action에는 포함되지 않는다. 선행 ID 누락은 attempt를 늘리지 않고 보류하고, 공통 인증·연결 장애는 묶음을 중단한다.
 - 서버는 설치 ID와 복구 epoch를 분리한다. instance/epoch 변경이나 cursor 역행을 감지하면 WPF는 mutation과 polling을 중지하고 기존 cursor·mapping을 보존한 채 reconciliation을 실행한다. 같은 key/hash는 새 ID에 재결합하고, 서버에 없으면 같은 key로 재전송하며, 불일치는 `SERVER_RECOVERY_DIVERGED`로 보존한다. 관리자 감사 후에만 cursor 0 재추적을 허용하고 처리한 `message_id`는 유지한다.
 - 수렴 완료는 비종결 큐 0건, 동일 idempotency key 서버 중복 0건, orphan mapping/source 0건, 문서 공개 포인터·source/version ID·hash 일치와 cursor 재추적 완료를 모두 요구한다. AI 후보 재생성과 보고서 운영은 이 gate 뒤에 수행한다.
 

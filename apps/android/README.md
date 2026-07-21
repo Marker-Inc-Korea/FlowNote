@@ -74,7 +74,7 @@ export FLOWNOTE_ANDROID_KEY_PASSWORD='보안 입력 경로에서 주입'
 
 조직 소유 서명키는 최소 2인 승인으로 오프라인/HSM 또는 승인된 비밀 저장소에 보관한다. 같은 applicationId의 무중단 업그레이드는 같은 키가 필요하다. 키 유출은 기존 키로 서명한 빌드 중단, MDM 차단, 새 applicationId 또는 승인된 키 회전 기능을 통한 재배포가 필요한 보안 사고다. 키 분실은 기존 앱을 새 키로 업그레이드할 수 없으므로 단말별 outbox 처리 후 제거·재등록 절차를 따른다.
 
-`scripts/verify-android-release.sh <run_id> <signed.apk> data/local/pilot-evidence [--install] [--rollback <previous.apk>]`는 정확히 한 대의 승인 단말만 연결된 조건에서 APK hash, 인증서 지문, package 정보, device idle 상태와 전달 로그를 보존하고 선택적으로 업그레이드/rollback을 실행한다. 실제 키와 운영 패키지는 Git 제외다.
+`scripts/verify-android-release.sh <run_id> <signed.apk> data/local/pilot-evidence [--install] [--rollback <previous.apk>]`는 정확히 한 대의 승인 단말만 연결된 조건에서 APK hash, 인증서 지문, package 정보, device idle 상태와 전달 로그를 보존하고 선택적으로 업그레이드/rollback을 실행한다. 기존 `android-delivery.csv`가 없으면 정상, Doze, 5분 단절, 재부팅, 서버 주소 변경, access token 만료, refresh 거부, 강제 중지 뒤 kiosk 재실행의 8개 측정 행을 만든다. 실제 키와 운영 패키지는 Git 제외다.
 
 ## 제외 범위
 

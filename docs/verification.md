@@ -2,6 +2,18 @@
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
 
+## 2026-07-21 작업 102 파일럿 판정 schema 2 문서 갱신
+
+현재 작업 트리의 코드 변경을 우선해 파일럿 실행 문서를 다시 맞췄다. `manage-pilot-run.py`는 `pilot-run.json` schema version 2와 네 개의 원시 측정 CSV를 만들고, 기존 실행·CSV는 기본적으로 덮어쓰지 않는다. 필수 게이트에는 Android 보안 저장/뷰어, 전달/복구, MDM kiosk 재시작이 추가됐으며 역할별 최대 시간·재시도·도움 요청, 8개 Android 전달 시나리오, 보안 실기 8개 항목, 단말 재접속 차단/교체 이력, UX 관찰의 개발 항목 전환을 증거 파일과 함께 판정한다.
+
+`verify-android-release.sh`의 신규 `android-delivery.csv`도 동일한 8개 condition과 `elapsed_seconds`·`allowed_seconds` 열을 사용하도록 배포 문서와 Android README를 갱신했다. 정상·Doze는 30초, 5분 단절은 `30 + page_seconds`를 강제하고, 누락·서버 receipt 중복은 0건, crash 경계 표시 중복은 최대 1건만 허용한다. 이번 요청은 문서 갱신이므로 실제 고객 유사망 파일럿, APK 설치/rollback, 전체 테스트·빌드는 실행하지 않았고 기존 테스트 DB·로그·산출물은 삭제하지 않았다.
+
+## 2026-07-21 작업 207 전체 Markdown 현재 코드 재대조
+
+Git 추적 Markdown 42개를 목록화하고 작업 정책 원문 `AGENTS.md`를 제외한 제품·구현 문서 41개를 FastAPI, WPF, Android와 운영 스크립트에 대조했다. 가상환경·빌드 캐시·`data/local`·`tmp`의 Markdown은 외부 의존 또는 누적 테스트 증거이므로 수정하지 않았다. 과거 일일 기록은 당시 작업 맥락을 유지하되 “현재 코드 기준” 절에 서버 권위 revision·도메인별 mutation receipt·instance/epoch manifest와 관리자 승인형 reconciliation을 반영했다.
+
+현재 코드에서 재산출한 값은 OpenAPI 122개 method/path 조합, SQLAlchemy ORM 57개 테이블, `Settings` 36개 항목, 중복 없는 pytest node ID 143개다. `services/api/README.md`의 API 표는 OpenAPI와 누락·초과 0건이고 로컬 Markdown 링크도 누락 0건이다. `docs/api.md`의 태그 교체 경로에서 query parameter를 route에 합쳐 적은 표기와 reconciliation 원천 없음 설명, `docs/data-model.md`의 잘못된 reconciliation run 상태 `RUNNING/COMPLETED`, FastAPI 테스트 README의 reconciliation 회귀 범위 누락을 현재 코드 계약으로 바로잡았다. 또한 WPF 탐색기 문서에 실제 상단 버튼과 별도 `AI 정답셋`·`AI 운영` 역할을 반영하고, FieldComment 역추적 경로에 `/api/v1`을 복원했으며, WPF 재시도 큐에 없는 태그 교체를 큐 순서에서 제외했다. 전체 pytest·WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았고 기존 SQLite, 로그, 테스트 파일과 산출물은 삭제하지 않았다. 표준 스크립트 guard는 여전히 131건이므로 143건으로 갱신하고 Windows 무생략 `verification-summary.json=PASSED`를 확보하기 전까지 통합 기준선은 `대기`다.
+
 ## 2026-07-21 작업 102 현재 코드 문서 재대조
 
 작업 시작 시 Git 작업 트리와 `main...origin/main`은 깨끗해 반영할 미커밋 코드는 없었다. 최근 구현된 서버 복구 manifest/reconciliation, WPF 재결합 경계와 관련 상위 문서는 현재 코드와 일치했다. 다만 `services/api/README.md`의 FastAPI 수집 기준만 서버 복구 회귀 6건이 추가되기 전인 137건에 머물러 있어 현재 수집값 143건으로 갱신했다.

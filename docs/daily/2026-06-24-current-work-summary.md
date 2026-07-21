@@ -11,11 +11,13 @@
 - 허용 role은 현재 공개 버전을 1회성 controlled copy로 저장할 수 있고 서버와 WPF가 SHA-256을 검증한다.
 - FieldComment는 문서와 분리된 현장 원천 기록으로 관리한다.
 - 작업순서 보드와 항목, 변경 이력, 알림 후보를 관리한다.
+- 작업순서 변경은 서버 `board_revision`과 mutation receipt, FieldComment 검토는 `review_revision`과 검토 receipt, 보고서 저장은 `report_revision`·내용/source 집합 hash와 보고서 receipt로 직렬화한다.
 - 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인을 관리한다.
 - 보고서는 FieldComment와 문서 데이터를 바탕으로 초안 생성 보조와 저장 기능을 제공한다.
 - AI 검색 전 단계의 근거 후보 재생성, 목록 조회, 품질 점검 API를 제공한다.
 - 독립 2인 승인 ground-truth 사례, 불변 dataset version에 결합된 회귀 평가, 외부 AI 질의의 기본 비활성·승인·근거 snapshot·응답 검증·인용 감사, `system-admin` 운영 제어와 자동 만료 보존을 제공한다. generic 네트워크 adapter는 명시적 test scope에만 있고 provider별 운영 client는 없다.
 - 서버 계정 생성·변경·재설정·세션 폐기와 `must_change_password` 강제 변경 흐름을 제공한다.
+- 서버 instance/epoch/API contract manifest와 WPF 큐 inventory reconciliation, 관리자 승인 적용 이력을 제공한다.
 
 ## Windows 앱
 
@@ -26,6 +28,7 @@
 - 기본 DB는 저장소 루트의 `data/local/flownote.local.sqlite`이다.
 - `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`가 있으면 해당 위치를 우선한다.
 - 서버 scope·사용자별 알림 cursor와 처리 메시지를 로컬 SQLite에 보존하고 cursor 역행 시 polling을 중지한다.
+- 서버 URL·instance·epoch 변경이나 cursor 역행 시 자동 동기화와 polling을 함께 중지하고, `서버 재결합` 화면에서 판정과 조치를 승인한 뒤 binding·mapping·큐를 적용한다.
 
 ## 현재 문서 기준
 

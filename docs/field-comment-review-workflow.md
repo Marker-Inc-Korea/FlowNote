@@ -56,7 +56,7 @@
 - 보고서 aggregate는 `report_revision`, 정규화 내용의 `content_hash_sha256`, 정렬된 source tuple의 `source_set_hash_sha256`를 가진다. 승인 시 보고서, source, 생성 문서/버전, mutation receipt를 같은 DB transaction으로 확정한다.
 - 보고서 선정 뒤 원천 상태·version·hash가 바뀌면 기존 초안을 자동 갱신하거나 과거 snapshot으로 승인하지 않는다. 저장을 `REPORT_SOURCE_STALE_OR_ORPHAN` 409로 멈추고 원천을 재검토한 뒤 새 source-set hash로 새 보고서 mutation을 만든다. 이미 승인된 보고서는 원래 source snapshot을 보존하고 정정 보고서로 연결한다.
 - source에 연결된 활성 업무 채널이 있으면 `admin`, `system-admin` 외 사용자는 활성 채널 멤버여야 한다.
-- `GET /field-comments/{comment_id}/traceability`와 WPF `서버 역추적`은 원천 hash, 상태 전이 감사, 보고서 source, 생성된 최종 문서와 모든 문서 버전 ID를 한 흐름으로 보여준다.
+- `GET /api/v1/field-comments/{comment_id}/traceability`와 WPF `서버 역추적`은 원천 hash, 상태 전이 감사, 보고서 source, 생성된 최종 문서와 모든 문서 버전 ID를 한 흐름으로 보여준다.
 - WPF 보고서 저장 결과는 보고서 ID, 생성 문서 ID와 각 source의 type/id/version/trace ID/hash를 함께 표시한다. 이 화면에서 확인한 FieldComment ID를 관리자 검토 화면의 서버 역추적으로 조회하면 반대 방향 연결도 확인할 수 있다.
 
 ## 보고서 폐기와 source 보존

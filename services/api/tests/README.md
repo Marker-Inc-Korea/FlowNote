@@ -39,6 +39,7 @@
 - fake/recording/제한형 network adapter의 성공·timeout·429/5xx 재시도·비재시도 오류, 응답 구조·크기·중복·prompt injection·의미 일치 검증
 - `system-admin` 외부 AI 승인·프롬프트·정책·감사·CSV·보존 API, 자동/즉시 만료 처리와 정제 감사 보존
 - 서버 계정 비밀번호 재설정, 잠금/비활성화, 계정 생성, role 변경 운영 스크립트와 수명주기 API 검증
+- 서버 instance ID 안정성·명시적 epoch 증가, sync manifest, WPF 큐 inventory의 `CONFIRMED`/`ABSENT`/`DIVERGED` 판정, 관리자 승인 적용과 divergence 감사 보존, 복구 장애 유형별 독립 reconciliation run 검증
 
 ## 실행
 
