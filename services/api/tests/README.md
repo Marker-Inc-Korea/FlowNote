@@ -25,6 +25,7 @@
 - 문서 열람 로그 등록/목록
 - controlled copy 전체 role 정책, 1회성·만료·사용자/세션 바인딩, Range·경로·크기·해시·감사 검증
 - 작업순서 보드 생성, 항목 추가, 전체 순서 변경, 상태 변경, 이력, 알림 후보 기록
+- 작업순서 mutation의 revision 증가·no-op 거부, 동일 key 재시도, key의 다른 intent 재사용 거부, 동일 revision 두 client 경쟁의 1건만 성공, API 재시작 후 receipt 재사용
 - 공통 채널 생성, 멤버 관리, 메시지 조회, 사용자별 알림 읽음 처리
 - 인수인계 등록과 수신자별 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 상태 기록
 - 보고서 초안 생성 보조, 보고서 등록, 목록, 상세 조회
@@ -44,6 +45,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-07-21 현재 FastAPI 테스트 코드와 저장소 루트 `scripts/verify-preserved-tests.ps1`의 수집/JUnit 기준은 모두 중복 없는 node ID 131개다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1` 한 번으로 FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존한다. macOS 보조 run `baseline-131-macos-precheck-20260721-001`은 FastAPI 131 passed와 failure/error/skipped 0만 확인했으며 WPF/Android 실제 테스트 수는 모두 `NOT_RUN`이다. 최신 통합 `PASSED` run은 Windows 실행 결과를 `docs/verification.md`와 `docs/deployment.md`에 기록하기 전까지 확정하지 않는다.
+2026-07-21 현재 FastAPI 테스트 코드는 중복 없는 node ID 134개를 수집한다. 저장소 루트 `scripts/verify-preserved-tests.ps1`의 수집/JUnit guard는 131개에 머물러 있어 현재 코드와 일치하지 않는다. 전체 표준 검증은 guard를 134개로 갱신한 뒤 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1` 한 번으로 FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존한다. `baseline-131-macos-precheck-20260721-001`은 과거 FastAPI 131 passed만 확인한 보조 run이며 WPF/Android는 `NOT_RUN`이다. 새 Windows 통합 `PASSED` run을 확보하기 전까지 최신 통합 기준선으로 승격하지 않는다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.

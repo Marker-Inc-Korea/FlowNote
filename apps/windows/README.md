@@ -24,7 +24,7 @@
 - FieldComment 작성과 첨부 저장, 원천 불변 검증, 단계형 관리자 검토, 담당자·기한 지정, 다중 선택 일괄 변경, 감사·품질 작업함
 - 알림, 전체 이력
 - 관리자 파일 감시 후보 처리
-- 작업순서 관리자 화면과 TV 화면
+- 작업순서 관리자 화면과 TV 화면. 서버 snapshot·`board_revision`을 권위 원천으로 사용하고 mutation key와 `baseBoardRevision`으로 직접 변경하며, 미연결/조회 실패 시 로컬 row는 읽기 캐시·초안으로만 표시하고 모든 확정 변경을 차단
 - 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도
 - 채널함: 서버 내 채널, 채널 메시지/알림, 인수인계 조회, 읽음/수신 확인, 원천 링크 복사, 후속 FieldComment 생성
 - 채널 관리: 서버 채널 생성, 멤버 추가/제외
@@ -118,7 +118,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-현재 FastAPI 코드와 표준 스크립트의 수집/JUnit guard는 모두 131건이다. 최신 개발 호스트에는 Windows/.NET/JDK/Android SDK가 없어 WPF Core·앱 build·누적 스모크·Android build를 한 run으로 완료할 수 없다. 새 Windows 무생략 `verification-summary.json=PASSED`가 나올 때까지 마지막 통합 기준선 재확립은 `대기`로 본다.
+현재 FastAPI 코드는 134건을 수집하지만 표준 스크립트의 수집/JUnit guard는 아직 131건이다. 작업순서 서버 권위 회귀 3건이 추가된 현재 코드에 맞게 guard를 갱신하고 Windows에서 WPF Core·앱 build·누적 스모크·Android build를 한 run으로 완료해야 한다. 새 Windows 무생략 `verification-summary.json=PASSED`가 나올 때까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

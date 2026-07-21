@@ -26,8 +26,9 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `field_comment_attachments` | FieldComment attachment relation |
 | `comment_templates` | Template text for field input |
 | `work_records`, `work_record_versions` | Work record basis for later expansion |
-| `work_sequence_boards`, `work_sequence_items` | Work sequence boards and items |
-| `work_sequence_change_history` | Work sequence changes |
+| `work_sequence_boards`, `work_sequence_items` | Work sequence boards, aggregate `board_revision`, ordered items, and hold reasons |
+| `work_sequence_change_history` | One change row per mutation key with the applied board revision |
+| `work_sequence_mutation_receipts` | Mutation intent hash, result revision/change ID, and first response snapshot for idempotent retries |
 | `work_sequence_notification_candidates` | Work sequence notification candidates |
 | `notification_channels`, `notification_channel_members` | Shared business channels and channel membership |
 | `channel_messages` | Traceable channel messages for document, FieldComment, work sequence, report, and handover events |

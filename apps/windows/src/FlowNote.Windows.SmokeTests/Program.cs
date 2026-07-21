@@ -33,6 +33,12 @@ var runId = NormalizeRunId(requestedRunId, runStartedAt.ToString("yyyyMMddHHmmss
 
 Console.WriteLine($"Integrated smoke run: id={runId}, startedAt={runStartedAt:O}, database={databasePath}");
 
+if (args.Contains("--work-sequence-concurrency-only", StringComparer.Ordinal))
+{
+    await RunWorkSequenceConcurrencySmokeAsync(runId);
+    return;
+}
+
 try
 {
     var services = new FlowNoteLocalServices(databasePath);
@@ -2037,7 +2043,8 @@ try
                     Description = "Server work sequence API smoke block.",
                     LineCode = "line-a",
                     BoardDate = DateOnly.FromDateTime(DateTime.Today),
-                    CreatedBy = serverLogin.UserId
+                    CreatedBy = serverLogin.UserId,
+                    IdempotencyKey = $"wpf-smoke-board-{runId}"
                 });
             Require(!string.IsNullOrWhiteSpace(serverWorkSequenceBoard.BoardId), "server work sequence board should receive an id");
             Require(serverWorkSequenceBoard.Items.Count == 0, "new server work sequence board should start empty");
@@ -2048,7 +2055,9 @@ try
                 {
                     Title = $"Server prepare material {runStamp}",
                     AssignedTo = "line-a",
-                    CreatedBy = serverLogin.UserId
+                    CreatedBy = serverLogin.UserId,
+                    IdempotencyKey = $"wpf-smoke-item-1-{runId}",
+                    BaseBoardRevision = serverWorkSequenceBoard.BoardRevision
                 });
             var serverFirstItem = serverWorkSequenceWithFirstItem.Items.Single();
             Require(serverFirstItem.Status == "WAITING", "server work sequence item should start in WAITING");
@@ -2059,7 +2068,9 @@ try
                 {
                     Title = $"Server start press run {runStamp}",
                     WorkOrderNo = $"WO-{runStamp}",
-                    CreatedBy = serverLogin.UserId
+                    CreatedBy = serverLogin.UserId,
+                    IdempotencyKey = $"wpf-smoke-item-2-{runId}",
+                    BaseBoardRevision = serverWorkSequenceWithFirstItem.BoardRevision
                 });
             var serverSecondItem = serverWorkSequenceWithSecondItem.Items.Single(item => item.ItemId != serverFirstItem.ItemId);
             Require(serverSecondItem.SortOrder == 2, "server second work sequence item should be appended");
@@ -2070,7 +2081,9 @@ try
                 {
                     ItemIds = [serverSecondItem.ItemId, serverFirstItem.ItemId],
                     ActorId = serverLogin.UserId,
-                    ChangeReason = "Windows smoke changed server work priority."
+                    ChangeReason = "Windows smoke changed server work priority.",
+                    IdempotencyKey = $"wpf-smoke-order-{runId}",
+                    BaseBoardRevision = serverWorkSequenceWithSecondItem.BoardRevision
                 });
             Require(
                 serverReorderedBoard.Items[0].ItemId == serverSecondItem.ItemId,
@@ -2083,19 +2096,74 @@ try
                 {
                     Status = "IN_PROGRESS",
                     ActorId = serverLogin.UserId,
-                    ChangeReason = "Windows smoke started server work."
+                    ChangeReason = "Windows smoke started server work.",
+                    IdempotencyKey = $"wpf-smoke-status-{runId}",
+                    BaseBoardRevision = serverReorderedBoard.BoardRevision
                 });
             Require(
                 serverStatusBoard.Items[0].Status == "IN_PROGRESS",
                 "server work sequence status change should persist");
+
+            using var competingHttpClient = FlowNoteServerApiEnvironment.CreateHttpClient(
+                serverSmokeBaseUrl,
+                TimeSpan.FromSeconds(20))
+                ?? throw new InvalidOperationException("second WPF work sequence client requires the server URL");
+            competingHttpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", serverLogin.AccessToken);
+            var competingDocuments = new FlowNoteServerDocumentClient(competingHttpClient);
+            var competingBaseRevision = serverStatusBoard.BoardRevision;
+            var competingOrderKey = $"wpf-smoke-compete-order-{runId}";
+            var competingStatusKey = $"wpf-smoke-compete-status-{runId}";
+            var firstClientMutation = CaptureWorkSequenceMutationAsync(() =>
+                serverDocuments.ReorderWorkSequenceItemsAsync(
+                    serverWorkSequenceBoard.BoardId,
+                    new ServerWorkSequenceReorderRequest
+                    {
+                        ItemIds = [serverFirstItem.ItemId, serverSecondItem.ItemId],
+                        ActorId = serverLogin.UserId,
+                        ChangeReason = "첫 번째 WPF 경쟁 순서 변경",
+                        IdempotencyKey = competingOrderKey,
+                        BaseBoardRevision = competingBaseRevision
+                    }));
+            var secondClientMutation = CaptureWorkSequenceMutationAsync(() =>
+                competingDocuments.UpdateWorkSequenceItemStatusAsync(
+                    serverWorkSequenceBoard.BoardId,
+                    serverSecondItem.ItemId,
+                    new ServerWorkSequenceStatusUpdateRequest
+                    {
+                        Status = "COMPLETED",
+                        ActorId = serverLogin.UserId,
+                        ChangeReason = "두 번째 WPF 경쟁 상태 변경",
+                        IdempotencyKey = competingStatusKey,
+                        BaseBoardRevision = competingBaseRevision
+                    }));
+            var competingResults = await Task.WhenAll(firstClientMutation, secondClientMutation);
+            Require(
+                competingResults.Count(result => result.Result is not null) == 1 &&
+                competingResults.Count(result => result.Conflict?.ConflictCode == "WORK_SEQUENCE_STALE_REVISION") == 1,
+                "two WPF clients on one board revision should have one success and one stale-revision conflict");
+            var firstClientSnapshot = await serverDocuments.GetWorkSequenceBoardAsync(serverWorkSequenceBoard.BoardId);
+            var secondClientSnapshot = await competingDocuments.GetWorkSequenceBoardAsync(serverWorkSequenceBoard.BoardId);
+            Require(
+                firstClientSnapshot.BoardRevision == competingBaseRevision + 1 &&
+                firstClientSnapshot.BoardRevision == secondClientSnapshot.BoardRevision &&
+                firstClientSnapshot.Items.Select(item => (item.ItemId, item.SortOrder, item.Status))
+                    .SequenceEqual(secondClientSnapshot.Items.Select(item => (item.ItemId, item.SortOrder, item.Status))),
+                "both WPF clients should converge to the same server order, status, and revision after refresh");
 
             var serverWorkSequenceHistory = await serverDocuments.ListWorkSequenceHistoryAsync(serverWorkSequenceBoard.BoardId);
             Require(
                 serverWorkSequenceHistory.Any(item => item.ChangeType == "ITEM_REORDERED"),
                 "server work sequence history should include reorder");
             Require(
-                serverWorkSequenceHistory.Any(item => item.ChangeType == "STATUS_CHANGED"),
+                serverWorkSequenceHistory.Any(item => item.ChangeType == "ITEM_STATUS_CHANGED"),
                 "server work sequence history should include status change");
+            var successfulCompetingKey = competingResults[0].Result is not null
+                ? competingOrderKey
+                : competingStatusKey;
+            Require(
+                serverWorkSequenceHistory.Count(item => item.MutationKey == successfulCompetingKey) == 1,
+                "successful competing WPF mutation should have exactly one semantic history row");
 
             var serverNotificationCandidates =
                 await serverDocuments.ListWorkSequenceNotificationCandidatesAsync(serverWorkSequenceBoard.BoardId);
@@ -3553,7 +3621,8 @@ try
                     Title = $"Server report source sequence {runStamp}",
                     LineCode = "line-a",
                     BoardDate = DateOnly.FromDateTime(DateTime.Today),
-                    CreatedBy = serverLogin.UserId
+                    CreatedBy = serverLogin.UserId,
+                    IdempotencyKey = $"wpf-smoke-report-board-{runId}"
                 });
             var reportSequenceWithItem = await serverDocuments.AddWorkSequenceItemAsync(
                 reportSequenceBoard.BoardId,
@@ -3561,7 +3630,9 @@ try
                 {
                     Title = $"Server report source item {runStamp}",
                     DocumentId = serverDocument.DocumentId,
-                    CreatedBy = serverLogin.UserId
+                    CreatedBy = serverLogin.UserId,
+                    IdempotencyKey = $"wpf-smoke-report-item-{runId}",
+                    BaseBoardRevision = reportSequenceBoard.BoardRevision
                 });
             var reportSequenceItem = reportSequenceWithItem.Items.Single();
             var reportSequenceHistory = await serverDocuments.ListWorkSequenceHistoryAsync(reportSequenceBoard.BoardId);
@@ -3962,7 +4033,8 @@ try
                     Description = "AI 후보 품질 검증용 작업순서 이력",
                     LineCode = "line-a",
                     BoardDate = DateOnly.FromDateTime(DateTime.Today),
-                    CreatedBy = serverLogin.UserId
+                    CreatedBy = serverLogin.UserId,
+                    IdempotencyKey = $"wpf-smoke-ai-board-{runId}"
                 });
             var aiServerBoardWithFirstItem = await serverDocuments.AddWorkSequenceItemAsync(
                 aiServerBoard.BoardId,
@@ -3971,7 +4043,9 @@ try
                     Title = $"가이드핀 청소 확인 {runStamp}",
                     DocumentId = aiServerPublishedDocument.DocumentId,
                     AssignedTo = "line-a",
-                    CreatedBy = serverLogin.UserId
+                    CreatedBy = serverLogin.UserId,
+                    IdempotencyKey = $"wpf-smoke-ai-item-1-{runId}",
+                    BaseBoardRevision = aiServerBoard.BoardRevision
                 });
             var aiServerFirstItem = aiServerBoardWithFirstItem.Items.Single();
             var aiServerBoardWithSecondItem = await serverDocuments.AddWorkSequenceItemAsync(
@@ -3981,16 +4055,20 @@ try
                     Title = $"센서 재영점 확인 {runStamp}",
                     DocumentId = aiServerPublishedDocument.DocumentId,
                     AssignedTo = "line-a",
-                    CreatedBy = serverLogin.UserId
+                    CreatedBy = serverLogin.UserId,
+                    IdempotencyKey = $"wpf-smoke-ai-item-2-{runId}",
+                    BaseBoardRevision = aiServerBoardWithFirstItem.BoardRevision
                 });
             var aiServerSecondItem = aiServerBoardWithSecondItem.Items.Single(item => item.ItemId != aiServerFirstItem.ItemId);
-            _ = await serverDocuments.ReorderWorkSequenceItemsAsync(
+            var aiServerReorderedBoard = await serverDocuments.ReorderWorkSequenceItemsAsync(
                 aiServerBoard.BoardId,
                 new ServerWorkSequenceReorderRequest
                 {
                     ItemIds = [aiServerSecondItem.ItemId, aiServerFirstItem.ItemId],
                     ActorId = serverLogin.UserId,
-                    ChangeReason = "AI 후보 품질 스모크에서 작업 우선순위를 재정렬함."
+                    ChangeReason = "AI 후보 품질 스모크에서 작업 우선순위를 재정렬함.",
+                    IdempotencyKey = $"wpf-smoke-ai-order-{runId}",
+                    BaseBoardRevision = aiServerBoardWithSecondItem.BoardRevision
                 });
             _ = await serverDocuments.UpdateWorkSequenceItemStatusAsync(
                 aiServerBoard.BoardId,
@@ -3999,11 +4077,13 @@ try
                 {
                     Status = "IN_PROGRESS",
                     ActorId = serverLogin.UserId,
-                    ChangeReason = $"AI 후보 품질 스모크에서 센서 재영점 확인을 착수함. {aiEvaluationToken}"
+                    ChangeReason = $"AI 후보 품질 스모크에서 센서 재영점 확인을 착수함. {aiEvaluationToken}",
+                    IdempotencyKey = $"wpf-smoke-ai-status-{runId}",
+                    BaseBoardRevision = aiServerReorderedBoard.BoardRevision
                 });
             var aiServerHistory = await serverDocuments.ListWorkSequenceHistoryAsync(aiServerBoard.BoardId);
             var aiServerTraceHistory = aiServerHistory.First(item =>
-                item.ChangeType == "STATUS_CHANGED" &&
+                item.ChangeType == "ITEM_STATUS_CHANGED" &&
                 item.ItemId == aiServerSecondItem.ItemId &&
                 !string.IsNullOrWhiteSpace(item.ChangeReason));
 
@@ -5100,6 +5180,120 @@ static byte[] BuildPdf(IReadOnlyList<byte[]> objects)
     output.Write(Encoding.ASCII.GetBytes(
         $"trailer\n<< /Size {objects.Count + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n"));
     return output.ToArray();
+}
+
+static async Task<(ServerWorkSequenceBoardResponse? Result, FlowNoteServerConflictException? Conflict)>
+    CaptureWorkSequenceMutationAsync(Func<Task<ServerWorkSequenceBoardResponse>> mutation)
+{
+    try
+    {
+        return (await mutation(), null);
+    }
+    catch (FlowNoteServerConflictException exception)
+    {
+        return (null, exception);
+    }
+}
+
+static async Task RunWorkSequenceConcurrencySmokeAsync(string runId)
+{
+    var configuredBaseUrl = Environment.GetEnvironmentVariable(
+        FlowNoteServerApiEnvironment.ApiBaseUrlEnvironmentVariable);
+    var baseUrl = string.IsNullOrWhiteSpace(configuredBaseUrl)
+        ? FlowNoteServerApiEnvironment.LocalLoopbackApiBaseUrl
+        : configuredBaseUrl;
+    using var firstHttp = FlowNoteServerApiEnvironment.CreateHttpClient(baseUrl, TimeSpan.FromSeconds(20))
+        ?? throw new InvalidOperationException("작업순서 경쟁 스모크에 유효한 서버 URL이 필요합니다.");
+    using var secondHttp = FlowNoteServerApiEnvironment.CreateHttpClient(baseUrl, TimeSpan.FromSeconds(20))
+        ?? throw new InvalidOperationException("작업순서 경쟁 스모크에 두 번째 서버 클라이언트가 필요합니다.");
+    var auth = new FlowNoteServerAuthClient(firstHttp);
+    var login = await auth.TryLoginAsync("admin", "1234")
+        ?? throw new InvalidOperationException("작업순서 경쟁 스모크 서버 로그인에 실패했습니다.");
+    firstHttp.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken);
+    secondHttp.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken);
+    var firstClient = new FlowNoteServerDocumentClient(firstHttp);
+    var secondClient = new FlowNoteServerDocumentClient(secondHttp);
+
+    var board = await firstClient.CreateWorkSequenceBoardAsync(new ServerWorkSequenceBoardCreateRequest
+    {
+        Title = $"두 WPF 경쟁 스모크 {runId}",
+        LineCode = "line-a",
+        BoardDate = DateOnly.FromDateTime(DateTime.Today),
+        CreatedBy = login.UserId,
+        IdempotencyKey = $"wpf-concurrency-board-{runId}"
+    });
+    var firstAdded = await firstClient.AddWorkSequenceItemAsync(
+        board.BoardId,
+        new ServerWorkSequenceItemCreateRequest
+        {
+            Title = "첫 작업",
+            CreatedBy = login.UserId,
+            IdempotencyKey = $"wpf-concurrency-item-1-{runId}",
+            BaseBoardRevision = board.BoardRevision
+        });
+    var secondAdded = await firstClient.AddWorkSequenceItemAsync(
+        board.BoardId,
+        new ServerWorkSequenceItemCreateRequest
+        {
+            Title = "둘째 작업",
+            CreatedBy = login.UserId,
+            IdempotencyKey = $"wpf-concurrency-item-2-{runId}",
+            BaseBoardRevision = firstAdded.BoardRevision
+        });
+    var firstItem = secondAdded.Items[0];
+    var secondItem = secondAdded.Items[1];
+    var baseRevision = secondAdded.BoardRevision;
+    var orderKey = $"wpf-concurrency-order-{runId}";
+    var statusKey = $"wpf-concurrency-status-{runId}";
+    var results = await Task.WhenAll(
+        CaptureWorkSequenceMutationAsync(() => firstClient.ReorderWorkSequenceItemsAsync(
+            board.BoardId,
+            new ServerWorkSequenceReorderRequest
+            {
+                ItemIds = [secondItem.ItemId, firstItem.ItemId],
+                ActorId = login.UserId,
+                ChangeReason = "첫 WPF 순서 경쟁",
+                IdempotencyKey = orderKey,
+                BaseBoardRevision = baseRevision
+            })),
+        CaptureWorkSequenceMutationAsync(() => secondClient.UpdateWorkSequenceItemStatusAsync(
+            board.BoardId,
+            firstItem.ItemId,
+            new ServerWorkSequenceStatusUpdateRequest
+            {
+                Status = "IN_PROGRESS",
+                ActorId = login.UserId,
+                ChangeReason = "둘째 WPF 상태 경쟁",
+                IdempotencyKey = statusKey,
+                BaseBoardRevision = baseRevision
+            })));
+
+    Require(results.Count(result => result.Result is not null) == 1, "경쟁 mutation 성공은 한 건이어야 합니다.");
+    Require(
+        results.Count(result => result.Conflict?.ConflictCode == "WORK_SEQUENCE_STALE_REVISION") == 1,
+        "경쟁 mutation 실패 한 건은 WORK_SEQUENCE_STALE_REVISION이어야 합니다.");
+    var firstSnapshot = await firstClient.GetWorkSequenceBoardAsync(board.BoardId);
+    var secondSnapshot = await secondClient.GetWorkSequenceBoardAsync(board.BoardId);
+    Require(firstSnapshot.BoardRevision == baseRevision + 1, "성공 mutation은 board revision을 한 번만 증가시켜야 합니다.");
+    Require(
+        firstSnapshot.BoardRevision == secondSnapshot.BoardRevision &&
+        firstSnapshot.Items.Select(item => (item.ItemId, item.SortOrder, item.Status))
+            .SequenceEqual(secondSnapshot.Items.Select(item => (item.ItemId, item.SortOrder, item.Status))),
+        "새로고침 뒤 두 WPF snapshot의 순서, 상태, revision이 일치해야 합니다.");
+    var successfulKey = results[0].Result is not null ? orderKey : statusKey;
+    var history = await firstClient.ListWorkSequenceHistoryAsync(board.BoardId);
+    Require(history.Count(item => item.MutationKey == successfulKey) == 1, "성공 mutation 이력은 정확히 한 건이어야 합니다.");
+    Console.WriteLine(JsonSerializer.Serialize(new
+    {
+        result = "PASSED",
+        boardId = board.BoardId,
+        baseBoardRevision = baseRevision,
+        finalBoardRevision = firstSnapshot.BoardRevision,
+        successfulMutationKey = successfulKey,
+        staleConflictCode = results.Single(result => result.Conflict is not null).Conflict!.ConflictCode,
+        historyCount = history.Count(item => item.MutationKey == successfulKey),
+        items = firstSnapshot.Items.Select(item => new { item.ItemId, item.SortOrder, item.Status })
+    }));
 }
 
 sealed record RolePolicyExpectation(

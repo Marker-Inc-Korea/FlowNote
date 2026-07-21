@@ -443,7 +443,12 @@ def _ensure_work_sequence_columns(database: Database) -> None:
         return
 
     targets = {
+        "work_sequence_boards": (("board_revision", "INTEGER NOT NULL DEFAULT 1"),),
         "work_sequence_items": (("hold_reason", "TEXT"),),
+        "work_sequence_change_history": (
+            ("mutation_key", "VARCHAR(160)"),
+            ("board_revision", "INTEGER"),
+        ),
         "work_sequence_notification_candidates": (
             ("recipient_hint", "VARCHAR(120)"),
         ),
@@ -460,6 +465,19 @@ def _ensure_work_sequence_columns(database: Database) -> None:
                     connection.execute(
                         text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
                     )
+        history_columns = {
+            row[1] for row in connection.execute(text("PRAGMA table_info(work_sequence_change_history)"))
+        }
+        if history_columns:
+            connection.execute(text(
+                "UPDATE work_sequence_change_history "
+                "SET mutation_key = COALESCE(mutation_key, 'legacy:' || change_id), "
+                "board_revision = COALESCE(board_revision, 0)"
+            ))
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_work_sequence_history_mutation_key "
+                "ON work_sequence_change_history (mutation_key)"
+            ))
 
 
 def _ensure_ai_evidence_snapshot_has_no_candidate_fk(database: Database) -> None:

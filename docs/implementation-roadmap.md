@@ -11,7 +11,7 @@
 - 문서 미리보기와 접근 로그
 - FieldComment 원천 불변과 첨부, 단계형 상태 전이, 담당자·기한, WPF 다중 선택 개별 동기화, FastAPI 최대 200건 일괄 검토, 원천 hash 감사·품질 작업함·보고서와 최종 문서 통합 역추적
 - 알림과 활동 이력
-- 작업순서 보드/항목/TV 화면
+- 작업순서 보드/항목/관리자·TV 화면의 서버 권위 운영. `board_revision`, mutation key·intent hash receipt, stale revision 조건부 갱신, 응답 유실 동일 key 1회 재시도와 오프라인 확정 변경 차단 포함
 - 보고서 초안 저장과 서버 보고서 저장 시도
 - 관리자 파일 감시 후보
 - FastAPI SQLite 서버와 `/api/v1` API
@@ -63,7 +63,7 @@
 
 ## 다음 우선순위
 
-1. 현재 수집값과 같은 FastAPI 131건 guard가 적용된 `scripts/verify-preserved-tests.ps1`로 WPF 빌드·스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 포함한 Windows 표준 검증을 생략 없이 실행하고 단일 `PASSED` 실행 ID를 남긴다. macOS 보조 run은 FastAPI 131건만 통과했으므로 통합 기준선으로 보지 않는다.
+1. FastAPI 현재 수집값 134건에 맞게 `scripts/verify-preserved-tests.ps1`의 131건 guard를 갱신한 뒤, WPF 빌드·스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 포함한 Windows 표준 검증을 생략 없이 실행하고 단일 `PASSED` 실행 ID를 남긴다. 기존 macOS `baseline-131` 보조 run은 과거 FastAPI 131건만 통과했으므로 현재 통합 기준선으로 보지 않는다.
 2. [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
 4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다.

@@ -251,12 +251,15 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 title=f"AI search work board {suffix[:8]}",
                 line_code="line-a",
                 status="ACTIVE",
+                board_revision=1,
                 created_by="user-admin",
             )
         )
         session.add(
             WorkSequenceChangeHistory(
                 change_id=history_id,
+                mutation_key=f"ai-search:{history_id}",
+                board_revision=1,
                 board_id=board_id,
                 item_id=None,
                 change_type="ITEM_REORDERED",
@@ -269,6 +272,8 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
         session.add(
             WorkSequenceChangeHistory(
                 change_id=empty_history_id,
+                mutation_key=f"ai-search:{empty_history_id}",
+                board_revision=1,
                 board_id=board_id,
                 item_id=None,
                 change_type="STATUS_CHANGED",

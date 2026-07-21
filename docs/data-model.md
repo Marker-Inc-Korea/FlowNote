@@ -67,7 +67,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-07-21 현재 ORM은 아래 51개 테이블을 생성 기준으로 사용한다.
+2026-07-21 현재 ORM은 작업순서 mutation receipt를 포함한 52개 서버 테이블을 생성 기준으로 사용한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -86,8 +86,9 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `field_comments`, `field_comment_attachments` | 현장 코멘트와 첨부. 원천 기록과 개별 첨부의 재시도 idempotency key를 각각 유일하게 보존. 담당자, 검토 기한, 마지막 전이 사유, 선정 시각은 관리자 해석 영역으로 분리 |
 | `comment_templates` | 정형 코멘트 문구 |
 | `work_records`, `work_record_versions` | 작업내역 모델 기반 |
-| `work_sequence_boards`, `work_sequence_items` | 작업순서 보드와 항목 |
-| `work_sequence_change_history` | 작업순서 변경 이력 |
+| `work_sequence_boards`, `work_sequence_items` | `board_revision`으로 직렬화되는 작업순서 보드와 항목 |
+| `work_sequence_change_history` | mutation key와 적용 board revision이 유일하게 연결된 작업순서 변경 이력 |
+| `work_sequence_mutation_receipts` | mutation key, intent hash, 결과 revision·change ID·최초 응답 snapshot을 보존하는 작업순서 멱등 receipt |
 | `work_sequence_notification_candidates` | 작업순서 알림 후보 |
 | `notification_channels` | 라인, 설비, 공정, 작업조, 작업내역 단위 업무 채널 |
 | `notification_channel_members` | 채널별 사용자 멤버십, 역할, 마지막 읽음 위치 |
@@ -112,7 +113,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `android_document_view_grants` | Android 앱 내부 열람용 token hash, 사용자·세션·필수 승인 단말·공개 버전·미디어 종류·크기·SHA-256, 만료·소비·실패 상태 |
 | `activity_history` | 서버 활동 이력 |
 
-수렴 계약 구현 시 서버 DB에는 다음 additive 모델과 열을 추가한다.
+남은 수렴 계약 구현 시 서버 DB에는 다음 additive 모델과 열을 추가한다. 작업순서 `board_revision`, 이력 `mutation_key`/`board_revision`, 전용 mutation receipt는 구현 완료되어 이 목표 목록에서 제외했다.
 
 | 목표 테이블/열 | 불변식 |
 | --- | --- |
@@ -121,8 +122,6 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `field_comments.review_revision` | 원천 생성 시 1, 검토 영역이 실제 변경될 때만 1 증가. 원천 hash는 별도 계산하며 변경 금지 |
 | `reports.revision`, `reports.content_hash`, `reports.source_set_hash` | 보고서 본문과 source 집합의 조건부 mutation 및 read-back 검증 기준 |
 | `report_sources.trace_id`, `report_sources.source_hash_sha256` | source row 추적 ID와 저장 시점 원천의 SHA-256. `source_id`와 해당 시점 `source_version_id`를 함께 고정 |
-| `work_sequence_boards.revision` | 항목 추가·순서·상태 mutation을 직렬화하는 board aggregate revision |
-| `work_sequence_change_history.mutation_key` | 부모 작업순서 mutation key와 UNIQUE. mutation 1건에서 이력 1건만 생성 |
 
 `sync_mutation_receipts`는 도메인 row를 대체하지 않는다. 도메인 transaction 안에서 도메인 row와 함께 기록하며, 같은 key·같은 `intent_hash` 요청은 저장된 결과를 반환하고 다른 hash는 `IDEMPOTENCY_KEY_REUSED`로 거부한다. 문서·버전·FieldComment·첨부·접근 로그·보고서에 이미 있는 개별 `idempotency_key` UNIQUE도 유지해 이중으로 중복을 차단한다.
 

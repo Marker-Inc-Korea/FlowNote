@@ -288,6 +288,9 @@ public sealed record ServerWorkSequenceBoardCreateRequest
 
     [JsonPropertyName("createdBy")]
     public string? CreatedBy { get; init; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string IdempotencyKey { get; init; } = string.Empty;
 }
 
 public sealed record ServerWorkSequenceItemCreateRequest
@@ -309,6 +312,12 @@ public sealed record ServerWorkSequenceItemCreateRequest
 
     [JsonPropertyName("createdBy")]
     public string? CreatedBy { get; init; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string IdempotencyKey { get; init; } = string.Empty;
+
+    [JsonPropertyName("baseBoardRevision")]
+    public int BaseBoardRevision { get; init; }
 }
 
 public sealed record ServerWorkSequenceReorderRequest
@@ -321,6 +330,12 @@ public sealed record ServerWorkSequenceReorderRequest
 
     [JsonPropertyName("changeReason")]
     public string? ChangeReason { get; init; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string IdempotencyKey { get; init; } = string.Empty;
+
+    [JsonPropertyName("baseBoardRevision")]
+    public int BaseBoardRevision { get; init; }
 }
 
 public sealed record ServerWorkSequenceStatusUpdateRequest
@@ -336,6 +351,12 @@ public sealed record ServerWorkSequenceStatusUpdateRequest
 
     [JsonPropertyName("holdReason")]
     public string? HoldReason { get; init; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string IdempotencyKey { get; init; } = string.Empty;
+
+    [JsonPropertyName("baseBoardRevision")]
+    public int BaseBoardRevision { get; init; }
 }
 
 public sealed record ServerWorkSequenceItemResponse
@@ -400,6 +421,9 @@ public sealed record ServerWorkSequenceBoardResponse
     [JsonPropertyName("status")]
     public string Status { get; init; } = string.Empty;
 
+    [JsonPropertyName("board_revision")]
+    public int BoardRevision { get; init; }
+
     [JsonPropertyName("created_by")]
     public string? CreatedBy { get; init; }
 
@@ -413,10 +437,43 @@ public sealed record ServerWorkSequenceBoardResponse
     public IReadOnlyList<ServerWorkSequenceItemResponse> Items { get; init; } = [];
 }
 
+public sealed record ServerWorkSequenceBoardListItem
+{
+    [JsonPropertyName("board_id")]
+    public string BoardId { get; init; } = string.Empty;
+
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = string.Empty;
+
+    [JsonPropertyName("line_code")]
+    public string? LineCode { get; init; }
+
+    [JsonPropertyName("board_date")]
+    public DateOnly? BoardDate { get; init; }
+
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("board_revision")]
+    public int BoardRevision { get; init; }
+
+    [JsonPropertyName("item_count")]
+    public int ItemCount { get; init; }
+
+    [JsonPropertyName("updated_at")]
+    public DateTime UpdatedAt { get; init; }
+}
+
 public sealed record ServerWorkSequenceHistoryResponse
 {
     [JsonPropertyName("change_id")]
     public string ChangeId { get; init; } = string.Empty;
+
+    [JsonPropertyName("mutation_key")]
+    public string MutationKey { get; init; } = string.Empty;
+
+    [JsonPropertyName("board_revision")]
+    public int BoardRevision { get; init; }
 
     [JsonPropertyName("board_id")]
     public string BoardId { get; init; } = string.Empty;

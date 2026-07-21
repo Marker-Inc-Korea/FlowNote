@@ -54,7 +54,7 @@
 
 보고서 서버 저장은 로컬 보고서 문서와 `report_sources`를 먼저 남긴 뒤 `/api/v1/reports` 저장을 시도한다. 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 연결한다. 실패하면 기존 `server_sync_queue`에 `entity_type = report`, `action = register_report`로 남기고, 재시도 시 같은 idempotency key로 서버 저장을 다시 시도한다.
 
-작업순서 보드/항목/이력은 현재 단계에서 WPF 로컬 큐의 양방향 동기화 대상이 아니다. 서버 연동 스모크는 서버 작업순서 API의 생성, 순서 변경, 상태 변경, 이력, 알림 후보를 직접 검증하고, WPF 보고서는 작업순서 항목/이력을 report source로 추적한다.
+작업순서 보드/항목/이력은 WPF 로컬 큐의 양방향 동기화 대상이 아니다. 관리 화면은 서버 목록·상세 snapshot의 `board_revision`을 읽고 mutation key와 `baseBoardRevision`을 서버 API에 직접 보낸다. 409 `WORK_SEQUENCE_STALE_REVISION`이면 “다른 사용자가 먼저 변경”했다는 한글 안내와 최신 snapshot을 표시하며, 사용자가 확인한 뒤 다시 시도한다. 서버 미연결·503·시간 초과·호환 응답 실패에서는 로컬 row를 읽기 캐시/초안으로만 표시하고 확정 생성·순서·상태 변경을 비활성화한다. 실패 요청을 `server_sync_queue`에 넣지 않으며 기존 로컬 row와 테스트 기록은 삭제하지 않는다.
 
 ## 앱 시작 자동 재시도
 
