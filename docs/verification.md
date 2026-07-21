@@ -2,9 +2,15 @@
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
 
+## 2026-07-21 작업 102 현재 코드 문서 재대조
+
+작업 시작 시 Git 작업 트리와 `main...origin/main`은 깨끗해 반영할 미커밋 코드는 없었다. 최근 구현된 서버 복구 manifest/reconciliation, WPF 재결합 경계와 관련 상위 문서는 현재 코드와 일치했다. 다만 `services/api/README.md`의 FastAPI 수집 기준만 서버 복구 회귀 6건이 추가되기 전인 137건에 머물러 있어 현재 수집값 143건으로 갱신했다.
+
+이번 재대조에서 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 143건을 수집했다. OpenAPI는 루트 `GET /`를 포함한 122개 method/path 조합이며 `services/api/README.md`의 API 표와 누락·초과 0건으로 일치하고, SQLAlchemy ORM은 57개 테이블이다. 전체 테스트·WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았으며 기존 SQLite, 로그와 테스트 산출물은 삭제하지 않았다. 표준 스크립트의 FastAPI guard는 계속 131건이므로 143건으로 갱신하고 Windows 무생략 `verification-summary.json=PASSED`를 확보하기 전까지 통합 기준선 상태는 `대기`다.
+
 ## 2026-07-21 작업 102 서버 복구 reconciliation 문서 갱신
 
-현재 미커밋 코드의 FastAPI server identity/epoch manifest와 reconciliation API, WPF URL별 binding·자동 전송/polling 차단, 관리자 `서버 재결합` 승인 적용을 개발 문서에 반영했다. 기존 문서에 목표 계약으로 남아 있던 `/sync/reconcile`, `/sync/mutations/{idempotency_key}`, sync header 계약은 현재 코드의 `/sync/reconciliation-runs` 계열과 manifest body 계약으로 바로잡았다. `DIVERGED/CONFLICT`의 실제 로컬 종결 상태가 `DISCARDED`이고 `RECONCILIATION_DIVERGED` 감사를 보존하는 점도 코드 기준으로 명시했다.
+당시 구현 코드의 FastAPI server identity/epoch manifest와 reconciliation API, WPF URL별 binding·자동 전송/polling 차단, 관리자 `서버 재결합` 승인 적용을 개발 문서에 반영했다. 기존 문서에 목표 계약으로 남아 있던 `/sync/reconcile`, `/sync/mutations/{idempotency_key}`, sync header 계약은 현재 코드의 `/sync/reconciliation-runs` 계열과 manifest body 계약으로 바로잡았다. `DIVERGED/CONFLICT`의 실제 로컬 종결 상태가 `DISCARDED`이고 `RECONCILIATION_DIVERGED` 감사를 보존하는 점도 코드 기준으로 명시했다.
 
 현재 OpenAPI는 루트 `GET /`를 포함한 122개 method/path 조합이고 ORM은 `server_identity`, `reconciliation_runs`, `reconciliation_items`를 포함한 57개 테이블이다. `services/api/README.md` API 표와 OpenAPI 집합은 누락·초과 0건으로 일치한다. FastAPI는 중복 없는 143건을 수집했고 `tests/test_sync_reconciliation_api.py` 집중 테스트 6건은 instance ID 안정성·명시적 epoch 증가, `CONFIRMED/ABSENT/DIVERGED` 판정, 승인 뒤 divergence 감사 보존, 네 장애 유형별 독립 run 생성을 검증한다. 2026-07-21 전체 FastAPI 143건과 Ruff 정적 검사는 통과했다. WPF Core는 36건이 통과해 instance/epoch·cursor·URL 차단과 큐 보존을 확인했다. Windows 대상 WPF 앱은 macOS에서 `EnableWindowsTargeting=true`로 빌드해 경고·오류 0건으로 통과했다. 실제 WPF 2대와 서버 프로세스를 사용하는 통합 장애 주입 스모크는 Windows 현장 환경 검증 범위다. 기존 SQLite와 테스트 산출물은 삭제하지 않았다.
 
