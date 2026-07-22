@@ -156,6 +156,12 @@ public sealed record ServerAISearchReadinessResponse
     [JsonPropertyName("ground_truth_gap")]
     public int GroundTruthGap { get; init; }
 
+    [JsonPropertyName("field_readiness")]
+    public ServerAISearchTrackReadinessResponse FieldReadiness { get; init; } = new();
+
+    [JsonPropertyName("smoke_regression_readiness")]
+    public ServerAISearchTrackReadinessResponse SmokeRegressionReadiness { get; init; } = new();
+
     [JsonPropertyName("missing_category_scenarios")]
     public IReadOnlyList<Dictionary<string, string>> MissingCategoryScenarios { get; init; } = [];
 
@@ -170,6 +176,18 @@ public sealed record ServerAISearchReadinessResponse
 
     [JsonPropertyName("latest_approved_dataset")]
     public ServerAIGroundTruthDatasetSummary? LatestApprovedDataset { get; init; }
+}
+
+public sealed record ServerAISearchTrackReadinessResponse
+{
+    [JsonPropertyName("ground_truth_count")]
+    public int GroundTruthCount { get; init; }
+
+    [JsonPropertyName("ground_truth_gap")]
+    public int GroundTruthGap { get; init; }
+
+    [JsonPropertyName("ground_truth_ready")]
+    public bool GroundTruthReady { get; init; }
 }
 
 public sealed record ServerAIGroundTruthCoverage

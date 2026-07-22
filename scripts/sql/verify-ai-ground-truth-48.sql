@@ -54,6 +54,18 @@ reference_checks AS (
            ELSE 0
          END AS source_exists
   FROM all_references r
+),
+matrix_comments AS (
+  SELECT * FROM field_comments
+  WHERE comment_id LIKE 'comment-smoke48-v1-%'
+    AND comment_id NOT LIKE 'comment-smoke48-v1-negative-%'
+),
+matrix_reports AS (
+  SELECT * FROM reports WHERE report_id LIKE 'report-smoke48-v1-%'
+),
+matrix_documents AS (
+  SELECT * FROM documents WHERE document_id LIKE 'doc-smoke48-v1-%'
+    AND document_id NOT LIKE 'doc-smoke48-v1-negative-%'
 )
 SELECT
   (SELECT count(*) FROM dataset) AS case_count,
@@ -67,4 +79,52 @@ SELECT
   (SELECT count(*) FROM dataset WHERE length(source_snapshot_hash) <> 64) AS snapshot_hash_violation_count,
   (SELECT count(*) FROM reference_checks WHERE source_exists = 0) AS orphan_reference_count,
   (SELECT count(*) FROM reference_checks WHERE length(content_hash) <> 64) AS reference_hash_violation_count,
-  (SELECT count(*) FROM reference_checks WHERE trim(coalesce(rationale, '')) = '') AS missing_rationale_count;
+  (SELECT count(*) FROM reference_checks WHERE trim(coalesce(rationale, '')) = '') AS missing_rationale_count,
+  abs((SELECT count(*) FROM matrix_comments) - 48) AS matrix_field_comment_count_violation,
+  (SELECT count(*) FROM (
+     SELECT status, count(*) AS actual FROM matrix_comments GROUP BY status
+     HAVING status NOT IN ('ANALYZED', 'REVIEWED', 'SELECTED', 'EXCLUDED') OR actual < 8 OR actual > 16
+   )) + CASE WHEN (SELECT count(DISTINCT status) FROM matrix_comments) = 4 THEN 0 ELSE 1 END
+     AS field_comment_status_distribution_violation,
+  (SELECT count(*) FROM matrix_comments
+   WHERE assigned_to IS NULL OR review_due_at IS NULL OR trim(coalesce(last_transition_reason, '')) = '')
+     AS field_comment_assignment_violation,
+  (SELECT count(*) FROM matrix_comments f
+   WHERE NOT EXISTS (
+     SELECT 1 FROM activity_history a
+     WHERE a.target_type = 'field_comment' AND a.target_id = f.comment_id
+       AND a.event_type = 'field_comment.review_changed'
+       AND length(json_extract(a.before_value, '$.source_hash_sha256')) = 64
+       AND json_extract(a.before_value, '$.source_hash_sha256') = json_extract(a.after_value, '$.source_hash_sha256')
+       AND trim(coalesce(a.change_reason, '')) <> ''
+   )) AS field_comment_audit_hash_violation,
+  (SELECT count(*) FROM matrix_comments f
+   WHERE NOT EXISTS (
+     SELECT 1 FROM activity_history a
+     WHERE a.target_type = 'field_comment' AND a.target_id = f.comment_id
+       AND a.history_id GLOB 'hist-smoke48-v1-*-[1-3]'
+       AND json_extract(a.before_value, '$.review_revision') IS NOT NULL
+       AND json_extract(a.after_value, '$.status') = f.status
+   )) + (SELECT count(*) FROM activity_history a
+     WHERE a.history_id GLOB 'hist-smoke48-v1-*-[1-3]'
+       AND json_extract(a.before_value, '$.review_revision') IS NOT NULL
+       AND (json_extract(a.before_value, '$.status'), json_extract(a.after_value, '$.status')) NOT IN (
+         VALUES ('NEW','ANALYZED'), ('ANALYZED','REVIEWED'), ('REVIEWED','SELECTED'), ('NEW','EXCLUDED')
+       )) AS field_comment_transition_path_violation,
+  (SELECT count(*) FROM (
+     SELECT idempotency_key FROM matrix_comments GROUP BY idempotency_key HAVING count(*) <> 1
+   )) + (SELECT count(*) FROM matrix_comments WHERE idempotency_key IS NULL)
+     AS field_comment_idempotency_violation,
+  abs((SELECT count(*) FROM matrix_reports) - 16) AS report_count_violation,
+  (SELECT count(*) FROM matrix_reports r
+   WHERE (SELECT count(DISTINCT rs.source_type) FROM report_sources rs WHERE rs.report_id = r.report_id) < 2)
+     AS report_source_type_violation,
+  (SELECT count(*) FROM report_sources rs JOIN matrix_reports r USING (report_id)
+   WHERE rs.source_version_id IS NULL OR length(rs.source_hash_sha256) <> 64 OR trim(rs.trace_id) = '')
+     AS report_frozen_source_violation,
+  (SELECT count(*) FROM matrix_documents d
+   WHERE (SELECT count(DISTINCT td.tag_type)
+          FROM document_tags dt JOIN tag_definitions td USING (tag_id)
+          WHERE dt.document_id = d.document_id
+            AND td.tag_type IN ('equipment', 'item', 'process', 'error_type')) < 2)
+     AS domain_tag_axis_violation;

@@ -21,15 +21,23 @@ sys.path.insert(0, str(API_ROOT))
 from app.core.config import Settings  # noqa: E402
 from app.db.init_db import hash_password_for_dev  # noqa: E402
 from app.db.models import (  # noqa: E402
+    ActivityHistory,
     AISearchCandidate,
     AISearchGroundTruthCase,
     AISearchGroundTruthProvenance,
     Document,
+    DocumentTag,
     DocumentVersion,
     FieldComment,
     FileObject,
     NotificationChannel,
+    Report,
+    ReportSource,
+    TagDefinition,
     UserAccount,
+    WorkSequenceBoard,
+    WorkSequenceChangeHistory,
+    WorkSequenceItem,
 )
 from app.main import create_app  # noqa: E402
 from app.services.ai_readiness import QUESTION_CATEGORIES, SCENARIO_TYPES, database_scope  # noqa: E402
@@ -60,6 +68,20 @@ NEGATIVE_KINDS = (
     "EXCLUDED_SOURCE",
     "ARCHIVED_SOURCE",
 )
+MATRIX_STATUSES = {
+    ("NORMAL", 1): "ANALYZED",
+    ("NORMAL", 2): "REVIEWED",
+    ("CONFLICT", 1): "SELECTED",
+    ("CONFLICT", 2): "SELECTED",
+    ("EXCLUSION", 1): "EXCLUDED",
+    ("EXCLUSION", 2): "EXCLUDED",
+}
+DOMAIN_TAGS = {
+    "equipment": ("press-a", "프레스 A"),
+    "item": ("housing-x", "하우징 X"),
+    "process": ("alignment", "정렬 공정"),
+    "error_type": ("alignment-delay", "정렬 지연"),
+}
 
 
 def _hash(value: str) -> str:
@@ -85,6 +107,7 @@ def _ensure_document(session, *, category: str, variant: int) -> tuple[str, str]
     document_id = f"doc-{DATASET_VERSION}-{slug}-{variant}"
     version_id = f"ver-{DATASET_VERSION}-{slug}-{variant}"
     if session.scalar(select(Document.id).where(Document.document_id == document_id)) is not None:
+        _ensure_document_domain_tags(session, document_id)
         return document_id, version_id
     common = f"{DATASET_VERSION}-{slug}-conflict"
     unique = f"{DATASET_VERSION}-{slug}-normal-{variant}"
@@ -122,7 +145,280 @@ def _ensure_document(session, *, category: str, variant: int) -> tuple[str, str]
         is_published=True,
         created_by=FIRST_APPROVER,
     ))
+    session.flush()
+    _ensure_document_domain_tags(session, document_id)
     return document_id, version_id
+
+
+def _ensure_document_domain_tags(session, document_id: str) -> None:
+    for tag_type, (code, name) in DOMAIN_TAGS.items():
+        tag_id = f"tag-{DATASET_VERSION}-{tag_type}-{code}"
+        if session.scalar(select(TagDefinition.id).where(TagDefinition.tag_id == tag_id)) is None:
+            session.add(TagDefinition(
+                tag_id=tag_id,
+                tag_type=tag_type,
+                code=code,
+                name=name,
+                is_active=True,
+            ))
+            session.flush()
+        if session.scalar(select(DocumentTag.id).where(
+            DocumentTag.document_id == document_id,
+            DocumentTag.tag_id == tag_id,
+        )) is None:
+            session.add(DocumentTag(document_id=document_id, tag_id=tag_id))
+    marker_id = f"tag-{DATASET_VERSION}-readiness-track"
+    if session.scalar(select(TagDefinition.id).where(TagDefinition.tag_id == marker_id)) is None:
+        session.add(TagDefinition(
+            tag_id=marker_id,
+            tag_type="custom",
+            code="smoke-regression",
+            name="SMOKE_REGRESSION",
+            is_active=True,
+        ))
+        session.flush()
+    if session.scalar(select(DocumentTag.id).where(
+        DocumentTag.document_id == document_id,
+        DocumentTag.tag_id == marker_id,
+    )) is None:
+        session.add(DocumentTag(document_id=document_id, tag_id=marker_id))
+
+
+def _field_comment_source_hash(comment: FieldComment) -> str:
+    payload = {
+        "comment_id": comment.comment_id,
+        "document_id": comment.document_id,
+        "document_version_id": comment.document_version_id,
+        "structure_item_id": comment.structure_item_id,
+        "work_record_id": comment.work_record_id,
+        "comment_type": comment.comment_type,
+        "input_mode": comment.input_mode,
+        "signal_level": comment.signal_level,
+        "template_id": comment.template_id,
+        "raw_content": comment.raw_content,
+        "author_id": comment.author_id,
+        "reported_by": comment.reported_by,
+        "operator_id": comment.operator_id,
+        "entry_source": comment.entry_source,
+        "device_id": comment.device_id,
+        "location_code": comment.location_code,
+        "created_at": comment.created_at.isoformat() if comment.created_at else None,
+    }
+    return _hash(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+
+
+def _ensure_matrix_comment(
+    session, *, category: str, scenario: str, variant: int, document_id: str, version_id: str, now: datetime
+) -> FieldComment:
+    slug = category.lower()
+    comment_id = f"comment-{DATASET_VERSION}-{slug}-{scenario.lower()}-{variant}"
+    existing = session.scalar(select(FieldComment).where(FieldComment.comment_id == comment_id))
+    if existing is not None:
+        _ensure_matrix_transition_audits(session, existing, scenario=scenario, variant=variant)
+        return existing
+    status = MATRIX_STATUSES[(scenario, variant)]
+    token = f"{DATASET_VERSION}-{slug}-{scenario.lower()}-{variant}"
+    conflict_token = f"{DATASET_VERSION}-{slug}-conflict"
+    raw = f"{CATEGORY_LABELS[category]} {scenario} 회귀 원천 {token}"
+    if scenario == "CONFLICT":
+        raw = f"{raw} {conflict_token} 상충 주장 {variant}"
+    normalized = f"정제된 {CATEGORY_LABELS[category]} 회귀 근거 {token}"
+    analysis = f"{scenario} 정책에 따라 포함·제외·상충 표시를 검증한다. {conflict_token if scenario == 'CONFLICT' else token}"
+    comment = FieldComment(
+        comment_id=comment_id,
+        idempotency_key=f"{DATASET_VERSION}:field-comment:{slug}:{scenario.lower()}:{variant}",
+        document_id=document_id,
+        document_version_id=version_id,
+        comment_type="issue",
+        input_mode="free_text",
+        signal_level=("green", "yellow", "red")[(variant + list(SCENARIO_TYPES).index(scenario)) % 3],
+        raw_content=raw,
+        normalized_content=normalized,
+        analysis_content=analysis,
+        author_id=FIRST_APPROVER,
+        reported_by="비민감 스모크 작업자",
+        entry_source="field_user",
+        location_code="line-a",
+        category=category,
+        status=status,
+        analyzed_by=FIRST_APPROVER if status in {"ANALYZED", "REVIEWED", "SELECTED"} else None,
+        reviewed_by=SECOND_APPROVER if status in {"REVIEWED", "SELECTED", "EXCLUDED"} else None,
+        assigned_to=SECOND_APPROVER,
+        review_due_at=now + timedelta(days=7),
+        last_transition_reason=f"{DATASET_VERSION} {scenario} 회귀 계약의 승인 전이",
+        analyzed_at=now if status in {"ANALYZED", "REVIEWED", "SELECTED"} else None,
+        reviewed_at=now if status in {"REVIEWED", "SELECTED"} else None,
+        selected_at=now if status == "SELECTED" else None,
+        review_revision={"ANALYZED": 2, "REVIEWED": 3, "SELECTED": 4, "EXCLUDED": 2}[status],
+    )
+    session.add(comment)
+    session.flush()
+    _ensure_matrix_transition_audits(session, comment, scenario=scenario, variant=variant)
+    return comment
+
+
+def _ensure_matrix_transition_audits(
+    session, comment: FieldComment, *, scenario: str, variant: int
+) -> None:
+    paths = {
+        "ANALYZED": ("NEW", "ANALYZED"),
+        "REVIEWED": ("NEW", "ANALYZED", "REVIEWED"),
+        "SELECTED": ("NEW", "ANALYZED", "REVIEWED", "SELECTED"),
+        "EXCLUDED": ("NEW", "EXCLUDED"),
+    }
+    path = paths[comment.status]
+    source_hash = _field_comment_source_hash(comment)
+    slug = (comment.category or "unknown").lower()
+    for step, (before_status, after_status) in enumerate(zip(path, path[1:]), 1):
+        history_id = f"hist-{DATASET_VERSION}-{slug}-{scenario.lower()}-{variant}-{step}"
+        if session.scalar(select(ActivityHistory.id).where(ActivityHistory.history_id == history_id)) is not None:
+            continue
+        before = {
+            "source_hash_sha256": source_hash,
+            "status": before_status,
+            "assigned_to": SECOND_APPROVER if step > 1 else None,
+            "review_due_at": comment.review_due_at.isoformat() if step > 1 and comment.review_due_at else None,
+            "review_revision": step,
+        }
+        after = {
+            "source_hash_sha256": source_hash,
+            "status": after_status,
+            "assigned_to": SECOND_APPROVER,
+            "review_due_at": comment.review_due_at.isoformat() if comment.review_due_at else None,
+            "review_revision": step + 1,
+        }
+        session.add(ActivityHistory(
+            history_id=history_id,
+            event_type="field_comment.review_changed",
+            actor_id=FIRST_APPROVER if after_status == "ANALYZED" else SECOND_APPROVER,
+            target_type="field_comment",
+            target_id=comment.comment_id,
+            target_title=comment.comment_id,
+            message=f"FieldComment 회귀 전이: {before_status} → {after_status}",
+            before_value=json.dumps(before, ensure_ascii=False, sort_keys=True),
+            after_value=json.dumps(after, ensure_ascii=False, sort_keys=True),
+            change_reason=f"{DATASET_VERSION} 승인 전이 {before_status} → {after_status}",
+        ))
+
+
+def _ensure_work_history(session, *, category: str, variant: int, document_id: str) -> WorkSequenceChangeHistory:
+    slug = category.lower()
+    board_id = f"board-{DATASET_VERSION}-{slug}"
+    item_id = f"item-{DATASET_VERSION}-{slug}-{variant}"
+    change_id = f"change-{DATASET_VERSION}-{slug}-{variant}"
+    board = session.scalar(select(WorkSequenceBoard).where(WorkSequenceBoard.board_id == board_id))
+    if board is None:
+        session.add(WorkSequenceBoard(
+            board_id=board_id,
+            title=f"{CATEGORY_LABELS[category]} 회귀 작업순서",
+            description="BOM을 강제하지 않는 라인 작업순서 회귀 자료",
+            line_code="line-a",
+            board_date=datetime.now(timezone.utc).date(),
+            status="ACTIVE",
+            board_revision=3,
+            created_by=FIRST_APPROVER,
+        ))
+        session.flush()
+    if session.scalar(select(WorkSequenceItem.id).where(WorkSequenceItem.item_id == item_id)) is None:
+        session.add(WorkSequenceItem(
+            item_id=item_id,
+            board_id=board_id,
+            title=f"{CATEGORY_LABELS[category]} 확인 {variant}",
+            description=f"{DATASET_VERSION}-{slug}-conflict",
+            document_id=document_id,
+            status="HOLD" if category == "WORK_HOLD" else "IN_PROGRESS",
+            hold_reason="검토 근거 확인" if category == "WORK_HOLD" else None,
+            sort_order=variant,
+            assigned_to="line-a",
+            created_by=FIRST_APPROVER,
+        ))
+        session.flush()
+    history = session.scalar(select(WorkSequenceChangeHistory).where(
+        WorkSequenceChangeHistory.change_id == change_id
+    ))
+    if history is None:
+        history = WorkSequenceChangeHistory(
+            change_id=change_id,
+            mutation_key=f"{DATASET_VERSION}:work-sequence:{slug}:{variant}",
+            board_revision=variant + 1,
+            board_id=board_id,
+            item_id=item_id,
+            change_type="ITEM_STATUS_CHANGED",
+            actor_id=FIRST_APPROVER,
+            before_value="WAITING",
+            after_value="HOLD" if category == "WORK_HOLD" else "IN_PROGRESS",
+            change_reason=f"{DATASET_VERSION}-{slug}-conflict 작업순서 회귀 근거 {variant}",
+        )
+        session.add(history)
+        session.flush()
+    return history
+
+
+def _hash_work_history(history: WorkSequenceChangeHistory) -> str:
+    payload = {
+        "change_id": history.change_id,
+        "board_id": history.board_id,
+        "item_id": history.item_id,
+        "change_type": history.change_type,
+        "actor_id": history.actor_id,
+        "before_value": history.before_value,
+        "after_value": history.after_value,
+        "change_reason": history.change_reason,
+        "created_at": history.created_at.isoformat() if history.created_at else None,
+    }
+    return _hash(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+
+
+def _ensure_report(
+    session, *, category: str, variant: int, document_id: str, version_id: str,
+    selected_comment: FieldComment, history: WorkSequenceChangeHistory,
+) -> Report:
+    slug = category.lower()
+    report_id = f"report-{DATASET_VERSION}-{slug}-{variant}"
+    report = session.scalar(select(Report).where(Report.report_id == report_id))
+    if report is None:
+        report = Report(
+            idempotency_key=f"{DATASET_VERSION}:report:{slug}:{variant}",
+            report_id=report_id,
+            report_type="field_review",
+            title=f"{CATEGORY_LABELS[category]} 복합 근거 회귀 보고서 {variant}",
+            summary=f"{DATASET_VERSION}-{slug}-conflict 문서·FieldComment·작업순서 상충 근거",
+            analysis_content="외부 provider 호출 없이 source hash와 역추적만 검증한다.",
+            conclusion="상충 원천을 숨기지 않고 함께 표시한다.",
+            status="APPROVED",
+            ai_draft_used=False,
+            created_by=FIRST_APPROVER,
+            reviewed_by=SECOND_APPROVER,
+            approved_by=SECOND_APPROVER,
+        )
+        session.add(report)
+        session.flush()
+    sources = (
+        ("DOCUMENT", document_id, version_id, session.scalar(
+            select(FileObject.hash_sha256).join(DocumentVersion, DocumentVersion.file_object_id == FileObject.id)
+            .where(DocumentVersion.version_id == version_id)
+        )),
+        ("FIELD_COMMENT", selected_comment.comment_id, version_id, _field_comment_source_hash(selected_comment)),
+        ("WORK_SEQUENCE_HISTORY", history.change_id, history.change_id, _hash_work_history(history)),
+    )
+    for index, (source_type, source_id, source_version_id, source_hash) in enumerate(sources, 1):
+        if session.scalar(select(ReportSource.id).where(
+            ReportSource.report_id == report_id,
+            ReportSource.source_type == source_type,
+            ReportSource.source_id == source_id,
+            ReportSource.source_version_id == source_version_id,
+        )) is None:
+            session.add(ReportSource(
+                report_id=report_id,
+                source_type=source_type,
+                source_id=source_id,
+                source_version_id=source_version_id,
+                trace_id=f"trace-{DATASET_VERSION}-{slug}-{variant}-{index}",
+                source_hash_sha256=source_hash,
+                relation_type="conflicting_evidence" if source_type != "DOCUMENT" else "published_baseline",
+            ))
+    session.flush()
+    return report
 
 
 def _negative_content(kind: str, token: str) -> str:
@@ -250,6 +546,27 @@ def _candidate_reference(candidate: AISearchCandidate, rationale: str) -> dict[s
     }
 
 
+def _excluded_comment_reference(comment: FieldComment) -> dict[str, str | None]:
+    content = "\n".join(filter(None, (
+        comment.normalized_content,
+        comment.raw_content,
+        comment.analysis_content,
+        comment.category,
+        comment.signal_level,
+    )))
+    return {
+        "candidateId": None,
+        "sourceType": "FIELD_COMMENT",
+        "sourceId": comment.comment_id,
+        "sourceVersionId": comment.document_version_id,
+        "traceId": comment.comment_id,
+        "traceVersionId": comment.document_version_id,
+        "contentHash": _hash(content),
+        "exclusionReason": "field_comment_excluded_status",
+        "rationale": "승인 전이로 EXCLUDED가 된 원천은 검색·보고서 후보에 노출되지 않아야 함",
+    }
+
+
 def seed(database_url: str) -> dict[str, object]:
     settings = Settings(
         _env_file=None,
@@ -265,8 +582,12 @@ def seed(database_url: str) -> dict[str, object]:
             _ensure_user(session, FIRST_APPROVER, "ai-gt-first")
             _ensure_user(session, SECOND_APPROVER, "ai-gt-second")
             session.flush()
+            now = datetime.now(timezone.utc)
             positives: dict[str, list[tuple[str, str]]] = {}
             negatives: dict[str, list[dict[str, str | None]]] = {}
+            matrix_comments: dict[tuple[str, str, int], FieldComment] = {}
+            histories: dict[tuple[str, int], WorkSequenceChangeHistory] = {}
+            reports: dict[tuple[str, int], Report] = {}
             for category in QUESTION_CATEGORIES:
                 positives[category] = [_ensure_document(session, category=category, variant=i) for i in (1, 2)]
                 negatives[category] = [
@@ -279,34 +600,90 @@ def seed(database_url: str) -> dict[str, object]:
                     )
                     for i in (1, 2)
                 ]
+                for scenario in SCENARIO_TYPES:
+                    for variant in (1, 2):
+                        document_id, version_id = positives[category][variant - 1]
+                        matrix_comments[(category, scenario, variant)] = _ensure_matrix_comment(
+                            session,
+                            category=category,
+                            scenario=scenario,
+                            variant=variant,
+                            document_id=document_id,
+                            version_id=version_id,
+                            now=now,
+                        )
+                for variant in (1, 2):
+                    document_id, version_id = positives[category][variant - 1]
+                    histories[(category, variant)] = _ensure_work_history(
+                        session, category=category, variant=variant, document_id=document_id
+                    )
+                    reports[(category, variant)] = _ensure_report(
+                        session,
+                        category=category,
+                        variant=variant,
+                        document_id=document_id,
+                        version_id=version_id,
+                        selected_comment=matrix_comments[(category, "CONFLICT", variant)],
+                        history=histories[(category, variant)],
+                    )
             session.commit()
             rebuild_ai_search_candidates(session, load_sensitive_filter(session, settings))
             candidate_by_source = {
                 (item.source_id, item.source_version_id): item
                 for item in session.scalars(select(AISearchCandidate)).all()
             }
-            now = datetime.now(timezone.utc)
+            report_candidates = {}
+            for item in session.scalars(select(AISearchCandidate).where(
+                AISearchCandidate.source_type == "REPORT_SOURCE"
+            )).all():
+                metadata = json.loads(item.metadata_json or "{}")
+                report_candidates.setdefault(metadata.get("report_id"), []).append(item)
             as_of = now + timedelta(minutes=5)
             db_scope = database_scope(database_url)
             created = 0
             for category in QUESTION_CATEGORIES:
-                refs = [
-                    _candidate_reference(candidate_by_source[source], "질문의 직접 공개 근거이며 hash와 version을 고정함")
-                    for source in positives[category]
-                ]
                 for scenario in SCENARIO_TYPES:
                     for variant in (1, 2):
                         case_key = f"{DATASET_VERSION}-{category.lower()}-{scenario.lower()}-{variant:02d}"
                         if scenario == "NORMAL":
-                            expected, excluded = [refs[variant - 1]], []
+                            comment = matrix_comments[(category, scenario, variant)]
+                            expected = [_candidate_reference(
+                                candidate_by_source[(comment.comment_id, comment.document_version_id)],
+                                "검토 상태·고정 문서 version·원천 hash를 가진 FieldComment 직접 근거",
+                            )]
+                            excluded = []
                             question = f"{DATASET_VERSION}-{category.lower()}-normal-{variant}"
                             outcome = "SUFFICIENT"
                         elif scenario == "CONFLICT":
-                            expected, excluded = refs, []
+                            comment = matrix_comments[(category, scenario, variant)]
+                            report = reports[(category, variant)]
+                            expected = [
+                                _candidate_reference(
+                                    candidate_by_source[positives[category][variant - 1]],
+                                    "현재 공개 문서 version을 상충 비교의 기준으로 고정함",
+                                ),
+                                _candidate_reference(
+                                    candidate_by_source[(comment.comment_id, comment.document_version_id)],
+                                    "선정 FieldComment의 상충 주장을 숨기지 않고 표시함",
+                                ),
+                                _candidate_reference(
+                                    candidate_by_source[(histories[(category, variant)].change_id, None)],
+                                    "작업순서 전이 이력을 상충 시점 근거로 고정함",
+                                ),
+                                *[
+                                    _candidate_reference(item, "3종 원천을 묶은 보고서 source의 역추적 계약")
+                                    for item in report_candidates[report.report_id]
+                                ],
+                            ]
+                            excluded = []
                             question = f"{DATASET_VERSION}-{category.lower()}-conflict"
                             outcome = "SUFFICIENT"
                         else:
-                            expected, excluded = [], [negatives[category][variant - 1]]
+                            expected = []
+                            excluded = [
+                                negatives[category][variant - 1],
+                                _excluded_comment_reference(matrix_comments[(category, scenario, variant)]),
+                            ]
                             question = f"{DATASET_VERSION}-{category.lower()}-exclusion-{variant}"
                             outcome = "INSUFFICIENT_EVIDENCE"
                         snapshot = {
@@ -325,9 +702,15 @@ def seed(database_url: str) -> dict[str, object]:
                             AISearchGroundTruthCase.case_key == case_key,
                         ))
                         if existing is not None:
+                            existing.category = category
+                            existing.scenario_type = scenario
                             existing.question = question
+                            existing.expected_outcome = outcome
                             existing.expected_evidence_json = json.dumps(expected, ensure_ascii=False, sort_keys=True)
                             existing.excluded_evidence_json = json.dumps(excluded, ensure_ascii=False, sort_keys=True)
+                            existing.allowed_rank_min = 1
+                            existing.allowed_rank_max = 20
+                            existing.as_of = as_of
                             provenance = session.scalar(select(AISearchGroundTruthProvenance).where(
                                 AISearchGroundTruthProvenance.ground_truth_case_id == existing.ground_truth_case_id
                             ))
@@ -376,7 +759,21 @@ def seed(database_url: str) -> dict[str, object]:
             cases = session.scalars(select(AISearchGroundTruthCase).where(
                 AISearchGroundTruthCase.case_key.like(f"{DATASET_VERSION}-%")
             )).all()
-            return {"datasetVersion": DATASET_VERSION, "created": created, "total": len(cases), "databaseScope": db_scope}
+            status_counts = {
+                status: sum(comment.status == status for comment in matrix_comments.values())
+                for status in ("ANALYZED", "REVIEWED", "SELECTED", "EXCLUDED")
+            }
+            return {
+                "datasetVersion": DATASET_VERSION,
+                "readinessTrack": "SMOKE_REGRESSION",
+                "created": created,
+                "total": len(cases),
+                "databaseScope": db_scope,
+                "fieldCommentStatusCounts": status_counts,
+                "reportCount": len(reports),
+                "reportSourceTypes": ["DOCUMENT", "FIELD_COMMENT", "WORK_SEQUENCE_HISTORY"],
+                "domainTagAxes": sorted(DOMAIN_TAGS),
+            }
 
 
 def main() -> int:

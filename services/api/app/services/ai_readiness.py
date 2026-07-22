@@ -83,6 +83,7 @@ def scope_readiness(
         candidate
         for candidate in session.scalars(select(AISearchCandidate)).all()
         if _line_matches(candidate, line_scope)
+        and _metadata(candidate).get("readiness_track", "FIELD_READINESS") == "FIELD_READINESS"
         and (
             candidate.source_type != "FIELD_COMMENT"
             or candidate.review_status in {"ANALYZED", "REVIEWED", "SELECTED"}

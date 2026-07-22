@@ -43,6 +43,7 @@ try
 {
     var services = new FlowNoteLocalServices(databasePath);
     var databaseStatisticsBefore = ReadDatabaseStatistics(services.Database);
+    object? aiSmokeEvidence = null;
 
     var cursorSmokeScopeA = $"https://cursor-a-{runId}.example/api/";
     var cursorSmokeScopeB = $"https://cursor-b-{runId}.example/api/";
@@ -4000,6 +4001,7 @@ try
                     Category = "alignment-delay",
                     IdempotencyKey = $"wpf-smoke-ai-analyzed-{runId}"
                 });
+            var aiAnalyzedSourceHashBefore = aiServerAnalyzedComment.SourceHashSha256;
             aiServerAnalyzedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
                 aiServerAnalyzedComment.CommentId,
                 new ServerFieldCommentReviewRequest
@@ -4007,7 +4009,11 @@ try
                     Status = "ANALYZED",
                     NormalizedContent = "정렬 지연은 가이드핀 청소 후 정상화됨.",
                     AnalysisContent = "공정 전 청소 기준을 공개 작업표준과 연결해 재발 여부를 추적한다.",
-                    AnalyzedBy = serverLogin.UserId
+                    AnalyzedBy = serverLogin.UserId,
+                    AssignedTo = serverLogin.UserId,
+                    ReviewDueAt = DateTime.UtcNow.AddDays(7),
+                    TransitionReason = "회귀 근거의 분석 완료 상태와 담당 기한을 보존함",
+                    MutationKey = $"wpf-smoke-ai-analyzed-transition-{runId}"
                 });
 
             var aiServerReviewedComment = await serverDocuments.RegisterFieldCommentAsync(
@@ -4026,6 +4032,7 @@ try
                     Category = "handover",
                     IdempotencyKey = $"wpf-smoke-ai-reviewed-{runId}"
                 });
+            var aiReviewedSourceHashBefore = aiServerReviewedComment.SourceHashSha256;
             aiServerReviewedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
                 aiServerReviewedComment.CommentId,
                 new ServerFieldCommentReviewRequest
@@ -4033,7 +4040,11 @@ try
                     Status = "ANALYZED",
                     NormalizedContent = "보류 발생 사항은 다음 조 인수인계 대상으로 분류됨.",
                     AnalysisContent = "보류 사유와 전달 누락 여부를 보고서 근거로 남긴다.",
-                    AnalyzedBy = serverLogin.UserId
+                    AnalyzedBy = serverLogin.UserId,
+                    AssignedTo = serverLogin.UserId,
+                    ReviewDueAt = DateTime.UtcNow.AddDays(7),
+                    TransitionReason = "회귀 근거의 분석 단계와 담당 기한을 보존함",
+                    MutationKey = $"wpf-smoke-ai-reviewed-analyze-{runId}"
                 });
             aiServerReviewedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
                 aiServerReviewedComment.CommentId,
@@ -4043,7 +4054,9 @@ try
                     NormalizedContent = "보류 발생 사항은 다음 조 인수인계 대상으로 분류됨.",
                     AnalysisContent = "보류 사유와 전달 누락 여부를 보고서 근거로 남긴다.",
                     ReviewedBy = serverLogin.UserId,
-                    AnalyzedBy = serverLogin.UserId
+                    AnalyzedBy = serverLogin.UserId,
+                    TransitionReason = "독립 검토 완료 근거를 회귀 계약에 고정함",
+                    MutationKey = $"wpf-smoke-ai-reviewed-transition-{runId}"
                 });
 
             var aiServerSelectedComment = await serverDocuments.RegisterFieldCommentAsync(
@@ -4062,6 +4075,7 @@ try
                     Category = "sensor-zeroing",
                     IdempotencyKey = $"wpf-smoke-ai-selected-{runId}"
                 });
+            var aiSelectedSourceHashBefore = aiServerSelectedComment.SourceHashSha256;
             aiServerSelectedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
                 aiServerSelectedComment.CommentId,
                 new ServerFieldCommentReviewRequest
@@ -4069,7 +4083,11 @@ try
                     Status = "ANALYZED",
                     NormalizedContent = "센서 재영점 절차 누락 위험을 관리자 검토 대상으로 선정함.",
                     AnalysisContent = "AI 검색 후보에서 절차 누락 위험 사례로 역추적 가능해야 한다.",
-                    AnalyzedBy = serverLogin.UserId
+                    AnalyzedBy = serverLogin.UserId,
+                    AssignedTo = serverLogin.UserId,
+                    ReviewDueAt = DateTime.UtcNow.AddDays(7),
+                    TransitionReason = "선정 전 분석 근거와 담당 기한을 보존함",
+                    MutationKey = $"wpf-smoke-ai-selected-analyze-{runId}"
                 });
             aiServerSelectedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
                 aiServerSelectedComment.CommentId,
@@ -4079,7 +4097,9 @@ try
                     NormalizedContent = "센서 재영점 절차 누락 위험을 관리자 검토 대상으로 선정함.",
                     AnalysisContent = "AI 검색 후보에서 절차 누락 위험 사례로 역추적 가능해야 한다.",
                     ReviewedBy = serverLogin.UserId,
-                    AnalyzedBy = serverLogin.UserId
+                    AnalyzedBy = serverLogin.UserId,
+                    TransitionReason = "선정 전 관리자 검토를 완료함",
+                    MutationKey = $"wpf-smoke-ai-selected-review-{runId}"
                 });
             aiServerSelectedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
                 aiServerSelectedComment.CommentId,
@@ -4089,7 +4109,9 @@ try
                     NormalizedContent = "센서 재영점 절차 누락 위험을 관리자 검토 대상으로 선정함.",
                     AnalysisContent = "AI 검색 후보에서 절차 누락 위험 사례로 역추적 가능해야 한다.",
                     ReviewedBy = serverLogin.UserId,
-                    AnalyzedBy = serverLogin.UserId
+                    AnalyzedBy = serverLogin.UserId,
+                    TransitionReason = "복합 보고서의 FieldComment 근거로 선정함",
+                    MutationKey = $"wpf-smoke-ai-selected-transition-{runId}"
                 });
 
             var aiServerExcludedComment = await serverDocuments.RegisterFieldCommentAsync(
@@ -4104,14 +4126,19 @@ try
                     EntrySource = "field_user",
                     IdempotencyKey = $"wpf-smoke-ai-excluded-{runId}"
                 });
-            _ = await serverDocuments.UpdateFieldCommentReviewAsync(
+            var aiExcludedSourceHashBefore = aiServerExcludedComment.SourceHashSha256;
+            aiServerExcludedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
                 aiServerExcludedComment.CommentId,
                 new ServerFieldCommentReviewRequest
                 {
                     Status = "EXCLUDED",
                     NormalizedContent = "AI 후보 제외 사유 검증용 기록",
                     AnalysisContent = "관리자가 보고서 근거로 사용하지 않기로 결정한 항목",
-                    ReviewedBy = serverLogin.UserId
+                    ReviewedBy = serverLogin.UserId,
+                    AssignedTo = serverLogin.UserId,
+                    ReviewDueAt = DateTime.UtcNow.AddDays(7),
+                    TransitionReason = "정책상 검색·보고서 근거에서 제외함",
+                    MutationKey = $"wpf-smoke-ai-excluded-transition-{runId}"
                 });
 
             var aiServerMesComment = await serverDocuments.RegisterFieldCommentAsync(
@@ -4440,6 +4467,47 @@ try
             Require(
                 blockedAiPayload.RootElement.GetProperty("error").GetProperty("code").GetString() == "AI_EXTERNAL_CALL_DISABLED",
                 "AI provider gate should expose the default-disabled ground truth code without calling a provider");
+            var aiReadiness = await serverDocuments.GetAISearchReadinessAsync();
+            Require(
+                !aiEvaluation.ProviderStartReady && !aiReadiness.ProviderStartReady,
+                "SMOKE_REGRESSION evaluation must never make FIELD_READINESS provider-ready");
+            aiSmokeEvidence = new
+            {
+                dataset = "SMOKE_REGRESSION",
+                ai_scope_or_disabled = "AI_EXTERNAL_CALL_DISABLED",
+                field_readiness_count = aiReadiness.FieldReadiness.GroundTruthCount,
+                smoke_regression_count = aiReadiness.SmokeRegressionReadiness.GroundTruthCount,
+                provider_start_ready = aiReadiness.ProviderStartReady,
+                status_distribution = new Dictionary<string, int>
+                {
+                    ["ANALYZED"] = 1,
+                    ["REVIEWED"] = 1,
+                    ["SELECTED"] = 1,
+                    ["EXCLUDED"] = 1
+                },
+                field_comments = new[]
+                {
+                    new { category = "EQUIPMENT_ANOMALY", scenario_type = "NORMAL", source_id = aiServerAnalyzedComment.CommentId, version_id = aiServerAnalyzedComment.DocumentVersionId, source_hash_before = aiAnalyzedSourceHashBefore, source_hash_after = aiServerAnalyzedComment.SourceHashSha256, actual_status = aiServerAnalyzedComment.Status, assigned_to = aiServerAnalyzedComment.AssignedTo, review_due_at = aiServerAnalyzedComment.ReviewDueAt, transition_reason = aiServerAnalyzedComment.LastTransitionReason },
+                    new { category = "HANDOVER", scenario_type = "NORMAL", source_id = aiServerReviewedComment.CommentId, version_id = aiServerReviewedComment.DocumentVersionId, source_hash_before = aiReviewedSourceHashBefore, source_hash_after = aiServerReviewedComment.SourceHashSha256, actual_status = aiServerReviewedComment.Status, assigned_to = aiServerReviewedComment.AssignedTo, review_due_at = aiServerReviewedComment.ReviewDueAt, transition_reason = aiServerReviewedComment.LastTransitionReason },
+                    new { category = "SAFETY", scenario_type = "CONFLICT", source_id = aiServerSelectedComment.CommentId, version_id = aiServerSelectedComment.DocumentVersionId, source_hash_before = aiSelectedSourceHashBefore, source_hash_after = aiServerSelectedComment.SourceHashSha256, actual_status = aiServerSelectedComment.Status, assigned_to = aiServerSelectedComment.AssignedTo, review_due_at = aiServerSelectedComment.ReviewDueAt, transition_reason = aiServerSelectedComment.LastTransitionReason },
+                    new { category = "QUALITY", scenario_type = "EXCLUSION", source_id = aiServerExcludedComment.CommentId, version_id = aiServerExcludedComment.DocumentVersionId, source_hash_before = aiExcludedSourceHashBefore, source_hash_after = aiServerExcludedComment.SourceHashSha256, actual_status = aiServerExcludedComment.Status, assigned_to = aiServerExcludedComment.AssignedTo, review_due_at = aiServerExcludedComment.ReviewDueAt, transition_reason = aiServerExcludedComment.LastTransitionReason }
+                },
+                report = new
+                {
+                    report_id = aiServerReport.ReportId,
+                    source_types = aiServerReport.Sources.Select(item => item.SourceType).Distinct().OrderBy(item => item).ToArray(),
+                    sources = aiServerReport.Sources.Select(item => new { item.SourceType, item.SourceId, item.SourceVersionId, item.SourceHashSha256, item.TraceId }).ToArray(),
+                    reverse_trace_success = aiServerReport.Sources.All(item => !string.IsNullOrWhiteSpace(item.TraceId) && !string.IsNullOrWhiteSpace(item.SourceHashSha256))
+                },
+                evaluation = new
+                {
+                    run_id = aiEvaluation.RunId,
+                    aiEvaluation.Status,
+                    aiEvaluation.CandidateIdentityStable,
+                    aiEvaluation.RankingStable,
+                    cases = aiEvaluation.Cases.Select(item => new { item.CaseKey, item.ActualOutcome, item.Passed, item.ActualEvidence }).ToArray()
+                }
+            };
             Console.WriteLine(
                 $"AI search quality server smoke: run={runId}, candidates={aiRebuild.CandidateCount}, reviewed={readiness.ReviewedStatusCount}, missing={readiness.MissingReviewedCount}, report={aiServerReport.ReportId}, evaluation={aiEvaluation.RunId}, providerReady={aiEvaluation.ProviderStartReady}, providerGate=AI_EXTERNAL_CALL_DISABLED");
         }
@@ -4625,7 +4693,8 @@ try
                 foreign_key_violations = 0,
                 mapping_duplicates = 0,
                 idempotency_duplicates = 0
-            }
+            },
+            ai_field_comment = aiSmokeEvidence
         };
         File.WriteAllText(
             evidencePath,

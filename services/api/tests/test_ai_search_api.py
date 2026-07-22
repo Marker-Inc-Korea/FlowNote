@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -13,11 +15,13 @@ from app.db.models import (
     AISearchEvaluationCase,
     AISearchEvaluationRun,
     Document,
+    DocumentTag,
     DocumentVersion,
     FieldComment,
     FileObject,
     Report,
     ReportSource,
+    TagDefinition,
     WorkSequenceBoard,
     WorkSequenceChangeHistory,
     NotificationChannel,
@@ -920,7 +924,7 @@ def test_scope_readiness_counts_approved_ground_truth_and_category_gaps() -> Non
             }],
             "expectedExcluded": [],
             "allowedRankMin": 1,
-            "allowedRankMax": 10,
+            "allowedRankMax": 20,
             "asOf": datetime.now(timezone.utc).isoformat(),
             "dataClassification": "TEST",
             "provenanceNote": "비민감 회귀 사례이며 실제 현장 준비도에서 제외",
@@ -1002,3 +1006,54 @@ def test_scope_readiness_counts_approved_ground_truth_and_category_gaps() -> Non
         assert delta["candidate_ids_removed"] == []
         assert delta["content_hash_changed"] == []
         assert delta["ranking_changed"] is False
+
+
+def test_scope_readiness_excludes_smoke_regression_candidates_from_field_source_counts() -> None:
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        seeded = seed_ai_search_sources(client)
+        with client.app.state.database.session() as session:
+            marker = session.scalar(select(TagDefinition).where(
+                TagDefinition.tag_type == "custom",
+                TagDefinition.code == "smoke-regression",
+            ))
+            if marker is None:
+                marker = TagDefinition(
+                    tag_id=f"tag-smoke-regression-{uuid4().hex}",
+                    tag_type="custom",
+                    code="smoke-regression",
+                    name="SMOKE_REGRESSION",
+                    is_active=True,
+                )
+                session.add(marker)
+                session.flush()
+            session.add(DocumentTag(
+                document_id=seeded["published_document_id"],
+                tag_id=marker.tag_id,
+            ))
+            session.commit()
+
+        rebuild = client.post("/api/v1/ai-search/candidates/rebuild", headers=headers)
+        assert rebuild.status_code == 200, rebuild.text
+        readiness_response = client.get("/api/v1/ai-search/readiness", headers=headers)
+        assert readiness_response.status_code == 200, readiness_response.text
+        readiness = readiness_response.json()
+
+        with client.app.state.database.session() as session:
+            candidates = session.scalars(select(AISearchCandidate)).all()
+            smoke_candidates = [
+                candidate for candidate in candidates
+                if json.loads(candidate.metadata_json or "{}").get("readiness_track") == "SMOKE_REGRESSION"
+            ]
+            field_counts = Counter(
+                candidate.source_type for candidate in candidates
+                if json.loads(candidate.metadata_json or "{}").get("readiness_track") == "FIELD_READINESS"
+                and (candidate.source_type != "FIELD_COMMENT" or candidate.review_status in {"ANALYZED", "REVIEWED", "SELECTED"})
+            )
+
+        assert smoke_candidates
+        assert readiness["source_counts"] == {
+            source_type: field_counts[source_type]
+            for source_type in readiness["source_minimums"]
+        }
+        assert readiness["provider_start_ready"] is False
