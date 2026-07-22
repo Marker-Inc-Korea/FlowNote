@@ -2,6 +2,14 @@
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
 
+## 2026-07-22 작업 201 전체 문서 현재 코드 재대조
+
+작업 정책 원문 `AGENTS.md`를 제외한 Git 추적 제품·구현 Markdown 41개를 FastAPI, Windows WPF, Android와 운영·검증 스크립트에 다시 대조했다. `data/local`, 앱 `Data/`와 캐시의 Markdown은 누적 시험·등록 산출물이므로 수정하지 않았다. 과거 일일·검증 기록의 당시 실행 결과는 보존하고, 현재 사양으로 읽히는 기준일·기능 범위·검증 기준만 갱신했다.
+
+현재 코드에서 다시 산출한 값은 루트 `GET /`를 포함한 OpenAPI 128개 method/path 조합, SQLAlchemy ORM 58개 테이블, `Settings` 36개 항목, FastAPI 테스트 149개다. WPF `AI 운영` 화면은 일괄 보존뿐 아니라 질의 상세, 단일 즉시 만료와 legal hold 설정·해제·감사 read-back까지 구현되어 있으므로 오래된 클라이언트 설명을 바로잡았다. API 테스트 문서의 146개 표기와 과거 스모크 문서의 144/131 guard 설명도 현재 코드·149개 guard에 맞췄다.
+
+이번 재대조에서는 FastAPI 테스트를 `--collect-only`로 수집해 전체 저장소 162개 중 `services/api/tests` 149개와 `scripts` 도구 테스트 13개를 확인했다. 전체 회귀, WPF·Android 빌드와 누적 공통 DB 스모크는 새로 실행하지 않았고 기존 SQLite, 로그, 테스트 파일과 산출물은 삭제하거나 초기화하지 않았다.
+
 ## 2026-07-22 우선순위 6 Android 운영 검증 보강
 
 운영 검증 스크립트는 APK와 AAB를 구분하고 APK의 package ID, version, non-debuggable, backup/cleartext 차단을 확인하도록 보강했다. 설치·rollback은 승인 ADB serial을 명시해야 하며 후보 설치 뒤 동일 signer·더 낮은 versionCode인 이전 승인 APK가 실제로 설치 성공해야 PASS다. `full_pilot` 준비 시 전달 시도, 누락·receipt 중복·crash 중복 집계, 보안 8행, 단말 발급·비활성화·분실·교체 4행, 후보/이전 승인 패키지 2행의 원시 CSV를 만든다. 최종 판정은 요약 JSON 외에도 원시 시도 수·성공 수·최대 시간과 집계값의 일치, 모든 원시 행의 PASS, 같은 실행 폴더 안의 증거 존재를 검사한다.
@@ -38,7 +46,7 @@ macOS ARM64 보조 run `p0-baseline-144-macos-precheck-20260722-002`에서 FastA
 
 현재 작업 트리의 코드를 기준으로 AI 질의 감사·보존 API를 고객·현장 scope에 고정하고, 단일 즉시 만료와 `ACTIVE`/`RELEASED` legal hold 계약을 API·데이터 모델·보안·설계 결정 문서에 반영했다. 정기 스케줄러와 `system-admin` 수동 보존 작업은 활성 hold를 건너뛰고, 해제 이력은 원래 row를 삭제하지 않는다. 실제 현장 준비도 검증기는 승인된 `FIELD_READINESS` dataset과 고객·현장·선택적 라인·DB fingerprint를 결합하고, 외부 호출 없이 동일 snapshot을 두 번 평가한다.
 
-현재 정량 기준은 루트 `GET /`를 포함한 OpenAPI 125개 method/path 조합, SQLAlchemy ORM 58개 테이블, `Settings` 36개 항목, 중복 없는 pytest node ID 144개다. `services/api/README.md`의 API 표는 OpenAPI와 누락·초과 0건이다. 변경 Python·테스트·검증기의 Ruff 검사와 AI 운영·DB 집중 회귀 6건은 통과했다. 실제 현장 dataset·검증 계정·비밀번호가 없어 `verify-ai-field-readiness.py`는 실행하지 않았다. 기존 SQLite, 로그, 테스트 파일과 산출물은 삭제하지 않았다.
+이 절 작성 당시 정량 기준은 루트 `GET /`를 포함한 OpenAPI 125개 method/path 조합, SQLAlchemy ORM 58개 테이블, `Settings` 36개 항목, 중복 없는 pytest node ID 144개였다. `services/api/README.md`의 API 표는 OpenAPI와 누락·초과 0건이었다. 변경 Python·테스트·검증기의 Ruff 검사와 AI 운영·DB 집중 회귀 6건은 통과했다. 실제 현장 dataset·검증 계정·비밀번호가 없어 `verify-ai-field-readiness.py`는 실행하지 않았다. 기존 SQLite, 로그, 테스트 파일과 산출물은 삭제하지 않았다.
 
 ## 2026-07-21 작업 102 파일럿 판정 schema 2 문서 갱신
 
@@ -62,7 +70,7 @@ Git 추적 Markdown 42개를 목록화하고 작업 정책 원문 `AGENTS.md`를
 
 당시 작업 시작 시 Git 작업 트리와 `main...origin/main`은 깨끗해 반영할 미커밋 코드는 없었다. 서버 복구 manifest/reconciliation, WPF 재결합 경계와 관련 상위 문서는 그 시점 코드와 일치했다. 다만 `services/api/README.md`의 FastAPI 수집 기준만 서버 복구 회귀 6건이 추가되기 전인 137건에 머물러 있어 당시 수집값 143건으로 갱신했다.
 
-그 재대조에서 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 143건을 수집했다. 당시 OpenAPI는 루트 `GET /`를 포함한 122개 method/path 조합이고 SQLAlchemy ORM은 57개 테이블이었다. 전체 테스트·WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았으며 기존 SQLite, 로그와 테스트 산출물은 삭제하지 않았다. 이 수치는 이후 AI 보존 변경 전 기록이며 현재 기준은 이 문서 상단의 125개 API·58개 테이블·144개 테스트를 따른다.
+그 재대조에서 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 143건을 수집했다. 당시 OpenAPI는 루트 `GET /`를 포함한 122개 method/path 조합이고 SQLAlchemy ORM은 57개 테이블이었다. 전체 테스트·WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았으며 기존 SQLite, 로그와 테스트 산출물은 삭제하지 않았다. 이 수치는 이후 AI 보존 변경 전 기록이며 현재 기준은 이 문서 최상단의 128개 API·58개 테이블·149개 테스트를 따른다.
 
 ## 2026-07-21 작업 102 서버 복구 reconciliation 문서 갱신
 
@@ -76,9 +84,9 @@ Git 추적 Markdown 42개를 전부 목록화했다. 작업 정책 원문 `AGENT
 
 이 절을 처음 작성한 시점의 OpenAPI는 루트 `GET /`를 포함한 116개 method/path 조합이었고 ORM은 FieldComment 검토·보고서·작업순서 mutation receipt를 포함한 54개 테이블이었다. 이후 서버 복구 reconciliation 시점에는 122개 API와 57개 테이블이었다. 당시에도 작업순서는 `board_revision`과 mutation receipt를 쓰는 FastAPI 권위 aggregate였고, FieldComment 검토는 `review_revision`, 보고서는 `report_revision`과 내용/source 집합 hash를 권위값으로 사용했다. WPF는 작업순서 서버 snapshot을 직접 읽고, 검토·첨부·보고서 재시도에는 base revision·mutation key·파일/source hash를 전달해 응답 read-back을 로컬에 보존했다.
 
-이 절 작성 당시 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 137건을 수집했다. 새 3건은 FieldComment 검토 동시성/receipt 재생, 첨부 응답 유실 재시도, 보고서 선정 뒤 source 변경 409 차단이었다. 전체 pytest는 당시 문서 갱신 중 새로 실행하지 않았으며, 직전 134 passed는 새 3건 추가 전의 역사적 결과로 보존한다. 당시 macOS에서 실행 가능한 WPF Core 테스트는 작업순서 서버 권위 정책 5건을 포함해 33 passed, failed/skipped 0이었고 Android `testDebugUnitTest`는 Java Runtime 부재로 테스트 시작 전 환경 실패였다. WPF 앱 build·누적 스모크·Android build도 Windows 표준 기준선으로 새로 실행하지 않았다. 이후 143건 통과 기록도 역사적 결과이며 현재 수집 기준은 문서 상단의 144건이다.
+이 절 작성 당시 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 137건을 수집했다. 새 3건은 FieldComment 검토 동시성/receipt 재생, 첨부 응답 유실 재시도, 보고서 선정 뒤 source 변경 409 차단이었다. 전체 pytest는 당시 문서 갱신 중 새로 실행하지 않았으며, 직전 134 passed는 새 3건 추가 전의 역사적 결과로 보존한다. 당시 macOS에서 실행 가능한 WPF Core 테스트는 작업순서 서버 권위 정책 5건을 포함해 33 passed, failed/skipped 0이었고 Android `testDebugUnitTest`는 Java Runtime 부재로 테스트 시작 전 환경 실패였다. WPF 앱 build·누적 스모크·Android build도 Windows 표준 기준선으로 새로 실행하지 않았다. 이후 143건 통과 기록도 역사적 결과이며 현재 수집 기준은 문서 최상단의 149건이다.
 
-이 절 작성 당시 `scripts/verify-preserved-tests.ps1`의 `$expectedFastApiTestCount`는 131이었다. 2026-07-22에 guard는 144건으로 복구됐지만 새 Windows x64 무생략 `PASSED` 기준선은 아직 확보하지 못했다. 기존 `baseline-131-macos-precheck-20260721-001`은 당시 결과로 보존하지만 현재 코드 기준선으로 승격하지 않는다. 기존 실패 run, SQLite, 로그, 파일은 삭제하거나 초기화하지 않았다.
+이 절 작성 당시 `scripts/verify-preserved-tests.ps1`의 `$expectedFastApiTestCount`는 131이었고 이후 같은 날의 중간 단계에서 144건으로 복구됐다. 현재 guard는 149건이지만 새 Windows x64 무생략 `PASSED` 기준선은 아직 확보하지 못했다. 기존 `baseline-131-macos-precheck-20260721-001`은 당시 결과로 보존하지만 현재 코드 기준선으로 승격하지 않는다. 기존 실패 run, SQLite, 로그, 파일은 삭제하거나 초기화하지 않았다.
 
 ## 2026-07-20 작업 207 전체 문서 재대조
 
@@ -252,7 +260,7 @@ provider 심사는 계약, 데이터 보존, 학습 사용, 전송 지역, TLS, 
 
 ## 2026-07-16 작업 102 초기 코드·문서 재대조 기록
 
-이 기록은 같은 날 후보 5 FieldComment 정제 변경 전의 재대조 결과다. 당시 깨끗한 작업 트리의 구현을 제품·시스템·데이터 모델·API·보안·배포·클라이언트·서버 개발 문서와 대조했다. 코드가 문서보다 우선한다는 기준으로 전역 FastAPI OpenAPI 105개 method/path 조합, ORM 46개 테이블, `Settings` 36개 항목을 확인했다. 서버 API 목록에서 빠진 문서 soft delete를 보강하고, Android 보안 본문 열람·Keystore 보호 outbox·로그인 세션 foreground service 알림 복구가 메타데이터 조회와 전경 Activity polling으로 남아 있던 당시 상태 요약·MVP·파일럿 문구를 구현에 맞게 바로잡았다. 그 시점의 FastAPI 수집값 126건과 표준 스크립트 고정값 120건의 불일치도 활성 검증·배포 문서에 명시했다. 후속 후보 5 변경 이후의 현재 기준은 위 절의 `128 passed` 기록을 따른다.
+이 기록은 같은 날 후보 5 FieldComment 정제 변경 전의 재대조 결과다. 당시 깨끗한 작업 트리의 구현을 제품·시스템·데이터 모델·API·보안·배포·클라이언트·서버 개발 문서와 대조했다. 코드가 문서보다 우선한다는 기준으로 전역 FastAPI OpenAPI 105개 method/path 조합, ORM 46개 테이블, `Settings` 36개 항목을 확인했다. 서버 API 목록에서 빠진 문서 soft delete를 보강하고, Android 보안 본문 열람·Keystore 보호 outbox·로그인 세션 foreground service 알림 복구가 메타데이터 조회와 전경 Activity polling으로 남아 있던 당시 상태 요약·MVP·파일럿 문구를 구현에 맞게 바로잡았다. 그 시점의 FastAPI 수집값 126건과 표준 스크립트 고정값 120건의 불일치도 활성 검증·배포 문서에 명시했다. 후속 후보 5 변경 뒤의 `128 passed` 역시 당시 역사적 기록이며 현재 기준은 문서 최상단을 따른다.
 
 `services/api/.venv/bin/python`으로 당시 OpenAPI 105개 조합, ORM 46개 테이블, `Settings` 36개 항목을 확인했다. `pytest --collect-only -q`로 당시 FastAPI 테스트 126건 수집도 확인했다. 문서 정합성 작업이므로 전체 pytest, WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았고, 기존 SQLite·로그·캐시·테스트 산출물은 삭제하지 않았다.
 
@@ -284,7 +292,7 @@ fake adapter로 success, timeout, 429/5xx 재시도, 비재시도 차단, 잘못
 
 ## 2026-07-15 작업 102 현재 코드 재대조
 
-이 절은 외부 AI 응답 검증과 자동 보존 스케줄러가 추가되기 전 같은 날의 중간 재대조 기록이다. 현재 기준은 위의 116건 수집·통과 기록과 문서 상단의 표준 실행 절을 우선한다.
+이 절은 외부 AI 응답 검증과 자동 보존 스케줄러가 추가되기 전 같은 날의 중간 재대조 기록이다. 같은 날 후속 116건 수집·통과 기록보다도 현재 기준은 문서 최상단의 최신 재대조와 표준 실행 절을 우선한다.
 
 작업 시작 시 Git 작업 트리는 깨끗했으므로 미커밋 변경을 추정하지 않고 최근 FastAPI, Windows WPF, Android 구현과 현재 개발 문서를 다시 대조했다. FastAPI OpenAPI의 루트 `GET /`를 포함한 102개 method/path 조합과 `docs/api.md`, `services/api/README.md`의 각 102개 표 항목은 누락과 초과가 각각 0건이었다. 서버 ORM 45개 테이블도 `docs/data-model.md`, `services/api/db/README.md`, `services/api/db/migrations/0001_initial_mvp_schema.md`에 모두 반영했다.
 
@@ -338,7 +346,7 @@ WPF 로컬 SQLite에 `server_notification_cursors`, `server_notification_message
 
 작업 시작 시 Git 작업 트리는 깨끗했으므로 미커밋 변경을 추정 반영하지 않고 현재 FastAPI, Windows WPF, Android 코드와 상위 제품 문서의 구현 범위를 다시 대조했다. Android 문서 본문 뷰어 미구현, WPF controlled copy 저장·SHA-256 검증, AI 근거 평가와 외부 호출 전 안전장치 골격 등 기존 구현 설명은 코드와 일치한다. 최신 Windows 코드의 보존 FAILED 큐 전환 기능은 독립 운영 문서와 데이터 모델·결정 기록에는 있었지만 Windows 문서 색인, 구현 목록, 로컬 SQLite 설명, 시스템 맵과 로드맵 연결이 부족해 해당 문서를 보강했다.
 
-이후 서버 계정 수명주기 API와 WPF 운영 화면, 강제 비밀번호 변경, 세션 폐기 코드가 추가되어 상위 제품·시스템·보안·배포·로드맵 문서를 다시 갱신했다. 그 중간 시점에는 `services/api`의 `pytest --collect-only -q`와 `scripts/verify-preserved-tests.ps1` 기준선이 92건이었다. 같은 날 AI provider 직전 권한·민감정보·최소 payload 게이트 회귀가 추가된 현재 기준선은 이 문서 상단에 적은 96건이다. 아래 2026-07-13의 75건 수집·통과 문장도 당시 실행 기록으로 보존한다. 이 중간 문서 갱신에서는 전체 pytest, WPF 빌드·스모크와 Android 빌드·단위 테스트를 새로 실행하지 않았고 기존 테스트 데이터와 산출물은 삭제하지 않았다.
+이후 서버 계정 수명주기 API와 WPF 운영 화면, 강제 비밀번호 변경, 세션 폐기 코드가 추가되어 상위 제품·시스템·보안·배포·로드맵 문서를 다시 갱신했다. 그 중간 시점에는 `services/api`의 `pytest --collect-only -q`와 `scripts/verify-preserved-tests.ps1` 기준선이 92건이었다. 같은 날 AI provider 직전 권한·민감정보·최소 payload 게이트 회귀가 추가된 뒤 96건이 되었으며 두 값 모두 당시 기록이다. 아래 2026-07-13의 75건 수집·통과 문장도 당시 실행 기록으로 보존한다. 이 중간 문서 갱신에서는 전체 pytest, WPF 빌드·스모크와 Android 빌드·단위 테스트를 새로 실행하지 않았고 기존 테스트 데이터와 산출물은 삭제하지 않았다.
 
 이번 재대조에서는 현재 코드의 설정 모델과 `.env.example`에 있는 `FLOWNOTE_AI_PROVIDER_EXCERPT_MAX_CHARS`, `FLOWNOTE_AI_PROVIDER_MAX_SOURCES`를 API 설정 목록에 반영했다. 이미 구현된 서버 계정·세션 운영 UI는 MVP 후속 후보에서 현재 구현 범위로 옮기고, 후속 항목은 실제 현장 권한·발급 절차 검증으로 좁혔다. `services/api`에서 `pytest --collect-only -q`를 다시 실행해 96건 수집을 확인했으며 전체 pytest, WPF/Android 빌드와 스모크 테스트는 새로 실행하지 않았다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하지 않았다.
 

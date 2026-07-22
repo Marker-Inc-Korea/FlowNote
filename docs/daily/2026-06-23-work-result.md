@@ -14,7 +14,7 @@
 - 서버 API는 `/api/v1` 경로 아래 인증·서버 계정, 승인 단말, 문서와 controlled copy, FieldComment, 태그, 작업순서, 채널/인수인계, 보고서, AI 근거 후보·회귀 평가와 외부 AI 질의 안전장치, sync manifest와 관리자 승인형 reconciliation을 구현한다.
 - Windows 앱은 공통 로컬 SQLite `data/local/flownote.local.sqlite`를 사용하며, 환경 변수로 위치를 바꿀 수 있다.
 - 현장 기록 명칭은 코드, DB, API, 문서에서 `FieldComment` / `field_comments` / `field-comments`를 사용한다.
-- 2026-07-21 재대조 기준으로 서버 계정 수명주기, WPF 사용자별 알림 cursor 보존, 보존 FAILED 큐 승인 전환, 서버 instance/epoch 복구 경계와 재결합도 현재 구현 범위다.
+- 2026-07-22 재대조 기준으로 서버 계정 수명주기, WPF 사용자별 알림 cursor 보존, 보존 FAILED 큐 승인 전환, 서버 instance/epoch 복구 경계와 재결합도 현재 구현 범위다.
 
 ## 남은 후속 범위
 
