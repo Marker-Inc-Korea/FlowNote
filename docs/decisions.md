@@ -450,3 +450,11 @@
 - 서버 URL만으로 동기화 연속성을 판단하지 않고, DB에 보존되는 불변 instance ID와 운영 복구 때 증가시키는 epoch를 함께 사용한다.
 - epoch 변경이나 cursor 역행은 자동 복구하지 않는다. 전송과 polling을 함께 멈추고, idempotency key/hash 기반 전수 판정 후 관리자 승인으로만 binding을 교체한다.
 - `CONFIRMED`는 새 ID/revision에 재결합하고 `ABSENT`는 기존 key로 재전송한다. `DIVERGED`는 충돌로 영구 보존하며 서버 또는 로컬 payload를 암묵적으로 선택하지 않는다.
+
+## 2026-07-22. FieldComment 일괄 정제는 항목별 receipt와 보고서 source revision으로 확정
+
+- 관리자 주 흐름은 `NEW → ASSIGNED → ANALYZED → REVIEWED → SELECTED`로 둔다. 기존 SQLite의 상태 CHECK와 기록을 재작성하지 않기 위해 `ASSIGNED`는 `NEW + assigned_to`의 논리 상태로 API·감사·WPF에 노출한다.
+- 최대 200건 일괄 처리는 실행 전 preview와 항목별 execute로 분리한다. 각 항목은 base revision과 고유 mutation key를 가지며 독립 transaction으로 성공/실패, 새 revision, receipt를 반환한다. 일부 실패가 다른 성공을 rollback하거나 응답 목록에서 지우지 않는다.
+- 상충 원천은 병합하지 않고 `conflict_flag`, `conflict_basis`와 전이 사유로 표시한다. 선정/제외 결정자는 상충 판단 근거를 남겨야 하며 원문은 계속 불변이다.
+- 보고서의 FieldComment source는 관찰 문서 버전·선정 `review_revision`·원천 hash를 함께 고정한다. 승인 및 파일 생성 직전 이 값과 채널 권한을 재검증하고 변경 시 409로 중단한다. 생성 문서에도 source ID/version/revision/trace/hash를 기록한다.
+- 관리자 대리 입력은 인증 입력자와 실제 전달자/작업자를 별도 필드와 `field_comment.proxy_created` 감사로 남긴다. 입력 계정을 실제 전달자로 자동 대체하지 않는다.

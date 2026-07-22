@@ -185,6 +185,8 @@ grant 응답은 `grant_id`, 상대 `stream_url`, 문서/버전 ID, 만료 시각
 | GET | `/api/v1/field-comments/{comment_id}` | FieldComment 상세 조회 |
 | PATCH | `/api/v1/field-comments/{comment_id}` | 상태, 정리 내용, 분석 내용 갱신 |
 | POST | `/api/v1/field-comments/bulk-review` | 최대 200건 담당 지정·기한·상태 일괄 변경 |
+| POST | `/api/v1/field-comments/bulk-review/preview` | 최대 200건 항목별 허용 전이·실패 사유 사전검증(쓰기 없음) |
+| POST | `/api/v1/field-comments/bulk-review/execute` | 항목별 base revision·mutation receipt를 가진 부분 성공 일괄 실행 |
 | GET | `/api/v1/field-comments/{comment_id}/audit` | 원천 hash를 포함한 검토 변경 전·후 감사 snapshot |
 | GET | `/api/v1/field-comments/{comment_id}/traceability` | FieldComment, 감사, report source, 생성 최종 문서·버전 통합 역추적 |
 | GET | `/api/v1/field-comments/quality-workbench` | 오래된 NEW, 근거가 빈약한 SELECTED, 원천·trace/version 누락, source hash 불일치 작업함 |
@@ -199,15 +201,15 @@ FieldComment 원천 삭제 API는 제공하지 않는다. 서버 ORM도 `field_c
 
 첨부 등록의 선택적 `idempotencyKey`도 공백을 제거한 뒤 최대 160자로 제한하며 서버 `field_comment_attachments.idempotency_key`에 유일하게 저장한다. WPF는 multipart `parentCommentId`, `fileSha256`, `idempotencyKey`를 함께 보낸다. `parentCommentId`가 경로의 FieldComment와 다르면 409 `ATTACHMENT_PARENT_MISMATCH`, `fileSha256`이 64자 SHA-256 hex가 아니면 422, 저장 파일의 서버 계산 hash와 다르면 파일을 제거하고 409 `ATTACHMENT_FILE_HASH_MISMATCH`로 응답한다. 같은 키를 같은 FieldComment와 같은 파일 hash로 다시 보내면 새 파일·첨부 row를 만들지 않고 기존 첨부와 file object를 반환한다. 다른 FieldComment 또는 다른 파일 hash에 키를 재사용하면 409로 거부한다. WPF 재시도 큐는 문서 버전과 FieldComment 첨부 전송에도 큐의 안정된 idempotency key를 그대로 전달한다.
 
-`GET /api/v1/field-comments`는 관리자 검토 화면 기준으로 `status`, `documentId`, `documentText`, `author`, `assignedTo`, `tag`, `line`, `equipment`, `process`, `errorType`, `createdFrom`, `createdTo`, `oldNewDays`, `hasAttachments`, `reportLinked`, `unreviewed`, `overdue`, `unassigned`, `missingEvidence`, `duplicateSuspected`, `priorityOrder`, `limit` 필터를 지원한다. 응답의 `workbench_flags`, `workbench_priority`는 관리자 처리 순서를 설명한다. WPF 관리자 화면은 같은 기준으로 로컬 `field_comments`, 문서, 문서 태그, 첨부와 보고서 source를 함께 조회한다.
+`GET /api/v1/field-comments`는 관리자 검토 화면 기준으로 `status`, `documentId`, `documentText`, `author`, `assignedTo`, `tag`, `line`, `equipment`, `process`, `errorType`, `createdFrom`, `createdTo`, `oldNewDays`, `hasAttachments`, `reportLinked`, `unreviewed`, `overdue`, `unassigned`, `missingEvidence`, `duplicateSuspected`, `conflict`, `priorityMin`, `priorityMax`, `priorityOrder`, `limit` 필터를 지원한다. 응답의 `workbench_flags`, `workbench_priority`, `attachment_count`, `channel_access`는 처리 순서와 근거 접근 상태를 설명한다.
 
-상태 변경은 `transitionReason` 3자 이상이 필수다. 주 흐름은 `NEW → ANALYZED → REVIEWED → SELECTED`이며 정해진 한 단계 전진과 감사 가능한 되돌림만 허용한다. 서버는 요청의 `reviewedBy`·`analyzedBy`를 신뢰하지 않고 인증 actor를 기록한다. `SELECTED`는 정리·분석 내용과 원천 작성자·문서 버전이 있어야 한다. 세부 권한과 되돌림 표는 [FieldComment 검토·분석·선정 운영](./field-comment-review-workflow.md)을 따른다.
+상태 변경은 `transitionReason` 3자 이상이 필수다. 주 흐름은 `NEW → ASSIGNED → ANALYZED → REVIEWED → SELECTED`이며 `ASSIGNED`에는 `assignedTo`가 필요하다. `conflictFlag/conflictBasis`는 상충 표지와 판단 근거를 보존한다. 서버는 요청의 `reviewedBy`·`analyzedBy`를 신뢰하지 않고 인증 actor를 기록한다.
 
 WPF 관리자 검토 화면은 선택한 FieldComment의 `normalized_content`, `analysis_content`, `status`를 수정하고 `server_sync_queue`에 `entity_type = field_comment_review`, `action = update_field_comment_review`로 서버 PATCH 재시도 항목을 남긴다. 서버 ID가 아직 없는 로컬 FieldComment는 선행 등록 동기화가 끝난 뒤 검토 변경 PATCH를 재시도한다.
 
 FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revision`을 반환한다. 검토 PATCH의 `baseReviewRevision`, `mutationKey`는 선택 필드지만 WPF는 큐 생성 시 읽은 revision과 안정된 큐 key를 항상 보낸다. 서버는 조건부 UPDATE로 base revision과 현재 revision이 같은 요청 하나만 성공시키고 revision을 1 증가시키며, 검토 변경과 `field_comment_review_mutation_receipts`를 같은 transaction에 저장한다. 같은 key·같은 comment·같은 intent 재시도는 영수증의 최초 응답 snapshot을 반환한다. 같은 key의 다른 comment/intent는 409 `IDEMPOTENCY_KEY_REUSED`, revision 불일치는 현재 revision을 포함한 409 `FIELD_COMMENT_STALE_REVIEW_REVISION`이다. `baseReviewRevision`을 생략한 직접 API 요청은 서버가 조회한 현재 revision을 기준으로 처리하므로 클라이언트가 읽은 시점의 낙관적 잠금을 제공하지 않는다. WPF는 서버 상태를 따라잡기 위해 중간 상태를 자동 생성하지 않는다.
 
-`POST /api/v1/field-comments/bulk-review`도 각 대상의 현재 `review_revision`을 조건부 갱신해 1씩 증가시킨 뒤 기존 상태 전이 정책을 적용한다. 이 일괄 요청에는 항목별 base revision이나 mutation key/receipt가 없으며, 대상 누락이나 항목 하나의 검증·동시성 갱신 실패가 있으면 전체 transaction을 저장하지 않는다.
+신규 일괄 계약은 `items[{commentId,baseReviewRevision,mutationKey}]`와 공통 변경 내용을 받는다. preview/execute 모두 입력 순서의 결과를 유지하며 execute는 `allowed`, `success`, `failure_code`, `failure_reason`, `review_revision`, `receipt`, 성공 `field_comment` snapshot을 항목별 반환한다. 기존 `/bulk-review`는 원자형 호환 경로다.
 
 ## 태그
 
@@ -285,11 +287,11 @@ FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revi
 | GET | `/api/v1/reports` | 보고서 목록 |
 | GET | `/api/v1/reports/{report_id}` | 보고서 상세 |
 
-보고서 draft와 최종 저장은 서로 다른 `sourceType` 최소 2종을 요구하며 같은 type/id/version 중복을 거부한다. 응답의 각 source는 `source_type`, `source_id`, 고정 `source_version_id`, 독립 `trace_id`, 저장 시점 `source_hash_sha256`를 반환한다. 최종 승인 직전에 같은 version의 원천 hash를 다시 계산하며 불일치하면 `409`로 차단한다. 승인된 보고서의 draft ID로 source를 교체할 수 없고 동일 `idempotencyKey` 재시도는 기존 보고서·생성 문서·source를 반환한다.
+보고서 draft와 최종 저장은 서로 다른 `sourceType` 최소 2종을 요구하며 같은 type/id/version 중복을 거부한다. 응답의 각 source는 `source_type`, `source_id`, 고정 `source_version_id`, FieldComment `source_revision`, 독립 `trace_id`, 저장 시점 `source_hash_sha256`를 반환한다. 최종 승인 직전에 같은 상태/version/revision/hash와 채널 권한을 다시 검사하며 불일치하면 `409`로 차단한다. 승인된 보고서의 draft ID로 source를 교체할 수 없다.
 
 보고서 source 타입은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `WORK_RECORD_VERSION`을 사용한다. 서버 저장은 `SELECTED` FieldComment와 현재 공개 문서 버전만 허용하며 FieldComment의 관찰 문서 버전을 source에 자동 고정한다. 활성 업무 채널에 연결된 source는 actor의 활성 멤버십을 검사한다. 현재 WPF 로컬 초안 후보도 `SELECTED` FieldComment, 공개 문서, 작업순서 항목/이력만 노출하며, `SELECTED` 전이에는 관찰 문서 버전과 원천 작성자가 필요하다.
 
-구현된 보고서 저장 계약은 `idempotencyKey`, `mutationKey`, 기존 초안의 선택적 `baseReportRevision`, 선택적 `contentHashSha256`, `sourceSetHashSha256`을 받는다. 각 source 요청은 `sourceType`, `sourceId`, 선택적 `sourceVersionId`, `relationType`을 보내며 서버가 현재 원천을 검증해 `source_hash_sha256`를 고정한다. 내용 hash는 보고서 유형·제목·본문·작업/구조/기간·상태의 정규화 JSON, source 집합 hash는 source type/ID/version/hash/relation의 정렬 canonical JSON을 SHA-256으로 계산한다. 기존 초안 저장은 base revision의 조건부 UPDATE가 성공할 때 `report_revision`을 1 증가시킨다. `baseReportRevision`을 생략하면 서버가 조회한 현재 revision을 사용하므로 클라이언트가 읽은 시점의 낙관적 잠금을 제공하지 않는다.
+구현된 보고서 저장 계약은 `idempotencyKey`, `mutationKey`, 기존 초안의 선택적 `baseReportRevision`, 선택적 `contentHashSha256`, `sourceSetHashSha256`을 받는다. 각 source 요청은 `sourceType`, `sourceId`, 선택적 `sourceVersionId`, `sourceRevision`, `sourceHashSha256`, `relationType`을 보내며 서버가 현재 원천을 검증해 revision/hash를 고정한다. 내용 hash는 보고서 유형·제목·본문·작업/구조/기간·상태의 정규화 JSON, source 집합 hash는 source type/ID/version/revision/hash/relation의 정렬 canonical JSON을 SHA-256으로 계산한다.
 
 서버는 문서/파일 생성 직전에 모든 source의 존재·상태·version·hash와 채널 권한을 다시 읽는다. 변경되거나 사라진 원천은 409 `REPORT_SOURCE_STALE_OR_ORPHAN`, 기존 초안 revision 경합은 409 `REPORT_STALE_REVISION`, 클라이언트가 보낸 두 hash와 서버 계산값 불일치는 각각 `REPORT_CONTENT_HASH_MISMATCH`, `REPORT_SOURCE_SET_HASH_MISMATCH`다. `mutationKey`가 없으면 `idempotencyKey`를 mutation key로 사용하며 같은 key·같은 intent는 `report_mutation_receipts`의 최초 응답을 반환하고 다른 intent는 409 `IDEMPOTENCY_KEY_REUSED`다. 보고서, source, 선택적 생성 document/version, 두 hash와 mutation receipt는 한 transaction으로 확정된다. 응답은 `report_revision`, `content_hash_sha256`, `source_set_hash_sha256`, `generated_document`와 source별 확정 ID/version/hash를 반환한다. 현재 WPF는 enqueue 시 고정한 source-set hash와 서버 응답 source 집합을 다시 계산해 일치할 때만 report/document/version ID, report revision, content hash, source-set hash를 로컬에 보존하고 큐를 `SYNCED`로 종결한다.
 

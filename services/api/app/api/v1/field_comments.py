@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from copy import copy
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
@@ -14,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.auth import (
+    CurrentUser,
     FIELD_COMMENT_DECIDE_ROLES,
     FieldCommentAnalyzeUser,
     FieldCommentCreateUser,
@@ -31,6 +34,8 @@ from app.db.models import (
     FieldCommentAttachment,
     FieldCommentReviewMutationReceipt,
     FileObject,
+    NotificationChannel,
+    NotificationChannelMember,
     ReportSource,
     Report,
     TagDefinition,
@@ -51,11 +56,12 @@ document_field_comments_router = APIRouter(
 
 COMMENT_TYPES = {"experience", "work_evaluation", "issue"}
 INPUT_MODES = {"signal", "free_text", "template", "template_with_text", "admin_proxy", "mes_integration"}
-STATUSES = {"NEW", "NEEDS_REVIEW", "ANALYZED", "REVIEWED", "SELECTED", "EXCLUDED", "ARCHIVED"}
-PRIMARY_WORKFLOW_STATUSES = {"NEW", "ANALYZED", "REVIEWED", "SELECTED"}
+STATUSES = {"NEW", "ASSIGNED", "NEEDS_REVIEW", "ANALYZED", "REVIEWED", "SELECTED", "EXCLUDED", "ARCHIVED"}
+PRIMARY_WORKFLOW_STATUSES = {"NEW", "ASSIGNED", "ANALYZED", "REVIEWED", "SELECTED"}
 ALLOWED_TRANSITIONS = {
-    "NEW": {"ANALYZED", "NEEDS_REVIEW", "EXCLUDED"},
-    "NEEDS_REVIEW": {"NEW", "ANALYZED", "EXCLUDED"},
+    "NEW": {"ASSIGNED", "ANALYZED", "NEEDS_REVIEW", "EXCLUDED"},
+    "ASSIGNED": {"NEW", "ANALYZED", "NEEDS_REVIEW", "EXCLUDED"},
+    "NEEDS_REVIEW": {"NEW", "ASSIGNED", "ANALYZED", "EXCLUDED"},
     "ANALYZED": {"NEW", "NEEDS_REVIEW", "REVIEWED", "EXCLUDED"},
     "REVIEWED": {"ANALYZED", "SELECTED", "EXCLUDED"},
     "SELECTED": {"REVIEWED", "EXCLUDED", "ARCHIVED"},
@@ -110,6 +116,8 @@ class FieldCommentReviewRequest(BaseModel):
     assigned_to: str | None = Field(default=None, alias="assignedTo")
     review_due_at: datetime | None = Field(default=None, alias="reviewDueAt")
     transition_reason: str | None = Field(default=None, alias="transitionReason")
+    conflict_flag: bool | None = Field(default=None, alias="conflictFlag")
+    conflict_basis: str | None = Field(default=None, alias="conflictBasis")
     base_review_revision: int | None = Field(default=None, alias="baseReviewRevision", ge=1)
     mutation_key: str | None = Field(default=None, alias="mutationKey", max_length=160)
 
@@ -122,6 +130,48 @@ class FieldCommentBulkReviewRequest(BaseModel):
     assigned_to: str | None = Field(default=None, alias="assignedTo")
     review_due_at: datetime | None = Field(default=None, alias="reviewDueAt")
     transition_reason: str | None = Field(default=None, alias="transitionReason")
+
+
+class FieldCommentBulkReviewItemRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    comment_id: str = Field(alias="commentId", min_length=1)
+    base_review_revision: int = Field(alias="baseReviewRevision", ge=1)
+    mutation_key: str = Field(alias="mutationKey", min_length=1, max_length=160)
+
+
+class FieldCommentBulkReviewV2Request(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: list[FieldCommentBulkReviewItemRequest] = Field(min_length=1, max_length=200)
+    status: str | None = None
+    normalized_content: str | None = Field(default=None, alias="normalizedContent")
+    analysis_content: str | None = Field(default=None, alias="analysisContent")
+    assigned_to: str | None = Field(default=None, alias="assignedTo")
+    review_due_at: datetime | None = Field(default=None, alias="reviewDueAt")
+    transition_reason: str | None = Field(default=None, alias="transitionReason")
+    conflict_flag: bool | None = Field(default=None, alias="conflictFlag")
+    conflict_basis: str | None = Field(default=None, alias="conflictBasis")
+
+
+class FieldCommentBulkReviewItemResponse(BaseModel):
+    comment_id: str
+    allowed: bool
+    success: bool | None = None
+    from_status: str | None = None
+    target_status: str | None = None
+    failure_code: str | None = None
+    failure_reason: str | None = None
+    review_revision: int | None = None
+    receipt: str | None = None
+    field_comment: "FieldCommentResponse | None" = None
+
+
+class FieldCommentBulkReviewResponse(BaseModel):
+    requested_count: int
+    success_count: int
+    failure_count: int
+    items: list[FieldCommentBulkReviewItemResponse]
 
 
 class FieldCommentAuditResponse(BaseModel):
@@ -169,6 +219,8 @@ class FieldCommentResponse(BaseModel):
     assigned_to: str | None
     review_due_at: datetime | None
     last_transition_reason: str | None
+    conflict_flag: bool
+    conflict_basis: str | None
     selected_at: datetime | None
     source_hash_sha256: str
     created_at: datetime
@@ -178,6 +230,8 @@ class FieldCommentResponse(BaseModel):
     review_revision: int
     workbench_flags: list[str] = Field(default_factory=list)
     workbench_priority: int = 0
+    attachment_count: int = 0
+    channel_access: str = "NOT_LINKED"
 
 
 class FieldCommentTraceDocumentResponse(BaseModel):
@@ -299,6 +353,8 @@ def _field_comment_response(
     *,
     workbench_flags: list[str] | None = None,
     workbench_priority: int = 0,
+    attachment_count: int = 0,
+    channel_access: str = "NOT_LINKED",
 ) -> FieldCommentResponse:
     return FieldCommentResponse(
         comment_id=note.comment_id,
@@ -321,12 +377,14 @@ def _field_comment_response(
         location_code=note.location_code,
         category=note.category,
         priority=note.priority,
-        status=note.status,
+        status=_effective_status(note),
         reviewed_by=note.reviewed_by,
         analyzed_by=note.analyzed_by,
         assigned_to=note.assigned_to,
         review_due_at=note.review_due_at,
         last_transition_reason=note.last_transition_reason,
+        conflict_flag=note.conflict_flag,
+        conflict_basis=note.conflict_basis,
         selected_at=note.selected_at,
         source_hash_sha256=_source_hash(note),
         created_at=note.created_at,
@@ -336,7 +394,33 @@ def _field_comment_response(
         review_revision=note.review_revision,
         workbench_flags=workbench_flags or [],
         workbench_priority=workbench_priority,
+        attachment_count=attachment_count,
+        channel_access=channel_access,
     )
+
+
+def _attachment_count(session: Session, comment_id: str) -> int:
+    return session.scalar(select(func.count()).select_from(FieldCommentAttachment).where(
+        FieldCommentAttachment.comment_id == comment_id
+    )) or 0
+
+
+def _channel_access(session: Session, note: FieldComment, current_user: CurrentUser) -> str:
+    channel_ids = list(session.scalars(select(NotificationChannel.channel_id).where(
+        NotificationChannel.status == "ACTIVE",
+        NotificationChannel.source_type == "FIELD_COMMENT",
+        NotificationChannel.source_id == note.comment_id,
+    )).all())
+    if not channel_ids:
+        return "NOT_LINKED"
+    if current_user.role in {"admin", "system-admin"}:
+        return "ALLOWED"
+    membership = session.scalar(select(NotificationChannelMember.id).where(
+        NotificationChannelMember.channel_id.in_(channel_ids),
+        NotificationChannelMember.user_id == current_user.user_id,
+        NotificationChannelMember.status == "ACTIVE",
+    ).limit(1))
+    return "ALLOWED" if membership is not None else "DENIED"
 
 
 def _workbench_flags(session: Session, note: FieldComment, now: datetime) -> list[str]:
@@ -344,6 +428,8 @@ def _workbench_flags(session: Session, note: FieldComment, now: datetime) -> lis
     active = note.status not in {"SELECTED", "EXCLUDED", "ARCHIVED"}
     if note.status in {"NEW", "NEEDS_REVIEW"}:
         flags.append("UNREVIEWED")
+    if note.conflict_flag:
+        flags.append("CONFLICT")
     due_at = note.review_due_at
     if due_at is not None:
         normalized_due = due_at.replace(tzinfo=timezone.utc) if due_at.tzinfo is None else due_at
@@ -373,6 +459,7 @@ def _workbench_flags(session: Session, note: FieldComment, now: datetime) -> lis
 
 
 WORKBENCH_FLAG_WEIGHTS = {
+    "CONFLICT": 128,
     "OVERDUE": 64,
     "UNASSIGNED": 32,
     "MISSING_EVIDENCE": 16,
@@ -408,6 +495,15 @@ def _source_snapshot(note: FieldComment) -> dict:
     }
 
 
+def _effective_status(note: FieldComment) -> str:
+    # ASSIGNED is a workflow state over the immutable legacy status constraint.
+    # Existing SQLite installations keep NEW in the physical column and assignment
+    # identity in assigned_to; API/audit clients see the logical ASSIGNED state.
+    if note.status == "NEW" and _clean_optional(note.assigned_to):
+        return "ASSIGNED"
+    return note.status
+
+
 def _source_hash(note: FieldComment) -> str:
     payload = json.dumps(_source_snapshot(note), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -416,7 +512,7 @@ def _source_hash(note: FieldComment) -> str:
 def _review_snapshot(note: FieldComment) -> dict:
     return {
         "source_hash_sha256": _source_hash(note),
-        "status": note.status,
+        "status": _effective_status(note),
         "normalized_content": note.normalized_content,
         "analysis_content": note.analysis_content,
         "assigned_to": note.assigned_to,
@@ -424,6 +520,8 @@ def _review_snapshot(note: FieldComment) -> dict:
         "analyzed_by": note.analyzed_by,
         "reviewed_by": note.reviewed_by,
         "review_revision": note.review_revision,
+        "conflict_flag": note.conflict_flag,
+        "conflict_basis": note.conflict_basis,
     }
 
 
@@ -500,10 +598,11 @@ def _load_user_id(session: Session, value: str | None, field_name: str) -> str |
 
 
 def _validate_transition(note: FieldComment, target: str, reason: str | None, actor_role: str) -> str:
-    if target == note.status:
+    current = _effective_status(note)
+    if target == current:
         return _clean_optional(reason) or note.last_transition_reason or "상태 유지"
-    if target not in ALLOWED_TRANSITIONS[note.status]:
-        raise HTTPException(status_code=409, detail=f"Transition {note.status} -> {target} is not allowed.")
+    if target not in ALLOWED_TRANSITIONS[current]:
+        raise HTTPException(status_code=409, detail=f"Transition {current} -> {target} is not allowed.")
     if target in {"REVIEWED", "SELECTED", "EXCLUDED", "ARCHIVED"} and actor_role not in FIELD_COMMENT_DECIDE_ROLES:
         raise HTTPException(status_code=403, detail="Current user role cannot make this FieldComment decision.")
     cleaned_reason = _clean_optional(reason)
@@ -555,10 +654,28 @@ def _apply_review_change(
 ) -> None:
     before = _review_snapshot(note)
     if isinstance(request, FieldCommentReviewRequest):
+        interpretation_changed = any((
+            request.normalized_content is not None and _clean_optional(request.normalized_content) != note.normalized_content,
+            request.analysis_content is not None and _clean_optional(request.analysis_content) != note.analysis_content,
+            request.conflict_flag is not None and request.conflict_flag != note.conflict_flag,
+            request.conflict_basis is not None and _clean_optional(request.conflict_basis) != note.conflict_basis,
+        ))
+        if _effective_status(note) == "SELECTED" and interpretation_changed and request.status not in {"REVIEWED", "EXCLUDED"}:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "SELECTED_SOURCE_REVIEW_REQUIRED",
+                    "message": "선정된 FieldComment 해석을 바꾸려면 REVIEWED로 되돌린 뒤 재검토해야 합니다.",
+                },
+            )
         if request.normalized_content is not None:
             note.normalized_content = _clean_optional(request.normalized_content)
         if request.analysis_content is not None:
             note.analysis_content = _clean_optional(request.analysis_content)
+        if request.conflict_flag is not None:
+            note.conflict_flag = request.conflict_flag
+        if request.conflict_basis is not None:
+            note.conflict_basis = _clean_optional(request.conflict_basis)
     if request.assigned_to is not None:
         note.assigned_to = _load_user_id(session, request.assigned_to, "assignedTo")
     if request.review_due_at is not None:
@@ -567,9 +684,15 @@ def _apply_review_change(
     reason = None
     if request.status is not None:
         target = _validate_choice(request.status, STATUSES, "status")
-        reason = _validate_transition(note, target, request.transition_reason, actor_role)
-        if target != note.status:
-            note.status = target
+        if target == "ASSIGNED" and not _clean_optional(note.assigned_to):
+            raise HTTPException(status_code=422, detail="ASSIGNED requires assignedTo.")
+        if note.conflict_flag and target in {"REVIEWED", "SELECTED", "EXCLUDED"} and not _clean_optional(note.conflict_basis):
+            raise HTTPException(status_code=422, detail="conflictBasis is required before resolving a conflicting record.")
+        transition_note = copy(note)
+        transition_note.assigned_to = before["assigned_to"]
+        reason = _validate_transition(transition_note, target, request.transition_reason, actor_role)
+        if target != before["status"]:
+            note.status = "NEW" if target == "ASSIGNED" else target
             note.last_transition_reason = reason
             now = datetime.now(timezone.utc)
             if target == "ANALYZED":
@@ -581,6 +704,83 @@ def _apply_review_change(
             elif target == "SELECTED":
                 note.selected_at = now
     _record_review_audit(session, note, actor_id, before, reason or _clean_optional(request.transition_reason))
+
+
+def _bulk_item_review_request(
+    request: FieldCommentBulkReviewV2Request,
+    item: FieldCommentBulkReviewItemRequest,
+) -> FieldCommentReviewRequest:
+    return FieldCommentReviewRequest(
+        status=request.status,
+        normalizedContent=request.normalized_content,
+        analysisContent=request.analysis_content,
+        assignedTo=request.assigned_to,
+        reviewDueAt=request.review_due_at,
+        transitionReason=request.transition_reason,
+        conflictFlag=request.conflict_flag,
+        conflictBasis=request.conflict_basis,
+        baseReviewRevision=item.base_review_revision,
+        mutationKey=item.mutation_key,
+    )
+
+
+def _preview_review_change(
+    session: Session,
+    note: FieldComment,
+    request: FieldCommentReviewRequest,
+    actor_role: str,
+) -> None:
+    if request.base_review_revision != note.review_revision:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "FIELD_COMMENT_STALE_REVIEW_REVISION",
+                "message": "다른 사용자가 FieldComment 검토를 먼저 변경했습니다.",
+                "expectedRevision": request.base_review_revision,
+                "currentRevision": note.review_revision,
+            },
+        )
+    interpretation_changed = any((
+        request.normalized_content is not None and _clean_optional(request.normalized_content) != note.normalized_content,
+        request.analysis_content is not None and _clean_optional(request.analysis_content) != note.analysis_content,
+        request.conflict_flag is not None and request.conflict_flag != note.conflict_flag,
+        request.conflict_basis is not None and _clean_optional(request.conflict_basis) != note.conflict_basis,
+    ))
+    if _effective_status(note) == "SELECTED" and interpretation_changed and request.status not in {"REVIEWED", "EXCLUDED"}:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "SELECTED_SOURCE_REVIEW_REQUIRED",
+                "message": "선정된 FieldComment 해석을 바꾸려면 REVIEWED로 되돌린 뒤 재검토해야 합니다.",
+            },
+        )
+    preview = copy(note)
+    if request.normalized_content is not None:
+        preview.normalized_content = _clean_optional(request.normalized_content)
+    if request.analysis_content is not None:
+        preview.analysis_content = _clean_optional(request.analysis_content)
+    if request.assigned_to is not None:
+        preview.assigned_to = _load_user_id(session, request.assigned_to, "assignedTo")
+    if request.conflict_flag is not None:
+        preview.conflict_flag = request.conflict_flag
+    if request.conflict_basis is not None:
+        preview.conflict_basis = _clean_optional(request.conflict_basis)
+    if request.status is None:
+        return
+    target = _validate_choice(request.status, STATUSES, "status")
+    if target == "ASSIGNED" and not _clean_optional(preview.assigned_to):
+        raise HTTPException(status_code=422, detail="ASSIGNED requires assignedTo.")
+    if preview.conflict_flag and target in {"REVIEWED", "SELECTED", "EXCLUDED"} and not _clean_optional(preview.conflict_basis):
+        raise HTTPException(status_code=422, detail="conflictBasis is required before resolving a conflicting record.")
+    transition_preview = copy(preview)
+    transition_preview.assigned_to = note.assigned_to
+    _validate_transition(transition_preview, target, request.transition_reason, actor_role)
+
+
+def _bulk_failure(exc: HTTPException) -> tuple[str, str]:
+    if isinstance(exc.detail, dict):
+        return str(exc.detail.get("code") or f"HTTP_{exc.status_code}"), str(exc.detail.get("message") or exc.detail)
+    return f"HTTP_{exc.status_code}", str(exc.detail)
 
 
 def _delete_stored_file(storage_root: Path, storage_key: str) -> None:
@@ -659,6 +859,12 @@ def create_field_comment(
     _validate_choice(request.comment_type, COMMENT_TYPES, "commentType")
     _validate_choice(request.input_mode, INPUT_MODES, "inputMode")
     _validate_target(session, request)
+    is_proxy_entry = request.input_mode == "admin_proxy" or request.entry_source.strip() == "admin_proxy"
+    if is_proxy_entry and not (_clean_optional(request.reported_by) or _clean_optional(request.operator_id)):
+        raise HTTPException(
+            status_code=422,
+            detail="admin_proxy requires reportedBy or operatorId so the actual reporter/operator is distinct from the entering account.",
+        )
 
     if request.idempotency_key is not None:
         existing = session.scalar(
@@ -680,7 +886,7 @@ def create_field_comment(
         template_id=_clean_optional(request.template_id),
         raw_content=request.raw_content,
         author_id=_clean_optional(request.author_id) or current_user.user_id,
-        reported_by=_clean_optional(request.reported_by) or current_user.display_name,
+        reported_by=_clean_optional(request.reported_by) if is_proxy_entry else (_clean_optional(request.reported_by) or current_user.display_name),
         operator_id=_clean_optional(request.operator_id),
         entry_source=request.entry_source.strip() or "field_user",
         device_id=_clean_optional(request.device_id),
@@ -690,6 +896,25 @@ def create_field_comment(
         status="NEW",
     )
     session.add(note)
+    session.flush()
+    if is_proxy_entry:
+        session.add(ActivityHistory(
+            history_id=_new_public_id("hist"),
+            event_type="field_comment.proxy_created",
+            actor_id=current_user.user_id,
+            target_type="field_comment",
+            target_id=note.comment_id,
+            target_title=note.comment_id,
+            message="관리자 대리 입력: 입력자와 실제 전달자/작업자를 분리 기록",
+            after_value=json.dumps({
+                "entered_by": current_user.user_id,
+                "reported_by": note.reported_by,
+                "operator_id": note.operator_id,
+                "entry_source": note.entry_source,
+                "source_hash_sha256": _source_hash(note),
+            }, ensure_ascii=False, sort_keys=True),
+            change_reason="관리자 대리 입력 원천 생성",
+        ))
     try:
         session.commit()
     except IntegrityError as exc:
@@ -848,6 +1073,7 @@ def list_field_comment_attachments(
 
 @router.get("", response_model=list[FieldCommentResponse])
 def list_field_comments(
+    current_user: CurrentUser,
     session: Annotated[Session, Depends(get_db_session)],
     document_id: Annotated[str | None, Query(alias="documentId")] = None,
     comment_status: Annotated[str | None, Query(alias="status")] = None,
@@ -867,6 +1093,9 @@ def list_field_comments(
     unassigned: Annotated[bool | None, Query(alias="unassigned")] = None,
     missing_evidence: Annotated[bool | None, Query(alias="missingEvidence")] = None,
     duplicate_suspected: Annotated[bool | None, Query(alias="duplicateSuspected")] = None,
+    conflict: Annotated[bool | None, Query(alias="conflict")] = None,
+    priority_min: Annotated[int | None, Query(alias="priorityMin", ge=0)] = None,
+    priority_max: Annotated[int | None, Query(alias="priorityMax", ge=0)] = None,
     has_attachments: Annotated[bool | None, Query(alias="hasAttachments")] = None,
     report_linked: Annotated[bool | None, Query(alias="reportLinked")] = None,
     priority_order: Annotated[bool, Query(alias="priorityOrder")] = False,
@@ -877,7 +1106,12 @@ def list_field_comments(
         statement = statement.where(FieldComment.document_id == document_id)
     if comment_status is not None:
         _validate_choice(comment_status, STATUSES, "status")
-        statement = statement.where(FieldComment.status == comment_status)
+        if comment_status == "ASSIGNED":
+            statement = statement.where(FieldComment.status == "NEW", FieldComment.assigned_to.is_not(None))
+        elif comment_status == "NEW":
+            statement = statement.where(FieldComment.status == "NEW", FieldComment.assigned_to.is_(None))
+        else:
+            statement = statement.where(FieldComment.status == comment_status)
     if document_text := _clean_optional(document_text):
         pattern = f"%{document_text}%"
         document_ids = select(Document.document_id).where(
@@ -964,6 +1198,12 @@ def list_field_comments(
     )
     if report_linked is not None:
         statement = statement.where(report_source_exists if report_linked else ~report_source_exists)
+    if conflict is not None:
+        statement = statement.where(FieldComment.conflict_flag.is_(conflict))
+    if priority_min is not None:
+        statement = statement.where(FieldComment.priority >= priority_min)
+    if priority_max is not None:
+        statement = statement.where(FieldComment.priority <= priority_max)
     statement = statement.order_by(desc(FieldComment.created_at), desc(FieldComment.id))
     if not priority_order and duplicate_suspected is None:
         statement = statement.limit(limit)
@@ -978,6 +1218,8 @@ def list_field_comments(
             note,
             workbench_flags=flags,
             workbench_priority=_workbench_priority(flags),
+            attachment_count=_attachment_count(session, note.comment_id),
+            channel_access=_channel_access(session, note, current_user),
         ))
     if priority_order:
         rows.sort(
@@ -1032,6 +1274,130 @@ def bulk_review_field_comments(
         session.rollback()
         raise HTTPException(status_code=409, detail="Bulk FieldComment review could not be saved.") from exc
     return [_field_comment_response(note) for note in ordered]
+
+
+@router.post("/bulk-review/preview", response_model=FieldCommentBulkReviewResponse)
+def preview_bulk_review_field_comments(
+    request: FieldCommentBulkReviewV2Request,
+    current_user: FieldCommentAnalyzeUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> FieldCommentBulkReviewResponse:
+    results: list[FieldCommentBulkReviewItemResponse] = []
+    seen_ids: set[str] = set()
+    seen_keys: set[str] = set()
+    for item in request.items:
+        cleaned_id = item.comment_id.strip()
+        review_request = _bulk_item_review_request(request, item)
+        failure: tuple[str, str] | None = None
+        note = session.scalar(select(FieldComment).where(FieldComment.comment_id == cleaned_id))
+        if cleaned_id in seen_ids:
+            failure = ("DUPLICATE_COMMENT_ID", "같은 일괄 요청에서 FieldComment를 중복 선택할 수 없습니다.")
+        elif item.mutation_key in seen_keys:
+            failure = ("DUPLICATE_MUTATION_KEY", "각 항목에는 서로 다른 mutation key가 필요합니다.")
+        elif note is None:
+            failure = ("FIELD_COMMENT_NOT_FOUND", "FieldComment를 찾을 수 없습니다.")
+        else:
+            try:
+                replay = _review_idempotent_response(
+                    session,
+                    cleaned_id,
+                    item.mutation_key,
+                    _review_intent_hash(cleaned_id, review_request),
+                )
+                if replay is None:
+                    _preview_review_change(session, note, review_request, current_user.role)
+            except HTTPException as exc:
+                failure = _bulk_failure(exc)
+        seen_ids.add(cleaned_id)
+        seen_keys.add(item.mutation_key)
+        results.append(FieldCommentBulkReviewItemResponse(
+            comment_id=cleaned_id,
+            allowed=failure is None,
+            from_status=_effective_status(note) if note is not None else None,
+            target_status=request.status,
+            failure_code=failure[0] if failure else None,
+            failure_reason=failure[1] if failure else None,
+            review_revision=note.review_revision if note is not None else None,
+            receipt=item.mutation_key,
+        ))
+    failures = sum(not result.allowed for result in results)
+    return FieldCommentBulkReviewResponse(
+        requested_count=len(results),
+        success_count=0,
+        failure_count=failures,
+        items=results,
+    )
+
+
+@router.post("/bulk-review/execute", response_model=FieldCommentBulkReviewResponse)
+def execute_bulk_review_field_comments(
+    request: FieldCommentBulkReviewV2Request,
+    current_user: FieldCommentAnalyzeUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> FieldCommentBulkReviewResponse:
+    results: list[FieldCommentBulkReviewItemResponse] = []
+    seen_ids: set[str] = set()
+    seen_keys: set[str] = set()
+    for item in request.items:
+        cleaned_id = item.comment_id.strip()
+        review_request = _bulk_item_review_request(request, item)
+        failure: tuple[str, str] | None = None
+        response: FieldCommentResponse | None = None
+        from_status: str | None = None
+        try:
+            if cleaned_id in seen_ids:
+                raise HTTPException(status_code=422, detail={"code": "DUPLICATE_COMMENT_ID", "message": "같은 일괄 요청에서 FieldComment를 중복 선택할 수 없습니다."})
+            if item.mutation_key in seen_keys:
+                raise HTTPException(status_code=422, detail={"code": "DUPLICATE_MUTATION_KEY", "message": "각 항목에는 서로 다른 mutation key가 필요합니다."})
+            intent_hash = _review_intent_hash(cleaned_id, review_request)
+            response = _review_idempotent_response(session, cleaned_id, item.mutation_key, intent_hash)
+            if response is None:
+                note = session.scalar(select(FieldComment).where(FieldComment.comment_id == cleaned_id))
+                if note is None:
+                    raise HTTPException(status_code=404, detail={"code": "FIELD_COMMENT_NOT_FOUND", "message": "FieldComment를 찾을 수 없습니다."})
+                from_status = _effective_status(note)
+                _preview_review_change(session, note, review_request, current_user.role)
+                _claim_review_revision(session, note, item.base_review_revision)
+                _apply_review_change(session, note, review_request, current_user.user_id, current_user.role)
+                session.flush()
+                response = _field_comment_response(note)
+                session.add(FieldCommentReviewMutationReceipt(
+                    mutation_key=item.mutation_key,
+                    intent_hash_sha256=intent_hash,
+                    comment_id=cleaned_id,
+                    review_revision=note.review_revision,
+                    response_json=response.model_dump_json(),
+                ))
+                session.commit()
+            else:
+                from_status = response.status
+        except HTTPException as exc:
+            session.rollback()
+            failure = _bulk_failure(exc)
+        except (IntegrityError, ValueError) as exc:
+            session.rollback()
+            failure = ("FIELD_COMMENT_BULK_ITEM_CONSTRAINT", str(exc))
+        seen_ids.add(cleaned_id)
+        seen_keys.add(item.mutation_key)
+        results.append(FieldCommentBulkReviewItemResponse(
+            comment_id=cleaned_id,
+            allowed=failure is None,
+            success=failure is None,
+            from_status=from_status,
+            target_status=request.status,
+            failure_code=failure[0] if failure else None,
+            failure_reason=failure[1] if failure else None,
+            review_revision=response.review_revision if response is not None else None,
+            receipt=item.mutation_key,
+            field_comment=response,
+        ))
+    success_count = sum(result.success is True for result in results)
+    return FieldCommentBulkReviewResponse(
+        requested_count=len(results),
+        success_count=success_count,
+        failure_count=len(results) - success_count,
+        items=results,
+    )
 
 
 @router.get("/quality-workbench", response_model=list[FieldCommentQualityItemResponse])
@@ -1100,12 +1466,12 @@ def field_comment_quality_workbench(
                 detail="보고서 source가 존재하지 않는 FieldComment를 참조함",
             ))
             continue
-        if not source.trace_id or not source.source_version_id:
+        if not source.trace_id or not source.source_version_id or source.source_revision is None:
             result.append(FieldCommentQualityItemResponse(
                 issue_type="INCOMPLETE_REPORT_TRACE",
                 comment_id=source.source_id,
                 report_id=source.report_id,
-                detail="보고서 source의 trace ID 또는 관찰 문서 버전이 누락됨",
+                detail="보고서 source의 trace ID, 관찰 문서 버전 또는 선정 revision이 누락됨",
             ))
         if source.source_hash_sha256 != _source_hash(source_comment):
             result.append(FieldCommentQualityItemResponse(
@@ -1113,6 +1479,13 @@ def field_comment_quality_workbench(
                 comment_id=source.source_id,
                 report_id=source.report_id,
                 detail="보고서에 고정한 원천 hash와 현재 FieldComment 원천 hash가 다름",
+            ))
+        if source.source_revision is not None and source.source_revision != source_comment.review_revision:
+            result.append(FieldCommentQualityItemResponse(
+                issue_type="SOURCE_REVISION_MISMATCH",
+                comment_id=source.source_id,
+                report_id=source.report_id,
+                detail="보고서에 고정한 선정 revision과 현재 FieldComment 검토 revision이 다름",
             ))
     return result
 
@@ -1128,6 +1501,20 @@ def field_comment_quality_metrics(
         ).all()}
 
     total = session.scalar(select(func.count()).select_from(FieldComment)) or 0
+    logical_status_distribution = dict(sorted(Counter(
+        "ASSIGNED" if row.status == "NEW" and _clean_optional(row.assigned_to) else row.status
+        for row in session.scalars(select(FieldComment)).all()
+    ).items()))
+    now = datetime.now(timezone.utc)
+    overdue_count = session.scalar(select(func.count()).select_from(FieldComment).where(
+        FieldComment.review_due_at.is_not(None),
+        FieldComment.review_due_at < now,
+        ~FieldComment.status.in_({"SELECTED", "EXCLUDED", "ARCHIVED"}),
+    )) or 0
+    unassigned_count = session.scalar(select(func.count()).select_from(FieldComment).where(
+        FieldComment.assigned_to.is_(None),
+        ~FieldComment.status.in_({"SELECTED", "EXCLUDED", "ARCHIVED"}),
+    )) or 0
     linked = session.scalar(
         select(func.count(func.distinct(ReportSource.source_id))).where(
             ReportSource.source_type == "FIELD_COMMENT"
@@ -1181,8 +1568,10 @@ def field_comment_quality_metrics(
     incomplete_trace_count = sum(
         1 for source in report_sources
         if not source.trace_id or not source.source_version_id or not source.source_hash_sha256
+        or (source.source_type == "FIELD_COMMENT" and source.source_revision is None)
     )
     field_comment_hash_mismatch_count = 0
+    field_comment_revision_mismatch_count = 0
     for source in report_sources:
         if source.source_type != "FIELD_COMMENT" or not source.source_hash_sha256:
             continue
@@ -1191,6 +1580,8 @@ def field_comment_quality_metrics(
         )
         if comment is not None and source.source_hash_sha256 != _source_hash(comment):
             field_comment_hash_mismatch_count += 1
+        if comment is not None and source.source_revision is not None and source.source_revision != comment.review_revision:
+            field_comment_revision_mismatch_count += 1
     duplicate_report_source_count = session.scalar(
         select(func.count()).select_from(
             select(ReportSource.report_id)
@@ -1217,7 +1608,8 @@ def field_comment_quality_metrics(
         }
     return {
         "total": total,
-        "status_distribution": distribution(FieldComment.status),
+        "status_distribution": logical_status_distribution,
+        "sla": {"overdue_count": overdue_count, "unassigned_active_count": unassigned_count},
         "signal_distribution": distribution(FieldComment.signal_level),
         "actor_distribution": distribution(FieldComment.author_id),
         "line_distribution": distribution(FieldComment.location_code),
@@ -1241,6 +1633,7 @@ def field_comment_quality_metrics(
             "orphan_report_source_rate": round(orphan_count / report_source_total, 4) if report_source_total else 0.0,
             "incomplete_report_trace_count": incomplete_trace_count,
             "field_comment_source_hash_mismatch_count": field_comment_hash_mismatch_count,
+            "field_comment_source_revision_mismatch_count": field_comment_revision_mismatch_count,
             "duplicate_report_source_count": duplicate_report_source_count,
         },
         "tag_axis_coverage": tag_axis_coverage,
@@ -1336,12 +1729,17 @@ def list_field_comment_audit(
 @router.get("/{comment_id}", response_model=FieldCommentResponse)
 def get_field_comment(
     comment_id: str,
+    current_user: CurrentUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> FieldCommentResponse:
     note = session.scalar(select(FieldComment).where(FieldComment.comment_id == comment_id))
     if note is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field comment not found.")
-    return _field_comment_response(note)
+    return _field_comment_response(
+        note,
+        attachment_count=_attachment_count(session, note.comment_id),
+        channel_access=_channel_access(session, note, current_user),
+    )
 
 
 @router.patch("/{comment_id}", response_model=FieldCommentResponse)

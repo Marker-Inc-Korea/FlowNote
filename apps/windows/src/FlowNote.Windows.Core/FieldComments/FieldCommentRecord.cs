@@ -23,4 +23,6 @@ public sealed record FieldCommentRecord(
     string? AssignedTo,
     DateTime? ReviewDueAt,
     string? LastTransitionReason,
-    int ReviewRevision = 1);
+    int ReviewRevision = 1,
+    bool ConflictFlag = false,
+    string? ConflictBasis = null);

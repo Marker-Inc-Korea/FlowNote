@@ -15,6 +15,12 @@ public sealed record ServerReportSourceRequest
 
     [JsonPropertyName("relationType")]
     public string? RelationType { get; init; }
+
+    [JsonPropertyName("sourceRevision")]
+    public int? SourceRevision { get; init; }
+
+    [JsonPropertyName("sourceHashSha256")]
+    public string? SourceHashSha256 { get; init; }
 }
 
 public sealed record ServerReportDraftCreateRequest
@@ -126,6 +132,9 @@ public sealed record ServerReportSourceResponse
 
     [JsonPropertyName("source_version_id")]
     public string? SourceVersionId { get; init; }
+
+    [JsonPropertyName("source_revision")]
+    public int? SourceRevision { get; init; }
 
     [JsonPropertyName("trace_id")]
     public string TraceId { get; init; } = string.Empty;

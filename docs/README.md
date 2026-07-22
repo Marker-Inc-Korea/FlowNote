@@ -52,7 +52,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-22 현재 pytest node ID 146건을 중복 없이 수집하며 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 수집/JUnit guard도 146건이다. macOS 사전 검증에서 146건 통과와 failure/error/skipped 0을 확인했지만 WPF·Android는 도구 부재로 `NOT_RUN`이다. Windows 무생략 `partial_run=false`, `verification-summary.json=PASSED` 기준선은 아직 확보해야 한다.
+- FastAPI 코드는 2026-07-22 현재 pytest node ID 149건을 중복 없이 수집하며 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 수집/JUnit guard도 149건이다. macOS 사전 검증에서 FastAPI 149건과 WPF Core 43건 통과, WPF 앱 빌드 경고·오류 0을 확인했다. Android와 Windows 누적 공통 DB 스모크는 `NOT_RUN`이며 Windows 무생략 `partial_run=false`, `verification-summary.json=PASSED` 기준선은 아직 확보해야 한다.
 
 ## 일일 기록
 

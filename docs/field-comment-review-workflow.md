@@ -1,6 +1,6 @@
 # FieldComment 검토·분석·선정 운영
 
-이 문서는 2026-07-21 현재 FastAPI FieldComment 검토 API·데이터 모델과 WPF 관리자 검토 화면을 기준으로, FieldComment 원천 기록을 관리자 해석과 섞지 않고 보고서 근거로 정제하는 운영 계약을 정리한다.
+이 문서는 2026-07-22 현재 FastAPI FieldComment 검토 API·데이터 모델과 WPF 관리자 검토 화면을 기준으로, FieldComment 원천 기록을 관리자 해석과 섞지 않고 보고서 근거로 정제하는 운영 계약을 정리한다.
 
 ## 원천과 해석의 분리
 
@@ -11,17 +11,18 @@
 
 ## 상태 전이와 권한
 
-주 흐름은 `NEW → ANALYZED → REVIEWED → SELECTED`이다. `NEEDS_REVIEW`는 정보 보강을 기다리는 운영 보류 상태이며 `EXCLUDED`는 오입력·중복·근거 부적합 결정, `ARCHIVED`는 선정 또는 제외 결정이 끝난 장기 보관 상태다.
+주 흐름은 `NEW → ASSIGNED → ANALYZED → REVIEWED → SELECTED`이다. 담당자 지정 없이 바로 분석할 수 있어 `NEW → ANALYZED`도 허용한다. `ASSIGNED`는 기존 SQLite 호환을 위해 물리 `NEW + assigned_to`로 저장하고 API·감사·화면에서 논리 상태로 노출한다. `NEEDS_REVIEW`는 정보 보강 또는 상충 판단을 기다리는 운영 보류 상태다.
 
 | 전이 | 허용 역할 | 필수 조건 |
 |---|---|---|
+| `NEW/NEEDS_REVIEW → ASSIGNED` | `line-foreman`, `team-lead` 이상 분석 역할 | 유효한 `assignedTo`, 3자 이상 배정 사유 |
 | `NEW/NEEDS_REVIEW → ANALYZED` | `line-foreman`, `team-lead` 이상 분석 역할 | 분석 내용, 3자 이상 사유. 담당자·검토 기한 미지정은 작업함 경고 |
 | `ANALYZED → REVIEWED` | `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager` | 정리·분석 내용, 검토자, 3자 이상 사유 |
 | `REVIEWED → SELECTED` | 위 결정 역할 | 정리·분석, 원천 작성자, 관찰 문서 버전, 원천 hash 일치, 3자 이상 사유 |
 | 활성 상태 → `EXCLUDED` | 위 결정 역할 | 중복·오입력·범위 밖·근거 부족 중 하나를 명시한 제외 사유 |
 | `SELECTED/EXCLUDED → ARCHIVED` | 위 결정 역할 | 후속 보고서 또는 제외 결정 확인, 보관 사유 |
 
-되돌림은 `ANALYZED → NEW/NEEDS_REVIEW`, `REVIEWED → ANALYZED`, `SELECTED → REVIEWED`, `EXCLUDED → NEW`, `ARCHIVED → EXCLUDED`만 허용한다. FastAPI 일괄 API는 요청당 최대 200건이며 각 대상의 현재 `review_revision`을 1 증가시키고, 항목별로 같은 규칙을 모두 통과해야 한 transaction으로 저장하며 각 원천별 감사 이력을 남긴다. 일괄 API에는 항목별 base revision과 mutation receipt가 없다. WPF의 다중 선택 저장은 선택 항목을 순서대로 로컬 저장하고 개별 PATCH/재시도 큐로 동기화한다.
+되돌림은 `ASSIGNED → NEW`, `ANALYZED → NEW/NEEDS_REVIEW`, `REVIEWED → ANALYZED`, `SELECTED → REVIEWED`, `EXCLUDED → NEW`, `ARCHIVED → EXCLUDED`만 허용한다. `/bulk-review/preview`는 최대 200개 항목의 허용 전이와 실패 코드·사유를 쓰기 없이 반환한다. `/bulk-review/execute`는 항목별 `baseReviewRevision`과 고유 `mutationKey`를 검사하고 항목별 transaction으로 처리한다. 한 항목이 stale/권한/조건 실패여도 다른 성공을 되돌리지 않으며 입력 순서대로 성공 여부, 새 revision, receipt, 최초 응답 snapshot을 보존한다. 기존 원자형 `/bulk-review`는 호환 경로로만 유지한다.
 
 ## 승인자와 SLA
 
@@ -35,15 +36,16 @@
 
 - 사진·문서 버전·작업자 확인이 부족하면 `NEEDS_REVIEW`로 보류하고 필요한 근거와 재개 담당자·기한을 사유에 적는다. 근거가 보완되면 `NEW → ANALYZED` 주 흐름으로 재개한다.
 - 잘못 제외한 원천은 `EXCLUDED → NEW`, 잘못 보관한 원천은 `ARCHIVED → EXCLUDED → NEW`로만 재개한다. 중간 상태를 건너뛰지 않는다.
-- 서버와 WPF 상태가 충돌하면 원천 본문을 병합하지 않는다. 서버 원천 hash와 로컬 원천 hash를 먼저 대조하고, 관리자 해석 영역만 최신 서버 revision에서 재시도하거나 서버본 유지로 감사 종결한다.
+- 서버와 WPF 상태가 충돌하거나 현장 진술이 상충하면 원천 본문을 병합하지 않는다. `conflict_flag`로 `CONFLICT / 검토 필요`를 표시하고 `conflict_basis`에 상충 지점·판단 근거·선정/제외 사유를 남긴다. 결정 상태로 진행할 때 상충 표지가 있으면 판단 근거가 필수다.
 - 충돌 해결자는 해당 라인 책임자 또는 보고서 책임자이며 최종 `SELECTED/EXCLUDED` 결정 충돌은 결정 역할 보유자만 종결한다. WPF는 자동으로 `NEW → ANALYZED → REVIEWED` 단계를 보간하지 않는다. 해결자는 서버 snapshot을 새로 읽고 담당자·기한·정리·분석을 함께 비교한 뒤 `재적용`, `서버본 유지`, `재검토 전환` 중 하나와 사유를 감사에 남긴다.
 - 원천 보완, 담당자 변경, 기한 재산정, 분석 근거 변경, 충돌 해결로 결론이 달라질 가능성이 있으면 재검토한다. 단순 오탈자라도 이미 `SELECTED`인 원천의 관리자 해석을 바꿀 때는 `REVIEWED`로 되돌린 뒤 다시 선정한다.
 - 원천 hash 불일치, 관찰 문서 버전 누락, 권한 부족은 재시도로 우회하지 않는다. 품질 작업함에서 원인을 해소한 뒤 같은 idempotency key로 다시 전송한다.
 
 ## 관리자 작업함
 
-- 목록은 상태, 담당자, 문서, 작성자, 라인, 설비, 공정, 오류 유형, 기간, 오래된 NEW, 첨부 유무, 보고서 연결 여부와 `UNREVIEWED`, `OVERDUE`, `UNASSIGNED`, `MISSING_EVIDENCE`, `DUPLICATE_SUSPECTED`, `REPORT_UNLINKED` 작업함 플래그로 필터링한다.
-- `priorityOrder=true`일 때 기한 초과, 담당자 없음, 근거 누락, 중복 의심, 미검토, 보고서 미연결 순으로 가중치를 합산하고 높은 항목부터 표시한다. 이 점수는 사실 판정이 아니라 관리자 처리 순서다.
+- 목록은 상태, 담당자, 문서, 작성자, 라인, 설비, 공정, 오류 유형, 기간, 오래된 NEW, 첨부 유무, 보고서 연결 여부와 `CONFLICT`, `UNREVIEWED`, `OVERDUE`, `UNASSIGNED`, `MISSING_EVIDENCE`, `DUPLICATE_SUSPECTED`, `REPORT_UNLINKED` 작업함 플래그로 필터링한다. 서버 목록은 `priorityMin/priorityMax`도 지원한다.
+- `priorityOrder=true`일 때 상충, 기한 초과, 담당자 없음, 근거 누락, 중복 의심, 미검토, 보고서 미연결 순으로 가중치를 합산한다. WPF의 `우선순위/작업함` 보기와 SQLite에 보존되는 `저장된 보기`가 같은 필터를 재사용한다.
+- 선택 상세는 원천 hash, 첨부 수, 관찰 문서 버전, 연결 채널 권한을 서버에서 읽어 표시한다. 다중 선택은 사전검증 표를 확인한 뒤 실행하며 부분 성공 표를 닫아도 서버 receipt와 revision은 보존된다.
 - 품질 작업함은 `OLD_NEW`, `WEAK_SELECTED`, `MISSING_REPORT_SOURCE`, `INCOMPLETE_REPORT_TRACE`, `SOURCE_HASH_MISMATCH`를 제공한다.
 - 품질 지표는 상태·신호등·actor·라인·오류 유형 분포, 문서↔FieldComment와 FieldComment↔보고서 연결률, 2종 이상 source 보고서 비율, source type 수, orphan 비율, 라인·설비·품목·공정·오류 유형 태그 축 커버리지를 산출한다.
 
@@ -52,7 +54,8 @@
 - 보고서의 `FIELD_COMMENT` source는 `SELECTED`만 허용하며 연결 시 해당 FieldComment의 `document_version_id`를 `report_sources.source_version_id`에 고정한다.
 - `DOCUMENT` source는 현재 `PUBLISHED` 버전만 허용한다. 비공개 문서와 최신 작업중 버전, 과거 공개본이 아닌 버전은 후보에 섞지 않는다.
 - 초안 생성과 승인에는 서로 다른 source type이 최소 2종 필요하다. 같은 `source_type + source_id + source_version_id` 중복은 거부한다.
-- 각 `report_sources` row는 독립 `trace_id`, 고정 `source_version_id`, 저장 시점 `source_hash_sha256`를 가진다. 승인 직전에 현재 원천을 다시 계산해 version 또는 hash가 달라지면 409로 차단한다.
+- 각 `report_sources` row는 독립 `trace_id`, 고정 `source_version_id`, FieldComment의 `source_revision`, 저장 시점 `source_hash_sha256`를 가진다. source 요청의 선택적 `sourceRevision/sourceHashSha256`가 현재 값과 다르면 고정 단계부터 409다. 승인 및 파일 생성 직전에 상태·version·revision·hash·채널 권한을 다시 읽어 하나라도 달라지면 409로 차단한다.
+- 생성된 최종 보고서 문서 본문에도 source type/ID/version/revision/trace/hash를 기록하므로 최종 문서에서 FieldComment 원문·첨부·관찰 문서 버전까지 역추적한다.
 - 보고서 aggregate는 `report_revision`, 정규화 내용의 `content_hash_sha256`, 정렬된 source tuple의 `source_set_hash_sha256`를 가진다. 승인 시 보고서, source, 생성 문서/버전, mutation receipt를 같은 DB transaction으로 확정한다.
 - 보고서 선정 뒤 원천 상태·version·hash가 바뀌면 기존 초안을 자동 갱신하거나 과거 snapshot으로 승인하지 않는다. 저장을 `REPORT_SOURCE_STALE_OR_ORPHAN` 409로 멈추고 원천을 재검토한 뒤 새 source-set hash로 새 보고서 mutation을 만든다. 이미 승인된 보고서는 원래 source snapshot을 보존하고 정정 보고서로 연결한다.
 - source에 연결된 활성 업무 채널이 있으면 `admin`, `system-admin` 외 사용자는 활성 채널 멤버여야 한다.
@@ -73,3 +76,10 @@
 - hash 불일치 수는 고정 `source_hash_sha256`와 현재 동일 version 원천의 재계산 hash가 다른 source 수다. 원천 또는 version 자체가 없으면 orphan/trace 누락으로 먼저 센다.
 - SLA 초과 수는 종결 상태가 아닌 항목 중 `review_due_at < now`인 수다. 담당자 없음은 활성 항목 중 `assigned_to IS NULL`인 수다.
 - 비율은 분모가 0이면 0으로 표시한다. 모든 count는 서버 SQLite 기준이며 WPF 로컬 누적값과 합산하지 않고 동기화 격차는 별도 큐 지표로 본다.
+
+## 사람형 시나리오와 품질 측정
+
+- 역할별 시나리오는 라인 책임자의 배정, 분석자의 정상/상충 분석, 결정자의 선정/제외, 보고서 책임자의 source 고정·저장, 권한 없는 사용자의 차단을 포함한다.
+- 각 시나리오는 시작·완료 UTC, 활성 작업 시간, 서버 왕복 수, 재시도 수, 도움 요청 수, 실패 코드, blocker 등급을 동일 `run_id`로 기록한다. 치명적 blocker, 원천/receipt 유실, 중복 생성, 권한 우회 허용치는 모두 0건이다.
+- 장애 주입은 정상, 일부 실패, stale revision, 성공 응답 유실 후 같은 mutation key 재시도, draft 뒤 source revision 변경을 각각 수행한다. 완료 조건은 200개 입력 ID와 200개 결과 행의 일대일 대응, 성공 receipt 유일성, 원천 변경 저장 409, 재검토·새 draft 뒤 저장 성공이다.
+- 상태 분포와 SLA 초과 수는 `/quality-metrics` 및 목록 `overdue=true` 결과를 SQLite의 논리 상태 `CASE WHEN status='NEW' AND assigned_to IS NOT NULL THEN 'ASSIGNED' ELSE status END`, `review_due_at < now` 읽기 전용 집계와 교차 확인한다.
