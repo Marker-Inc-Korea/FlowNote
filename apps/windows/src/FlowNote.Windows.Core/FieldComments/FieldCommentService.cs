@@ -2,6 +2,7 @@ using FlowNote.Windows.Core.Storage;
 using Microsoft.Data.Sqlite;
 using FlowNote.Windows.Core.History;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace FlowNote.Windows.Core.FieldComments;
 
@@ -10,6 +11,7 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
     public static readonly IReadOnlyList<string> ReviewStatuses =
     [
         "NEW",
+        "ASSIGNED",
         "NEEDS_REVIEW",
         "ANALYZED",
         "REVIEWED",
@@ -173,7 +175,8 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             SELECT id, comment_id, document_id, document_version_no, comment_type, input_mode, signal_level,
                    raw_content, normalized_content, analysis_content, author_name, reported_by,
                    operator_name, entry_source, device_id, location_code, status, created_at, synced_at,
-                   assigned_to, review_due_at, last_transition_reason, review_revision
+                   assigned_to, review_due_at, last_transition_reason, review_revision,
+                   conflict_flag, conflict_basis
             FROM field_comments
             WHERE document_id = $document_id
             ORDER BY created_at DESC, id DESC;
@@ -293,6 +296,10 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             var duplicateClause = "EXISTS (SELECT 1 FROM field_comments duplicate WHERE duplicate.comment_id <> comment.comment_id AND duplicate.raw_content = comment.raw_content)";
             clauses.Add(filter.DuplicateSuspected.Value ? duplicateClause : $"NOT {duplicateClause}");
         }
+        if (filter.Conflict is not null)
+        {
+            clauses.Add(filter.Conflict.Value ? "comment.conflict_flag = 1" : "comment.conflict_flag = 0");
+        }
 
         if (filter.CreatedFrom is not null)
         {
@@ -340,13 +347,17 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
                        WHERE attachment.comment_id = comment.comment_id
                    ) AS attachment_count,
                    comment.created_at,
-                   comment.synced_at
+                   comment.synced_at,
+                   comment.review_revision,
+                   comment.conflict_flag,
+                   comment.conflict_basis
             FROM field_comments AS comment
             LEFT JOIN documents AS document ON document.document_id = comment.document_id
             {where}
             ORDER BY
                 CASE WHEN $priority_order = 1 THEN
-                    (CASE WHEN comment.review_due_at IS NOT NULL AND comment.review_due_at < $priority_now AND comment.status NOT IN ('SELECTED', 'EXCLUDED', 'ARCHIVED') THEN 64 ELSE 0 END)
+                    (CASE WHEN comment.conflict_flag = 1 THEN 128 ELSE 0 END)
+                    + (CASE WHEN comment.review_due_at IS NOT NULL AND comment.review_due_at < $priority_now AND comment.status NOT IN ('SELECTED', 'EXCLUDED', 'ARCHIVED') THEN 64 ELSE 0 END)
                     + (CASE WHEN comment.assigned_to IS NULL OR trim(comment.assigned_to) = '' THEN 32 ELSE 0 END)
                     + (CASE WHEN comment.document_version_no IS NULL OR trim(comment.author_name) = '' OR comment.analysis_content IS NULL OR trim(comment.analysis_content) = '' THEN 16 ELSE 0 END)
                     + (CASE WHEN EXISTS (SELECT 1 FROM field_comments duplicate WHERE duplicate.comment_id <> comment.comment_id AND duplicate.raw_content = comment.raw_content) THEN 8 ELSE 0 END)
@@ -391,6 +402,44 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         return value is null or DBNull ? null : Convert.ToString(value);
     }
 
+    public IReadOnlyList<FieldCommentSavedView> ListSavedViews()
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT name, filter_json, updated_at FROM field_comment_saved_views ORDER BY name;";
+        using var reader = command.ExecuteReader();
+        var result = new List<FieldCommentSavedView>();
+        while (reader.Read())
+        {
+            var filter = JsonSerializer.Deserialize<FieldCommentReviewFilter>(reader.GetString(1));
+            if (filter is not null)
+            {
+                result.Add(new FieldCommentSavedView(reader.GetString(0), filter, DateTime.Parse(reader.GetString(2))));
+            }
+        }
+        return result;
+    }
+
+    public void SaveView(string name, FieldCommentReviewFilter filter)
+    {
+        var cleaned = name.Trim();
+        if (cleaned.Length < 2)
+        {
+            throw new ArgumentException("저장 보기 이름을 2자 이상 입력하세요.", nameof(name));
+        }
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO field_comment_saved_views (name, filter_json, updated_at)
+            VALUES ($name, $filter_json, $updated_at)
+            ON CONFLICT(name) DO UPDATE SET filter_json = excluded.filter_json, updated_at = excluded.updated_at;
+            """;
+        command.Parameters.AddWithValue("$name", cleaned);
+        command.Parameters.AddWithValue("$filter_json", JsonSerializer.Serialize(filter));
+        command.Parameters.AddWithValue("$updated_at", DateTime.UtcNow.ToString("O"));
+        command.ExecuteNonQuery();
+    }
+
     public FieldCommentRecord UpdateReview(
         string commentId,
         string? normalizedContent,
@@ -399,7 +448,9 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         string actorName,
         string transitionReason,
         string? assignedTo = null,
-        DateTime? reviewDueAt = null)
+        DateTime? reviewDueAt = null,
+        bool conflictFlag = false,
+        string? conflictBasis = null)
     {
         if (string.IsNullOrWhiteSpace(commentId))
         {
@@ -416,6 +467,14 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         var normalized = CleanNullable(normalizedContent);
         var analysis = CleanNullable(analysisContent);
         var reason = CleanNullable(transitionReason);
+        if (existingComment.Status == "SELECTED" && status is not ("REVIEWED" or "EXCLUDED") &&
+            (!string.Equals(normalized, existingComment.NormalizedContent, StringComparison.Ordinal) ||
+             !string.Equals(analysis, existingComment.AnalysisContent, StringComparison.Ordinal) ||
+             conflictFlag != existingComment.ConflictFlag ||
+             !string.Equals(CleanNullable(conflictBasis), existingComment.ConflictBasis, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("선정된 FieldComment 해석을 바꾸려면 검토완료로 되돌린 뒤 재검토하세요.");
+        }
         ValidateTransition(existingComment.Status, status, normalized, analysis, reason);
         if (status == "SELECTED" &&
             (existingComment.DocumentVersionNo is null || string.IsNullOrWhiteSpace(existingComment.AuthorName)))
@@ -431,6 +490,8 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
                 assigned_to = $assigned_to,
                 review_due_at = $review_due_at,
                 last_transition_reason = $transition_reason,
+                conflict_flag = $conflict_flag,
+                conflict_basis = $conflict_basis,
                 status = $status
             WHERE comment_id = $comment_id;
             """;
@@ -439,6 +500,8 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         update.Parameters.AddWithValue("$assigned_to", CleanNullable(assignedTo) ?? (object)DBNull.Value);
         update.Parameters.AddWithValue("$review_due_at", reviewDueAt is null ? DBNull.Value : reviewDueAt.Value.ToString("O"));
         update.Parameters.AddWithValue("$transition_reason", reason ?? (object)DBNull.Value);
+        update.Parameters.AddWithValue("$conflict_flag", conflictFlag ? 1 : 0);
+        update.Parameters.AddWithValue("$conflict_basis", CleanNullable(conflictBasis) ?? (object)DBNull.Value);
         update.Parameters.AddWithValue("$status", status);
         update.Parameters.AddWithValue("$comment_id", commentId);
         update.ExecuteNonQuery();
@@ -455,6 +518,62 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
 
         return LoadComment(connection, commentId)
             ?? throw new InvalidOperationException($"Field comment not found after update: {commentId}");
+    }
+
+    public void ApplyServerReviewResult(
+        string commentId,
+        string? normalizedContent,
+        string? analysisContent,
+        string status,
+        string? assignedTo,
+        DateTime? reviewDueAt,
+        string? transitionReason,
+        int reviewRevision,
+        bool conflictFlag,
+        string? conflictBasis,
+        string actorName)
+    {
+        ValidateReviewStatus(status);
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE field_comments
+            SET normalized_content = $normalized_content,
+                analysis_content = $analysis_content,
+                status = $status,
+                assigned_to = $assigned_to,
+                review_due_at = $review_due_at,
+                last_transition_reason = $transition_reason,
+                review_revision = $review_revision,
+                conflict_flag = $conflict_flag,
+                conflict_basis = $conflict_basis,
+                synced_at = $synced_at
+            WHERE comment_id = $comment_id;
+            """;
+        command.Parameters.AddWithValue("$normalized_content", CleanNullable(normalizedContent) ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$analysis_content", CleanNullable(analysisContent) ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$status", status);
+        command.Parameters.AddWithValue("$assigned_to", CleanNullable(assignedTo) ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$review_due_at", reviewDueAt is null ? DBNull.Value : reviewDueAt.Value.ToString("O"));
+        command.Parameters.AddWithValue("$transition_reason", CleanNullable(transitionReason) ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$review_revision", reviewRevision);
+        command.Parameters.AddWithValue("$conflict_flag", conflictFlag ? 1 : 0);
+        command.Parameters.AddWithValue("$conflict_basis", CleanNullable(conflictBasis) ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$synced_at", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$comment_id", commentId);
+        if (command.ExecuteNonQuery() != 1)
+        {
+            throw new InvalidOperationException($"Field comment not found: {commentId}");
+        }
+        HistoryService.Record(
+            connection,
+            "field_comment.bulk_review_applied",
+            actorName,
+            "field_comment",
+            commentId,
+            commentId,
+            $"서버 일괄 검토 결과 반영: {status} · revision {reviewRevision}",
+            DateTime.UtcNow);
     }
 
     public FieldCommentAttachmentRecord AddAttachment(
@@ -627,7 +746,9 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             reader.IsDBNull(19) ? null : reader.GetString(19),
             reader.IsDBNull(20) ? null : DateTime.Parse(reader.GetString(20)),
             reader.IsDBNull(21) ? null : reader.GetString(21),
-            reader.GetInt32(22));
+            reader.GetInt32(22),
+            reader.GetInt32(23) != 0,
+            reader.IsDBNull(24) ? null : reader.GetString(24));
     }
 
     private static FieldCommentReviewRecord ReadFieldCommentReview(SqliteDataReader reader)
@@ -656,7 +777,10 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             reader.GetString(20),
             reader.GetInt32(21),
             DateTime.Parse(reader.GetString(22)),
-            reader.IsDBNull(23) ? null : DateTime.Parse(reader.GetString(23)));
+            reader.IsDBNull(23) ? null : DateTime.Parse(reader.GetString(23)),
+            reader.GetInt32(24),
+            reader.GetInt32(25) != 0,
+            reader.IsDBNull(26) ? null : reader.GetString(26));
     }
 
     private static FieldCommentRecord? LoadComment(SqliteConnection connection, string commentId)
@@ -666,7 +790,8 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             SELECT id, comment_id, document_id, document_version_no, comment_type, input_mode, signal_level,
                    raw_content, normalized_content, analysis_content, author_name, reported_by,
                    operator_name, entry_source, device_id, location_code, status, created_at, synced_at,
-                   assigned_to, review_due_at, last_transition_reason, review_revision
+                   assigned_to, review_due_at, last_transition_reason, review_revision,
+                   conflict_flag, conflict_basis
             FROM field_comments
             WHERE comment_id = $comment_id
             LIMIT 1;
@@ -698,8 +823,9 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
 
         var allowed = currentStatus switch
         {
-            "NEW" => new[] { "ANALYZED", "NEEDS_REVIEW", "EXCLUDED" },
-            "NEEDS_REVIEW" => new[] { "NEW", "ANALYZED", "EXCLUDED" },
+            "NEW" => new[] { "ASSIGNED", "ANALYZED", "NEEDS_REVIEW", "EXCLUDED" },
+            "ASSIGNED" => new[] { "NEW", "ANALYZED", "NEEDS_REVIEW", "EXCLUDED" },
+            "NEEDS_REVIEW" => new[] { "NEW", "ASSIGNED", "ANALYZED", "EXCLUDED" },
             "ANALYZED" => new[] { "NEW", "NEEDS_REVIEW", "REVIEWED", "EXCLUDED" },
             "REVIEWED" => new[] { "ANALYZED", "SELECTED", "EXCLUDED" },
             "SELECTED" => new[] { "REVIEWED", "EXCLUDED", "ARCHIVED" },

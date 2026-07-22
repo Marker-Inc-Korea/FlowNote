@@ -2026,7 +2026,8 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             SELECT id, comment_id, document_id, document_version_no, comment_type, input_mode, signal_level,
                    raw_content, normalized_content, analysis_content, author_name, reported_by,
                    operator_name, entry_source, device_id, location_code, status, created_at, synced_at,
-                   assigned_to, review_due_at, last_transition_reason, review_revision
+                   assigned_to, review_due_at, last_transition_reason, review_revision,
+                   conflict_flag, conflict_basis
             FROM field_comments
             WHERE comment_id = $comment_id
             LIMIT 1;
@@ -2061,7 +2062,9 @@ public sealed class ServerSyncService(FlowNoteLocalDatabase database)
             reader.IsDBNull(19) ? null : reader.GetString(19),
             reader.IsDBNull(20) ? null : DateTime.Parse(reader.GetString(20)),
             reader.IsDBNull(21) ? null : reader.GetString(21),
-            reader.GetInt32(22));
+            reader.GetInt32(22),
+            reader.GetInt32(23) != 0,
+            reader.IsDBNull(24) ? null : reader.GetString(24));
     }
 
     private FieldCommentAttachmentRecord? LoadFieldCommentAttachment(string attachmentId)

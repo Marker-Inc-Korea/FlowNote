@@ -24,11 +24,15 @@ public sealed record FieldCommentReviewRecord(
     string Status,
     int AttachmentCount,
     DateTime CreatedAt,
-    DateTime? SyncedAt)
+    DateTime? SyncedAt,
+    int ReviewRevision = 1,
+    bool ConflictFlag = false,
+    string? ConflictBasis = null)
 {
     public string StatusLabel => Status switch
     {
         "NEW" => "신규",
+        "ASSIGNED" => "담당배정",
         "NEEDS_REVIEW" => "검토필요",
         "ANALYZED" => "분석완료",
         "REVIEWED" => "검토완료",
@@ -46,6 +50,10 @@ public sealed record FieldCommentReviewRecord(
             if (ReviewDueAt is not null && ReviewDueAt.Value < DateTime.UtcNow && Status is not ("SELECTED" or "EXCLUDED" or "ARCHIVED"))
             {
                 flags.Add("기한초과");
+            }
+            if (ConflictFlag)
+            {
+                flags.Insert(0, "상충검토");
             }
             if (string.IsNullOrWhiteSpace(AssignedTo))
             {

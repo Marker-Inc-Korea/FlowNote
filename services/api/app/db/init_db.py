@@ -259,6 +259,8 @@ def _ensure_field_comment_review_columns(database: Database) -> None:
         "assigned_to": "VARCHAR(64)",
         "review_due_at": "DATETIME",
         "last_transition_reason": "TEXT",
+        "conflict_flag": "BOOLEAN NOT NULL DEFAULT 0",
+        "conflict_basis": "TEXT",
         "selected_at": "DATETIME",
         "review_revision": "INTEGER NOT NULL DEFAULT 1",
     }
@@ -282,6 +284,8 @@ def _ensure_report_source_trace_columns(database: Database) -> None:
             connection.execute(text("ALTER TABLE report_sources ADD COLUMN trace_id VARCHAR(64)"))
         if "source_hash_sha256" not in existing:
             connection.execute(text("ALTER TABLE report_sources ADD COLUMN source_hash_sha256 VARCHAR(64)"))
+        if "source_revision" not in existing:
+            connection.execute(text("ALTER TABLE report_sources ADD COLUMN source_revision INTEGER"))
         missing_trace_count = connection.scalar(
             text("SELECT COUNT(*) FROM report_sources WHERE trace_id IS NULL OR trace_id = ''")
         ) or 0

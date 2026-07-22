@@ -168,7 +168,7 @@ WPF 로컬 DB는 공개 버전을 `documents.published_version_no`와 `document_
 
 FieldComment는 문서 파일 개정이 아니라 현장 원천 기록이다. 새 WPF 코멘트는 `field_comments`에 저장되며 문서 버전을 증가시키지 않는다. 첨부 사진/파일은 `field_comment_attachments`에 별도로 저장된다.
 
-관리자 검토 화면은 FieldComment 원천을 읽기 전용으로 표시하고 상태, 문서, 작성자, 담당자, 태그, 라인, 설비, 공정, 오류 유형, 기간, 오래된 NEW, 첨부와 보고서 연결 여부로 필터링한다. 관리자 해석 영역의 정리·분석 내용, 담당자, 검토 기한, 상태와 필수 전이 사유를 수정하고 다중 선택 항목을 순서대로 로컬 저장·개별 동기화한다. 첨부 사진/파일은 같은 화면의 첨부 목록에서 원본 파일명, 유형, 로컬 경로, 서버 첨부 ID로 추적한다. WPF 검토 변경은 로컬 DB에 먼저 저장하고 서버가 연결되어 있으면 각 항목을 `/api/v1/field-comments/{comment_id}` PATCH로 반영하며, 실패하면 `server_sync_queue`의 `field_comment_review/update_field_comment_review` 항목으로 남긴다. FastAPI의 별도 `/api/v1/field-comments/bulk-review`는 요청당 최대 200건을 한 트랜잭션으로 검증·저장한다. 원천 hash를 포함한 전후 snapshot 감사와 오래된 NEW·근거 부족 SELECTED·원천 누락 보고서 품질 작업함/지표도 서버 API에서 제공한다.
+관리자 검토 화면은 FieldComment 원천을 읽기 전용으로 표시하고 상태·기한 초과·담당자·라인/설비/공정/오류 태그·우선순위/상충·첨부·보고서 연결을 필터링하며 필터를 로컬 SQLite 저장 보기로 보존한다. 상세는 서버 원천 hash, 첨부 수, 관찰 문서 버전, 채널 권한과 상충 판단 근거를 표시한다. 다중 선택은 `/bulk-review/preview` 표에서 항목별 허용 전이와 실패를 확인한 뒤 `/bulk-review/execute`로 최대 200건을 처리한다. 서버는 항목별 transaction·revision·receipt를 반환해 일부 실패나 응답 유실에도 성공 결과를 보존하고 WPF는 성공 snapshot만 로컬에 반영한다.
 
 ## 작업순서
 
@@ -192,7 +192,7 @@ Windows와 Android의 알림은 장기적으로 개인 메신저가 아니라 �
 
 보고서는 FieldComment, 문서, 작업순서 항목/이력을 근거로 수동 초안을 만들고 문서로 저장하는 최소 흐름이 구현되어 있다. WPF는 로컬 보고서 문서를 먼저 만들고 source를 `report_sources`에 보존한 뒤 `/api/v1/reports` 저장을 시도한다. 실패하면 `server_sync_queue`에 남기고, 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다.
 
-초안 생성과 최종 저장에는 서로 다른 source type이 최소 2종 필요하며 같은 type/ID/version 중복은 거부한다. WPF 후보는 `SELECTED` FieldComment, 현재 공개 문서, 작업순서 항목/이력만 사용한다. FieldComment의 `SELECTED` 전이에는 관찰 문서 버전과 원천 작성자가 필요하다. 서버는 FieldComment의 관찰 버전, 문서의 현재 공개 버전, 작업순서·작업내역의 최신 불변 식별자를 `source_version_id`로 확정하고 각 source에 독립 `trace_id`와 저장 시점 `source_hash_sha256`를 남긴다. 최종 문서 저장 직전에 같은 version의 원천 hash를 다시 계산해 달라졌으면 `409`로 차단하며 승인·보관 보고서의 source 교체도 거부한다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
+초안 생성과 최종 저장에는 서로 다른 source type이 최소 2종 필요하며 같은 type/ID/version 중복은 거부한다. 서버는 FieldComment의 관찰 버전과 선정 `review_revision`, 원천 hash를 `report_sources`에 고정한다. 최종 문서 저장 직전에 상태·version·revision·hash·채널 권한을 다시 읽고 달라졌으면 `409`로 차단한다. 생성 문서는 source의 type/ID/version/revision/trace/hash를 포함해 최종 문서에서 원천까지 역추적된다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
 
 ## 후속 연동
 

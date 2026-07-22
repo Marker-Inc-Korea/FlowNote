@@ -186,6 +186,21 @@ public sealed record ServerFieldCommentResponse
 
     [JsonPropertyName("last_transition_reason")]
     public string? LastTransitionReason { get; init; }
+
+    [JsonPropertyName("conflict_flag")]
+    public bool ConflictFlag { get; init; }
+
+    [JsonPropertyName("conflict_basis")]
+    public string? ConflictBasis { get; init; }
+
+    [JsonPropertyName("workbench_flags")]
+    public IReadOnlyList<string> WorkbenchFlags { get; init; } = [];
+
+    [JsonPropertyName("attachment_count")]
+    public int AttachmentCount { get; init; }
+
+    [JsonPropertyName("channel_access")]
+    public string ChannelAccess { get; init; } = "NOT_LINKED";
 }
 
 public sealed record ServerFieldCommentReviewRequest
@@ -214,6 +229,12 @@ public sealed record ServerFieldCommentReviewRequest
     [JsonPropertyName("transitionReason")]
     public string TransitionReason { get; init; } = "WPF 관리자 검토 동기화";
 
+    [JsonPropertyName("conflictFlag")]
+    public bool? ConflictFlag { get; init; }
+
+    [JsonPropertyName("conflictBasis")]
+    public string? ConflictBasis { get; init; }
+
     [JsonPropertyName("baseReviewRevision")]
     public int BaseReviewRevision { get; init; }
 
@@ -240,6 +261,8 @@ public sealed record ServerFieldCommentReviewRequest
                 : null,
             AssignedTo = Clean(fieldComment.AssignedTo),
             ReviewDueAt = fieldComment.ReviewDueAt,
+            ConflictFlag = fieldComment.ConflictFlag,
+            ConflictBasis = Clean(fieldComment.ConflictBasis),
             TransitionReason = Clean(fieldComment.LastTransitionReason) ?? "WPF 관리자 검토 동기화",
             BaseReviewRevision = baseReviewRevision ?? fieldComment.ReviewRevision,
             MutationKey = Clean(mutationKey) ?? throw new ArgumentException("Mutation key is required.", nameof(mutationKey))
@@ -250,6 +273,96 @@ public sealed record ServerFieldCommentReviewRequest
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
+}
+
+public sealed record ServerFieldCommentBulkReviewItemRequest
+{
+    [JsonPropertyName("commentId")]
+    public string CommentId { get; init; } = string.Empty;
+
+    [JsonPropertyName("baseReviewRevision")]
+    public int BaseReviewRevision { get; init; }
+
+    [JsonPropertyName("mutationKey")]
+    public string MutationKey { get; init; } = string.Empty;
+}
+
+public sealed record ServerFieldCommentBulkReviewRequest
+{
+    [JsonPropertyName("items")]
+    public IReadOnlyList<ServerFieldCommentBulkReviewItemRequest> Items { get; init; } = [];
+
+    [JsonPropertyName("status")]
+    public string? Status { get; init; }
+
+    [JsonPropertyName("normalizedContent")]
+    public string? NormalizedContent { get; init; }
+
+    [JsonPropertyName("analysisContent")]
+    public string? AnalysisContent { get; init; }
+
+    [JsonPropertyName("assignedTo")]
+    public string? AssignedTo { get; init; }
+
+    [JsonPropertyName("reviewDueAt")]
+    public DateTime? ReviewDueAt { get; init; }
+
+    [JsonPropertyName("transitionReason")]
+    public string? TransitionReason { get; init; }
+
+    [JsonPropertyName("conflictFlag")]
+    public bool? ConflictFlag { get; init; }
+
+    [JsonPropertyName("conflictBasis")]
+    public string? ConflictBasis { get; init; }
+}
+
+public sealed record ServerFieldCommentBulkReviewItemResponse
+{
+    [JsonPropertyName("comment_id")]
+    public string CommentId { get; init; } = string.Empty;
+
+    [JsonPropertyName("allowed")]
+    public bool Allowed { get; init; }
+
+    [JsonPropertyName("success")]
+    public bool? Success { get; init; }
+
+    [JsonPropertyName("from_status")]
+    public string? FromStatus { get; init; }
+
+    [JsonPropertyName("target_status")]
+    public string? TargetStatus { get; init; }
+
+    [JsonPropertyName("failure_code")]
+    public string? FailureCode { get; init; }
+
+    [JsonPropertyName("failure_reason")]
+    public string? FailureReason { get; init; }
+
+    [JsonPropertyName("review_revision")]
+    public int? ReviewRevision { get; init; }
+
+    [JsonPropertyName("receipt")]
+    public string? Receipt { get; init; }
+
+    [JsonPropertyName("field_comment")]
+    public ServerFieldCommentResponse? FieldComment { get; init; }
+}
+
+public sealed record ServerFieldCommentBulkReviewResponse
+{
+    [JsonPropertyName("requested_count")]
+    public int RequestedCount { get; init; }
+
+    [JsonPropertyName("success_count")]
+    public int SuccessCount { get; init; }
+
+    [JsonPropertyName("failure_count")]
+    public int FailureCount { get; init; }
+
+    [JsonPropertyName("items")]
+    public IReadOnlyList<ServerFieldCommentBulkReviewItemResponse> Items { get; init; } = [];
 }
 
 public sealed record ServerFieldCommentAttachmentFileResponse

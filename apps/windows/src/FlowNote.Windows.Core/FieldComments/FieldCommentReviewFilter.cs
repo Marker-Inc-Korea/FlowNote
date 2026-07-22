@@ -18,6 +18,7 @@ public sealed record FieldCommentReviewFilter(
     bool? Unassigned = null,
     bool? MissingEvidence = null,
     bool? DuplicateSuspected = null,
+    bool? Conflict = null,
     bool PriorityOrder = true,
     DateTime? CreatedFrom = null,
     DateTime? CreatedTo = null,

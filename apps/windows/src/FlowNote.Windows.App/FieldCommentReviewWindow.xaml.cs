@@ -19,6 +19,7 @@ public partial class FieldCommentReviewWindow : Window
     private readonly string actorName;
     private readonly string? serverUserId;
     private readonly ReviewWorkspace workspace = new();
+    private bool loadingSavedViews;
 
     public FieldCommentReviewWindow(
         FieldCommentService fieldComments,
@@ -62,6 +63,7 @@ public partial class FieldCommentReviewWindow : Window
         WorkbenchFilterComboBox.ItemsSource = new[]
         {
             new StatusOption("ALL", "전체"),
+            new StatusOption("CONFLICT", "상충/검토 필요"),
             new StatusOption("UNREVIEWED", "미검토"),
             new StatusOption("OVERDUE", "기한 초과"),
             new StatusOption("UNASSIGNED", "담당자 없음"),
@@ -75,7 +77,41 @@ public partial class FieldCommentReviewWindow : Window
             combo.SelectedValuePath = nameof(StatusOption.Value);
             combo.SelectedValue = "ALL";
         }
+        ReloadSavedViews();
         RefreshComments("FieldComment 검토 목록을 조회했습니다.");
+    }
+
+    private void SaveViewButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            fieldComments.SaveView(SavedViewNameTextBox.Text, BuildFilter());
+            ReloadSavedViews(SavedViewNameTextBox.Text.Trim());
+            StatusTextBlock.Text = "현재 필터를 저장된 보기로 보존했습니다.";
+        }
+        catch (ArgumentException exception)
+        {
+            StatusTextBlock.Text = exception.Message;
+        }
+    }
+
+    private void SavedViewComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (loadingSavedViews || SavedViewComboBox.SelectedItem is not FieldCommentSavedView view)
+        {
+            return;
+        }
+        ApplyFilter(view.Filter);
+        RefreshComments($"저장된 보기 '{view.Name}'를 적용했습니다.");
+    }
+
+    private void ReloadSavedViews(string? selectedName = null)
+    {
+        loadingSavedViews = true;
+        var views = fieldComments.ListSavedViews();
+        SavedViewComboBox.ItemsSource = views;
+        SavedViewComboBox.SelectedItem = views.FirstOrDefault(item => item.Name == selectedName);
+        loadingSavedViews = false;
     }
 
     private void RefreshButton_Click(object sender, RoutedEventArgs e)
@@ -114,7 +150,9 @@ public partial class FieldCommentReviewWindow : Window
                 actorName,
                 TransitionReasonTextBox.Text,
                 AssignedToTextBox.Text,
-                ReviewDueDatePicker.SelectedDate);
+                ReviewDueDatePicker.SelectedDate,
+                ConflictCheckBox.IsChecked == true,
+                ConflictBasisTextBox.Text);
             var syncResult = await serverSync.QueueAndTrySyncFieldCommentReviewAsync(
                 updated,
                 serverClient,
@@ -140,6 +178,11 @@ public partial class FieldCommentReviewWindow : Window
             StatusTextBlock.Text = "일괄 검토할 FieldComment를 하나 이상 선택하세요.";
             return;
         }
+        if (selected.Count > 200)
+        {
+            StatusTextBlock.Text = "일괄 검토는 한 번에 최대 200건입니다. 선택을 나눠 실행하세요.";
+            return;
+        }
 
         var status = ReviewStatusComboBox.SelectedValue?.ToString();
         if (string.IsNullOrWhiteSpace(status))
@@ -148,32 +191,82 @@ public partial class FieldCommentReviewWindow : Window
             return;
         }
 
+        if (serverClient is null)
+        {
+            StatusTextBlock.Text = "항목별 사전검증과 receipt 보존을 위해 서버 연결이 필요합니다.";
+            return;
+        }
+
         try
         {
-            var synced = 0;
+            var localByServerId = new Dictionary<string, FieldCommentReviewRecord>(StringComparer.Ordinal);
+            var requestItems = new List<ServerFieldCommentBulkReviewItemRequest>();
             foreach (var item in selected)
             {
-                var updated = fieldComments.UpdateReview(
-                    item.CommentId,
-                    NormalizedContentTextBox.Text,
-                    AnalysisContentTextBox.Text,
-                    status,
-                    actorName,
-                    TransitionReasonTextBox.Text,
-                    AssignedToTextBox.Text,
-                    ReviewDueDatePicker.SelectedDate);
-                var result = await serverSync.QueueAndTrySyncFieldCommentReviewAsync(
-                    updated,
-                    serverClient,
-                    serverUserId,
-                    DateTime.UtcNow);
-                if (result.Success)
+                var serverCommentId = fieldComments.GetServerCommentId(item.CommentId);
+                if (string.IsNullOrWhiteSpace(serverCommentId))
                 {
-                    synced++;
+                    continue;
                 }
+                var serverState = await serverClient.GetFieldCommentAsync(serverCommentId);
+                localByServerId[serverCommentId] = item;
+                requestItems.Add(new ServerFieldCommentBulkReviewItemRequest
+                {
+                    CommentId = serverCommentId,
+                    BaseReviewRevision = serverState.ReviewRevision,
+                    MutationKey = $"wpf-bulk-review-{Guid.NewGuid():N}"
+                });
+            }
+            if (requestItems.Count != selected.Count)
+            {
+                StatusTextBlock.Text = $"선택 {selected.Count}건 중 서버 ID가 없는 {selected.Count - requestItems.Count}건은 일괄 처리할 수 없습니다.";
+                return;
+            }
+
+            var request = new ServerFieldCommentBulkReviewRequest
+            {
+                Items = requestItems,
+                Status = status,
+                NormalizedContent = NormalizedContentTextBox.Text,
+                AnalysisContent = AnalysisContentTextBox.Text,
+                AssignedTo = AssignedToTextBox.Text,
+                ReviewDueAt = ReviewDueDatePicker.SelectedDate,
+                TransitionReason = TransitionReasonTextBox.Text,
+                ConflictFlag = ConflictCheckBox.IsChecked == true,
+                ConflictBasis = ConflictBasisTextBox.Text
+            };
+            var preview = await serverClient.PreviewFieldCommentBulkReviewAsync(request);
+            var previewWindow = new FieldCommentBulkPreviewWindow(preview) { Owner = this };
+            if (previewWindow.ShowDialog() != true)
+            {
+                StatusTextBlock.Text = "일괄 처리를 취소했습니다. 사전검증 결과는 화면에서 확인했습니다.";
+                return;
+            }
+
+            var execution = await serverClient.ExecuteFieldCommentBulkReviewAsync(request);
+            foreach (var result in execution.Items.Where(item => item.Success == true && item.FieldComment is not null))
+            {
+                var local = localByServerId[result.CommentId];
+                var server = result.FieldComment!;
+                fieldComments.ApplyServerReviewResult(
+                    local.CommentId,
+                    server.NormalizedContent,
+                    server.AnalysisContent,
+                    server.Status,
+                    server.AssignedTo,
+                    server.ReviewDueAt,
+                    server.LastTransitionReason,
+                    server.ReviewRevision,
+                    server.ConflictFlag,
+                    server.ConflictBasis,
+                    actorName);
             }
             ReviewChanged = true;
-            RefreshComments($"선택 {selected.Count}건을 {FormatStatus(status)} 상태로 저장했습니다. 서버 반영 {synced}건.");
+            RefreshComments($"일괄 처리 {execution.RequestedCount}건 · 성공 {execution.SuccessCount}건 · 실패 {execution.FailureCount}건. 항목별 revision/receipt가 보존되었습니다.");
+            if (execution.FailureCount > 0)
+            {
+                new FieldCommentBulkPreviewWindow(execution) { Owner = this }.ShowDialog();
+            }
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentOutOfRangeException or HttpRequestException or TaskCanceledException)
         {
@@ -247,7 +340,32 @@ public partial class FieldCommentReviewWindow : Window
     {
         workspace.FieldComments.Clear();
         var workbench = WorkbenchFilterComboBox.SelectedValue?.ToString();
-        var filter = new FieldCommentReviewFilter(
+        var filter = BuildFilter();
+        foreach (var comment in fieldComments.ListForReview(filter))
+        {
+            workspace.FieldComments.Add(comment);
+        }
+
+        FilterHintTextBlock.Text = $"표시 {workspace.FieldComments.Count}건 · 상충→기한 초과→담당 없음→근거 누락 순";
+        StatusTextBlock.Text = statusText;
+
+        if (!string.IsNullOrWhiteSpace(selectedCommentId))
+        {
+            FieldCommentGrid.SelectedItem = workspace.FieldComments.FirstOrDefault(item => item.CommentId == selectedCommentId);
+        }
+
+        if (FieldCommentGrid.SelectedItem is null)
+        {
+            FieldCommentGrid.SelectedItem = workspace.FieldComments.FirstOrDefault();
+        }
+
+        LoadSelectedComment();
+    }
+
+    private FieldCommentReviewFilter BuildFilter()
+    {
+        var workbench = WorkbenchFilterComboBox.SelectedValue?.ToString();
+        return new FieldCommentReviewFilter(
             Status: StatusFilterComboBox.SelectedValue?.ToString(),
             DocumentText: DocumentFilterTextBox.Text,
             AuthorText: AuthorFilterTextBox.Text,
@@ -267,28 +385,35 @@ public partial class FieldCommentReviewWindow : Window
             Unassigned: workbench == "UNASSIGNED" ? true : null,
             MissingEvidence: workbench == "MISSING_EVIDENCE" ? true : null,
             DuplicateSuspected: workbench == "DUPLICATE_SUSPECTED" ? true : null,
+            Conflict: workbench == "CONFLICT" ? true : null,
             PriorityOrder: true,
             CreatedFrom: CreatedFromDatePicker.SelectedDate,
             CreatedTo: CreatedToDatePicker.SelectedDate);
-        foreach (var comment in fieldComments.ListForReview(filter))
-        {
-            workspace.FieldComments.Add(comment);
-        }
+    }
 
-        FilterHintTextBlock.Text = $"표시 {workspace.FieldComments.Count}건 · 기한 초과→담당 없음→근거 누락→중복 의심 순으로 우선 처리";
-        StatusTextBlock.Text = statusText;
-
-        if (!string.IsNullOrWhiteSpace(selectedCommentId))
-        {
-            FieldCommentGrid.SelectedItem = workspace.FieldComments.FirstOrDefault(item => item.CommentId == selectedCommentId);
-        }
-
-        if (FieldCommentGrid.SelectedItem is null)
-        {
-            FieldCommentGrid.SelectedItem = workspace.FieldComments.FirstOrDefault();
-        }
-
-        LoadSelectedComment();
+    private void ApplyFilter(FieldCommentReviewFilter filter)
+    {
+        StatusFilterComboBox.SelectedValue = filter.Status ?? "ALL";
+        DocumentFilterTextBox.Text = filter.DocumentText ?? string.Empty;
+        AuthorFilterTextBox.Text = filter.AuthorText ?? string.Empty;
+        TagFilterTextBox.Text = filter.TagText ?? string.Empty;
+        AssignedFilterTextBox.Text = filter.AssignedTo ?? string.Empty;
+        LineFilterTextBox.Text = filter.LineText ?? string.Empty;
+        EquipmentFilterTextBox.Text = filter.EquipmentText ?? string.Empty;
+        ProcessFilterTextBox.Text = filter.ProcessText ?? string.Empty;
+        ErrorTypeFilterTextBox.Text = filter.ErrorTypeText ?? string.Empty;
+        AgingFilterComboBox.SelectedValue = filter.OlderThanDays?.ToString() ?? "ALL";
+        AttachmentFilterComboBox.SelectedValue = filter.HasAttachments is true ? "YES" : filter.HasAttachments is false ? "NO" : "ALL";
+        ReportLinkFilterComboBox.SelectedValue = filter.ReportLinked is true ? "YES" : filter.ReportLinked is false ? "NO" : "ALL";
+        WorkbenchFilterComboBox.SelectedValue = filter.Overdue is true ? "OVERDUE"
+            : filter.Conflict is true ? "CONFLICT"
+            : filter.Unassigned is true ? "UNASSIGNED"
+            : filter.MissingEvidence is true ? "MISSING_EVIDENCE"
+            : filter.DuplicateSuspected is true ? "DUPLICATE_SUSPECTED"
+            : filter.Unreviewed is true ? "UNREVIEWED"
+            : "ALL";
+        CreatedFromDatePicker.SelectedDate = filter.CreatedFrom;
+        CreatedToDatePicker.SelectedDate = filter.CreatedTo;
     }
 
     private void LoadSelectedComment()
@@ -304,6 +429,9 @@ public partial class FieldCommentReviewWindow : Window
             TransitionReasonTextBox.Text = string.Empty;
             AssignedToTextBox.Text = string.Empty;
             ReviewDueDatePicker.SelectedDate = null;
+            ConflictCheckBox.IsChecked = false;
+            ConflictBasisTextBox.Text = string.Empty;
+            EvidenceTextBlock.Text = "원천 hash · 첨부 · 문서 버전 · 채널 권한: 서버 조회 전";
             return;
         }
 
@@ -315,18 +443,53 @@ public partial class FieldCommentReviewWindow : Window
         TransitionReasonTextBox.Text = string.Empty;
         AssignedToTextBox.Text = selected.AssignedTo ?? string.Empty;
         ReviewDueDatePicker.SelectedDate = selected.ReviewDueAt;
+        ConflictCheckBox.IsChecked = selected.ConflictFlag;
+        ConflictBasisTextBox.Text = selected.ConflictBasis ?? string.Empty;
 
         foreach (var attachment in fieldComments.ListAttachments(selected.CommentId))
         {
             workspace.Attachments.Add(attachment);
         }
+        _ = LoadServerEvidenceAsync(selected);
     }
+
+    private async Task LoadServerEvidenceAsync(FieldCommentReviewRecord selected)
+    {
+        var serverCommentId = fieldComments.GetServerCommentId(selected.CommentId);
+        if (serverClient is null || string.IsNullOrWhiteSpace(serverCommentId))
+        {
+            EvidenceTextBlock.Text = $"문서 버전 {selected.DocumentVersionNo?.ToString() ?? "없음"} · 로컬 첨부 {selected.AttachmentCount}건 · 서버 연결 없음";
+            return;
+        }
+        try
+        {
+            var server = await serverClient.GetFieldCommentAsync(serverCommentId);
+            if (FieldCommentGrid.SelectedItem is not FieldCommentReviewRecord current || current.CommentId != selected.CommentId)
+            {
+                return;
+            }
+            EvidenceTextBlock.Text = $"hash {server.SourceHashSha256[..Math.Min(12, server.SourceHashSha256.Length)]}… · 첨부 {server.AttachmentCount}건 · 문서 버전 {server.DocumentVersionId ?? "없음"} · 채널 권한 {FormatChannelAccess(server.ChannelAccess)}";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            EvidenceTextBlock.Text = $"서버 근거 표시 실패: {exception.Message}";
+        }
+    }
+
+    private static string FormatChannelAccess(string value) => value switch
+    {
+        "ALLOWED" => "허용",
+        "DENIED" => "차단",
+        "NOT_LINKED" => "채널 미연결",
+        _ => value
+    };
 
     private static string FormatStatus(string status)
     {
         return status switch
         {
             "NEW" => "신규",
+            "ASSIGNED" => "담당배정",
             "NEEDS_REVIEW" => "검토필요",
             "ANALYZED" => "분석완료",
             "REVIEWED" => "검토완료",

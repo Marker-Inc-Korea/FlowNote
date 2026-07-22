@@ -743,3 +743,118 @@ def test_field_comment_rejects_unknown_document() -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Document not found."
+
+
+def test_bulk_review_200_preserves_partial_results_revisions_and_receipts() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        comments = []
+        for index in range(200):
+            response = client.post(
+                "/api/v1/field-comments",
+                headers=headers,
+                json={
+                    "documentId": document["document_id"],
+                    "documentVersionId": document["latest_version"]["version_id"],
+                    "rawContent": f"200건 일괄 검토 {uuid4().hex} #{index}",
+                },
+            )
+            assert response.status_code == 201, response.text
+            comments.append(response.json())
+
+        items = [
+            {
+                "commentId": comment["comment_id"],
+                "baseReviewRevision": comment["review_revision"],
+                "mutationKey": f"bulk-200-{uuid4().hex}",
+            }
+            for comment in comments
+        ]
+        items[73]["baseReviewRevision"] = 999
+        payload = {
+            "items": items,
+            "status": "ANALYZED",
+            "normalizedContent": "일괄 정리 내용",
+            "analysisContent": "일괄 분석 내용",
+            "transitionReason": "200건 처리량과 부분 성공 검증",
+        }
+
+        preview = client.post("/api/v1/field-comments/bulk-review/preview", headers=headers, json=payload)
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["requested_count"] == 200
+        assert sum(item["allowed"] for item in preview.json()["items"]) == 199
+        assert preview.json()["items"][73]["failure_code"] == "FIELD_COMMENT_STALE_REVIEW_REVISION"
+
+        execution = client.post("/api/v1/field-comments/bulk-review/execute", headers=headers, json=payload)
+        assert execution.status_code == 200, execution.text
+        result = execution.json()
+        assert result["requested_count"] == 200
+        assert result["success_count"] == 199
+        assert result["failure_count"] == 1
+        assert len({item["comment_id"] for item in result["items"]}) == 200
+        successes = [item for item in result["items"] if item["success"]]
+        assert all(item["review_revision"] == 2 and item["receipt"] for item in successes)
+
+        replay = client.post("/api/v1/field-comments/bulk-review/execute", headers=headers, json=payload)
+        assert replay.status_code == 200, replay.text
+        assert replay.json()["success_count"] == 199
+        with client.app.state.database.session() as session:
+            receipt_count = session.scalar(
+                select(func.count()).select_from(FieldCommentReviewMutationReceipt).where(
+                    FieldCommentReviewMutationReceipt.mutation_key.in_([item["mutationKey"] for item in items])
+                )
+            )
+            assert receipt_count == 199
+
+
+def test_assignment_conflict_and_proxy_actor_audit_are_explicit() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        proxy = client.post(
+            "/api/v1/field-comments",
+            headers=headers,
+            json={
+                "documentId": document["document_id"],
+                "documentVersionId": document["latest_version"]["version_id"],
+                "inputMode": "admin_proxy",
+                "entrySource": "admin_proxy",
+                "reportedBy": "현장 전달자 A",
+                "rawContent": "관리자 대리 입력 감사 분리",
+            },
+        )
+        assert proxy.status_code == 201, proxy.text
+        comment = proxy.json()
+        assigned = client.patch(
+            f"/api/v1/field-comments/{comment['comment_id']}",
+            headers=headers,
+            json={
+                "status": "ASSIGNED",
+                "assignedTo": "user-admin",
+                "transitionReason": "담당 관리자 배정",
+                "baseReviewRevision": comment["review_revision"],
+            },
+        )
+        assert assigned.status_code == 200, assigned.text
+        assert assigned.json()["status"] == "ASSIGNED"
+        conflict = client.patch(
+            f"/api/v1/field-comments/{comment['comment_id']}",
+            headers=headers,
+            json={
+                "status": "NEEDS_REVIEW",
+                "conflictFlag": True,
+                "conflictBasis": "교대조 A/B의 설비 정지 시각 진술이 상충함",
+                "transitionReason": "상충 기록 별도 검토",
+                "baseReviewRevision": assigned.json()["review_revision"],
+            },
+        )
+        assert conflict.status_code == 200, conflict.text
+        assert conflict.json()["conflict_flag"] is True
+        assert "CONFLICT" in client.get(
+            "/api/v1/field-comments", headers=headers, params={"conflict": True}
+        ).json()[0]["workbench_flags"]
+        audit = client.get(f"/api/v1/field-comments/{comment['comment_id']}/audit", headers=headers).json()
+        proxy_audit = next(item for item in audit if item["event_type"] == "field_comment.proxy_created")
+        assert proxy_audit["actor_id"] == "user-admin"
+        assert proxy_audit["after_snapshot"]["reported_by"] == "현장 전달자 A"

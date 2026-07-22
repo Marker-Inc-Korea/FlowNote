@@ -335,6 +335,28 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerFieldCommentResponse>(response, cancellationToken);
     }
 
+    public async Task<ServerFieldCommentBulkReviewResponse> PreviewFieldCommentBulkReviewAsync(
+        ServerFieldCommentBulkReviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            "api/v1/field-comments/bulk-review/preview",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerFieldCommentBulkReviewResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerFieldCommentBulkReviewResponse> ExecuteFieldCommentBulkReviewAsync(
+        ServerFieldCommentBulkReviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            "api/v1/field-comments/bulk-review/execute",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerFieldCommentBulkReviewResponse>(response, cancellationToken);
+    }
+
     public async Task<ServerFieldCommentResponse> GetFieldCommentAsync(
         string commentId,
         CancellationToken cancellationToken = default)

@@ -56,6 +56,8 @@ class ReportSourceRequest(BaseModel):
     source_id: str = Field(alias="sourceId", min_length=1)
     source_version_id: str | None = Field(default=None, alias="sourceVersionId")
     relation_type: str | None = Field(default=None, alias="relationType")
+    source_revision: int | None = Field(default=None, alias="sourceRevision", ge=1)
+    source_hash_sha256: str | None = Field(default=None, alias="sourceHashSha256", min_length=64, max_length=64)
 
 
 class ReportDraftCreateRequest(BaseModel):
@@ -103,6 +105,7 @@ class ReportSourceResponse(BaseModel):
     source_type: str
     source_id: str
     source_version_id: str | None
+    source_revision: int | None
     trace_id: str
     source_hash_sha256: str
     relation_type: str | None
@@ -237,11 +240,12 @@ def _validate_source(
     session: Session,
     source: ReportSourceRequest,
     current_user: CurrentUser,
-) -> tuple[str, str, str, str | None, str]:
+) -> tuple[str, str, str, int | None, str | None, str]:
     source_type = _normalize_source_type(source.source_type)
     source_id = source.source_id.strip()
     source_version_id = _clean_optional(source.source_version_id)
     relation_type = _clean_optional(source.relation_type)
+    source_revision: int | None = None
 
     if source_type == "FIELD_COMMENT":
         field_comment = session.scalar(select(FieldComment).where(FieldComment.comment_id == source_id))
@@ -254,6 +258,7 @@ def _validate_source(
             )
         source_version_id = field_comment.document_version_id
         source_hash = _field_comment_source_hash(field_comment)
+        source_revision = field_comment.review_revision
     elif source_type == "DOCUMENT":
         document = session.scalar(
             select(Document).where(Document.document_id == source_id, Document.deleted_at.is_(None))
@@ -333,7 +338,11 @@ def _validate_source(
         raise HTTPException(status_code=422, detail=f"{source_type} source requires a fixed source version.")
     if not source_hash:
         raise HTTPException(status_code=422, detail=f"{source_type} source requires a verifiable source hash.")
-    return source_type, source_id, source_version_id, relation_type, source_hash
+    if source.source_revision is not None and source.source_revision != source_revision:
+        raise HTTPException(status_code=409, detail="Report source revision changed before it could be frozen.")
+    if source.source_hash_sha256 is not None and source.source_hash_sha256.lower() != source_hash.lower():
+        raise HTTPException(status_code=409, detail="Report source hash changed before it could be frozen.")
+    return source_type, source_id, source_version_id, source_revision, relation_type, source_hash
 
 
 def _hash_payload(payload: dict) -> str:
@@ -363,6 +372,7 @@ def _source_set_hash(sources: list[ReportSource]) -> str:
             "source_type": source.source_type,
             "source_id": source.source_id,
             "source_version_id": source.source_version_id,
+            "source_revision": source.source_revision,
             "source_hash_sha256": source.source_hash_sha256,
             "relation_type": source.relation_type,
         } for source in sources),
@@ -484,12 +494,13 @@ def _replace_report_sources(
     session.query(ReportSource).filter(ReportSource.report_id == report_id).delete(synchronize_session=False)
     session.flush()
     report_sources: list[ReportSource] = []
-    for source_type, source_id, source_version_id, relation_type, source_hash in validated_sources:
+    for source_type, source_id, source_version_id, source_revision, relation_type, source_hash in validated_sources:
         report_source = ReportSource(
             report_id=report_id,
             source_type=source_type,
             source_id=source_id,
             source_version_id=source_version_id,
+            source_revision=source_revision,
             trace_id=_new_public_id("trace"),
             source_hash_sha256=source_hash,
             relation_type=relation_type,
@@ -509,7 +520,7 @@ def _validate_frozen_sources(
         raise HTTPException(status_code=422, detail="A report requires at least two distinct source types.")
     for source in sources:
         try:
-            validated_type, validated_id, validated_version, _, current_hash = _validate_source(
+            validated_type, validated_id, validated_version, current_revision, _, current_hash = _validate_source(
                 session,
                 ReportSourceRequest(
                     sourceType=source.source_type,
@@ -537,6 +548,8 @@ def _validate_frozen_sources(
             raise HTTPException(status_code=409, detail=f"Report source version changed: {source.trace_id}.")
         if current_hash != source.source_hash_sha256:
             raise HTTPException(status_code=409, detail=f"Report source hash mismatch: {source.trace_id}.")
+        if source.source_revision is not None and current_revision != source.source_revision:
+            raise HTTPException(status_code=409, detail=f"Report source revision changed: {source.trace_id}.")
 
 
 def _source_summary(session: Session, source: ReportSource) -> str | None:
@@ -578,6 +591,8 @@ def _report_body(report: Report, sources: list[ReportSource]) -> bytes:
             "\n".join(
                 f"- {source.source_type}: {source.source_id}"
                 + (f" ({source.source_version_id})" if source.source_version_id else "")
+                + (f" revision={source.source_revision}" if source.source_revision is not None else "")
+                + f" trace={source.trace_id} sha256={source.source_hash_sha256}"
                 for source in sources
             ),
         ),
@@ -754,6 +769,7 @@ def _report_response(session: Session, report: Report) -> ReportResponse:
                 source_type=source.source_type,
                 source_id=source.source_id,
                 source_version_id=source.source_version_id,
+                source_revision=source.source_revision,
                 trace_id=source.trace_id,
                 source_hash_sha256=source.source_hash_sha256,
                 relation_type=source.relation_type,

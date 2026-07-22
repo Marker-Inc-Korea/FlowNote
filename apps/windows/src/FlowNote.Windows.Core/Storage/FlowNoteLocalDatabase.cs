@@ -333,6 +333,8 @@ public sealed class FlowNoteLocalDatabase
                 assigned_to TEXT NULL,
                 review_due_at TEXT NULL,
                 last_transition_reason TEXT NULL,
+                conflict_flag INTEGER NOT NULL DEFAULT 0,
+                conflict_basis TEXT NULL,
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 synced_at TEXT NULL,
@@ -341,6 +343,12 @@ public sealed class FlowNoteLocalDatabase
 
             CREATE INDEX IF NOT EXISTS ix_field_comments_document_created
                 ON field_comments (document_id, created_at);
+
+            CREATE TABLE IF NOT EXISTS field_comment_saved_views (
+                name TEXT PRIMARY KEY,
+                filter_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
 
             CREATE TABLE IF NOT EXISTS field_comment_attachments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -734,6 +742,8 @@ public sealed class FlowNoteLocalDatabase
         EnsureColumn(connection, "field_comments", "assigned_to", "TEXT NULL");
         EnsureColumn(connection, "field_comments", "review_due_at", "TEXT NULL");
         EnsureColumn(connection, "field_comments", "last_transition_reason", "TEXT NULL");
+        EnsureColumn(connection, "field_comments", "conflict_flag", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "field_comments", "conflict_basis", "TEXT NULL");
         EnsureColumn(connection, "field_comments", "synced_at", "TEXT NULL");
         EnsureColumn(connection, "field_comments", "review_revision", "INTEGER NOT NULL DEFAULT 1");
         EnsureColumn(connection, "field_comment_attachments", "server_attachment_id", "TEXT NULL");

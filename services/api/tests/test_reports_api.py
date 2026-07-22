@@ -473,6 +473,66 @@ def test_report_approval_rejects_field_comment_source_hash_mismatch() -> None:
     assert save_response.json()["detail"].startswith("Report source hash mismatch: trace_")
 
 
+def test_report_approval_rejects_selected_source_revision_change_until_redrafted() -> None:
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        document = create_document(client, headers)
+        field_comment = create_field_comment(client, headers, document)
+        draft_response = client.post(
+            "/api/v1/reports/drafts",
+            headers=headers,
+            json={
+                "reportType": "field_review",
+                "title": "선정 원천 revision 고정",
+                "sources": [
+                    {
+                        "sourceType": "FIELD_COMMENT",
+                        "sourceId": field_comment["comment_id"],
+                        "sourceRevision": field_comment["review_revision"],
+                        "sourceHashSha256": field_comment["source_hash_sha256"],
+                    },
+                    {"sourceType": "DOCUMENT", "sourceId": document["document_id"]},
+                ],
+            },
+        )
+        assert draft_response.status_code == 201, draft_response.text
+        draft = draft_response.json()
+        frozen = next(source for source in draft["sources"] if source["source_type"] == "FIELD_COMMENT")
+        assert frozen["source_revision"] == field_comment["review_revision"]
+
+        changed = client.patch(
+            f"/api/v1/field-comments/{field_comment['comment_id']}",
+            headers=headers,
+            json={
+                "status": "REVIEWED",
+                "analysisContent": "선정 후 재분석되어 재검토가 필요한 내용",
+                "transitionReason": "선정 원천 재검토 전환",
+                "baseReviewRevision": field_comment["review_revision"],
+            },
+        )
+        assert changed.status_code == 200, changed.text
+        reselected = client.patch(
+            f"/api/v1/field-comments/{field_comment['comment_id']}",
+            headers=headers,
+            json={
+                "status": "SELECTED",
+                "transitionReason": "재검토 뒤 보고서 근거 재선정",
+                "baseReviewRevision": changed.json()["review_revision"],
+            },
+        )
+        assert reselected.status_code == 200, reselected.text
+        assert changed.json()["source_hash_sha256"] == field_comment["source_hash_sha256"]
+        assert reselected.json()["review_revision"] == field_comment["review_revision"] + 2
+
+        save_response = client.post(
+            "/api/v1/reports",
+            headers=headers,
+            json={"draftReportId": draft["report_id"], "saveAsDocument": True},
+        )
+        assert save_response.status_code == 409, save_response.text
+        assert save_response.json()["detail"].startswith("Report source revision changed: trace_")
+
+
 def test_report_rejects_excluded_field_comment_source() -> None:
     with create_test_client() as client:
         headers = auth_headers(client)

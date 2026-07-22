@@ -92,7 +92,7 @@ public partial class ReportDraftWindow : Window
             {
                 var traceLines = string.Join(Environment.NewLine, result.Saved.Sources.Select(source =>
                     $"- {source.SourceType} · {source.SourceId} · 버전 {source.SourceVersionId} · " +
-                    $"trace {source.TraceId} · hash {source.SourceHashSha256}"));
+                    $"revision {source.SourceRevision?.ToString() ?? "없음"} · trace {source.TraceId} · hash {source.SourceHashSha256}"));
                 MessageBox.Show(
                     this,
                     $"보고서 {result.Saved.ReportId} → 생성 문서 {result.Saved.GeneratedDocumentId ?? "없음"}{Environment.NewLine}" +
