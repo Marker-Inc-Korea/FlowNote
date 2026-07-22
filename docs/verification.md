@@ -2,6 +2,12 @@
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
 
+## 2026-07-22 작업 102 FieldComment 일괄 API 문서 재대조
+
+작업 시작 시 `main...origin/main`은 동기화되어 있었고 미커밋 변경은 없었다. 현재 코드를 다시 산출한 결과 루트 `GET /`를 포함한 OpenAPI는 128개 method/path 조합이지만 `services/api/README.md`는 새 `POST /api/v1/field-comments/bulk-review/preview`, `POST /api/v1/field-comments/bulk-review/execute`를 제외한 126개만 설명하고 있었다. 두 경로와 총계를 보강해 서버 README 표가 OpenAPI와 누락·초과 0건으로 일치하도록 했으며, 상위 문서에는 저장된 보기, 쓰기 없는 preview, 항목별 revision·mutation receipt와 부분 성공 실행 계약을 현재 구현 기준으로 명시했다. ORM 58개 테이블과 FastAPI 149개 테스트 수집 기준도 코드·검증 guard와 일치했다. 현재 사양 문서의 기준일은 2026-07-22로 통일하고 과거 실행 기록의 당시 날짜·수치는 변경하지 않았다.
+
+`services/api/.venv/bin/python -m pytest -q`는 `149 passed`, `python -m ruff check app tests`는 통과했다. WPF Core는 `43 passed`였고 WPF 앱 빌드는 오류 0건으로 완료됐지만 `MainWindow.xaml.cs`의 `currentRole` nullable 경고 `CS8604` 1건이 재현됐다. OpenAPI와 서버 README 집합 비교, Git 추적 제품 Markdown의 로컬 링크 검사와 `git diff --check`도 누락·오류 0건으로 통과했다. Android와 Windows 누적 공통 DB 스모크는 새로 실행하지 않았고 기존 SQLite, 로그, 테스트 파일과 산출물은 삭제하거나 초기화하지 않았다.
+
 ## 2026-07-22 작업 102 AI 보존 WPF 구현 문서 재대조
 
 작업 시작 시 `main...origin/main`은 동기화되어 있었고 미커밋 변경은 없었다. 직전 코드에서 WPF `AI 운영` 화면에 고객·현장 질의 상세, 단일 즉시 만료와 legal hold 설정·해제가 구현되었지만 일부 상위 문서에는 서버 API 전용 또는 WPF 미구현으로 남아 있던 설명을 현재 코드 기준으로 바로잡았다. WPF의 사유·근거 번호 검사, 이중 확인, 최신 `stateTag`, 조작별 operation key 재시도와 완료 후 query/hold/audit read-back 계약도 제품·시스템·배포 문서에 일치시켰다.

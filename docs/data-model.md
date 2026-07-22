@@ -68,7 +68,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-07-21 현재 ORM은 FieldComment 검토·보고서·작업순서 mutation receipt, 서버 복구 reconciliation과 AI 질의 legal hold 모델을 포함한 58개 서버 테이블을 생성 기준으로 사용한다.
+2026-07-22 현재 ORM은 FieldComment 검토·보고서·작업순서 mutation receipt, 서버 복구 reconciliation과 AI 질의 legal hold 모델을 포함한 58개 서버 테이블을 생성 기준으로 사용한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
