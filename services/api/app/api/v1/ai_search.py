@@ -288,6 +288,52 @@ def _document_line_scopes(session: Session, document_id: str) -> list[str]:
     )
 
 
+def _document_readiness_track(session: Session, document_id: str | None) -> str:
+    if document_id is None:
+        return "FIELD_READINESS"
+    smoke_marker = session.scalar(
+        select(DocumentTag.id)
+        .join(TagDefinition, DocumentTag.tag_id == TagDefinition.tag_id)
+        .where(
+            DocumentTag.document_id == document_id,
+            TagDefinition.tag_type == "custom",
+            TagDefinition.code == "smoke-regression",
+            TagDefinition.is_active.is_(True),
+        )
+        .limit(1)
+    )
+    return "SMOKE_REGRESSION" if smoke_marker is not None else "FIELD_READINESS"
+
+
+def _history_readiness_track(session: Session, history: WorkSequenceChangeHistory) -> str:
+    document_id = session.scalar(
+        select(WorkSequenceItem.document_id).where(WorkSequenceItem.item_id == history.item_id)
+    ) if history.item_id else None
+    return _document_readiness_track(session, document_id)
+
+
+def _report_source_readiness_track(session: Session, source: ReportSource) -> str:
+    source_type = source.source_type.strip().upper()
+    if source_type == "DOCUMENT":
+        return _document_readiness_track(session, source.source_id)
+    if source_type == "FIELD_COMMENT":
+        document_id = session.scalar(
+            select(FieldComment.document_id).where(FieldComment.comment_id == source.source_id)
+        )
+        return _document_readiness_track(session, document_id)
+    if source_type == "WORK_SEQUENCE_HISTORY":
+        history = session.scalar(
+            select(WorkSequenceChangeHistory).where(WorkSequenceChangeHistory.change_id == source.source_id)
+        )
+        return _history_readiness_track(session, history) if history else "FIELD_READINESS"
+    if source_type == "WORK_SEQUENCE_ITEM":
+        document_id = session.scalar(
+            select(WorkSequenceItem.document_id).where(WorkSequenceItem.item_id == source.source_id)
+        )
+        return _document_readiness_track(session, document_id)
+    return "FIELD_READINESS"
+
+
 def _history_line_scope(session: Session, history: WorkSequenceChangeHistory) -> str | None:
     return session.scalar(
         select(WorkSequenceBoard.line_code).where(WorkSequenceBoard.board_id == history.board_id)
@@ -530,6 +576,7 @@ def rebuild_ai_search_candidates(
                 "version_no": version.version_no,
                 "is_published": version.is_published,
                 "line_scope": _document_line_scopes(session, document.document_id),
+                "readiness_track": _document_readiness_track(session, document.document_id),
             },
             refreshed_at=refreshed_at,
         )
@@ -561,6 +608,7 @@ def rebuild_ai_search_candidates(
                 "input_mode": comment.input_mode,
                 "entry_source": comment.entry_source,
                 "line_scope": comment.location_code,
+                "readiness_track": _document_readiness_track(session, comment.document_id),
             },
             refreshed_at=refreshed_at,
         )
@@ -589,6 +637,7 @@ def rebuild_ai_search_candidates(
                 "item_id": history.item_id,
                 "actor_id": history.actor_id,
                 "line_scope": _history_line_scope(session, history),
+                "readiness_track": _history_readiness_track(session, history),
             },
             refreshed_at=refreshed_at,
         )
@@ -620,6 +669,7 @@ def rebuild_ai_search_candidates(
                 "report_source_id": source.source_id,
                 "generated_document_id": report.generated_document_id,
                 "line_scope": _report_line_scope(session, source),
+                "readiness_track": _report_source_readiness_track(session, source),
             },
             refreshed_at=refreshed_at,
         )
