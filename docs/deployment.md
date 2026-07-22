@@ -706,7 +706,7 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 7. WPF 실행 전 서버 계정 로그인이 가능한지 확인한다.
 8. WPF가 `RECONCILIATION_REQUIRED`를 표시하면 자동 전송·polling이 중지된 상태에서 `이력 > 서버 재결합`의 모든 `REBOUND`/`REQUEUE`/`CONFLICT` 항목과 승인 사유를 검토해 적용한다. 기존 큐·mapping·처리 `message_id`를 삭제하거나 수동 초기화하지 않는다.
 9. 승인 적용 뒤 cursor 0 재추적과 `PENDING` 재전송이 재개되는지 확인한다.
-10. `scripts\verify-pilot-restore.py`로 복구 전후 `server` 증거를 비교해 테이블별 원천 개수, `storage` 상대경로·크기·SHA-256, `quick_check`, foreign key가 모두 통과했는지 확인한다.
+10. `scripts\verify-pilot-restore.py`로 복구 전후 `server` 증거를 비교한다. 전후에는 동일한 익명 백업 세트·복구 승인 ID와 서로 다른 원본/복구 PC ID를 기록하고, 테이블별 원천 개수, `storage` 상대경로·크기·SHA-256, `quick_check`, `integrity_check`, foreign key가 모두 통과했는지 확인한다. DB 본파일 크기·SHA-256은 물리 복사 추적용 참고값으로 함께 보존한다.
 
 ### WPF 복구 순서
 
@@ -716,7 +716,7 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 4. `FLOWNOTE_LOCAL_DATA_DIR`, `FLOWNOTE_LOCAL_DATABASE_PATH`, `FLOWNOTE_API_BASE_URL` 값이 복구 위치와 맞는지 확인한다.
 5. WPF 앱을 실행해 로그인, 문서 목록, 문서 열람, FieldComment 등록/조회, 보고서 근거 조회를 확인한다.
 6. 복구 후 저장소 루트에서 `.\scripts\verify-preserved-tests.ps1` 또는 운영자가 지정한 동등 점검을 실행한다. 운영 환경에서 전체 개발 테스트를 실행할 수 없으면 최소한 서버 health, DB health, WPF 로그인, 문서 목록, 문서 열람, FieldComment, 보고서 근거 조회를 수동 점검표로 남긴다.
-7. `scripts\verify-pilot-restore.py`로 복구 전후 `wpf` 증거를 비교해 테이블별 원천 개수, `Files` 상대경로·크기·SHA-256, `quick_check`, foreign key가 모두 통과했는지 확인한다.
+7. `scripts\verify-pilot-restore.py`로 복구 전후 `wpf` 증거를 비교한다. 전후에는 동일한 익명 백업 세트·복구 승인 ID와 서로 다른 원본/복구 PC ID를 기록하고, 테이블별 원천 개수, `Files` 상대경로·크기·SHA-256, `quick_check`, `integrity_check`, foreign key가 모두 통과했는지 확인한다. DB 본파일 크기·SHA-256은 물리 복사 추적용 참고값으로 함께 보존한다.
 
 ### 부분 복원 장애 대응
 
@@ -727,6 +727,8 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 | 서버 DB와 `storage\` 시점이 다름 | 일부 문서 버전 또는 첨부만 열리지 않거나 DB에 없는 파일이 남는다. | 최신 세트 하나로 다시 맞춘다. 불가피하면 DB 기준으로 누락 파일과 고아 파일 목록을 작성하고, 누락 항목은 열람 제한, 고아 파일은 보존 폴더로 격리한다. |
 | WPF DB만 복원하고 `Files\`가 누락됨 | 로컬 문서 목록, 열람 로그, 동기화 큐는 있으나 로컬 파일 미리보기와 첨부 열람이 실패한다. | 같은 시점의 `Files\`를 재복원한다. 서버에 이미 동기화된 문서는 서버 열람으로 대체할 수 있지만, 로컬 미동기화 파일은 재수집 전까지 보존 장애로 기록한다. |
 | WPF `Files\`만 복원하고 DB가 누락됨 | 파일은 있으나 로컬 문서, 첨부, 큐, 열람 이력과 연결되지 않는다. | 같은 시점의 WPF DB를 재복원한다. DB가 없으면 파일은 삭제하지 않고 운영자가 서버 등록 여부와 로컬 재등록 필요 여부를 판단한다. |
+
+부분 복원, 오래된 DB와 새 파일, 누락 파일, 잘못된 서버 epoch는 같은 파일럿 `run_id`에서 각각 주입한다. 승인 전에는 WPF binding이 `RECONCILIATION_REQUIRED`이고 자동 전송·알림 polling이 모두 중지되어야 한다. 관리자가 서버 판정과 모든 `REBOUND/REQUEUE/CONFLICT`를 승인한 뒤에만 cursor 0 재추적과 전송을 재개한다. 결과는 `scenario-results/restore-fault-injections.csv`의 네 필수 행과 화면·WPF 로그·서버 reconciliation 감사 파일로 연결한다.
 
 ## 장애 시 보존 파일
 

@@ -887,3 +887,13 @@ SELECT COUNT(*) FROM documents d LEFT JOIN server_id_mappings m ON m.entity_type
 ```
 
 서버 DB에서는 `documents.latest_version_id/published_version_id`가 같은 문서의 version을 가리키는지, `document_versions.file_object_id`의 SHA-256과 저장 파일이 일치하는지, 보고서 `content_hash_sha256/source_set_hash_sha256`와 report source 집합이 일치하는지도 0건 기준으로 판정한다. 실패 run과 `DIVERGED` row가 적용 뒤에도 조회되는지 반드시 확인한다.
+
+## 2026-07-22 우선순위 7 복구·역할·UX 최종 게이트
+
+`scripts/verify-pilot-restore.py`는 복구 전후 manifest에 익명 장비 ID, 백업 세트 ID와 복구 승인 ID를 추가하고 DB `quick_check`·`integrity_check`·FK, 테이블별 row 수, 파일 상대경로·크기·SHA-256을 비교한다. DB 본파일 크기·SHA-256은 물리 복사 추적용 참고값으로 보존한다. 원본과 복구 장비 ID가 같거나 세트/승인이 다르거나 `table_count_mismatch_count` 또는 파일 `missing/extra/size/sha256` 중 하나가 0이 아니면 comparison은 FAIL이다.
+
+`scripts/manage-pilot-run.py`의 `full_pilot` 최종 판정은 두 comparison JSON을 다시 열어 위 0건 조건과 서로 다른 PC를 확인한다. 또한 `restore-fault-injections.csv`의 부분 복원·오래된 DB/새 파일·누락 파일·잘못된 epoch 네 행에서 자동 전송과 polling fail-closed, reconciliation 요구, 관리자 승인 재결합, 정상 업무 재개를 모두 요구한다.
+
+역할 지표는 `role-metrics.csv`에서 관리자 5종과 반장·조장·작업자 각 4종 필수 시나리오의 분모를 확인하고 성공률·중앙값·최대·재시도·도움 요청·치명적 blocker를 재계산해 `pilot-run.json`과 대조한다. 현장 관찰은 네 역할, 장갑 착용, 네트워크 단절을 포함해야 하며 조치 가능 관찰은 소유자·P0~P3·제품/설정/배치·교육 분류·검증 기준·기한·증거가 있는 개발 항목과 1:1이어야 한다.
+
+로컬 도구 회귀는 `python3 -m unittest scripts/test_verify_pilot_restore.py scripts/test_manage_pilot_run.py -v`의 11건이 통과했다. 이 결과는 도구의 정상/차단 판정을 검증한 것이며 별도 Windows PC, 승인 현장 참여자와 3자 서명이 필요한 실제 PILOT PASS를 대신하지 않는다. 실제 전체 실행은 여전히 `대기`다.

@@ -34,9 +34,7 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
         (self.run_root / "proof.txt").write_text("test evidence\n", encoding="utf-8")
 
     def complete_record(self) -> dict:
-        record = manage_pilot_run.empty_record(
-            self.run_id, "windows_server_rehearsal"
-        )
+        record = manage_pilot_run.empty_record(self.run_id, "windows_server_rehearsal")
         record["status"] = "PASS"
         record["environment"].update(
             {
@@ -120,9 +118,7 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
             )
 
         record = json.loads(
-            (self.evidence_root / run_id / "pilot-run.json").read_text(
-                encoding="utf-8"
-            )
+            (self.evidence_root / run_id / "pilot-run.json").read_text(encoding="utf-8")
         )
         self.assertEqual(0, result)
         self.assertEqual(3, record["schema_version"])
@@ -137,18 +133,16 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
         )
         self.assertTrue(
             (
-                self.evidence_root
-                / run_id
-                / "approvals"
-                / "rehearsal-authorization.md"
+                self.evidence_root / run_id / "approvals" / "rehearsal-authorization.md"
             ).is_file()
         )
 
     def verify(self, record: dict) -> tuple[int, dict]:
         path = self.run_root / "pilot-run.json"
         path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
-            io.StringIO()
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
         ):
             result = manage_pilot_run.verify(
                 argparse.Namespace(run_id=self.run_id, evidence_root=self.evidence_root)
@@ -199,6 +193,9 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
         self.assertTrue(
             (run_root / "packages" / "android-release-approval.csv").is_file()
         )
+        self.assertTrue(
+            (run_root / "scenario-results" / "restore-fault-injections.csv").is_file()
+        )
         failures = manage_pilot_run.android_delivery_csv_failures(run_root)
         self.assertTrue(any("PASS가 아닙니다" in failure for failure in failures))
 
@@ -206,10 +203,19 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
         path = self.run_root / "scenario-results" / "android-delivery.csv"
         path.parent.mkdir(parents=True)
         fieldnames = [
-            "scenario_id", "condition", "delivery_run_id", "message_id",
-            "created_at_utc", "recovery_ready_at_utc", "displayed_at_utc",
-            "receipt_at_utc", "page_seconds", "elapsed_seconds",
-            "allowed_seconds", "result", "evidence",
+            "scenario_id",
+            "condition",
+            "delivery_run_id",
+            "message_id",
+            "created_at_utc",
+            "recovery_ready_at_utc",
+            "displayed_at_utc",
+            "receipt_at_utc",
+            "page_seconds",
+            "elapsed_seconds",
+            "allowed_seconds",
+            "result",
+            "evidence",
         ]
         with path.open("w", newline="", encoding="utf-8") as stream:
             writer = csv.DictWriter(stream, fieldnames=fieldnames)
@@ -230,7 +236,9 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
                     }
                 )
 
-        self.assertEqual([], manage_pilot_run.android_delivery_csv_failures(self.run_root))
+        self.assertEqual(
+            [], manage_pilot_run.android_delivery_csv_failures(self.run_root)
+        )
 
         integrity_path = (
             self.run_root / "scenario-results" / "android-delivery-integrity.csv"
@@ -270,6 +278,269 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
                 },
             ),
         )
+
+    def test_restore_fault_injections_require_fail_closed_and_approved_rebind(
+        self,
+    ) -> None:
+        path = self.run_root / "scenario-results" / "restore-fault-injections.csv"
+        path.parent.mkdir(parents=True)
+        fieldnames = [
+            "injection_id",
+            "target",
+            "automatic_send_blocked",
+            "polling_blocked",
+            "reconciliation_required",
+            "admin_approved_rebind",
+            "normal_operation_resumed",
+            "result",
+            "evidence",
+        ]
+        with path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fieldnames)
+            writer.writeheader()
+            for case in manage_pilot_run.RESTORE_FAULT_CASES:
+                writer.writerow(
+                    {
+                        "injection_id": case,
+                        "target": "both",
+                        "automatic_send_blocked": "TRUE",
+                        "polling_blocked": "TRUE",
+                        "reconciliation_required": "TRUE",
+                        "admin_approved_rebind": "TRUE",
+                        "normal_operation_resumed": "TRUE",
+                        "result": "PASS",
+                        "evidence": "proof.txt",
+                    }
+                )
+
+        self.assertEqual(
+            [], manage_pilot_run.restore_fault_injection_failures(self.run_root)
+        )
+
+    def test_restore_comparison_is_bound_to_both_manifest_hashes(self) -> None:
+        restore_root = self.run_root / "backup-restore"
+        restore_root.mkdir(parents=True)
+        manifests = {}
+        for phase, machine_id in (("before", "SOURCE-01"), ("after", "RESTORE-02")):
+            path = restore_root / f"server-{phase}.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "run_id": self.run_id,
+                        "target": "server",
+                        "phase": phase,
+                        "machine_id": machine_id,
+                        "backup_set_id": "BACKUP-001",
+                        "restore_approval_id": "APPROVAL-001",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manifests[phase] = path
+        comparison = restore_root / "server-comparison.json"
+        comparison.write_text(
+            json.dumps(
+                {
+                    "run_id": self.run_id,
+                    "target": "server",
+                    "result": "PASS",
+                    "before_manifest": "backup-restore/server-before.json",
+                    "after_manifest": "backup-restore/server-after.json",
+                    "before_manifest_sha256": manage_pilot_run.sha256(
+                        manifests["before"]
+                    ),
+                    "after_manifest_sha256": manage_pilot_run.sha256(
+                        manifests["after"]
+                    ),
+                    "source_machine_id": "SOURCE-01",
+                    "restore_machine_id": "RESTORE-02",
+                    "backup_set_id": "BACKUP-001",
+                    "restore_approval_id": "APPROVAL-001",
+                    "table_counts_equal": True,
+                    "table_count_mismatch_count": 0,
+                    "file_manifest_equal": True,
+                    "file_mismatch_counts": {
+                        "missing": 0,
+                        "extra": 0,
+                        "size": 0,
+                        "sha256": 0,
+                    },
+                    "database_checks": {
+                        "database_file_equal": True,
+                        "before_quick_check_ok": True,
+                        "before_integrity_check_ok": True,
+                        "before_foreign_key_violation_count": 0,
+                        "after_quick_check_ok": True,
+                        "after_integrity_check_ok": True,
+                        "after_foreign_key_violation_count": 0,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        evidence = ["backup-restore/server-comparison.json"]
+
+        self.assertEqual(
+            [],
+            manage_pilot_run.restore_comparison_failures(
+                self.run_root, evidence, "server"
+            ),
+        )
+
+        manifests["after"].write_text("{}", encoding="utf-8")
+        self.assertTrue(
+            manage_pilot_run.restore_comparison_failures(
+                self.run_root, evidence, "server"
+            )
+        )
+
+    def test_role_metrics_raw_rows_must_match_summary(self) -> None:
+        path = self.run_root / "scenario-results" / "role-metrics.csv"
+        path.parent.mkdir(parents=True)
+        fieldnames = [
+            "role",
+            "participant_id",
+            "scenario_id",
+            "required",
+            "success",
+            "elapsed_seconds",
+            "retry_count",
+            "help_request_count",
+            "critical_blocker",
+            "evidence",
+        ]
+        expected = {}
+        with path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fieldnames)
+            writer.writeheader()
+            for role, scenarios in manage_pilot_run.ROLE_SCENARIOS.items():
+                for scenario in scenarios:
+                    writer.writerow(
+                        {
+                            "role": role,
+                            "participant_id": f"PARTICIPANT-{role}",
+                            "scenario_id": scenario,
+                            "required": "TRUE",
+                            "success": "TRUE",
+                            "elapsed_seconds": "10",
+                            "retry_count": "0",
+                            "help_request_count": "0",
+                            "critical_blocker": "FALSE",
+                            "evidence": "proof.txt",
+                        }
+                    )
+                expected[role] = {
+                    "required_attempts": len(scenarios),
+                    "successful_attempts": len(scenarios),
+                    "success_rate_percent": 100,
+                    "median_seconds": 10,
+                    "maximum_seconds": 10,
+                    "retry_count": 0,
+                    "help_request_count": 0,
+                    "critical_blockers": 0,
+                }
+
+        self.assertEqual(
+            [], manage_pilot_run.role_metrics_csv_failures(self.run_root, expected)
+        )
+
+    def test_actionable_observations_convert_one_to_one_to_owned_items(self) -> None:
+        observations_path = self.run_root / "observations" / "role-observations.csv"
+        observations_path.parent.mkdir(parents=True)
+        observation_fields = [
+            "observation_id",
+            "role",
+            "scenario_id",
+            "device_id",
+            "location",
+            "network",
+            "gloves",
+            "one_hand",
+            "lighting",
+            "terminal_position",
+            "input_moment",
+            "terminology_confusion",
+            "button_confusion",
+            "actionable",
+            "success",
+            "elapsed_seconds",
+            "retry_count",
+            "help_request_count",
+            "notes",
+            "evidence",
+        ]
+        with observations_path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=observation_fields)
+            writer.writeheader()
+            for index, role in enumerate(manage_pilot_run.REQUIRED_ROLES):
+                writer.writerow(
+                    {
+                        "observation_id": f"OBS-{index}",
+                        "role": role,
+                        "scenario_id": manage_pilot_run.ROLE_SCENARIOS[role][0],
+                        "device_id": "DEVICE-01",
+                        "location": "LINE-01",
+                        "network": "DISCONNECTED" if index == 0 else "CONNECTED",
+                        "gloves": "ON" if index == 0 else "OFF",
+                        "one_hand": "TRUE",
+                        "lighting": "NORMAL",
+                        "terminal_position": "FIXED-STAND",
+                        "input_moment": "AFTER-TASK",
+                        "terminology_confusion": "FALSE",
+                        "button_confusion": "FALSE",
+                        "actionable": "TRUE" if index == 0 else "FALSE",
+                        "success": "TRUE",
+                        "elapsed_seconds": "10",
+                        "retry_count": "0",
+                        "help_request_count": "0",
+                        "notes": "anonymous observation",
+                        "evidence": "proof.txt",
+                    }
+                )
+
+        items_path = self.run_root / "observations" / "development-items.csv"
+        item_fields = [
+            "item_id",
+            "observation_id",
+            "priority",
+            "classification",
+            "title",
+            "acceptance_criteria",
+            "owner",
+            "due_date",
+            "status",
+            "evidence",
+        ]
+        with items_path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=item_fields)
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "item_id": "UX-001",
+                    "observation_id": "OBS-0",
+                    "priority": "P2",
+                    "classification": "common_product",
+                    "title": "장갑 입력 개선",
+                    "acceptance_criteria": "같은 조건에서 첫 시도 성공",
+                    "owner": "product-owner",
+                    "due_date": "2026-08-31",
+                    "status": "OPEN",
+                    "evidence": "proof.txt",
+                }
+            )
+        expected = {
+            "actionable_findings": 1,
+            "converted_items": 1,
+            "unconverted_actionable_findings": 0,
+            "priorities": {"P0": 0, "P1": 0, "P2": 1, "P3": 0},
+            "classifications": {
+                "common_product": 1,
+                "device_or_mdm_setting": 0,
+                "site_layout_or_training": 0,
+            },
+        }
+
+        self.assertEqual([], manage_pilot_run.ux_csv_failures(self.run_root, expected))
 
 
 if __name__ == "__main__":

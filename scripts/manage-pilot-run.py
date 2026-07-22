@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import re
+import statistics
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -67,6 +69,45 @@ WINDOWS_SERVER_REHEARSAL_GATES = (
 )
 REQUIRED_ROLES = ("admin", "line_foreman", "team_lead", "team_member")
 REQUIRED_APPROVALS = ("operations", "security", "field_operations")
+RESTORE_FAULT_CASES = (
+    "partial_restore",
+    "old_database_new_files",
+    "missing_file",
+    "wrong_server_epoch",
+)
+ROLE_SCENARIOS = {
+    "admin": (
+        "ADMIN-DOCUMENT",
+        "ADMIN-FIELD-COMMENT-PHOTO",
+        "ADMIN-WORK-SEQUENCE",
+        "ADMIN-HANDOVER",
+        "ADMIN-REVIEW-REPORT",
+    ),
+    "line_foreman": (
+        "LINE-FOREMAN-DOCUMENT",
+        "LINE-FOREMAN-FIELD-COMMENT-PHOTO",
+        "LINE-FOREMAN-WORK-SEQUENCE",
+        "LINE-FOREMAN-HANDOVER",
+    ),
+    "team_lead": (
+        "TEAM-LEAD-DOCUMENT",
+        "TEAM-LEAD-FIELD-COMMENT-PHOTO",
+        "TEAM-LEAD-WORK-SEQUENCE",
+        "TEAM-LEAD-HANDOVER",
+    ),
+    "team_member": (
+        "TEAM-MEMBER-DOCUMENT",
+        "TEAM-MEMBER-FIELD-COMMENT-PHOTO",
+        "TEAM-MEMBER-WORK-SEQUENCE",
+        "TEAM-MEMBER-HANDOVER",
+    ),
+}
+UX_PRIORITIES = ("P0", "P1", "P2", "P3")
+UX_CLASSIFICATIONS = (
+    "common_product",
+    "device_or_mdm_setting",
+    "site_layout_or_training",
+)
 ZERO_TOLERANCE_METRICS = (
     "data_loss",
     "permission_bypass",
@@ -238,14 +279,9 @@ def empty_record(run_id: str, profile: str) -> dict[str, Any]:
             "actionable_findings": None,
             "converted_items": None,
             "unconverted_actionable_findings": None,
-            "priorities": {priority: None for priority in ("P0", "P1", "P2", "P3")},
+            "priorities": {priority: None for priority in UX_PRIORITIES},
             "classifications": {
-                classification: None
-                for classification in (
-                    "common_product",
-                    "device_or_mdm_setting",
-                    "site_layout_or_training",
-                )
+                classification: None for classification in UX_CLASSIFICATIONS
             },
             "evidence": [],
         },
@@ -333,7 +369,10 @@ def prepare(args: argparse.Namespace) -> int:
             "scenario_id,result,checked_at,old_device_id,new_device_id,"
             "old_access_result,old_refresh_result,old_login_result,"
             "server_status,history_event_ids,mdm_event_id,evidence,notes\n"
-            + "".join(f"{case},NOT_RUN,,,,,,,,,,,\n" for case in ANDROID_DEVICE_LIFECYCLE_CASES)
+            + "".join(
+                f"{case},NOT_RUN,,,,,,,,,,,\n"
+                for case in ANDROID_DEVICE_LIFECYCLE_CASES
+            )
         ),
         run_root / "packages" / "android-release-approval.csv": (
             "artifact_role,artifact_type,version_name,version_code,sha256,"
@@ -345,14 +384,21 @@ def prepare(args: argparse.Namespace) -> int:
             "role,participant_id,scenario_id,required,success,elapsed_seconds,"
             "retry_count,help_request_count,critical_blocker,evidence\n"
         ),
+        run_root / "scenario-results" / "restore-fault-injections.csv": (
+            "injection_id,target,automatic_send_blocked,polling_blocked,"
+            "reconciliation_required,admin_approved_rebind,normal_operation_resumed,"
+            "result,evidence\n"
+            + "".join(f"{case},,,,,,,NOT_RUN,\n" for case in RESTORE_FAULT_CASES)
+        ),
         run_root / "observations" / "role-observations.csv": (
             "observation_id,role,scenario_id,device_id,location,network,gloves,"
-            "one_hand,lighting,input_moment,success,elapsed_seconds,retry_count,"
-            "help_request_count,notes\n"
+            "one_hand,lighting,terminal_position,input_moment,terminology_confusion,"
+            "button_confusion,actionable,success,elapsed_seconds,retry_count,"
+            "help_request_count,notes,evidence\n"
         ),
         run_root / "observations" / "development-items.csv": (
             "item_id,observation_id,priority,classification,title,acceptance_criteria,"
-            "owner,due_date,status\n"
+            "owner,due_date,status,evidence\n"
         ),
     }
     for path, header in templates.items():
@@ -405,7 +451,9 @@ def required_android_csv_failures(
                 if not (row.get(field) or "").strip():
                     failures.append(f"{label} {required_id}의 {field} 값이 없습니다.")
             evidence = (row.get("evidence") or "").strip()
-            failures.extend(evidence_failures(run_root, [evidence], f"{label} {required_id}"))
+            failures.extend(
+                evidence_failures(run_root, [evidence], f"{label} {required_id}")
+            )
     return failures
 
 
@@ -439,12 +487,16 @@ def android_delivery_csv_failures(
         for condition, matching in rows_by_condition.items():
             metric = expected.get(condition, {})
             if len(matching) != metric.get("required_attempts"):
-                failures.append(f"Android 전달 {condition}의 원시 시도 수와 요약 분모가 다릅니다.")
+                failures.append(
+                    f"Android 전달 {condition}의 원시 시도 수와 요약 분모가 다릅니다."
+                )
             passed = sum(
                 1 for row in matching if (row.get("result") or "").strip() == "PASS"
             )
             if passed != metric.get("successful_attempts"):
-                failures.append(f"Android 전달 {condition}의 원시 성공 수와 요약 성공 수가 다릅니다.")
+                failures.append(
+                    f"Android 전달 {condition}의 원시 성공 수와 요약 성공 수가 다릅니다."
+                )
             try:
                 raw_maximum = max(
                     float((row.get("elapsed_seconds") or "").strip())
@@ -454,27 +506,38 @@ def android_delivery_csv_failures(
                 pass
             else:
                 summary_maximum = metric.get("maximum_seconds")
-                if not isinstance(summary_maximum, (int, float)) or abs(
-                    raw_maximum - summary_maximum
-                ) > 0.001:
-                    failures.append(f"Android 전달 {condition}의 원시 최대 시간과 요약 최대 시간이 다릅니다.")
+                if (
+                    not isinstance(summary_maximum, (int, float))
+                    or abs(raw_maximum - summary_maximum) > 0.001
+                ):
+                    failures.append(
+                        f"Android 전달 {condition}의 원시 최대 시간과 요약 최대 시간이 다릅니다."
+                    )
     for row in rows:
         condition = (row.get("condition") or "").strip()
         if condition not in ANDROID_DELIVERY_SCENARIOS:
             continue
         delivery_run_id = (row.get("delivery_run_id") or "").strip()
         if not delivery_run_id.startswith("ANDROID-DELIVERY-"):
-            failures.append(f"Android 전달 {condition}의 delivery_run_id가 올바르지 않습니다.")
+            failures.append(
+                f"Android 전달 {condition}의 delivery_run_id가 올바르지 않습니다."
+            )
         try:
             elapsed = float((row.get("elapsed_seconds") or "").strip())
             allowed = float((row.get("allowed_seconds") or "").strip())
         except ValueError:
-            failures.append(f"Android 전달 {condition}의 측정/허용 시간이 숫자가 아닙니다.")
+            failures.append(
+                f"Android 전달 {condition}의 측정/허용 시간이 숫자가 아닙니다."
+            )
             continue
         if elapsed < 0 or allowed <= 0 or elapsed > allowed:
-            failures.append(f"Android 전달 {condition}의 원시 측정값이 허용 시간을 초과합니다.")
+            failures.append(
+                f"Android 전달 {condition}의 원시 측정값이 허용 시간을 초과합니다."
+            )
         if condition in ("normal", "doze") and allowed != 30:
-            failures.append(f"Android 전달 {condition}의 원시 허용 시간은 30초여야 합니다.")
+            failures.append(
+                f"Android 전달 {condition}의 원시 허용 시간은 30초여야 합니다."
+            )
         if condition == "disconnect_5m":
             try:
                 page_seconds = float((row.get("page_seconds") or "").strip())
@@ -482,7 +545,9 @@ def android_delivery_csv_failures(
                 failures.append("Android 5분 단절 원시 page 시간이 숫자가 아닙니다.")
             else:
                 if page_seconds < 0 or allowed != 30 + page_seconds:
-                    failures.append("Android 5분 단절 원시 허용 시간은 30초+page 시간이어야 합니다.")
+                    failures.append(
+                        "Android 5분 단절 원시 허용 시간은 30초+page 시간이어야 합니다."
+                    )
     return failures
 
 
@@ -517,7 +582,9 @@ def android_delivery_integrity_csv_failures(
             failures.append(f"Android 전달 무결성의 {field} 값이 정수가 아닙니다.")
             continue
         if value != expected.get(field):
-            failures.append(f"Android 전달 무결성의 {field} 원시값과 요약값이 다릅니다.")
+            failures.append(
+                f"Android 전달 무결성의 {field} 원시값과 요약값이 다릅니다."
+            )
     evidence = (row.get("evidence") or "").strip()
     failures.extend(evidence_failures(run_root, [evidence], "Android 전달 무결성"))
     return failures
@@ -556,6 +623,336 @@ def evidence_failures(run_root: Path, values: Any, label: str) -> list[str]:
     return failures
 
 
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def read_csv_rows(
+    run_root: Path, relative_path: str, label: str
+) -> tuple[list[dict[str, str]], list[str]]:
+    path = run_root / relative_path
+    if not path.is_file():
+        return [], [f"{label}: 원시 결과 파일이 없습니다: {relative_path}"]
+    try:
+        with path.open(newline="", encoding="utf-8-sig") as stream:
+            return list(csv.DictReader(stream)), []
+    except (OSError, csv.Error) as exc:
+        return [], [f"{label}: CSV를 읽을 수 없습니다: {exc}"]
+
+
+def csv_bool(value: Any) -> bool | None:
+    normalized = str(value or "").strip().casefold()
+    if normalized in ("true", "1", "yes", "y"):
+        return True
+    if normalized in ("false", "0", "no", "n"):
+        return False
+    return None
+
+
+def restore_fault_injection_failures(run_root: Path) -> list[str]:
+    rows, failures = read_csv_rows(
+        run_root,
+        "scenario-results/restore-fault-injections.csv",
+        "복구 장애 주입",
+    )
+    grouped = {case: [] for case in RESTORE_FAULT_CASES}
+    for row in rows:
+        injection_id = (row.get("injection_id") or "").strip()
+        if injection_id in grouped:
+            grouped[injection_id].append(row)
+    for case, matching in grouped.items():
+        if len(matching) != 1:
+            failures.append(f"복구 장애 주입 {case} 행은 정확히 1개여야 합니다.")
+            continue
+        row = matching[0]
+        if (row.get("target") or "").strip() not in ("server", "wpf", "both"):
+            failures.append(f"복구 장애 주입 {case}의 target이 올바르지 않습니다.")
+        for field in (
+            "automatic_send_blocked",
+            "polling_blocked",
+            "reconciliation_required",
+            "admin_approved_rebind",
+            "normal_operation_resumed",
+        ):
+            if csv_bool(row.get(field)) is not True:
+                failures.append(f"복구 장애 주입 {case}의 {field}가 TRUE가 아닙니다.")
+        if (row.get("result") or "").strip() != "PASS":
+            failures.append(f"복구 장애 주입 {case}의 원시 판정이 PASS가 아닙니다.")
+        failures.extend(
+            evidence_failures(
+                run_root,
+                [(row.get("evidence") or "").strip()],
+                f"복구 장애 주입 {case}",
+            )
+        )
+    return failures
+
+
+def role_metrics_csv_failures(
+    run_root: Path, expected_roles: dict[str, Any]
+) -> list[str]:
+    rows, failures = read_csv_rows(
+        run_root, "scenario-results/role-metrics.csv", "역할별 원시 지표"
+    )
+    for role, required_scenarios in ROLE_SCENARIOS.items():
+        role_rows = [row for row in rows if (row.get("role") or "").strip() == role]
+        required_rows = [
+            row for row in role_rows if csv_bool(row.get("required")) is True
+        ]
+        for scenario_id in required_scenarios:
+            if not any(
+                (row.get("scenario_id") or "").strip() == scenario_id
+                for row in required_rows
+            ):
+                failures.append(
+                    f"역할 {role}의 필수 시나리오 {scenario_id} 분모가 없습니다."
+                )
+        if any(csv_bool(row.get("required")) is None for row in role_rows):
+            failures.append(f"역할 {role}의 required 값은 TRUE/FALSE여야 합니다.")
+
+        elapsed_values: list[float] = []
+        retries = 0
+        help_requests = 0
+        blockers = 0
+        successful = 0
+        for index, row in enumerate(required_rows, start=1):
+            label = f"역할 {role} 원시 시도 {index}"
+            if not nonempty(row.get("participant_id")):
+                failures.append(f"{label}의 익명 participant_id가 없습니다.")
+            success = csv_bool(row.get("success"))
+            blocker = csv_bool(row.get("critical_blocker"))
+            if success is None or blocker is None:
+                failures.append(
+                    f"{label}의 success/critical_blocker 값이 올바르지 않습니다."
+                )
+            successful += int(success is True)
+            blockers += int(blocker is True)
+            try:
+                elapsed = float((row.get("elapsed_seconds") or "").strip())
+                retry = int((row.get("retry_count") or "").strip())
+                help_count = int((row.get("help_request_count") or "").strip())
+                if elapsed < 0 or retry < 0 or help_count < 0:
+                    raise ValueError
+            except ValueError:
+                failures.append(
+                    f"{label}의 시간·재시도·도움 요청 값이 올바르지 않습니다."
+                )
+            else:
+                elapsed_values.append(elapsed)
+                retries += retry
+                help_requests += help_count
+            failures.extend(
+                evidence_failures(
+                    run_root, [(row.get("evidence") or "").strip()], label
+                )
+            )
+
+        summary = expected_roles.get(role, {})
+        raw_required = len(required_rows)
+        raw_rate = successful / raw_required * 100 if raw_required else None
+        comparisons = (
+            ("required_attempts", raw_required, "분모"),
+            ("successful_attempts", successful, "성공 건수"),
+            ("retry_count", retries, "재시도 합계"),
+            ("help_request_count", help_requests, "도움 요청 합계"),
+            ("critical_blockers", blockers, "치명적 blocker 합계"),
+        )
+        for field, raw_value, label in comparisons:
+            if summary.get(field) != raw_value:
+                failures.append(f"역할 {role}의 원시 {label}와 요약값이 다릅니다.")
+        numeric_comparisons = (
+            ("success_rate_percent", raw_rate, "성공률"),
+            (
+                "median_seconds",
+                statistics.median(elapsed_values) if elapsed_values else None,
+                "중앙 시간",
+            ),
+            (
+                "maximum_seconds",
+                max(elapsed_values) if elapsed_values else None,
+                "최대 시간",
+            ),
+        )
+        for field, raw_value, label in numeric_comparisons:
+            summary_value = summary.get(field)
+            if (
+                raw_value is None
+                or not isinstance(summary_value, (int, float))
+                or abs(summary_value - raw_value) > 0.01
+            ):
+                failures.append(f"역할 {role}의 원시 {label}과 요약값이 다릅니다.")
+    return failures
+
+
+def ux_csv_failures(run_root: Path, expected: dict[str, Any]) -> list[str]:
+    observations, failures = read_csv_rows(
+        run_root, "observations/role-observations.csv", "역할별 현장 관찰"
+    )
+    items, item_failures = read_csv_rows(
+        run_root, "observations/development-items.csv", "UX 개발 항목"
+    )
+    failures.extend(item_failures)
+    observation_ids: set[str] = set()
+    actionable_ids: set[str] = set()
+    observed_roles: set[str] = set()
+    observed_gloves_on = False
+    observed_disconnected = False
+    for index, row in enumerate(observations, start=1):
+        observation_id = (row.get("observation_id") or "").strip()
+        if not observation_id or observation_id in observation_ids:
+            failures.append(f"현장 관찰 {index}의 observation_id가 없거나 중복입니다.")
+        observation_ids.add(observation_id)
+        role = (row.get("role") or "").strip()
+        if role not in REQUIRED_ROLES:
+            failures.append(
+                f"현장 관찰 {observation_id or index}의 역할이 올바르지 않습니다."
+            )
+        else:
+            observed_roles.add(role)
+        for field in (
+            "scenario_id",
+            "device_id",
+            "location",
+            "network",
+            "gloves",
+            "one_hand",
+            "lighting",
+            "terminal_position",
+            "input_moment",
+            "terminology_confusion",
+            "button_confusion",
+        ):
+            if not nonempty(row.get(field)):
+                failures.append(
+                    f"현장 관찰 {observation_id or index}의 {field} 값이 없습니다."
+                )
+        network = (row.get("network") or "").strip().upper()
+        gloves = (row.get("gloves") or "").strip().upper()
+        if network not in ("CONNECTED", "DISCONNECTED"):
+            failures.append(
+                f"현장 관찰 {observation_id or index}의 network는 CONNECTED/DISCONNECTED여야 합니다."
+            )
+        if gloves not in ("ON", "OFF"):
+            failures.append(
+                f"현장 관찰 {observation_id or index}의 gloves는 ON/OFF여야 합니다."
+            )
+        observed_gloves_on = observed_gloves_on or gloves == "ON"
+        observed_disconnected = observed_disconnected or network == "DISCONNECTED"
+        for field in (
+            "one_hand",
+            "terminology_confusion",
+            "button_confusion",
+            "success",
+        ):
+            if csv_bool(row.get(field)) is None:
+                failures.append(
+                    f"현장 관찰 {observation_id or index}의 {field} 값이 올바르지 않습니다."
+                )
+        try:
+            elapsed = float((row.get("elapsed_seconds") or "").strip())
+            retry = int((row.get("retry_count") or "").strip())
+            help_count = int((row.get("help_request_count") or "").strip())
+            if elapsed < 0 or retry < 0 or help_count < 0:
+                raise ValueError
+        except ValueError:
+            failures.append(
+                f"현장 관찰 {observation_id or index}의 시간·재시도·도움 요청 값이 올바르지 않습니다."
+            )
+        actionable = csv_bool(row.get("actionable"))
+        if actionable is None:
+            failures.append(
+                f"현장 관찰 {observation_id or index}의 actionable 값이 올바르지 않습니다."
+            )
+        elif actionable:
+            actionable_ids.add(observation_id)
+        failures.extend(
+            evidence_failures(
+                run_root,
+                [(row.get("evidence") or "").strip()],
+                f"현장 관찰 {observation_id or index}",
+            )
+        )
+
+    for role in REQUIRED_ROLES:
+        if role not in observed_roles:
+            failures.append(f"역할 {role}의 현장 관찰이 없습니다.")
+    if not observed_gloves_on:
+        failures.append("장갑 착용 상태의 현장 관찰이 없습니다.")
+    if not observed_disconnected:
+        failures.append("네트워크 단절 상태의 현장 관찰이 없습니다.")
+
+    item_ids: set[str] = set()
+    linked_observations: list[str] = []
+    priority_counts = {value: 0 for value in UX_PRIORITIES}
+    classification_counts = {value: 0 for value in UX_CLASSIFICATIONS}
+    for index, row in enumerate(items, start=1):
+        item_id = (row.get("item_id") or "").strip()
+        observation_id = (row.get("observation_id") or "").strip()
+        if not item_id or item_id in item_ids:
+            failures.append(f"UX 개발 항목 {index}의 item_id가 없거나 중복입니다.")
+        item_ids.add(item_id)
+        if observation_id not in actionable_ids:
+            failures.append(
+                f"UX 개발 항목 {item_id or index}가 조치 가능 관찰을 참조하지 않습니다."
+            )
+        linked_observations.append(observation_id)
+        priority = (row.get("priority") or "").strip()
+        classification = (row.get("classification") or "").strip()
+        if priority not in priority_counts:
+            failures.append(
+                f"UX 개발 항목 {item_id or index}의 우선순위가 올바르지 않습니다."
+            )
+        else:
+            priority_counts[priority] += 1
+        if classification not in classification_counts:
+            failures.append(
+                f"UX 개발 항목 {item_id or index}의 분류가 올바르지 않습니다."
+            )
+        else:
+            classification_counts[classification] += 1
+        for field in ("title", "acceptance_criteria", "owner", "due_date", "status"):
+            if not nonempty(row.get(field)):
+                failures.append(
+                    f"UX 개발 항목 {item_id or index}의 {field} 값이 없습니다."
+                )
+        try:
+            date.fromisoformat((row.get("due_date") or "").strip())
+        except ValueError:
+            failures.append(
+                f"UX 개발 항목 {item_id or index}의 due_date 형식이 올바르지 않습니다."
+            )
+        failures.extend(
+            evidence_failures(
+                run_root,
+                [(row.get("evidence") or "").strip()],
+                f"UX 개발 항목 {item_id or index}",
+            )
+        )
+    if set(linked_observations) != actionable_ids or len(linked_observations) != len(
+        actionable_ids
+    ):
+        failures.append(
+            "모든 조치 가능 관찰은 정확히 하나의 UX 개발 항목으로 변환되어야 합니다."
+        )
+    if expected.get("actionable_findings") != len(actionable_ids):
+        failures.append("UX 조치 가능 관찰 원시 건수와 요약값이 다릅니다.")
+    if expected.get("converted_items") != len(items):
+        failures.append("UX 개발 항목 원시 건수와 요약값이 다릅니다.")
+    if expected.get("unconverted_actionable_findings") != len(
+        actionable_ids - set(linked_observations)
+    ):
+        failures.append("UX 미변환 관찰 원시 건수와 요약값이 다릅니다.")
+    if expected.get("priorities") != priority_counts:
+        failures.append("UX 개발 항목의 원시 우선순위 집계와 요약값이 다릅니다.")
+    if expected.get("classifications") != classification_counts:
+        failures.append("UX 개발 항목의 원시 분류 집계와 요약값이 다릅니다.")
+    return failures
+
+
 def restore_comparison_failures(
     run_root: Path, evidence: Any, target: str
 ) -> list[str]:
@@ -571,12 +968,80 @@ def restore_comparison_failures(
             report = json.loads((run_root / candidate).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        manifests: dict[str, dict[str, Any]] = {}
+        manifests_ok = True
+        for phase in ("before", "after"):
+            raw_path = report.get(f"{phase}_manifest")
+            manifest_path = Path(raw_path) if isinstance(raw_path, str) else Path(".")
+            if (
+                not isinstance(raw_path, str)
+                or manifest_path.is_absolute()
+                or ".." in manifest_path.parts
+                or not (run_root / manifest_path).is_file()
+            ):
+                manifests_ok = False
+                break
+            try:
+                manifests[phase] = json.loads(
+                    (run_root / manifest_path).read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError):
+                manifests_ok = False
+                break
+            if sha256(run_root / manifest_path) != report.get(
+                f"{phase}_manifest_sha256"
+            ):
+                manifests_ok = False
+                break
+        if manifests_ok:
+            before_manifest = manifests["before"]
+            after_manifest = manifests["after"]
+            manifests_ok = (
+                before_manifest.get("run_id") == run_root.name
+                and after_manifest.get("run_id") == run_root.name
+                and before_manifest.get("target") == target
+                and after_manifest.get("target") == target
+                and before_manifest.get("phase") == "before"
+                and after_manifest.get("phase") == "after"
+                and before_manifest.get("machine_id") == report.get("source_machine_id")
+                and after_manifest.get("machine_id") == report.get("restore_machine_id")
+                and before_manifest.get("backup_set_id") == report.get("backup_set_id")
+                and after_manifest.get("backup_set_id") == report.get("backup_set_id")
+                and before_manifest.get("restore_approval_id")
+                == report.get("restore_approval_id")
+                and after_manifest.get("restore_approval_id")
+                == report.get("restore_approval_id")
+            )
         if (
-            report.get("run_id") == run_root.name
+            manifests_ok
+            and report.get("run_id") == run_root.name
             and report.get("target") == target
             and report.get("result") == "PASS"
             and report.get("table_counts_equal") is True
+            and report.get("table_count_mismatch_count") == 0
             and report.get("file_manifest_equal") is True
+            and report.get("file_mismatch_counts")
+            == {"missing": 0, "extra": 0, "size": 0, "sha256": 0}
+            and nonempty(report.get("source_machine_id"))
+            and nonempty(report.get("restore_machine_id"))
+            and normalized_identity(report.get("source_machine_id"))
+            != normalized_identity(report.get("restore_machine_id"))
+            and nonempty(report.get("backup_set_id"))
+            and nonempty(report.get("restore_approval_id"))
+            and report.get("database_checks", {}).get("before_quick_check_ok") is True
+            and report.get("database_checks", {}).get("before_integrity_check_ok")
+            is True
+            and report.get("database_checks", {}).get(
+                "before_foreign_key_violation_count"
+            )
+            == 0
+            and report.get("database_checks", {}).get("after_quick_check_ok") is True
+            and report.get("database_checks", {}).get("after_integrity_check_ok")
+            is True
+            and report.get("database_checks", {}).get(
+                "after_foreign_key_violation_count"
+            )
+            == 0
         ):
             return []
     return [f"{target} 복구 게이트에 같은 run_id의 PASS comparison JSON이 없습니다."]
@@ -590,7 +1055,9 @@ def verify(args: argparse.Namespace) -> int:
     if record.get("run_id") != args.run_id:
         failures.append("판정표 run_id가 실행 폴더 run_id와 다릅니다.")
     if record.get("schema_version") != SCHEMA_VERSION:
-        failures.append(f"pilot-run.json schema_version은 {SCHEMA_VERSION}이어야 합니다.")
+        failures.append(
+            f"pilot-run.json schema_version은 {SCHEMA_VERSION}이어야 합니다."
+        )
     profile = record.get("profile")
     if profile not in RUN_PROFILES:
         failures.append("지원하는 파일럿 profile이 아닙니다.")
@@ -649,7 +1116,9 @@ def verify(args: argparse.Namespace) -> int:
         or not all(nonempty(value) for value in stop_criteria)
         or len(stop_criteria) < 5
     ):
-        failures.append("리허설 사전 승인에는 5개 이상의 구체적 중단 기준이 필요합니다.")
+        failures.append(
+            "리허설 사전 승인에는 5개 이상의 구체적 중단 기준이 필요합니다."
+        )
     try:
         if not nonempty(authorization.get("retention_until")):
             raise ValueError
@@ -657,7 +1126,9 @@ def verify(args: argparse.Namespace) -> int:
     except ValueError:
         failures.append("증거 보존 기한은 YYYY-MM-DD 형식으로 필요합니다.")
     equipment = authorization.get("equipment", {})
-    failures.extend(identifier_list_failures(equipment.get("server_ids"), 1, "시험 서버"))
+    failures.extend(
+        identifier_list_failures(equipment.get("server_ids"), 1, "시험 서버")
+    )
     failures.extend(
         identifier_list_failures(
             equipment.get("windows_client_ids"), 1, "시험 Windows 클라이언트"
@@ -675,7 +1146,9 @@ def verify(args: argparse.Namespace) -> int:
     ):
         ids = equipment.get(id_field)
         if isinstance(ids, list) and environment.get(count_field) != len(ids):
-            failures.append(f"{label} 식별자 수와 environment.{count_field}가 다릅니다.")
+            failures.append(
+                f"{label} 식별자 수와 environment.{count_field}가 다릅니다."
+            )
     if profile == "full_pilot":
         android_ids = equipment.get("android_device_ids")
         if isinstance(android_ids, list) and environment.get(
@@ -686,9 +1159,7 @@ def verify(args: argparse.Namespace) -> int:
             )
     versions = authorization.get("previous_approved_versions", {})
     version_targets = (
-        ("server", "wpf", "android")
-        if profile == "full_pilot"
-        else ("server", "wpf")
+        ("server", "wpf", "android") if profile == "full_pilot" else ("server", "wpf")
     )
     for target in version_targets:
         if not nonempty(versions.get(target)):
@@ -718,6 +1189,7 @@ def verify(args: argparse.Namespace) -> int:
                 "server",
             )
         )
+        failures.extend(restore_fault_injection_failures(run_root))
         failures.extend(
             restore_comparison_failures(
                 run_root,
@@ -813,6 +1285,8 @@ def verify(args: argparse.Namespace) -> int:
         failures.extend(
             evidence_failures(run_root, metric.get("evidence"), f"역할 {role}")
         )
+    if profile == "full_pilot":
+        failures.extend(role_metrics_csv_failures(run_root, roles))
 
     android_delivery = record.get("android_delivery", {})
     delivery_scenarios = android_delivery.get("scenarios", {})
@@ -922,13 +1396,16 @@ def verify(args: argparse.Namespace) -> int:
         )
 
     device_lifecycle = record.get("android_device_lifecycle", {})
-    if profile == "full_pilot" and device_lifecycle.get(
-        "lost_or_inactive_device_reconnect_blocked"
-    ) is not True:
+    if (
+        profile == "full_pilot"
+        and device_lifecycle.get("lost_or_inactive_device_reconnect_blocked")
+        is not True
+    ):
         failures.append("분실·비활성 Android 단말의 재접속 차단이 확인되지 않았습니다.")
-    if profile == "full_pilot" and device_lifecycle.get(
-        "replacement_history_preserved"
-    ) is not True:
+    if (
+        profile == "full_pilot"
+        and device_lifecycle.get("replacement_history_preserved") is not True
+    ):
         failures.append("Android 단말 교체 이력 보존이 확인되지 않았습니다.")
     if profile == "full_pilot":
         failures.extend(
@@ -945,7 +1422,13 @@ def verify(args: argparse.Namespace) -> int:
                 "scenario_id",
                 ANDROID_DEVICE_LIFECYCLE_CASES,
                 "Android 단말 수명주기 원시 결과",
-                ("checked_at", "old_device_id", "server_status", "history_event_ids", "mdm_event_id"),
+                (
+                    "checked_at",
+                    "old_device_id",
+                    "server_status",
+                    "history_event_ids",
+                    "mdm_event_id",
+                ),
             )
         )
         failures.extend(
@@ -1011,12 +1494,11 @@ def verify(args: argparse.Namespace) -> int:
         failures.extend(
             evidence_failures(run_root, ux_items.get("evidence"), "UX 개발 항목 변환")
         )
+        failures.extend(ux_csv_failures(run_root, ux_items))
 
     rollback = record.get("rollback", {})
     rollback_targets = (
-        ("server", "wpf", "android")
-        if profile == "full_pilot"
-        else ("server", "wpf")
+        ("server", "wpf", "android") if profile == "full_pilot" else ("server", "wpf")
     )
     for target in rollback_targets:
         item = rollback.get(target, {})
@@ -1089,9 +1571,7 @@ def parser() -> argparse.ArgumentParser:
     )
     prepare_parser.add_argument("--run-id", required=True, type=validate_run_id)
     prepare_parser.add_argument("--evidence-root", required=True, type=Path)
-    prepare_parser.add_argument(
-        "--profile", choices=RUN_PROFILES, default="full_pilot"
-    )
+    prepare_parser.add_argument("--profile", choices=RUN_PROFILES, default="full_pilot")
     prepare_parser.add_argument("--allow-existing", action="store_true")
     prepare_parser.set_defaults(handler=prepare)
     verify_parser = commands.add_parser(
