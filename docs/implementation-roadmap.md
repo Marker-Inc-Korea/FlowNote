@@ -69,7 +69,7 @@
 1. `scripts/verify-preserved-tests.ps1`의 FastAPI guard와 수집/JUnit 직접 대조는 현재 149건이다. macOS 사전 검증에서 FastAPI 149건, WPF Core 43건과 WPF 앱 빌드 통과를 확인했다. Windows x64 표준 환경에서 누적 공통 DB 스모크 전후 무결성, Android 단위 테스트·debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, 단일 `PASSED` 실행 ID를 남긴다.
 2. [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
-4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다.
+4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다. APK 설치·rollback은 승인 ADB serial, 동일 signer와 더 낮은 이전 versionCode를 확인하고, AAB는 관리형 스토어가 전달한 서명 APK를 별도로 검증한다. `full_pilot`의 전달·무결성·보안·단말 수명주기·패키지 승인 원시 CSV와 같은 `run_id`의 실제 증거가 모두 PASS일 때만 완료한다.
 5. 별도 PC에서 서버 DB+`storage`, WPF DB+`Files`를 복구하고 원천 개수·파일 hash·DB 무결성을 전후 비교한다.
 6. 관리자·반장·조장·작업자의 핵심 업무 성공률과 시간을 측정하고 단말 위치·장갑·입력 가능 순간·단절 UX 관찰을 개발 항목으로 변환한다.
 7. Android foreground service의 Doze·재부팅·강제 중지/MDM kiosk 복구와 Windows/Android 채널 polling 운영 UX를 승인 실단말·고객 유사망에서 검증한다. WPF 사용자별 cursor 보존과 창 활성 polling, Android 로그인 세션 polling·재부팅 복구, 읽음/수신 확인은 구현되어 있다.
