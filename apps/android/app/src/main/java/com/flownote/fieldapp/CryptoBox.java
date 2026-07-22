@@ -18,6 +18,13 @@ final class CryptoBox {
 
     private final SecretKey key;
 
+    CryptoBox(SecretKey key) {
+        if (key == null) {
+            throw new IllegalArgumentException("단말 보안 키가 필요합니다.");
+        }
+        this.key = key;
+    }
+
     CryptoBox() {
         try {
             KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");

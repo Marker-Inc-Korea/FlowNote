@@ -88,7 +88,9 @@ MDM 기준은 단말 전체 암호화, 6자리 이상 화면 잠금과 짧은 �
 4. 교체는 기존 단말을 `RETIRED`로 만드는 replace API와 새 임의 `deviceId`를 사용한다. 기존 outbox/Keystore 키를 복사하지 않고 미전송 건은 idempotency key와 서버 원천을 대조해 전송·보존·폐기를 승인한다.
 5. 폐기 단말은 `RETIRED`에서 재활성화하지 않으며 MDM wipe 증거와 자산 폐기 기록을 연결한다.
 
-서명 APK 생성 뒤 `scripts/verify-android-release.sh <run_id> <apk> data/local/pilot-evidence`로 인증서 지문과 SHA-256을 보존한다. `--install`은 동일 키 신규 설치/업그레이드를, `--rollback <이전.apk>`는 승인된 이전 versionCode 설치를 수행한다. 시나리오 CSV가 없으면 정상, Doze, 5분 단절, 재부팅, 서버 주소 변경, access token 만료, refresh 거부, 강제 중지 뒤 kiosk 재실행의 8개 `NOT_RUN` 행과 측정/허용 시간 열을 만든다. 정확히 한 대의 승인 단말 연결, 현재/이전 APK의 동일 인증서, `PENDING`/`FAILED` outbox 0건, 서버/API·로컬 schema 하위 호환성과 rollback 승인 없이는 실행하지 않는다. 이전 APK는 새 암호화 outbox를 해석하지 못할 수 있으므로 미전송 항목이 있으면 rollback을 중단한다. 운영 패키지와 모든 실행 증거는 Git 제외 상태로 보존한다.
+서명 산출물 생성 뒤 `scripts/verify-android-release.sh <run_id> <apk|aab> data/local/pilot-evidence`로 서명과 SHA-256을 보존한다. APK 설치/rollback은 `--device-serial <승인 adb serial>`을 필수로 지정한다. `--rollback <이전.apk>`는 후보를 먼저 설치한 뒤 동일 signer와 더 낮은 versionCode인 이전 승인 APK의 설치 성공까지 검증한다. APK는 applicationId, non-debuggable, backup 비활성, cleartext 차단도 확인한다. AAB는 JAR 서명만 확인하며 직접 설치할 수 없으므로 관리형 스토어가 생성·전달한 서명 APK의 별도 검증 없이는 완료가 아니다. 시나리오 CSV가 없으면 8개 `NOT_RUN` 행을 만든다. 현재/이전 APK의 동일 인증서, `PENDING`/`FAILED` outbox 0건, 서버/API·로컬 schema 하위 호환성과 rollback 승인 없이는 실행하지 않는다. 이전 APK는 새 암호화 outbox를 해석하지 못할 수 있으므로 미전송 항목이 있으면 rollback을 중단한다. 운영 패키지와 모든 실행 증거는 Git 제외 상태로 보존한다.
+
+실제 MDM 공급자·tenant, 승인 자산, 배포 ring, kiosk 재실행 제한 시간과 이전 승인 버전/hash는 현장 계약값이다. 값이 제공되지 않은 상태에서는 제품 정책만 확정된 것이며 배포 승인은 `대기`다. 승인 후에는 Git이 아닌 같은 PILOT 실행의 `packages/android-release-approval.csv`, `android-logs/mdm-*`, `approvals/*`에 기록한다. `full_pilot` 판정은 release candidate와 이전 승인 rollback 두 행, 8개 전달 행, 8개 보안 행, 발급·비활성화·분실·교체 4개 수명주기 행의 원시 PASS와 실제 증거 경로를 요구한다.
 
 서명키 분실은 기존 설치 앱 업그레이드 불가 사건으로 처리해 outbox 판정, 앱 제거, 새 키/필요 시 새 applicationId 배포와 새 `deviceId` 등록을 수행한다. 키 유출은 해당 인증서 빌드 허용 중단, MDM blocklist, 영향 버전·단말 파악과 승인된 Android 키 업그레이드 또는 새 applicationId 재배포 절차를 따른다.
 

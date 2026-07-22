@@ -113,7 +113,7 @@ Android 본문 열람은 WPF controlled copy와 별도 계약이다. 앱은 승�
 - 일반 브라우저 직접 접근은 초기 운영 기준이 아니며 승인된 설치형 클라이언트 접근을 기본으로 한다.
 - Windows와 Android 채널 알림은 업무 채널, 서버 사용자, role, 클라이언트/단말 승인 상태를 기준으로 표시한다. 개인 메신저 대화 수집, 개인 휴대폰 기본 배포, GPS/근태 추적은 포함하지 않는다.
 - 채널·인수인계 알림은 외부 인터넷에 의존하지 않는 사내망 HTTPS polling이다. Android는 로그인 동안 15초 `specialUse` foreground service를 사용하고 서버 주소+사용자 scope별 cursor를 항목 표시 직후 보존한다. WPF는 credential을 제외해 정규화한 서버 scope와 사용자 ID별 cursor·처리 `message_id`를 로컬 SQLite에 격리한다.
-- Android access/refresh token과 outbox JSON은 Android Keystore 비반출 AES-256 GCM 키로 암호화한다. 새 outbox 사진은 선택 즉시 앱 전용 내부 저장소의 AES-GCM 파일로 복사한다. backup은 금지하고 DB 상태·cursor 같은 비본문 메타데이터만 평문으로 둔다.
+- Android access/refresh token과 outbox JSON은 Android Keystore 비반출 AES-256 GCM 키로 암호화한다. 새 outbox 사진은 선택 즉시 앱 전용 내부 저장소의 AES-GCM 파일로 복사한다. backup은 금지하고 DB 상태·cursor 같은 비본문 메타데이터만 평문으로 둔다. 암호문 손상·키 무효화로 복호화할 수 없으면 재전송 작업을 crash로 끝내지 않고, 재설치·초기화를 금지하고 관리자에게 단말 교체 점검을 요청하는 한글 안내를 표시한다.
 - 정상 연결 표시 목표는 30초, 5분 이상 단절 복구 목표는 연결 회복 후 30초+page 전송 시간이다. `message_id` 고정 시스템 알림으로 crash 경계 시각 중복을 최대 1건으로 제한하고 서버 읽음/receipt 중복 row는 0건을 요구한다.
 - 재부팅은 저장 세션이 있으면 서비스를 재개하고 access 401은 refresh를 한 번 회전한다. refresh 거부는 token 폐기와 서비스 중단이다. Android 강제 중지는 OS가 자동 복구를 차단하므로 MDM kiosk 재실행 또는 사용자 재실행을 운영 통제로 둔다.
 - 제한 주기 WorkManager는 Doze 지연 때문에 목표 전달 수단으로 사용하지 않는다. 사내 relay push는 MDM 허용, 상호 인증, 감사, 배터리 실기 검증 후의 선택지이며 FCM 같은 외부 클라우드 의존은 기본 범위에 없다. relay를 추가해도 cursor polling은 missed notification 복구 원천이다.
