@@ -188,12 +188,12 @@ MDM 정책 보고서에서 단말 전체 암호화, 6자리 이상 화면 잠금
 
 1. 서버 쓰기를 중지하고 SQLite checkpoint 또는 앱 중지 상태를 확인한 뒤 서버 DB, 같은 시점의 `storage`, 운영 설정과 로그를 하나의 백업 세트로 만든다.
 2. WPF 앱을 종료하고 로컬 DB와 같은 시점의 `Files`를 PC별 백업 세트로 만든다.
-3. 백업 전에 DB `PRAGMA quick_check`, `PRAGMA foreign_key_check`, 대상 파일 SHA-256 목록, 업무 원천별 개수를 기록한다.
+3. 백업 전에 DB `PRAGMA quick_check`, `PRAGMA integrity_check`, `PRAGMA foreign_key_check`, 대상 파일 SHA-256 목록, 업무 원천별 개수를 기록하고 익명 백업 세트·복구 승인 ID를 부여한다.
 4. 별도 PC에 서버 DB+`storage`를 함께 복원하고 health, DB health, 로그인, 문서 열람을 확인한다.
 5. 별도 클라이언트 PC에 WPF DB+`Files`를 함께 복원하고 로컬 로그인/서버 로그인, 목록, 파일 열람, 미전송 큐와 알림 cursor 상태를 확인한다.
-6. 복구 후 같은 SQL과 파일 hash 목록을 생성해 전후 값을 비교한다. 불일치는 누락, 추가, 변경, 예상된 런타임 생성 파일로 분류한다.
+6. 복구 후 같은 SQL과 파일 hash 목록을 생성하고 원본과 다른 익명 복구 장비 ID를 기록해 전후 값을 비교한다. 불일치는 누락, 추가, 변경, 예상된 런타임 생성 파일로 분류한다.
 
-전후 비교의 최소 원천은 문서, 문서 버전, FieldComment, FieldComment 첨부, 보고서, 보고서 source다. 해당 모델이 존재하는 경우 채널 메시지, 인수인계, 인수인계 receipt, 알림 읽음 위치와 활동/접근 이력도 포함한다. DB quick check가 `ok`가 아니거나 foreign key 위반이 1건이라도 있거나, 승인되지 않은 파일 hash 변경·누락이 있으면 복구는 실패다.
+전후 비교의 최소 원천은 문서, 문서 버전, FieldComment, FieldComment 첨부, 보고서, 보고서 source다. 해당 모델이 존재하는 경우 채널 메시지, 인수인계, 인수인계 receipt, 알림 읽음 위치와 활동/접근 이력도 포함한다. 전후 백업 세트·복구 승인 ID가 다르거나 원본과 복구 장비 ID가 같거나, DB quick check·integrity check가 `ok`가 아니거나 foreign key 위반이 1건이라도 있거나, 테이블별 row 수 또는 파일 상대경로·크기·SHA-256이 다르면 복구는 실패다.
 
 ## 5. 역할별 핵심 업무 시나리오
 
