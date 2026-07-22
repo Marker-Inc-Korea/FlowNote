@@ -2,6 +2,12 @@
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
 
+## 2026-07-22 작업 102 AI 보존 WPF 구현 문서 재대조
+
+작업 시작 시 `main...origin/main`은 동기화되어 있었고 미커밋 변경은 없었다. 직전 코드에서 WPF `AI 운영` 화면에 고객·현장 질의 상세, 단일 즉시 만료와 legal hold 설정·해제가 구현되었지만 일부 상위 문서에는 서버 API 전용 또는 WPF 미구현으로 남아 있던 설명을 현재 코드 기준으로 바로잡았다. WPF의 사유·근거 번호 검사, 이중 확인, 최신 `stateTag`, 조작별 operation key 재시도와 완료 후 query/hold/audit read-back 계약도 제품·시스템·배포 문서에 일치시켰다.
+
+현재 표준 스크립트의 FastAPI guard는 145건이다. `services/api/.venv/bin/python -m pytest -q`는 `145 passed`로 통과했고, 이어서 실행한 `python -m ruff check app tests`도 통과했다. 이번 직접 실행은 FastAPI 회귀와 정적 검사만 대상이며 WPF·Android·누적 공통 DB 스모크는 새로 실행하지 않았다. 기존 SQLite, 로그, 테스트 파일과 산출물은 삭제하거나 초기화하지 않았다.
+
 ## 2026-07-22 작업 102 현재 코드·문서 재확인
 
 작업 시작 시 `main...origin/main`은 동기화되어 있었고 반영할 미커밋 코드 변경은 없었다. 현재 API·구현 범위와 정량 기준을 코드에 대조했으며, 2026-07-22 검증 기준을 이미 반영한 상위 문서의 기준일만 오래된 표기로 남아 있어 현재 날짜로 맞췄다.
@@ -32,7 +38,7 @@ macOS ARM64 보조 run `p0-baseline-144-macos-precheck-20260722-002`에서 FastA
 
 Git 추적 Markdown 42개를 목록화하고 작업 정책 원문 `AGENTS.md`를 제외한 제품·구현 문서 41개를 FastAPI, WPF, Android와 운영 스크립트에 대조했다. 가상환경·빌드 캐시·`data/local`·`tmp`의 Markdown은 외부 의존 또는 누적 테스트 증거이므로 수정하지 않았다. 과거 일일 기록은 당시 작업 맥락을 유지하되 “현재 코드 기준” 절에 서버 권위 revision·도메인별 mutation receipt·instance/epoch manifest와 관리자 승인형 reconciliation을 반영했다.
 
-이번 재대조까지 반영한 값은 OpenAPI 125개 method/path 조합, SQLAlchemy ORM 58개 테이블, `Settings` 36개 항목, 중복 없는 pytest node ID 144개다. 새 서버 구현인 고객·현장 scope별 AI 질의/보존 감사, 단일 즉시 만료, `ACTIVE`/`RELEASED` legal hold와 실제 현장 준비도 검증기를 제품·시스템·MVP·보안·배포·데이터·API·서버·클라이언트 문서에 반영했다. WPF는 AI 보존 일괄 실행까지만 지원하고 단일 만료·hold 조작 UI는 없다는 구현 경계도 분리했다. 보고서 동기화는 WPF가 응답 source-set hash를 다시 검증한 뒤 report revision·content hash·source-set hash를 로컬에 보존하는 현재 코드로 과거 API 설명을 교정했다. `services/api/README.md`의 API 표는 OpenAPI와 누락·초과 0건이며, ORM 테이블 목록과 설정 목록도 코드 누락 0건, 로컬 Markdown 링크도 누락 0건이다. 이 절 작성 당시에는 pytest 수집만 다시 확인했고 전체 pytest·WPF·Android 빌드와 통합 스모크는 실행하지 않았다. 이후 2026-07-22 결과는 이 문서 상단의 144건 guard 복구와 보조 실행 절을 따른다.
+이번 재대조까지 반영한 값은 OpenAPI 125개 method/path 조합, SQLAlchemy ORM 58개 테이블, `Settings` 36개 항목, 중복 없는 pytest node ID 144개다. 새 서버 구현인 고객·현장 scope별 AI 질의/보존 감사, 단일 즉시 만료, `ACTIVE`/`RELEASED` legal hold와 실제 현장 준비도 검증기를 제품·시스템·MVP·보안·배포·데이터·API·서버·클라이언트 문서에 반영했다. 당시 WPF는 AI 보존 일괄 실행까지만 지원했고 단일 만료·hold 조작 UI는 없다는 구현 경계를 분리했다. 보고서 동기화는 WPF가 응답 source-set hash를 다시 검증한 뒤 report revision·content hash·source-set hash를 로컬에 보존하는 당시 코드로 과거 API 설명을 교정했다. `services/api/README.md`의 API 표는 OpenAPI와 누락·초과 0건이며, ORM 테이블 목록과 설정 목록도 코드 누락 0건, 로컬 Markdown 링크도 누락 0건이다. 이 절 작성 당시에는 pytest 수집만 다시 확인했고 전체 pytest·WPF·Android 빌드와 통합 스모크는 실행하지 않았다. 이후 WPF 단일 만료·hold 조작 구현과 FastAPI 145건 결과는 이 문서 최상단의 최신 절을 따른다.
 
 ## 2026-07-21 작업 102 현재 코드 문서 재대조
 

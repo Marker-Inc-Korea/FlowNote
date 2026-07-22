@@ -35,7 +35,7 @@
 - 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth 첫 승인·독립 2차 승인, 원천 snapshot/provenance 고정, 실제 현장/스모크 준비도 분리와 48건 비민감 스모크 시드·검증 도구
 - 불변 ground-truth dataset version의 작성·구성·검토·독립 2단계 승인·대체·폐기, 승인 version 결합 평가 run과 scope 격리
 - WPF AI 근거 후보 운영 점검, `AI 정답셋`, 사례·원천 구성 화면과 서버 API 클라이언트
-- FastAPI `system-admin` 전용 외부 AI 전송 승인·프롬프트·운영 정책·감사·보존 API와 WPF `AI 운영` 화면. 서버 API의 고객·현장 scope별 단일 만료와 legal hold 설정·해제를 포함하며, 이 세 조작은 아직 WPF에 연결되지 않음
+- FastAPI `system-admin` 전용 외부 AI 전송 승인·프롬프트·운영 정책·감사·보존 API와 WPF `AI 운영` 화면. 고객·현장 scope별 질의 상세, 단일 만료와 legal hold 설정·해제, 이중 확인·멱등 재시도·서버 read-back 포함
 - FastAPI 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인 API
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면과 서버 API 클라이언트
 - Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 채널 알림, 인수인계 확인
@@ -85,7 +85,7 @@
 - MES/ERP 어댑터 설계. 착수 전에는 수동 작업지시의 `work_order_no`, 문서 연결, 작업순서, FieldComment, 보고서 근거가 안정적으로 축적되어야 한다.
 - 외부 AI 호출 기반 검색/작업 조언. 착수 기준은 [MVP 범위 문서의 후속 계층 착수 기준](./mvp-scope.md#후속-계층-착수-기준)을 따른다.
   - 원천별 사용자 열람 권한, 민감정보/전송 금지 필터, 최소 텍스트 payload, 운영 승인·프롬프트·kill switch·한도·감사·보존 API/UI, 규칙 기반 응답 의미 검증은 구현됐다. 운영 호출 전 남은 항목은 provider별 계약·전송 지역·법적 조건 승인과 사람 표본 검토다.
-  - 질의 조회와 보존 조작은 현재 고객·현장 scope로 제한되어 있다. 서버 자동 스케줄러는 기본 1시간 간격으로 구현되어 있고 `system-admin`은 API/WPF에서 일괄 즉시 실행하거나 서버 API로 단일 만료·legal hold 설정/해제를 수행할 수 있다. 남은 작업은 운영 주기·근거 번호 승인·모니터링·장애 대응 절차와 WPF 단일/hold UI 필요성을 현장에서 확정하는 것이다.
+  - 질의 조회와 보존 조작은 현재 고객·현장 scope로 제한되어 있다. 서버 자동 스케줄러는 기본 1시간 간격으로 구현되어 있고 `system-admin`은 API/WPF에서 일괄·단일 만료와 legal hold 설정/해제를 수행할 수 있다. 남은 작업은 운영 주기·근거 번호 승인·모니터링·장애 대응 절차를 현장에서 확정하는 것이다.
 - 운영 감사 로그와 보안 정책 고도화
 
 ## 현재 보류

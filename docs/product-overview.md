@@ -6,7 +6,7 @@
 
 FlowNote는 생산공장 현장의 문서와 현장 경험을 함께 남기는 서버형 시스템이다. 목표는 단순 문서 보관이나 순수 지식관리 중 한쪽으로 치우치지 않고, 문서 버전, 공개 상태, 현장 코멘트, 작업순서, 보고서 근거를 같은 흐름에서 축적하는 것이다.
 
-초기 제품은 AI 기능보다 데이터 축적과 현장 사용성을 우선한다. 현재 AI 관련 구현은 DB 원천에서 `ai_search_candidates` 근거 후보를 재생성·조회·품질 점검하는 API와 WPF 운영 점검 화면, 사례·원천 구성과 독립 승인을 거쳐 불변 dataset version을 운영·평가하는 WPF `AI 정답셋`, `/api/v1/ai/queries` 질의 생성·조회 및 제한형 provider adapter, `system-admin` 전용 `/api/v1/ai-operations` 운영 제어 API와 WPF `AI 운영` 화면까지다. 질의 라우터는 기본 비활성 플래그, 보고서 작성 role, 허용 목적, 고객·현장·provider·model 승인, 승인된 프롬프트, 근거 원천 상태·작성자 role·채널 권한, 현장별 민감정보 정책, 전역/현장 kill switch와 한도, 응답 인용 ID를 검사하고 감사 row를 남긴다. 응답은 구조·크기·중복·prompt injection과 규칙 기반 의미 일치를 검사하고 호출 후 원천·권한·승인을 다시 확인한다. 운영 API는 승인 철회, 불변 프롬프트 수명주기, 요청·동시성·timeout·비용·보존 정책, 현재 고객·현장 scope의 정제 감사, 만료 보존 일괄·단일 실행과 legal hold 설정·해제를 제공한다. 활성 hold는 자동·수동·단일 만료보다 우선하며 해제 이력도 보존한다. WPF 화면은 이 중 일괄 만료까지만 제공하고 단일 만료·hold 조작은 서버 API 전용이다. provider 경계는 필터를 통과한 최소 발췌와 안정 ID/hash만 전달한다. generic 네트워크 adapter는 명시적 test scope로 제한되어 실제 외부 AI 요약을 운영할 단계는 아니다. 후속 운영 연동도 “근거가 있는 검색과 요약”으로 제한하고 모든 사실 주장을 질의 시점 근거와 연결한다.
+초기 제품은 AI 기능보다 데이터 축적과 현장 사용성을 우선한다. 현재 AI 관련 구현은 DB 원천에서 `ai_search_candidates` 근거 후보를 재생성·조회·품질 점검하는 API와 WPF 운영 점검 화면, 사례·원천 구성과 독립 승인을 거쳐 불변 dataset version을 운영·평가하는 WPF `AI 정답셋`, `/api/v1/ai/queries` 질의 생성·조회 및 제한형 provider adapter, `system-admin` 전용 `/api/v1/ai-operations` 운영 제어 API와 WPF `AI 운영` 화면까지다. 질의 라우터는 기본 비활성 플래그, 보고서 작성 role, 허용 목적, 고객·현장·provider·model 승인, 승인된 프롬프트, 근거 원천 상태·작성자 role·채널 권한, 현장별 민감정보 정책, 전역/현장 kill switch와 한도, 응답 인용 ID를 검사하고 감사 row를 남긴다. 응답은 구조·크기·중복·prompt injection과 규칙 기반 의미 일치를 검사하고 호출 후 원천·권한·승인을 다시 확인한다. 운영 API와 WPF 화면은 승인 철회, 불변 프롬프트 수명주기, 요청·동시성·timeout·비용·보존 정책, 현재 고객·현장 scope의 정제 감사, 만료 보존 일괄·단일 실행과 legal hold 설정·해제를 제공한다. 활성 hold는 자동·수동·단일 만료보다 우선하며 해제 이력도 보존한다. WPF의 단일 만료·hold 조작은 이중 확인, 최신 `stateTag`, 안정 operation key와 서버 상세 read-back으로 충돌·응답 유실·감사 중복을 방지한다. provider 경계는 필터를 통과한 최소 발췌와 안정 ID/hash만 전달한다. generic 네트워크 adapter는 명시적 test scope로 제한되어 실제 외부 AI 요약을 운영할 단계는 아니다. 후속 운영 연동도 “근거가 있는 검색과 요약”으로 제한하고 모든 사실 주장을 질의 시점 근거와 연결한다.
 
 ## 현재 구현 상태
 
@@ -32,7 +32,7 @@ FlowNote는 생산공장 현장의 문서와 현장 경험을 함께 남기는 �
 - 임시 비밀번호 로그인 후 WPF 비밀번호 변경 강제, 변경 완료 시 기존 세션 폐기와 새 비밀번호 재로그인
 - AI 자동 조언 전 단계의 근거 검색 후보 재생성, 목록 조회, 품질 점검, scope별 ground-truth 첫 승인·독립 2차 승인, 실제 현장/스모크 준비도 분리, 불변 dataset version과 오프라인 회귀 평가, WPF 운영 점검·`AI 정답셋`·사례 원천 구성 화면
 - FastAPI 외부 AI 질의 생성·조회, 기능 플래그·승인·목적·프롬프트, 원천 권한·민감정보·최소 payload provider adapter, 근거 snapshot·인용·의미 일치·호출 후 재검증과 감사 모델. generic 네트워크 adapter는 명시적 test scope 전용이며 provider별 운영 연동은 미구현
-- FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/내보내기, 만료 보존 일괄 즉시 실행. 서버 API에는 현재 scope의 단일 만료와 legal hold 설정·해제가 추가되어 있으며 이 세 조작의 WPF UI는 없다. 서버는 활성 hold를 제외한 만료 처리를 설정 주기로 자동 실행한다.
+- FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/내보내기, 만료 보존 일괄·단일 즉시 실행과 legal hold 설정·해제. 서버는 활성 hold를 제외한 만료 처리를 설정 주기로 자동 실행하며, WPF 고위험 조작은 이중 확인과 서버 read-back을 거친다.
 - 관리자 파일 감시 후보와 버전 확정
 - FastAPI 인증, 승인 단말, 문서, controlled copy, FieldComment, 첨부, 접근 로그, 태그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가와 외부 AI 안전장치 API
 - WPF MSI 패키징, FastAPI 작업 스케줄러 등록/관리, 서버 DB+`storage`·WPF DB+`Files` 복구 전후 증거 비교 스크립트
