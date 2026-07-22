@@ -2,6 +2,12 @@
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
 
+## 2026-07-22 우선순위 6 Android 운영 검증 보강
+
+운영 검증 스크립트는 APK와 AAB를 구분하고 APK의 package ID, version, non-debuggable, backup/cleartext 차단을 확인하도록 보강했다. 설치·rollback은 승인 ADB serial을 명시해야 하며 후보 설치 뒤 동일 signer·더 낮은 versionCode인 이전 승인 APK가 실제로 설치 성공해야 PASS다. `full_pilot` 준비 시 전달 시도, 누락·receipt 중복·crash 중복 집계, 보안 8행, 단말 발급·비활성화·분실·교체 4행, 후보/이전 승인 패키지 2행의 원시 CSV를 만든다. 최종 판정은 요약 JSON 외에도 원시 시도 수·성공 수·최대 시간과 집계값의 일치, 모든 원시 행의 PASS, 같은 실행 폴더 안의 증거 존재를 검사한다.
+
+Android 앱은 outbox 일부 실패의 성공·실패·대기 건수와 재시도 안내를 한글로 표시하고, Keystore/암호문 오류는 재설치·초기화를 하지 말고 관리자 점검을 요청하도록 처리한다. 서로 다른 AES 키의 복호화 실패 계측 테스트도 추가했다. 파일럿/Android release 도구 단위 테스트 7건과 셸 문법 검사는 통과했다. Android Studio JBR을 명시한 `testDebugUnitTest assembleDebug`도 단위 테스트 15건과 debug APK 빌드에 성공했고 `lintDebug`도 통과했다. 승인 단말·운영 키·MDM tenant가 없어 instrumentation, 운영 서명 산출물, 8개 전달 및 8개 보안 실기, 단말 수명주기와 rollback은 실행하지 않았으며 판정은 `대기`다.
+
 ## 2026-07-22 작업 102 FieldComment 일괄 API 문서 재대조
 
 작업 시작 시 `main...origin/main`은 동기화되어 있었고 미커밋 변경은 없었다. 현재 코드를 다시 산출한 결과 루트 `GET /`를 포함한 OpenAPI는 128개 method/path 조합이지만 `services/api/README.md`는 새 `POST /api/v1/field-comments/bulk-review/preview`, `POST /api/v1/field-comments/bulk-review/execute`를 제외한 126개만 설명하고 있었다. 두 경로와 총계를 보강해 서버 README 표가 OpenAPI와 누락·초과 0건으로 일치하도록 했으며, 상위 문서에는 저장된 보기, 쓰기 없는 preview, 항목별 revision·mutation receipt와 부분 성공 실행 계약을 현재 구현 기준으로 명시했다. ORM 58개 테이블과 FastAPI 149개 테스트 수집 기준도 코드·검증 guard와 일치했다. 현재 사양 문서의 기준일은 2026-07-22로 통일하고 과거 실행 기록의 당시 날짜·수치는 변경하지 않았다.

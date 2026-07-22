@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import sys
@@ -96,6 +97,22 @@ ANDROID_DELIVERY_CASES = (
     ("AND-NOTIFY-FORCESTOP", "force_stop_kiosk_restart"),
 )
 ANDROID_DELIVERY_SCENARIOS = tuple(condition for _, condition in ANDROID_DELIVERY_CASES)
+ANDROID_SECURITY_CHECKS = (
+    "keystore_token_ciphertext",
+    "outbox_ciphertext",
+    "encrypted_photo",
+    "wrong_key_decryption_failure",
+    "secure_cache_cleanup",
+    "flag_secure",
+    "external_share_absent",
+    "backup_disabled",
+)
+ANDROID_DEVICE_LIFECYCLE_CASES = (
+    "device_issue",
+    "device_deactivate",
+    "device_lost",
+    "device_replacement",
+)
 EVIDENCE_DIRECTORIES = (
     "approvals",
     "packages",
@@ -303,6 +320,27 @@ def prepare(args: argparse.Namespace) -> int:
             "recovery_ready_at_utc,displayed_at_utc,receipt_at_utc,page_seconds,"
             "elapsed_seconds,allowed_seconds,result,evidence\n" + android_delivery_rows
         ),
+        run_root / "scenario-results" / "android-delivery-integrity.csv": (
+            "pilot_run_id,lost_messages,server_receipt_duplicates,"
+            "crash_boundary_display_duplicates,result,evidence\n"
+            f"{args.run_id},,,,NOT_RUN,\n"
+        ),
+        run_root / "integrity" / "android-security.csv": (
+            "check_id,result,checked_at,device_id,evidence,notes\n"
+            + "".join(f"{check},NOT_RUN,,,,\n" for check in ANDROID_SECURITY_CHECKS)
+        ),
+        run_root / "scenario-results" / "android-device-lifecycle.csv": (
+            "scenario_id,result,checked_at,old_device_id,new_device_id,"
+            "old_access_result,old_refresh_result,old_login_result,"
+            "server_status,history_event_ids,mdm_event_id,evidence,notes\n"
+            + "".join(f"{case},NOT_RUN,,,,,,,,,,,\n" for case in ANDROID_DEVICE_LIFECYCLE_CASES)
+        ),
+        run_root / "packages" / "android-release-approval.csv": (
+            "artifact_role,artifact_type,version_name,version_code,sha256,"
+            "signer_sha256,mdm_package_id,rollout_ring,approval_id,result,evidence\n"
+            "release_candidate,,,,,,,,,NOT_RUN,\n"
+            "previous_approved_rollback,,,,,,,,,NOT_RUN,\n"
+        ),
         run_root / "scenario-results" / "role-metrics.csv": (
             "role,participant_id,scenario_id,required,success,elapsed_seconds,"
             "retry_count,help_request_count,critical_blocker,evidence\n"
@@ -328,6 +366,161 @@ def prepare(args: argparse.Namespace) -> int:
 
 def nonempty(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def required_android_csv_failures(
+    run_root: Path,
+    relative_path: str,
+    id_column: str,
+    required_ids: tuple[str, ...],
+    label: str,
+    required_fields: tuple[str, ...] = (),
+    exactly_one: bool = True,
+) -> list[str]:
+    path = run_root / relative_path
+    if not path.is_file():
+        return [f"{label}: 원시 결과 파일이 없습니다: {relative_path}"]
+    try:
+        with path.open(newline="", encoding="utf-8-sig") as stream:
+            rows = list(csv.DictReader(stream))
+    except (OSError, csv.Error) as exc:
+        return [f"{label}: CSV를 읽을 수 없습니다: {exc}"]
+
+    failures: list[str] = []
+    grouped = {required_id: [] for required_id in required_ids}
+    for row in rows:
+        row_id = (row.get(id_column) or "").strip()
+        if row_id in grouped:
+            grouped[row_id].append(row)
+    for required_id, matching in grouped.items():
+        if not matching:
+            failures.append(f"{label} {required_id} 행이 없습니다.")
+            continue
+        if exactly_one and len(matching) != 1:
+            failures.append(f"{label} {required_id} 행은 정확히 1개여야 합니다.")
+        for row in matching:
+            if (row.get("result") or "").strip() != "PASS":
+                failures.append(f"{label} {required_id}의 원시 판정이 PASS가 아닙니다.")
+            for field in required_fields:
+                if not (row.get(field) or "").strip():
+                    failures.append(f"{label} {required_id}의 {field} 값이 없습니다.")
+            evidence = (row.get("evidence") or "").strip()
+            failures.extend(evidence_failures(run_root, [evidence], f"{label} {required_id}"))
+    return failures
+
+
+def android_delivery_csv_failures(
+    run_root: Path, expected: dict[str, Any] | None = None
+) -> list[str]:
+    relative_path = "scenario-results/android-delivery.csv"
+    path = run_root / relative_path
+    failures = required_android_csv_failures(
+        run_root,
+        relative_path,
+        "condition",
+        ANDROID_DELIVERY_SCENARIOS,
+        "Android 전달 원시 결과",
+        exactly_one=False,
+    )
+    if not path.is_file():
+        return failures
+    try:
+        with path.open(newline="", encoding="utf-8-sig") as stream:
+            rows = list(csv.DictReader(stream))
+    except (OSError, csv.Error):
+        return failures
+    rows_by_condition = {
+        condition: [
+            row for row in rows if (row.get("condition") or "").strip() == condition
+        ]
+        for condition in ANDROID_DELIVERY_SCENARIOS
+    }
+    if expected is not None:
+        for condition, matching in rows_by_condition.items():
+            metric = expected.get(condition, {})
+            if len(matching) != metric.get("required_attempts"):
+                failures.append(f"Android 전달 {condition}의 원시 시도 수와 요약 분모가 다릅니다.")
+            passed = sum(
+                1 for row in matching if (row.get("result") or "").strip() == "PASS"
+            )
+            if passed != metric.get("successful_attempts"):
+                failures.append(f"Android 전달 {condition}의 원시 성공 수와 요약 성공 수가 다릅니다.")
+            try:
+                raw_maximum = max(
+                    float((row.get("elapsed_seconds") or "").strip())
+                    for row in matching
+                )
+            except (ValueError, TypeError):
+                pass
+            else:
+                summary_maximum = metric.get("maximum_seconds")
+                if not isinstance(summary_maximum, (int, float)) or abs(
+                    raw_maximum - summary_maximum
+                ) > 0.001:
+                    failures.append(f"Android 전달 {condition}의 원시 최대 시간과 요약 최대 시간이 다릅니다.")
+    for row in rows:
+        condition = (row.get("condition") or "").strip()
+        if condition not in ANDROID_DELIVERY_SCENARIOS:
+            continue
+        delivery_run_id = (row.get("delivery_run_id") or "").strip()
+        if not delivery_run_id.startswith("ANDROID-DELIVERY-"):
+            failures.append(f"Android 전달 {condition}의 delivery_run_id가 올바르지 않습니다.")
+        try:
+            elapsed = float((row.get("elapsed_seconds") or "").strip())
+            allowed = float((row.get("allowed_seconds") or "").strip())
+        except ValueError:
+            failures.append(f"Android 전달 {condition}의 측정/허용 시간이 숫자가 아닙니다.")
+            continue
+        if elapsed < 0 or allowed <= 0 or elapsed > allowed:
+            failures.append(f"Android 전달 {condition}의 원시 측정값이 허용 시간을 초과합니다.")
+        if condition in ("normal", "doze") and allowed != 30:
+            failures.append(f"Android 전달 {condition}의 원시 허용 시간은 30초여야 합니다.")
+        if condition == "disconnect_5m":
+            try:
+                page_seconds = float((row.get("page_seconds") or "").strip())
+            except ValueError:
+                failures.append("Android 5분 단절 원시 page 시간이 숫자가 아닙니다.")
+            else:
+                if page_seconds < 0 or allowed != 30 + page_seconds:
+                    failures.append("Android 5분 단절 원시 허용 시간은 30초+page 시간이어야 합니다.")
+    return failures
+
+
+def android_delivery_integrity_csv_failures(
+    run_root: Path, run_id: str, expected: dict[str, Any]
+) -> list[str]:
+    relative_path = "scenario-results/android-delivery-integrity.csv"
+    path = run_root / relative_path
+    if not path.is_file():
+        return [f"Android 전달 무결성: 원시 결과 파일이 없습니다: {relative_path}"]
+    try:
+        with path.open(newline="", encoding="utf-8-sig") as stream:
+            rows = list(csv.DictReader(stream))
+    except (OSError, csv.Error) as exc:
+        return [f"Android 전달 무결성 CSV를 읽을 수 없습니다: {exc}"]
+    if len(rows) != 1:
+        return ["Android 전달 무결성 원시 결과 행은 정확히 1개여야 합니다."]
+    row = rows[0]
+    failures: list[str] = []
+    if (row.get("pilot_run_id") or "").strip() != run_id:
+        failures.append("Android 전달 무결성의 PILOT run_id가 현재 실행과 다릅니다.")
+    if (row.get("result") or "").strip() != "PASS":
+        failures.append("Android 전달 무결성 원시 판정이 PASS가 아닙니다.")
+    for field in (
+        "lost_messages",
+        "server_receipt_duplicates",
+        "crash_boundary_display_duplicates",
+    ):
+        try:
+            value = int((row.get(field) or "").strip())
+        except ValueError:
+            failures.append(f"Android 전달 무결성의 {field} 값이 정수가 아닙니다.")
+            continue
+        if value != expected.get(field):
+            failures.append(f"Android 전달 무결성의 {field} 원시값과 요약값이 다릅니다.")
+    evidence = (row.get("evidence") or "").strip()
+    failures.extend(evidence_failures(run_root, [evidence], "Android 전달 무결성"))
+    return failures
 
 
 def normalized_identity(value: Any) -> str:
@@ -687,6 +880,12 @@ def verify(args: argparse.Namespace) -> int:
                 run_root, android_delivery.get("evidence"), "Android 전달 종합"
             )
         )
+        failures.extend(android_delivery_csv_failures(run_root, delivery_scenarios))
+        failures.extend(
+            android_delivery_integrity_csv_failures(
+                run_root, args.run_id, android_delivery
+            )
+        )
 
     android_security = record.get("android_security", {})
     for check_name in (
@@ -711,6 +910,16 @@ def verify(args: argparse.Namespace) -> int:
                 run_root, android_security.get("evidence"), "Android 보안 실기"
             )
         )
+        failures.extend(
+            required_android_csv_failures(
+                run_root,
+                "integrity/android-security.csv",
+                "check_id",
+                ANDROID_SECURITY_CHECKS,
+                "Android 보안 원시 결과",
+                ("checked_at", "device_id"),
+            )
+        )
 
     device_lifecycle = record.get("android_device_lifecycle", {})
     if profile == "full_pilot" and device_lifecycle.get(
@@ -727,6 +936,35 @@ def verify(args: argparse.Namespace) -> int:
                 run_root,
                 device_lifecycle.get("evidence"),
                 "Android 단말 수명주기",
+            )
+        )
+        failures.extend(
+            required_android_csv_failures(
+                run_root,
+                "scenario-results/android-device-lifecycle.csv",
+                "scenario_id",
+                ANDROID_DEVICE_LIFECYCLE_CASES,
+                "Android 단말 수명주기 원시 결과",
+                ("checked_at", "old_device_id", "server_status", "history_event_ids", "mdm_event_id"),
+            )
+        )
+        failures.extend(
+            required_android_csv_failures(
+                run_root,
+                "packages/android-release-approval.csv",
+                "artifact_role",
+                ("release_candidate", "previous_approved_rollback"),
+                "Android 운영 패키지 승인",
+                (
+                    "artifact_type",
+                    "version_name",
+                    "version_code",
+                    "sha256",
+                    "signer_sha256",
+                    "mdm_package_id",
+                    "rollout_ring",
+                    "approval_id",
+                ),
             )
         )
 

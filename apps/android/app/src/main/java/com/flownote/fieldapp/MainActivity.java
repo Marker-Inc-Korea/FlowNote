@@ -512,12 +512,24 @@ public final class MainActivity extends Activity {
         rebuildApiClient();
         updateStatus("재전송 중...");
         executor.execute(() -> {
-            OfflineQueueStore.SyncSummary summary = outbox.retryPending(apiClient, currentUserId);
-            postStatus(
-                    "재전송 완료: 성공 " + summary.successCount +
-                            "건, 실패 " + summary.failedCount +
-                            "건, 대기 " + summary.remainingCount + "건"
-            );
+            try {
+                OfflineQueueStore.SyncSummary summary = outbox.retryPending(apiClient, currentUserId);
+                if (summary.failedCount > 0) {
+                    postStatus(
+                            "일부 기록을 보내지 못했습니다. 성공 " + summary.successCount +
+                                    "건, 실패 " + summary.failedCount +
+                                    "건, 대기 " + summary.remainingCount +
+                                    "건입니다. 네트워크와 로그인 상태를 확인한 뒤 재전송하세요."
+                    );
+                } else {
+                    postStatus(
+                            "재전송 완료: 성공 " + summary.successCount +
+                                    "건, 대기 " + summary.remainingCount + "건"
+                    );
+                }
+            } catch (Exception exc) {
+                postStatus("재전송 실패: " + UserErrorMessage.from(exc));
+            }
         });
     }
 

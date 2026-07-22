@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import csv
 import importlib.util
 import io
 import json
@@ -173,6 +174,101 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
         self.assertIn(
             "책임 영역 server는 담당자와 독립 승인자가 달라야 합니다.",
             report["failures"],
+        )
+
+    def test_full_pilot_prepare_creates_android_raw_evidence_templates(self) -> None:
+        run_id = "PILOT-20260722-1320-LOCALCHECK-003"
+        with contextlib.redirect_stdout(io.StringIO()):
+            manage_pilot_run.prepare(
+                argparse.Namespace(
+                    run_id=run_id,
+                    evidence_root=self.evidence_root,
+                    profile="full_pilot",
+                    allow_existing=False,
+                )
+            )
+        run_root = self.evidence_root / run_id
+
+        self.assertTrue((run_root / "integrity" / "android-security.csv").is_file())
+        self.assertTrue(
+            (run_root / "scenario-results" / "android-delivery-integrity.csv").is_file()
+        )
+        self.assertTrue(
+            (run_root / "scenario-results" / "android-device-lifecycle.csv").is_file()
+        )
+        self.assertTrue(
+            (run_root / "packages" / "android-release-approval.csv").is_file()
+        )
+        failures = manage_pilot_run.android_delivery_csv_failures(run_root)
+        self.assertTrue(any("PASS가 아닙니다" in failure for failure in failures))
+
+    def test_android_delivery_raw_results_require_all_eight_timed_passes(self) -> None:
+        path = self.run_root / "scenario-results" / "android-delivery.csv"
+        path.parent.mkdir(parents=True)
+        fieldnames = [
+            "scenario_id", "condition", "delivery_run_id", "message_id",
+            "created_at_utc", "recovery_ready_at_utc", "displayed_at_utc",
+            "receipt_at_utc", "page_seconds", "elapsed_seconds",
+            "allowed_seconds", "result", "evidence",
+        ]
+        with path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fieldnames)
+            writer.writeheader()
+            for scenario_id, condition in manage_pilot_run.ANDROID_DELIVERY_CASES:
+                page_seconds = "2" if condition == "disconnect_5m" else "0"
+                allowed = "32" if condition == "disconnect_5m" else "30"
+                writer.writerow(
+                    {
+                        "scenario_id": scenario_id,
+                        "condition": condition,
+                        "delivery_run_id": "ANDROID-DELIVERY-test",
+                        "page_seconds": page_seconds,
+                        "elapsed_seconds": "1",
+                        "allowed_seconds": allowed,
+                        "result": "PASS",
+                        "evidence": "proof.txt",
+                    }
+                )
+
+        self.assertEqual([], manage_pilot_run.android_delivery_csv_failures(self.run_root))
+
+        integrity_path = (
+            self.run_root / "scenario-results" / "android-delivery-integrity.csv"
+        )
+        with integrity_path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(
+                stream,
+                fieldnames=[
+                    "pilot_run_id",
+                    "lost_messages",
+                    "server_receipt_duplicates",
+                    "crash_boundary_display_duplicates",
+                    "result",
+                    "evidence",
+                ],
+            )
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "pilot_run_id": self.run_id,
+                    "lost_messages": 0,
+                    "server_receipt_duplicates": 0,
+                    "crash_boundary_display_duplicates": 1,
+                    "result": "PASS",
+                    "evidence": "proof.txt",
+                }
+            )
+        self.assertEqual(
+            [],
+            manage_pilot_run.android_delivery_integrity_csv_failures(
+                self.run_root,
+                self.run_id,
+                {
+                    "lost_messages": 0,
+                    "server_receipt_duplicates": 0,
+                    "crash_boundary_display_duplicates": 1,
+                },
+            ),
         )
 
 

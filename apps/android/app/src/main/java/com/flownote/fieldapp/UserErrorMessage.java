@@ -39,6 +39,12 @@ public final class UserErrorMessage {
         if (message.contains("Access token is missing")) {
             return "로그인이 필요합니다.";
         }
+        if (message.contains("로컬 보안 키") || message.contains("단말 보안 키")) {
+            return "단말 보안 저장소를 열 수 없습니다. 재설치하거나 초기화하지 말고 관리자에게 단말 교체 점검을 요청하세요.";
+        }
+        if (message.contains("로컬 데이터를 암호화") || message.contains("첨부를 암호화")) {
+            return "현장 기록을 안전하게 임시 저장하지 못했습니다. 앱을 종료하지 말고 관리자에게 문의하세요.";
+        }
         return "요청을 처리하지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도하세요.";
     }
 }

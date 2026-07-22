@@ -34,4 +34,12 @@ public final class UserErrorMessageTest {
                 UserErrorMessage.from(new SocketTimeoutException("timeout"))
         );
     }
+
+    @Test
+    public void invalidKeystoreUsesPreservationGuidance() {
+        assertEquals(
+                "단말 보안 저장소를 열 수 없습니다. 재설치하거나 초기화하지 말고 관리자에게 단말 교체 점검을 요청하세요.",
+                UserErrorMessage.from(new IllegalStateException("로컬 보안 키가 없거나 암호문이 손상되었습니다."))
+        );
+    }
 }
