@@ -108,6 +108,41 @@ WPF MSI는 Windows 배포 준비 PC와 최소 1대 이상의 설치 대상 Windo
 - 코드 서명 인증서가 준비된 경우 EXE와 MSI 모두 `signtool verify /pa`를 통과한다.
 - 검증 후 `git status --short --untracked-files=all`에 `artifacts`, publish 산출물, MSI, `.wixpdb`, 테스트 산출물이 추적 대상으로 잡히지 않는다.
 
+### 우선순위 5 단일 run 실행·증거 기준
+
+Windows/서버 고객 유사망 리허설은 [파일럿 리허설 문서의 사전 승인 계약](./pilot-rehearsal.md#우선순위-5-사전-승인-계약)을 먼저 완료하고, `windows_server_rehearsal` 프로필의 하나의 `run_id`로만 수행한다. 실제 현장 값은 Git 문서가 아니라 접근 통제된 `pilot-run.json`에 기록한다. 아래 변수는 예시이며 승인된 현장 값으로 바꾼 뒤 transcript 첫 부분에 변수명과 익명 식별자만 남긴다.
+
+```powershell
+$RunId = "PILOT-YYYYMMDD-HHMM-SITE-001"
+$EvidenceRoot = "D:\FlowNotePilotEvidence"
+$RunRoot = Join-Path $EvidenceRoot $RunId
+Start-Transcript -Path (Join-Path $RunRoot "install\windows-server-rehearsal.txt") -Append
+```
+
+| 판정 게이트 | 실행 명령·점검 | 필수 증거 상대경로 | PASS 기준 |
+| --- | --- | --- | --- |
+| `server_clean_install` | 이 문서의 서버 설치 1~8단계와 health/DB health 호출 | `install/server-clean-install-*`, `server-logs/server-health-*` | 깨끗한 승인 서버 1대에서 설치, 로그인 없는 실행, health와 DB health 모두 정상 |
+| `server_reboot_autostart` | `Restart-Computer` 후 `Get-ScheduledTask -TaskPath '\FlowNote\'`, `Get-ScheduledTaskInfo`와 health 재확인 | `install/server-reboot-*`, `server-logs/server-autostart-*` | 재부팅 후 사용자 로그인 없이 작업 실행, 최근 결과 정상, 핵심 API 재개 |
+| `wpf_clean_install`, `wpf_upgrade`, `wpf_remove_reinstall` | `msiexec /i <승인 MSI> /L*v <로그>`, 이전 승인 버전→후보 버전 업그레이드, `msiexec /x <ProductCode> /L*v <로그>`, 재설치 | `install/wpf-clean-*`, `install/wpf-upgrade-*`, `install/wpf-remove-reinstall-*` | 각 명령 종료 코드 0, 대상 버전 실행, 로컬 DB·`Files` 손실 0, 로그인·목록·열람 재개 |
+| `package_hash_and_signature` | `Get-FileHash <MSI/EXE> -Algorithm SHA256`, `signtool verify /pa /all /v <MSI/EXE>`, `dotnet --list-runtimes`, WebView2 버전/미설치 UX 확인 | `packages/windows-hash-*`, `packages/windows-signature-*`, `install/prerequisites-*` | 승인 hash 일치, EXE/MSI 서명·chain·timestamp 정상, 채택한 .NET 방식과 WebView2 조건 통과 |
+| `https_renewal` | 갱신 전/후 `Invoke-WebRequest https://<승인 DNS>/api/v1/health`, 인증서 chain·SAN·유효기간 확인, 구 인증서 rollback 후 재적용 | `network-and-certificate/certificate-renewal-*` | WPF/서버에서 검증 우회·HTTP 강등 없이 접속, 갱신 및 승인 rollback 모두 정상 |
+| `firewall_and_address_change` | 승인 변경서에 따라 방화벽/DNS 또는 서버 URL을 변경하고 승인·비승인 구간 접속, WPF 재연결을 각각 확인 | `network-and-certificate/firewall-*`, `network-and-certificate/address-change-*` | 승인 구간만 허용, 비승인 구간 거부, 주소 변경 후 cursor/로그 혼선 없이 핵심 업무 재개 |
+| `time_synchronization` | `w32tm /query /status`, 서버·클라이언트의 인증서/token/감사 시각 비교 | `network-and-certificate/time-sync-*` | 승인 시간 원천과 동기화되고 사전 승인 오차 이내이며 로그 순서·인증서/token 판정 정상 |
+| `long_network_outage_recovery` | 승인 방화벽 규칙으로 사전 승인 시간 동안 단절 후 복구; 실패/재시도 원시 로그 보존 | `scenario-results/long-outage-*`, `server-logs/long-outage-*`, `windows-logs/long-outage-*` | 단절 중 허위 성공 없음, 재연결 뒤 중복·손실·권한 우회 0, 핵심 업무 재개 |
+| `disk_full_stop_and_rollback` | 운영 볼륨이 아닌 격리된 제한 용량 시험 볼륨/snapshot에서 DB·파일 저장 공간 부족 주입 | `scenario-results/disk-full-*`, `integrity/disk-full-*`, `incident-and-rollback/disk-full-*` | 부분 파일·부분 commit 없이 fail-closed, 원시 실패 증거 보존, 공간/이전 승인본 복구 뒤 DB 무결성과 업무 재개 |
+| `permission_negative_tests` | 비활성·권한 없는 계정의 로그인, 문서/controlled copy/관리 API 접근 거부 확인 | `scenario-results/permission-negative-*` | 모든 미승인 접근 거부, 로컬 계정 우회와 파일 유출 0 |
+| `approved_package_rollback` | 사전 확정한 이전 승인 서버/WPF 패키지와 같은 시점 데이터 세트로 복귀 | `incident-and-rollback/server-*`, `incident-and-rollback/wpf-*` | 이전 승인 버전 식별자/hash 일치, DB 무결성 정상, 로그인·목록·열람·FieldComment 재개 |
+
+디스크 부족 시험은 실제 운영 볼륨을 임의로 채우지 않는다. 격리된 시험 볼륨 또는 되돌릴 수 있는 승인 snapshot만 사용하고, 주입 전 중단 승인·백업·복귀 명령을 먼저 검토한다. 네트워크·방화벽·인증서 변경도 원복 명령과 접근 경로를 먼저 확보한다. 실패 시 transcript와 실패 상태를 먼저 보존하며 같은 파일명으로 재실행 결과를 덮어쓰지 않는다.
+
+모든 게이트 완료 후 운영·보안·현장 승인자가 `pilot-run.json`과 원시 증거를 대조해 서명한 다음 판정한다.
+
+```powershell
+Stop-Transcript
+py -3 scripts\manage-pilot-run.py verify --run-id $RunId --evidence-root $EvidenceRoot
+if ((Get-Content (Join-Path $RunRoot "pilot-verification.json") -Raw | ConvertFrom-Json).result -ne "PASS") { throw "파일럿 판정 실패" }
+```
+
 ## 서버 설치 절차
 
 서버 PC에는 Python 3.11 이상을 설치한다. WPF 앱을 같은 PC에서 사용할 경우 .NET Windows Desktop Runtime과 WebView2 Runtime도 준비한다.
@@ -639,6 +674,11 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 
 | 항목 | 현장 확정 값 | 승인/증거 | 상태 |
 | --- | --- | --- | --- |
+| `run_id`·프로필·증거 저장소 식별자·보존 기한 | 미확정 / `windows_server_rehearsal` | `<run_id>/approvals/rehearsal-authorization-*` | 착수 금지 |
+| server/certificate/windows/android/data protection/field operations/support/AI 담당자·독립 승인자 | 미확정 | `<run_id>/approvals/responsibility-*` | 착수 금지 |
+| 통합 시험 범위·5개 이상 중단 기준·시작/종료 시각 | 미확정 | `<run_id>/approvals/rehearsal-authorization-*` | 착수 금지 |
+| 익명 시험 서버·Windows 클라이언트 ID | 미확정 | `<run_id>/approvals/equipment-*` | 착수 금지 |
+| 이전 승인 서버/WPF 버전과 복귀 패키지 hash | 미확정 | `<run_id>/approvals/rollback-baseline-*` | 착수 금지 |
 | 서버 설치 경로·서비스 계정·자동 시작 방식 | 미확정 | `<run_id>/install/server-*` | 대기 |
 | 운영 DNS 이름·API URL·TLS 종단 위치 | 미확정 | `<run_id>/network-and-certificate/network-*` | 대기 |
 | 인증서 발급자·SAN·유효기간·갱신 겹침 기간 | 미확정 | `<run_id>/network-and-certificate/certificate-*` | 대기 |
