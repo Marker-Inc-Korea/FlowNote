@@ -13,6 +13,8 @@ from typing import Any
 
 
 RUN_ID_PATTERN = re.compile(r"^PILOT-\d{8}-\d{4}-[A-Z0-9_-]+-\d{3}$")
+SCHEMA_VERSION = 3
+RUN_PROFILES = ("full_pilot", "windows_server_rehearsal")
 RESPONSIBILITY_AREAS = (
     "server",
     "certificate",
@@ -32,6 +34,7 @@ REQUIRED_GATES = (
     "package_hash_and_signature",
     "https_renewal",
     "firewall_and_address_change",
+    "time_synchronization",
     "android_approved_install",
     "android_secure_storage_and_viewer",
     "android_delivery_and_recovery",
@@ -46,6 +49,21 @@ REQUIRED_GATES = (
     "approved_package_rollback",
     "ai_scope_or_disabled",
 )
+WINDOWS_SERVER_REHEARSAL_GATES = (
+    "server_clean_install",
+    "server_reboot_autostart",
+    "wpf_clean_install",
+    "wpf_upgrade",
+    "wpf_remove_reinstall",
+    "package_hash_and_signature",
+    "https_renewal",
+    "firewall_and_address_change",
+    "time_synchronization",
+    "permission_negative_tests",
+    "disk_full_stop_and_rollback",
+    "long_network_outage_recovery",
+    "approved_package_rollback",
+)
 REQUIRED_ROLES = ("admin", "line_foreman", "team_lead", "team_member")
 REQUIRED_APPROVALS = ("operations", "security", "field_operations")
 ZERO_TOLERANCE_METRICS = (
@@ -59,6 +77,13 @@ ZERO_TOLERANCE_METRICS = (
     "database_integrity_failure",
     "source_count_mismatch",
     "source_hash_mismatch",
+)
+WINDOWS_SERVER_ZERO_TOLERANCE_METRICS = (
+    "data_loss",
+    "permission_bypass",
+    "unauthorized_file_disclosure",
+    "secret_or_personal_data_disclosure",
+    "database_integrity_failure",
 )
 ANDROID_DELIVERY_CASES = (
     ("AND-NOTIFY-NORMAL", "normal"),
@@ -95,10 +120,11 @@ def validate_run_id(value: str) -> str:
     return value
 
 
-def empty_record(run_id: str) -> dict[str, Any]:
+def empty_record(run_id: str, profile: str) -> dict[str, Any]:
     return {
-        "schema_version": 2,
+        "schema_version": SCHEMA_VERSION,
         "run_id": run_id,
+        "profile": profile,
         "status": "PENDING",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "environment": {
@@ -108,7 +134,34 @@ def empty_record(run_id: str) -> dict[str, Any]:
             "approved_android_count": 0,
         },
         "responsibilities": {
-            area: {"owner": "", "approver": ""} for area in RESPONSIBILITY_AREAS
+            area: {
+                "owner": "",
+                "approver": "",
+                "test_scope": "",
+                "stop_criteria": "",
+                "evidence_repository": "",
+                "approval_evidence": [],
+            }
+            for area in RESPONSIBILITY_AREAS
+        },
+        "authorization": {
+            "decision": "PENDING",
+            "approved_at": "",
+            "run_scope": "",
+            "stop_criteria": [],
+            "evidence_repository": "",
+            "retention_until": "",
+            "equipment": {
+                "server_ids": [],
+                "windows_client_ids": [],
+                "android_device_ids": [],
+            },
+            "previous_approved_versions": {
+                "server": "",
+                "wpf": "",
+                "android": "",
+            },
+            "evidence": [],
         },
         "gates": {
             gate: {"result": "PENDING", "evidence": []} for gate in REQUIRED_GATES
@@ -211,13 +264,15 @@ def prepare(args: argparse.Namespace) -> int:
     for directory in EVIDENCE_DIRECTORIES:
         (run_root / directory).mkdir(exist_ok=True)
     if not record_path.exists():
-        write_json(record_path, empty_record(args.run_id))
+        write_json(record_path, empty_record(args.run_id, args.profile))
     manifest = run_root / "manifest.md"
     if not manifest.exists():
         manifest.write_text(
             f"# {args.run_id}\n\n"
+            f"- 프로필: {args.profile}\n"
             "- 상태: 대기\n- 현장/라인 코드:\n- 시작 시각/시간대:\n"
-            "- 종료 시각/시간대:\n- 이전 승인 서버/WPF/Android 버전:\n"
+            "- 종료 시각/시간대:\n- 증거 저장소 식별자:\n"
+            "- 이전 승인 서버/WPF/Android 버전:\n"
             "- 최종 판정: 대기\n",
             encoding="utf-8",
         )
@@ -227,6 +282,22 @@ def prepare(args: argparse.Namespace) -> int:
         for scenario_id, condition in ANDROID_DELIVERY_CASES
     )
     templates = {
+        run_root / "approvals" / "responsibility-assignments.csv": (
+            "area,owner,approver,test_scope,stop_criteria,evidence_repository,"
+            "approved_at,approval_evidence\n"
+            + "".join(f"{area},,,,,,,\n" for area in RESPONSIBILITY_AREAS)
+        ),
+        run_root / "approvals" / "rehearsal-authorization.md": (
+            f"# {args.run_id} 리허설 사전 승인\n\n"
+            f"- 프로필: {args.profile}\n"
+            "- 승인 결정: 대기\n- 승인 시각/시간대:\n- 통합 시험 범위:\n"
+            "- 중단 기준:\n- 증거 저장소 식별자:\n- 증거 보존 기한:\n"
+            "- 익명 서버 ID:\n- 익명 Windows 클라이언트 ID:\n"
+            "- 익명 Android 단말 ID:\n- 이전 승인 서버 버전:\n"
+            "- 이전 승인 WPF 버전:\n- 이전 승인 Android 버전:\n"
+            "- 운영 승인자/서명:\n- 보안 승인자/서명:\n"
+            "- 현장 승인자/서명:\n"
+        ),
         run_root / "scenario-results" / "android-delivery.csv": (
             "scenario_id,condition,delivery_run_id,message_id,created_at_utc,"
             "recovery_ready_at_utc,displayed_at_utc,receipt_at_utc,page_seconds,"
@@ -257,6 +328,21 @@ def prepare(args: argparse.Namespace) -> int:
 
 def nonempty(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def normalized_identity(value: Any) -> str:
+    return value.strip().casefold() if isinstance(value, str) else ""
+
+
+def identifier_list_failures(values: Any, minimum: int, label: str) -> list[str]:
+    if not isinstance(values, list):
+        return [f"{label} 목록이 없습니다."]
+    identifiers = [value.strip() for value in values if nonempty(value)]
+    if len(identifiers) < minimum:
+        return [f"{label}는 {minimum}개 이상이어야 합니다."]
+    if len(set(value.casefold() for value in identifiers)) != len(identifiers):
+        return [f"{label}에 중복 식별자가 있습니다."]
+    return []
 
 
 def evidence_failures(run_root: Path, values: Any, label: str) -> list[str]:
@@ -310,17 +396,20 @@ def verify(args: argparse.Namespace) -> int:
     failures: list[str] = []
     if record.get("run_id") != args.run_id:
         failures.append("판정표 run_id가 실행 폴더 run_id와 다릅니다.")
-    if record.get("schema_version") != 2:
-        failures.append("pilot-run.json schema_version은 2여야 합니다.")
+    if record.get("schema_version") != SCHEMA_VERSION:
+        failures.append(f"pilot-run.json schema_version은 {SCHEMA_VERSION}이어야 합니다.")
+    profile = record.get("profile")
+    if profile not in RUN_PROFILES:
+        failures.append("지원하는 파일럿 profile이 아닙니다.")
+        profile = "full_pilot"
 
     environment = record.get("environment", {})
     if environment.get("customer_like_network") is not True:
         failures.append("고객 유사망 실행이 확인되지 않았습니다.")
-    for field in (
-        "clean_server_count",
-        "clean_windows_client_count",
-        "approved_android_count",
-    ):
+    required_environment_counts = ["clean_server_count", "clean_windows_client_count"]
+    if profile == "full_pilot":
+        required_environment_counts.append("approved_android_count")
+    for field in required_environment_counts:
         if not isinstance(environment.get(field), int) or environment[field] < 1:
             failures.append(f"environment.{field}는 1 이상이어야 합니다.")
 
@@ -331,37 +420,131 @@ def verify(args: argparse.Namespace) -> int:
             assignment.get("approver")
         ):
             failures.append(f"책임 영역 {area}의 담당자와 승인자가 모두 필요합니다.")
+        elif normalized_identity(assignment.get("owner")) == normalized_identity(
+            assignment.get("approver")
+        ):
+            failures.append(f"책임 영역 {area}는 담당자와 독립 승인자가 달라야 합니다.")
+        for field, label in (
+            ("test_scope", "시험 범위"),
+            ("stop_criteria", "중단 기준"),
+            ("evidence_repository", "증거 저장소"),
+        ):
+            if not nonempty(assignment.get(field)):
+                failures.append(f"책임 영역 {area}의 {label}가 필요합니다.")
+        failures.extend(
+            evidence_failures(
+                run_root,
+                assignment.get("approval_evidence"),
+                f"책임 영역 {area} 사전 승인",
+            )
+        )
+
+    authorization = record.get("authorization", {})
+    if authorization.get("decision") != "PASS" or not nonempty(
+        authorization.get("approved_at")
+    ):
+        failures.append("리허설 책임·범위 사전 승인의 PASS와 승인 시각이 필요합니다.")
+    for field, label in (
+        ("run_scope", "통합 시험 범위"),
+        ("evidence_repository", "통합 증거 저장소"),
+    ):
+        if not nonempty(authorization.get(field)):
+            failures.append(f"리허설 사전 승인의 {label}가 필요합니다.")
+    stop_criteria = authorization.get("stop_criteria")
+    if (
+        not isinstance(stop_criteria, list)
+        or not all(nonempty(value) for value in stop_criteria)
+        or len(stop_criteria) < 5
+    ):
+        failures.append("리허설 사전 승인에는 5개 이상의 구체적 중단 기준이 필요합니다.")
+    try:
+        if not nonempty(authorization.get("retention_until")):
+            raise ValueError
+        date.fromisoformat(authorization["retention_until"])
+    except ValueError:
+        failures.append("증거 보존 기한은 YYYY-MM-DD 형식으로 필요합니다.")
+    equipment = authorization.get("equipment", {})
+    failures.extend(identifier_list_failures(equipment.get("server_ids"), 1, "시험 서버"))
+    failures.extend(
+        identifier_list_failures(
+            equipment.get("windows_client_ids"), 1, "시험 Windows 클라이언트"
+        )
+    )
+    if profile == "full_pilot":
+        failures.extend(
+            identifier_list_failures(
+                equipment.get("android_device_ids"), 1, "시험 Android 단말"
+            )
+        )
+    for count_field, id_field, label in (
+        ("clean_server_count", "server_ids", "시험 서버"),
+        ("clean_windows_client_count", "windows_client_ids", "시험 Windows 클라이언트"),
+    ):
+        ids = equipment.get(id_field)
+        if isinstance(ids, list) and environment.get(count_field) != len(ids):
+            failures.append(f"{label} 식별자 수와 environment.{count_field}가 다릅니다.")
+    if profile == "full_pilot":
+        android_ids = equipment.get("android_device_ids")
+        if isinstance(android_ids, list) and environment.get(
+            "approved_android_count"
+        ) != len(android_ids):
+            failures.append(
+                "시험 Android 단말 식별자 수와 environment.approved_android_count가 다릅니다."
+            )
+    versions = authorization.get("previous_approved_versions", {})
+    version_targets = (
+        ("server", "wpf", "android")
+        if profile == "full_pilot"
+        else ("server", "wpf")
+    )
+    for target in version_targets:
+        if not nonempty(versions.get(target)):
+            failures.append(f"리허설 전 {target} 이전 승인 버전 확정이 필요합니다.")
+    failures.extend(
+        evidence_failures(
+            run_root, authorization.get("evidence"), "리허설 통합 사전 승인"
+        )
+    )
 
     gates = record.get("gates", {})
-    for gate in REQUIRED_GATES:
+    required_gates = (
+        REQUIRED_GATES if profile == "full_pilot" else WINDOWS_SERVER_REHEARSAL_GATES
+    )
+    for gate in required_gates:
         item = gates.get(gate, {})
         if item.get("result") != "PASS":
             failures.append(f"필수 게이트 {gate}가 PASS가 아닙니다.")
         failures.extend(
             evidence_failures(run_root, item.get("evidence"), f"게이트 {gate}")
         )
-    failures.extend(
-        restore_comparison_failures(
-            run_root,
-            gates.get("server_restore_separate_pc", {}).get("evidence"),
-            "server",
+    if profile == "full_pilot":
+        failures.extend(
+            restore_comparison_failures(
+                run_root,
+                gates.get("server_restore_separate_pc", {}).get("evidence"),
+                "server",
+            )
         )
-    )
-    failures.extend(
-        restore_comparison_failures(
-            run_root,
-            gates.get("wpf_restore_separate_pc", {}).get("evidence"),
-            "wpf",
+        failures.extend(
+            restore_comparison_failures(
+                run_root,
+                gates.get("wpf_restore_separate_pc", {}).get("evidence"),
+                "wpf",
+            )
         )
-    )
 
     zero_tolerance = record.get("zero_tolerance", {})
-    for metric in ZERO_TOLERANCE_METRICS:
+    required_zero_metrics = (
+        ZERO_TOLERANCE_METRICS
+        if profile == "full_pilot"
+        else WINDOWS_SERVER_ZERO_TOLERANCE_METRICS
+    )
+    for metric in required_zero_metrics:
         if zero_tolerance.get(metric) != 0:
             failures.append(f"0건 필수 지표 {metric}이 0이 아닙니다.")
 
     roles = record.get("roles", {})
-    for role in REQUIRED_ROLES:
+    for role in REQUIRED_ROLES if profile == "full_pilot" else ():
         metric = roles.get(role, {})
         required = metric.get("required_attempts")
         successful = metric.get("successful_attempts")
@@ -440,7 +623,7 @@ def verify(args: argparse.Namespace) -> int:
 
     android_delivery = record.get("android_delivery", {})
     delivery_scenarios = android_delivery.get("scenarios", {})
-    for scenario in ANDROID_DELIVERY_SCENARIOS:
+    for scenario in ANDROID_DELIVERY_SCENARIOS if profile == "full_pilot" else ():
         metric = delivery_scenarios.get(scenario, {})
         required = metric.get("required_attempts")
         successful = metric.get("successful_attempts")
@@ -484,57 +667,74 @@ def verify(args: argparse.Namespace) -> int:
             )
         )
     for metric_name, label in (
-        ("lost_messages", "누락 메시지"),
-        ("server_receipt_duplicates", "서버 receipt 중복"),
+        (
+            ("lost_messages", "누락 메시지"),
+            ("server_receipt_duplicates", "서버 receipt 중복"),
+        )
+        if profile == "full_pilot"
+        else ()
     ):
         if android_delivery.get(metric_name) != 0:
             failures.append(f"Android {label}가 0건이 아닙니다.")
     display_duplicates = android_delivery.get("crash_boundary_display_duplicates")
-    if not isinstance(display_duplicates, int) or not 0 <= display_duplicates <= 1:
+    if profile == "full_pilot" and (
+        not isinstance(display_duplicates, int) or not 0 <= display_duplicates <= 1
+    ):
         failures.append("Android crash 경계 표시 중복이 0~1건이 아니거나 미측정입니다.")
-    failures.extend(
-        evidence_failures(
-            run_root, android_delivery.get("evidence"), "Android 전달 종합"
+    if profile == "full_pilot":
+        failures.extend(
+            evidence_failures(
+                run_root, android_delivery.get("evidence"), "Android 전달 종합"
+            )
         )
-    )
 
     android_security = record.get("android_security", {})
     for check_name in (
-        "keystore_token_ciphertext_verified",
-        "outbox_ciphertext_verified",
-        "encrypted_photo_verified",
-        "wrong_key_decryption_failed",
-        "secure_cache_cleared_after_exit",
-        "flag_secure_verified",
-        "external_share_absent",
-        "backup_disabled",
+        (
+            "keystore_token_ciphertext_verified",
+            "outbox_ciphertext_verified",
+            "encrypted_photo_verified",
+            "wrong_key_decryption_failed",
+            "secure_cache_cleared_after_exit",
+            "flag_secure_verified",
+            "external_share_absent",
+            "backup_disabled",
+        )
+        if profile == "full_pilot"
+        else ()
     ):
         if android_security.get(check_name) is not True:
             failures.append(f"Android 보안 실기 {check_name}가 확인되지 않았습니다.")
-    failures.extend(
-        evidence_failures(
-            run_root, android_security.get("evidence"), "Android 보안 실기"
+    if profile == "full_pilot":
+        failures.extend(
+            evidence_failures(
+                run_root, android_security.get("evidence"), "Android 보안 실기"
+            )
         )
-    )
 
     device_lifecycle = record.get("android_device_lifecycle", {})
-    if device_lifecycle.get("lost_or_inactive_device_reconnect_blocked") is not True:
+    if profile == "full_pilot" and device_lifecycle.get(
+        "lost_or_inactive_device_reconnect_blocked"
+    ) is not True:
         failures.append("분실·비활성 Android 단말의 재접속 차단이 확인되지 않았습니다.")
-    if device_lifecycle.get("replacement_history_preserved") is not True:
+    if profile == "full_pilot" and device_lifecycle.get(
+        "replacement_history_preserved"
+    ) is not True:
         failures.append("Android 단말 교체 이력 보존이 확인되지 않았습니다.")
-    failures.extend(
-        evidence_failures(
-            run_root,
-            device_lifecycle.get("evidence"),
-            "Android 단말 수명주기",
+    if profile == "full_pilot":
+        failures.extend(
+            evidence_failures(
+                run_root,
+                device_lifecycle.get("evidence"),
+                "Android 단말 수명주기",
+            )
         )
-    )
 
     ux_items = record.get("ux_development_items", {})
     actionable = ux_items.get("actionable_findings")
     converted = ux_items.get("converted_items")
     unconverted = ux_items.get("unconverted_actionable_findings")
-    if (
+    if profile == "full_pilot" and (
         not all(
             isinstance(value, int) and value >= 0 for value in (actionable, converted)
         )
@@ -556,8 +756,12 @@ def verify(args: argparse.Namespace) -> int:
         )
     ]
     for counts, label in (
-        (priority_counts, "P0~P3 우선순위"),
-        (classification_counts, "제품/설정/배치·교육 분류"),
+        (
+            (priority_counts, "P0~P3 우선순위"),
+            (classification_counts, "제품/설정/배치·교육 분류"),
+        )
+        if profile == "full_pilot"
+        else ()
     ):
         if (
             not all(isinstance(value, int) and value >= 0 for value in counts)
@@ -565,17 +769,27 @@ def verify(args: argparse.Namespace) -> int:
             or sum(counts) != converted
         ):
             failures.append(f"UX 개발 항목의 {label} 합계가 변환 건수와 다릅니다.")
-    failures.extend(
-        evidence_failures(run_root, ux_items.get("evidence"), "UX 개발 항목 변환")
-    )
+    if profile == "full_pilot":
+        failures.extend(
+            evidence_failures(run_root, ux_items.get("evidence"), "UX 개발 항목 변환")
+        )
 
     rollback = record.get("rollback", {})
-    for target in ("server", "wpf", "android"):
+    rollback_targets = (
+        ("server", "wpf", "android")
+        if profile == "full_pilot"
+        else ("server", "wpf")
+    )
+    for target in rollback_targets:
         item = rollback.get(target, {})
         if item.get("result") != "PASS" or item.get("normal_work_resumed") is not True:
             failures.append(f"{target} rollback과 정상 업무 재개가 PASS가 아닙니다.")
         if not nonempty(item.get("previous_approved_version")):
             failures.append(f"{target}의 이전 승인 버전이 없습니다.")
+        elif item.get("previous_approved_version") != versions.get(target):
+            failures.append(
+                f"{target} rollback 버전이 리허설 전 확정한 이전 승인 버전과 다릅니다."
+            )
         failures.extend(
             evidence_failures(run_root, item.get("evidence"), f"rollback {target}")
         )
@@ -611,7 +825,7 @@ def verify(args: argparse.Namespace) -> int:
         failures.append("pilot-run.json의 최종 status가 PASS가 아닙니다.")
 
     report = {
-        "schema_version": 2,
+        "schema_version": SCHEMA_VERSION,
         "run_id": args.run_id,
         "verified_at_utc": datetime.now(timezone.utc).isoformat(),
         "result": "PASS" if not failures else "FAIL",
@@ -637,6 +851,9 @@ def parser() -> argparse.ArgumentParser:
     )
     prepare_parser.add_argument("--run-id", required=True, type=validate_run_id)
     prepare_parser.add_argument("--evidence-root", required=True, type=Path)
+    prepare_parser.add_argument(
+        "--profile", choices=RUN_PROFILES, default="full_pilot"
+    )
     prepare_parser.add_argument("--allow-existing", action="store_true")
     prepare_parser.set_defaults(handler=prepare)
     verify_parser = commands.add_parser(

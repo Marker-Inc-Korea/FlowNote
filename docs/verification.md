@@ -40,6 +40,12 @@ macOS ARM64 보조 run `p0-baseline-144-macos-precheck-20260722-002`에서 FastA
 
 `verify-android-release.sh`의 신규 `android-delivery.csv`도 동일한 8개 condition과 `elapsed_seconds`·`allowed_seconds` 열을 사용하도록 배포 문서와 Android README를 갱신했다. 정상·Doze는 30초, 5분 단절은 `30 + page_seconds`를 강제하고, 누락·서버 receipt 중복은 0건, crash 경계 표시 중복은 최대 1건만 허용한다. 이번 요청은 문서 갱신이므로 실제 고객 유사망 파일럿, APK 설치/rollback, 전체 테스트·빌드는 실행하지 않았고 기존 테스트 DB·로그·산출물은 삭제하지 않았다.
 
+## 2026-07-22 우선순위 5 Windows/서버 리허설 판정 분리
+
+`manage-pilot-run.py` schema version 3은 기존 전체 범위 `full_pilot`과 Windows/서버 고객 유사망 리허설용 `windows_server_rehearsal`을 분리한다. 두 프로필 모두 server, certificate, windows, android, data protection, field operations, support, AI의 담당자와 독립 승인자, 영역별 범위·중단 기준·증거 저장소·승인 원시 증거를 요구한다. 통합 사전 승인에는 익명 시험 장비 ID, 5개 이상 중단 기준, 보존 기한, 이전 승인 버전이 있어야 하며 담당자와 승인자가 같으면 FAIL이다.
+
+Windows/서버 프로필의 prepare/schema fixture, 최소 PASS fixture와 자기 승인 FAIL fixture를 `python3 -m unittest scripts/test_manage_pilot_run.py`로 검증했다. 결과 fixture는 Git 제외 경로 `data/local/pilot-tool-tests/manage-pilot-run-*/`에 실행별로 누적 보존한다. 실제 책임자, Windows 시험 장비, 고객 유사망, 운영 인증서와 이전 승인 버전은 제공되지 않았으므로 실제 리허설은 실행하거나 PASS 처리하지 않았다. 기존 LOCALCHECK 실패 실행과 원시 증거는 수정·삭제하지 않았다.
+
 ## 2026-07-21 작업 207 전체 Markdown 현재 코드 재대조
 
 Git 추적 Markdown 42개를 목록화하고 작업 정책 원문 `AGENTS.md`를 제외한 제품·구현 문서 41개를 FastAPI, WPF, Android와 운영 스크립트에 대조했다. 가상환경·빌드 캐시·`data/local`·`tmp`의 Markdown은 외부 의존 또는 누적 테스트 증거이므로 수정하지 않았다. 과거 일일 기록은 당시 작업 맥락을 유지하되 “현재 코드 기준” 절에 서버 권위 revision·도메인별 mutation receipt·instance/epoch manifest와 관리자 승인형 reconciliation을 반영했다.
