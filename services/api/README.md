@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-07-22 현재 OpenAPI에 등록된 125개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-07-22 현재 OpenAPI에 등록된 126개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -106,7 +106,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}` | Read a dataset version, its cases, coverage, and approval history |
 | PUT | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}/cases` | Replace the case composition of a draft dataset version |
 | POST | `/api/v1/ai-search/ground-truth-datasets/{dataset_version_id}/transition` | Submit, review, approve, supersede, or retire a dataset version |
-| GET | `/api/v1/ai-search/readiness` | Read scoped evidence, ground-truth, regression, and stability readiness |
+| GET | `/api/v1/ai-search/readiness` | Read scoped evidence readiness while returning `FIELD_READINESS` and `SMOKE_REGRESSION` ground-truth counts separately; only the field track can satisfy provider-start gates |
 | POST | `/api/v1/ai-search/evaluations` | Persist offline ground-truth evidence, exclusion, and ranking regression results |
 | GET | `/api/v1/ai-search/evaluations` | List stored evaluation runs with an optional dataset-version filter |
 | GET | `/api/v1/ai-search/evaluations/{run_id}` | Read a stored evaluation run and optionally compare it with another run |
@@ -208,7 +208,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-07-22, the FastAPI suite and `scripts/verify-preserved-tests.ps1` collection/JUnit guard are aligned at 144 unique node IDs. A direct rerun also passed all 144 tests, followed by a clean Ruff check of `app` and `tests`. The preserved macOS helper run `p0-baseline-144-macos-precheck-20260722-002` matched 144 collected, 144 unique, and 144 JUnit passes with zero failures, errors, or skips. It is not the integrated baseline because WPF and Android were `NOT_RUN` on the macOS ARM64 host and its summary is `partial_run=true`, `FAILED_ENVIRONMENT`. A complete current baseline still requires WPF Core/build/shared-DB smoke and Android unit/debug build checks under one preserved Windows x64 run ID with `partial_run=false` and `verification-summary.json=PASSED`.
+As of 2026-07-22, the FastAPI suite and `scripts/verify-preserved-tests.ps1` collection/JUnit guard are aligned at 146 unique node IDs. A direct FastAPI rerun passed all 146 tests, followed by a clean Ruff check of `app`, `tests`, and the AI ground-truth seed and verification scripts. This is not the integrated baseline because WPF and Android were `NOT_RUN` on the macOS ARM64 host. A complete current baseline still requires WPF Core/build/shared-DB smoke and Android unit/debug build checks under one preserved Windows x64 run ID with `partial_run=false` and `verification-summary.json=PASSED`. The earlier preserved `p0-baseline-144-macos-precheck-20260722-002` run remains a historical 144-test partial result and is not promoted to the current baseline.
 
 The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no management API for that sensitive-data policy. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. Query and retention audit operations are restricted to the configured customer/site scope. The server lifespan runs expired-query retention on the configured interval, while `system-admin` can run scoped bulk retention, expire one query, or place and release a reasoned legal hold. An active hold blocks all three expiry paths. WPF mutations send a stable `operationKey` and the latest detail `stateTag`; duplicate/lost-response retries return the original result, while stale, already-expired, already-released, and concurrent operations return `409`. Legal-hold rows and linked audit history are never deleted by release or expiry.
 
