@@ -97,7 +97,7 @@ pilot-evidence/<run_id>/
 py -3 scripts\manage-pilot-run.py prepare --run-id PILOT-YYYYMMDD-HHMM-SITE-001 --evidence-root D:\FlowNotePilotEvidence
 ```
 
-준비 명령은 `scenario-results/android-delivery.csv`, `scenario-results/role-metrics.csv`, `observations/role-observations.csv`, `observations/development-items.csv`도 기존 파일을 덮어쓰지 않고 만든다. 익명 참여자 ID만 사용해 원시 관찰값을 적고, 집계한 분모·성공·중앙값·최대 시간·재시도·도움 요청은 `pilot-run.json` schema version 3에 옮긴다. Android 전달 항목은 `full_pilot` 프로필에서 정상, Doze, 5분 단절, 재부팅, 서버 주소 변경, access token 만료, refresh 거부, 강제 중지 뒤 kiosk 재실행을 각각 전건 성공과 허용 시간 이내로 기록해야 한다. 정상·Doze의 `allowed_seconds`는 30, 5분 단절의 값은 `30 + page_seconds`로 고정하며 임의 완화할 수 없다. 나머지 시나리오도 사전 승인한 양수 허용 시간과 측정 최대 시간을 반드시 기록한다.
+준비 명령은 `scenario-results/android-delivery.csv`, `scenario-results/role-metrics.csv`, `scenario-results/restore-fault-injections.csv`, `observations/role-observations.csv`, `observations/development-items.csv`도 기존 파일을 덮어쓰지 않고 만든다. 익명 참여자 ID만 사용해 원시 관찰값을 적고, 집계한 분모·성공·중앙값·최대 시간·재시도·도움 요청은 `pilot-run.json` schema version 3에 옮긴다. 최종 검증은 요약값을 신뢰하지 않고 역할 원시 행에서 다시 계산해 일치 여부를 확인한다. Android 전달 항목은 `full_pilot` 프로필에서 정상, Doze, 5분 단절, 재부팅, 서버 주소 변경, access token 만료, refresh 거부, 강제 중지 뒤 kiosk 재실행을 각각 전건 성공과 허용 시간 이내로 기록해야 한다. 정상·Doze의 `allowed_seconds`는 30, 5분 단절의 값은 `30 + page_seconds`로 고정하며 임의 완화할 수 없다. 나머지 시나리오도 사전 승인한 양수 허용 시간과 측정 최대 시간을 반드시 기록한다.
 
 ## 1. Windows 서버와 WPF 배포 리허설
 
@@ -264,7 +264,7 @@ MDM 정책 보고서에서 단말 전체 암호화, 6자리 이상 화면 잠금
 
 운영·보안·현장 서명 후에는 다음 명령을 실행한다. 도구는 필수 책임 영역, 고객 유사 장비 수, 모든 필수 게이트, 증거 파일 존재, 역할별 승인 성공률/중앙 시간, 0건 지표, 서버/WPF/Android rollback과 정상 업무 재개, 남은 항목의 책임자·기한·중단 영향, 3자 최종 승인을 같은 `run_id` 안에서 확인한다. 종료 코드 0과 `pilot-verification.json`의 `PASS`가 함께 있어야 하며, 이 결과는 서명 내용과 원천 증거의 사람 교차 검토를 대체하지 않는다.
 
-schema version 3의 `full_pilot` 판정은 역할별 최대 시간·재시도·도움 요청, 평문 token/outbox·외부 공유·잔존 secure cache 0건, Android 알림 누락·서버 receipt 중복 0건, crash 경계 표시 중복 최대 1건, 분실·비활성 단말 재접속 차단과 교체 이력 보존도 별도로 강제한다. Keystore token, outbox, 암호화 사진, 잘못된 키 복호화 실패, 종료 후 cache 정리, `FLAG_SECURE`, 공유 경로 부재와 backup 차단은 각각 확인해야 한다. 조치 가능한 UX 관찰은 전건 개발 항목으로 변환하고 P0~P3 합계와 `common_product`·`device_or_mdm_setting`·`site_layout_or_training` 분류 합계가 변환 건수와 일치해야 한다. 게이트·역할·Android 전달/보안/단말 수명주기·UX 변환·rollback·최종 승인의 증거 목록에는 같은 실행 폴더 안에 실제 존재하는 상대경로만 넣는다. `windows_server_rehearsal` 판정은 Android·역할별 UX 실기를 제외하고 서버/WPF/HTTPS·망·시간·권한·장기 단절·디스크 부족·rollback 게이트와 해당 0건 지표, 서버/WPF 정상 업무 재개, 3자 최종 승인을 강제한다.
+schema version 3의 `full_pilot` 판정은 역할별 최대 시간·재시도·도움 요청, 평문 token/outbox·외부 공유·잔존 secure cache 0건, Android 알림 누락·서버 receipt 중복 0건, crash 경계 표시 중복 최대 1건, 분실·비활성 단말 재접속 차단과 교체 이력 보존도 별도로 강제한다. 서버/WPF comparison은 서로 다른 익명 장비 ID, 동일 백업 세트·복구 승인 ID, DB `quick_check`·`integrity_check`·FK, 테이블별 row 수, 파일 상대경로·크기·SHA-256 불일치 0건이어야 한다. 부분 복원·오래된 DB와 새 파일·누락 파일·잘못된 epoch 장애 주입은 자동 전송과 polling을 모두 차단하고 관리자 승인 재결합 뒤 정상화되어야 한다. Keystore token, outbox, 암호화 사진, 잘못된 키 복호화 실패, 종료 후 cache 정리, `FLAG_SECURE`, 공유 경로 부재와 backup 차단은 각각 확인해야 한다. 조치 가능한 UX 관찰은 전건 정확히 하나의 개발 항목으로 변환하고 P0~P3 합계와 `common_product`·`device_or_mdm_setting`·`site_layout_or_training` 분류 합계가 변환 건수와 일치해야 한다. 게이트·역할·Android 전달/보안/단말 수명주기·UX 변환·rollback·최종 승인의 증거 목록에는 같은 실행 폴더 안에 실제 존재하는 상대경로만 넣는다. `windows_server_rehearsal` 판정은 Android·역할별 UX 실기를 제외하고 서버/WPF/HTTPS·망·시간·권한·장기 단절·디스크 부족·rollback 게이트와 해당 0건 지표, 서버/WPF 정상 업무 재개, 3자 최종 승인을 강제한다.
 
 ```powershell
 py -3 scripts\manage-pilot-run.py verify --run-id PILOT-YYYYMMDD-HHMM-SITE-001 --evidence-root D:\FlowNotePilotEvidence
@@ -297,6 +297,8 @@ py -3 scripts\manage-pilot-run.py verify --run-id PILOT-YYYYMMDD-HHMM-SITE-001 -
 
 성공률은 `성공 건수 / 필수 시나리오 분모 × 100`으로 계산한다. 중앙값과 최대 시간은 성공·실패를 포함한 모든 시도에서 따로 계산하지 않고, 원시 시도 행을 보존한 뒤 `전체 시도` 기준으로 산출한다. 재시도와 도움 요청은 성공 처리에서 숨기지 않고 별도 합계로 남긴다.
 
+필수 `scenario_id`는 관리자 `ADMIN-DOCUMENT`, `ADMIN-FIELD-COMMENT-PHOTO`, `ADMIN-WORK-SEQUENCE`, `ADMIN-HANDOVER`, `ADMIN-REVIEW-REPORT`; 반장·조장·작업자는 각각 역할 접두사 `LINE-FOREMAN`, `TEAM-LEAD`, `TEAM-MEMBER`와 `DOCUMENT`, `FIELD-COMMENT-PHOTO`, `WORK-SEQUENCE`, `HANDOVER` 조합을 사용한다. 각 ID에 `required=TRUE`인 시도가 하나 이상 있어야 한다.
+
 | 역할 | 참여자 수 | 필수 시나리오 분모 | 성공 | 성공률 | 중앙값 | 최대 | 재시도 | 도움 요청 | 치명적 blocker | 판정 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | 관리자 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 대기 |
@@ -313,15 +315,19 @@ py -3 scripts\manage-pilot-run.py verify --run-id PILOT-YYYYMMDD-HHMM-SITE-001 -
 | 권한 우회 | 미측정 | `<run_id>/scenario-results/permission-negative-*` | 대기 |
 | 미승인 파일·비밀·개인정보 유출 | 미측정 | `<run_id>/integrity/disclosure-*` | 대기 |
 
-복구 전후 증거는 쓰기가 중지되고 SQLite checkpoint 또는 앱 종료가 확인된 상태에서 다음처럼 수집한다. `capture`는 DB `quick_check`, foreign key 위반, 모든 업무 테이블의 원천 개수와 파일 상대경로·크기·SHA-256을 JSON으로 남긴다. `compare`는 같은 `run_id`와 대상의 전후 개수 및 파일 manifest가 다르거나 복구 DB 무결성이 실패하면 종료 코드 1을 반환한다. 경로에는 실제 고객명, 서버명, IP를 넣지 않는다.
+복구 전후 증거는 쓰기가 중지되고 SQLite checkpoint 또는 앱 종료가 확인된 상태에서 다음처럼 수집한다. `capture`는 DB `quick_check`·`integrity_check`, foreign key 위반, 모든 업무 테이블의 원천 개수, DB 본파일과 파일 상대경로·크기·SHA-256을 JSON으로 남긴다. 전후에는 같은 `--backup-set-id`와 `--restore-approval-id`를 쓰고 서로 다른 익명 `--machine-id`를 기록한다. `compare`는 같은 `run_id`와 대상의 전후 값이 다르거나 별도 PC가 아니거나 복구 DB 무결성이 실패하면 종료 코드 1을 반환한다. 경로와 ID에는 실제 고객명, 서버명, IP를 넣지 않는다.
 
 ```powershell
-py -3 scripts\verify-pilot-restore.py capture --run-id <run_id> --target server --phase before --database C:\FlowNote\Server\data\flownote.sqlite3 --files C:\FlowNote\Server\storage --evidence-root D:\FlowNotePilotEvidence
-py -3 scripts\verify-pilot-restore.py capture --run-id <run_id> --target server --phase after --database D:\FlowNoteRestore\Server\data\flownote.sqlite3 --files D:\FlowNoteRestore\Server\storage --evidence-root D:\FlowNotePilotEvidence
+py -3 scripts\verify-pilot-restore.py capture --run-id <run_id> --target server --phase before --machine-id SOURCE-SRV-01 --backup-set-id BACKUP-001 --restore-approval-id APPROVAL-001 --database C:\FlowNote\Server\data\flownote.sqlite3 --files C:\FlowNote\Server\storage --evidence-root D:\FlowNotePilotEvidence
+py -3 scripts\verify-pilot-restore.py capture --run-id <run_id> --target server --phase after --machine-id RESTORE-SRV-02 --backup-set-id BACKUP-001 --restore-approval-id APPROVAL-001 --database D:\FlowNoteRestore\Server\data\flownote.sqlite3 --files D:\FlowNoteRestore\Server\storage --evidence-root D:\FlowNotePilotEvidence
 py -3 scripts\verify-pilot-restore.py compare --before D:\FlowNotePilotEvidence\<run_id>\backup-restore\server-before.json --after D:\FlowNotePilotEvidence\<run_id>\backup-restore\server-after.json
 ```
 
-WPF도 같은 명령에서 `--target wpf`, 로컬 DB, `Files` 경로로 전후를 수집한다. DB 본파일의 SHA-256은 참고값이며 SQLite가 정상적으로 checkpoint된 서로 다른 복사본이라도 물리 바이트가 달라질 수 있으므로, 통과 판정은 `quick_check`, foreign key, 테이블별 원천 개수와 참조 파일 manifest 일치로 한다.
+WPF도 같은 명령에서 `--target wpf`, 로컬 DB, `Files` 경로와 서로 다른 원본/복구 PC ID로 전후를 수집한다. DB 본파일 크기와 SHA-256은 물리 복사 추적용 참고값으로 남기고, 논리 복구 PASS는 DB 검사·테이블별 row 수와 `storage`/`Files` manifest로 판정한다. 비교 JSON의 `table_count_mismatch_count`와 `file_mismatch_counts.missing/extra/size/sha256`은 모두 0이어야 한다.
+
+장애 주입 결과는 `scenario-results/restore-fault-injections.csv`에 `partial_restore`, `old_database_new_files`, `missing_file`, `wrong_server_epoch`를 정확히 한 행씩 기록한다. 각 행은 `automatic_send_blocked`, `polling_blocked`, `reconciliation_required`, `admin_approved_rebind`, `normal_operation_resumed`가 모두 `TRUE`, `result=PASS`, 같은 실행 폴더의 화면·WPF 로그·서버 reconciliation 감사 증거가 있어야 한다. 실패 상태와 승인 전 로그는 정상화 결과로 덮어쓰지 않는다.
+
+현장 관찰은 각 역할에 최소 한 행이 필요하며 `network`는 `CONNECTED/DISCONNECTED`, `gloves`는 `ON/OFF`, boolean 필드는 `TRUE/FALSE`로 기록한다. 전체 실행에는 장갑 착용과 네트워크 단절 관찰이 각각 하나 이상 있어야 한다. `actionable=TRUE`인 관찰은 `development-items.csv`의 고유 항목 하나와만 연결하고 `owner`, P0~P3, 세 분류 중 하나, 측정 가능한 `acceptance_criteria`, `due_date`, 증거를 모두 채운다.
 
 ### 2026-07-16 준비 점검
 
