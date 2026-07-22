@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-07-22 현재 OpenAPI에 등록된 126개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-07-22 현재 OpenAPI에 등록된 128개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -61,6 +61,8 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/field-comments/{comment_id}` | FieldComment detail |
 | PATCH | `/api/v1/field-comments/{comment_id}` | Review/analyze FieldComment |
 | POST | `/api/v1/field-comments/bulk-review` | Bulk assignment, due date, and review-state update |
+| POST | `/api/v1/field-comments/bulk-review/preview` | Read-only validation of per-item transitions and failure reasons for up to 200 comments |
+| POST | `/api/v1/field-comments/bulk-review/execute` | Partial-success bulk review with per-item base revision and mutation receipt |
 | GET | `/api/v1/field-comments/{comment_id}/audit` | Review audit snapshots with source hash |
 | GET | `/api/v1/field-comments/{comment_id}/traceability` | FieldComment, audit, report-source, and generated-document traceability |
 | GET | `/api/v1/field-comments/quality-workbench` | Stale, weak-evidence, and missing-source review workbench |
