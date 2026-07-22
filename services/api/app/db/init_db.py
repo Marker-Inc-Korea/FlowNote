@@ -624,12 +624,20 @@ def _ensure_ai_operations_columns(database: Database) -> None:
             "prompt_snapshot_json": "TEXT",
             "approval_snapshot_json": "TEXT",
             "response_retention_until": "DATETIME",
+            "immediate_expiry_operation_key": "VARCHAR(160)",
+            "immediate_expiry_requested_at": "DATETIME",
+            "immediate_expiry_reason": "TEXT",
         },
         "ai_call_attempts": {"cost_micros": "INTEGER"},
         "ai_transfer_approvals": {
             "allowed_purposes": (
                 "TEXT NOT NULL DEFAULT '[\"EVIDENCE_SEARCH\", \"EVIDENCE_SUMMARY\"]'"
             ),
+        },
+        "ai_retention_audits": {"operation_key": "VARCHAR(160)"},
+        "ai_query_legal_holds": {
+            "operation_key": "VARCHAR(160)",
+            "release_operation_key": "VARCHAR(160)",
         },
     }
     with database.engine.begin() as connection:
@@ -644,6 +652,26 @@ def _ensure_ai_operations_columns(database: Database) -> None:
                     connection.execute(
                         text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
                     )
+        connection.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_ai_queries_immediate_expiry_operation_key "
+            "ON ai_queries (immediate_expiry_operation_key)"
+        ))
+        connection.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_ai_retention_audits_operation_key "
+            "ON ai_retention_audits (operation_key)"
+        ))
+        connection.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_ai_query_legal_holds_operation_key "
+            "ON ai_query_legal_holds (operation_key)"
+        ))
+        connection.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_ai_query_legal_holds_release_operation_key "
+            "ON ai_query_legal_holds (release_operation_key)"
+        ))
+        connection.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_ai_query_legal_holds_active_query "
+            "ON ai_query_legal_holds (query_id) WHERE status = 'ACTIVE'"
+        ))
 
 
 def _assert_database_schema_ownership(database: Database) -> None:

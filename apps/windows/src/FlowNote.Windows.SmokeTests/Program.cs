@@ -1987,6 +1987,107 @@ try
                 "disabled viewer's approved Android session should also be rejected immediately");
             Console.WriteLine(
                 $"Server account/device lifecycle smoke: run={runId}, actor={serverLogin.UserId}, viewer={createdViewer.Account.UserId}, device={androidDeviceId}, revoked={disabledViewer.SessionsRevoked}");
+
+            var aiOperatorUsername = $"smoke-ai-system-{accountSuffix}";
+            var aiOperatorPassword = $"AI-System-{accountSuffix}!";
+            var aiOperatorChangedPassword = $"AI-System-Changed-{accountSuffix}!";
+            await serverAccounts.CreateAsync(new ServerAccountCreateRequest(
+                aiOperatorUsername,
+                $"AI 보존 운영 스모크 {runId}",
+                "system-admin",
+                aiOperatorPassword,
+                $"AI 단일 만료·legal hold 사람형 스모크 run={runId}"));
+            using var aiOperationsHttpClient = FlowNoteServerApiEnvironment.CreateHttpClient(
+                serverSmokeBaseUrl, TimeSpan.FromSeconds(20))
+                ?? throw new InvalidOperationException("AI 보존 운영 스모크에는 서버 URL이 필요합니다.");
+            var aiOperatorAuth = new FlowNoteServerAuthClient(aiOperationsHttpClient);
+            var aiOperatorLogin = await aiOperatorAuth.TryLoginAsync(aiOperatorUsername, aiOperatorPassword)
+                ?? throw new InvalidOperationException("AI 보존 운영 system-admin 로그인이 필요합니다.");
+            aiOperationsHttpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", aiOperatorLogin.AccessToken);
+            if (aiOperatorLogin.MustChangePassword)
+            {
+                Require(
+                    await aiOperatorAuth.TryChangePasswordAsync(aiOperatorPassword, aiOperatorChangedPassword),
+                    "AI 보존 운영 system-admin은 임시 비밀번호를 변경해야 합니다.");
+                aiOperationsHttpClient.DefaultRequestHeaders.Authorization = null;
+                aiOperatorLogin = await aiOperatorAuth.TryLoginAsync(aiOperatorUsername, aiOperatorChangedPassword)
+                    ?? throw new InvalidOperationException("비밀번호 변경 뒤 AI 보존 운영 재로그인이 필요합니다.");
+            }
+            aiOperationsHttpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", aiOperatorLogin.AccessToken);
+            using var aiQueryResponse = await aiOperationsHttpClient.PostAsJsonAsync(
+                "api/v1/ai/queries",
+                new
+                {
+                    purpose = "EVIDENCE_SUMMARY",
+                    query = $"WPF legal hold 사람형 스모크 run={runId}",
+                    responseStorageMode = "DO_NOT_STORE"
+                });
+            Require(
+                aiQueryResponse.StatusCode == HttpStatusCode.ServiceUnavailable,
+                "default-disabled AI query should still create auditable query metadata for retention smoke");
+            using var aiQueryPayload = JsonDocument.Parse(await aiQueryResponse.Content.ReadAsStringAsync());
+            var aiRetentionQueryId = aiQueryPayload.RootElement.GetProperty("queryId").GetString()
+                ?? throw new InvalidOperationException("AI query block response should include queryId");
+
+            using var unauthorizedAIDetail = await serverHttpClient.GetAsync(
+                $"api/v1/ai-operations/queries/{Uri.EscapeDataString(aiRetentionQueryId)}");
+            Require(
+                unauthorizedAIDetail.StatusCode == HttpStatusCode.Forbidden,
+                "non-system-admin must not bypass AI retention detail API authorization");
+
+            var aiOperations = new FlowNoteServerAIOperationsClient(aiOperationsHttpClient);
+            var beforeHold = await aiOperations.GetQueryDetailAsync(aiRetentionQueryId);
+            var placedHold = await aiOperations.PlaceLegalHoldAndReadBackAsync(
+                aiRetentionQueryId,
+                new ServerAILegalHoldCreateRequest
+                {
+                    Reason = $"법무 보존 설정 사람형 스모크 run={runId}",
+                    AuthorityReference = $"SMOKE-LEGAL-{runId}",
+                    ExpectedStateTag = beforeHold.StateTag,
+                    OperationKey = $"wpf:ai:hold-place:{runId}"
+                });
+            Require(
+                placedHold.ActiveHold?.Status == "ACTIVE" &&
+                placedHold.ActiveHold.AuthorityReference == $"SMOKE-LEGAL-{runId}" &&
+                placedHold.AuditEvents.Any(item => item.EventType == "QUERY_LEGAL_HOLD_PLACED"),
+                "hold placement read-back should include ACTIVE row and placement audit");
+            await aiOperations.RunRetentionAsync();
+            var retainedByHold = await aiOperations.GetQueryDetailAsync(aiRetentionQueryId);
+            Require(
+                !retainedByHold.QueryPayloadExpired && retainedByHold.ActiveHold is not null,
+                "active hold should block manual bulk retention");
+            var releasedHold = await aiOperations.ReleaseLegalHoldAndReadBackAsync(
+                aiRetentionQueryId,
+                retainedByHold.ActiveHold.HoldId,
+                new ServerAIQueryMutationRequest
+                {
+                    Reason = $"보존 의무 종료 사람형 스모크 run={runId}",
+                    ExpectedStateTag = retainedByHold.StateTag,
+                    OperationKey = $"wpf:ai:hold-release:{runId}"
+                });
+            Require(
+                releasedHold.ActiveHold is null &&
+                releasedHold.Holds.Any(item => item.Status == "RELEASED") &&
+                releasedHold.AuditEvents.Any(item => item.EventType == "QUERY_LEGAL_HOLD_RELEASED"),
+                "hold release read-back should retain RELEASED history and release audit");
+            var expiredQuery = await aiOperations.ExpireQueryAndReadBackAsync(
+                aiRetentionQueryId,
+                new ServerAIQueryMutationRequest
+                {
+                    Reason = $"단일 즉시 만료 사람형 스모크 run={runId}",
+                    ExpectedStateTag = releasedHold.StateTag,
+                    OperationKey = $"wpf:ai:expire:{runId}"
+                });
+            Require(
+                expiredQuery.QueryPayloadExpired &&
+                expiredQuery.Holds.Any(item => item.Status == "RELEASED") &&
+                expiredQuery.RetentionAudits.Any(item => item.QueryTextAction == "DEIDENTIFIED") &&
+                expiredQuery.AuditEvents.Any(item => item.EventType == "QUERY_IMMEDIATE_EXPIRY_REQUESTED"),
+                "single expiry read-back should include expired query, retained hold history, retention and operation audits");
+            Console.WriteLine(
+                $"WPF AI retention human-like smoke: run={runId}, query={aiRetentionQueryId}, hold={placedHold.Holds[0].HoldId}, flow=place-readback-block-release-expire-audit");
         }
 
         var authExpiredDocument = services.Documents.RegisterDocument(

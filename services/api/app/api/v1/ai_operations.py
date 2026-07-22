@@ -12,7 +12,8 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.auth import ROLE_SYSTEM_ADMIN, AuthenticatedUser, require_roles
@@ -299,6 +300,11 @@ class ReasonRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
 
 
+class QueryMutationRequest(ReasonRequest):
+    operation_key: str | None = Field(default=None, alias="operationKey", min_length=8, max_length=160)
+    expected_state_tag: str | None = Field(default=None, alias="expectedStateTag", min_length=16, max_length=64)
+
+
 @router.post("/approvals/{approval_id}/revoke")
 def revoke_approval(approval_id: str, payload: ReasonRequest, user: SystemAdmin, session: Db) -> dict[str, object]:
     row = session.scalar(select(AITransferApproval).where(AITransferApproval.approval_id == approval_id))
@@ -538,9 +544,12 @@ def query_audit(_: SystemAdmin, settings: Cfg, session: Db, status: str | None =
 
 
 @router.get("/audit/events")
-def event_audit(_: SystemAdmin, session: Db, event_type: str | None = Query(None, alias="eventType"),
+def event_audit(_: SystemAdmin, settings: Cfg, session: Db, event_type: str | None = Query(None, alias="eventType"),
                 target_id: str | None = Query(None, alias="targetId"), limit: int = Query(100, ge=1, le=500)):
-    statement = select(AIOperationAuditEvent)
+    statement = select(AIOperationAuditEvent).where(
+        AIOperationAuditEvent.customer_scope == settings.ai_customer_scope,
+        AIOperationAuditEvent.site_scope == settings.ai_site_scope,
+    )
     if event_type:
         statement = statement.where(AIOperationAuditEvent.event_type == event_type)
     if target_id:
@@ -593,7 +602,7 @@ def retention_audit(_: SystemAdmin, settings: Cfg, session: Db, limit: int = Que
             ).all()]
 
 
-class LegalHoldCreate(BaseModel):
+class LegalHoldCreate(QueryMutationRequest):
     reason: str = Field(min_length=1, max_length=2000)
     authority_reference: str = Field(alias="authorityReference", min_length=1, max_length=500)
 
@@ -609,11 +618,119 @@ def _scoped_query(query_id: str, settings: Settings, session: Session) -> AIQuer
     return row
 
 
+def _begin_ai_mutation(session: Session) -> None:
+    """Serialize cross-table hold/expiry decisions on SQLite; row locks cover server DBs."""
+    if session.bind is not None and session.bind.dialect.name == "sqlite" and not session.in_transaction():
+        session.execute(text("BEGIN IMMEDIATE"))
+
+
+def _query_state_tag(row: AIQuery, active_hold_id: str | None) -> str:
+    material = "|".join((
+        row.query_id,
+        "EXPIRED" if row.query_text == "[EXPIRED]" else "PRESENT",
+        "STORED" if row.response_text is not None else "NOT_STORED",
+        utc(row.retention_until).isoformat(),
+        utc(row.response_retention_until).isoformat() if row.response_retention_until else "",
+        active_hold_id or "",
+    ))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _hold_dict(hold: AIQueryLegalHold) -> dict[str, object]:
+    return {
+        "holdId": hold.hold_id, "queryId": hold.query_id, "status": hold.status,
+        "reason": hold.reason, "authorityReference": hold.authority_reference,
+        "placedBy": hold.placed_by, "placedAt": hold.placed_at,
+        "releasedBy": hold.released_by, "releasedAt": hold.released_at,
+        "releaseReason": hold.release_reason,
+    }
+
+
+def _query_detail_dict(row: AIQuery, session: Session) -> dict[str, object]:
+    holds = session.scalars(select(AIQueryLegalHold).where(
+        AIQueryLegalHold.query_id == row.query_id
+    ).order_by(AIQueryLegalHold.placed_at.desc())).all()
+    active_hold = next((hold for hold in holds if hold.status == "ACTIVE"), None)
+    retention_rows = session.scalars(select(AIRetentionAudit).where(
+        AIRetentionAudit.query_id == row.query_id
+    ).order_by(AIRetentionAudit.processed_at.desc())).all()
+    target_ids = [row.query_id, *(hold.hold_id for hold in holds)]
+    events = session.scalars(select(AIOperationAuditEvent).where(
+        AIOperationAuditEvent.customer_scope == row.customer_scope,
+        AIOperationAuditEvent.site_scope == row.site_scope,
+        AIOperationAuditEvent.target_id.in_(target_ids),
+    ).order_by(AIOperationAuditEvent.occurred_at.desc())).all()
+    return {
+        "queryId": row.query_id, "requestedBy": row.requested_by,
+        "customerScope": row.customer_scope, "siteScope": row.site_scope,
+        "purpose": row.purpose, "status": row.status, "blockCode": row.block_code,
+        "queryPayloadExpired": row.query_text == "[EXPIRED]",
+        "responseStored": row.response_text is not None,
+        "retentionUntil": row.retention_until,
+        "responseRetentionUntil": row.response_retention_until,
+        "createdAt": row.created_at, "completedAt": row.completed_at,
+        "activeHold": _hold_dict(active_hold) if active_hold else None,
+        "holds": [_hold_dict(hold) for hold in holds],
+        "retentionAudits": [{
+            "retentionAuditId": item.retention_audit_id, "queryId": item.query_id,
+            "action": item.action, "queryTextAction": item.query_text_action,
+            "responseTextAction": item.response_text_action, "processedAt": item.processed_at,
+        } for item in retention_rows],
+        "auditEvents": [{
+            "eventId": item.event_id, "eventType": item.event_type,
+            "actorId": item.actor_id, "targetType": item.target_type,
+            "targetId": item.target_id, "reasonCode": item.reason_code,
+            "detail": json.loads(item.detail_json), "occurredAt": item.occurred_at,
+        } for item in events],
+        "stateTag": _query_state_tag(row, active_hold.hold_id if active_hold else None),
+    }
+
+
+@router.get("/queries/{query_id}")
+def get_query_detail(
+    query_id: str, _: SystemAdmin, settings: Cfg, session: Db
+) -> dict[str, object]:
+    return _query_detail_dict(_scoped_query(query_id, settings, session), session)
+
+
+def _ensure_expected_state(payload: QueryMutationRequest, row: AIQuery, session: Session) -> None:
+    active_hold_id = session.scalar(select(AIQueryLegalHold.hold_id).where(
+        AIQueryLegalHold.query_id == row.query_id,
+        AIQueryLegalHold.status == "ACTIVE",
+    ))
+    current = _query_state_tag(row, active_hold_id)
+    if payload.expected_state_tag and payload.expected_state_tag != current:
+        raise HTTPException(409, {
+            "code": "AI_QUERY_STALE_STATE",
+            "message": "다른 관리자가 질의 보존 상태를 변경했습니다. 상세를 새로고침한 뒤 다시 확인하세요.",
+            "currentStateTag": current,
+        })
+
+
 @router.post("/queries/{query_id}/expire")
 def expire_query_now(
-    query_id: str, payload: ReasonRequest, user: SystemAdmin, settings: Cfg, session: Db
+    query_id: str, payload: QueryMutationRequest, user: SystemAdmin, settings: Cfg, session: Db
 ) -> dict[str, object]:
+    _begin_ai_mutation(session)
     row = _scoped_query(query_id, settings, session)
+    replay_query = session.scalar(select(AIQuery).where(
+        AIQuery.immediate_expiry_operation_key == payload.operation_key
+    )) if payload.operation_key else None
+    if replay_query is not None and replay_query.query_id != query_id:
+        raise HTTPException(409, "동일 요청 키가 다른 질의 조작에 사용되었습니다.")
+    if payload.operation_key and row.immediate_expiry_operation_key == payload.operation_key:
+        if row.immediate_expiry_reason != payload.reason.strip():
+            raise HTTPException(409, "동일 요청 키의 즉시 만료 사유가 최초 요청과 다릅니다.")
+        audit = session.scalar(select(AIRetentionAudit).where(
+            AIRetentionAudit.query_id == query_id,
+            AIRetentionAudit.operation_key == payload.operation_key,
+        ))
+        return {"queryId": query_id, "processed": 1 if audit else 0,
+                "queryPayloadsDeidentified": 1 if audit and audit.query_text_action == "DEIDENTIFIED" else 0,
+                "responsesDeleted": 1 if audit and audit.response_text_action == "DELETED" else 0}
+    _ensure_expected_state(payload, row, session)
+    if row.immediate_expiry_operation_key or (row.query_text == "[EXPIRED]" and row.response_text is None):
+        raise HTTPException(409, "이미 만료된 질의입니다. 상세를 새로고침하세요.")
     active_hold = session.scalar(select(AIQueryLegalHold.id).where(
         AIQueryLegalHold.query_id == query_id, AIQueryLegalHold.status == "ACTIVE"
     ))
@@ -622,13 +739,15 @@ def expire_query_now(
     now = datetime.now(timezone.utc)
     row.retention_until = now
     row.response_retention_until = now
+    row.immediate_expiry_operation_key = payload.operation_key
+    row.immediate_expiry_requested_at = now
+    row.immediate_expiry_reason = payload.reason.strip()
     audit_event(
         session, event_type="QUERY_IMMEDIATE_EXPIRY_REQUESTED", actor_id=user.user_id,
         customer_scope=row.customer_scope, site_scope=row.site_scope,
         target_type="AI_QUERY", target_id=row.query_id, detail={"reason": payload.reason},
     )
-    session.commit()
-    result = run_retention(session, now=now, query_id=query_id)
+    result = run_retention(session, now=now, query_id=query_id, operation_key=payload.operation_key)
     return {"queryId": query_id, **result}
 
 
@@ -636,7 +755,22 @@ def expire_query_now(
 def place_legal_hold(
     query_id: str, payload: LegalHoldCreate, user: SystemAdmin, settings: Cfg, session: Db
 ) -> dict[str, object]:
+    _begin_ai_mutation(session)
     row = _scoped_query(query_id, settings, session)
+    if payload.operation_key:
+        replay = session.scalar(select(AIQueryLegalHold).where(
+            AIQueryLegalHold.operation_key == payload.operation_key
+        ))
+        if replay is not None:
+            if replay.query_id != query_id:
+                raise HTTPException(409, "동일 요청 키가 다른 질의 조작에 사용되었습니다.")
+            if (replay.reason != payload.reason.strip() or
+                    replay.authority_reference != payload.authority_reference.strip()):
+                raise HTTPException(409, "동일 요청 키의 hold 사유 또는 근거 번호가 최초 요청과 다릅니다.")
+            return _hold_dict(replay)
+    _ensure_expected_state(payload, row, session)
+    if row.query_text == "[EXPIRED]" and row.response_text is None:
+        raise HTTPException(409, "이미 만료된 질의에는 legal hold를 설정할 수 없습니다.")
     if session.scalar(select(AIQueryLegalHold.id).where(
         AIQueryLegalHold.query_id == query_id, AIQueryLegalHold.status == "ACTIVE"
     )) is not None:
@@ -646,6 +780,7 @@ def place_legal_hold(
         hold_id=f"aihold-{uuid4().hex}", query_id=query_id, status="ACTIVE",
         reason=payload.reason.strip(), authority_reference=payload.authority_reference.strip(),
         placed_by=user.user_id, placed_at=now,
+        operation_key=payload.operation_key,
     )
     session.add(hold)
     audit_event(
@@ -654,16 +789,19 @@ def place_legal_hold(
         target_type="AI_QUERY_LEGAL_HOLD", target_id=hold.hold_id,
         detail={"queryId": query_id, "authorityReference": hold.authority_reference},
     )
-    session.commit()
-    return {"holdId": hold.hold_id, "queryId": query_id, "status": hold.status,
-            "reason": hold.reason, "authorityReference": hold.authority_reference,
-            "placedBy": hold.placed_by, "placedAt": hold.placed_at}
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(409, "다른 관리자가 먼저 legal hold를 설정했습니다. 상세를 새로고침하세요.")
+    return _hold_dict(hold)
 
 
 @router.post("/legal-holds/{hold_id}/release")
 def release_legal_hold(
-    hold_id: str, payload: ReasonRequest, user: SystemAdmin, settings: Cfg, session: Db
+    hold_id: str, payload: QueryMutationRequest, user: SystemAdmin, settings: Cfg, session: Db
 ) -> dict[str, object]:
+    _begin_ai_mutation(session)
     hold = session.scalar(
         select(AIQueryLegalHold).join(AIQuery, AIQuery.query_id == AIQueryLegalHold.query_id).where(
             AIQueryLegalHold.hold_id == hold_id,
@@ -673,13 +811,24 @@ def release_legal_hold(
     )
     if hold is None:
         raise HTTPException(404, "현재 고객·현장 범위에서 legal hold를 찾을 수 없습니다.")
+    row = _scoped_query(hold.query_id, settings, session)
+    replay = session.scalar(select(AIQueryLegalHold).where(
+        AIQueryLegalHold.release_operation_key == payload.operation_key
+    )) if payload.operation_key else None
+    if replay is not None and replay.hold_id != hold_id:
+        raise HTTPException(409, "동일 요청 키가 다른 hold 해제에 사용되었습니다.")
+    if payload.operation_key and hold.release_operation_key == payload.operation_key:
+        if hold.release_reason != payload.reason.strip():
+            raise HTTPException(409, "동일 요청 키의 hold 해제 사유가 최초 요청과 다릅니다.")
+        return _hold_dict(hold)
+    _ensure_expected_state(payload, row, session)
     if hold.status == "RELEASED":
-        return {"holdId": hold.hold_id, "queryId": hold.query_id, "status": hold.status,
-                "releasedBy": hold.released_by, "releasedAt": hold.released_at}
+        raise HTTPException(409, "이미 해제된 legal hold입니다. 상세를 새로고침하세요.")
     hold.status = "RELEASED"
     hold.released_by = user.user_id
     hold.released_at = datetime.now(timezone.utc)
     hold.release_reason = payload.reason.strip()
+    hold.release_operation_key = payload.operation_key
     audit_event(
         session, event_type="QUERY_LEGAL_HOLD_RELEASED", actor_id=user.user_id,
         customer_scope=settings.ai_customer_scope, site_scope=settings.ai_site_scope,
@@ -687,5 +836,4 @@ def release_legal_hold(
         detail={"queryId": hold.query_id, "reason": hold.release_reason},
     )
     session.commit()
-    return {"holdId": hold.hold_id, "queryId": hold.query_id, "status": hold.status,
-            "releasedBy": hold.released_by, "releasedAt": hold.released_at}
+    return _hold_dict(hold)

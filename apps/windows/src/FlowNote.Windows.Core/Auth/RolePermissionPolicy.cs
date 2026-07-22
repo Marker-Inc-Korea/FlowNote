@@ -132,6 +132,9 @@ public static class RolePermissionPolicy
         return !string.IsNullOrWhiteSpace(role) && GroundTruthApprovalRoles.Contains(role);
     }
 
+    public static bool CanOperateAIOperations(string? role) =>
+        string.Equals(role, "system-admin", StringComparison.OrdinalIgnoreCase);
+
     public static bool IsAllowedUserRole(string? role)
     {
         return !string.IsNullOrWhiteSpace(role) &&

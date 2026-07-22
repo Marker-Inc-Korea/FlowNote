@@ -71,6 +71,7 @@ def run_retention(
     query_id: str | None = None,
     customer_scope: str | None = None,
     site_scope: str | None = None,
+    operation_key: str | None = None,
 ) -> dict[str, int]:
     """Redacts expired payloads without deleting referential audit metadata."""
     current = now or datetime.now(timezone.utc)
@@ -118,6 +119,7 @@ def run_retention(
                 response_text_action=response_action,
                 query_hash=query.query_hash,
                 response_hash=query.response_hash,
+                operation_key=operation_key if query_id == query.query_id else None,
                 processed_at=current,
             )
         )
