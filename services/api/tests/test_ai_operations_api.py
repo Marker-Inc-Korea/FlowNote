@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -10,7 +11,7 @@ from sqlalchemy import select, text
 
 from app.core.config import Settings
 from app.db.init_db import hash_password
-from app.db.models import AIQuery, UserAccount
+from app.db.models import AIOperationAuditEvent, AIQuery, AIQueryLegalHold, AIRetentionAudit, UserAccount
 from app.main import create_app
 
 API_ROOT = Path(__file__).resolve().parents[1]
@@ -252,3 +253,147 @@ def test_legal_hold_blocks_retention_and_release_allows_immediate_expiry() -> No
         with client.app.state.database.session() as session:
             query = session.scalar(select(AIQuery).where(AIQuery.query_id == query_id))
             assert query.query_text == "[EXPIRED]" and query.response_text is None
+
+
+def test_query_operations_read_back_are_idempotent_stale_safe_and_preserve_hold_history() -> None:
+    with create_client() as client:
+        auth = system_admin(client)
+        ordinary = login(client, "admin", "1234")
+        settings = client.app.state.settings
+        query_id = f"aiq-wpf-operations-{uuid4().hex}"
+        concurrent_query_id = f"aiq-wpf-concurrent-{uuid4().hex}"
+        now = datetime.now(timezone.utc)
+        with client.app.state.database.session() as session:
+            actor_id = session.scalar(select(UserAccount.user_id).where(
+                UserAccount.role == "system-admin"
+            ).order_by(UserAccount.id.desc()))
+            for item_id in (query_id, concurrent_query_id):
+                session.add(AIQuery(
+                    query_id=item_id, requested_by=actor_id,
+                    customer_scope=settings.ai_customer_scope, site_scope=settings.ai_site_scope,
+                    query_text=f"WPF 보존 조작 원문 {item_id}", query_hash="1" * 64,
+                    purpose="EVIDENCE_SUMMARY", status="SUCCEEDED",
+                    response_storage_mode="STORE_90_DAYS", response_text="보존 응답",
+                    response_hash="2" * 64, retention_until=now - timedelta(seconds=1),
+                    response_retention_until=now - timedelta(seconds=1),
+                ))
+            session.commit()
+
+        for path in (
+            f"/api/v1/ai-operations/queries/{query_id}",
+            f"/api/v1/ai-operations/queries/{query_id}/legal-holds",
+            f"/api/v1/ai-operations/queries/{query_id}/expire",
+        ):
+            response = client.get(path, headers=ordinary) if path.endswith(query_id) else client.post(
+                path, headers=ordinary, json={"reason": "권한 우회", "authorityReference": "NO-AUTH"}
+            )
+            assert response.status_code == 403
+
+        initial = client.get(f"/api/v1/ai-operations/queries/{query_id}", headers=auth)
+        assert initial.status_code == 200
+        initial_state = initial.json()["stateTag"]
+        hold_key = f"wpf:ai:hold:{uuid4().hex}"
+        hold_payload = {
+            "reason": "WPF 이중 확인 보존", "authorityReference": "CASE-WPF-001",
+            "operationKey": hold_key, "expectedStateTag": initial_state,
+        }
+        placed = client.post(
+            f"/api/v1/ai-operations/queries/{query_id}/legal-holds", headers=auth, json=hold_payload
+        )
+        replayed = client.post(
+            f"/api/v1/ai-operations/queries/{query_id}/legal-holds", headers=auth, json=hold_payload
+        )
+        assert placed.status_code == replayed.status_code == 201
+        assert placed.json()["holdId"] == replayed.json()["holdId"]
+        assert client.post(
+            f"/api/v1/ai-operations/legal-holds/{placed.json()['holdId']}/release",
+            headers=ordinary, json={"reason": "권한 우회 해제"},
+        ).status_code == 403
+        reused_hold_key = client.post(
+            f"/api/v1/ai-operations/queries/{query_id}/legal-holds", headers=auth,
+            json={**hold_payload, "authorityReference": "CASE-WPF-DIFFERENT"},
+        )
+        assert reused_hold_key.status_code == 409
+
+        stale_expiry = client.post(
+            f"/api/v1/ai-operations/queries/{query_id}/expire", headers=auth,
+            json={"reason": "stale 화면", "operationKey": f"wpf:ai:expire:{uuid4().hex}",
+                  "expectedStateTag": initial_state},
+        )
+        assert stale_expiry.status_code == 409
+        assert stale_expiry.json()["detail"]["code"] == "AI_QUERY_STALE_STATE"
+        held_detail = client.get(f"/api/v1/ai-operations/queries/{query_id}", headers=auth).json()
+        assert held_detail["activeHold"]["authorityReference"] == "CASE-WPF-001"
+        assert any(event["eventType"] == "QUERY_LEGAL_HOLD_PLACED" for event in held_detail["auditEvents"])
+
+        release_key = f"wpf:ai:release:{uuid4().hex}"
+        release_payload = {
+            "reason": "보존 의무 종료", "operationKey": release_key,
+            "expectedStateTag": held_detail["stateTag"],
+        }
+        release_path = f"/api/v1/ai-operations/legal-holds/{placed.json()['holdId']}/release"
+        released = client.post(release_path, headers=auth, json=release_payload)
+        release_replay = client.post(release_path, headers=auth, json=release_payload)
+        assert released.status_code == release_replay.status_code == 200
+        assert released.json()["status"] == "RELEASED"
+        already_released = client.post(
+            release_path, headers=auth,
+            json={**release_payload, "operationKey": f"wpf:ai:release:{uuid4().hex}"},
+        )
+        assert already_released.status_code == 409
+
+        released_detail = client.get(f"/api/v1/ai-operations/queries/{query_id}", headers=auth).json()
+        expiry_key = f"wpf:ai:expire:{uuid4().hex}"
+        expiry_payload = {
+            "reason": "WPF 단일 즉시 만료", "operationKey": expiry_key,
+            "expectedStateTag": released_detail["stateTag"],
+        }
+        expired = client.post(
+            f"/api/v1/ai-operations/queries/{query_id}/expire", headers=auth, json=expiry_payload
+        )
+        expiry_replay = client.post(
+            f"/api/v1/ai-operations/queries/{query_id}/expire", headers=auth, json=expiry_payload
+        )
+        assert expired.status_code == expiry_replay.status_code == 200
+        assert expired.json() == expiry_replay.json()
+        reused_expiry_key = client.post(
+            f"/api/v1/ai-operations/queries/{query_id}/expire", headers=auth,
+            json={**expiry_payload, "reason": "다른 만료 사유"},
+        )
+        assert reused_expiry_key.status_code == 409
+        final_detail = client.get(f"/api/v1/ai-operations/queries/{query_id}", headers=auth).json()
+        assert final_detail["queryPayloadExpired"] is True
+        assert final_detail["responseStored"] is False
+        assert final_detail["holds"][0]["status"] == "RELEASED"
+        assert any(item["queryTextAction"] == "DEIDENTIFIED" for item in final_detail["retentionAudits"])
+
+        concurrent_state = client.get(
+            f"/api/v1/ai-operations/queries/{concurrent_query_id}", headers=auth
+        ).json()["stateTag"]
+        def place_competing(index: int):
+            return client.post(
+                f"/api/v1/ai-operations/queries/{concurrent_query_id}/legal-holds", headers=auth,
+                json={"reason": f"동시 관리자 {index}", "authorityReference": f"RACE-{index}",
+                      "operationKey": f"wpf:ai:race:{uuid4().hex}",
+                      "expectedStateTag": concurrent_state},
+            )
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            race_results = list(executor.map(place_competing, (1, 2)))
+        assert sorted(response.status_code for response in race_results) == [201, 409]
+
+        with client.app.state.database.session() as session:
+            original_hold = session.scalar(select(AIQueryLegalHold).where(
+                AIQueryLegalHold.hold_id == placed.json()["holdId"]
+            ))
+            assert original_hold is not None and original_hold.status == "RELEASED"
+            assert original_hold.reason == "WPF 이중 확인 보존"
+            assert session.scalar(select(AIQueryLegalHold).where(
+                AIQueryLegalHold.query_id == concurrent_query_id,
+                AIQueryLegalHold.status == "ACTIVE",
+            )) is not None
+            assert len(session.scalars(select(AIOperationAuditEvent).where(
+                AIOperationAuditEvent.target_id == placed.json()["holdId"]
+            )).all()) == 2
+            assert len(session.scalars(select(AIRetentionAudit).where(
+                AIRetentionAudit.operation_key == expiry_key
+            )).all()) == 1

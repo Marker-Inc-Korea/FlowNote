@@ -1272,6 +1272,11 @@ class AIQuery(Base):
     block_code: Mapped[str | None] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    immediate_expiry_operation_key: Mapped[str | None] = mapped_column(
+        String(160), unique=True, index=True
+    )
+    immediate_expiry_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    immediate_expiry_reason: Mapped[str | None] = mapped_column(Text)
 
 
 class AIQueryEvidenceCandidate(Base):
@@ -1469,6 +1474,7 @@ class AIRetentionAudit(Base):
     response_text_action: Mapped[str] = mapped_column(String(30), nullable=False)
     query_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     response_hash: Mapped[str | None] = mapped_column(String(64))
+    operation_key: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
     processed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -1498,6 +1504,8 @@ class AIQueryLegalHold(Base):
     released_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     release_reason: Mapped[str | None] = mapped_column(Text)
+    operation_key: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
+    release_operation_key: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
 
 
 class AISensitiveDataPolicy(Base):

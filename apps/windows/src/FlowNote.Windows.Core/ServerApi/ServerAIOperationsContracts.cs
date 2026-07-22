@@ -95,6 +95,8 @@ public sealed class ServerAIQueryAuditResponse
     [JsonPropertyName("evidenceCount")] public int EvidenceCount { get; set; }
     [JsonPropertyName("citationCount")] public int CitationCount { get; set; }
     [JsonPropertyName("createdAt")] public DateTimeOffset CreatedAt { get; set; }
+    [JsonPropertyName("customerScope")] public string CustomerScope { get; set; } = string.Empty;
+    [JsonPropertyName("siteScope")] public string SiteScope { get; set; } = string.Empty;
 }
 
 public sealed class ServerAIRetentionResult
@@ -102,4 +104,70 @@ public sealed class ServerAIRetentionResult
     [JsonPropertyName("processed")] public int Processed { get; set; }
     [JsonPropertyName("queryPayloadsDeidentified")] public int QueryPayloadsDeidentified { get; set; }
     [JsonPropertyName("responsesDeleted")] public int ResponsesDeleted { get; set; }
+}
+
+public class ServerAIQueryMutationRequest
+{
+    [JsonPropertyName("reason")] public string Reason { get; set; } = string.Empty;
+    [JsonPropertyName("operationKey")] public string OperationKey { get; set; } = string.Empty;
+    [JsonPropertyName("expectedStateTag")] public string ExpectedStateTag { get; set; } = string.Empty;
+}
+
+public sealed class ServerAILegalHoldCreateRequest : ServerAIQueryMutationRequest
+{
+    [JsonPropertyName("authorityReference")] public string AuthorityReference { get; set; } = string.Empty;
+}
+
+public sealed class ServerAILegalHoldResponse
+{
+    [JsonPropertyName("holdId")] public string HoldId { get; set; } = string.Empty;
+    [JsonPropertyName("queryId")] public string QueryId { get; set; } = string.Empty;
+    [JsonPropertyName("status")] public string Status { get; set; } = string.Empty;
+    [JsonPropertyName("reason")] public string Reason { get; set; } = string.Empty;
+    [JsonPropertyName("authorityReference")] public string AuthorityReference { get; set; } = string.Empty;
+    [JsonPropertyName("placedBy")] public string PlacedBy { get; set; } = string.Empty;
+    [JsonPropertyName("placedAt")] public DateTimeOffset PlacedAt { get; set; }
+    [JsonPropertyName("releasedBy")] public string? ReleasedBy { get; set; }
+    [JsonPropertyName("releasedAt")] public DateTimeOffset? ReleasedAt { get; set; }
+    [JsonPropertyName("releaseReason")] public string? ReleaseReason { get; set; }
+}
+
+public sealed class ServerAIRetentionAuditResponse
+{
+    [JsonPropertyName("retentionAuditId")] public string RetentionAuditId { get; set; } = string.Empty;
+    [JsonPropertyName("queryId")] public string QueryId { get; set; } = string.Empty;
+    [JsonPropertyName("action")] public string Action { get; set; } = string.Empty;
+    [JsonPropertyName("queryTextAction")] public string QueryTextAction { get; set; } = string.Empty;
+    [JsonPropertyName("responseTextAction")] public string ResponseTextAction { get; set; } = string.Empty;
+    [JsonPropertyName("processedAt")] public DateTimeOffset ProcessedAt { get; set; }
+}
+
+public sealed class ServerAIOperationAuditEventResponse
+{
+    [JsonPropertyName("eventId")] public string EventId { get; set; } = string.Empty;
+    [JsonPropertyName("eventType")] public string EventType { get; set; } = string.Empty;
+    [JsonPropertyName("actorId")] public string? ActorId { get; set; }
+    [JsonPropertyName("targetType")] public string TargetType { get; set; } = string.Empty;
+    [JsonPropertyName("targetId")] public string TargetId { get; set; } = string.Empty;
+    [JsonPropertyName("reasonCode")] public string? ReasonCode { get; set; }
+    [JsonPropertyName("occurredAt")] public DateTimeOffset OccurredAt { get; set; }
+}
+
+public sealed class ServerAIQueryDetailResponse
+{
+    [JsonPropertyName("queryId")] public string QueryId { get; set; } = string.Empty;
+    [JsonPropertyName("requestedBy")] public string RequestedBy { get; set; } = string.Empty;
+    [JsonPropertyName("customerScope")] public string CustomerScope { get; set; } = string.Empty;
+    [JsonPropertyName("siteScope")] public string SiteScope { get; set; } = string.Empty;
+    [JsonPropertyName("purpose")] public string Purpose { get; set; } = string.Empty;
+    [JsonPropertyName("status")] public string Status { get; set; } = string.Empty;
+    [JsonPropertyName("queryPayloadExpired")] public bool QueryPayloadExpired { get; set; }
+    [JsonPropertyName("responseStored")] public bool ResponseStored { get; set; }
+    [JsonPropertyName("retentionUntil")] public DateTimeOffset RetentionUntil { get; set; }
+    [JsonPropertyName("responseRetentionUntil")] public DateTimeOffset? ResponseRetentionUntil { get; set; }
+    [JsonPropertyName("activeHold")] public ServerAILegalHoldResponse? ActiveHold { get; set; }
+    [JsonPropertyName("holds")] public List<ServerAILegalHoldResponse> Holds { get; set; } = [];
+    [JsonPropertyName("retentionAudits")] public List<ServerAIRetentionAuditResponse> RetentionAudits { get; set; } = [];
+    [JsonPropertyName("auditEvents")] public List<ServerAIOperationAuditEventResponse> AuditEvents { get; set; } = [];
+    [JsonPropertyName("stateTag")] public string StateTag { get; set; } = string.Empty;
 }

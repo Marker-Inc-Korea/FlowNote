@@ -104,17 +104,73 @@
                 </Grid>
             </TabItem>
             <TabItem Header="감사·보존">
-                <DockPanel Margin="12">
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10"><Button Width="120" Content="감사 내보내기" Click="ExportAudit_Click"/><Button Width="150" Margin="8,0,0,0" Content="만료 보존 작업 실행" Click="RunRetention_Click"/></StackPanel>
-                    <DataGrid x:Name="AuditGrid" AutoGenerateColumns="False" IsReadOnly="True">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="질의 ID" Binding="{Binding QueryId}" Width="180"/><DataGridTextColumn Header="요청자" Binding="{Binding RequestedBy}" Width="100"/>
-                            <DataGridTextColumn Header="목적" Binding="{Binding Purpose}" Width="130"/><DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="110"/>
-                            <DataGridTextColumn Header="차단 사유" Binding="{Binding BlockCode}" Width="160"/><DataGridCheckBoxColumn Header="응답 보존" Binding="{Binding ResponseStored}" Width="80"/>
-                            <DataGridCheckBoxColumn Header="질의 만료" Binding="{Binding QueryPayloadExpired}" Width="80"/><DataGridTextColumn Header="근거" Binding="{Binding EvidenceCount}" Width="55"/><DataGridTextColumn Header="인용" Binding="{Binding CitationCount}" Width="55"/><DataGridTextColumn Header="시각" Binding="{Binding CreatedAt}" Width="*"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </DockPanel>
+                <Grid Margin="12">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <Button Width="120" Content="감사 내보내기" Click="ExportAudit_Click"/>
+                        <Button Width="150" Margin="8,0,0,0" Content="만료 보존 작업 실행" Click="RunRetention_Click"/>
+                        <TextBlock Margin="14,7,0,0" Foreground="{StaticResource SecondaryTextBrush}" Text="단일 조작은 상세 재조회와 두 번의 확인 뒤 실행됩니다."/>
+                    </StackPanel>
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="5*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="6*"/></Grid.ColumnDefinitions>
+                        <DataGrid x:Name="AuditGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionChanged="AuditGrid_SelectionChanged">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="질의 ID" Binding="{Binding QueryId}" Width="180"/>
+                                <DataGridTextColumn Header="고객" Binding="{Binding CustomerScope}" Width="95"/>
+                                <DataGridTextColumn Header="현장" Binding="{Binding SiteScope}" Width="95"/>
+                                <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="95"/>
+                                <DataGridCheckBoxColumn Header="만료" Binding="{Binding QueryPayloadExpired}" Width="55"/>
+                                <DataGridTextColumn Header="시각" Binding="{Binding CreatedAt}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock Text="질의 보존 상세" FontSize="16" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="QueryScopeTextBlock" Margin="0,6,0,0" Text="왼쪽에서 질의를 선택하세요." TextWrapping="Wrap"/>
+                                <TextBlock x:Name="QueryRetentionTextBlock" Margin="0,4,0,10" TextWrapping="Wrap" Foreground="{StaticResource SecondaryTextBrush}"/>
+                                <UniformGrid Columns="2" Margin="0,0,0,8">
+                                    <TextBlock Text="조작 사유" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="QueryMutationReasonTextBox" Margin="4" ToolTip="감사에 남길 구체적인 조작 사유"/>
+                                    <TextBlock Text="근거 번호" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="HoldAuthorityReferenceTextBox" Margin="4" ToolTip="법무·감사·분쟁 보존 근거 번호"/>
+                                </UniformGrid>
+                                <WrapPanel Margin="0,0,0,10">
+                                    <Button x:Name="PlaceHoldButton" Width="105" Content="hold 설정" IsEnabled="False" Click="PlaceHold_Click"/>
+                                    <Button x:Name="ReleaseHoldButton" Width="105" Margin="8,0" Content="hold 해제" IsEnabled="False" Click="ReleaseHold_Click"/>
+                                    <Button x:Name="ExpireQueryButton" Width="115" Content="단일 즉시 만료" IsEnabled="False" Click="ExpireQuery_Click"/>
+                                    <Button Width="90" Margin="8,0,0,0" Content="상세 재조회" Click="RefreshQueryDetail_Click"/>
+                                </WrapPanel>
+                                <TextBlock Text="Legal hold 이력(원본 보존)" FontWeight="SemiBold"/>
+                                <DataGrid x:Name="HoldGrid" Height="125" Margin="0,5,0,10" AutoGenerateColumns="False" IsReadOnly="True">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="70"/>
+                                        <DataGridTextColumn Header="근거 번호" Binding="{Binding AuthorityReference}" Width="120"/>
+                                        <DataGridTextColumn Header="설정 시각" Binding="{Binding PlacedAt}" Width="140"/>
+                                        <DataGridTextColumn Header="해제 시각" Binding="{Binding ReleasedAt}" Width="*"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <TextBlock Text="보존 처리 감사 read-back" FontWeight="SemiBold"/>
+                                <DataGrid x:Name="RetentionAuditGrid" Height="105" Margin="0,5,0,10" AutoGenerateColumns="False" IsReadOnly="True">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="감사 ID" Binding="{Binding RetentionAuditId}" Width="150"/>
+                                        <DataGridTextColumn Header="질의 처리" Binding="{Binding QueryTextAction}" Width="95"/>
+                                        <DataGridTextColumn Header="응답 처리" Binding="{Binding ResponseTextAction}" Width="95"/>
+                                        <DataGridTextColumn Header="시각" Binding="{Binding ProcessedAt}" Width="*"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <TextBlock Text="운영 조작 감사 read-back" FontWeight="SemiBold"/>
+                                <DataGrid x:Name="OperationAuditGrid" Height="115" Margin="0,5,0,0" AutoGenerateColumns="False" IsReadOnly="True">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="이벤트" Binding="{Binding EventType}" Width="190"/>
+                                        <DataGridTextColumn Header="행위자" Binding="{Binding ActorId}" Width="100"/>
+                                        <DataGridTextColumn Header="대상" Binding="{Binding TargetId}" Width="145"/>
+                                        <DataGridTextColumn Header="시각" Binding="{Binding OccurredAt}" Width="*"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Grid>
             </TabItem>
         </TabControl>
     </DockPanel>

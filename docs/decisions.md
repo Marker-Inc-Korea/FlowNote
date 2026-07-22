@@ -393,6 +393,14 @@
 - 만료 작업은 참조 row를 삭제하지 않고 질의 payload 비식별화와 응답 원문 삭제를 수행하며 hash·근거·인용·호출 메타데이터와 처리 감사를 보존한다.
 - 같은 만료 작업을 서버 lifespan 스케줄러가 기본 1시간 간격으로 실행하고, `system-admin` API/WPF는 다음 주기를 기다리지 않는 즉시 실행 경로로 유지한다. 활성 여부와 간격은 서버 설정으로 제어한다.
 
+## 2026-07-22. WPF AI 단일 만료·legal hold는 서버 read-back과 멱등 조작으로 확정
+
+- `AI 운영`의 질의 상세, 단일 즉시 만료, legal hold 설정·해제는 서버 로그인 `system-admin`에게만 노출하며 FastAPI도 같은 role과 현재 고객·현장 scope를 다시 검사한다.
+- WPF는 사유와 hold 근거 번호를 받고 두 번 확인한다. 목록 snapshot만 믿지 않고 상세 GET의 `stateTag`를 mutation에 보내 다른 관리자의 선행 변경을 `409`로 중단한다.
+- 각 클릭은 하나의 operation key를 만들고 응답 유실 재시도에 같은 key를 사용한다. 서버는 단일 만료, hold 설정, hold 해제 key를 영구 보존해 같은 요청이 hold 또는 감사를 중복 생성하지 않게 한다.
+- 조작 POST 응답만으로 완료하지 않고 query 상태, 전체 hold row, retention audit와 operation audit를 다시 읽어 화면에 표시한다. `RELEASED` 전이는 설정 원본 row를 삭제하지 않는다.
+- 활성 hold는 서버 스케줄러, 수동 일괄, 단일 만료보다 우선한다. 서로 다른 관리자의 경합은 SQLite에서 mutation 구간을 직렬화하고 query별 활성 hold 유일 인덱스로 재검증한다.
+
 ## 2026-07-15. 제한형 AI provider adapter와 응답 근거 검증
 
 - provider 계약은 `invoke(payload)` 중립 인터페이스로 고정하고 fake, recording, callable 호환, 제한형 JSON 네트워크 adapter를 분리한다. 기본 adapter mode는 `DISABLED`다.

@@ -57,4 +57,14 @@ public sealed class ServerAccountUiPolicyTests
         Assert.Equal(canOperate, RolePermissionPolicy.CanOperateGroundTruth(role));
         Assert.Equal(canApprove, RolePermissionPolicy.CanApproveGroundTruth(role));
     }
+
+    [Theory]
+    [InlineData("system-admin", true)]
+    [InlineData("admin", false)]
+    [InlineData("manager", false)]
+    [InlineData("viewer", false)]
+    public void AIOperationsMenuIsSystemAdminOnly(string role, bool expected)
+    {
+        Assert.Equal(expected, RolePermissionPolicy.CanOperateAIOperations(role));
+    }
 }

@@ -409,6 +409,7 @@ ground-truth 평가 run은 비교 가능한 변경 이력을 위해 선택적 `e
 | `GET` | `/api/v1/ai-operations/audit/export` | 현장 정책이 허용한 원문 없는 CSV 내보내기 |
 | `POST` | `/api/v1/ai-operations/retention/run` | 만료 처리 즉시 실행 |
 | `GET` | `/api/v1/ai-operations/retention/audit` | 만료 처리 이력 조회 |
+| `GET` | `/api/v1/ai-operations/queries/{query_id}` | 현재 scope 질의의 보존 시각·상태 태그·hold 원본 이력·보존/운영 감사를 한 번에 read-back |
 | `POST` | `/api/v1/ai-operations/queries/{query_id}/expire` | 현재 고객·현장 scope의 단일 질의 즉시 만료 |
 | `POST` | `/api/v1/ai-operations/queries/{query_id}/legal-holds` | 근거 번호와 사유가 있는 법무·감사 보존 설정 |
 | `POST` | `/api/v1/ai-operations/legal-holds/{hold_id}/release` | 보존 명령 해제 이력 기록 |
@@ -417,7 +418,9 @@ ground-truth 평가 run은 비교 가능한 변경 이력을 위해 선택적 `e
 
 질의 감사, 보존 이력, 단일 만료와 legal hold API는 설정된 고객·현장 scope를 항상 조건에 포함한다. 활성 legal hold가 있는 질의의 단일 만료는 `409`이며 정기/수동 일괄 만료도 해당 질의를 건너뛴다. 해제 뒤 만료를 다시 요청할 수 있다.
 
-단일 만료와 hold 해제는 `{ "reason": "..." }`를 받고, hold 설정은 `{ "reason": "...", "authorityReference": "..." }`를 받는다. `reason`은 1~2,000자, `authorityReference`는 1~500자다. 다른 scope의 query/hold ID는 `404`, 중복 활성 hold 설정은 `409`를 반환한다. hold 해제는 이미 `RELEASED`인 경우 기존 해제 결과를 반환하며, 단일 만료는 질의·응답 보존 시각을 현재 시각으로 바꾼 해당 질의에만 보존 처리를 실행한다.
+단일 만료와 hold 해제는 `reason`, `operationKey`, `expectedStateTag`를 받고, hold 설정은 여기에 `authorityReference`를 더한다. `reason`은 1~2,000자, `authorityReference`는 1~500자, operation key는 8~160자다. WPF는 상세 조회에서 받은 `stateTag`와 조작별 고유 operation key를 보내며 응답 유실 때 같은 body로 한 번 재시도한다. 같은 key·같은 조작은 기존 결과를 반환해 hold/감사를 중복 생성하지 않고, key 재사용·이미 만료됨·이미 해제됨·활성 hold·다른 관리자가 먼저 바꾼 stale 상태는 `409`와 한글 재조회 안내를 반환한다. 다른 scope의 query/hold ID는 `404`다. 단일 만료는 질의·응답 보존 시각을 현재 시각으로 바꾼 해당 질의에만 보존 처리를 실행한다.
+
+WPF `AI 운영 > 감사·보존`은 질의를 선택하면 고객/현장 scope, 현재 hold, 질의/응답 보존 예정 시각, 전체 hold 원본 이력과 연결된 보존/운영 감사를 조회한다. 설정·해제·단일 만료는 사유와 필요한 근거 번호를 검사하고 서로 다른 두 확인 창을 통과해야 한다. 성공 응답 자체를 최종 상태로 간주하지 않고 위 상세 GET을 다시 호출해 query, hold row, audit event를 표시한다. 메뉴와 API는 모두 `system-admin`만 허용한다.
 
 검증 테스트 기준:
 

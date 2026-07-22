@@ -531,7 +531,7 @@ public partial class MainWindow : Window
 
     private void AIOperationsButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!string.Equals(currentUser.Role, "system-admin", StringComparison.OrdinalIgnoreCase))
+        if (!RolePermissionPolicy.CanOperateAIOperations(currentUser.Role))
         {
             workspace.StatusText = "외부 AI 운영 관리는 시스템 관리자만 사용할 수 있습니다.";
             return;
@@ -909,8 +909,7 @@ public partial class MainWindow : Window
         ReportDraftButton.IsEnabled = canWriteReports;
         AISearchQualityButton.IsEnabled = canWriteReports;
         AIGroundTruthButton.IsEnabled = canWriteReports;
-        AIOperationsButton.Visibility = string.Equals(
-            currentUser.Role, "system-admin", StringComparison.OrdinalIgnoreCase)
+        AIOperationsButton.Visibility = RolePermissionPolicy.CanOperateAIOperations(currentUser.Role)
             ? Visibility.Visible : Visibility.Collapsed;
         ApplyDocumentStatusButton.IsEnabled = canGovernDocuments;
         PublishDocumentButton.IsEnabled = canGovernDocuments;
