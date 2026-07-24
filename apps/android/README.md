@@ -7,6 +7,7 @@
 ## 기술 기준
 
 - 언어/UI: Java, Android 네이티브 View
+- Java 소스/타깃: 17
 - 빌드: Gradle Android plugin, `./gradlew assembleDebug`
 - 패키지: `com.flownote.fieldapp`
 - SDK: `minSdk 26`, `targetSdk 35`, `compileSdk 35`

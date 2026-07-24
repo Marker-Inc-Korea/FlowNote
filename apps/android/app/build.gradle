@@ -20,6 +20,11 @@ android {
         unitTests.returnDefaultValues = true
     }
 
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
     def releaseKeystore = System.getenv("FLOWNOTE_ANDROID_KEYSTORE")
     def releaseAlias = System.getenv("FLOWNOTE_ANDROID_KEY_ALIAS")
     def releaseStorePassword = System.getenv("FLOWNOTE_ANDROID_STORE_PASSWORD")

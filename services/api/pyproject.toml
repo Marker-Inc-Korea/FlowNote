@@ -15,7 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.3",
-  "httpx2>=0.28",
+  "httpx>=0.28",
   "pillow>=11.0",
   "reportlab>=4.2",
   "ruff>=0.8"

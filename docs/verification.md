@@ -2,6 +2,20 @@
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
 
+## 2026-07-24 GitHub README 공개 리뷰 재검증
+
+루트 README를 공개 리뷰용으로 재구성한 뒤 기능 주장, 실행 명령, 링크와 정량 수치를 현재 코드에 다시 대조했다. 코드에서 루트 `GET /`를 포함한 OpenAPI 128개 method/path와 SQLAlchemy ORM 58개 테이블을 재산출했다.
+
+`services/api/.venv/bin/python -m pytest -q services/api/tests`는 149건이 통과했고 Ruff의 `app`, `tests` 검사도 통과했다. 새 개발 환경에서 FastAPI `TestClient`가 요구하는 패키지가 설치되도록 개발 의존성의 잘못된 `httpx2`를 `httpx>=0.28`로 바로잡았으며, `--no-index --no-build-isolation` editable 재설치와 `pip check`, 149건 재수집으로 메타데이터를 확인했다.
+
+WPF Core 테스트는 43건이 통과했다. `AIGroundTruthOperationsWindow`에 nullable role을 전달하던 경고를 빈 권한 값으로 fail-closed 처리한 뒤 WPF 앱을 `EnableWindowsTargeting=true`로 다시 빌드해 경고 0개, 오류 0개를 확인했다. 이 빌드는 macOS의 Windows 대상 교차 빌드이며 실제 Windows 창 조작 결과가 아니다.
+
+Android Studio JBR 21과 Android SDK에서 `testDebugUnitTest assembleDebug lintDebug --rerun-tasks`를 강제 실행했다. 단위 테스트 15건, debug APK와 lint가 통과했다. AGP 기본 Java 8 소스 타깃의 폐기 예정 경고를 제거하고 문서의 표준 JDK 17 기준과 맞추기 위해 Java source/target 17을 명시했으며, 변경 후 47개 Gradle task를 모두 다시 실행해 경고 없이 통과했다.
+
+이번 실행은 컴포넌트 기준선이다. Windows x64의 공통 누적 SQLite 스모크, 실제 Windows UI, 승인 Android 실단말, 운영 HTTPS·서명·MDM을 하나의 실행 ID로 검증하지 않았으므로 전체 현장 통합 기준선과 운영 배포 판정은 계속 `대기`다. 기존 DB, 로그, APK, lint 보고서와 빌드 산출물은 삭제하지 않았고 Git 제외 상태로 보존한다.
+
+저장소에는 현재 `LICENSE`가 없다. 공개 열람과 오픈소스 사용·수정·재배포 허용은 별개이므로, 라이선스와 외부 기여 정책은 저장소 소유 조직이 공개 전 확정해야 한다.
+
 ## 2026-07-22 작업 201 전체 문서 현재 코드 재대조
 
 작업 정책 원문 `AGENTS.md`를 제외한 Git 추적 제품·구현 Markdown 41개를 FastAPI, Windows WPF, Android와 운영·검증 스크립트에 다시 대조했다. `data/local`, 앱 `Data/`와 캐시의 Markdown은 누적 시험·등록 산출물이므로 수정하지 않았다. 과거 일일·검증 기록의 당시 실행 결과는 보존하고, 현재 사양으로 읽히는 기준일·기능 범위·검증 기준만 갱신했다.
