@@ -166,10 +166,10 @@
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="112" />
-                        <ColumnDefinition Width="112" />
-                        <ColumnDefinition Width="150" />
-                        <ColumnDefinition Width="116" />
+                        <ColumnDefinition Width="86" />
+                        <ColumnDefinition Width="86" />
+                        <ColumnDefinition Width="118" />
+                        <ColumnDefinition Width="104" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
                         <TextBlock Text="변경 사유"

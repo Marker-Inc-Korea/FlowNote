@@ -19,7 +19,7 @@
 - 문서 태그 저장과 표시
 - TXT, PDF, XLSX, 이미지 미리보기
 - 문서 열람 시작/종료 로그
-- viewer 자동 닫힘과 다운로드 차단 로그
+- viewer 수동 닫힘과 다운로드 차단 로그
 - 허용 role의 서버 1회성 controlled copy 저장과 SHA-256 검증, 비허용 role의 기존 차단 안내·이력
 - FieldComment 작성과 첨부 저장, 원천 불변 검증, 단계형 관리자 검토, 담당자·기한 지정, 다중 선택 일괄 변경, 감사·품질 작업함
 - 알림, 전체 이력
@@ -76,7 +76,6 @@ apps/windows/
 - `FLOWNOTE_LOCAL_DATA_DIR`: 로컬 데이터 폴더 override
 - `FLOWNOTE_LOCAL_DATABASE_PATH`: SQLite 파일 경로 override
 - `FLOWNOTE_API_BASE_URL`: FastAPI 서버 URL
-- `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS`: 뷰어 자동 닫힘 시간
 
 업로드 파일과 FieldComment 첨부는 로컬 데이터 폴더의 `Files/` 아래 보존한다.
 

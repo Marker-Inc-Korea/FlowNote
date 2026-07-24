@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Threading;
 using System.Xml.Linq;
 using FlowNote.Windows.Core.Audit;
 using FlowNote.Windows.Core.Auth;
@@ -31,13 +30,11 @@ public partial class DocumentViewWindow : Window
     private readonly ServerSyncService? serverSyncService;
     private readonly DocumentViewLogService? documentViewLogService;
     private readonly HistoryService? historyService;
-    private readonly DispatcherTimer autoCloseTimer;
     private readonly List<string> selectedAttachmentPaths = [];
     private readonly string actorName;
     private readonly string userRole;
     private readonly bool canDownloadDocument;
     private readonly bool canWriteFieldComments;
-    private readonly TimeSpan autoCloseDelay;
     private ExplorerDocument document;
     private long? documentViewLogId;
     private bool documentViewLogClosed;
@@ -82,8 +79,7 @@ public partial class DocumentViewWindow : Window
         HistoryService? historyService,
         ExplorerDocument document,
         string actorName,
-        string? userRole = null,
-        TimeSpan? autoCloseDelay = null)
+        string? userRole = null)
     {
         InitializeComponent();
         this.fieldCommentService = fieldCommentService;
@@ -96,15 +92,6 @@ public partial class DocumentViewWindow : Window
         this.userRole = userRole ?? string.Empty;
         canDownloadDocument = RolePermissionPolicy.CanDownloadDocuments(this.userRole);
         canWriteFieldComments = RolePermissionPolicy.CanWriteFieldComments(this.userRole);
-        this.autoCloseDelay = autoCloseDelay.HasValue
-            ? DocumentViewerPolicy.NormalizeAutoCloseDelay(autoCloseDelay.Value)
-            : DocumentViewerPolicy.ResolveAutoCloseDelay();
-        autoCloseTimer = new DispatcherTimer
-        {
-            Interval = this.autoCloseDelay
-        };
-        Loaded += DocumentViewWindow_Loaded;
-        autoCloseTimer.Tick += AutoCloseTimer_Tick;
         SaveCommentButton.IsEnabled = canWriteFieldComments && fieldCommentService is not null && !string.IsNullOrWhiteSpace(document.DocumentId);
         SelectAttachmentButton.IsEnabled = SaveCommentButton.IsEnabled;
         ClearAttachmentButton.IsEnabled = false;
@@ -119,9 +106,6 @@ public partial class DocumentViewWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
-        Loaded -= DocumentViewWindow_Loaded;
-        autoCloseTimer.Stop();
-        autoCloseTimer.Tick -= AutoCloseTimer_Tick;
         if (PdfPreview.CoreWebView2 is not null && pdfPreviewSecurityConfigured)
         {
             PdfPreview.CoreWebView2.DownloadStarting -= PdfPreview_DownloadStarting;
@@ -130,19 +114,6 @@ public partial class DocumentViewWindow : Window
 
         CloseDocumentViewLog(documentViewCloseReason);
         base.OnClosed(e);
-    }
-
-    private void DocumentViewWindow_Loaded(object sender, RoutedEventArgs e)
-    {
-        autoCloseTimer.Stop();
-        autoCloseTimer.Start();
-    }
-
-    private void AutoCloseTimer_Tick(object? sender, EventArgs e)
-    {
-        autoCloseTimer.Stop();
-        documentViewCloseReason = "auto_closed";
-        Close();
     }
 
     private void StartDocumentViewLog()
@@ -194,8 +165,8 @@ public partial class DocumentViewWindow : Window
         TitleTextBlock.Text = document.FileName;
         MetaTextBlock.Text = $"{document.Status} | {document.VersionLabel} | {document.UpdatedBy} | {document.UpdatedAt:yyyy-MM-dd HH:mm}";
         SecurityPolicyTextBlock.Text = canDownloadDocument
-            ? $"다운로드 허용 | 자동 닫힘: {autoCloseDelay.TotalSeconds:N0}초"
-            : $"다운로드 차단 | 자동 닫힘: {autoCloseDelay.TotalSeconds:N0}초";
+            ? "다운로드 허용 | 자동 닫힘 없음"
+            : "다운로드 차단 | 자동 닫힘 없음";
         DownloadCopyButton.ToolTip = canDownloadDocument
             ? "통제된 복사본을 저장하고 로컬 이력에 기록합니다."
             : "이 역할은 문서 다운로드가 차단되며 시도 이력이 기록됩니다.";

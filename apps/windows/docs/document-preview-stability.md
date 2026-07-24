@@ -1,6 +1,6 @@
 # 문서 미리보기 안정화 기준
 
-이 문서는 WPF 문서 뷰어의 실제 현장 파일 유형별 미리보기 기준이다. 일반 뷰어의 저장·다운로드는 차단하고 자동 닫힘과 열람 로그를 공통 적용한다. 별도 권한이 있는 사용자의 파일 저장은 뷰어 원본 복사가 아니라 서버 controlled copy 흐름만 사용한다.
+이 문서는 WPF 문서 뷰어의 실제 현장 파일 유형별 미리보기 기준이다. 일반 뷰어의 저장·다운로드는 차단하고 열람 시작과 사용자의 수동 닫힘 로그를 공통 적용한다. 별도 권한이 있는 사용자의 파일 저장은 뷰어 원본 복사가 아니라 서버 controlled copy 흐름만 사용한다.
 
 2026-07-22 현재 구현 대상은 TXT, PDF, XLSX, 이미지이며 CAD/HWP 고급 뷰어는 구현 예외다.
 
@@ -8,7 +8,7 @@
 
 - 문서 창을 열면 `document_view_logs`에 열람 시작 row를 만들고 `activity_history`에 `document.view_started`를 기록한다.
 - 사용자가 창을 닫으면 같은 열람 row에 `closed_at`, `close_reason = window_closed`를 기록하고 `activity_history`에 `document.view_closed`를 기록한다.
-- 자동 닫힘이면 `close_reason = auto_closed`를 기록한다.
+- Windows 뷰어는 시간 기반 자동 닫힘을 수행하지 않는다. 기존 `auto_closed` 값은 과거 로그와 서버 동기화 호환을 위해서만 읽을 수 있다.
 - 다운로드 또는 WebView2 PDF 저장/외부 창 요청이 차단되면 `close_reason = download_blocked`인 별도 접근 로그와 `document.download_blocked` 이력을 남긴다.
 - 미리보기 실패, 대용량 제한, CAD/HWP 고급 뷰어 제외는 앱을 종료하지 않고 한글 안내를 표시하며 `document.preview_failed` 이력에 사유를 남긴다.
 - controlled copy는 서버에 매핑된 현재 공개 버전에서만 활성화한다. 서버가 발급한 짧은 만료의 1회성 티켓으로 저장한 뒤 응답 SHA-256과 로컬 저장 파일을 다시 대조하며, 이 흐름은 `server_sync_queue`에 넣지 않는다.
@@ -57,7 +57,7 @@
 
 ## CAD/HWP 제외 범위
 
-CAD와 HWP 고급 뷰어는 현재 MVP 범위에서 제외한다. `.dwg`, `.dxf`, `.step`, `.stp`, `.iges`, `.igs`, `.hwp`, `.hwpx`는 원본 첨부, 문서 메타데이터, FieldComment, 열람 시작/종료/다운로드 차단/자동 닫힘 로그만 기준으로 한다.
+CAD와 HWP 고급 뷰어는 현재 MVP 범위에서 제외한다. `.dwg`, `.dxf`, `.step`, `.stp`, `.iges`, `.igs`, `.hwp`, `.hwpx`는 원본 첨부, 문서 메타데이터, FieldComment, 열람 시작/종료/다운로드 차단 로그만 기준으로 한다.
 
 ## 검증
 
@@ -67,7 +67,7 @@ WPF 스모크 테스트는 다음을 검증한다.
 - 대용량 TXT, 손상 PDF, 암호/읽기 실패 PDF, 긴 경로 TXT, 큰 XLSX, 고해상도 이미지, 손상 이미지, 미지원 CAD/HWP의 익명 예외 샘플 목록이 정의되어 있다.
 - 미지원 또는 손상 파일은 앱을 종료하지 않고 한글 안내와 `document.preview_failed` 이력을 남기는지 확인한다.
 - TXT/PDF/XLSX/이미지 대표 샘플을 등록한다.
-- 각 유형별 열람 시작, 열람 종료, 다운로드 차단, 자동 닫힘 로그가 공통 SQLite에 남는다.
+- 각 유형별 열람 시작, 사용자의 열람 종료, 다운로드 차단 로그가 공통 SQLite에 남는다.
 - 스모크 테스트 출력에 `Preview audit smoke` 줄로 파일 유형, 샘플 파일 경로, 로그 ID가 남는다.
 - 테스트 산출물은 로컬에 보존하되 SQLite를 포함한 DB와 입력·출력 파일은 Git 추적 대상에 포함하지 않는다.
 - 권한 없는 role은 기존 다운로드 차단 안내와 이력을 유지하고, 허용 role의 controlled copy는 서버 문서/버전 매핑·1회성·SHA-256 검증을 통과해야 한다.
