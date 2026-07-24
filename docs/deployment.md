@@ -448,7 +448,6 @@ New-Item -ItemType Directory -Force C:\FlowNote\LocalData\Files
 ```powershell
 setx FLOWNOTE_LOCAL_DATA_DIR "C:\FlowNote\LocalData" /M
 setx FLOWNOTE_API_BASE_URL "http://<서버IP>:5184" /M
-setx FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS "300" /M
 ```
 
 환경 변수 변경 후 이미 열려 있던 PowerShell, 서비스, WPF 앱은 새 값을 읽지 못할 수 있으므로 새 세션에서 실행한다. `FLOWNOTE_LOCAL_DATABASE_PATH`는 특정 DB 파일 경로를 강제로 지정해야 할 때만 사용하며, 일반 운영에서는 `FLOWNOTE_LOCAL_DATA_DIR`만 둔다.
@@ -458,7 +457,6 @@ setx FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS "300" /M
 ```powershell
 $env:FLOWNOTE_LOCAL_DATA_DIR = "C:\FlowNote\LocalData"
 $env:FLOWNOTE_API_BASE_URL = "http://<서버IP>:5184"
-$env:FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS = "300"
 & "C:\Program Files\FlowNote\Client\FlowNote.Windows.App\FlowNote.Windows.App.exe"
 ```
 
@@ -513,7 +511,6 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | WPF | `FLOWNOTE_LOCAL_DATA_DIR` | `C:\FlowNote\LocalData`처럼 DB와 `Files\`를 함께 둘 폴더 |
 | WPF | `FLOWNOTE_LOCAL_DATABASE_PATH` | 특정 DB 파일을 직접 지정할 때만 사용. 지정 시 `FLOWNOTE_LOCAL_DATA_DIR`보다 DB 경로 우선 |
 | WPF | `FLOWNOTE_API_BASE_URL` | 서버 PC 주소. 예: `http://192.168.0.10:5184` |
-| WPF | `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS` | 문서 뷰어 자동 닫힘 시간. 5초-3600초로 정규화 |
 
 `FLOWNOTE_LOCAL_DATABASE_PATH`를 지정하면 WPF DB 파일 위치가 그 값으로 고정된다. 다만 로컬 파일 저장 위치는 `FLOWNOTE_LOCAL_DATA_DIR` 기준으로 관리하는 편이 운영자가 백업 대상을 이해하기 쉽다. 운영에서는 특별한 이유가 없으면 `FLOWNOTE_LOCAL_DATA_DIR`만 지정한다.
 
@@ -540,7 +537,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - .NET Windows Desktop Runtime과 WebView2 Runtime 설치 여부를 확인한다.
 - `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`에 WPF 실행 파일, .NET 실행 메타데이터, 의존 DLL이 있는지 확인한다.
 - `C:\FlowNote\LocalData`와 `C:\FlowNote\LocalData\Files`를 만들고 앱 실행 사용자에게 읽기/쓰기 권한을 부여한다.
-- `FLOWNOTE_LOCAL_DATA_DIR`, `FLOWNOTE_API_BASE_URL`, `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS` 설정 방식을 시스템 환경 변수 또는 실행 스크립트 중 하나로 정한다.
+- `FLOWNOTE_LOCAL_DATA_DIR`, `FLOWNOTE_API_BASE_URL` 설정 방식을 시스템 환경 변수 또는 실행 스크립트 중 하나로 정한다.
 - 서버 PC의 `/api/v1/health`, `/api/v1/health/db`를 클라이언트 PC에서 호출할 수 있는지 확인한다.
 
 ### 백업
@@ -586,7 +583,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - 문서 목록이 열리고 서버에 등록된 문서가 조회되는지 확인한다.
 - 문서를 열어 뷰어가 표시되고 다운로드 차단 정책과 열람 로그가 동작하는지 확인한다.
 - WebView2 Runtime 미설치 또는 손상 환경에서는 `문서 뷰어를 시작할 수 없습니다.` 안내가 표시되는지 확인하고, WebView2 Runtime 설치 후 같은 문서가 정상 열람되는지 기록한다.
-- `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS` 기준으로 뷰어 자동 닫힘이 동작하는지 확인한다.
+- Windows 문서 뷰어가 시간 경과로 자동 종료되지 않고 사용자가 직접 닫을 때까지 유지되는지 확인한다.
 - FieldComment를 등록하고 서버 목록 또는 문서별 FieldComment 조회에서 확인한다.
 - 서버 호출 실패 시 로컬 저장이 유지되고 동기화 이력이 남는지 장애 테스트에서 별도로 확인한다.
 - 서버 URL, instance/epoch 또는 cursor 복구 경계가 달라지면 자동 전송과 알림 polling이 중지되고 `이력 > 서버 재결합` 안내가 표시되는지 확인한다.

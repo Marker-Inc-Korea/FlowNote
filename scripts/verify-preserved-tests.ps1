@@ -77,7 +77,7 @@ function Write-RunSummary {
         }
         fastapi = $script:fastApiEvidence
         git_artifacts = $script:gitArtifactEvidence
-        steps = @($script:stepResults)
+        steps = @($script:stepResults | ForEach-Object { $_ })
     }
     $summary | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $runArtifactDir "verification-summary.json")
 }
@@ -184,8 +184,16 @@ function Assert-StandardToolchain {
         throw ".NET Windows Desktop Runtime 10.x is required."
     }
 
-    $javaVersionLines = @(& java -version 2>&1)
-    if ($LASTEXITCODE -ne 0) {
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $javaVersionLines = @(& java -version 2>&1)
+        $javaVersionExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($javaVersionExitCode -ne 0) {
         throw "Unable to execute java -version."
     }
     $javaVersionText = $javaVersionLines -join "`n"
@@ -207,7 +215,17 @@ function Assert-StandardToolchain {
         (Resolve-Path $javaHomeExecutable).Path -ne (Resolve-Path $pathJavaExecutable).Path) {
         throw "JAVA_HOME and PATH java must point to the same JDK 17 installation."
     }
-    $javaSettings = @(& java -XshowSettings:properties -version 2>&1) -join "`n"
+    try {
+        $ErrorActionPreference = "Continue"
+        $javaSettings = @(& java -XshowSettings:properties -version 2>&1) -join "`n"
+        $javaSettingsExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($javaSettingsExitCode -ne 0) {
+        throw "Unable to inspect Java runtime properties."
+    }
     if ($javaSettings -notmatch "(?m)^\s*os\.arch\s*=\s*amd64\s*$") {
         throw "An x64 JDK 17 is required; java os.arch must be amd64."
     }

@@ -7,9 +7,25 @@
         MinWidth="980"
         MinHeight="620"
         Background="{StaticResource WindowBackgroundBrush}">
+    <Window.Resources>
+        <Style x:Key="HeaderTopMenuItemStyle" TargetType="{x:Type MenuItem}">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}" />
+            <Setter Property="Background" Value="{StaticResource PanelMutedBrush}" />
+        </Style>
+        <Style x:Key="HeaderSubmenuItemStyle" TargetType="{x:Type MenuItem}">
+            <Setter Property="MinWidth" Value="184" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+    </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="64" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="32" />
         </Grid.RowDefinitions>
@@ -17,9 +33,11 @@
         <Border Grid.Row="0"
                 Background="{StaticResource PanelBackgroundBrush}"
                 BorderBrush="{StaticResource PanelBorderBrush}"
-                BorderThickness="0,0,0,1">
-            <DockPanel Margin="18,0">
+                BorderThickness="0,0,0,1"
+                Padding="18,8">
+            <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Left"
+                            Width="210"
                             VerticalAlignment="Center">
                     <TextBlock Text="FlowNote"
                                FontSize="21"
@@ -30,146 +48,152 @@
                                FontSize="12"
                                Foreground="{StaticResource SecondaryTextBrush}" />
                 </StackPanel>
-                <StackPanel DockPanel.Dock="Right"
-                            Orientation="Horizontal"
-                            VerticalAlignment="Center">
+
+                <Border DockPanel.Dock="Right"
+                        MaxWidth="230"
+                        Margin="12,0,0,0"
+                        Padding="10,5"
+                        Background="{StaticResource PanelMutedBrush}"
+                        CornerRadius="4"
+                        VerticalAlignment="Center">
                     <TextBlock x:Name="SignedInUserTextBlock"
-                               Margin="0,0,18,0"
                                FontSize="13"
                                Foreground="{StaticResource SecondaryTextBrush}"
+                               TextTrimming="CharacterEllipsis"
                                VerticalAlignment="Center" />
-                    <Button x:Name="UserManagementButton"
-                            Width="104"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="사용자 관리"
-                            Click="UserManagementButton_Click" />
-                    <Button x:Name="TerminalDeviceManagementButton"
-                            Width="104"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="승인 단말"
-                            Click="TerminalDeviceManagementButton_Click" />
-                    <Button x:Name="NotificationButton"
-                            Width="104"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="알림함"
-                            Click="NotificationButton_Click" />
-                    <Button x:Name="NotificationCursorResetButton"
-                            Width="120"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="알림 위치 초기화"
-                            Click="NotificationCursorResetButton_Click" />
-                    <Button x:Name="ChannelInboxButton"
-                            Width="96"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="채널함"
-                            Click="ChannelInboxButton_Click" />
-                    <Button x:Name="ChannelManagementButton"
-                            Width="96"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="채널 관리"
-                            Click="ChannelManagementButton_Click" />
-                    <Button x:Name="HandoverStatusButton"
-                            Width="96"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="확인 현황"
-                            Click="HandoverStatusButton_Click" />
-                    <Button Width="88"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="이력"
-                            Click="HistoryButton_Click" />
-                    <Button x:Name="WorkSequenceAdminButton"
-                            Width="104"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="작업판"
-                            Click="WorkSequenceAdminButton_Click" />
-                    <Button x:Name="FieldCommentReviewButton"
-                            Width="104"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="코멘트 검토"
-                            Click="FieldCommentReviewButton_Click" />
-                    <Button x:Name="ReportDraftButton"
-                            Width="86"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="보고서"
-                            Click="ReportDraftButton_Click" />
-                    <Button x:Name="AISearchQualityButton"
-                            Width="86"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="AI 점검"
-                            Click="AISearchQualityButton_Click" />
-                    <Button x:Name="AIGroundTruthButton"
-                            Width="112"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="AI 정답셋"
-                            Click="AIGroundTruthButton_Click" />
-                    <Button x:Name="AIOperationsButton"
-                            Width="92"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="AI 운영"
-                            Click="AIOperationsButton_Click" />
-                    <Button Width="80"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="현황판"
-                            Click="WorkSequenceTvButton_Click" />
-                    <Button Width="92"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="새 폴더"
-                            Click="NewFolderButton_Click" />
-                    <Button x:Name="RegisterDocumentButton"
-                            Width="104"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="문서 등록"
-                            Click="RegisterDocumentButton_Click" />
-                    <ComboBox x:Name="DocumentStatusComboBox"
-                              Width="116"
-                              Height="34"
-                              Margin="0,0,8,0"
-                              SelectedIndex="0">
-                        <ComboBoxItem Content="작업중" Tag="WORKING" />
-                        <ComboBoxItem Content="검토중" Tag="IN_REVIEW" />
-                        <ComboBoxItem Content="보관" Tag="ARCHIVED" />
-                    </ComboBox>
-                    <Button x:Name="ApplyDocumentStatusButton"
-                            Width="92"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="상태 변경"
-                            Click="ApplyDocumentStatusButton_Click" />
-                    <Button x:Name="PublishDocumentButton"
-                            Width="92"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="공개"
-                            Click="PublishDocumentButton_Click" />
-                    <Button x:Name="FileWatchButton"
-                            Width="96"
-                            Height="34"
-                            Margin="0,0,8,0"
-                            Content="파일 감시"
-                            Click="FileWatchButton_Click" />
-                    <Button x:Name="UploadFileButton"
-                            Width="104"
-                            Height="34"
-                            Content="파일 업로드"
-                            Click="UploadFileButton_Click" />
-                </StackPanel>
+                </Border>
+
+                <ComboBox x:Name="DocumentStatusComboBox"
+                          Visibility="Collapsed"
+                          SelectedIndex="0">
+                    <ComboBoxItem Content="작업중" Tag="WORKING" />
+                    <ComboBoxItem Content="검토중" Tag="IN_REVIEW" />
+                    <ComboBoxItem Content="보관" Tag="ARCHIVED" />
+                </ComboBox>
+
+                <Menu Margin="0"
+                      Padding="0"
+                      Background="Transparent"
+                      HorizontalAlignment="Right"
+                      VerticalAlignment="Center">
+                    <MenuItem x:Name="AdministrationActionsGroup"
+                              Header="계정 · 단말  ▾"
+                              Style="{StaticResource HeaderTopMenuItemStyle}">
+                        <MenuItem x:Name="UserManagementButton"
+                                  Header="사용자 관리"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="UserManagementButton_Click" />
+                        <MenuItem x:Name="TerminalDeviceManagementButton"
+                                  Header="승인 단말 관리"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="TerminalDeviceManagementButton_Click" />
+                    </MenuItem>
+
+                    <MenuItem Header="알림 · 채널  ▾"
+                              Style="{StaticResource HeaderTopMenuItemStyle}">
+                        <MenuItem x:Name="NotificationButton"
+                                  Header="알림함"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="NotificationButton_Click" />
+                        <MenuItem x:Name="NotificationCursorResetButton"
+                                  Header="알림 위치 초기화"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="NotificationCursorResetButton_Click" />
+                        <Separator />
+                        <MenuItem x:Name="ChannelInboxButton"
+                                  Header="채널함"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="ChannelInboxButton_Click" />
+                        <MenuItem x:Name="ChannelManagementButton"
+                                  Header="채널 관리"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="ChannelManagementButton_Click" />
+                        <MenuItem x:Name="HandoverStatusButton"
+                                  Header="인수인계 확인 현황"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="HandoverStatusButton_Click" />
+                    </MenuItem>
+
+                    <MenuItem Header="현장 운영  ▾"
+                              Style="{StaticResource HeaderTopMenuItemStyle}">
+                        <MenuItem Header="이력"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="HistoryButton_Click" />
+                        <MenuItem x:Name="WorkSequenceAdminButton"
+                                  Header="작업판"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="WorkSequenceAdminButton_Click" />
+                        <MenuItem Header="현황판"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="WorkSequenceTvButton_Click" />
+                        <Separator />
+                        <MenuItem x:Name="FieldCommentReviewButton"
+                                  Header="코멘트 검토"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="FieldCommentReviewButton_Click" />
+                        <MenuItem x:Name="ReportDraftButton"
+                                  Header="보고서"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="ReportDraftButton_Click" />
+                    </MenuItem>
+
+                    <MenuItem Header="AI  ▾"
+                              Style="{StaticResource HeaderTopMenuItemStyle}">
+                        <MenuItem x:Name="AISearchQualityButton"
+                                  Header="AI 점검"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="AISearchQualityButton_Click" />
+                        <MenuItem x:Name="AIGroundTruthButton"
+                                  Header="AI 정답셋"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="AIGroundTruthButton_Click" />
+                        <MenuItem x:Name="AIOperationsButton"
+                                  Header="AI 운영"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="AIOperationsButton_Click" />
+                    </MenuItem>
+
+                    <MenuItem Header="문서 운영  ▾"
+                              Style="{StaticResource HeaderTopMenuItemStyle}">
+                        <MenuItem Header="새 폴더"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="NewFolderButton_Click" />
+                        <MenuItem x:Name="RegisterDocumentButton"
+                                  Header="문서 등록"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="RegisterDocumentButton_Click" />
+                        <MenuItem x:Name="UploadFileButton"
+                                  Header="파일 업로드"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="UploadFileButton_Click" />
+                        <Separator />
+                        <MenuItem x:Name="ApplyDocumentStatusButton"
+                                  Header="문서 상태 변경"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}">
+                            <MenuItem Header="작업중으로 변경"
+                                      Tag="WORKING"
+                                      Style="{StaticResource HeaderSubmenuItemStyle}"
+                                      Click="ApplyDocumentStatusButton_Click" />
+                            <MenuItem Header="검토중으로 변경"
+                                      Tag="IN_REVIEW"
+                                      Style="{StaticResource HeaderSubmenuItemStyle}"
+                                      Click="ApplyDocumentStatusButton_Click" />
+                            <MenuItem Header="보관으로 변경"
+                                      Tag="ARCHIVED"
+                                      Style="{StaticResource HeaderSubmenuItemStyle}"
+                                      Click="ApplyDocumentStatusButton_Click" />
+                        </MenuItem>
+                        <MenuItem x:Name="PublishDocumentButton"
+                                  Header="공개"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="PublishDocumentButton_Click" />
+                        <Separator />
+                        <MenuItem x:Name="FileWatchButton"
+                                  Header="파일 감시"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="FileWatchButton_Click" />
+                    </MenuItem>
+                </Menu>
             </DockPanel>
         </Border>
 
@@ -256,31 +280,40 @@
                         BorderThickness="1"
                         CornerRadius="4"
                         Padding="14,0">
-                    <DockPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="1.4*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
                         <TextBlock Text="검색"
                                    Margin="0,0,10,0"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource PrimaryTextBrush}"
                                    VerticalAlignment="Center" />
-                        <TextBox Width="360"
+                        <TextBox Grid.Column="1"
                                  Height="30"
                                  VerticalContentAlignment="Center" />
-                        <TextBlock Text="태그"
+                        <TextBlock Grid.Column="2"
+                                   Text="태그"
                                    Margin="14,0,8,0"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource PrimaryTextBrush}"
                                    VerticalAlignment="Center" />
                         <TextBox x:Name="TagInputTextBox"
-                                 Width="260"
+                                 Grid.Column="3"
                                  Height="30"
                                  ToolTip="쉼표로 여러 태그를 입력"
                                  VerticalContentAlignment="Center" />
-                        <TextBlock DockPanel.Dock="Right"
+                        <TextBlock Grid.Column="4"
                                    Text="파일 목록"
+                                   Margin="12,0,0,0"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource SecondaryTextBrush}"
                                    VerticalAlignment="Center" />
-                    </DockPanel>
+                    </Grid>
                 </Border>
 
                 <Border Grid.Row="1"

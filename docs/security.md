@@ -9,7 +9,7 @@
 - WPF 시작 시 로그인 요구
 - WPF 로컬 계정 상태 `ACTIVE` 확인
 - WPF role 기반 문서 등록, 파일 감시, 사용자 관리, 다운로드 허용 제어
-- 문서 뷰어 자동 닫힘
+- Windows 문서 뷰어 수동 닫힘과 열람 종료 감사
 - 다운로드 차단 시 로컬 접근 로그와 활동 이력 기록
 - FastAPI 로그인, access token, refresh token, logout
 - FastAPI `auth_sessions` 기반 세션 폐기와 token 교체 검증
@@ -90,9 +90,8 @@ FastAPI 서버는 HMAC 서명 Bearer access token과 `auth_sessions` 테이블�
 
 WPF 문서 뷰어는 로컬 앱 계층에서 보호한다.
 
-- `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS`로 자동 닫힘 시간을 조정한다.
-- 설정값은 최소 5초, 최대 3600초 범위로 정규화된다.
-- 닫힘 사유는 `window_closed`, `auto_closed`, `download_blocked` 등으로 기록한다.
+- Windows 문서 뷰어는 시간 기반 자동 닫힘을 수행하지 않고 사용자가 직접 닫을 때까지 유지한다.
+- 닫힘 사유는 신규 열람에서 `window_closed`, 다운로드 차단 시 `download_blocked`로 기록한다. 기존 `auto_closed` 값은 과거 감사·동기화 호환을 위해 보존한다.
 - PDF는 WebView2 기반 표시를 우선하고 저장/다운로드 이벤트를 차단한다.
 - 텍스트, 이미지, Excel은 앱 내부 읽기 전용 미리보기로 표시한다.
 - TXT/PDF/XLSX/이미지의 정상, 비정상, 한글 파일명, 큰 파일 기준과 CAD/HWP 제외 범위는 [문서 미리보기 안정화 기준](../apps/windows/docs/document-preview-stability.md)을 따른다.

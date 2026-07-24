@@ -283,7 +283,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        var selectedStatus = (DocumentStatusComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+        var selectedStatus = (sender as MenuItem)?.Tag?.ToString()
+            ?? (DocumentStatusComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
         if (string.IsNullOrWhiteSpace(selectedStatus))
         {
             workspace.StatusText = "문서 상태를 선택하세요.";
@@ -918,6 +919,7 @@ public partial class MainWindow : Window
         FileWatchButton.IsEnabled = canManageFileWatch;
         UserManagementButton.Visibility = canManageUsers ? Visibility.Visible : Visibility.Collapsed;
         TerminalDeviceManagementButton.Visibility = canManageUsers ? Visibility.Visible : Visibility.Collapsed;
+        AdministrationActionsGroup.Visibility = canManageUsers ? Visibility.Visible : Visibility.Collapsed;
 
         if (!canRegisterDocuments)
         {
@@ -1125,7 +1127,7 @@ public partial class MainWindow : Window
     private void RefreshNotificationButton()
     {
         var unreadCount = services.Notifications.CountUnread(GetCurrentActorName());
-        NotificationButton.Content = unreadCount == 0 ? "알림함" : $"알림함 ({unreadCount})";
+        NotificationButton.Header = unreadCount == 0 ? "알림함" : $"알림함 ({unreadCount})";
     }
 
     private static string FormatDocumentStatus(string status)

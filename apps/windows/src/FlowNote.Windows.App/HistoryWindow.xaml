@@ -71,8 +71,19 @@
                             BorderThickness="1"
                             CornerRadius="4"
                             Padding="12">
-                        <DockPanel>
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Name="SyncQueueSummaryTextBlock"
+                                       Foreground="{StaticResource SecondaryTextBrush}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center" />
+                            <StackPanel Grid.Row="1"
+                                        Margin="0,8,0,0"
+                                        Orientation="Horizontal"
+                                        HorizontalAlignment="Right">
                                 <TextBox x:Name="ConflictReasonTextBox"
                                          Width="220"
                                          Height="32"
@@ -94,10 +105,7 @@
                                         Content="일반 재시도"
                                         Click="RetrySyncButton_Click" />
                             </StackPanel>
-                            <TextBlock x:Name="SyncQueueSummaryTextBlock"
-                                       Foreground="{StaticResource SecondaryTextBrush}"
-                                       VerticalAlignment="Center" />
-                        </DockPanel>
+                        </Grid>
                     </Border>
 
                     <Border Grid.Row="2"
@@ -143,8 +151,19 @@
                     <Border Background="{StaticResource PanelBackgroundBrush}"
                             BorderBrush="{StaticResource PanelBorderBrush}"
                             BorderThickness="1" CornerRadius="4" Padding="12">
-                        <DockPanel>
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Name="ReconciliationSummaryTextBlock"
+                                       Foreground="{StaticResource SecondaryTextBrush}"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap" />
+                            <StackPanel Grid.Row="1"
+                                        Margin="0,8,0,0"
+                                        Orientation="Horizontal"
+                                        HorizontalAlignment="Right">
                                 <TextBox x:Name="ReconciliationReasonTextBox" Width="250" Height="32"
                                          Margin="0,0,8,0" VerticalContentAlignment="Center"
                                          ToolTip="관리자 승인 사유" />
@@ -153,10 +172,7 @@
                                 <Button Width="116" Height="32"
                                         Content="승인 적용" Click="ApplyReconciliationButton_Click" />
                             </StackPanel>
-                            <TextBlock x:Name="ReconciliationSummaryTextBlock"
-                                       Foreground="{StaticResource SecondaryTextBrush}"
-                                       VerticalAlignment="Center" TextWrapping="Wrap" />
-                        </DockPanel>
+                        </Grid>
                     </Border>
                     <Border Grid.Row="2" Background="{StaticResource PanelBackgroundBrush}"
                             BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="4">

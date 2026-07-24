@@ -461,17 +461,6 @@ try
     Require(autoClosedViewLog is not null, "auto-closed document view log should remain readable");
     Require(autoClosedViewLog!.ClosedAt is not null, "auto-closed document view log should record the closed time");
     Require(autoClosedViewLog.CloseReason == "auto_closed", "document view log should record the auto-close reason");
-    var configuredAutoCloseDelay = WithEnvironmentVariable(
-        DocumentViewerPolicy.AutoCloseSecondsEnvironmentVariable,
-        "45",
-        DocumentViewerPolicy.ResolveAutoCloseDelay);
-    Require(configuredAutoCloseDelay == TimeSpan.FromSeconds(45), "document viewer auto-close delay should use the configured setting");
-    var invalidAutoCloseDelay = WithEnvironmentVariable(
-        DocumentViewerPolicy.AutoCloseSecondsEnvironmentVariable,
-        "1",
-        DocumentViewerPolicy.ResolveAutoCloseDelay);
-    Require(invalidAutoCloseDelay == TimeSpan.FromSeconds(DocumentViewerPolicy.DefaultAutoCloseSeconds),
-        "document viewer auto-close delay should fall back when the configured setting is below the minimum");
     using (var viewLogConnection = services.Database.OpenConnection())
     {
         Require(
@@ -4911,20 +4900,6 @@ static IReadOnlyList<(string FlowType, string FolderName, DocumentRecord Documen
     }
 
     return candidates;
-}
-
-static T WithEnvironmentVariable<T>(string name, string value, Func<T> action)
-{
-    var previousValue = Environment.GetEnvironmentVariable(name);
-    try
-    {
-        Environment.SetEnvironmentVariable(name, value);
-        return action();
-    }
-    finally
-    {
-        Environment.SetEnvironmentVariable(name, previousValue);
-    }
 }
 
 static string BuildRunSampleFileName(string sampleFileName, string runStamp)

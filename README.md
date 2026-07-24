@@ -20,7 +20,7 @@ FlowNote는 생산공장 현장의 문서와 현장 지식을 함께 관리하�
 - 최신 버전과 공개 버전 분리, 명시적 공개 처리
 - 문서 태그 저장과 목록 표시
 - TXT, PDF, XLSX, 이미지 미리보기
-- 문서 열람 시작/종료, 자동 닫힘, 다운로드 차단 로그
+- 문서 열람 시작/종료와 다운로드 차단 로그, Windows 뷰어 수동 닫힘
 - 허용 role의 공개 문서 버전 controlled copy: 서버 1회성 티켓, 세션 바인딩, SHA-256 검증
 - FieldComment 원천 불변 기록과 첨부 파일 저장, 단계형 검토·담당/기한 지정·감사·품질 작업함. 검토 revision·mutation receipt와 첨부 부모/파일 hash 검증 포함
 - 알림, 전체 이력, 보고서 초안 문서 저장과 서버 저장 시도. 보고서 revision·내용/source 집합 hash·mutation receipt와 source 변경 재검증 포함

@@ -39,17 +39,18 @@
                             <Grid>
                                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                                 <TextBlock Text="새 draft / 대체 버전" FontWeight="SemiBold"/>
-                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
-                                    <TextBox x:Name="DatasetKeyTextBox" Width="150" ToolTip="dataset key"/>
-                                    <TextBox x:Name="DatasetTitleTextBox" Width="180" Margin="6,0,0,0" ToolTip="제목"/>
-                                    <ComboBox x:Name="TrackComboBox" Width="120" Margin="6,0,0,0" SelectedIndex="0"><ComboBoxItem Content="SMOKE_REGRESSION"/><ComboBoxItem Content="FIELD_READINESS"/></ComboBox>
-                                </StackPanel>
+                                <Grid Grid.Row="1" Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="3*"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="DatasetKeyTextBox" Margin="0,0,6,0" ToolTip="dataset key"/>
+                                    <TextBox Grid.Column="1" x:Name="DatasetTitleTextBox" Margin="0,0,6,0" ToolTip="제목"/>
+                                    <ComboBox Grid.Column="2" x:Name="TrackComboBox" SelectedIndex="0"><ComboBoxItem Content="SMOKE_REGRESSION"/><ComboBoxItem Content="FIELD_READINESS"/></ComboBox>
+                                </Grid>
                                 <TextBox Grid.Row="2" x:Name="ChangeReasonTextBox" Margin="0,7,0,0" Height="28" Text="운영 검토용 새 dataset version"/>
-                                <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,8,0,0">
-                                    <Button Width="112" Margin="0,0,6,0" Content="사례·원천 구성" Click="OpenCaseEditorButton_Click"/>
-                                    <Button Width="148" Content="전체 승인 사례로 생성" Click="CreateDatasetButton_Click"/>
-                                    <Button Width="126" Margin="6,0,0,0" Content="선택본 대체 생성" Click="CreateReplacementButton_Click"/>
-                                </StackPanel>
+                                <UniformGrid Grid.Row="3" Columns="3" Rows="1" Margin="0,8,0,0">
+                                    <Button Margin="0,0,4,0" Content="사례·원천 구성" Click="OpenCaseEditorButton_Click"/>
+                                    <Button Margin="2,0" Content="전체 승인 사례로 생성" Click="CreateDatasetButton_Click"/>
+                                    <Button Margin="4,0,0,0" Content="선택본 대체 생성" Click="CreateReplacementButton_Click"/>
+                                </UniformGrid>
                             </Grid>
                         </Border>
                     </Grid>
@@ -59,14 +60,14 @@
                             <Grid>
                                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                                 <TextBlock x:Name="DatasetSummaryTextBlock" Text="dataset version을 선택하세요." TextWrapping="Wrap"/>
-                                <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Bottom">
-                                    <Button x:Name="SubmitButton" Width="92" Content="검토 요청" Click="TransitionButton_Click" Tag="SUBMIT_REVIEW"/>
-                                    <Button x:Name="ReviewButton" Width="92" Margin="6,0,0,0" Content="검토 완료" Click="TransitionButton_Click" Tag="REVIEW"/>
-                                    <Button x:Name="FirstApproveButton" Width="92" Margin="6,0,0,0" Content="1차 승인" Click="TransitionButton_Click" Tag="FIRST_APPROVE"/>
-                                    <Button x:Name="SecondApproveButton" Width="92" Margin="6,0,0,0" Content="2차 승인" Click="TransitionButton_Click" Tag="SECOND_APPROVE"/>
-                                    <Button x:Name="RetireButton" Width="82" Margin="6,0,0,0" Content="폐기" Click="TransitionButton_Click" Tag="RETIRE"/>
-                                    <Button x:Name="EvaluateButton" Width="104" Margin="14,0,0,0" Content="평가 실행" Click="EvaluateButton_Click"/>
-                                </StackPanel>
+                                <UniformGrid Grid.Row="1" Columns="3" Rows="2" Margin="0,8,0,0" VerticalAlignment="Bottom">
+                                    <Button x:Name="SubmitButton" Height="32" Margin="0,0,4,4" Content="검토 요청" Click="TransitionButton_Click" Tag="SUBMIT_REVIEW"/>
+                                    <Button x:Name="ReviewButton" Height="32" Margin="2,0,2,4" Content="검토 완료" Click="TransitionButton_Click" Tag="REVIEW"/>
+                                    <Button x:Name="FirstApproveButton" Height="32" Margin="4,0,0,4" Content="1차 승인" Click="TransitionButton_Click" Tag="FIRST_APPROVE"/>
+                                    <Button x:Name="SecondApproveButton" Height="32" Margin="0,4,4,0" Content="2차 승인" Click="TransitionButton_Click" Tag="SECOND_APPROVE"/>
+                                    <Button x:Name="RetireButton" Height="32" Margin="2,4,2,0" Content="폐기" Click="TransitionButton_Click" Tag="RETIRE"/>
+                                    <Button x:Name="EvaluateButton" Height="32" Margin="4,4,0,0" Content="평가 실행" Click="EvaluateButton_Click"/>
+                                </UniformGrid>
                             </Grid>
                         </Border>
                         <DataGrid Grid.Row="1" x:Name="CaseGrid" ItemsSource="{Binding Cases}" Margin="0,8,0,0" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">

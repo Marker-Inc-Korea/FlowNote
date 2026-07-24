@@ -11,7 +11,7 @@
 - FastAPI 서버 로그인과 Bearer token 인증
 - 문서 등록, 버전 추가, 상태 변경, 공개 버전 지정
 - 문서 태그
-- 문서 미리보기, 열람 로그, 자동 닫힘, 다운로드 차단
+- 문서 미리보기, 열람 시작/수동 종료 로그, 다운로드 차단
 - WPF 허용 role의 공개 버전 controlled copy 1회성 저장과 SHA-256 검증
 - FieldComment 원천 불변 기록과 첨부, 단계형 검토·담당/기한·일괄 처리·감사·품질 작업함, 개별 검토 revision·mutation receipt와 첨부 부모/파일 hash 검증
 - 알림과 활동 이력

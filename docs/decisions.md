@@ -458,3 +458,10 @@
 - 상충 원천은 병합하지 않고 `conflict_flag`, `conflict_basis`와 전이 사유로 표시한다. 선정/제외 결정자는 상충 판단 근거를 남겨야 하며 원문은 계속 불변이다.
 - 보고서의 FieldComment source는 관찰 문서 버전·선정 `review_revision`·원천 hash를 함께 고정한다. 승인 및 파일 생성 직전 이 값과 채널 권한을 재검증하고 변경 시 409로 중단한다. 생성 문서에도 source ID/version/revision/trace/hash를 기록한다.
 - 관리자 대리 입력은 인증 입력자와 실제 전달자/작업자를 별도 필드와 `field_comment.proxy_created` 감사로 남긴다. 입력 계정을 실제 전달자로 자동 대체하지 않는다.
+
+## 2026-07-24. Windows 문서 뷰어의 시간 기반 자동 닫힘 제거
+
+- Windows WPF 문서 뷰어의 기본 30초 타이머와 `FLOWNOTE_VIEWER_AUTO_CLOSE_SECONDS` 설정을 제거한다.
+- 문서 창은 사용자가 직접 닫을 때까지 유지하며 신규 열람은 `view_started`와 `window_closed`를 기준으로 감사한다.
+- 다운로드 차단, 역할 권한, controlled copy와 열람 감사는 유지한다.
+- 기존 SQLite와 서버 동기화에 남은 `auto_closed` 값은 과거 기록 호환을 위해 삭제하거나 재작성하지 않는다.
