@@ -543,7 +543,13 @@ public partial class MainWindow : Window
     private void AIGroundTruthButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureReportWriteAllowed()) return;
-        new AIGroundTruthOperationsWindow(serverDocumentClient, GetCurrentUserId(), currentUser.Role) { Owner = this }.ShowDialog();
+        new AIGroundTruthOperationsWindow(
+            serverDocumentClient,
+            GetCurrentUserId(),
+            currentUser.Role ?? string.Empty)
+        {
+            Owner = this
+        }.ShowDialog();
     }
 
     private void FieldCommentReviewButton_Click(object sender, RoutedEventArgs e)

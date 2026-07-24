@@ -1,71 +1,246 @@
 # FlowNote
 
-FlowNote는 생산공장 현장의 문서와 현장 지식을 함께 관리하는 사내 서버형 문서/현장지식 관리 시스템이다. 문서 파일, 문서 메타데이터, 버전, 변경 사유, 현장 코멘트, 작업순서, 접근 로그를 함께 축적해 이후 AI 검색과 작업 조언의 근거 데이터로 사용할 수 있게 하는 것이 제품 방향이다.
+> 생산현장의 **문서**와 **사람의 경험**을 하나의 추적 가능한 흐름으로 연결하는 온프레미스 시스템
 
-이 README의 기능 목록은 2026-07-22 현재 저장소 코드 기준이다. 구현되지 않은 내용은 아래의 제외 범위와 각 문서의 후속 항목에서만 다룬다.
+FlowNote는 공장 내부 서버에서 문서 버전, 현장 공개본, 작업순서, 현장 코멘트, 사진, 인수인계와 보고서 근거를 함께 관리한다. 목표는 문서를 보관하는 데서 끝나지 않고, 현장에서 생긴 판단과 문제 해결 경험을 다음 작업과 향후 AI 검색에 사용할 수 있는 근거 데이터로 남기는 것이다.
 
-현재 코드는 Windows WPF 로컬 클라이언트, Android 현장 단말 최소 앱, Python FastAPI 서버가 함께 개발되어 있다. WPF 앱은 로컬 SQLite를 우선 저장소로 사용하고, `FLOWNOTE_API_BASE_URL`이 설정되어 있으면 FastAPI 서버와 인증 후 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도한다. Android 앱은 승인 단말 `deviceId`로 서버 로그인 후 공개 문서 목록·상세, PDF/이미지/TXT 앱 내부 보안 열람, FieldComment, 사진 첨부, 신호등식 기록, 채널 알림, 인수인계 확인을 수행한다. WPF는 서버 전송 실패 시 로컬 원천과 재시도 큐를 유지하고, Android는 FieldComment와 사진 첨부 전송 실패 항목만 전용 SQLite outbox에 두되 업무 payload와 앱 내부 첨부 파일은 Keystore AES-GCM으로 보호한다.
+`FastAPI` · `Windows WPF` · `Android` · `SQLite` · `On-premises`
 
-## 현재 구현
+> **현재 상태:** 실제 운영 흐름을 구현·검증 중인 연구 프로토타입이다. 아래 기능 설명은 2026-07-24 저장소 코드 기준이며, 운영 배포가 확정된 완제품을 의미하지 않는다.
 
-- Windows WPF 로그인 화면과 탐색기형 메인 화면
-- 공통 로컬 SQLite 기본 경로 `data/local/flownote.local.sqlite`
-- 로컬 기본 계정과 그룹 시드, 기본 비밀번호 `1234`
-- 사용자 관리 화면: 사용자 추가, 이름/역할/비밀번호 변경
-- 서버 계정 관리 화면: 계정 생성, 이름/역할/상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기, 첫 로그인 비밀번호 변경 강제
-- 기본 폴더: 문서, 인수인계, 작업순서, 사진
-- 문서 하위 분류 폴더: 도면, 작업표준서, 점검표, 품질검사, 안전수칙, 보전작업, 일반문서
-- 파일 업로드와 Drag & Drop 등록, 로컬 `Files/Uploads/yyyy-MM-dd/` 복사
-- 문서 상태 `WORKING`, `IN_REVIEW`, `PUBLISHED`, `ARCHIVED`
-- 최신 버전과 공개 버전 분리, 명시적 공개 처리
-- 문서 태그 저장과 목록 표시
-- TXT, PDF, XLSX, 이미지 미리보기
-- 문서 열람 시작/종료와 다운로드 차단 로그, Windows 뷰어 수동 닫힘
-- 허용 role의 공개 문서 버전 controlled copy: 서버 1회성 티켓, 세션 바인딩, SHA-256 검증
-- FieldComment 원천 불변 기록과 첨부 파일 저장, 단계형 검토·담당/기한 지정·감사·품질 작업함. 검토 revision·mutation receipt와 첨부 부모/파일 hash 검증 포함
-- 알림, 전체 이력, 보고서 초안 문서 저장과 서버 저장 시도. 보고서 revision·내용/source 집합 hash·mutation receipt와 source 변경 재검증 포함
-- 작업순서 관리자/TV 화면과 서버 직접 운영: `board_revision`, mutation key, 멱등 receipt, stale revision 충돌 처리. 로컬 테이블은 읽기 캐시·초안으로만 보존
-- Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
-- WPF 서버 scope·사용자별 알림 cursor와 처리 메시지 SQLite 보존, cursor 역행 차단과 관리자 초기화
-- AI 근거 후보 운영 점검 화면: 후보 재생성, 품질 지표, 제외 사유, 원천 추적값 복사
-- AI 정답셋 운영 화면: 사례·원천 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·평가 run 비교
-- 시스템 관리자용 외부 AI 운영 화면: 전송 승인 생성·철회, 불변 프롬프트 검토·승인·활성화·폐기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 내보내기, 일괄 만료, 고객/현장 질의 상세, 단일 즉시 만료와 legal hold 설정·해제. 고위험 조작은 이중 확인·상태 태그·멱등 키·서버 read-back을 사용한다.
-- FastAPI AI 보존 제어: 고객·현장 scope별 질의 감사, 기본 1시간 간격 만료 처리, 단일 질의 즉시 만료, 근거 번호가 있는 legal hold 설정·해제. 활성 hold는 자동·수동·단일 만료보다 우선한다.
-- FastAPI 서버 DB와 WPF 로컬 DB의 SQLite 스키마 경계 보호: 서버 초기화가 WPF 문서 테이블 구조를 감지하면 테이블 생성 전에 중단
-- 관리자급 파일 감시 후보 등록과 버전 확정
-- FastAPI 인증, 승인 단말, 문서, controlled copy, FieldComment, 첨부, 태그, 접근 로그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가, 외부 AI 질의 안전장치·운영 제어 API
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부, 신호등식 기록, 알림/인수인계 조회와 확인, SQLite outbox 재전송
-- FastAPI-WPF role 정책 정합성 검증: 문서 등록, FieldComment 작성, 보고서 작성, 접근 로그 조회, 사용자 관리, controlled copy 다운로드
-- WPF 동기화 큐 대상: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장
-- 서버 복구 경계 보호와 관리자 재결합: instance/epoch/API contract manifest, URL·epoch·cursor 역행 감지, 큐 inventory 판정·승인, mapping/큐/binding 적용과 알림 cursor 재추적
-- 누적 FAILED 큐의 읽기 전용 진단과 승인 기반 무손실 전환 CLI
+## 왜 만들었나
 
-운영 배포 보조 스크립트는 현재 저장소에 포함되어 있다. WPF MSI 패키징은 `scripts/package-wpf-msi.ps1`, FastAPI 서버 작업 스케줄러 등록과 관리는 `scripts/install-flownote-server-task.ps1`, `scripts/manage-flownote-server-task.ps1`를 기준으로 한다. `scripts/verify-pilot-restore.py`는 파일럿 복구 전후의 서버 DB+`storage`와 WPF DB+`Files` 증거를 수집하고 무결성·테이블별 row 수·파일 상대경로/크기/SHA-256을 비교한다.
+생산현장의 정보는 서로 다른 곳에 흩어지기 쉽다.
 
-아직 구현되지 않은 범위는 현장별 설치 검증과 코드 서명 검증, 현장별 런타임 패키징 확정, 서버-WPF 동기화 정책 고도화, Android 보안 본문 뷰어의 승인 실단말 검증과 운영 배포 서명/MDM/인증서 확정, 운영 provider를 통한 실제 외부 AI 검색·요약/작업 조언, MES/ERP 어댑터, 일반 브라우저 사용자 화면, 클라우드 운영이다. 현재 서버에는 외부 호출 없이 DB 원천을 사용하는 `ai_search_candidates` 후보 재생성·목록·품질 점검, 독립 승인 ground-truth 사례와 불변 dataset version 기반 오프라인 회귀 평가, `/api/v1/ai/queries`의 기본 비활성 안전장치·감사 골격, `system-admin` 전용 `/api/v1/ai-operations` 승인·프롬프트·정책·감사·보존·legal hold API가 구현되어 있다. WPF에는 근거 후보 운영 점검, `AI 정답셋`, 단일 만료·legal hold까지 연결된 별도의 `AI 운영` 화면이 있다. 실제 외부 AI 질의를 실행하는 사용자 화면과 운영 provider 활성화는 여전히 후속 범위다.
+- 작업표준서와 도면은 파일 서버에 있지만, 어떤 버전이 현장 공개본인지 불명확하다.
+- 작업 중 발견한 문제와 숙련자의 판단은 구두 전달이나 개인 메신저에 머문다.
+- 현장 기록이 보고서로 정리되는 과정에서 원문과 판단 근거의 연결이 끊어진다.
+- 데이터가 쌓여도 출처와 권한이 불명확하면 AI 검색과 조언에 안전하게 활용하기 어렵다.
 
-## 저장소 구조
+FlowNote는 **문서 → 현장 사용 → 짧은 기록 → 관리자 검토 → 보고서 → 검색 근거**의 연결을 보존한다. MES나 ERP를 대체하기보다, 정형 생산 데이터만으로 담기 어려운 현장 맥락을 축적하는 계층을 지향한다.
 
-```text
-FlowNote/
-  apps/
-    windows/       Windows WPF 클라이언트
-    android/       Android 현장 단말 클라이언트
-  services/
-    api/           Python FastAPI 서버
-  docs/            제품, 시스템, 데이터, API, 보안, 배포 문서
-  data/local/      WPF 공통 로컬 SQLite와 로컬 산출물
+## 현재의 핵심 연구 과제
+
+FlowNote의 주요 기술 기능은 대부분 구현되어 있다. 그러나 생산현장용 제품의 완성은 기능 목록만으로 결정되지 않는다. 실제 작업자가 문서를 찾는 방식, 감각으로 판단하는 순간, 작업을 보류하거나 재작업하는 기준, 단말기가 놓이는 위치와 기록할 수 있는 시간은 현장마다 다르다.
+
+따라서 현재 가장 중요한 과제는 **현장의 목소리를 지속적으로 취득하고, 서로 다른 요구를 종합해 제품 구조에 반영하는 일**이다. 이 과정은 한 기능을 개발하는 것보다 더 많은 관찰과 검증 시간이 필요하다.
+
+현장의 목소리는 한 번의 회의나 설문으로 한꺼번에 모이지 않는다. 공정, 설비, 작업조와 역할을 하나씩 돌아보며 실제 업무가 시작되고 멈추고 인계되는 과정을 따라가야 한다. 같은 작업도 작업자, 시간대, 설비 상태와 예외 상황에 따라 판단과 기록 방식이 달라지므로, 짧은 방문에서 들은 의견만으로 전체 흐름을 일반화할 수 없다. **각 업무를 반복해서 관찰하고 서로 다른 목소리 사이의 공통점과 차이를 확인하는 일이 이 연구에서 가장 오랜 시간이 필요한 단계다.**
+
+FlowNote의 장기 목표는 축적된 현장 데이터를 AI 검색과 의사결정 보조에 활용하는 것이다. 그러나 최전선의 작업자가 실제로 사용하지 않는 시스템은 데이터가 쌓이지 않고 연구 단계에 머문다. 근거가 축적되지 않은 AI 기능만으로는 현장의 문제를 해결하거나 제품의 가치를 증명할 수 없다.
+
+따라서 AI 기능을 앞세우기보다 작업자를 지속적으로 관찰하고, 그들이 실제 작업 중 사용할 수 있을 때까지 입력 방식과 업무 흐름을 다듬는 것이 먼저다. **현장 사용이 정착되어 문서와 경험이 자연스럽게 축적될 때 비로소 FlowNote의 AI가 근거 있는 검색과 조언으로 가장 큰 가치를 발휘할 수 있다.**
+
+1. 현장 관찰과 사용자 의견에서 실제 문제를 수집한다.
+2. 의견을 `수용`, `불수용`, `추가 검토`로 분류하고 이유를 남긴다.
+3. 문서, FieldComment, 작업순서, 인수인계와 보고서 흐름에 미치는 영향을 함께 검토한다.
+4. 고객의 기존 문서 구조와 작업 방식을 불필요하게 바꾸지 않는 해결책을 설계한다.
+5. 파일럿에서 다시 사용성을 확인하고 다음 구현에 반영한다.
+
+이 프로젝트에서 코드는 해결책을 구현하는 수단이다. 장기적인 제품 품질은 현장의 암묵지와 불편을 얼마나 정확히 발견하고, 특정 개인의 요구가 아닌 반복 가능한 업무 구조로 바꾸는지에 달려 있다.
+
+## 동작 구조
+
+```mermaid
+flowchart LR
+    subgraph Clients["승인된 설치형 클라이언트"]
+        WPF["Windows WPF<br/>문서 운영 · 검토 · 보고"]
+        Android["Android 현장 단말<br/>열람 · 코멘트 · 사진 · 인수인계"]
+    end
+
+    subgraph Local["연결 불안정 구간의 로컬 보존"]
+        WPFLocal["WPF SQLite + Files"]
+        AndroidLocal["암호화 Outbox"]
+    end
+
+    subgraph Server["사내 서버 PC"]
+        API["FastAPI<br/>인증 · 권한 · 업무 API"]
+        DB[("Server SQLite")]
+        Storage[("Local storage/")]
+        Evidence["추적 가능한 검색 근거<br/>정답셋 · 평가 · 감사"]
+    end
+
+    WPF --> WPFLocal
+    Android --> AndroidLocal
+    WPF -->|REST / 동기화| API
+    Android -->|REST / 승인 단말| API
+    API --> DB
+    API --> Storage
+    DB --> Evidence
 ```
 
-## 개발 기준
+- **Windows**는 관리자와 현장 PC의 문서 운영, 파일 감시, 검토, 보고서, 채널 감독을 담당한다.
+- **Android**는 승인된 태블릿·러기드 단말의 공개 문서 열람, FieldComment, 사진, 신호등식 기록과 인수인계 확인을 담당한다.
+- **FastAPI 서버**는 계정·권한, 문서와 버전, 감사 로그, 작업순서, 채널, 보고서와 AI 근거 데이터의 권위 원천이다.
+- 네트워크 오류가 업무 원천의 삭제로 이어지지 않도록 WPF와 Android가 각자의 범위에서 로컬 기록과 재시도 상태를 보존한다.
 
-- Backend: Python FastAPI
-- Client: Windows WPF 네이티브 앱, Android 네이티브 앱
-- Database: SQLite 우선, 필요 시 PostgreSQL 확장
-- Server file storage: 서버 PC 로컬 `storage/`
-- Client local storage: WPF는 저장소 루트 `data/local/`, Android는 앱 전용 SQLite outbox와 Keystore 보호 payload·암호화 첨부 저장소
-- 배포 방향: 서버 PC 1대, Windows 설치형 클라이언트, 승인된 Android 현장 단말
+## 핵심 구현
 
-## 문서
+### 1. 문서의 “최신본”과 “현장 공개본”을 분리
 
-문서 시작점은 [docs/README.md](./docs/README.md)이다. 현재 코드 기준의 핵심 문서는 [docs/product-overview.md](./docs/product-overview.md), [docs/system-map.md](./docs/system-map.md), [docs/data-model.md](./docs/data-model.md), [docs/api.md](./docs/api.md)를 기준으로 본다.
+- 문서 상태: `WORKING`, `IN_REVIEW`, `PUBLISHED`, `ARCHIVED`
+- 파일 등록, Drag & Drop, 버전 추가, 변경 사유와 태그
+- TXT, PDF, XLSX, 이미지 미리보기
+- 관리자가 선택한 버전만 현장 공개
+- 열람 시작·종료와 다운로드 차단 이력, Windows 뷰어 수동 닫힘
+- 허용 역할의 controlled copy: 세션에 묶인 1회성 티켓과 SHA-256 검증
+
+### 2. 현장의 짧은 기록을 보고서 근거까지 연결
+
+- 불변 원천인 `FieldComment`와 사진 첨부
+- 신호등식 상태와 짧은 메모
+- 담당자·기한·검토 단계·감사 이력
+- 다중 항목 검토 전 미리보기와 부분 성공 처리
+- 현장 원문에서 보고서 초안·정제 문서까지 추적
+- 라인·설비·공정·오류 유형 등 태그 기반 연결
+### 3. 불안정한 사내망을 전제로 한 동기화
+
+- WPF 로컬 SQLite 우선 저장과 무손실 재시도 큐
+- Android FieldComment·사진 첨부 전용 SQLite outbox
+- Android Keystore AES-GCM 기반 payload·첨부 보호
+- idempotency key, aggregate revision과 mutation receipt
+- stale revision을 자동 덮어쓰지 않는 충돌 처리
+- 서버 instance·epoch·cursor 역행 감지와 관리자 승인형 재결합
+
+### 4. 설치형 클라이언트 전체에 걸친 접근 통제
+
+- 역할 기반 계정·권한과 활성 세션 폐기
+- 관리자 승인 단말만 Android 로그인 허용
+- Android 문서 본문은 단기 1회 grant로 앱 내부에서만 열람
+- 임시 파일 무결성 확인, `FLAG_SECURE`, 공유·외부 열기 차단
+- 문서 수정자·열람자·코멘트 등록자·작업자 감사 추적
+
+### 5. AI 호출보다 먼저 준비하는 근거 품질
+
+- DB 원천에서 추적 가능한 검색 후보 재생성
+- 제외 사유와 데이터 품질 지표
+- 독립 2인 승인 ground-truth 사례
+- 불변 dataset version과 오프라인 회귀 평가
+- 외부 전송 승인, 프롬프트 수명주기, kill switch, 한도·보존·감사·legal hold
+
+실제 외부 AI provider를 이용한 사용자 검색·요약 화면은 아직 운영 범위가 아니다. 외부 호출 경계는 기본 비활성이고, 현재 구현은 근거 데이터와 안전장치를 검증하는 단계다.
+
+## 구성 요소
+
+| 영역 | 역할 | 주요 기술 |
+| --- | --- | --- |
+| [`services/api`](./services/api) | 인증, 문서·버전, FieldComment, 작업순서, 채널, 보고서, 검색 근거 API | Python 3.11+, FastAPI, SQLAlchemy, SQLite |
+| [`apps/windows`](./apps/windows) | 관리자·현장 PC용 문서 운영 및 검토 클라이언트 | .NET 10, WPF, SQLite |
+| [`apps/android`](./apps/android) | 승인 현장 단말용 보안 열람 및 기록 클라이언트 | Java, Android SDK 35, SQLite, Android Keystore |
+| [`docs`](./docs) | 제품, 아키텍처, 데이터 모델, API, 보안, 배포와 검증 기록 | Markdown |
+| [`scripts`](./scripts) | 패키징, 누적 검증, 복구 비교와 파일럿 판정 보조 | PowerShell, Python, Shell |
+
+## 현재 완성도
+
+| 구분 | 상태 |
+| --- | --- |
+| FastAPI 업무 API와 SQLite 모델 | 구현됨 |
+| Windows WPF 문서·검토·운영 화면 | 구현됨 |
+| Android 현장 단말 최소 업무 흐름 | 구현됨 |
+| 컴포넌트 단위 테스트와 정적 검사 | 수행 중이며 최근 결과는 [검증 기록](./docs/verification.md)에 보존 |
+| Windows 서버·WPF·Android를 묶은 현장 유사 통합 검증 | 대기 |
+| 운영 코드 서명, MDM, 인증서와 현장별 설치 확정 | 대기 |
+| 실제 외부 AI provider 운영 연동 | 후속 범위 |
+| MES/ERP 어댑터 | 후속 범위 |
+
+일반 브라우저 사용자 화면, 개인 휴대폰 기본 배포, 클라우드 운영, GPS·근태 관리와 개인 메신저 수집은 초기 제품 범위가 아니다.
+
+## 검증 스냅샷
+
+2026-07-24 현재 저장소에서 컴포넌트 기준선을 다시 실행했다.
+
+| 검증 대상 | 결과 |
+| --- | --- |
+| FastAPI OpenAPI | 루트 `GET /` 포함 128개 method/path |
+| SQLAlchemy ORM | 58개 테이블 |
+| FastAPI 테스트 | 149개 통과 |
+| Python 정적 검사 | Ruff 통과 |
+| WPF Core 테스트 | 43개 통과 |
+| WPF 앱 빌드 | 경고 0개, 오류 0개 |
+| Android 단위 테스트 | 15개 통과 |
+| Android debug 빌드·lint | `assembleDebug`, `lintDebug` 통과 |
+
+이 결과는 macOS ARM64 개발 호스트의 API·Core 테스트와 Windows 대상 교차 빌드, Android 개발 빌드 기준이다. 실제 Windows UI 조작, 공통 누적 SQLite를 사용하는 Windows 통합 스모크, 승인 Android 실단말, 운영 HTTPS·코드 서명·MDM 검증을 한 실행 ID로 묶은 현장 기준선은 아직 `대기`다. 상세 실행 기록과 과거 실패 증거는 [검증 자동화 문서](./docs/verification.md)에 보존한다.
+
+## 빠르게 살펴보기
+
+### FastAPI 서버
+
+Python 3.11 이상이 필요하다.
+
+```powershell
+cd services\api
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+Copy-Item .env.example .env
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 5184 --reload
+```
+
+서버 실행 후 다음 주소에서 상태와 OpenAPI 문서를 확인할 수 있다.
+
+- Health: `http://127.0.0.1:5184/api/v1/health`
+- Swagger UI: `http://127.0.0.1:5184/docs`
+
+`.env.example`의 비밀값과 개발 기본 계정은 로컬 개발 전용이다. 실제 운영에서는 현장별 비밀값, HTTPS, 접근 정책을 별도로 설정해야 한다.
+
+### Windows WPF
+
+Windows와 .NET 10 SDK가 필요하다.
+
+```powershell
+$env:FLOWNOTE_API_BASE_URL = "http://127.0.0.1:5184"
+dotnet run --project .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
+```
+
+### Android
+
+JDK와 Android SDK가 필요하다.
+
+```bash
+cd apps/android
+./gradlew testDebugUnitTest
+./gradlew assembleDebug
+```
+
+로그인 전에 FastAPI 서버 주소와 관리자가 등록한 승인 단말 `deviceId`를 입력한다. 운영 배포는 조직 소유 키로 서명한 APK와 MDM 적용을 전제로 하며, debug APK는 운영용이 아니다.
+
+## 검증
+
+```powershell
+# FastAPI
+cd services\api
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m ruff check app tests
+
+# Windows
+cd ..\..
+dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
+dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
+```
+
+전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`이 FastAPI, WPF, Android, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID로 묶어 검증한다. 테스트 DB, 로그와 산출물은 회귀 분석 근거로 로컬에 누적 보존하며 Git에는 포함하지 않는다.
+
+## 설계 문서
+
+- [제품 개요](./docs/product-overview.md)
+- [전체 시스템 관계](./docs/system-map.md)
+- [데이터 모델](./docs/data-model.md)
+- [API 계약](./docs/api.md)
+- [보안 기준](./docs/security.md)
+- [배포 기준](./docs/deployment.md)
+- [검증 자동화와 실행 기록](./docs/verification.md)
+- [중요 설계 결정](./docs/decisions.md)
+
+## 프로젝트 원칙
+
+- 고객이 사용하는 문서 구조를 존중하며 특정 트리나 BOM 구조를 강제하지 않는다.
+- 업로드된 파일을 자동으로 최신 확정본으로 간주하지 않는다.
+- 원천 현장 기록과 관리자가 정제한 보고서를 함께 보존한다.
+- 네트워크·재시도·복구 실패에서도 업무 원천과 감사 이력을 잃지 않는다.
+- AI 기능보다 출처, 권한, 데이터 품질과 회귀 평가를 먼저 준비한다.
+- FlowNote는 MES나 ERP를 대체하지 않으며, 필요한 경우 후속 어댑터로 연결한다.
+
+## 라이선스
+
+현재 저장소에는 별도의 오픈소스 라이선스가 지정되어 있지 않다. 공개 열람 가능 여부와 소프트웨어의 사용·수정·재배포 허용은 같은 의미가 아니므로, 외부 공개 또는 배포 전 저장소 소유 조직이 `LICENSE`와 기여 정책을 확정해야 한다.
