@@ -73,6 +73,10 @@ android {
     }
 }
 
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.add("-Werror")
+}
+
 dependencies {
     testImplementation "junit:junit:4.13.2"
 }

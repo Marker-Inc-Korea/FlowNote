@@ -1,6 +1,34 @@
 # 검증 자동화
 
+## 최신 유효 Windows x64 통합 기준선
+
+2026-07-26 현재 유효한 무생략 통합 기준선은 아직 없다. 아래 표는 기준선 확정 여부를 확인하는 단일 현황표다. `PASSED` 실행이 나온 뒤에도 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 재현 가능한 기준선으로 확정한다.
+
+| 항목 | 최신 유효 기준선 | 재현 실행 |
+| --- | --- | --- |
+| 판정 | `대기` | `대기` |
+| `run_id` | 없음 | 없음 |
+| 소스 커밋 | 없음 | 없음 |
+| 환경 | 없음 | 없음 |
+| FastAPI | 목표 149/149, failure/error/skipped 0 | 동일 |
+| WPF Core | 목표 43/43, failed/error/skipped 0 | 동일 |
+| WPF 앱 | 목표 build PASS, compiler warning 0 | 동일 |
+| Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
+| Android | 목표 unit 15/15, failure/error/skipped 0, debug build PASS | 동일 |
+| SQLite | 목표 전후 `quick_check=ok`, FK 위반 0 | 동일 |
+| Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
+
+보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 이 실행과 앞선 실패 실행의 DB·로그·요약은 삭제하거나 덮어쓰지 않는다. 현재 작업 환경은 macOS ARM64이므로 Windows x64 무생략 실행과 같은 환경에서의 경고 재확인은 수행할 수 없다.
+
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
+
+## 2026-07-26 Windows 통합 기준선 게이트 보강
+
+표준 스크립트가 소스 커밋과 Git 전후 clean 상태, FastAPI 149건, WPF Core 43건, Android unit 15건을 정확히 강제하도록 보강했다. WPF와 Android 빌드는 경고를 오류로 처리하며, 요약에는 WPF·Android 수치와 오늘 사진·인수인계 SQL 확인, 기존 과거 문서 version `+1`, DB 전후 무결성 증거를 구조화해 남긴다.
+
+`java -version`과 Java 속성 조회는 Windows PowerShell 5.1이 표준 오류 출력을 PowerShell 오류 객체로 바꾸지 않도록 별도 프로세스로 실행한다. 원문은 실행별 `java-version.log`와 `java-settings.log`에 보존한다.
+
+macOS ARM64 보조 검증에서 Python 3.11.15 FastAPI 149건, .NET SDK 10.0.301 WPF Core 43건, WPF Windows 대상 교차 빌드 경고 0·오류 0, Android Studio JBR 21의 Android unit 15건과 debug build가 통과했다. Android 보조 실행은 표준 JDK 17이 아니며 Windows 누적 공통 DB 스모크와 Git 전후 통합 증거도 포함하지 않으므로 유효 기준선은 계속 `대기`다. 기존 DB와 빌드·테스트 산출물은 삭제하지 않았다.
 
 ## 2026-07-24 GitHub README 공개 리뷰 재검증
 
@@ -116,22 +144,32 @@ Git이 추적하는 Markdown 42개를 현재 서버·Windows·Android 코드와 
 
 `scripts/manage-pilot-run.py`를 추가해 실제 파일럿 증거 구조 생성과 완료 판정을 분리했다. `PILOT-20260720-1500-LOCAL-001`로 초기 판정표 생성과 누락 게이트 검출을 시험했으며 예상대로 종료 코드 1과 `FAIL` 판정이 나왔다. 잘못된 `PILOT-bad` 실행 ID는 종료 코드 2로 거부됐다. 결과와 로그는 Git 제외 경로 `data/local/pilot-evidence/PILOT-20260720-1500-LOCAL-001/`에 보존했다. Python compile, 저장소 FastAPI 가상환경의 Ruff check와 `git diff --check`는 통과했다. 이 실행은 고객 유사망·Windows·Android·별도 PC 복구가 없는 로컬 준비 점검이므로 실제 파일럿 통과 증거가 아니며 모든 실기 게이트는 계속 `대기`다.
 
-## 표준 실행
+## 지원 도구 matrix와 표준 실행
 
 Windows 배포 준비·통합 검증 PC의 표준 도구 기준은 다음과 같다. `verify-preserved-tests.ps1`은 실행 시작 단계에서 이 기준을 검사하고 실제 버전을 실행 ID 폴더의 `environment.json`에 남긴다.
 
-| 도구 | 표준 기준 |
-| --- | --- |
-| 운영체제 | Windows 10/11 또는 동등한 Windows Server x64 |
-| PowerShell | Windows PowerShell 5.1 이상. PowerShell 7.4 LTS 이상 권장 |
-| .NET | SDK 10.x와 `Microsoft.WindowsDesktop.App` Runtime 10.x |
-| Python | `services/api/.venv/Scripts/python.exe`, Python 3.11 이상 |
-| Android Java | x64 JDK 17. `JAVA_HOME`과 `java`가 같은 설치를 가리켜야 함 |
-| Android SDK | `ANDROID_SDK_ROOT` 또는 `ANDROID_HOME`, Platform 35, Build Tools 35.0.0, Platform Tools |
-| Android 빌드 | 저장소 Gradle Wrapper 8.10.2, Android Gradle Plugin 8.7.3 |
-| Git | 검증 PC PATH에서 실행 가능한 Git |
+| 구성 요소 | 지원 범위 | 기준선 강제 조건 |
+| --- | --- | --- |
+| 운영체제 | Windows 10/11 또는 동등한 Windows Server | x64 OS와 x64 PowerShell 프로세스 |
+| PowerShell | Windows PowerShell 5.1 이상, PowerShell 7.4 LTS 이상 권장 | 실행 버전과 edition을 `environment.json`에 기록 |
+| .NET | SDK 10.x | `Microsoft.WindowsDesktop.App` Runtime 10.x가 함께 설치되어야 함 |
+| WPF target | `net10.0`, `net10.0-windows` | Nullable 활성화, WPF Core와 앱 build warning 0 |
+| Python | 3.11 이상 | `services/api/.venv/Scripts/python.exe`의 실제 버전을 기록 |
+| Android Java | x64 JDK 17 | `JAVA_HOME`, PATH의 `java`·`javac`가 같은 JDK 17이어야 함 |
+| Android SDK | Platform 35 | Build Tools 35.0.0과 Platform Tools가 있어야 함 |
+| Android 빌드 | Gradle Wrapper 8.10.2, Android Gradle Plugin 8.7.3 | Java source/target 17, Java compiler warning 0 |
+| Git | 현재 Windows용 Git | 커밋 SHA를 기록하고 실행 전후 worktree가 clean이어야 함 |
 
 JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기준선으로 확정하지 않는다. WPF framework-dependent 배포 대상 PC도 Desktop Runtime 10.x를 사용하며, 런타임 설치를 통제할 수 없는 대상에는 별도의 self-contained MSI 검증 기준을 적용한다.
+
+### Compiler 경고 정책
+
+- 릴리스 기준선은 compiler warning 허용 목록을 두지 않고 0건만 인정한다.
+- WPF Core 테스트와 WPF 앱 빌드는 `TreatWarningsAsErrors=true`로 실행한다. Nullable 경고를 포함한 C# compiler/analyzer 경고가 하나라도 있으면 해당 단계와 전체 실행이 실패한다.
+- Android Java compile은 `-Werror`, Gradle 실행은 `--warning-mode=fail`을 적용한다. Java compiler 또는 Gradle 경고가 있으면 Android 단계가 실패한다.
+- SDK나 compiler 버전 차이로만 보이는 경고도 임시 허용하지 않는다. `environment.json`의 실제 Windows/.NET/JDK/Android SDK 조합과 경고 로그를 함께 비교한 뒤 지원 matrix 변경 여부를 별도 결정한다.
+
+`CS8604`는 환경 차이가 아니라 null 계약이 불명확했던 코드 결함으로 분류한다. `currentUser.Role`은 nullable인데 `AIGroundTruthOperationsWindow` 생성자는 non-null 문자열을 요구했다. 현재 코드는 `currentUser.Role ?? string.Empty`로 전달해 권한 값이 없으면 fail-closed로 처리한다. macOS의 .NET 10 Windows 대상 교차 빌드에서는 수정 후 warning 0을 확인했지만, 동일 Windows x64 환경 재확인은 아직 남아 있다. 다음 무생략 실행에서는 경고를 오류로 승격하므로 같은 문제가 재현되면 WPF 앱 build가 PASS가 될 수 없다.
 
 저장소 루트에서 다음 명령을 실행한다.
 
@@ -143,17 +181,17 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 
 1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
 2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
-3. 실행 전 `git status --porcelain=v1 --untracked-files=all`과 `git ls-files`에서 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않는지 점검한다.
+3. 실행 전 커밋 SHA를 기록하고 `git status --porcelain=v1 --untracked-files=all`이 비어 있는지 확인한다. `git ls-files`에서는 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않아야 한다.
 4. `services/api`에서 FastAPI pytest node ID 149개를 수집하고 중복 node ID가 0개인지 확인한다. 수집 목록은 `fastapi-collected-tests.txt`로 보존한다.
 5. FastAPI pytest를 실행하고 실행 ID별 JUnit을 보존한다. 수집 총수·고유 node ID 수·JUnit 실행 수가 모두 149인지 직접 대조한다.
-6. WPF Core 테스트를 실행하고 TRX를 보존한다.
-7. WPF 앱을 빌드한다.
+6. WPF Core 테스트를 warning-as-error로 실행하고 TRX의 total/passed가 모두 43인지 확인한다.
+7. WPF 앱을 warning-as-error로 빌드해 compiler warning과 error가 모두 0인지 확인한다.
 8. WPF 공통 DB의 스모크 전 `quick_check`와 `foreign_key_check`를 별도 JSON 증거로 확인한다.
 9. `5184` 포트에 서버가 없으면 누적 `flownote.windows-smoke.sqlite3`와 `storage/windows-smoke`를 쓰는 FastAPI를 시작하고, 같은 실행 ID로 WPF 통합 스모크를 실행한다.
 10. WPF 공통 DB의 스모크 후 무결성을 다시 확인한다.
-11. Android `testDebugUnitTest`와 `assembleDebug`를 실행하고 JUnit XML을 실행 ID 폴더에도 복사해 보존한다.
+11. Android Java warning-as-error 조건에서 `testDebugUnitTest`와 `assembleDebug`를 실행한다. JUnit total/passed 15, failure/error/skipped 0을 확인하고 XML을 실행 ID 폴더에도 복사해 보존한다.
 12. `-RunAndroidDeviceSmoke`를 지정하면 연결된 승인 실단말이 정확히 1대인지 확인하고 `connectedDebugAndroidTest`를 실행한다.
-13. 실행 후 `git status --short --untracked-files=all`, `git ls-files`, staged 파일 목록을 다시 점검하고 전후 증거 파일과 신규 금지 추적 산출물 수를 보존한다.
+13. 실행 후 `git status --short --untracked-files=all`, `git ls-files`, staged 파일 목록을 다시 점검한다. worktree가 다시 clean이고 신규 금지 추적·스테이징 산출물과 개인 경로가 모두 0이어야 하며, 전후 증거를 보존한다.
 
 개별 명령은 다음과 같다.
 
@@ -192,7 +230,7 @@ FieldComment 정제 스모크의 기존 6개 슬롯은 범주마다 `NORMAL-01/0
 
 마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. `wpf-smoke-database-evidence.json`에는 주요 테이블 실행 전후 통계, 오늘 문서 ID, 과거 기존 문서의 이전·신규 버전과 무결성 결과가 저장된다. 통제된 기준선은 실행마다 설정이 식별되는 관리형 FastAPI를 사용하므로 시작 전에 `5184` 포트를 비워야 한다. 해당 포트에 이미 건강한 서버가 있으면 환경 실패로 중단하고 외부 프로세스는 종료하지 않는다.
 
-한 run ID의 `verification-summary.json`이 `partial_run=false`, `status=PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선으로 확정한다. 현재 FastAPI 수집/JUnit guard와 목표는 149건이며 failure/error/skipped와 중복 node ID는 모두 0이어야 한다. WPF TRX와 Android JUnit도 failure/error 0, WPF·Android build 로그도 build error 0이어야 하며 DB 증거의 네 무결성 값이 모두 위 기준과 일치해야 한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+한 run ID의 `verification-summary.json`이 `partial_run=false`, `status=PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선 후보가 된다. FastAPI는 수집·고유 node ID·JUnit passed가 모두 149이고 failure/error/skipped가 0이어야 한다. WPF Core는 total/passed 43과 failed/error/skipped 0, Android는 total/passed 15와 failure/error/skipped 0이어야 한다. WPF·Android build의 compiler warning과 error도 0이어야 한다. DB 전후 무결성, 오늘 사진·인수인계 2건, 기존 과거 문서 version `+1`, Git 전후 clean과 금지 산출물 0이 요약과 원본 증거에서 일치해야 한다. 같은 커밋에서 새 `run_id`로 한 번 더 동일하게 통과한 뒤 최상단 현황표에 두 실행을 기록한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
 

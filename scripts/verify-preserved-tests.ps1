@@ -31,9 +31,12 @@ New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
 $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
 $expectedFastApiTestCount = 149
+$expectedWpfCoreTestCount = 43
+$expectedAndroidUnitTestCount = 15
 $script:stepNumber = 0
 $script:stepResults = New-Object System.Collections.Generic.List[object]
 $script:isPartialRun = $SkipFastApiPytest -or $SkipWpfBuild -or $SkipWpfSmoke -or $SkipAndroidBuild -or $SkipGitArtifactCheck
+$script:sourceCommit = $null
 $script:fastApiEvidence = [ordered]@{
     expected = $expectedFastApiTestCount
     collected = $null
@@ -44,7 +47,65 @@ $script:fastApiEvidence = [ordered]@{
     skipped = $null
     collection_matches_junit = $null
 }
+$script:wpfEvidence = [ordered]@{
+    core_tests = [ordered]@{
+        expected = $expectedWpfCoreTestCount
+        total = $null
+        passed = $null
+        failed = $null
+        errors = $null
+        skipped = $null
+    }
+    app_build = [ordered]@{
+        status = "NOT_RUN"
+        compiler_warnings = $null
+        errors = $null
+        warnings_as_errors = $true
+    }
+    database_before = [ordered]@{
+        quick_check = $null
+        foreign_key_violations = $null
+        evidence = $null
+    }
+    smoke = [ordered]@{
+        status = "NOT_RUN"
+        evidence = $null
+        today_registered_and_listed = $null
+        today_sql_verified_rows = $null
+        past_document_id = $null
+        past_previous_version = $null
+        past_new_version = $null
+        past_sql_verified_rows = $null
+        quick_check = $null
+        foreign_key_violations = $null
+        mapping_duplicates = $null
+        idempotency_duplicates = $null
+    }
+    database_after = [ordered]@{
+        quick_check = $null
+        foreign_key_violations = $null
+        evidence = $null
+    }
+}
+$script:androidEvidence = [ordered]@{
+    unit_tests = [ordered]@{
+        expected = $expectedAndroidUnitTestCount
+        total = $null
+        passed = $null
+        failures = $null
+        errors = $null
+        skipped = $null
+    }
+    debug_build = [ordered]@{
+        status = "NOT_RUN"
+        compiler_warnings = $null
+        warnings_as_errors = $true
+    }
+}
 $script:gitArtifactEvidence = [ordered]@{
+    source_commit = $null
+    worktree_clean_before = $null
+    worktree_clean_after = $null
     new_forbidden_tracked_files = $null
     staged_forbidden_artifacts = $null
     staged_personal_paths = $null
@@ -62,6 +123,7 @@ function Write-RunSummary {
     $summary = [ordered]@{
         run_id = $RunId
         status = $Status
+        source_commit = $script:sourceCommit
         started_from = $repoRoot.Path
         artifact_directory = $runArtifactDir
         generated_at = (Get-Date).ToString("O")
@@ -76,6 +138,8 @@ function Write-RunSummary {
             skip_git_artifact_check = $SkipGitArtifactCheck.IsPresent
         }
         fastapi = $script:fastApiEvidence
+        wpf = $script:wpfEvidence
+        android = $script:androidEvidence
         git_artifacts = $script:gitArtifactEvidence
         steps = @($script:stepResults | ForEach-Object { $_ })
     }
@@ -184,15 +248,13 @@ function Assert-StandardToolchain {
         throw ".NET Windows Desktop Runtime 10.x is required."
     }
 
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = "Continue"
-        $javaVersionLines = @(& java -version 2>&1)
-        $javaVersionExitCode = $LASTEXITCODE
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
+    $javaExecutable = (Get-Command java).Source
+    $javaVersionLog = Join-Path $runArtifactDir "java-version.log"
+    $javaVersionProcess = Start-Process -FilePath $javaExecutable `
+        -ArgumentList @("-version") -NoNewWindow -Wait -PassThru `
+        -RedirectStandardError $javaVersionLog
+    $javaVersionExitCode = $javaVersionProcess.ExitCode
+    $javaVersionLines = @(Get-Content $javaVersionLog)
     if ($javaVersionExitCode -ne 0) {
         throw "Unable to execute java -version."
     }
@@ -215,14 +277,12 @@ function Assert-StandardToolchain {
         (Resolve-Path $javaHomeExecutable).Path -ne (Resolve-Path $pathJavaExecutable).Path) {
         throw "JAVA_HOME and PATH java must point to the same JDK 17 installation."
     }
-    try {
-        $ErrorActionPreference = "Continue"
-        $javaSettings = @(& java -XshowSettings:properties -version 2>&1) -join "`n"
-        $javaSettingsExitCode = $LASTEXITCODE
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
+    $javaSettingsLog = Join-Path $runArtifactDir "java-settings.log"
+    $javaSettingsProcess = Start-Process -FilePath $javaExecutable `
+        -ArgumentList @("-XshowSettings:properties", "-version") -NoNewWindow -Wait -PassThru `
+        -RedirectStandardError $javaSettingsLog
+    $javaSettingsExitCode = $javaSettingsProcess.ExitCode
+    $javaSettings = @(Get-Content $javaSettingsLog) -join "`n"
     if ($javaSettingsExitCode -ne 0) {
         throw "Unable to inspect Java runtime properties."
     }
@@ -265,8 +325,11 @@ function Assert-StandardToolchain {
         throw "Python 3.11 or newer is required. Detected: $pythonVersion"
     }
 
+    $script:sourceCommit = (& git rev-parse HEAD).Trim()
+    $script:gitArtifactEvidence.source_commit = $script:sourceCommit
     $environment = [ordered]@{
         run_id = $RunId
+        source_commit = $script:sourceCommit
         os = [Environment]::OSVersion.VersionString
         powershell = $PSVersionTable.PSVersion.ToString()
         powershell_edition = $PSVersionTable.PSEdition
@@ -461,7 +524,12 @@ if (-not $SkipGitArtifactCheck) {
     Invoke-Step "Check current git status before verification" {
         Write-GitEvidence -Phase "before"
         $script:trackedFilesBefore = @(& git ls-files)
+        $statusBefore = @(& git status --porcelain=v1 --untracked-files=all)
+        $script:gitArtifactEvidence.worktree_clean_before = $statusBefore.Count -eq 0
         Assert-NoForbiddenGitArtifacts
+        if ($statusBefore.Count -ne 0) {
+            throw "The integrated baseline must start from a clean worktree tied to source commit $($script:sourceCommit)."
+        }
     }
 }
 
@@ -535,7 +603,8 @@ if (-not $SkipWpfBuild) {
         $trxPath = Join-Path $runArtifactDir "wpf-core-tests.trx"
         & dotnet test ".\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj" `
             --logger ("trx;LogFileName={0}" -f [IO.Path]::GetFileName($trxPath)) `
-            --results-directory $runArtifactDir
+            --results-directory $runArtifactDir `
+            -p:TreatWarningsAsErrors=true
         if ($LASTEXITCODE -ne 0) {
             throw "WPF Core tests failed with exit code $LASTEXITCODE."
         }
@@ -544,17 +613,38 @@ if (-not $SkipWpfBuild) {
         }
         [xml]$trx = Get-Content -Raw $trxPath
         $counters = $trx.SelectSingleNode("//*[local-name()='Counters']")
-        if ($null -eq $counters -or [int]$counters.total -le 0 -or [int]$counters.failed -ne 0 -or [int]$counters.error -ne 0) {
-            throw "WPF Core TRX counters are missing or contain failures."
+        if ($null -eq $counters) {
+            throw "WPF Core TRX counters are missing."
         }
-        Write-Host "WPF Core TRX: total=$($counters.total), passed=$($counters.passed), failed=0, error=0"
+        $wpfTotal = [int]$counters.GetAttribute("total")
+        $wpfPassed = [int]$counters.GetAttribute("passed")
+        $wpfFailed = [int]$counters.GetAttribute("failed")
+        $wpfErrors = [int]$counters.GetAttribute("error")
+        $wpfSkipped = [int]$counters.GetAttribute("notExecuted")
+        $script:wpfEvidence.core_tests.total = $wpfTotal
+        $script:wpfEvidence.core_tests.passed = $wpfPassed
+        $script:wpfEvidence.core_tests.failed = $wpfFailed
+        $script:wpfEvidence.core_tests.errors = $wpfErrors
+        $script:wpfEvidence.core_tests.skipped = $wpfSkipped
+        if ($wpfTotal -ne $expectedWpfCoreTestCount -or
+            $wpfPassed -ne $expectedWpfCoreTestCount -or
+            $wpfFailed -ne 0 -or
+            $wpfErrors -ne 0 -or
+            $wpfSkipped -ne 0) {
+            throw "WPF Core TRX mismatch: expected=$expectedWpfCoreTestCount, total=$wpfTotal, passed=$wpfPassed, failed=$wpfFailed, errors=$wpfErrors, skipped=$wpfSkipped."
+        }
+        Write-Host "WPF Core TRX: total=$wpfTotal, passed=$wpfPassed, failed=0, errors=0, skipped=0"
     }
 
     Invoke-Step "Build WPF app" {
-        & dotnet build ".\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj"
+        & dotnet build ".\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj" `
+            -p:TreatWarningsAsErrors=true
         if ($LASTEXITCODE -ne 0) {
             throw "WPF build failed with exit code $LASTEXITCODE."
         }
+        $script:wpfEvidence.app_build.status = "PASSED"
+        $script:wpfEvidence.app_build.compiler_warnings = 0
+        $script:wpfEvidence.app_build.errors = 0
     }
 }
 
@@ -569,6 +659,15 @@ if (-not $SkipWpfSmoke) {
             --check-only
         if ($LASTEXITCODE -ne 0) {
             throw "Shared WPF SQLite preflight integrity check failed with exit code $LASTEXITCODE."
+        }
+        $preflightEvidencePath = Join-Path $runArtifactDir "wpf-integrity-preflight/before-evidence.json"
+        $preflightEvidence = Get-Content -Raw $preflightEvidencePath | ConvertFrom-Json
+        $script:wpfEvidence.database_before.quick_check = @($preflightEvidence.quick_check) -join ","
+        $script:wpfEvidence.database_before.foreign_key_violations = @($preflightEvidence.foreign_key_check).Count
+        $script:wpfEvidence.database_before.evidence = "wpf-integrity-preflight/before-evidence.json"
+        if ($script:wpfEvidence.database_before.quick_check -ne "ok" -or
+            $script:wpfEvidence.database_before.foreign_key_violations -ne 0) {
+            throw "Shared WPF SQLite preflight evidence does not report quick_check=ok and zero foreign-key violations."
         }
     }
 
@@ -651,6 +750,34 @@ if (-not $SkipWpfSmoke) {
             if (-not (Test-Path $expectedDatabasePath)) {
                 throw "WPF smoke did not leave the shared SQLite DB at: $expectedDatabasePath"
             }
+            $smokeEvidencePath = Join-Path $runArtifactDir "wpf-smoke-database-evidence.json"
+            if (-not (Test-Path $smokeEvidencePath -PathType Leaf)) {
+                throw "WPF smoke database evidence was not created: $smokeEvidencePath"
+            }
+            $smokeEvidence = Get-Content -Raw $smokeEvidencePath | ConvertFrom-Json
+            $script:wpfEvidence.smoke.evidence = "wpf-smoke-database-evidence.json"
+            $script:wpfEvidence.smoke.today_registered_and_listed = [bool]$smokeEvidence.today.registered_and_listed
+            $script:wpfEvidence.smoke.today_sql_verified_rows = [int]$smokeEvidence.today.sql_verified_rows
+            $script:wpfEvidence.smoke.past_document_id = $smokeEvidence.past_existing_document.document_id
+            $script:wpfEvidence.smoke.past_previous_version = [int]$smokeEvidence.past_existing_document.previous_version
+            $script:wpfEvidence.smoke.past_new_version = [int]$smokeEvidence.past_existing_document.new_version
+            $script:wpfEvidence.smoke.past_sql_verified_rows = [int]$smokeEvidence.past_existing_document.sql_verified_rows
+            $script:wpfEvidence.smoke.quick_check = $smokeEvidence.integrity.quick_check
+            $script:wpfEvidence.smoke.foreign_key_violations = [int]$smokeEvidence.integrity.foreign_key_violations
+            $script:wpfEvidence.smoke.mapping_duplicates = [int]$smokeEvidence.integrity.mapping_duplicates
+            $script:wpfEvidence.smoke.idempotency_duplicates = [int]$smokeEvidence.integrity.idempotency_duplicates
+            if ($smokeEvidence.run_id -ne $RunId -or
+                -not $script:wpfEvidence.smoke.today_registered_and_listed -or
+                $script:wpfEvidence.smoke.today_sql_verified_rows -ne 2 -or
+                $script:wpfEvidence.smoke.past_new_version -ne ($script:wpfEvidence.smoke.past_previous_version + 1) -or
+                $script:wpfEvidence.smoke.past_sql_verified_rows -ne 1 -or
+                $script:wpfEvidence.smoke.quick_check -ne "ok" -or
+                $script:wpfEvidence.smoke.foreign_key_violations -ne 0 -or
+                $script:wpfEvidence.smoke.mapping_duplicates -ne 0 -or
+                $script:wpfEvidence.smoke.idempotency_duplicates -ne 0) {
+                throw "WPF smoke database evidence does not satisfy the integrated baseline contract."
+            }
+            $script:wpfEvidence.smoke.status = "PASSED"
         }
         finally {
             if ($null -ne $managedApiProcess -and -not $managedApiProcess.HasExited) {
@@ -679,6 +806,15 @@ if (-not $SkipWpfSmoke) {
         if ($LASTEXITCODE -ne 0) {
             throw "Shared WPF SQLite postflight integrity check failed with exit code $LASTEXITCODE."
         }
+        $postflightEvidencePath = Join-Path $runArtifactDir "wpf-integrity-postflight/before-evidence.json"
+        $postflightEvidence = Get-Content -Raw $postflightEvidencePath | ConvertFrom-Json
+        $script:wpfEvidence.database_after.quick_check = @($postflightEvidence.quick_check) -join ","
+        $script:wpfEvidence.database_after.foreign_key_violations = @($postflightEvidence.foreign_key_check).Count
+        $script:wpfEvidence.database_after.evidence = "wpf-integrity-postflight/before-evidence.json"
+        if ($script:wpfEvidence.database_after.quick_check -ne "ok" -or
+            $script:wpfEvidence.database_after.foreign_key_violations -ne 0) {
+            throw "Shared WPF SQLite postflight evidence does not report quick_check=ok and zero foreign-key violations."
+        }
     }
 }
 
@@ -688,7 +824,8 @@ if (-not $SkipAndroidBuild) {
         $androidLog = Join-Path $runArtifactDir "android-unit-build.log"
         Push-Location $androidDir
         try {
-            & .\gradlew.bat testDebugUnitTest assembleDebug --stacktrace *>&1 | Tee-Object -FilePath $androidLog
+            & .\gradlew.bat testDebugUnitTest assembleDebug --stacktrace --warning-mode=fail *>&1 |
+                Tee-Object -FilePath $androidLog
             if ($LASTEXITCODE -ne 0) {
                 throw "Android unit test or debug build failed with exit code $LASTEXITCODE."
             }
@@ -706,16 +843,29 @@ if (-not $SkipAndroidBuild) {
             $androidTests = 0
             $androidFailures = 0
             $androidErrors = 0
+            $androidSkipped = 0
             foreach ($androidXmlFile in $androidXmlFiles) {
                 $counts = Get-JUnitCounts $androidXmlFile.FullName
                 $androidTests += $counts.Tests
                 $androidFailures += $counts.Failures
                 $androidErrors += $counts.Errors
+                $androidSkipped += $counts.Skipped
             }
-            if ($androidTests -le 0 -or $androidFailures -ne 0 -or $androidErrors -ne 0) {
-                throw "Android JUnit mismatch: tests=$androidTests, failures=$androidFailures, errors=$androidErrors."
+            $script:androidEvidence.unit_tests.total = $androidTests
+            $script:androidEvidence.unit_tests.passed = $androidTests - $androidFailures - $androidErrors - $androidSkipped
+            $script:androidEvidence.unit_tests.failures = $androidFailures
+            $script:androidEvidence.unit_tests.errors = $androidErrors
+            $script:androidEvidence.unit_tests.skipped = $androidSkipped
+            if ($androidTests -ne $expectedAndroidUnitTestCount -or
+                $script:androidEvidence.unit_tests.passed -ne $expectedAndroidUnitTestCount -or
+                $androidFailures -ne 0 -or
+                $androidErrors -ne 0 -or
+                $androidSkipped -ne 0) {
+                throw "Android JUnit mismatch: expected=$expectedAndroidUnitTestCount, tests=$androidTests, passed=$($script:androidEvidence.unit_tests.passed), failures=$androidFailures, errors=$androidErrors, skipped=$androidSkipped."
             }
-            Write-Host "Android JUnit: tests=$androidTests, failures=0, errors=0"
+            $script:androidEvidence.debug_build.status = "PASSED"
+            $script:androidEvidence.debug_build.compiler_warnings = 0
+            Write-Host "Android JUnit: tests=$androidTests, passed=$androidTests, failures=0, errors=0, skipped=0"
         }
         finally {
             Pop-Location
@@ -769,9 +919,14 @@ if (-not $SkipGitArtifactCheck) {
         $script:gitArtifactEvidence.new_forbidden_tracked_files = $newForbiddenTrackedFiles.Count
         $script:gitArtifactEvidence.staged_forbidden_artifacts = $stagedForbiddenArtifacts.Count
         $script:gitArtifactEvidence.staged_personal_paths = $stagedPersonalPaths.Count
+        $statusAfter = @(& git status --porcelain=v1 --untracked-files=all)
+        $script:gitArtifactEvidence.worktree_clean_after = $statusAfter.Count -eq 0
         Assert-NoForbiddenGitArtifacts
         if ($newForbiddenTrackedFiles.Count -ne 0) {
             throw "Verification newly added forbidden tracked artifacts: $($newForbiddenTrackedFiles -join ', ')."
+        }
+        if ($statusAfter.Count -ne 0) {
+            throw "The integrated baseline changed tracked or untracked source files. Inspect git-status-after.txt."
         }
         Write-Host "git status --short --untracked-files=all"
         & git status --short --untracked-files=all
