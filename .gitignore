@@ -139,6 +139,7 @@ htmlcov/
 # Temporary files
 tmp/
 temp/
+_workspace/
 smoke-output/
 smoke-results/
 test-output/
