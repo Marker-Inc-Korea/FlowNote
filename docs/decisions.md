@@ -60,6 +60,14 @@
 - 기존 run ID의 증거는 덮어쓰지 않는다. 실패 단계까지 생성된 DB·로그·결과도 삭제하지 않으며 요약에 실패 단계와 원인을 남긴다.
 - 생략 옵션이 없는 `PASSED` 요약과 모든 필수 단계·무결성 값이 함께 통과해야 기준선으로 확정한다. `PASSED_PARTIAL`, 비 Windows 실행 또는 테스트 수집 개수 일치는 부분 근거로만 취급한다.
 
+## 2026-07-26. 통합 기준선의 compiler warning 0건과 재현 실행
+
+- 릴리스 기준선은 C#·Android Java compiler warning 허용 목록을 두지 않고 0건만 인정한다. WPF Core와 앱은 `TreatWarningsAsErrors=true`, Android Java compile은 `-Werror`, Gradle은 `--warning-mode=fail`로 실행한다.
+- `CS8604`는 SDK 차이에 따른 허용 경고가 아니라 nullable 역할 값을 non-null 생성자에 넘긴 코드 결함으로 분류한다. 역할이 없을 때 `string.Empty`로 정규화해 권한 검사가 fail-closed가 되도록 수정했으며, 같은 Windows x64 matrix에서 warning-as-error 빌드를 통과해야 종결한다.
+- `verification-summary.json`은 소스 커밋, FastAPI 149건, WPF Core 43건, Android unit 15건, WPF·Android build, 공통 DB 전후 무결성, 오늘 문서와 과거 문서 version 증가, Git 전후 상태를 구조화해 남긴다.
+- 첫 무생략 `PASSED`는 기준선 후보로만 본다. 기존 증거를 보존한 채 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 최신 유효 기준선으로 확정한다.
+- SDK/compiler 차이로 새 경고가 나타나면 경고를 숨기거나 임시 허용하지 않는다. 실행별 `environment.json`과 원본 build log를 비교해 코드 결함인지 지원 matrix 차이인지 먼저 결정하고, matrix 변경은 새 결정 기록과 두 번의 무생략 실행으로 검증한다.
+
 ## 2026-07-15. 서버 동기화 재시도 멱등성과 운영 진단
 
 - WPF 큐가 재전송하는 문서 버전과 FieldComment 첨부는 기존 큐의 안정된 idempotency key를 서버에 전달한다. 서버는 `document_versions`와 `field_comment_attachments`에 키를 유일하게 저장하고 같은 부모의 재요청에는 기존 결과를 반환한다.
