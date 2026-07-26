@@ -320,6 +320,8 @@ AI 검색 후보 API는 자동 조언이 아닌 “근거가 있는 검색과 �
 
 `GET /api/v1/ai-search/readiness`는 `field_readiness`와 `smoke_regression_readiness`를 별도 반환한다. provider 착수 가능은 고객 승인을 받은 `ANONYMOUS_FIELD` 계열에서 문서 10, 검토 가능한 FieldComment 100, 작업순서 이력 20, 보고서 source 10 후보와 독립 2인 승인 질문 48건을 요구한다. 여덟 범주와 `NORMAL`/`EXCLUSION`/`CONFLICT`의 24개 조합은 각각 2건 이상이어야 한다. 같은 scope의 실제 현장 승인 세트 전체 평가에서 candidate ID/content hash와 순위가 안정되고 top-k 포함률·인용 trace·인용 의미 일치율·상충 표시율이 모두 100%, 제외 근거 노출·권한 누출·존재하지 않는 인용이 각각 0건이어야 한다. 이어 24개 칸에서 1건씩 뽑은 같은 표본을 두 사람이 독립 검토해야 하며 불일치는 제3 합의 전까지 `PENDING_CONSENSUS`다. 스모크 48건과 `PILOT` 사례는 실제 익명 현장 48건으로 합산하지 않는다. 현재 provider/model의 기술·보안·법무·고객 심사와 필수 체크리스트까지 모두 승인되어야 `provider_start_ready=true`다. DB scope는 로컬 경로나 자격정보를 반환하지 않는 driver+hash 식별자다. `FLOWNOTE_AI_READINESS_GATE_ENABLED` 기본값은 `true`이며 미달 scope는 provider 호출 전에 `409 AI_READINESS_NOT_MET`로 차단한다. 이 판정은 외부 전송 승인이나 기능 플래그를 자동으로 켜지 않는다.
 
+표본 검토 API는 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`만 사용할 수 있다. 승인된 `FIELD_READINESS` dataset과 같은 snapshot에서 품질 기준을 모두 통과한 평가 run 2개가 있어야 검토를 등록한다. 독립 검토는 24개 칸에서 1건씩 고른 같은 case 목록과 같은 `samplingPlanReference`를 사용한다. 첫 검토자의 `findings`와 `decisionHash`는 두 번째 검토가 제출되기 전까지 다른 사용자에게 숨긴다. 두 판정이 다르면 앞선 검토자와 다른 제3 사용자가 불일치 case 전체만 `CONSENSUS`로 기록해야 완료된다. 이 기능은 현재 서버 API와 DB에만 있으며 WPF 표본 검토 화면과 클라이언트는 구현되어 있지 않다.
+
 WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidates/rebuild`로 후보를 재생성한 뒤 `GET /api/v1/ai-search/quality`의 후보/제외/FieldComment 검토 지표와 `GET /api/v1/ai-search/readiness`의 서버 고객·현장·DB scope, 네 원천과 승인 질문 부족분, 범주/유형 누락, 운영 호출 차단 상태를 표시한다. 화면은 이 수치가 서버 DB 기준이며 WPF 공통 로컬 SQLite와 합산되지 않음을 명시한다. 후보 목록에서 운영자는 `trace_table`, `trace_id`, `trace_version_id`로 원문 문서 버전, FieldComment, 작업순서 이력, 보고서 source row로 이동해 근거를 확인하며 선택 후보의 추적값을 클립보드에 복사할 수 있다.
 
 WPF `AI 정답셋 > 사례·원천 구성` 창은 후보 목록에서 포함 근거를 선택하고 제외 원천 ID·선택적 version ID·제외 사유·근거 설명을 입력해 `POST /ground-truth-cases`를 호출한다. 사례 등록/2차 승인 role은 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`다. 운영 창은 `GET /ground-truth-cases?includePending=true`로 첫 승인 대기 사례까지 표시하고, 첫 승인자와 다른 사용자가 2차 승인해야 활성 사례가 된다.
@@ -446,6 +448,7 @@ WPF `AI 운영 > 감사·보존`은 질의를 선택하면 고객/현장 scope, 
 | FieldComment 등록 | 위 role + `team-member`, `viewer` |
 | 접근 로그 조회 | `admin`, `system-admin` |
 | 보고서 작성 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
+| AI 실제 현장 표본 검토·제3 합의 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
 | 외부 AI 근거 검색·요약(후속 1단계) | `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`. 기능 플래그, 고객·현장별 전송 승인과 원천/채널 권한도 필요 |
 | 외부 AI 운영 승인·프롬프트·정책·감사·보존 | `system-admin` 전용 |
 | 채널 생성/멤버 관리 | 문서/작업순서 쓰기 role. 단, 채널 조회와 메시지/인수인계 조회는 채널 멤버 또는 `admin`, `system-admin` |
@@ -510,9 +513,9 @@ WPF `RolePermissionPolicy`와의 대조:
 - `FLOWNOTE_AI_RETENTION_SCHEDULER_ENABLED` (기본 `true`)
 - `FLOWNOTE_AI_RETENTION_SCHEDULER_INTERVAL_SECONDS` (기본 3600초, 60~86400초)
 
-## AI ground-truth WPF 운영 API
+## AI ground-truth와 현장 표본 운영 API
 
-WPF `AI 정답셋` 화면이 사용하는 API와 dataset 운영을 위해 서버가 제공하는 API는 다음과 같다. 응답의 `dataset_version_id`, `snapshot_hash`, 평가 `run_id`는 릴리스 준비도 재현 키다.
+WPF `AI 정답셋` 화면이 사용하는 API와 현장 표본 운영을 위해 서버가 제공하는 API는 다음과 같다. 응답의 `dataset_version_id`, `snapshot_hash`, 평가 `run_id`는 릴리스 준비도 재현 키다.
 
 | Method | Path | 계약 |
 | --- | --- | --- |
@@ -525,10 +528,12 @@ WPF `AI 정답셋` 화면이 사용하는 API와 dataset 운영을 위해 서버
 | `POST` | `/api/v1/ai-search/evaluations` | `datasetVersionId`로 승인 snapshot 전체 평가. ad-hoc `cases`/`groundTruthCaseIds`와 혼용 금지 |
 | `GET` | `/api/v1/ai-search/evaluations` | 저장된 run 목록. `datasetVersionId` 필터 지원 |
 | `GET` | `/api/v1/ai-search/evaluations/{run_id}` | 사례별 실패 코드와 기대·실제·제외 원천 trace 조회. `compareToRunId` 비교 지원 |
+| `POST` | `/api/v1/ai-search/field-readiness/sample-reviews` | 같은 dataset/evaluation 표본의 독립 판정 또는 불일치 제3 합의 기록. 현재 WPF는 직접 호출하지 않음 |
+| `GET` | `/api/v1/ai-search/field-readiness/sample-reviews` | 판정 은닉, 불일치 case, 합의와 완료 상태 조회. 현재 WPF는 직접 호출하지 않음 |
 
 dataset 상태는 `DRAFT → IN_REVIEW → PENDING_FIRST_APPROVAL → PENDING_SECOND_APPROVAL → APPROVED`다. 작성자, 검토자, 1차 승인자, 2차 승인자는 모두 달라야 하며 서버 상태 전이와 DB 제약이 이를 함께 강제한다. 최종 승인은 총 48건과 8범주×3유형 각 2건을 요구하고 사례 snapshot hash를 다시 확인한다. 대체 version은 같은 고객·현장·DB·라인·준비도 계열과 같은 `datasetKey`의 불변 version만 참조할 수 있다. 대체 version 승인 시 이전 승인본은 삭제·수정하지 않고 `SUPERSEDED`, 명시적 폐기는 `RETIRED`가 된다. dataset 상세·구성 변경·상태 전이는 현재 고객·현장·DB scope 밖의 ID를 `404`로 처리한다.
 
-`GET /api/v1/ai-search/readiness`는 `latest_approved_dataset`, 그 version에 정확히 결합된 `latest_evaluation`, `ai_provider_readiness_status`, `readiness_failures`, `external_ai_calls_blocked`, `non_ai_core_flows_blocked=false`를 반환한다. 승인 dataset 또는 해당 평가가 없으면 `PENDING`, 평가가 존재하지만 임계값 미달이면 `FAIL`, 모든 결합 게이트 통과 시 `PASS`다. `FAIL/PENDING`은 외부 provider 호출만 차단하며 후보 재생성·품질 점검과 문서·FieldComment 등 비AI API는 차단하지 않는다.
+`GET /api/v1/ai-search/readiness`는 `latest_approved_dataset`, 그 version에 정확히 결합된 `latest_evaluation`, `human_sample_review`, `human_sample_review_ready`, `ai_provider_readiness_status`, `readiness_failures`, `external_ai_calls_blocked`, `non_ai_core_flows_blocked=false`를 반환한다. 승인 dataset 또는 해당 평가가 없으면 `PENDING`, 평가가 존재하지만 임계값·독립 표본·provider 심사를 충족하지 못하면 `FAIL`, 모든 결합 게이트 통과 시 `PASS`다. `FAIL/PENDING`은 외부 provider 호출만 차단하며 후보 재생성·품질 점검과 문서·FieldComment 등 비AI API는 차단하지 않는다.
 ## 서버 식별과 무손실 reconciliation
 
 - `GET /api/v1/health/sync-manifest`, `GET /api/v1/sync/manifest`: `server_instance_id`, `server_epoch`, `schema_contract`, `api_contract_min/max`, 현재 `server_cursor`를 반환한다. health 경로는 전송 차단 판단을 위해 인증 없이 읽을 수 있지만 비밀값이나 운영 데이터는 포함하지 않는다.

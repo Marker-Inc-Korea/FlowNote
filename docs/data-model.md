@@ -185,7 +185,7 @@ AI 자동 조언과 자동 의사결정은 아직 범위에 넣지 않는다. �
 
 `ai_search_ground_truth_cases`는 고객·현장·선택적 라인과 로컬 경로를 노출하지 않는 DB fingerprint scope에 묶인다. 질문 범주는 안전, 품질, 설비 이상, 작업 보류, 재작업, 인수인계, 최신 공개 문서, 상충 기록이고 각 범주에서 `NORMAL`, `EXCLUSION`, `CONFLICT`를 구분한다. 기대 포함 근거는 승인 시점의 candidate/source/version/trace ID와 content hash, 승인자의 열람 권한, `as_of` 이전 존재를 검증한 뒤 근거 설명과 함께 snapshot으로 고정한다. 제외 근거도 실제 원천 row, content hash, 제외 사유와 설명으로 역추적되어야 한다. 허용 순위 최소·최대, `as_of`, 승인자·승인 시각을 보존하며 승인 질문 원본을 평가 실행과 분리한다.
 
-`ai_search_ground_truth_provenance`는 질문과 1:1이며 `SYNTHETIC`, `TEST`, `ANONYMOUS_FIELD`, `PILOT` 분류를 가진다. 앞의 두 분류는 `SMOKE_REGRESSION`, 뒤의 두 분류는 `FIELD_READINESS`로 고정한다. source snapshot hash, 비민감 여부와 설명, 서로 다른 첫/두 번째 승인자와 시각을 보존한다. 첫 승인 상태는 `PENDING_SECOND_APPROVAL`이며 독립 두 번째 승인 뒤 `APPROVED`가 되어야 질문이 활성화된다. 실제 현장 준비도와 스모크 회귀 준비도는 별도 집계하고 provider 착수에는 실제 현장 계열만 사용한다.
+`ai_search_ground_truth_provenance`는 질문과 1:1이며 `SYNTHETIC`, `TEST`, `ANONYMOUS_FIELD`, `PILOT` 분류를 가진다. 앞의 두 분류는 `SMOKE_REGRESSION`, 뒤의 두 분류는 `FIELD_READINESS`로 고정한다. source snapshot hash, 비민감 여부와 설명, 서로 다른 첫/두 번째 승인자와 시각을 보존한다. 첫 승인 상태는 `PENDING_SECOND_APPROVAL`이며 독립 두 번째 승인 뒤 `APPROVED`가 되어야 질문이 활성화된다. 실제 현장 준비도와 스모크 회귀 준비도는 별도 집계한다. 승인 `FIELD_READINESS` dataset과 provider 착수 48건에는 고객 승인을 받은 `ANONYMOUS_FIELD`만 포함하고 `PILOT`은 별도 이력으로 보존한다.
 
 `smoke48-v1` 회귀 matrix의 업무 원천은 case와 별도 row로 보존한다. 범주마다 `NORMAL` 2건, `EXCLUSION` 2건, `CONFLICT` 2건을 배정하고 FieldComment는 고정 `idempotency_key`로 재사용한다. 상태는 승인 전이 규칙에 따라 `ANALYZED`, `REVIEWED`, `SELECTED`, `EXCLUDED`로 수렴하며 `assigned_to`, `review_due_at`, `last_transition_reason`, `review_revision`을 필수 증거로 본다. `activity_history`의 검토 변경 before/after에는 동일한 원천 SHA-256이 있어야 하며 상태 정제 중 `raw_content`와 source 연결은 바뀌지 않는다.
 

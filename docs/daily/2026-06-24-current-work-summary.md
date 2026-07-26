@@ -15,7 +15,7 @@
 - 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인을 관리한다.
 - 보고서는 FieldComment와 문서 데이터를 바탕으로 초안 생성 보조와 저장 기능을 제공한다.
 - AI 검색 전 단계의 근거 후보 재생성, 목록 조회, 품질 점검 API를 제공한다.
-- 독립 2인 승인 ground-truth 사례, 불변 dataset version에 결합된 회귀 평가, 외부 AI 질의의 기본 비활성·승인·근거 snapshot·응답 검증·인용 감사, `system-admin` 운영 제어와 자동·일괄·단일 만료, legal hold 설정·해제를 제공한다. generic 네트워크 adapter는 명시적 test scope에만 있고 provider별 운영 client는 없다.
+- 독립 2인 승인 ground-truth 사례, 불변 dataset version에 결합된 회귀 평가, 실제 익명 현장 24칸 독립 표본 검토·제3 합의, 외부 AI 질의의 기본 비활성·승인·근거 snapshot·응답 검증·인용 감사, `system-admin` 운영 제어와 자동·일괄·단일 만료, legal hold 설정·해제를 제공한다. generic 네트워크 adapter는 명시적 test scope에만 있고 provider별 운영 client는 없다.
 - 서버 계정 생성·변경·재설정·세션 폐기와 `must_change_password` 강제 변경 흐름을 제공한다.
 - 서버 instance/epoch/API contract manifest와 WPF 큐 inventory reconciliation, 관리자 승인 적용 이력을 제공한다.
 
@@ -24,6 +24,7 @@
 - Windows WPF 앱은 로컬 SQLite를 사용한다.
 - 문서 등록, 문서 열람, FieldComment 작성·단계형 검토·품질 작업함, 작업순서, 알림, 채널함, 채널 관리, 인수인계 확인 현황, 보고서, 사용자 관리 기능이 구현되어 있다.
 - 서버 연결 시 AI 근거 후보 운영 점검 화면에서 후보 재생성, 품질 지표, 제외 사유, 원천 추적값을 확인하고 `AI 정답셋` 화면에서 사례·원천과 dataset version을 운영할 수 있다.
+- 실제 현장 표본 검토와 제3 합의는 서버 API에만 있으며 WPF 입력 화면은 없다.
 - `system-admin`은 별도 `AI 운영` 화면에서 승인·프롬프트·정책·감사, 만료 보존 일괄·단일 즉시 실행과 legal hold 설정·해제를 관리한다. 단일 고위험 조작은 이중 확인, 상태 충돌 검사와 서버 read-back을 거친다.
 - 기본 DB는 저장소 루트의 `data/local/flownote.local.sqlite`이다.
 - `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`가 있으면 해당 위치를 우선한다.

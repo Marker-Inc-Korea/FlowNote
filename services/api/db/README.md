@@ -13,7 +13,7 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 
 ## 주요 테이블
 
-2026-07-26 현재 ORM 생성 기준은 다음 59개 테이블이다.
+2026-07-26 현재 ORM 생성 기준은 다음 60개 테이블이다.
 
 - `schema_migrations`
 - `server_identity`

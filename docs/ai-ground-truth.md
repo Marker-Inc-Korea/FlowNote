@@ -123,4 +123,4 @@ services/api/.venv/bin/python scripts/verify-ai-field-readiness.py \
 - 익명화 누락, 권한 누출, 존재하지 않는 인용, 제외 근거 노출 발견
 - 고객 승인 만료·철회 또는 표본 검토 불일치의 재발
 
-승인 dataset은 제자리 수정하지 않는다. 같은 dataset key의 다음 version에 교체 사유와 `replaces_dataset_version_id`를 남기고 사례 48건·24칸, 네 사람의 dataset 역할 분리, 동일 snapshot 2회 평가와 독립 표본 검토를 다시 완료한다. 이전 version과 evaluation·검토 기록은 `SUPERSEDED` 이력으로 보존한다.
+승인 dataset은 제자리 수정하지 않는다. 같은 dataset key의 다음 version에 교체 사유와 `replaces_dataset_version_id`를 남기고 사례 48건·24칸, 네 사람의 dataset 역할 분리, 동일 snapshot 2회 평가와 독립 표본 검토를 다시 완료한다. 이전 dataset version만 `SUPERSEDED`로 전환하고, 그 version에 연결된 evaluation과 표본 검토 기록은 원래 ID와 snapshot hash를 유지한 채 보존한다.

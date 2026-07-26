@@ -32,7 +32,7 @@
 - 작업순서와 알림 후보, 보드 revision·mutation receipt
 - 채널/인수인계
 - 보고서 revision·내용/source 집합 hash·mutation receipt와 고정 근거 재검증
-- AI 검색 전 단계의 근거 후보 재생성·목록·품질, 독립 승인 사례와 불변 dataset version 기반 회귀 평가, 외부 AI 질의의 기본 비활성 안전장치·응답 검증·감사 골격
+- AI 검색 전 단계의 근거 후보 재생성·목록·품질, 독립 승인 사례와 불변 dataset version 기반 회귀 평가, 실제 익명 현장 24칸 독립 표본 검토·제3 합의 API, 외부 AI 질의의 기본 비활성 안전장치·응답 검증·감사 골격
 - 서버 계정 수명주기, 승인 단말 세션 폐기와 고객·현장별 AI 민감정보 정책 필터
 - `system-admin` 전용 외부 AI 승인·프롬프트·운영 정책·provider 착수 심사·감사·보존 API
 - 서버 instance/epoch/API contract manifest와 WPF 큐 inventory reconciliation·관리자 승인 적용 API

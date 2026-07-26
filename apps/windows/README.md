@@ -43,6 +43,8 @@ WPF에는 `/api/v1/ai/queries`를 호출하는 실제 외부 AI 질의 실행 �
 
 AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트, `AI 근거 후보 운영 점검` 화면에 구현되어 있다. 이 화면은 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`, `/api/v1/ai-search/readiness`를 호출해 외부 AI 호출 전 데이터 품질, 원천 추적 가능성, 서버 scope별 실제 현장/스모크 준비도를 확인한다. `AI 정답셋`의 `사례·원천 구성` 창은 후보를 포함 근거로 선택하고 실제 source ID·선택적 version ID·제외 사유·설명을 제외 근거로 입력한다. 첫 등록 사례는 비활성으로 남고 다른 사용자가 2차 승인해야 활성화된다. 승인 사례는 dataset version으로 묶어 작성자·검토자·두 승인자를 분리하고, 승인 snapshot에 결합한 평가 run을 실행·비교한다. 합성/시험 회귀와 실제 현장 준비도는 별도 계열로 유지한다.
 
+실제 익명 현장 dataset의 24칸 독립 표본 검토와 불일치 제3 합의는 FastAPI와 서버 DB에 구현되어 있다. 현재 WPF에는 이 표본을 입력하거나 합의하는 화면과 API 클라이언트가 없으므로 서버 API를 직접 사용해야 한다.
+
 `AI 운영` 화면은 `/api/v1/ai-operations`를 통해 승인, 프롬프트, 전역/현장 운영 정책과 질의 감사 메타데이터를 조회·변경한다. provider 자격증명·질의 원문·응답 원문은 표시하지 않으며 provider 자격증명은 설정 여부만 표시한다. 감사 CSV는 현장 정책에서 내보내기를 허용한 경우에만 저장할 수 있다. 서버는 설정된 주기로 만료 보존을 자동 처리하며, 화면의 실행 버튼은 다음 주기를 기다리지 않고 같은 일괄 처리를 즉시 요청한다. 감사·보존 탭은 선택 질의의 고객/현장, hold 상태, 두 보존 예정 시각, 전체 hold/감사 이력을 read-back한다. 단일 만료와 hold 설정·해제는 사유·근거 번호, 이중 확인, 최신 상태 태그와 안정 operation key를 사용하며 응답 유실은 같은 요청으로 한 번 재시도한다. 성공 뒤 query/hold/audit를 서버에서 다시 읽기 전에는 완료로 표시하지 않는다.
 
 `작업내역` 화면의 서버 동기화 큐는 완료, 보존 구 형식, 선행 조건 대기, 수동 조치 필요, 재시도 가능을 별도 운영 상태로 표시한다. 요약에는 `SYNCED`가 아닌 큐 깊이, 최장 대기 시간, 최근 1시간 처리량과 실패 분포가 나온다. 인증 만료나 서버 연결 실패·시간 초과는 현재 재시도 묶음을 중단하며, 개별 항목의 검증·파일 오류는 해당 항목을 실패로 남기고 다음 독립 항목을 계속 처리한다. 모든 경우 로컬 원천과 큐는 유지한다.
@@ -121,7 +123,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-현재 FastAPI 코드는 150건, WPF Core는 45건을 수집한다. 표준 스크립트의 수집/JUnit guard는 아직 FastAPI 149건·WPF Core 43건이어서 현재 코드와 맞지 않는다. 이번 macOS 검증에서 WPF Core 45건과 WPF 앱·동기화 마이그레이션 도구·수렴 검증 프로젝트 빌드는 경고·오류 없이 통과했다. Windows 누적 공통 DB 스모크와 Android build를 새 기준으로 한 run에서 완료해 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
+현재 FastAPI 코드는 151건, WPF Core는 48건을 수집한다. 표준 스크립트의 수집/JUnit guard는 아직 FastAPI 149건·WPF Core 43건이어서 현재 코드와 맞지 않는다. 이번 macOS 검증에서 WPF Core 48건과 WPF 앱 빌드는 경고·오류 없이 통과했다. Windows 누적 공통 DB 스모크와 Android build를 새 기준으로 한 run에서 완료해 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 
