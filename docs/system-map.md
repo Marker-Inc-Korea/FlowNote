@@ -168,7 +168,7 @@ WPF 로컬 DB는 공개 버전을 `documents.published_version_no`와 `document_
 
 FieldComment는 문서 파일 개정이 아니라 현장 원천 기록이다. 새 WPF 코멘트는 `field_comments`에 저장되며 문서 버전을 증가시키지 않는다. 첨부 사진/파일은 `field_comment_attachments`에 별도로 저장된다.
 
-관리자 검토 화면은 FieldComment 원천을 읽기 전용으로 표시하고 상태·기한 초과·담당자·라인/설비/공정/오류 태그·우선순위/상충·첨부·보고서 연결을 필터링하며 필터를 로컬 SQLite 저장 보기로 보존한다. 상세는 서버 원천 hash, 첨부 수, 관찰 문서 버전, 채널 권한과 상충 판단 근거를 표시한다. 다중 선택은 `/bulk-review/preview` 표에서 항목별 허용 전이와 실패를 확인한 뒤 `/bulk-review/execute`로 최대 200건을 처리한다. 서버는 항목별 transaction·revision·receipt를 반환해 일부 실패나 응답 유실에도 성공 결과를 보존하고 WPF는 성공 snapshot만 로컬에 반영한다.
+관리자 검토 화면은 FieldComment 원천을 읽기 전용으로 표시하고 상태·기한 초과·담당자·라인/설비/공정/오류 태그·우선순위/상충·첨부·보고서 연결을 필터링하며 필터를 로컬 SQLite 저장 보기로 보존한다. 상세는 서버 원천 hash, 첨부 수, 관찰 문서 버전, 채널 권한과 상충 판단 근거를 표시한다. 다중 선택은 `/bulk-review/preview` 표에서 항목별 허용 전이와 실패를 확인한 뒤 `/bulk-review/execute`로 최대 200건을 처리한다. 서버는 항목별 transaction·revision·receipt를 반환해 일부 실패나 응답 유실에도 성공 결과를 보존하고 WPF는 성공 snapshot만 로컬에 반영한다. `red` 신호 또는 상충 원천의 결정 상태는 분석자와 다른 사용자가 바꿔야 한다.
 
 ## 작업순서
 

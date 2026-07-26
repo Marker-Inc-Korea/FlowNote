@@ -17,7 +17,7 @@
 |---|---|---|
 | `NEW/NEEDS_REVIEW → ASSIGNED` | `line-foreman`, `team-lead` 이상 분석 역할 | 유효한 `assignedTo`, 3자 이상 배정 사유 |
 | `NEW/NEEDS_REVIEW → ANALYZED` | `line-foreman`, `team-lead` 이상 분석 역할 | 분석 내용, 3자 이상 사유. 담당자·검토 기한 미지정은 작업함 경고 |
-| `ANALYZED → REVIEWED` | `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager` | 정리·분석 내용, 검토자, 3자 이상 사유 |
+| `ANALYZED → REVIEWED` | `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager` | 정리·분석 내용, 검토자, 3자 이상 사유. `red` 또는 상충 원천은 분석자와 다른 결정자 |
 | `REVIEWED → SELECTED` | 위 결정 역할 | 정리·분석, 원천 작성자, 관찰 문서 버전, 원천 hash 일치, 3자 이상 사유 |
 | 활성 상태 → `EXCLUDED` | 위 결정 역할 | 중복·오입력·범위 밖·근거 부족 중 하나를 명시한 제외 사유 |
 | `SELECTED/EXCLUDED → ARCHIVED` | 위 결정 역할 | 후속 보고서 또는 제외 결정 확인, 보관 사유 |
@@ -36,7 +36,7 @@
 
 - 사진·문서 버전·작업자 확인이 부족하면 `NEEDS_REVIEW`로 보류하고 필요한 근거와 재개 담당자·기한을 사유에 적는다. 근거가 보완되면 `NEW → ANALYZED` 주 흐름으로 재개한다.
 - 잘못 제외한 원천은 `EXCLUDED → NEW`, 잘못 보관한 원천은 `ARCHIVED → EXCLUDED → NEW`로만 재개한다. 중간 상태를 건너뛰지 않는다.
-- 서버와 WPF 상태가 충돌하거나 현장 진술이 상충하면 원천 본문을 병합하지 않는다. `conflict_flag`로 `CONFLICT / 검토 필요`를 표시하고 `conflict_basis`에 상충 지점·판단 근거·선정/제외 사유를 남긴다. 결정 상태로 진행할 때 상충 표지가 있으면 판단 근거가 필수다.
+- 서버와 WPF 상태가 충돌하거나 현장 진술이 상충하면 원천 본문을 병합하지 않는다. `conflict_flag`로 `CONFLICT / 검토 필요`를 표시하고 `conflict_basis`에 상충 지점·판단 근거·선정/제외 사유를 남긴다. `red` 신호 또는 상충 표지가 있는 원천을 `REVIEWED`, `SELECTED`, `EXCLUDED`, `ARCHIVED`로 바꿀 때는 분석자와 다른 사용자가 결정해야 하며 판단 근거도 필수다.
 - 충돌 해결자는 해당 라인 책임자 또는 보고서 책임자이며 최종 `SELECTED/EXCLUDED` 결정 충돌은 결정 역할 보유자만 종결한다. WPF는 자동으로 `NEW → ANALYZED → REVIEWED` 단계를 보간하지 않는다. 해결자는 서버 snapshot을 새로 읽고 담당자·기한·정리·분석을 함께 비교한 뒤 `재적용`, `서버본 유지`, `재검토 전환` 중 하나와 사유를 감사에 남긴다.
 - 원천 보완, 담당자 변경, 기한 재산정, 분석 근거 변경, 충돌 해결로 결론이 달라질 가능성이 있으면 재검토한다. 단순 오탈자라도 이미 `SELECTED`인 원천의 관리자 해석을 바꿀 때는 `REVIEWED`로 되돌린 뒤 다시 선정한다.
 - 원천 hash 불일치, 관찰 문서 버전 누락, 권한 부족은 재시도로 우회하지 않는다. 품질 작업함에서 원인을 해소한 뒤 같은 idempotency key로 다시 전송한다.

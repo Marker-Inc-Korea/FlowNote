@@ -2,9 +2,11 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `/api/v1/health/sync-manifest`, `GET /api/v1/sync/manifest`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-07-26 현재 전역 FastAPI 앱에 등록된 method/path 조합과 요청·응답 코드 기준이다. 문서 상태·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-07-27 현재 전역 FastAPI 앱에 등록된 method/path 조합과 요청·응답 코드 기준이다. 문서 상태·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
+
+파일럿 서버는 단일 고객·현장 scope다. 보호 요청의 선택 헤더 `X-FlowNote-Customer-Scope`, `X-FlowNote-Site-Scope`와 로그인·refresh의 선택 `customerScope`, `siteScope`는 서버 설정과 정확히 일치해야 한다. 생략하면 현재 서버 scope로 해석한다. 다른 값이나 헤더·본문 충돌은 대상 존재와 관계없이 `404`와 `detail.code = SCOPE_NOT_FOUND`로 거부하고 감사한다. 로그인·refresh·현재 사용자 응답은 `customer_scope`, `site_scope`를 반환한다.
 
 | Method | Path | 설명 |
 | --- | --- | --- |
@@ -288,14 +290,19 @@ FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revi
 | POST | `/api/v1/reports` | 보고서 저장, 선택 시 문서로 저장. `idempotencyKey`를 보내면 같은 키의 재시도는 기존 보고서를 반환 |
 | GET | `/api/v1/reports` | 보고서 목록 |
 | GET | `/api/v1/reports/{report_id}` | 보고서 상세 |
+| GET | `/api/v1/reports/{report_id}/sources` | 보고서 고정 원천 목록 |
 
 보고서 draft와 최종 저장은 서로 다른 `sourceType` 최소 2종을 요구하며 같은 type/id/version 중복을 거부한다. 응답의 각 source는 `source_type`, `source_id`, 고정 `source_version_id`, FieldComment `source_revision`, 독립 `trace_id`, 저장 시점 `source_hash_sha256`를 반환한다. 최종 승인 직전에 같은 상태/version/revision/hash와 채널 권한을 다시 검사하며 불일치하면 `409`로 차단한다. 승인된 보고서의 draft ID로 source를 교체할 수 없다.
 
 보고서 source 타입은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `WORK_RECORD_VERSION`을 사용한다. 서버 저장은 `SELECTED` FieldComment와 현재 공개 문서 버전만 허용하며 FieldComment의 관찰 문서 버전을 source에 자동 고정한다. 활성 업무 채널에 연결된 source는 actor의 활성 멤버십을 검사한다. 현재 WPF 로컬 초안 후보도 `SELECTED` FieldComment, 공개 문서, 작업순서 항목/이력만 노출하며, `SELECTED` 전이에는 관찰 문서 버전과 원천 작성자가 필요하다.
 
+목록·상세·source 조회는 응답 직전에 각 고정 원천을 다시 읽는다. `FIELD_COMMENT`는 현재 `SELECTED`, `DOCUMENT`는 현재 공개본, 작업순서·작업내역은 현재 추적 가능한 원천이어야 하며, 원천과 연결된 활성 채널이 있으면 호출자는 그 채널의 활성 멤버이거나 `admin`/`system-admin`이어야 한다. 하나라도 실패하면 목록은 보고서 전체를 제외하고 상세와 source는 모두 같은 `404 RESOURCE_NOT_FOUND`를 반환한다. 개별 source ID, 유형, 상태와 존재 여부는 응답하지 않는다. 원천을 초안에 넣는 요청도 없는 원천·비공개 원천·권한 밖 원천을 모두 `404 SOURCE_NOT_VISIBLE`로 처리한다.
+
+보고서 목록 조회는 반환·비노출 건수를, 상세/source 조회는 허용·거부를 `activity_history`에 기록한다.
+
 구현된 보고서 저장 계약은 `idempotencyKey`, `mutationKey`, 기존 초안의 선택적 `baseReportRevision`, 선택적 `contentHashSha256`, `sourceSetHashSha256`을 받는다. 각 source 요청은 `sourceType`, `sourceId`, 선택적 `sourceVersionId`, `sourceRevision`, `sourceHashSha256`, `relationType`을 보내며 서버가 현재 원천을 검증해 revision/hash를 고정한다. 내용 hash는 보고서 유형·제목·본문·작업/구조/기간·상태의 정규화 JSON, source 집합 hash는 source type/ID/version/revision/hash/relation의 정렬 canonical JSON을 SHA-256으로 계산한다.
 
-서버는 문서/파일 생성 직전에 모든 source의 존재·상태·version·hash와 채널 권한을 다시 읽는다. 변경되거나 사라진 원천은 409 `REPORT_SOURCE_STALE_OR_ORPHAN`, 기존 초안 revision 경합은 409 `REPORT_STALE_REVISION`, 클라이언트가 보낸 두 hash와 서버 계산값 불일치는 각각 `REPORT_CONTENT_HASH_MISMATCH`, `REPORT_SOURCE_SET_HASH_MISMATCH`다. `mutationKey`가 없으면 `idempotencyKey`를 mutation key로 사용하며 같은 key·같은 intent는 `report_mutation_receipts`의 최초 응답을 반환하고 다른 intent는 409 `IDEMPOTENCY_KEY_REUSED`다. 보고서, source, 선택적 생성 document/version, 두 hash와 mutation receipt는 한 transaction으로 확정된다. 응답은 `report_revision`, `content_hash_sha256`, `source_set_hash_sha256`, `generated_document`와 source별 확정 ID/version/hash를 반환한다. 현재 WPF는 enqueue 시 고정한 source-set hash와 서버 응답 source 집합을 다시 계산해 일치할 때만 report/document/version ID, report revision, content hash, source-set hash를 로컬에 보존하고 큐를 `SYNCED`로 종결한다.
+서버는 문서/파일 생성 직전에 모든 source의 존재·상태·version·hash와 채널 권한을 다시 읽는다. 원천이 사라지거나 비공개·권한 밖 상태가 되면 `404 SOURCE_NOT_VISIBLE`, 여전히 적격이지만 고정 hash/revision이 달라지면 `409`로 중단한다. 기존 초안 revision 경합은 409 `REPORT_STALE_REVISION`, 클라이언트가 보낸 두 hash와 서버 계산값 불일치는 각각 `REPORT_CONTENT_HASH_MISMATCH`, `REPORT_SOURCE_SET_HASH_MISMATCH`다. `mutationKey`가 없으면 `idempotencyKey`를 mutation key로 사용하며 같은 key·같은 intent는 `report_mutation_receipts`의 최초 응답을 반환하고 다른 intent는 409 `IDEMPOTENCY_KEY_REUSED`다. 보고서, source, 선택적 생성 document/version, 두 hash와 mutation receipt는 한 transaction으로 확정된다. 응답은 `report_revision`, `content_hash_sha256`, `source_set_hash_sha256`, `generated_document`와 source별 확정 ID/version/hash를 반환한다. 현재 WPF는 enqueue 시 고정한 source-set hash와 서버 응답 source 집합을 다시 계산해 일치할 때만 report/document/version ID, report revision, content hash, source-set hash를 로컬에 보존하고 큐를 `SYNCED`로 종결한다.
 
 ## AI 검색 근거 후보
 
@@ -446,8 +453,10 @@ WPF `AI 운영 > 감사·보존`은 질의를 선택하면 고객/현장 scope, 
 | 문서 등록/버전 등록/태그 변경/작업순서 변경 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead` |
 | 문서 상태/버전 상태/공개본/삭제 결정 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
 | FieldComment 등록 | 위 role + `team-member`, `viewer` |
+| FieldComment 검토·선정·제외·보관 결정 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`. 위험 신호·상충 원천은 분석자와 결정자 분리 |
 | 접근 로그 조회 | `admin`, `system-admin` |
 | 보고서 작성 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
+| 보고서 목록·상세·원천 조회 | 기본 role 전체. 단일 서버 scope, 원천 상태와 채널 멤버십을 모두 통과한 보고서만 허용 |
 | AI 실제 현장 표본 검토·제3 합의 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` |
 | 외부 AI 근거 검색·요약(후속 1단계) | `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`. 기능 플래그, 고객·현장별 전송 승인과 원천/채널 권한도 필요 |
 | 외부 AI 운영 승인·프롬프트·정책·감사·보존 | `system-admin` 전용 |
@@ -461,6 +470,7 @@ WPF `RolePermissionPolicy`와의 대조:
 | 문서 상태, 버전 상태, 공개, 삭제 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | `DocumentGovernanceUser` |
 | 현장 코멘트 작성 | 기본 role 전체 | `FieldCommentCreateUser` |
 | 보고서 버튼 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | `ReportWriteUser` |
+| 보고서 조회 결과 | 기본 role 전체 | 모든 고정 원천 재검사 실패 시 목록 제외, 상세/source `404` |
 | 채널 관리/인수인계 확인 현황 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead` | 채널 생성은 `DocumentWriteUser`, 조회/읽음/수신확인은 채널 멤버십 또는 `admin`, `system-admin` |
 | 파일 감시 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | WPF 로컬 기능 |
 | 사용자 관리 | `admin`, `system-admin` | `admin`은 일반 계정, `system-admin`은 system-admin 포함 |
@@ -495,6 +505,9 @@ WPF `RolePermissionPolicy`와의 대조:
 - `FLOWNOTE_ACCESS_TOKEN_SECRET`
 - `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES`
 - `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS`
+- `FLOWNOTE_CUSTOMER_SCOPE` (단일 서버 고객 경계. 생략 시 `FLOWNOTE_AI_CUSTOMER_SCOPE`)
+- `FLOWNOTE_SITE_SCOPE` (단일 서버 현장 경계. 생략 시 `FLOWNOTE_AI_SITE_SCOPE`)
+- `FLOWNOTE_FIELD_COMMENT_INDEPENDENT_REVIEW_REQUIRED` (기본 `true`; 위험 신호·상충 원천 maker-checker)
 - `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED`
 - `FLOWNOTE_AI_READINESS_GATE_ENABLED` (기본 `true`)
 - `FLOWNOTE_AI_PROVIDER`

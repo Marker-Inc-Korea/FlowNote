@@ -1,6 +1,6 @@
 # FlowNote 보안
 
-이 문서는 2026-07-26 현재 코드에 적용된 통제와 운영 전 후속 통제를 구분한다.
+이 문서는 2026-07-27 현재 코드에 적용된 통제와 운영 전 후속 통제를 구분한다.
 
 ## 현재 구현
 
@@ -16,8 +16,10 @@
 - FastAPI 서버 계정 생성·role/상태 변경·임시 비밀번호 재설정·세션 조회/폐기 API와 변경 사유 감사
 - WPF 서버 계정 운영 화면과 `must_change_password` 로그인 직후 비밀번호 변경 강제
 - FastAPI role 기반 문서 쓰기, 태그 생성, FieldComment 작성, 접근 로그 조회, 보고서 작성 권한
+- 서버 PC 1대의 단일 고객·현장 경계와 다른 scope 입력을 `404`로 거부하고 `activity_history`에 남기는 fail-closed 검사
 - FieldComment 원천 핵심 필드의 ORM 수정·삭제 차단, 원천 SHA-256 snapshot과 관리자 검토 전후 감사, 검토 revision 조건부 갱신·mutation receipt, 첨부 부모/파일 SHA-256 검증
-- 보고서 source version/hash 저장 직전 재검증과 report revision·내용/source 집합 hash·mutation receipt의 단일 transaction 저장
+- 위험 신호·상충 FieldComment의 분석자와 결정자 분리, 보고서 source version/hash 저장 직전 재검증과 report revision·내용/source 집합 hash·mutation receipt의 단일 transaction 저장
+- 보고서 목록·상세·source 조회 시 모든 원천의 현재 상태·채널 멤버십 재검사, 권한 밖 보고서 비노출과 허용·거부 감사
 - FastAPI 공개 문서 버전 controlled copy 1회성 티켓, 사용자·세션 바인딩, 만료·재사용 차단, 경로·크기·SHA-256 검증과 전체 감사
 - FastAPI 채널 멤버십 기반 채널 메시지 조회, 사용자별 알림 읽음, 인수인계 수신 확인 권한
 - Android 승인 단말 `deviceId` 로그인 검증과 `auth_sessions.device_id` 기록
@@ -87,15 +89,15 @@ Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현�
 
 | 업무 | 시스템 운영 | 일반 관리 | 문서·보고서 관리 | 현장 감독 | 현장 작업·열람 | 추가 조건과 금지 확인 |
 | --- | --- | --- | --- | --- | --- | --- |
-| WPF/API 문서 목록·상세 열람 | 허용 | 허용 | 허용 | 허용 | 허용 | 현재는 인증된 서버 계정에 삭제되지 않은 문서를 반환한다. 고객·현장 scope 권한은 아직 구현되지 않았으므로 이를 요구하는 현장에서는 구현 공백으로 기록한다. |
+| WPF/API 문서 목록·상세 열람 | 허용 | 허용 | 허용 | 허용 | 허용 | 활성 인증 계정과 서버의 단일 고객·현장 scope가 일치해야 한다. 다른 scope 입력은 대상 존재와 무관하게 `404 SCOPE_NOT_FOUND`이며 감사에 남긴다. |
 | Android 공개 문서 본문 열람 | 금지 | 조건부 | 조건부 | 조건부 | 조건부 | `system-admin`은 Android 본문 열람 role에서 제외한다. 나머지도 `ACTIVE` 승인 단말, 단말 바인딩 세션, 현재 공개 버전과 1회성 grant가 필요하다. |
 | controlled copy 발급·저장 | 허용 | 허용 | 허용 | 금지 | 금지 | 현재 공개 버전, 사용자·세션 바인딩, 만료, 1회 사용, 크기·SHA-256 재검증을 모두 확인한다. 요청자의 업무 사유와 독립 승인은 현재 grant에 연결되지 않는다. |
 | 문서·버전 등록, 태그 변경 | 허용 | 허용 | 허용 | 허용 | 금지 | 서버 `DOCUMENT_WRITE_ROLES`와 WPF 등록 버튼 집합이 같아야 한다. |
 | 문서 상태·버전 상태 변경, 공개·보관·삭제 | 허용 | 허용 | 허용 | 금지 | 금지 | `DOCUMENT_GOVERNANCE_ROLES`, 변경 사유, 최신 document revision과 예상 공개 version을 적용한다. 공개·삭제는 별도 고위험 절차를 적용한다. |
 | FieldComment 등록 | 허용 | 허용 | 허용 | 허용 | 허용 | 원천 내용·작성자·단말·문서/version 연결을 생성 후 바꾸거나 삭제할 수 없어야 한다. |
 | FieldComment 담당 배정·정리·분석 | 허용 | 허용 | 허용 | 허용 | 금지 | `FIELD_COMMENT_ANALYZE_ROLES`, 현재 `review_revision`, 담당자, 기한, 사유를 검사한다. |
-| FieldComment 검토·선정·제외·보관 결정 | 허용 | 허용 | 허용 | 금지 | 금지 | 서버는 `FIELD_COMMENT_DECIDE_ROLES`, 최신 `review_revision`, 원천 hash 불변을 확인한다. 분석자와 결정자의 분리는 아직 강제하지 않으므로 독립 검토가 필요한 현장에서는 구현을 보완해야 한다. |
-| 보고서 목록·근거 조회 | 허용 | 허용 | 허용 | 허용 | 허용 | 현재 목록·상세 API는 인증만 확인하고 보고서와 source를 반환한다. 원천별 열람 권한 재검사는 아직 구현되지 않았으므로 현장 승인 전 보완해야 한다. |
+| FieldComment 검토·선정·제외·보관 결정 | 허용 | 허용 | 허용 | 금지 | 금지 | 서버는 `FIELD_COMMENT_DECIDE_ROLES`, 최신 `review_revision`, 원천 hash 불변을 확인한다. `red` 신호 또는 `conflict_flag = true`인 원천은 분석자와 같은 사용자의 `REVIEWED`·`SELECTED`·`EXCLUDED`·`ARCHIVED` 결정을 `403 INDEPENDENT_REVIEW_REQUIRED`로 거부한다. |
+| 보고서 목록·근거 조회 | 허용 | 허용 | 허용 | 허용 | 허용 | 보고서의 모든 원천이 현재 적격 상태이고 호출자가 원천 연결 채널을 열람할 수 있어야 한다. 하나라도 실패하면 목록에서 보고서 전체를 제외하고 상세·source는 동일한 정제 `404`로 처리한다. 성공·거부는 감사에 남긴다. |
 | 보고서 초안·확정본 작성 | 허용 | 허용 | 허용 | 금지 | 금지 | 현재 source version/revision/hash, 서로 다른 source type, report revision과 mutation receipt가 필요하다. |
 | 채널 생성 | 허용 | 허용 | 허용 | 허용 | 금지 | 문서 쓰기 role만 가능하다. |
 | 채널 조회·메시지·인수인계 생성 | 조건부 | 조건부 | 조건부 | 조건부 | 조건부 | `admin`, `system-admin`의 감독 범위를 제외하면 활성 채널 멤버십이 필요하다. 인수인계 수신 확인은 본인 receipt만 변경하며 다른 사용자의 receipt는 관리자 외에는 거부한다. |
@@ -231,6 +233,20 @@ Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현�
 ## 역할별 오류 문구 사용성 기준
 
 권한 실패 화면은 한글로 원인 범주, 사용자가 취할 다음 조치, 관리자 문의 필요 여부, 입력 파일·로컬 원천·동기화 큐의 보존 상태를 알려야 한다. 서버 영문 `detail`, 예외 stack, 내부 경로와 token을 그대로 표시하지 않는다. `404` 존재 은닉 계약이 필요한 화면은 숨긴 대상의 종류나 존재를 문구로 확인해 주지 않는다.
+
+| HTTP/공개 오류 코드 | 사용자 안내 범주 | 다음 조치 |
+| --- | --- | --- |
+| `401` | 로그인 만료·인증 필요 | 다시 로그인한다. `DEVICE_NOT_APPROVED`이면 단말 승인 상태를 관리자에게 확인한다. |
+| `403 PERMISSION_DENIED` | 권한 없음 | 계정 role과 활성 상태를 관리자에게 확인한다. |
+| `403/401 DEVICE_NOT_APPROVED` | 단말 비승인 | 재설치·초기화하지 않고 등록·활성·교체 상태를 확인한다. |
+| `404 SCOPE_NOT_FOUND` | 다른 고객·현장 범위 | 서버 주소와 현장 설정을 확인한다. 대상 ID나 실제 존재 여부는 표시하지 않는다. |
+| `404 SOURCE_NOT_VISIBLE` 또는 `RESOURCE_NOT_FOUND` | 원천 없음·비공개 | 목록을 새로 조회하고 필요하면 공개 상태를 관리자에게 확인한다. 존재 여부는 확정해 말하지 않는다. |
+
+## 단일 고객·현장 운영 경계
+
+파일럿의 서버 PC 1대는 고객 하나와 현장 하나만 담당한다. 서버 경계값은 `FLOWNOTE_CUSTOMER_SCOPE`, `FLOWNOTE_SITE_SCOPE`이며 설정하지 않으면 기존 AI scope 설정을 사용한다. 보호 API는 `X-FlowNote-Customer-Scope`, `X-FlowNote-Site-Scope`가 생략되면 현재 서버 경계로 해석하고, 값이 들어오면 정확히 일치하는 경우만 허용한다. 로그인·refresh의 선택 `customerScope`, `siteScope`도 같은 규칙을 적용하며 헤더와 본문 값이 다르면 거부한다.
+
+이 결정에서는 계정·문서·채널·보고서·검색 후보에 고객·현장 열을 추가하지 않는다. 기존 SQLite와 `storage/`는 이미 이 서버 경계 안의 데이터이므로 행 이동, ID 변경, 파일 재배치가 없다. 전환 전후 핵심 테이블 row 수와 파일 SHA-256을 비교하고, rollback은 이전 서버 패키지와 기존 설정으로 되돌린 뒤 같은 DB·파일을 그대로 연다. 새 설정을 제거해도 업무 행 형식은 바뀌지 않는다. 여러 고객 또는 여러 현장을 한 서버에서 운영하려면 별도 결정, 전 엔티티 scope 외래키, 인덱스, 백필·검증·rollback 도구와 교차 scope 부정 테스트가 먼저 필요하다.
 
 실계정 사용자와 익명 시험계정 사용자를 역할 묶음별로 포함해 추가 설명 없이 문구를 읽고 다음 조치를 선택하게 한다. 현장이 별도 승인값을 정하지 않았다면 다음 파일럿 기본 임계값을 사용한다.
 

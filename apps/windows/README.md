@@ -4,7 +4,7 @@
 
 현재 프로젝트는 WPF UI `net10.0-windows`, Core와 스모크 테스트 `net10.0`을 대상으로 한다. 현재 기능 목록은 `FlowNote.Windows.App`, `FlowNote.Windows.Core`, `FlowNote.Windows.SmokeTests` 코드에 실제 연결된 범위만 포함한다.
 
-이 문서는 2026-07-26 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
+이 문서는 2026-07-27 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
 
 ## 현재 구현
 
@@ -123,7 +123,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-현재 FastAPI 코드는 151건, WPF Core는 48건을 수집한다. 표준 스크립트의 수집/JUnit guard는 아직 FastAPI 149건·WPF Core 43건이어서 현재 코드와 맞지 않는다. 이번 macOS 검증에서 WPF Core 48건과 WPF 앱 빌드는 경고·오류 없이 통과했다. Windows 누적 공통 DB 스모크와 Android build를 새 기준으로 한 run에서 완료해 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
+현재 FastAPI 코드는 154건, WPF Core는 52건을 수집하며 표준 스크립트 guard도 FastAPI 154건·WPF Core 52건·Android 16건으로 맞췄다. WPF Core 기대값은 기존 48건에 권한 없음·단말 비승인·다른 현장 범위·원천 비공개 안내 회귀 4건을 더한 값이다. 이후에도 실제 수집값과 원시 JUnit/TRX 수가 일치할 때만 기대값을 바꾼다. 이번 macOS 검증에서 WPF Core 52건과 WPF 앱 빌드는 경고·오류 없이 통과했지만, Windows 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

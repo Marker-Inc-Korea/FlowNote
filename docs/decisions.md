@@ -1,6 +1,6 @@
 # FlowNote 설계 결정
 
-이 문서는 2026-07-26 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
+이 문서는 2026-07-27 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
 
 ## 2026-07-15. FieldComment 원천 불변과 단계형 검토 결정
 
@@ -72,7 +72,7 @@
 
 - 릴리스 기준선은 C#·Android Java compiler warning 허용 목록을 두지 않고 0건만 인정한다. WPF Core와 앱은 `TreatWarningsAsErrors=true`, Android Java compile은 `-Werror`, Gradle은 `--warning-mode=fail`로 실행한다.
 - `CS8604`는 SDK 차이에 따른 허용 경고가 아니라 nullable 역할 값을 non-null 생성자에 넘긴 코드 결함으로 분류한다. 역할이 없을 때 `string.Empty`로 정규화해 권한 검사가 fail-closed가 되도록 수정했으며, 같은 Windows x64 matrix에서 warning-as-error 빌드를 통과해야 종결한다.
-- `verification-summary.json`은 소스 커밋, FastAPI·WPF Core·Android unit 수집/실행 수, WPF·Android build, 공통 DB 전후 무결성, 오늘 문서와 과거 문서 version 증가, Git 전후 상태를 구조화해 남긴다. 현재 코드는 FastAPI 151건·WPF Core 48건이지만 표준 스크립트 guard는 149건·43건이므로 보정 전에는 통합 기준선을 만들 수 없다.
+- `verification-summary.json`은 소스 커밋, FastAPI·WPF Core·Android unit 수집/실행 수, WPF·Android build, 공통 DB 전후 무결성, 오늘 문서와 과거 문서 version 증가, Git 전후 상태를 구조화해 남긴다. 2026-07-27 현재 코드는 FastAPI 154건·WPF Core 52건·Android 16건을 수집하며 표준 스크립트 guard도 같은 수치를 사용한다. Windows x64 무생략 실행 2회가 끝나기 전에는 통합 기준선으로 확정하지 않는다.
 - 첫 무생략 `PASSED`는 기준선 후보로만 본다. 기존 증거를 보존한 채 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 최신 유효 기준선으로 확정한다.
 - SDK/compiler 차이로 새 경고가 나타나면 경고를 숨기거나 임시 허용하지 않는다. 실행별 `environment.json`과 원본 build log를 비교해 코드 결함인지 지원 matrix 차이인지 먼저 결정하고, matrix 변경은 새 결정 기록과 두 번의 무생략 실행으로 검증한다.
 
@@ -481,3 +481,13 @@
 - 문서 창은 사용자가 직접 닫을 때까지 유지하며 신규 열람은 `view_started`와 `window_closed`를 기준으로 감사한다.
 - 다운로드 차단, 역할 권한, controlled copy와 열람 감사는 유지한다.
 - 기존 SQLite와 서버 동기화에 남은 `auto_closed` 값은 과거 기록 호환을 위해 삭제하거나 재작성하지 않는다.
+
+## 2026-07-27. 파일럿 서버는 단일 고객·현장 경계로 운영하고 권한 밖 원천은 숨김
+
+- 서버 PC 1대는 고객 하나와 현장 하나만 담당한다. 계정·문서·채널·보고서·검색 후보에 멀티 scope 열을 추가하지 않고 서버 설정을 경계로 사용한다.
+- 선택 scope 헤더와 로그인·refresh scope 입력이 서버 경계와 다르거나 서로 충돌하면 행 조회 전에 `404 SCOPE_NOT_FOUND`로 거부하고 감사한다. 입력 생략은 현재 서버 경계를 뜻한다.
+- 기존 단일 현장 SQLite와 파일 저장소는 변환하지 않는다. 배포·rollback 모두 같은 DB와 파일을 열며 row 수, 공개 ID, source hash와 파일 SHA-256 비교로 무손실을 확인한다.
+- 보고서 목록·상세·source 조회는 모든 원천의 현재 적격 상태와 채널 멤버십을 다시 검사한다. 하나라도 실패하면 목록에서 보고서 전체를 제외하고 상세/source는 같은 정제 `404`를 반환해 source 존재를 드러내지 않는다.
+- `red` 신호 또는 `conflict_flag = true`인 FieldComment는 독립 검토 대상으로 고정한다. 분석자와 같은 사용자의 검토·선정·제외·보관 결정을 서버가 거부한다.
+- WPF와 Android는 공개 오류 코드로 권한 없음, 단말 비승인, 다른 현장 범위, 원천 없음·비공개를 구분한다. 서버 오류 원문, token, 내부 경로, stack trace는 화면에 표시하지 않는다.
+- 여러 고객·현장을 한 서버에서 지원하는 변경은 전 엔티티 scope 모델, 기존 데이터 백필, 검색·감사 격리, 무손실 migration과 rollback 도구를 포함한 별도 결정 없이는 시작하지 않는다.

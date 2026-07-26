@@ -66,20 +66,15 @@ public sealed class FlowNoteServerTerminalDeviceClient(HttpClient httpClient)
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            if (response.StatusCode is HttpStatusCode.Unauthorized
+                or HttpStatusCode.Forbidden
+                or HttpStatusCode.NotFound)
             {
-                throw new FlowNoteServerAuthenticationException(
-                    $"서버 로그인이 만료되었습니다. 다시 로그인하세요. {errorBody}");
-            }
-
-            if (response.StatusCode == HttpStatusCode.Forbidden)
-            {
-                throw new InvalidOperationException(
-                    $"승인 단말 관리는 관리자 또는 시스템 관리자만 사용할 수 있습니다. {errorBody}");
+                throw ServerAccessDenialPolicy.CreateException(response.StatusCode, errorBody);
             }
 
             throw new InvalidOperationException(
-                $"승인 단말 API 요청 실패: {(int)response.StatusCode} {response.ReasonPhrase}. {errorBody}");
+                "승인 단말 요청을 처리하지 못했습니다. 잠시 후 다시 시도하세요.");
         }
 
         var result = await response.Content.ReadFromJsonAsync<T>(cancellationToken);

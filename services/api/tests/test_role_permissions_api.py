@@ -4,13 +4,14 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.core.auth import ACCESS_LOG_READ_ROLES, CONTROLLED_COPY_DOWNLOAD_ROLES
 from app.core.auth import DOCUMENT_WRITE_ROLES, FIELD_COMMENT_CREATE_ROLES
 from app.core.auth import REPORT_WRITE_ROLES, USER_MANAGEMENT_ROLES
 from app.core.config import Settings
 from app.db.init_db import ALLOWED_USER_ROLES, hash_password_for_dev
-from app.db.models import UserAccount
+from app.db.models import ActivityHistory, Document, UserAccount
 from app.main import create_app
 
 
@@ -55,13 +56,18 @@ USER_MANAGEMENT_EXPECTED = {"admin", "system-admin"}
 CONTROLLED_COPY_DOWNLOAD_EXPECTED = REPORT_WRITE_EXPECTED
 
 
-def create_test_client() -> TestClient:
+def create_test_client(
+    customer_scope: str | None = None,
+    site_scope: str | None = None,
+) -> TestClient:
     app_settings = Settings(
         _env_file=None,
         environment="test",
         database_url=TEST_DATABASE_URL,
         test_database_url=TEST_DATABASE_URL,
         storage_root=str(TEST_STORAGE_ROOT),
+        customer_scope=customer_scope,
+        site_scope=site_scope,
     )
     return TestClient(create_app(app_settings))
 
@@ -103,6 +109,75 @@ def test_role_groups_match_wpf_policy_matrix() -> None:
     assert REPORT_WRITE_ROLES == REPORT_WRITE_EXPECTED
     assert USER_MANAGEMENT_ROLES == USER_MANAGEMENT_EXPECTED
     assert CONTROLLED_COPY_DOWNLOAD_ROLES == CONTROLLED_COPY_DOWNLOAD_EXPECTED
+
+
+def test_single_scope_rejects_mismatch_and_preserves_existing_data_through_rollback() -> None:
+    with create_test_client() as client:
+        account = create_role_user(client, "document-admin")
+        created_response = post_document(
+            client,
+            auth_headers(client, account),
+            "단일 scope 무손실 전환 문서",
+        )
+        assert created_response.status_code == 201, created_response.text
+        document_id = created_response.json()["document_id"]
+        with client.app.state.database.session() as session:
+            document = session.scalar(
+                select(Document).where(Document.document_id == document_id)
+            )
+            before = (document.title, document.status, document.revision)
+
+    with create_test_client("CUSTOMER-A", "SITE-A") as scoped_client:
+        account = create_role_user(scoped_client, "viewer")
+        scoped_headers = auth_headers(scoped_client, account)
+        scoped_headers.update(
+            {
+                "X-FlowNote-Customer-Scope": "CUSTOMER-A",
+                "X-FlowNote-Site-Scope": "SITE-A",
+            }
+        )
+        accepted = scoped_client.get(
+            f"/api/v1/documents/{document_id}",
+            headers=scoped_headers,
+        )
+        assert accepted.status_code == 200, accepted.text
+
+        wrong_headers = dict(scoped_headers)
+        wrong_headers["X-FlowNote-Site-Scope"] = "SITE-B"
+        rejected = scoped_client.get(
+            f"/api/v1/documents/{document_id}",
+            headers=wrong_headers,
+        )
+        assert rejected.status_code == 404
+        assert rejected.json()["detail"]["code"] == "SCOPE_NOT_FOUND"
+        assert document_id not in rejected.text
+        with scoped_client.app.state.database.session() as session:
+            audit = session.scalar(
+                select(ActivityHistory)
+                .where(
+                    ActivityHistory.actor_id == account.user_id,
+                    ActivityHistory.event_type == "scope.access_denied",
+                )
+                .order_by(ActivityHistory.id.desc())
+            )
+            assert audit is not None
+            document = session.scalar(
+                select(Document).where(Document.document_id == document_id)
+            )
+            assert (document.title, document.status, document.revision) == before
+
+    with create_test_client() as rollback_client:
+        account = create_role_user(rollback_client, "viewer")
+        rolled_back = rollback_client.get(
+            f"/api/v1/documents/{document_id}",
+            headers=auth_headers(rollback_client, account),
+        )
+        assert rolled_back.status_code == 200, rolled_back.text
+        with rollback_client.app.state.database.session() as session:
+            document = session.scalar(
+                select(Document).where(Document.document_id == document_id)
+            )
+            assert (document.title, document.status, document.revision) == before
 
 
 def post_document(client: TestClient, headers: dict[str, str], title: str):

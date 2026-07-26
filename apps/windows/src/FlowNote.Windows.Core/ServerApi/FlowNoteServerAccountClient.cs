@@ -79,15 +79,15 @@ public sealed class FlowNoteServerAccountClient(HttpClient httpClient)
             return;
         }
 
-        var detail = await response.Content.ReadAsStringAsync(cancellationToken);
-        throw new ServerAccountApiException(response.StatusCode, detail);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        throw new ServerAccountApiException(response.StatusCode, responseBody);
     }
 }
 
-public sealed class ServerAccountApiException(HttpStatusCode statusCode, string serverDetail)
-    : InvalidOperationException(ServerAccountUiPolicy.ErrorMessage(statusCode))
+public sealed class ServerAccountApiException(HttpStatusCode statusCode, string responseBody)
+    : InvalidOperationException(ServerAccessDenialPolicy.Message(statusCode, responseBody))
 {
     public HttpStatusCode StatusCode { get; } = statusCode;
 
-    public string ServerDetail { get; } = serverDetail;
+    public string ErrorCode { get; } = ServerAccessDenialPolicy.ErrorCode(responseBody);
 }

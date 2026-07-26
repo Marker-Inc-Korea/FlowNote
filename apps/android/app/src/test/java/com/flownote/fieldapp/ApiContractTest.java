@@ -37,7 +37,7 @@ public final class ApiContractTest {
 
         assertTrue(body.toString().contains("\"deviceId\":\"test-android-virtual-terminal-001\""));
         assertTrue(UserErrorMessage.from(new java.io.IOException("HTTP 403: rejected"))
-                .contains("승인 단말 상태"));
+                .contains("작업 권한"));
         assertTrue(UserErrorMessage.from(new java.io.IOException("HTTP 401: revoked"))
                 .contains("다시 로그인"));
         assertTrue(FlowNoteApiClient.shouldDiscardStoredSession(401));

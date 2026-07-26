@@ -17,10 +17,36 @@ public final class UserErrorMessageTest {
         );
 
         assertEquals(
-                "요청이 거부되었습니다. 승인 단말 상태와 사용자 권한을 확인하세요. (HTTP 403)",
+                "승인되지 않았거나 비활성 상태인 단말입니다. 관리자에게 단말 승인 상태를 확인하세요.",
                 message
         );
         assertFalse(message.contains("Terminal device"));
+    }
+
+    @Test
+    public void accessErrorsSeparatePermissionScopeAndHiddenSourceWithoutInternals() {
+        assertEquals(
+                "현재 계정에는 이 작업 권한이 없습니다. 관리자에게 역할과 계정 상태를 확인하세요.",
+                UserErrorMessage.from(new IOException(
+                        "HTTP 403: {\"detail\":{\"code\":\"PERMISSION_DENIED\",\"message\":\"token=secret\"}}"
+                ))
+        );
+        assertEquals(
+                "현재 서버와 다른 고객·현장 범위입니다. 서버 주소와 현장 설정을 확인하세요.",
+                UserErrorMessage.from(new IOException(
+                        "HTTP 404: {\"detail\":{\"code\":\"SCOPE_NOT_FOUND\",\"message\":\"/srv/app.py\"}}"
+                ))
+        );
+        String hiddenSource = UserErrorMessage.from(new IOException(
+                "HTTP 404: {\"detail\":{\"code\":\"SOURCE_NOT_VISIBLE\",\"message\":\"stack trace\"}}"
+        ));
+        assertEquals(
+                "요청한 원천을 찾을 수 없거나 공개되지 않았습니다. 목록을 새로 조회하거나 관리자에게 공개 상태를 확인하세요.",
+                hiddenSource
+        );
+        assertFalse(hiddenSource.contains("stack"));
+        assertFalse(hiddenSource.contains("token"));
+        assertFalse(hiddenSource.contains("/srv/"));
     }
 
     @Test

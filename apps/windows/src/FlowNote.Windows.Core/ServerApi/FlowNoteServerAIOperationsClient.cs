@@ -97,13 +97,13 @@ public sealed class FlowNoteServerAIOperationsClient(HttpClient httpClient)
     {
         if (response.IsSuccessStatusCode) return;
         var body = await response.Content.ReadAsStringAsync(ct);
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
-            throw new FlowNoteServerAuthenticationException("서버 로그인이 만료되었습니다. 다시 로그인하세요.");
-        if (response.StatusCode == HttpStatusCode.Forbidden)
-            throw new InvalidOperationException($"외부 AI 운영은 시스템 관리자만 사용할 수 있습니다. {body}");
+        if (response.StatusCode is HttpStatusCode.Unauthorized
+            or HttpStatusCode.Forbidden
+            or HttpStatusCode.NotFound)
+            throw ServerAccessDenialPolicy.CreateException(response.StatusCode, body);
         if (response.StatusCode == HttpStatusCode.Conflict)
-            throw new InvalidOperationException($"다른 관리자 작업 또는 현재 상태와 충돌했습니다. 상세를 새로고침하세요. {body}");
-        throw new InvalidOperationException($"외부 AI 운영 API 요청 실패: {(int)response.StatusCode}. {body}");
+            throw new InvalidOperationException("다른 관리자 작업 또는 현재 상태와 충돌했습니다. 상세를 새로고침하세요.");
+        throw new InvalidOperationException("외부 AI 운영 요청을 처리하지 못했습니다. 잠시 후 다시 시도하세요.");
     }
 }
 

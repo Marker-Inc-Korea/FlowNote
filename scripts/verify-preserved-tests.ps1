@@ -30,9 +30,24 @@ if ((Test-Path $runArtifactDir -PathType Container) -and
 New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
 $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
-$expectedFastApiTestCount = 149
-$expectedWpfCoreTestCount = 43
-$expectedAndroidUnitTestCount = 15
+$expectedFastApiTestCount = 154
+$expectedWpfCoreTestCount = 52
+$expectedAndroidUnitTestCount = 16
+$stepDisplayNames = @{
+    "Check Windows baseline toolchain versions" = "Windows x64 표준 도구 확인"
+    "Check .gitignore coverage for known test/build artifact paths" = "테스트·빌드 산출물 Git 제외 규칙 확인"
+    "Check current git status before verification" = "검증 전 Git 상태 확인"
+    "Collect FastAPI pytest tests" = "FastAPI pytest 테스트 수집"
+    "Run FastAPI pytest" = "FastAPI pytest 실행"
+    "Run WPF Core tests" = "WPF Core 테스트 실행"
+    "Build WPF app" = "WPF 앱 빌드"
+    "Check shared WPF SQLite integrity before smoke" = "스모크 전 공통 WPF SQLite 무결성 확인"
+    "Run integrated WPF smoke against shared SQLite and preserved FastAPI" = "공통 SQLite·보존 FastAPI 연동 WPF 스모크 실행"
+    "Check shared WPF SQLite integrity after smoke" = "스모크 후 공통 WPF SQLite 무결성 확인"
+    "Run Android unit tests and debug build" = "Android 단위 테스트·debug 빌드"
+    "Run approved Android physical-device instrumentation smoke" = "승인 Android 실단말 계측 스모크"
+    "Check git status after verification" = "검증 후 Git 상태 확인"
+}
 $script:stepNumber = 0
 $script:stepResults = New-Object System.Collections.Generic.List[object]
 $script:isPartialRun = $SkipFastApiPytest -or $SkipWpfBuild -or $SkipWpfSmoke -or $SkipAndroidBuild -or $SkipGitArtifactCheck
@@ -117,7 +132,10 @@ Write-Host "Preserved run artifacts: $runArtifactDir"
 function Write-RunSummary {
     param(
         [string]$Status,
-        [string]$Failure = ""
+        [string]$Failure = "",
+        [string]$FailureStep = "",
+        [string]$NextAction = "",
+        [string]$EvidencePath = ""
     )
 
     $summary = [ordered]@{
@@ -128,6 +146,11 @@ function Write-RunSummary {
         artifact_directory = $runArtifactDir
         generated_at = (Get-Date).ToString("O")
         failure = $Failure
+        failure_context = [ordered]@{
+            "실패 단계" = $FailureStep
+            "다음 조치" = $NextAction
+            "보존된 증거 경로" = $EvidencePath
+        }
         partial_run = $script:isPartialRun
         options = [ordered]@{
             skip_fastapi_pytest = $SkipFastApiPytest.IsPresent
@@ -174,7 +197,12 @@ function Invoke-Step {
     }
     catch {
         $failure = $_.Exception.Message
+        $failureStep = if ($stepDisplayNames.ContainsKey($Name)) { $stepDisplayNames[$Name] } else { $Name }
+        $nextAction = "해당 단계 로그와 verification-summary.json을 확인해 원인을 수정한 뒤, 보존된 증거는 유지하고 새 RunId로 다시 실행하세요."
         "FAILED: $failure" | Add-Content -Encoding UTF8 $logPath
+        "실패 단계: $failureStep" | Add-Content -Encoding UTF8 $logPath
+        "다음 조치: $nextAction" | Add-Content -Encoding UTF8 $logPath
+        "보존된 증거 경로: $runArtifactDir" | Add-Content -Encoding UTF8 $logPath
         $script:stepResults.Add([pscustomobject]@{
             number = $script:stepNumber
             name = $Name
@@ -184,7 +212,13 @@ function Invoke-Step {
             log = [IO.Path]::GetFileName($logPath)
             failure = $failure
         })
-        Write-RunSummary -Status "FAILED" -Failure $failure
+        Write-RunSummary -Status "FAILED" -Failure $failure -FailureStep $failureStep `
+            -NextAction $nextAction -EvidencePath $runArtifactDir
+        Write-Host ""
+        Write-Host "검증 실패"
+        Write-Host "실패 단계: $failureStep"
+        Write-Host "다음 조치: $nextAction"
+        Write-Host "보존된 증거 경로: $runArtifactDir"
         throw
     }
 }

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ from app.core.config import Settings, get_settings
 from app.db.init_db import hash_password, verify_password
 from app.db.models import ActivityHistory, AuthSession, TerminalDevice, UserAccount
 from app.db.session import get_db_session
+from app.core.scope import ensure_server_scope
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -31,6 +32,8 @@ class LoginRequest(BaseModel):
     username: str = Field(min_length=1)
     password: str = Field(min_length=1)
     device_id: str | None = Field(default=None, alias="deviceId")
+    customer_scope: str | None = Field(default=None, alias="customerScope")
+    site_scope: str | None = Field(default=None, alias="siteScope")
 
 
 class LoginResponse(BaseModel):
@@ -45,10 +48,14 @@ class LoginResponse(BaseModel):
     refresh_token: str
     refresh_expires_at: datetime
     must_change_password: bool
+    customer_scope: str
+    site_scope: str
 
 
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=1)
+    customer_scope: str | None = Field(default=None, alias="customerScope")
+    site_scope: str | None = Field(default=None, alias="siteScope")
 
 
 class LogoutResponse(BaseModel):
@@ -61,6 +68,8 @@ class CurrentUserResponse(BaseModel):
     role: str
     display_name: str
     must_change_password: bool
+    customer_scope: str
+    site_scope: str
 
 
 class ChangePasswordRequest(BaseModel):
@@ -94,7 +103,10 @@ def _validate_active_terminal_device(session: Session, device_id: str | None) ->
     if terminal is None or terminal.status != "ACTIVE":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Terminal device is not approved or active.",
+            detail={
+                "code": "DEVICE_NOT_APPROVED",
+                "message": "승인되지 않았거나 비활성 상태인 단말입니다.",
+            },
         )
     terminal.last_seen_at = datetime.now(timezone.utc)
     session.add(terminal)
@@ -104,9 +116,17 @@ def _validate_active_terminal_device(session: Session, device_id: str | None) ->
 @router.post("/login", response_model=LoginResponse)
 def login(
     request: LoginRequest,
+    http_request: Request,
     session: Annotated[Session, Depends(get_db_session)],
     app_settings: Annotated[Settings, Depends(get_settings)],
 ) -> LoginResponse:
+    ensure_server_scope(
+        http_request,
+        app_settings,
+        session,
+        customer_scope=request.customer_scope,
+        site_scope=request.site_scope,
+    )
     username = request.username.strip()
     account = session.scalar(select(UserAccount).where(UserAccount.username == username))
     if account is None or not _password_matches(request.password, account.password_hash):
@@ -117,7 +137,10 @@ def login(
     if not account.is_active or account.status != "ACTIVE":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is not active.",
+            detail={
+                "code": "ACCOUNT_NOT_ACTIVE",
+                "message": "현재 계정은 활성 상태가 아닙니다.",
+            },
         )
     device_id = _validate_active_terminal_device(session, request.device_id)
 
@@ -133,15 +156,25 @@ def login(
         refresh_token=tokens.refresh_token,
         refresh_expires_at=tokens.refresh_expires_at,
         must_change_password=account.must_change_password,
+        customer_scope=app_settings.effective_customer_scope,
+        site_scope=app_settings.effective_site_scope,
     )
 
 
 @router.post("/refresh", response_model=LoginResponse)
 def refresh(
     request: RefreshRequest,
+    http_request: Request,
     session: Annotated[Session, Depends(get_db_session)],
     app_settings: Annotated[Settings, Depends(get_settings)],
 ) -> LoginResponse:
+    ensure_server_scope(
+        http_request,
+        app_settings,
+        session,
+        customer_scope=request.customer_scope,
+        site_scope=request.site_scope,
+    )
     token_hash = hash_refresh_token(request.refresh_token)
     auth_session = session.scalar(
         select(AuthSession).where(AuthSession.refresh_token_hash == token_hash)
@@ -191,6 +224,8 @@ def refresh(
         refresh_token=tokens.refresh_token,
         refresh_expires_at=tokens.refresh_expires_at,
         must_change_password=account.must_change_password,
+        customer_scope=app_settings.effective_customer_scope,
+        site_scope=app_settings.effective_site_scope,
     )
 
 
@@ -219,6 +254,8 @@ def read_current_user(current_user: CurrentUser) -> CurrentUserResponse:
         role=current_user.role,
         display_name=current_user.display_name,
         must_change_password=current_user.must_change_password,
+        customer_scope=current_user.customer_scope,
+        site_scope=current_user.site_scope,
     )
 
 

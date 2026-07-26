@@ -517,6 +517,60 @@ def test_field_comment_review_roles_separate_analysis_and_decision() -> None:
         assert denied_decision.status_code == 403
 
 
+def test_high_risk_field_comment_requires_a_different_decision_user() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        analyzer_headers = auth_headers(client)
+        decision_headers = create_role_headers(client, "manager")
+        created = client.post(
+            "/api/v1/field-comments",
+            headers=analyzer_headers,
+            json={
+                "documentId": document["document_id"],
+                "documentVersionId": document["latest_version"]["version_id"],
+                "rawContent": "위험 신호 독립 검토 원문",
+                "signalLevel": "red",
+                "authorId": "user-admin",
+            },
+        ).json()
+        analyzed = client.patch(
+            f"/api/v1/field-comments/{created['comment_id']}",
+            headers=analyzer_headers,
+            json={
+                "status": "ANALYZED",
+                "normalizedContent": "위험 신호 정리",
+                "analysisContent": "위험 신호 분석",
+                "transitionReason": "위험 신호 분석 완료",
+                "baseReviewRevision": created["review_revision"],
+            },
+        )
+        assert analyzed.status_code == 200, analyzed.text
+
+        same_user = client.patch(
+            f"/api/v1/field-comments/{created['comment_id']}",
+            headers=analyzer_headers,
+            json={
+                "status": "REVIEWED",
+                "transitionReason": "같은 분석자 검토 시도",
+                "baseReviewRevision": analyzed.json()["review_revision"],
+            },
+        )
+        assert same_user.status_code == 403
+        assert same_user.json()["detail"]["code"] == "INDEPENDENT_REVIEW_REQUIRED"
+
+        independent = client.patch(
+            f"/api/v1/field-comments/{created['comment_id']}",
+            headers=decision_headers,
+            json={
+                "status": "REVIEWED",
+                "transitionReason": "독립 결정자 검토 완료",
+                "baseReviewRevision": analyzed.json()["review_revision"],
+            },
+        )
+        assert independent.status_code == 200, independent.text
+        assert independent.json()["reviewed_by"] != independent.json()["analyzed_by"]
+
+
 def test_field_comment_idempotency_key_returns_existing_note() -> None:
     with create_test_client() as client:
         document = create_document(client)

@@ -189,11 +189,11 @@ def test_login_rejects_unknown_or_inactive_android_terminal_device() -> None:
         )
 
     assert unknown_response.status_code == 403
-    assert unknown_response.json()["detail"] == "Terminal device is not approved or active."
+    assert unknown_response.json()["detail"]["code"] == "DEVICE_NOT_APPROVED"
     assert inactive_response.status_code == 403
-    assert inactive_response.json()["detail"] == "Terminal device is not approved or active."
+    assert inactive_response.json()["detail"]["code"] == "DEVICE_NOT_APPROVED"
     assert retired_response.status_code == 403
-    assert retired_response.json()["detail"] == "Terminal device is not approved or active."
+    assert retired_response.json()["detail"]["code"] == "DEVICE_NOT_APPROVED"
 
 
 def test_direct_device_deactivation_blocks_access_refresh_and_relogin() -> None:
@@ -258,10 +258,12 @@ def test_me_returns_current_user_for_bearer_token() -> None:
     assert response.json() == {
         "user_id": account.user_id,
         "username": account.username,
-        "role": "viewer",
-        "display_name": "Login Test User",
-        "must_change_password": False,
-    }
+            "role": "viewer",
+            "display_name": "Login Test User",
+            "must_change_password": False,
+            "customer_scope": "DEFAULT",
+            "site_scope": "DEFAULT",
+        }
 
 
 def test_me_rejects_missing_token() -> None:
@@ -381,7 +383,7 @@ def test_login_rejects_inactive_account() -> None:
         )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "User account is not active."
+    assert response.json()["detail"]["code"] == "ACCOUNT_NOT_ACTIVE"
 
 
 def test_login_rejects_unknown_account() -> None:

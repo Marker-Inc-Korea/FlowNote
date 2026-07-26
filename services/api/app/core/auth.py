@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.db.models import AuthSession, TerminalDevice, UserAccount
 from app.db.session import get_db_session
+from app.core.scope import ensure_server_scope
 
 TOKEN_TYPE = "Bearer"
 ROLE_ADMIN = "admin"
@@ -115,6 +116,8 @@ class AuthenticatedUser:
     session_id: str
     access_token_id: str
     must_change_password: bool
+    customer_scope: str
+    site_scope: str
 
 
 @dataclass(frozen=True)
@@ -318,7 +321,14 @@ def _validate_auth_session(
             select(TerminalDevice).where(TerminalDevice.device_id == auth_session.device_id)
         )
         if terminal is None or terminal.status != "ACTIVE":
-            raise _invalid_credentials("Terminal device is not approved or active.")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "code": "DEVICE_NOT_APPROVED",
+                    "message": "승인되지 않았거나 비활성 상태인 단말입니다.",
+                },
+                headers={"WWW-Authenticate": TOKEN_TYPE},
+            )
     return auth_session
 
 
@@ -333,6 +343,7 @@ def _invalid_credentials(
 
 
 def get_authenticated_user(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
@@ -347,6 +358,12 @@ def get_authenticated_user(
     )
     if account is None or not account.is_active or account.status != "ACTIVE":
         raise _invalid_credentials()
+    ensure_server_scope(
+        request,
+        settings,
+        session,
+        actor_id=account.user_id,
+    )
 
     return AuthenticatedUser(
         user_id=account.user_id,
@@ -356,6 +373,8 @@ def get_authenticated_user(
         session_id=auth_session.session_id,
         access_token_id=auth_session.access_token_id,
         must_change_password=account.must_change_password,
+        customer_scope=settings.effective_customer_scope,
+        site_scope=settings.effective_site_scope,
     )
 
 
@@ -379,7 +398,10 @@ def require_roles(*allowed_roles: str):
         if current_user.role not in allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Current user role is not allowed to perform this action.",
+                detail={
+                    "code": "PERMISSION_DENIED",
+                    "message": "현재 계정에는 이 작업 권한이 없습니다.",
+                },
             )
         return current_user
 

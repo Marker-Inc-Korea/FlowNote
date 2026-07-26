@@ -1,6 +1,6 @@
 # FlowNote 문서
 
-이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-26 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
+이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-27 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
 
 전체 문서 갱신 범위는 Git이 추적하는 제품·구현 Markdown이다. `AGENTS.md`는 작업 정책 원문이므로 제품 코드 설명과 분리하고, 가상환경·빌드 캐시·테스트 산출물 안의 Markdown은 생성·보존 기록이므로 갱신 대상에서 제외한다.
 
@@ -28,6 +28,7 @@
 - Windows 사용자 관리는 로그인 저장소에 따라 분리된다. 서버 로그인한 `admin`, `system-admin`은 서버 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기를 수행하고, 로컬 로그인은 로컬 SQLite 계정 화면만 사용한다. 임시 비밀번호 계정은 메인 화면 전에 비밀번호 변경을 강제하고 변경 후 재로그인을 요구한다.
 - Windows에는 채널함, 채널 관리, 인수인계 확인 현황 화면이 구현되어 있고 FastAPI 채널/인수인계 API를 직접 호출한다. 서버 미연결 시 로컬 데이터와 동기화 큐를 삭제하지 않고 서버 설정 확인 문구를 표시한다.
 - FastAPI 서버는 `/api/v1` REST API와 SQLite, 로컬 `storage/` 파일 저장소를 사용한다.
+- 파일럿 서버 PC 1대는 고객 하나와 현장 하나의 경계로 운영한다. 보호 요청에 다른 고객·현장 scope가 들어오면 대상 존재 여부를 드러내지 않는 `404 SCOPE_NOT_FOUND`로 거부하고 감사 이력을 남긴다.
 - FastAPI 서버 DB와 WPF 로컬 DB는 스키마 소유권이 다른 별도 SQLite 파일이다. FastAPI 초기화는 WPF `documents`/`document_versions` 형태를 감지하면 서버 테이블을 만들기 전에 중단한다.
 - FastAPI 서버에는 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API가 있다.
 - WPF와 스모크 테스트는 기본적으로 `data/local/flownote.local.sqlite`를 함께 사용한다.
@@ -35,7 +36,7 @@
 - 문서 등록은 즉시 공개가 아니다. 등록된 문서는 `WORKING` 상태와 최신 버전으로 저장되고, 공개 버전은 별도 publish 절차로 지정한다.
 - WPF 다운로드 허용 role의 파일 저장은 로컬 원본 복사가 아니라 서버의 세션 바인딩 1회성 controlled copy와 저장 후 SHA-256 검증을 사용한다.
 - FieldComment는 문서 버전이 아니라 현장 원천 기록이다.
-- FieldComment 원천 핵심 필드는 생성 후 수정·삭제하지 않고, 관리자 해석은 담당자·기한·정리·분석·상태·전이 사유와 원천 hash 감사로 분리한다. WPF에는 상세 필터와 저장된 보기, 다중 선택 검토 preview·품질 작업함·서버 역추적 화면이 있다. FastAPI에는 요청당 최대 200건을 입력 순서대로 사전검증하고 항목별 revision·mutation receipt로 부분 성공 처리하는 일괄 검토, 원자형 호환 일괄 경로, 감사·품질 API, 보고서 source와 생성 최종 문서·버전을 잇는 통합 역추적 API가 구현되어 있다.
+- FieldComment 원천 핵심 필드는 생성 후 수정·삭제하지 않고, 관리자 해석은 담당자·기한·정리·분석·상태·전이 사유와 원천 hash 감사로 분리한다. `red` 신호 또는 상충 원천의 결정은 분석자와 다른 사용자가 맡는다. WPF에는 상세 필터와 저장된 보기, 다중 선택 검토 preview·품질 작업함·서버 역추적 화면이 있다. FastAPI에는 요청당 최대 200건을 입력 순서대로 사전검증하고 항목별 revision·mutation receipt로 부분 성공 처리하는 일괄 검토, 원자형 호환 일괄 경로, 감사·품질 API, 보고서 source와 생성 최종 문서·버전을 잇는 통합 역추적 API가 구현되어 있다.
 - 보고서 초안과 최종 저장은 서로 다른 source type 2종 이상을 요구한다. FieldComment는 `SELECTED`이면서 관찰 문서 버전과 원천 작성자가 있어야 하고 문서는 현재 공개 버전만 사용할 수 있다. 각 source는 version, 독립 trace ID와 저장 시점 SHA-256을 고정하며 최종 문서 저장 직전에 원천을 다시 검증한다.
 - WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다. 공개·상태·태그는 안정된 mutation key와 서버 receipt를 사용하고, 2xx 응답 뒤 서버 문서 상태를 다시 읽어야 `SYNCED`로 종결한다. 작업내역 화면에서는 큐 깊이·최장 대기·최근 처리량·실패 분포와 row별 운영 상태를 확인한다. 서버본 유지로 종결한 `DISCARDED`도 전체 보존 건수에는 포함하되 재시도 대상 큐 깊이에서는 제외한다.
 - 작업순서는 동기화 큐 대상이 아니다. WPF 관리자·TV 화면은 FastAPI snapshot을 권위 원천으로 읽고, 관리 화면은 `board_revision`, mutation key, `baseBoardRevision`으로 서버를 직접 변경한다. 서버 미연결·조회 실패에서는 로컬 row를 읽기 캐시·초안으로만 표시하고 확정 변경을 차단한다.
@@ -53,7 +54,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-26 현재 pytest node ID 151건을 중복 없이 수집해 모두 통과했고 WPF Core 테스트 48건도 통과했다. 표준 스크립트 `scripts/verify-preserved-tests.ps1`은 아직 FastAPI 149건·WPF Core 43건을 고정하므로 현재 코드와 맞지 않는다. 새 수치로 스크립트를 보정하고 Windows 누적 공통 DB 스모크와 Android 검증까지 한 run에서 통과하기 전에는 `partial_run=false`, `verification-summary.json=PASSED` 통합 기준선으로 인정하지 않는다.
+- FastAPI 코드는 2026-07-27 현재 pytest node ID 154건을 중복 없이 수집해 모두 통과했고 WPF Core 테스트 52건과 Android 단위 테스트 16건도 통과했다. 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 guard도 FastAPI 154건·WPF Core 52건·Android 16건으로 맞췄다. 실제 수집값과 JUnit/TRX 수를 대조해 guard를 갱신한 뒤에도 Windows 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 run이 같은 clean 소스 커밋에서 2회 연속 `partial_run=false`, `verification-summary.json=PASSED`여야 통합 기준선으로 인정한다.
 
 ## 일일 기록
 

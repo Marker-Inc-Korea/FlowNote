@@ -45,12 +45,20 @@ public sealed class ServerAwareAuthService(AuthService localAuth, HttpClient? se
 
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
-                return LoginResult.Failed("서버 로그인 ID 또는 비밀번호가 올바르지 않습니다.");
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                return LoginResult.Failed(ServerAccessDenialPolicy.Message(response.StatusCode, body));
             }
 
             if (response.StatusCode == HttpStatusCode.Forbidden)
             {
-                return LoginResult.Failed("서버 계정이 비활성 상태입니다. 관리자에게 문의하세요.");
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                return LoginResult.Failed(ServerAccessDenialPolicy.Message(response.StatusCode, body));
+            }
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                return LoginResult.Failed(ServerAccessDenialPolicy.Message(response.StatusCode, body));
             }
 
             return LoginResult.Failed("서버 로그인에 실패했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.");
