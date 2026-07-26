@@ -6,7 +6,7 @@ FlowNote는 공장 내부 서버에서 문서 버전, 현장 공개본, 작업�
 
 `FastAPI` · `Windows WPF` · `Android` · `SQLite` · `On-premises`
 
-> **현재 상태:** 실제 운영 흐름을 구현하고 검증하는 연구 프로토타입이다. 아래 기능 설명은 2026-07-26 저장소 코드 기준이다. 운영 배포가 확정된 완제품은 아니다.
+> **현재 상태:** 실제 운영 흐름을 구현하고 검증하는 연구 프로토타입이다. 아래 기능 설명은 2026-07-27 저장소 코드 기준이다. 운영 배포가 확정된 완제품은 아니다.
 
 ## 왜 만들었나
 
@@ -92,8 +92,9 @@ flowchart LR
 - 불변 원천인 `FieldComment`와 사진 첨부
 - 신호등식 상태와 짧은 메모
 - 담당자·기한·검토 단계·감사 이력
+- 위험 신호·상충 기록의 분석자와 결정자 분리
 - 다중 항목 검토 전 미리보기와 부분 성공 처리
-- 현장 원문에서 보고서 초안·정제 문서까지 추적
+- 현장 원문에서 보고서 초안·정제 문서까지 추적하고 조회 시 원천 권한 재검사
 - 라인·설비·공정·오류 유형 등 태그 기반 연결
 
 ### 3. 불안정한 사내망을 전제로 한 동기화
@@ -108,6 +109,7 @@ flowchart LR
 ### 4. 설치형 클라이언트 전체에 걸친 접근 통제
 
 - 역할 기반 계정·권한과 활성 세션 폐기
+- 서버 PC 1대의 단일 고객·현장 경계와 다른 scope 요청 차단
 - 관리자 승인 단말만 Android 로그인 허용
 - Android 문서 본문은 단기 1회 grant로 앱 내부에서만 열람
 - 임시 파일 무결성 확인, `FLAG_SECURE`, 공유·외부 열기 차단
@@ -152,17 +154,17 @@ flowchart LR
 
 ## 내부 기술 검증 스냅샷
 
-2026-07-26 현재 서버·Windows 컴포넌트와 Android 단위 테스트·debug 빌드·lint를 다시 실행했다. 아래 결과는 현재까지 확인한 내부 기술 검증 범위다.
+2026-07-27 현재 서버·Windows 컴포넌트와 Android 단위 테스트를 다시 확인했다. 아래 결과는 현재까지 확인한 내부 기술 검증 범위다.
 
 | 검증 대상 | 결과 |
 | --- | --- |
-| FastAPI OpenAPI | 루트 `GET /` 포함 130개 method/path |
+| FastAPI OpenAPI | 루트 `GET /` 포함 131개 method/path |
 | SQLAlchemy ORM | 60개 테이블 |
-| FastAPI 테스트 | 151개 통과 |
+| FastAPI 테스트 | 154개 통과 |
 | Python 정적 검사 | Ruff 통과 |
-| WPF Core 테스트 | 48개 통과 |
+| WPF Core 테스트 | 52개 통과 |
 | WPF 앱 빌드 | 경고 0개, 오류 0개 |
-| Android 단위 테스트 | 15개 통과 |
+| Android 단위 테스트 | 16개 통과 |
 | Android debug 빌드·lint | `assembleDebug`, `lintDebug` 통과 |
 
 이 결과는 macOS ARM64 개발 호스트에서 실행한 API·Core 테스트, Windows 대상 교차 빌드, Android 개발 빌드를 기준으로 한다. 개별 내부 검증은 기능 개발과 함께 계속 진행한다. 실제 Windows UI 조작, 공통 누적 SQLite를 사용하는 Windows 통합 스모크, 승인 Android 실단말, 운영 HTTPS·코드 서명·MDM 검증을 한 실행 ID로 묶은 전체 구성요소 통합 기준선은 아직 `대기`다. 상세 실행 기록과 과거 실패 증거는 [검증 자동화 문서](./docs/verification.md)에 보존한다.
@@ -224,7 +226,7 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
 ```
 
-전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF, Android, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 테스트 DB, 로그와 산출물은 회귀 분석 근거로 로컬에 계속 보존하되 Git에는 포함하지 않는다.
+전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI 154건, WPF Core 52건, Android 단위 테스트 16건, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 기대값은 실제 수집값과 JUnit/TRX 수가 일치할 때만 갱신하며, 같은 clean 소스 커밋에서 새 실행 ID로 2회 연속 통과해야 기준선으로 인정한다. 실패 단계·다음 조치·보존 증거 경로는 콘솔과 실행별 `verification-summary.json`에 한글로 남긴다. 테스트 DB, 로그와 산출물은 회귀 분석 근거로 로컬에 계속 보존하되 Git에는 포함하지 않는다. 자세한 갱신·대조 절차는 [검증 자동화 문서](./docs/verification.md)를 따른다.
 
 ## 설계 문서
 

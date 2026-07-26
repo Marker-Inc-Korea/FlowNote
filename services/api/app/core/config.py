@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     access_token_secret: str = "flownote-local-dev-token-secret-change-before-operation"
     access_token_expires_minutes: int = 480
     refresh_token_expires_days: int = 14
+    customer_scope: str | None = None
+    site_scope: str | None = None
+    field_comment_independent_review_required: bool = True
     ai_external_call_enabled: bool = False
     ai_readiness_gate_enabled: bool = True
     ai_provider: str = "UNCONFIGURED"
@@ -47,6 +50,14 @@ class Settings(BaseSettings):
     ai_provider_response_max_bytes: int = Field(default=65536, ge=1024, le=1048576)
     ai_retention_scheduler_enabled: bool = True
     ai_retention_scheduler_interval_seconds: int = Field(default=3600, ge=60, le=86400)
+
+    @property
+    def effective_customer_scope(self) -> str:
+        return (self.customer_scope or self.ai_customer_scope).strip()
+
+    @property
+    def effective_site_scope(self) -> str:
+        return (self.site_scope or self.ai_site_scope).strip()
 
 
 settings = Settings()

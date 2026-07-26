@@ -11,7 +11,9 @@ from app.db.init_db import hash_password_for_dev
 from app.db.models import (
     Document,
     DocumentVersion,
+    ActivityHistory,
     NotificationChannel,
+    NotificationChannelMember,
     Report,
     ReportMutationReceipt,
     ReportSource,
@@ -343,8 +345,8 @@ def test_report_save_rejects_source_changed_after_selection_with_409() -> None:
                 "saveAsDocument": True,
             },
         )
-        assert saved.status_code == 409, saved.text
-        assert saved.json()["detail"]["code"] == "REPORT_SOURCE_STALE_OR_ORPHAN"
+        assert saved.status_code == 404, saved.text
+        assert saved.json()["detail"]["code"] == "SOURCE_NOT_VISIBLE"
         with client.app.state.database.session() as session:
             report = session.scalar(select(Report).where(Report.report_id == draft["report_id"]))
             assert report.status == "DRAFT"
@@ -568,8 +570,8 @@ def test_report_rejects_excluded_field_comment_source() -> None:
             },
         )
 
-    assert response.status_code == 422
-    assert response.json()["detail"] == "FIELD_COMMENT report source must be SELECTED."
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "SOURCE_NOT_VISIBLE"
 
 
 def test_report_draft_requires_manager_role() -> None:
@@ -604,8 +606,8 @@ def test_report_rejects_unknown_source() -> None:
             },
         )
 
-    assert response.status_code == 422
-    assert response.json()["detail"] == "FIELD_COMMENT source is unknown."
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "SOURCE_NOT_VISIBLE"
 
 
 def test_report_source_eligibility_rejects_unselected_private_stale_and_out_of_channel_evidence() -> None:
@@ -634,7 +636,8 @@ def test_report_source_eligibility_rejects_unselected_private_stale_and_out_of_c
                 "sources": [{"sourceType": "FIELD_COMMENT", "sourceId": unselected["comment_id"]}],
             },
         )
-        assert rejected_unselected.status_code == 422
+        assert rejected_unselected.status_code == 404
+        assert rejected_unselected.json()["detail"]["code"] == "SOURCE_NOT_VISIBLE"
 
         private_response = client.post(
             "/api/v1/documents",
@@ -657,8 +660,8 @@ def test_report_source_eligibility_rejects_unselected_private_stale_and_out_of_c
                 "sources": [{"sourceType": "DOCUMENT", "sourceId": private["document_id"]}],
             },
         )
-        assert rejected_private.status_code == 422
-        assert rejected_private.json()["detail"] == "DOCUMENT report source must be published."
+        assert rejected_private.status_code == 404
+        assert rejected_private.json()["detail"]["code"] == "SOURCE_NOT_VISIBLE"
 
         v2_response = client.post(
             f"/api/v1/documents/{published['document_id']}/versions",
@@ -680,8 +683,8 @@ def test_report_source_eligibility_rejects_unselected_private_stale_and_out_of_c
                 }],
             },
         )
-        assert rejected_stale.status_code == 422
-        assert rejected_stale.json()["detail"] == "DOCUMENT report source must use the current published version."
+        assert rejected_stale.status_code == 404
+        assert rejected_stale.json()["detail"]["code"] == "SOURCE_NOT_VISIBLE"
 
         selected = create_field_comment(client, admin_headers, published)
         manager = create_role_user(client, "manager")
@@ -705,4 +708,102 @@ def test_report_source_eligibility_rejects_unselected_private_stale_and_out_of_c
                 "sources": [{"sourceType": "FIELD_COMMENT", "sourceId": selected["comment_id"]}],
             },
         )
-        assert rejected_channel.status_code == 403
+        assert rejected_channel.status_code == 404
+        assert rejected_channel.json()["detail"]["code"] == "SOURCE_NOT_VISIBLE"
+
+
+def test_report_reads_hide_any_out_of_channel_source_and_write_audit() -> None:
+    with create_test_client() as client:
+        admin_headers = auth_headers(client)
+        document = create_document(client, admin_headers)
+        field_comment = create_field_comment(client, admin_headers, document)
+        report_response = client.post(
+            "/api/v1/reports/drafts",
+            headers=admin_headers,
+            json={
+                "reportType": "scope_recheck",
+                "title": f"원천 권한 재검사 {uuid4().hex[:8]}",
+                "sources": [
+                    {
+                        "sourceType": "FIELD_COMMENT",
+                        "sourceId": field_comment["comment_id"],
+                    },
+                    {
+                        "sourceType": "DOCUMENT",
+                        "sourceId": document["document_id"],
+                    },
+                ],
+            },
+        )
+        assert report_response.status_code == 201, report_response.text
+        report = report_response.json()
+        manager = create_role_user(client, "manager")
+        manager_headers = auth_headers(client, manager.username, TEST_PASSWORD)
+        channel_id = f"channel-{uuid4().hex}"
+        with client.app.state.database.session() as session:
+            session.add(
+                NotificationChannel(
+                    channel_id=channel_id,
+                    name="보고서 원천 제한 채널",
+                    channel_type="LINE",
+                    source_type="FIELD_COMMENT",
+                    source_id=field_comment["comment_id"],
+                    status="ACTIVE",
+                    created_by="user-admin",
+                )
+            )
+            session.commit()
+
+        listed = client.get("/api/v1/reports", headers=manager_headers)
+        detail = client.get(
+            f"/api/v1/reports/{report['report_id']}",
+            headers=manager_headers,
+        )
+        sources = client.get(
+            f"/api/v1/reports/{report['report_id']}/sources",
+            headers=manager_headers,
+        )
+
+        assert listed.status_code == 200
+        assert report["report_id"] not in {item["report_id"] for item in listed.json()}
+        assert detail.status_code == 404
+        assert sources.status_code == 404
+        assert detail.json() == sources.json()
+        assert detail.json()["detail"]["code"] == "RESOURCE_NOT_FOUND"
+        with client.app.state.database.session() as session:
+            denied_events = session.scalars(
+                select(ActivityHistory).where(
+                    ActivityHistory.actor_id == manager.user_id,
+                    ActivityHistory.target_id == report["report_id"],
+                    ActivityHistory.event_type.in_(
+                        {"report.read_denied", "report.source_read_denied"}
+                    ),
+                )
+            ).all()
+            assert {event.event_type for event in denied_events} == {
+                "report.read_denied",
+                "report.source_read_denied",
+            }
+            session.add(
+                NotificationChannelMember(
+                    member_id=f"member-{uuid4().hex}",
+                    channel_id=channel_id,
+                    user_id=manager.user_id,
+                    member_role="MEMBER",
+                    status="ACTIVE",
+                    added_by="user-admin",
+                )
+            )
+            session.commit()
+
+        allowed_detail = client.get(
+            f"/api/v1/reports/{report['report_id']}",
+            headers=manager_headers,
+        )
+        allowed_sources = client.get(
+            f"/api/v1/reports/{report['report_id']}/sources",
+            headers=manager_headers,
+        )
+        assert allowed_detail.status_code == 200, allowed_detail.text
+        assert allowed_sources.status_code == 200, allowed_sources.text
+        assert len(allowed_sources.json()) == 2

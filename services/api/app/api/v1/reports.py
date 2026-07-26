@@ -47,6 +47,14 @@ REPORT_SOURCE_TYPES = {
 }
 FIELD_COMMENT_REPORT_SOURCE_STATUS = "SELECTED"
 DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "PUBLISHED", "ARCHIVED"}
+SOURCE_NOT_VISIBLE_DETAIL = {
+    "code": "SOURCE_NOT_VISIBLE",
+    "message": "요청한 원천을 찾을 수 없거나 현재 공개 범위에서 열람할 수 없습니다.",
+}
+REPORT_NOT_VISIBLE_DETAIL = {
+    "code": "RESOURCE_NOT_FOUND",
+    "message": "요청한 보고서를 찾을 수 없습니다.",
+}
 
 
 class ReportSourceRequest(BaseModel):
@@ -231,8 +239,8 @@ def _ensure_source_channel_access(
     )
     if membership is None:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Current user cannot use a source linked to an out-of-scope channel.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=SOURCE_NOT_VISIBLE_DETAIL,
         )
 
 
@@ -250,11 +258,11 @@ def _validate_source(
     if source_type == "FIELD_COMMENT":
         field_comment = session.scalar(select(FieldComment).where(FieldComment.comment_id == source_id))
         if field_comment is None:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="FIELD_COMMENT source is unknown.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=SOURCE_NOT_VISIBLE_DETAIL)
         if field_comment.status != FIELD_COMMENT_REPORT_SOURCE_STATUS:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="FIELD_COMMENT report source must be SELECTED.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=SOURCE_NOT_VISIBLE_DETAIL,
             )
         source_version_id = field_comment.document_version_id
         source_hash = _field_comment_source_hash(field_comment)
@@ -264,23 +272,23 @@ def _validate_source(
             select(Document).where(Document.document_id == source_id, Document.deleted_at.is_(None))
         )
         if document is None:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="DOCUMENT source is unknown.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=SOURCE_NOT_VISIBLE_DETAIL)
         if document.status != "PUBLISHED" or document.published_version_id is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="DOCUMENT report source must be published.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=SOURCE_NOT_VISIBLE_DETAIL,
             )
         source_version_id = source_version_id or document.published_version_id
         version = session.scalar(select(DocumentVersion).where(DocumentVersion.version_id == source_version_id))
         if version is None or version.document_id != document.document_id:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="sourceVersionId must belong to the DOCUMENT source.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=SOURCE_NOT_VISIBLE_DETAIL,
             )
         if source_version_id != document.published_version_id or not version.is_published:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="DOCUMENT report source must use the current published version.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=SOURCE_NOT_VISIBLE_DETAIL,
             )
         file_object = session.scalar(select(FileObject).where(FileObject.id == version.file_object_id))
         source_hash = file_object.hash_sha256 if file_object is not None else None
@@ -288,8 +296,8 @@ def _validate_source(
         item = session.scalar(select(WorkSequenceItem).where(WorkSequenceItem.item_id == source_id))
         if item is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="WORK_SEQUENCE_ITEM source is unknown.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=SOURCE_NOT_VISIBLE_DETAIL,
             )
         latest_change = session.scalar(
             select(WorkSequenceChangeHistory)
@@ -305,30 +313,30 @@ def _validate_source(
         )
         if history is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="WORK_SEQUENCE_HISTORY source is unknown.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=SOURCE_NOT_VISIBLE_DETAIL,
             )
         source_version_id = history.change_id
         source_hash = _hash_payload(_work_sequence_history_snapshot(history))
     elif source_type == "WORK_RECORD":
         work_record = session.scalar(select(WorkRecord).where(WorkRecord.work_record_id == source_id))
         if work_record is None:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="WORK_RECORD source is unknown.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=SOURCE_NOT_VISIBLE_DETAIL)
         if work_record.latest_version_id is None:
-            raise HTTPException(status_code=422, detail="WORK_RECORD source requires a latest version.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=SOURCE_NOT_VISIBLE_DETAIL)
         version = session.scalar(
             select(WorkRecordVersion).where(WorkRecordVersion.version_id == work_record.latest_version_id)
         )
         if version is None:
-            raise HTTPException(status_code=422, detail="WORK_RECORD latest version is unknown.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=SOURCE_NOT_VISIBLE_DETAIL)
         source_version_id = version.version_id
         source_hash = _hash_payload(_work_record_version_snapshot(version))
     elif source_type == "WORK_RECORD_VERSION":
         version = session.scalar(select(WorkRecordVersion).where(WorkRecordVersion.version_id == source_id))
         if version is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="WORK_RECORD_VERSION source is unknown.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=SOURCE_NOT_VISIBLE_DETAIL,
             )
         source_version_id = version.version_id
         source_hash = _hash_payload(_work_record_version_snapshot(version))
@@ -531,7 +539,10 @@ def _validate_frozen_sources(
                 current_user,
             )
         except HTTPException as exc:
-            if exc.status_code == status.HTTP_403_FORBIDDEN:
+            if exc.status_code in {
+                status.HTTP_403_FORBIDDEN,
+                status.HTTP_404_NOT_FOUND,
+            }:
                 raise
             raise HTTPException(
                 status_code=409,
@@ -795,6 +806,54 @@ def _report_response(session: Session, report: Report) -> ReportResponse:
     )
 
 
+def _report_sources(session: Session, report_id: str) -> list[ReportSource]:
+    return list(
+        session.scalars(
+            select(ReportSource)
+            .where(ReportSource.report_id == report_id)
+            .order_by(ReportSource.id)
+        ).all()
+    )
+
+
+def _record_report_access(
+    session: Session,
+    *,
+    actor_id: str,
+    event_type: str,
+    report_id: str | None,
+    title: str | None,
+    message: str,
+) -> None:
+    session.add(
+        ActivityHistory(
+            history_id=_new_public_id("hist"),
+            event_type=event_type,
+            actor_id=actor_id,
+            target_type="report",
+            target_id=report_id,
+            target_title=title,
+            message=message,
+        )
+    )
+
+
+def _report_is_readable(
+    session: Session,
+    report: Report,
+    current_user: CurrentUser,
+) -> bool:
+    try:
+        _validate_frozen_sources(
+            session,
+            _report_sources(session, report.report_id),
+            current_user,
+        )
+    except HTTPException:
+        return False
+    return True
+
+
 def _report_idempotent_response(
     session: Session,
     mutation_key: str | None,
@@ -1002,20 +1061,90 @@ def save_report(
 
 @router.get("", response_model=list[ReportResponse])
 def list_reports(
-    _current_user: CurrentUser,
+    current_user: CurrentUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> list[ReportResponse]:
     reports = session.scalars(select(Report).order_by(desc(Report.updated_at), desc(Report.id))).all()
-    return [_report_response(session, report) for report in reports]
+    readable: list[Report] = []
+    filtered_count = 0
+    for report in reports:
+        if _report_is_readable(session, report, current_user):
+            readable.append(report)
+        else:
+            filtered_count += 1
+    _record_report_access(
+        session,
+        actor_id=current_user.user_id,
+        event_type="report.list_read",
+        report_id=None,
+        title=None,
+        message=f"보고서 목록 권한 재검사 완료: 반환 {len(readable)}건, 비노출 {filtered_count}건.",
+    )
+    session.commit()
+    return [_report_response(session, report) for report in readable]
 
 
 @router.get("/{report_id}", response_model=ReportResponse)
 def get_report(
     report_id: str,
-    _current_user: CurrentUser,
+    current_user: CurrentUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> ReportResponse:
     report = session.scalar(select(Report).where(Report.report_id == report_id))
-    if report is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found.")
+    if report is None or not _report_is_readable(session, report, current_user):
+        _record_report_access(
+            session,
+            actor_id=current_user.user_id,
+            event_type="report.read_denied",
+            report_id=report_id,
+            title=None,
+            message="보고서 또는 원천을 현재 권한으로 열람할 수 없어 존재를 숨겼습니다.",
+        )
+        session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=REPORT_NOT_VISIBLE_DETAIL,
+        )
+    _record_report_access(
+        session,
+        actor_id=current_user.user_id,
+        event_type="report.read_granted",
+        report_id=report.report_id,
+        title=report.title,
+        message="보고서와 모든 원천의 현재 열람 권한을 재검사해 조회를 허용했습니다.",
+    )
+    session.commit()
     return _report_response(session, report)
+
+
+@router.get("/{report_id}/sources", response_model=list[ReportSourceResponse])
+def list_report_sources(
+    report_id: str,
+    current_user: CurrentUser,
+    session: Annotated[Session, Depends(get_db_session)],
+) -> list[ReportSourceResponse]:
+    report = session.scalar(select(Report).where(Report.report_id == report_id))
+    if report is None or not _report_is_readable(session, report, current_user):
+        _record_report_access(
+            session,
+            actor_id=current_user.user_id,
+            event_type="report.source_read_denied",
+            report_id=report_id,
+            title=None,
+            message="보고서 원천 열람 권한 재검사에 실패해 보고서와 원천의 존재를 숨겼습니다.",
+        )
+        session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=REPORT_NOT_VISIBLE_DETAIL,
+        )
+    _record_report_access(
+        session,
+        actor_id=current_user.user_id,
+        event_type="report.source_read_granted",
+        report_id=report.report_id,
+        title=report.title,
+        message="보고서의 모든 원천에 대한 현재 열람 권한을 재검사해 조회를 허용했습니다.",
+    )
+    session.commit()
+    return _report_response(session, report).sources

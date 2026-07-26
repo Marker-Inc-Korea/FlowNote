@@ -431,6 +431,8 @@ def _post_call_evidence_is_current(
         session_id=auth_session.session_id,
         access_token_id=auth_session.access_token_id,
         must_change_password=account.must_change_password,
+        customer_scope=current_user.customer_scope,
+        site_scope=current_user.site_scope,
     )
     policy = AISourceAccessPolicy(session, refreshed_user)
     for snapshot in eligible:

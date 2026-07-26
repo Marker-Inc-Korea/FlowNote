@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-07-26 현재 OpenAPI에 등록된 130개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-07-27 현재 OpenAPI에 등록된 131개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -97,6 +97,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/reports` | Save report |
 | GET | `/api/v1/reports` | Report list |
 | GET | `/api/v1/reports/{report_id}` | Report detail |
+| GET | `/api/v1/reports/{report_id}/sources` | Report source list after current source-state and channel-permission revalidation |
 | POST | `/api/v1/ai-search/candidates/rebuild` | Rebuild traceable AI search evidence candidates |
 | GET | `/api/v1/ai-search/candidates` | List AI search evidence candidates |
 | GET | `/api/v1/ai-search/quality` | Candidate counts, exclusion reasons, and FieldComment review readiness |
@@ -143,6 +144,8 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 
 The server uses HMAC-signed Bearer access tokens plus the `auth_sessions` table. Login creates a session. Refresh rotates the access token ID and refresh token hash. Logout revokes the session.
 
+The pilot server is a single customer/site boundary. Optional `X-FlowNote-Customer-Scope` and `X-FlowNote-Site-Scope` headers, plus optional login/refresh body scopes, must match the configured boundary. A mismatch is audited and rejected with `404 SCOPE_NOT_FOUND` before resource lookup. Login, refresh, and current-user responses return the effective server scope.
+
 Document write responses carry the server-authoritative aggregate `revision`. Version registration, status changes, publish, tag replacement, and soft delete compare the caller's base revision and relevant latest/published version before committing. Publish, status, and tag mutations store the normalized intent and first successful response in `document_mutation_receipts` within the same transaction. Replaying the same mutation key and intent returns that response without another revision or audit event; reusing the key for another intent returns a structured HTTP 409 conflict. WPF reads the document back after a successful response and marks the queue `SYNCED` only after the authoritative status, published version, tags, and revision agree.
 
 Development defaults such as `admin / 1234` and the default token secret are local development values only.
@@ -154,6 +157,8 @@ Server account lifecycle APIs require `admin` or `system-admin`. Temporary passw
 Work sequence reads require an authenticated user and writes use the document-write role policy. The server is authoritative for the board aggregate: meaningful item add, reorder, and status mutations conditionally advance `board_revision`, store exactly one change-history row and one `work_sequence_mutation_receipts` row in the same transaction, and return `WORK_SEQUENCE_STALE_REVISION` when another client wins the base revision. Retrying the same intent with the same mutation key returns the stored first response; reusing the key for another intent returns `IDEMPOTENCY_KEY_REUSED`. No-op reorder or status requests are rejected without consuming a revision.
 
 FieldComment review writes use the server-authoritative `review_revision`. A caller can send `baseReviewRevision` and `mutationKey`; WPF always sends both. One conditional update advances the revision, and the review change plus `field_comment_review_mutation_receipts` row commit together. Replaying the same key and intent returns the first response snapshot, while stale revisions and key reuse return structured 409 conflicts. Attachment uploads can also bind multipart `parentCommentId` and `fileSha256`; parent, request hash, and stored-file hash mismatches are rejected without retaining a new attachment/file row.
+
+When `FLOWNOTE_FIELD_COMMENT_INDEPENDENT_REVIEW_REQUIRED=true`, a red-signal or conflicting FieldComment cannot move to `REVIEWED`, `SELECTED`, `EXCLUDED`, or `ARCHIVED` when the decision actor is the same user recorded in `analyzed_by`.
 
 Report saves validate and freeze every source version and source hash, calculate normalized content and source-set SHA-256 values, and conditionally advance `report_revision` for an existing draft. The report, all sources, optional generated document/version, aggregate hashes, and `report_mutation_receipts` row commit in one transaction. Stale/orphan sources, stale report revision, client/server hash mismatch, and mutation-key reuse return structured 409 conflicts.
 
@@ -185,6 +190,9 @@ Useful settings:
 - `FLOWNOTE_ACCESS_TOKEN_SECRET`
 - `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES`: default `480`
 - `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS`: default `14`
+- `FLOWNOTE_CUSTOMER_SCOPE`: single-customer server boundary; falls back to `FLOWNOTE_AI_CUSTOMER_SCOPE`
+- `FLOWNOTE_SITE_SCOPE`: single-site server boundary; falls back to `FLOWNOTE_AI_SITE_SCOPE`
+- `FLOWNOTE_FIELD_COMMENT_INDEPENDENT_REVIEW_REQUIRED`: default `true`
 - `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED`: default `false`
 - `FLOWNOTE_AI_READINESS_GATE_ENABLED`: default `true`; 현재 고객·현장·DB scope의 근거/승인 질문/회귀 기준 미달 시 운영 provider 호출 차단
 - `FLOWNOTE_AI_PROVIDER`: default `UNCONFIGURED`
@@ -212,7 +220,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-07-26, the FastAPI suite passed all 151 unique node IDs and WPF Core passed all 48 tests. The current `scripts/verify-preserved-tests.ps1` guard still expects 149 FastAPI and 43 WPF Core tests, so it is not aligned with this source state. Ruff passed for `app` and `tests`, and the WPF app built without warnings or errors on the macOS ARM64 host. Android unit tests and the debug build also passed with Android Studio JBR 21, but this is not an integrated baseline because the shared-DB smoke and all checks were not run under one Windows x64 run ID. The guard counts still need to be updated.
+As of 2026-07-27, FastAPI passes 154 unique node IDs, WPF Core passes 52 tests, and Android passes 16 unit tests. The `scripts/verify-preserved-tests.ps1` guard expects the same 154/52/16 counts. The latest additions cover the single server scope boundary, high-risk FieldComment maker-checker enforcement, report-source visibility, and cause-specific client guidance. Future count changes must be justified by test changes and matched against FastAPI collection/unique node IDs, pytest JUnit, WPF TRX, and Android JUnit. Ruff passed for `app` and `tests`, and the WPF app built without warnings or errors on the macOS ARM64 host. This is not an integrated baseline because the shared-DB smoke and all checks were not run twice under one clean source commit on Windows x64.
 
 The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no management API for that sensitive-data policy. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. Query and retention audit operations are restricted to the configured customer/site scope. The server lifespan runs expired-query retention on the configured interval, while `system-admin` can run scoped bulk retention, expire one query, or place and release a reasoned legal hold. An active hold blocks all three expiry paths. WPF mutations send a stable `operationKey` and the latest detail `stateTag`; duplicate/lost-response retries return the original result, while stale, already-expired, already-released, and concurrent operations return `409`. Legal-hold rows and linked audit history are never deleted by release or expiry.
 

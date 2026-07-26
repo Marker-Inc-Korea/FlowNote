@@ -20,13 +20,27 @@ public final class UserErrorMessage {
             return "요청을 처리하지 못했습니다. 잠시 후 다시 시도하세요.";
         }
         if (message.startsWith("HTTP 401")) {
+            if (hasCode(message, "DEVICE_NOT_APPROVED")) {
+                return "승인되지 않았거나 비활성 상태인 단말입니다. 관리자에게 단말 승인 상태를 확인하세요.";
+            }
             return "로그인 정보가 만료되었거나 올바르지 않습니다. 다시 로그인하세요. (HTTP 401)";
         }
         if (message.startsWith("HTTP 403")) {
-            return "요청이 거부되었습니다. 승인 단말 상태와 사용자 권한을 확인하세요. (HTTP 403)";
+            if (hasCode(message, "DEVICE_NOT_APPROVED")
+                    || message.contains("Terminal device is not approved")) {
+                return "승인되지 않았거나 비활성 상태인 단말입니다. 관리자에게 단말 승인 상태를 확인하세요.";
+            }
+            return "현재 계정에는 이 작업 권한이 없습니다. 관리자에게 역할과 계정 상태를 확인하세요.";
         }
         if (message.startsWith("HTTP 404")) {
-            return "요청한 기록을 찾을 수 없습니다. 목록을 새로 조회하세요. (HTTP 404)";
+            if (hasCode(message, "SCOPE_NOT_FOUND")) {
+                return "현재 서버와 다른 고객·현장 범위입니다. 서버 주소와 현장 설정을 확인하세요.";
+            }
+            if (hasCode(message, "SOURCE_NOT_VISIBLE")
+                    || hasCode(message, "RESOURCE_NOT_FOUND")) {
+                return "요청한 원천을 찾을 수 없거나 공개되지 않았습니다. 목록을 새로 조회하거나 관리자에게 공개 상태를 확인하세요.";
+            }
+            return "요청한 기록을 찾을 수 없거나 공개되지 않았습니다. 목록을 새로 조회하세요.";
         }
         if (message.startsWith("HTTP ")) {
             int separator = message.indexOf(':');
@@ -46,5 +60,10 @@ public final class UserErrorMessage {
             return "현장 기록을 안전하게 임시 저장하지 못했습니다. 앱을 종료하지 말고 관리자에게 문의하세요.";
         }
         return "요청을 처리하지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도하세요.";
+    }
+
+    private static boolean hasCode(String message, String code) {
+        return message.contains("\"code\":\"" + code + "\"")
+                || message.contains("\"code\": \"" + code + "\"");
     }
 }

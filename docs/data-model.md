@@ -1,6 +1,6 @@
 # FlowNote 데이터 모델
 
-이 문서는 2026-07-26 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며, 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
+이 문서는 2026-07-27 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며, 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
 
 ## WPF 로컬 SQLite
 
@@ -70,7 +70,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-07-26 현재 ORM은 문서·FieldComment 검토·보고서·작업순서 mutation receipt, 서버 복구 reconciliation과 AI 질의 legal hold 모델을 포함한 59개 서버 테이블을 생성 기준으로 사용한다.
+2026-07-27 현재 ORM은 문서·FieldComment 검토·보고서·작업순서 mutation receipt, 서버 복구 reconciliation과 AI 질의 legal hold 모델을 포함한 60개 서버 테이블을 생성 기준으로 사용한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -396,6 +396,14 @@ FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관�
 - `team-member`
 - `viewer`
 
+## 서버 운영 scope
+
+파일럿 데이터 모델은 서버 인스턴스 자체를 단일 `customer_scope`·`site_scope` 경계로 본다. 계정, 문서, 채널, 보고서와 일반 검색 후보는 같은 서버 경계에 속하므로 개별 테이블에 중복 scope 열을 두지 않는다. 외부 AI 테이블의 기존 `customer_scope`, `site_scope`는 전송 승인과 감사 snapshot을 위한 값이며 서버 경계와 다른 값을 일반 업무 멀티테넌시로 해석하지 않는다.
+
+API에 다른 scope가 들어오면 행 조회 전에 fail-closed로 거부한다. 따라서 다른 scope의 문서 ID와 존재하지 않는 ID는 외부 응답에서 구분되지 않는다. scope 거부는 `activity_history`의 `scope.access_denied`로 남기며 요청 사용자, 요청 scope와 서버 scope를 감사 안에서만 비교한다.
+
+이번 전환은 업무 테이블 schema와 행을 바꾸지 않는다. 기존 단일 현장 DB를 새 코드로 열고 다시 이전 코드로 여는 동안 `documents`, `document_versions`, `field_comments`, `reports`, `report_sources`, 채널·계정 테이블의 행 수와 주요 ID/hash가 그대로여야 한다. 여러 scope 지원은 이 모델의 호환 변경이 아니라 별도 migration이 필요한 후속 설계다.
+
 ### 역할별 권한 정책
 
 FastAPI 서버의 `app/core/auth.py`와 WPF `RolePermissionPolicy`는 다음 기준을 공유한다.
@@ -404,8 +412,10 @@ FastAPI 서버의 `app/core/auth.py`와 WPF `RolePermissionPolicy`는 다음 기
 | --- | --- | --- |
 | 문서 등록/버전 등록/태그 변경/작업순서 변경 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead` | 문서 등록, 파일 업로드, Drag & Drop, 상태 변경, 공개, 작업판 버튼 활성 |
 | FieldComment 등록 | 문서 쓰기 role + `team-member`, `viewer` | 문서 뷰어의 현장 코멘트 작성은 기본 role 전체 허용 |
+| FieldComment 위험 원천 최종 결정 | `FIELD_COMMENT_DECIDE_ROLES`. `red` 또는 상충 원천은 `analyzed_by`와 결정 actor가 달라야 함 | 서버 거부 문구를 정제해 표시하고 같은 분석자의 결정 완료로 표시하지 않음 |
 | 접근 로그 조회 | `admin`, `system-admin` | WPF는 로컬 열람/다운로드 차단 로그를 기록하고 서버 조회 UI는 아직 두지 않는다 |
 | 보고서 작성 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | 보고서 버튼 활성 |
+| 보고서 목록·상세·원천 조회 | 기본 role 전체. 모든 고정 원천의 현재 상태와 연결 채널 멤버십을 재검사 | 비노출 보고서를 로컬 목록에 합치지 않고 원천 없음·비공개 안내 사용 |
 | AI ground-truth 사례 등록·2차 승인, dataset 작성·구성·검토 | `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager` | `AI 정답셋`과 `사례·원천 구성` 화면 사용 |
 | AI ground-truth dataset 1·2차 승인·폐기 | `admin`, `system-admin`, `document-admin`, `department-manager` | 독립 사용자 조건을 만족하는 상태에서만 승인/폐기 버튼 활성 |
 | 채널 관리/인수인계 확인 현황 | 채널 생성은 문서/작업순서 쓰기 role, 조회와 수신확인은 채널 멤버십 또는 `admin`, `system-admin` 기준 | 채널 관리와 인수인계 확인 현황 버튼은 문서 등록 권한과 같은 role에서 활성 |

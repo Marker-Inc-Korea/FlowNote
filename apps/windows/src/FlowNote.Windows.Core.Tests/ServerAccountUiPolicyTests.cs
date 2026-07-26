@@ -32,6 +32,27 @@ public sealed class ServerAccountUiPolicyTests
     }
 
     [Theory]
+    [InlineData(HttpStatusCode.Forbidden, "DEVICE_NOT_APPROVED", "단말")]
+    [InlineData(HttpStatusCode.Forbidden, "PERMISSION_DENIED", "권한")]
+    [InlineData(HttpStatusCode.NotFound, "SCOPE_NOT_FOUND", "고객·현장")]
+    [InlineData(HttpStatusCode.NotFound, "SOURCE_NOT_VISIBLE", "원천")]
+    public void AccessDenialsUseCauseSpecificKoreanGuidanceWithoutServerInternals(
+        HttpStatusCode statusCode,
+        string code,
+        string expected)
+    {
+        var body =
+            $"{{\"detail\":{{\"code\":\"{code}\",\"message\":\"token=secret /srv/app.py stack trace\"}}}}";
+
+        var message = ServerAccessDenialPolicy.Message(statusCode, body);
+
+        Assert.Contains(expected, message);
+        Assert.DoesNotContain("secret", message);
+        Assert.DoesNotContain("/srv/", message);
+        Assert.DoesNotContain("stack", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
     [InlineData("admin", true)]
     [InlineData("document-admin", true)]
     [InlineData("department-manager", true)]

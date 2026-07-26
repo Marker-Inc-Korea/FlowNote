@@ -238,14 +238,15 @@ public sealed class FlowNoteServerChannelClient
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            if (response.StatusCode is HttpStatusCode.Unauthorized
+                or HttpStatusCode.Forbidden
+                or HttpStatusCode.NotFound)
             {
-                throw new FlowNoteServerAuthenticationException(
-                    $"로그인이 만료되었거나 서버 인증이 해제되었습니다. 다시 로그인한 뒤 채널 화면을 새로고침하세요. 로컬 데이터와 동기화 큐는 삭제되지 않습니다. {errorBody}");
+                throw ServerAccessDenialPolicy.CreateException(response.StatusCode, errorBody);
             }
 
             throw new InvalidOperationException(
-                $"FlowNote API request failed: {(int)response.StatusCode} {response.ReasonPhrase}. {errorBody}");
+                "채널 요청을 처리하지 못했습니다. 잠시 후 다시 시도하세요.");
         }
 
         var result = await response.Content.ReadFromJsonAsync<T>(cancellationToken);

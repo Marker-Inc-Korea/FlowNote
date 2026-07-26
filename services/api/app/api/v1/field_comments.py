@@ -617,6 +617,30 @@ def _validate_transition(note: FieldComment, target: str, reason: str | None, ac
     return cleaned_reason
 
 
+def _ensure_independent_decision(
+    note: FieldComment,
+    target: str,
+    actor_id: str,
+    policy_enabled: bool,
+) -> None:
+    high_risk = note.signal_level == "red" or note.conflict_flag
+    is_decision = target in {"REVIEWED", "SELECTED", "EXCLUDED", "ARCHIVED"}
+    if (
+        policy_enabled
+        and high_risk
+        and is_decision
+        and note.analyzed_by is not None
+        and note.analyzed_by == actor_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "INDEPENDENT_REVIEW_REQUIRED",
+                "message": "위험 신호 또는 상충 FieldComment는 분석자와 다른 결정자가 검토해야 합니다.",
+            },
+        )
+
+
 def _record_review_audit(
     session: Session,
     note: FieldComment,
@@ -651,6 +675,7 @@ def _apply_review_change(
     request: FieldCommentReviewRequest | FieldCommentBulkReviewRequest,
     actor_id: str,
     actor_role: str,
+    independent_review_required: bool,
 ) -> None:
     before = _review_snapshot(note)
     if isinstance(request, FieldCommentReviewRequest):
@@ -691,6 +716,12 @@ def _apply_review_change(
         transition_note = copy(note)
         transition_note.assigned_to = before["assigned_to"]
         reason = _validate_transition(transition_note, target, request.transition_reason, actor_role)
+        _ensure_independent_decision(
+            transition_note,
+            target,
+            actor_id,
+            independent_review_required,
+        )
         if target != before["status"]:
             note.status = "NEW" if target == "ASSIGNED" else target
             note.last_transition_reason = reason
@@ -728,7 +759,9 @@ def _preview_review_change(
     session: Session,
     note: FieldComment,
     request: FieldCommentReviewRequest,
+    actor_id: str,
     actor_role: str,
+    independent_review_required: bool,
 ) -> None:
     if request.base_review_revision != note.review_revision:
         raise HTTPException(
@@ -775,6 +808,12 @@ def _preview_review_change(
     transition_preview = copy(preview)
     transition_preview.assigned_to = note.assigned_to
     _validate_transition(transition_preview, target, request.transition_reason, actor_role)
+    _ensure_independent_decision(
+        transition_preview,
+        target,
+        actor_id,
+        independent_review_required,
+    )
 
 
 def _bulk_failure(exc: HTTPException) -> tuple[str, str]:
@@ -1254,6 +1293,7 @@ def list_document_field_comments(
 def bulk_review_field_comments(
     request: FieldCommentBulkReviewRequest,
     current_user: FieldCommentAnalyzeUser,
+    app_settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> list[FieldCommentResponse]:
     comment_ids = list(dict.fromkeys(_clean_optional(item) for item in request.comment_ids))
@@ -1267,7 +1307,14 @@ def bulk_review_field_comments(
     ordered = [by_id[item] for item in comment_ids]
     for note in ordered:
         _claim_review_revision(session, note, note.review_revision)
-        _apply_review_change(session, note, request, current_user.user_id, current_user.role)
+        _apply_review_change(
+            session,
+            note,
+            request,
+            current_user.user_id,
+            current_user.role,
+            app_settings.field_comment_independent_review_required,
+        )
     try:
         session.commit()
     except (IntegrityError, ValueError) as exc:
@@ -1280,6 +1327,7 @@ def bulk_review_field_comments(
 def preview_bulk_review_field_comments(
     request: FieldCommentBulkReviewV2Request,
     current_user: FieldCommentAnalyzeUser,
+    app_settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> FieldCommentBulkReviewResponse:
     results: list[FieldCommentBulkReviewItemResponse] = []
@@ -1305,7 +1353,14 @@ def preview_bulk_review_field_comments(
                     _review_intent_hash(cleaned_id, review_request),
                 )
                 if replay is None:
-                    _preview_review_change(session, note, review_request, current_user.role)
+                    _preview_review_change(
+                        session,
+                        note,
+                        review_request,
+                        current_user.user_id,
+                        current_user.role,
+                        app_settings.field_comment_independent_review_required,
+                    )
             except HTTPException as exc:
                 failure = _bulk_failure(exc)
         seen_ids.add(cleaned_id)
@@ -1333,6 +1388,7 @@ def preview_bulk_review_field_comments(
 def execute_bulk_review_field_comments(
     request: FieldCommentBulkReviewV2Request,
     current_user: FieldCommentAnalyzeUser,
+    app_settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> FieldCommentBulkReviewResponse:
     results: list[FieldCommentBulkReviewItemResponse] = []
@@ -1356,9 +1412,23 @@ def execute_bulk_review_field_comments(
                 if note is None:
                     raise HTTPException(status_code=404, detail={"code": "FIELD_COMMENT_NOT_FOUND", "message": "FieldComment를 찾을 수 없습니다."})
                 from_status = _effective_status(note)
-                _preview_review_change(session, note, review_request, current_user.role)
+                _preview_review_change(
+                    session,
+                    note,
+                    review_request,
+                    current_user.user_id,
+                    current_user.role,
+                    app_settings.field_comment_independent_review_required,
+                )
                 _claim_review_revision(session, note, item.base_review_revision)
-                _apply_review_change(session, note, review_request, current_user.user_id, current_user.role)
+                _apply_review_change(
+                    session,
+                    note,
+                    review_request,
+                    current_user.user_id,
+                    current_user.role,
+                    app_settings.field_comment_independent_review_required,
+                )
                 session.flush()
                 response = _field_comment_response(note)
                 session.add(FieldCommentReviewMutationReceipt(
@@ -1747,6 +1817,7 @@ def review_field_comment(
     comment_id: str,
     request: FieldCommentReviewRequest,
     current_user: FieldCommentAnalyzeUser,
+    app_settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> FieldCommentResponse:
     mutation_key = _clean_idempotency_key(request.mutation_key)
@@ -1761,7 +1832,14 @@ def review_field_comment(
 
     base_revision = request.base_review_revision or note.review_revision
     _claim_review_revision(session, note, base_revision)
-    _apply_review_change(session, note, request, current_user.user_id, current_user.role)
+    _apply_review_change(
+        session,
+        note,
+        request,
+        current_user.user_id,
+        current_user.role,
+        app_settings.field_comment_independent_review_required,
+    )
 
     try:
         session.flush()

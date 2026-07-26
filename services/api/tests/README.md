@@ -49,6 +49,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-07-26 현재 FastAPI 테스트 코드는 중복 없는 node ID 151개를 수집해 모두 통과했다. 저장소 루트 `scripts/verify-preserved-tests.ps1`의 수집/JUnit guard는 아직 149개여서 현재 코드와 맞지 않는다. 이번 변경의 문서 mutation receipt·reconciliation 집중 회귀 20건도 macOS에서 통과했다. 전체 표준 검증은 guard를 현재 수치로 보정한 뒤 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1 -RunId <승인된-run-id>` 한 번으로 FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존해야 한다.
+2026-07-27 현재 FastAPI 테스트 코드는 중복 없는 node ID 154개를 수집해 모두 통과한다. 저장소 루트 `scripts/verify-preserved-tests.ps1`의 수집/JUnit guard도 154개로 맞췄다. 이번 변경에는 단일 서버 scope 경계, 위험 신호 FieldComment의 독립 결정, 보고서 원천 권한 재검사 회귀가 포함된다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1 -RunId <승인된-run-id>`로 수행하며 FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존해야 한다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
