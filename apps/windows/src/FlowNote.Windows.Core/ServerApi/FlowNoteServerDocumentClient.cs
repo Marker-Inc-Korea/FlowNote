@@ -377,6 +377,19 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerFieldCommentBulkReviewResponse>(response, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ServerFieldCommentQualityItemResponse>> ListFieldCommentQualityIssuesAsync(
+        int agingDays = 7,
+        CancellationToken cancellationToken = default)
+    {
+        var days = Math.Clamp(agingDays, 1, 3650);
+        using var response = await httpClient.GetAsync(
+            $"api/v1/field-comments/quality-workbench?agingDays={days}",
+            cancellationToken);
+        return await ReadJsonResponse<List<ServerFieldCommentQualityItemResponse>>(
+            response,
+            cancellationToken);
+    }
+
     public async Task<ServerFieldCommentResponse> GetFieldCommentAsync(
         string commentId,
         CancellationToken cancellationToken = default)

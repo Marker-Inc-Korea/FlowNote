@@ -338,17 +338,20 @@ public sealed partial class ServerSyncService
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT source_type, local_source_id, COALESCE(source_version_id, ''),
-                   COALESCE(source_hash_sha256, ''), COALESCE(relation_type, '')
+                   COALESCE(source_revision, 0), COALESCE(source_hash_sha256, ''),
+                   snapshot_verified,
+                   COALESCE(relation_type, '')
             FROM report_sources
             WHERE local_report_document_id = $id
-            ORDER BY source_type, local_source_id, source_version_id, relation_type, source_hash_sha256;
+            ORDER BY source_type, local_source_id, source_version_id, source_revision,
+                     relation_type, source_hash_sha256;
             """;
         command.Parameters.AddWithValue("$id", reportDocumentId);
         using var reader = command.ExecuteReader();
         var rows = new List<string>();
         while (reader.Read())
         {
-            rows.Add(string.Join("|", Enumerable.Range(0, 5).Select(reader.GetString)));
+            rows.Add(string.Join("|", Enumerable.Range(0, 7).Select(index => reader.GetValue(index))));
         }
         return rows.Count == 0 ? null : ComputeSha256(string.Join("\n", rows));
     }

@@ -298,7 +298,8 @@ public sealed partial class ServerSyncService
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT source_type, local_source_id, source_version_id, relation_type
+            SELECT source_type, local_source_id, source_version_id, relation_type,
+                   source_revision, source_hash_sha256, snapshot_verified
             FROM report_sources
             WHERE local_report_document_id = $document_id
             ORDER BY id;
@@ -313,7 +314,10 @@ public sealed partial class ServerSyncService
                 reader.GetString(0),
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
-                reader.IsDBNull(3) ? null : reader.GetString(3));
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.GetInt32(6) == 1);
             if (TryMapQueuedReportSource(connection, localSource) is { } mapped)
             {
                 sources.Add(mapped);
@@ -440,7 +444,9 @@ public sealed partial class ServerSyncService
             SourceType = sourceType,
             SourceId = sourceId,
             SourceVersionId = Clean(sourceVersionId) ?? Clean(source.SourceVersionId),
-            RelationType = Clean(source.RelationType) ?? DefaultReportRelationType(sourceType)
+            RelationType = Clean(source.RelationType) ?? DefaultReportRelationType(sourceType),
+            SourceRevision = source.SnapshotVerified ? source.SourceRevision : null,
+            SourceHashSha256 = source.SnapshotVerified ? Clean(source.SourceHashSha256) : null
         };
     }
 

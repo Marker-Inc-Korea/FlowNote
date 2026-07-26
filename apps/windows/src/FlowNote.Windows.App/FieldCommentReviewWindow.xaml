@@ -208,7 +208,7 @@
                             <RowDefinition Height="86" />
                             <RowDefinition Height="*" />
                             <RowDefinition Height="154" />
-                            <RowDefinition Height="78" />
+                            <RowDefinition Height="116" />
                         </Grid.RowDefinitions>
                         <StackPanel>
                             <TextBlock x:Name="SelectedTitleTextBlock"
@@ -284,7 +284,7 @@
                         </Grid>
                         <UniformGrid Grid.Row="5"
                                      Columns="2"
-                                     Rows="2"
+                                     Rows="3"
                                      Margin="0,8,0,0">
                             <ComboBox x:Name="ReviewStatusComboBox"
                                       Height="30"
@@ -303,6 +303,16 @@
                                     Margin="4,4,0,0"
                                     Content="서버 역추적"
                                     Click="TraceabilityButton_Click" />
+                            <Button x:Name="RetryBulkResultButton"
+                                    Height="30"
+                                    Margin="0,4,4,0"
+                                    Content="마지막 일괄 결과 복구"
+                                    IsEnabled="False"
+                                    Click="RetryBulkResultButton_Click" />
+                            <Button Height="30"
+                                    Margin="4,4,0,0"
+                                    Content="품질 이슈 전체"
+                                    Click="ShowQualityIssuesButton_Click" />
                         </UniformGrid>
                     </Grid>
                 </Border>

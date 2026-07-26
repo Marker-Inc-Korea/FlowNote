@@ -596,5 +596,8 @@ public sealed partial class ServerSyncService
         string SourceType,
         string LocalSourceId,
         string? SourceVersionId,
-        string? RelationType);
+        string? RelationType,
+        int? SourceRevision,
+        string? SourceHashSha256,
+        bool SnapshotVerified);
 }

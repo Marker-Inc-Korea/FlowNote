@@ -28,7 +28,7 @@ FastAPI Server
 
 FastAPI 서버 SQLite와 WPF 로컬 SQLite는 서로 대체하거나 공유하는 파일이 아니다. 같은 이름의 문서 테이블도 서버는 `document_versions.version_id`, WPF는 로컬 `id`와 문서별 `version_no`를 기준으로 하므로 각 프로세스가 자기 DB만 초기화해야 한다. FastAPI는 기존 WPF 테이블 형태를 감지하면 `Base.metadata.create_all()` 전에 시작을 거부한다.
 
-WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. FieldComment 검토 큐는 base review revision과 mutation key를, 첨부는 부모 comment ID와 파일 SHA-256을 보낸다. 보고서는 로컬 보고서 문서와 `report_sources`를 먼저 남기고 source 집합 hash를 큐에 고정한 뒤 `register_report` 항목으로 서버 `/api/v1/reports` 저장을 재시도한다. 성공 응답의 source 집합을 다시 hash하고 report revision·내용/source 집합 hash를 로컬에 보존한 경우에만 종결한다. 큐 재시도는 단순 생성 순서가 아니라 같은 문서 또는 보고서 근거 단위로 묶고, 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다. 문서 버전과 FieldComment 첨부도 큐의 idempotency key를 서버 multipart 요청에 전달해 응답 유실 뒤 재시도가 중복 버전이나 파일을 만들지 않게 한다.
+WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. FieldComment 검토 큐는 base review revision과 mutation key를, 첨부는 부모 comment ID와 파일 SHA-256을 보낸다. 보고서는 예외로, 초안 생성 때 서버에서 선택 원천의 상태와 version/revision/hash를 검증해 snapshot을 먼저 고정한다. 이 검증을 통과한 뒤 로컬 보고서 문서와 `report_sources`를 남기고 source 집합 hash를 큐에 고정하며, 이후 서버 저장이 실패하면 `register_report` 항목으로 `/api/v1/reports` 저장을 재시도한다. 성공 응답의 source 집합을 다시 hash하고 report revision·내용/source 집합 hash를 로컬에 보존한 경우에만 종결한다. 큐 재시도는 단순 생성 순서가 아니라 같은 문서 또는 보고서 근거 단위로 묶고, 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다. 문서 버전과 FieldComment 첨부도 큐의 idempotency key를 서버 multipart 요청에 전달해 응답 유실 뒤 재시도가 중복 버전이나 파일을 만들지 않게 한다.
 
 `작업내역`의 동기화 큐 화면은 각 row를 완료, 보존 구 형식, 선행 조건 대기, 수동 조치 필요, 재시도 가능의 운영 상태로 구분한다. 전체 보존 건수는 `PENDING`, `FAILED`/`CONFLICT`, `SYNCED`, `DISCARDED`를 모두 세며, 서버본 유지로 종결한 `DISCARDED`는 삭제하지 않되 처리 대기 깊이에서는 제외한다. 요약은 `SYNCED`와 `DISCARDED`가 아닌 큐 깊이, 그중 가장 오래된 `created_at` 기준 대기 시간, 최근 1시간 `SYNCED` 처리량, `FAILED` 진단 분포를 표시한다. 인증 만료와 서버 연결 실패·시간 초과는 뒤 항목도 같은 원인으로 연속 실패시키지 않도록 현재 재시도 묶음을 즉시 중단하고, 항목 자체의 검증·로컬 파일 오류는 실패를 기록한 뒤 다음 독립 항목을 계속 처리한다.
 
@@ -190,9 +190,9 @@ Windows와 Android의 알림은 장기적으로 개인 메신저가 아니라 �
 
 ## 보고서
 
-보고서는 FieldComment, 문서, 작업순서 항목/이력을 근거로 수동 초안을 만들고 문서로 저장하는 최소 흐름이 구현되어 있다. WPF는 로컬 보고서 문서를 먼저 만들고 source를 `report_sources`에 보존한 뒤 `/api/v1/reports` 저장을 시도한다. 실패하면 `server_sync_queue`에 남기고, 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다.
+보고서는 FieldComment, 문서, 작업순서 항목/이력을 근거로 수동 초안을 만들고 문서로 저장하는 최소 흐름이 구현되어 있다. WPF 초안 화면은 서로 다른 source type을 2종 이상 선택한 뒤 서버에서 각 원천의 상태와 version/revision/hash를 확인한다. 현재 WPF에서 초안 고정을 지원하는 원천은 `FIELD_COMMENT`와 `DOCUMENT`이며, 검증할 수 없는 원천 유형이나 달라진 snapshot이 하나라도 있으면 초안 생성을 중단한다. 검증을 통과한 snapshot은 저장 직전에 다시 확인한다.
 
-초안 생성과 최종 저장에는 서로 다른 source type이 최소 2종 필요하며 같은 type/ID/version 중복은 거부한다. 서버는 FieldComment의 관찰 버전과 선정 `review_revision`, 원천 hash를 `report_sources`에 고정한다. 최종 문서 저장 직전에 상태·version·revision·hash·채널 권한을 다시 읽고 달라졌으면 `409`로 차단한다. 생성 문서는 source의 type/ID/version/revision/trace/hash를 포함해 최종 문서에서 원천까지 역추적된다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
+재검증을 통과하면 WPF는 로컬 보고서 문서와 source를 `report_sources`에 보존한 뒤 `/api/v1/reports` 저장을 시도한다. 실패하면 `server_sync_queue`에 남기고, 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다. 서버는 FieldComment의 관찰 버전과 선정 `review_revision`, 원천 hash를 `report_sources`에 고정한다. 최종 문서 저장 직전에 상태·version·revision·hash·채널 권한을 다시 읽고 달라졌으면 `409`로 차단한다. 생성 문서는 source의 type/ID/version/revision/trace/hash를 포함해 최종 문서에서 원천까지 역추적된다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
 
 ## 후속 연동
 

@@ -353,7 +353,7 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
                 comparison,
             ]
 
-    def test_prepare_creates_schema_four_windows_server_templates(self) -> None:
+    def test_prepare_creates_schema_five_windows_server_templates(self) -> None:
         run_id = "PILOT-20260722-1310-LOCALCHECK-002"
         with contextlib.redirect_stdout(io.StringIO()):
             result = manage_pilot_run.prepare(
@@ -369,7 +369,7 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
             (self.evidence_root / run_id / "pilot-run.json").read_text(encoding="utf-8")
         )
         self.assertEqual(0, result)
-        self.assertEqual(4, record["schema_version"])
+        self.assertEqual(5, record["schema_version"])
         self.assertEqual("windows_server_rehearsal", record["profile"])
         self.assertTrue(
             (
@@ -720,6 +720,7 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
             "elapsed_seconds",
             "retry_count",
             "help_request_count",
+            "screen_transitions",
             "critical_blocker",
             "evidence",
         ]
@@ -729,28 +730,31 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
             writer.writeheader()
             for role, scenarios in manage_pilot_run.ROLE_SCENARIOS.items():
                 for scenario in scenarios:
-                    writer.writerow(
-                        {
-                            "role": role,
-                            "participant_id": f"PARTICIPANT-{role}",
-                            "scenario_id": scenario,
-                            "required": "TRUE",
-                            "success": "TRUE",
-                            "elapsed_seconds": "10",
-                            "retry_count": "0",
-                            "help_request_count": "0",
-                            "critical_blocker": "FALSE",
-                            "evidence": "proof.txt",
-                        }
-                    )
+                    for attempt in range(2):
+                        writer.writerow(
+                            {
+                                "role": role,
+                                "participant_id": f"PARTICIPANT-{role}-{attempt}",
+                                "scenario_id": scenario,
+                                "required": "TRUE",
+                                "success": "TRUE",
+                                "elapsed_seconds": "10",
+                                "retry_count": "0",
+                                "help_request_count": "0",
+                                "screen_transitions": "2",
+                                "critical_blocker": "FALSE",
+                                "evidence": "proof.txt",
+                            }
+                        )
                 expected[role] = {
-                    "required_attempts": len(scenarios),
-                    "successful_attempts": len(scenarios),
+                    "required_attempts": len(scenarios) * 2,
+                    "successful_attempts": len(scenarios) * 2,
                     "success_rate_percent": 100,
                     "median_seconds": 10,
                     "maximum_seconds": 10,
                     "retry_count": 0,
                     "help_request_count": 0,
+                    "screen_transition_count": len(scenarios) * 4,
                     "critical_blockers": 0,
                 }
 
@@ -775,11 +779,15 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
             "input_moment",
             "terminology_confusion",
             "button_confusion",
+            "photo_capture",
+            "short_memo",
+            "signal_input",
             "actionable",
             "success",
             "elapsed_seconds",
             "retry_count",
             "help_request_count",
+            "screen_transitions",
             "notes",
             "evidence",
         ]
@@ -802,11 +810,15 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
                         "input_moment": "AFTER-TASK",
                         "terminology_confusion": "FALSE",
                         "button_confusion": "FALSE",
+                        "photo_capture": "TRUE",
+                        "short_memo": "TRUE",
+                        "signal_input": "TRUE",
                         "actionable": "TRUE" if index == 0 else "FALSE",
                         "success": "TRUE",
                         "elapsed_seconds": "10",
                         "retry_count": "0",
                         "help_request_count": "0",
+                        "screen_transitions": "2",
                         "notes": "anonymous observation",
                         "evidence": "proof.txt",
                     }
@@ -816,6 +828,8 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
         item_fields = [
             "item_id",
             "observation_id",
+            "decision",
+            "decision_basis",
             "priority",
             "classification",
             "title",
@@ -828,29 +842,32 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
         with items_path.open("w", newline="", encoding="utf-8") as stream:
             writer = csv.DictWriter(stream, fieldnames=item_fields)
             writer.writeheader()
-            writer.writerow(
-                {
-                    "item_id": "UX-001",
-                    "observation_id": "OBS-0",
-                    "priority": "P2",
-                    "classification": "common_product",
-                    "title": "장갑 입력 개선",
-                    "acceptance_criteria": "같은 조건에서 첫 시도 성공",
-                    "owner": "product-owner",
-                    "due_date": "2026-08-31",
-                    "status": "OPEN",
-                    "evidence": "proof.txt",
-                }
-            )
+            for index, _role in enumerate(manage_pilot_run.REQUIRED_ROLES):
+                writer.writerow(
+                    {
+                        "item_id": f"UX-{index:03}",
+                        "observation_id": f"OBS-{index}",
+                        "decision": "ACCEPTED" if index == 0 else "REJECTED",
+                        "decision_basis": "익명 관찰 근거",
+                        "priority": "P2" if index == 0 else "P3",
+                        "classification": "common_product" if index == 0 else "site_layout_or_training",
+                        "title": "장갑 입력 개선" if index == 0 else "현장별 선호 보존",
+                        "acceptance_criteria": "같은 조건에서 첫 시도 성공",
+                        "owner": "product-owner",
+                        "due_date": "2026-08-31",
+                        "status": "OPEN",
+                        "evidence": "proof.txt",
+                    }
+                )
         expected = {
             "actionable_findings": 1,
-            "converted_items": 1,
+            "converted_items": 4,
             "unconverted_actionable_findings": 0,
-            "priorities": {"P0": 0, "P1": 0, "P2": 1, "P3": 0},
+            "priorities": {"P0": 0, "P1": 0, "P2": 1, "P3": 3},
             "classifications": {
                 "common_product": 1,
                 "device_or_mdm_setting": 0,
-                "site_layout_or_training": 0,
+                "site_layout_or_training": 3,
             },
         }
 

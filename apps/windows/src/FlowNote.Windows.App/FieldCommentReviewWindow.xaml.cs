@@ -19,6 +19,9 @@ public partial class FieldCommentReviewWindow : Window
     private readonly string actorName;
     private readonly string? serverUserId;
     private readonly ReviewWorkspace workspace = new();
+    private IReadOnlyList<ServerFieldCommentQualityItemResponse> qualityIssues = [];
+    private ServerFieldCommentBulkReviewRequest? lastBulkRequest;
+    private IReadOnlyDictionary<string, FieldCommentReviewRecord>? lastBulkLocalByServerId;
     private bool loadingSavedViews;
 
     public FieldCommentReviewWindow(
@@ -40,7 +43,7 @@ public partial class FieldCommentReviewWindow : Window
 
     public bool ReviewChanged { get; private set; }
 
-    private void FieldCommentReviewWindow_Loaded(object sender, RoutedEventArgs e)
+    private async void FieldCommentReviewWindow_Loaded(object sender, RoutedEventArgs e)
     {
         StatusFilterComboBox.ItemsSource = new[]
         {
@@ -69,7 +72,13 @@ public partial class FieldCommentReviewWindow : Window
             new StatusOption("UNASSIGNED", "담당자 없음"),
             new StatusOption("MISSING_EVIDENCE", "근거 누락"),
             new StatusOption("DUPLICATE_SUSPECTED", "중복 의심"),
-            new StatusOption("REPORT_UNLINKED", "보고서 미연결")
+            new StatusOption("REPORT_UNLINKED", "보고서 미연결"),
+            new StatusOption("OLD_NEW", "품질: 오래된 NEW"),
+            new StatusOption("WEAK_SELECTED", "품질: 근거 부족 SELECTED"),
+            new StatusOption("MISSING_REPORT_SOURCE", "품질: 보고서 원천 누락"),
+            new StatusOption("INCOMPLETE_REPORT_TRACE", "품질: trace/version 누락"),
+            new StatusOption("SOURCE_HASH_MISMATCH", "품질: hash 불일치"),
+            new StatusOption("SOURCE_REVISION_MISMATCH", "품질: revision 불일치")
         };
         foreach (var combo in new[] { AgingFilterComboBox, AttachmentFilterComboBox, ReportLinkFilterComboBox, WorkbenchFilterComboBox })
         {
@@ -78,6 +87,7 @@ public partial class FieldCommentReviewWindow : Window
             combo.SelectedValue = "ALL";
         }
         ReloadSavedViews();
+        await RefreshQualityIssuesAsync();
         RefreshComments("FieldComment 검토 목록을 조회했습니다.");
     }
 
@@ -114,8 +124,9 @@ public partial class FieldCommentReviewWindow : Window
         loadingSavedViews = false;
     }
 
-    private void RefreshButton_Click(object sender, RoutedEventArgs e)
+    private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
+        await RefreshQualityIssuesAsync();
         RefreshComments("필터를 적용했습니다.");
     }
 
@@ -236,6 +247,7 @@ public partial class FieldCommentReviewWindow : Window
                 ConflictBasis = ConflictBasisTextBox.Text
             };
             var preview = await serverClient.PreviewFieldCommentBulkReviewAsync(request);
+            FieldCommentBulkReviewResultValidator.ValidatePreview(preview, request.Items);
             var previewWindow = new FieldCommentBulkPreviewWindow(preview) { Owner = this };
             if (previewWindow.ShowDialog() != true)
             {
@@ -243,35 +255,69 @@ public partial class FieldCommentReviewWindow : Window
                 return;
             }
 
-            var execution = await serverClient.ExecuteFieldCommentBulkReviewAsync(request);
-            foreach (var result in execution.Items.Where(item => item.Success == true && item.FieldComment is not null))
-            {
-                var local = localByServerId[result.CommentId];
-                var server = result.FieldComment!;
-                fieldComments.ApplyServerReviewResult(
-                    local.CommentId,
-                    server.NormalizedContent,
-                    server.AnalysisContent,
-                    server.Status,
-                    server.AssignedTo,
-                    server.ReviewDueAt,
-                    server.LastTransitionReason,
-                    server.ReviewRevision,
-                    server.ConflictFlag,
-                    server.ConflictBasis,
-                    actorName);
-            }
-            ReviewChanged = true;
-            RefreshComments($"일괄 처리 {execution.RequestedCount}건 · 성공 {execution.SuccessCount}건 · 실패 {execution.FailureCount}건. 항목별 revision/receipt가 보존되었습니다.");
-            if (execution.FailureCount > 0)
-            {
-                new FieldCommentBulkPreviewWindow(execution) { Owner = this }.ShowDialog();
-            }
+            lastBulkRequest = request;
+            lastBulkLocalByServerId = localByServerId;
+            RetryBulkResultButton.IsEnabled = true;
+            await ExecuteAndApplyBulkAsync(request, localByServerId, "일괄 처리");
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentOutOfRangeException or HttpRequestException or TaskCanceledException)
         {
-            StatusTextBlock.Text = $"일괄 검토 저장에 실패했습니다. {exception.Message}";
+            StatusTextBlock.Text =
+                $"일괄 검토 응답을 확정하지 못했습니다. 성공 항목을 되돌리지 않으며 같은 mutation key로 '마지막 일괄 결과 복구'를 실행할 수 있습니다. {exception.Message}";
         }
+    }
+
+    private async void RetryBulkResultButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (serverClient is null || lastBulkRequest is null || lastBulkLocalByServerId is null)
+        {
+            StatusTextBlock.Text = "복구할 일괄 요청이 없습니다.";
+            return;
+        }
+        try
+        {
+            await ExecuteAndApplyBulkAsync(lastBulkRequest, lastBulkLocalByServerId, "일괄 결과 복구");
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException)
+        {
+            StatusTextBlock.Text = $"일괄 결과 복구에 실패했습니다. 같은 mutation key는 유지됩니다. {exception.Message}";
+        }
+    }
+
+    private async Task ExecuteAndApplyBulkAsync(
+        ServerFieldCommentBulkReviewRequest request,
+        IReadOnlyDictionary<string, FieldCommentReviewRecord> localByServerId,
+        string actionLabel)
+    {
+        if (serverClient is null)
+        {
+            throw new InvalidOperationException("서버 연결이 필요합니다.");
+        }
+        var execution = await serverClient.ExecuteFieldCommentBulkReviewAsync(request);
+        FieldCommentBulkReviewResultValidator.Validate(execution, request.Items);
+        foreach (var result in execution.Items.Where(item => item.Success == true && item.FieldComment is not null))
+        {
+            var local = localByServerId[result.CommentId];
+            var server = result.FieldComment!;
+            fieldComments.ApplyServerReviewResult(
+                local.CommentId,
+                server.NormalizedContent,
+                server.AnalysisContent,
+                server.Status,
+                server.AssignedTo,
+                server.ReviewDueAt,
+                server.LastTransitionReason,
+                server.ReviewRevision,
+                server.ConflictFlag,
+                server.ConflictBasis,
+                actorName);
+        }
+        ReviewChanged = execution.SuccessCount > 0 || ReviewChanged;
+        await RefreshQualityIssuesAsync();
+        RefreshComments(
+            $"{actionLabel} {execution.RequestedCount}건 · 성공 {execution.SuccessCount}건 · 실패 {execution.FailureCount}건. " +
+            "성공+실패 합계와 요청 수를 확인했고 항목별 revision/receipt를 보존했습니다.");
+        new FieldCommentBulkPreviewWindow(execution) { Owner = this }.ShowDialog();
     }
 
     private async void TraceabilityButton_Click(object sender, RoutedEventArgs e)
@@ -336,17 +382,67 @@ public partial class FieldCommentReviewWindow : Window
         Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
     }
 
+    private async Task RefreshQualityIssuesAsync()
+    {
+        if (serverClient is null)
+        {
+            qualityIssues = [];
+            return;
+        }
+        try
+        {
+            var agingDays = int.TryParse(AgingFilterComboBox.SelectedValue?.ToString(), out var selectedDays)
+                ? selectedDays
+                : 7;
+            qualityIssues = await serverClient.ListFieldCommentQualityIssuesAsync(agingDays);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            qualityIssues = [];
+            StatusTextBlock.Text = $"서버 품질 작업함을 조회하지 못했습니다. {exception.Message}";
+        }
+    }
+
+    private async void ShowQualityIssuesButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RefreshQualityIssuesAsync();
+        if (qualityIssues.Count == 0)
+        {
+            StatusTextBlock.Text = "현재 서버 품질 작업함 이슈가 없거나 서버 조회가 불가능합니다.";
+            return;
+        }
+        new FieldCommentQualityIssueWindow(qualityIssues) { Owner = this }.ShowDialog();
+    }
+
     private void RefreshComments(string statusText, string? selectedCommentId = null)
     {
         workspace.FieldComments.Clear();
         var workbench = WorkbenchFilterComboBox.SelectedValue?.ToString();
         var filter = BuildFilter();
+        var qualityCommentIds = string.IsNullOrWhiteSpace(filter.QualityIssueType)
+            ? null
+            : qualityIssues
+                .Where(item => item.IssueType == filter.QualityIssueType && !string.IsNullOrWhiteSpace(item.CommentId))
+                .Select(item => item.CommentId!)
+                .ToHashSet(StringComparer.Ordinal);
         foreach (var comment in fieldComments.ListForReview(filter))
         {
+            if (qualityCommentIds is not null)
+            {
+                var serverCommentId = fieldComments.GetServerCommentId(comment.CommentId);
+                if (string.IsNullOrWhiteSpace(serverCommentId) || !qualityCommentIds.Contains(serverCommentId))
+                {
+                    continue;
+                }
+            }
             workspace.FieldComments.Add(comment);
         }
 
-        FilterHintTextBlock.Text = $"표시 {workspace.FieldComments.Count}건 · 상충→기한 초과→담당 없음→근거 누락 순";
+        var qualitySummary = string.IsNullOrWhiteSpace(filter.QualityIssueType)
+            ? string.Empty
+            : $" · 서버 이슈 {qualityIssues.Count(item => item.IssueType == filter.QualityIssueType)}건";
+        FilterHintTextBlock.Text =
+            $"표시 {workspace.FieldComments.Count}건{qualitySummary} · 상충→기한 초과→담당 없음→근거 누락 순";
         StatusTextBlock.Text = statusText;
 
         if (!string.IsNullOrWhiteSpace(selectedCommentId))
@@ -386,6 +482,7 @@ public partial class FieldCommentReviewWindow : Window
             MissingEvidence: workbench == "MISSING_EVIDENCE" ? true : null,
             DuplicateSuspected: workbench == "DUPLICATE_SUSPECTED" ? true : null,
             Conflict: workbench == "CONFLICT" ? true : null,
+            QualityIssueType: IsQualityIssueType(workbench) ? workbench : null,
             PriorityOrder: true,
             CreatedFrom: CreatedFromDatePicker.SelectedDate,
             CreatedTo: CreatedToDatePicker.SelectedDate);
@@ -411,6 +508,7 @@ public partial class FieldCommentReviewWindow : Window
             : filter.MissingEvidence is true ? "MISSING_EVIDENCE"
             : filter.DuplicateSuspected is true ? "DUPLICATE_SUSPECTED"
             : filter.Unreviewed is true ? "UNREVIEWED"
+            : !string.IsNullOrWhiteSpace(filter.QualityIssueType) ? filter.QualityIssueType
             : "ALL";
         CreatedFromDatePicker.SelectedDate = filter.CreatedFrom;
         CreatedToDatePicker.SelectedDate = filter.CreatedTo;
@@ -506,6 +604,14 @@ public partial class FieldCommentReviewWindow : Window
         "NO" => false,
         _ => null
     };
+
+    private static bool IsQualityIssueType(string? value) => value is
+        "OLD_NEW" or
+        "WEAK_SELECTED" or
+        "MISSING_REPORT_SOURCE" or
+        "INCOMPLETE_REPORT_TRACE" or
+        "SOURCE_HASH_MISMATCH" or
+        "SOURCE_REVISION_MISMATCH";
 
     private sealed record StatusOption(string Value, string Label);
 

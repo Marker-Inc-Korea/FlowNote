@@ -1,6 +1,6 @@
 # FieldComment 검토·분석·선정 운영
 
-이 문서는 2026-07-22 현재 FastAPI FieldComment 검토 API·데이터 모델과 WPF 관리자 검토 화면을 기준으로, FieldComment 원천 기록을 관리자 해석과 섞지 않고 보고서 근거로 정제하는 운영 계약을 정리한다.
+이 문서는 2026-07-26 현재 FastAPI FieldComment 검토 API·데이터 모델과 WPF 관리자 검토 화면을 기준으로, FieldComment 원천 기록을 관리자 해석과 섞지 않고 보고서 근거로 정제하는 운영 계약을 정리한다.
 
 ## 원천과 해석의 분리
 
@@ -46,7 +46,7 @@
 - 목록은 상태, 담당자, 문서, 작성자, 라인, 설비, 공정, 오류 유형, 기간, 오래된 NEW, 첨부 유무, 보고서 연결 여부와 `CONFLICT`, `UNREVIEWED`, `OVERDUE`, `UNASSIGNED`, `MISSING_EVIDENCE`, `DUPLICATE_SUSPECTED`, `REPORT_UNLINKED` 작업함 플래그로 필터링한다. 서버 목록은 `priorityMin/priorityMax`도 지원한다.
 - `priorityOrder=true`일 때 상충, 기한 초과, 담당자 없음, 근거 누락, 중복 의심, 미검토, 보고서 미연결 순으로 가중치를 합산한다. WPF의 `우선순위/작업함` 보기와 SQLite에 보존되는 `저장된 보기`가 같은 필터를 재사용한다.
 - 선택 상세는 원천 hash, 첨부 수, 관찰 문서 버전, 연결 채널 권한을 서버에서 읽어 표시한다. 다중 선택은 사전검증 표를 확인한 뒤 실행하며 부분 성공 표를 닫아도 서버 receipt와 revision은 보존된다.
-- 품질 작업함은 `OLD_NEW`, `WEAK_SELECTED`, `MISSING_REPORT_SOURCE`, `INCOMPLETE_REPORT_TRACE`, `SOURCE_HASH_MISMATCH`를 제공한다.
+- 품질 작업함은 `OLD_NEW`, `WEAK_SELECTED`, `MISSING_REPORT_SOURCE`, `INCOMPLETE_REPORT_TRACE`, `SOURCE_HASH_MISMATCH`, `SOURCE_REVISION_MISMATCH`를 제공한다.
 - 품질 지표는 상태·신호등·actor·라인·오류 유형 분포, 문서↔FieldComment와 FieldComment↔보고서 연결률, 2종 이상 source 보고서 비율, source type 수, orphan 비율, 라인·설비·품목·공정·오류 유형 태그 축 커버리지를 산출한다.
 
 ## 보고서 선정과 역추적
@@ -80,6 +80,43 @@
 ## 사람형 시나리오와 품질 측정
 
 - 역할별 시나리오는 라인 책임자의 배정, 분석자의 정상/상충 분석, 결정자의 선정/제외, 보고서 책임자의 source 고정·저장, 권한 없는 사용자의 차단을 포함한다.
-- 각 시나리오는 시작·완료 UTC, 활성 작업 시간, 서버 왕복 수, 재시도 수, 도움 요청 수, 실패 코드, blocker 등급을 동일 `run_id`로 기록한다. 치명적 blocker, 원천/receipt 유실, 중복 생성, 권한 우회 허용치는 모두 0건이다.
+- 각 시나리오는 시작·완료 UTC, 활성 작업 시간, 화면 이동 수, 서버 왕복 수, 재시도 수, 도움 요청 수, 실패 코드, blocker 등급을 동일 `run_id`로 기록한다. 치명적 blocker, 원천/receipt 유실, 중복 생성, 권한 우회 허용치는 모두 0건이다.
 - 장애 주입은 정상, 일부 실패, stale revision, 성공 응답 유실 후 같은 mutation key 재시도, draft 뒤 source revision 변경을 각각 수행한다. 완료 조건은 200개 입력 ID와 200개 결과 행의 일대일 대응, 성공 receipt 유일성, 원천 변경 저장 409, 재검토·새 draft 뒤 저장 성공이다.
 - 상태 분포와 SLA 초과 수는 `/quality-metrics` 및 목록 `overdue=true` 결과를 SQLite의 논리 상태 `CASE WHEN status='NEW' AND assigned_to IS NOT NULL THEN 'ASSIGNED' ELSE status END`, `review_due_at < now` 읽기 전용 집계와 교차 확인한다.
+
+## 역할별 실제 화면 순서
+
+| 역할 | 대표 업무 | 화면 순서 | 완료 표시 |
+| --- | --- | --- | --- |
+| 작업자 | 짧은 현장 기록과 사진 | 공개 문서 목록 → 문서 상세/보안 뷰어 → 신호등 또는 기본 정형 문구 → 짧은 메모 → 사진 촬영/확인 → 전송 상태 | 로컬 outbox ID와 서버 FieldComment/attachment ID가 1:1이고 재연결 뒤 중복이 없음 |
+| 조장·반장 | 분류·담당·기한·근거 보강 | 채널/알림 → FieldComment 검토 → 품질 작업함 → 원천/첨부 확인 → 담당·기한 → 정리·분석 → 상태·사유 저장 | 새 `review_revision`, mutation receipt, 감사 이력과 원천 hash 동일성이 보임 |
+| 문서관리자 | 선정 원천을 보고서로 확정 | FieldComment 검토의 `SELECTED` 후보 → 서버 역추적 → 보고서 초안 → 서로 다른 source 2종 이상 선택 → 초안 생성 → 고정 근거 확인 → 문서 저장 → 최종 역추적 | 각 source의 ID/version/revision/hash와 저장 뒤 trace ID·생성 문서 ID가 보임 |
+
+작업자는 장갑 착용/미착용, 한 손 사용, 고정 거치/손에 든 상태, 사진 있음/없음, 연결/단절을 나누어 수행한다. 조장·반장과 문서관리자는 정상 단건, 200건 일괄, 일부 실패, stale revision, 권한 변경, 성공 응답 유실을 각각 수행한다. 같은 역할·시나리오는 익명 참여자 또는 실행 회차를 바꿔 최소 2회 반복한다.
+
+## 품질 임계값과 우선순위 검증
+
+| 품질 이슈 | 기본 임계값 | 현장 확인 질문 | 처리 |
+| --- | --- | --- | --- |
+| `OLD_NEW` | 기본 7일, 현장 승인값으로 1~3650일 | 실제 미처리 위험 순서와 일치하는가 | 담당·기한 지정 또는 분석/보류 |
+| `WEAK_SELECTED` | 문서 버전·작성자·분석·첨부·단계별 감사 중 하나라도 부족 | 첨부 없는 선정이 합리적인 예외인가 | 보강 또는 `REVIEWED`로 되돌림 |
+| `MISSING_REPORT_SOURCE` | 참조 원천 row 0건 | 삭제·복구·잘못된 ID 중 무엇인가 | 승인 차단, orphan 원인 조사 |
+| `INCOMPLETE_REPORT_TRACE` | trace ID/version/revision 중 하나라도 없음 | 최종 문서에서 원천까지 한 번에 도달하는가 | 승인 차단, 새 source snapshot 생성 |
+| `SOURCE_HASH_MISMATCH` | 고정 hash와 현재 원천 hash 불일치 1건 이상 | 원천 불변 위반인가 잘못된 고정값인가 | 즉시 중단, 원천·감사 교차 비교 |
+| `SOURCE_REVISION_MISMATCH` | 고정 선정 revision과 현재 revision 불일치 1건 이상 | 선정 뒤 관리자 해석이 바뀌었는가 | 재검토하고 새 초안 생성 |
+
+서버 품질 작업함의 개별 이슈와 WPF 필터 결과 수를 비교한다. `MISSING_REPORT_SOURCE`처럼 로컬 FieldComment row가 없는 이슈는 WPF 전체 품질 이슈 표에서 보고서 ID와 원인을 확인하며, 로컬 검토 목록에 억지로 가상 원천을 만들지 않는다. 파일럿에서는 오래된 NEW·근거 부족 SELECTED 표본을 각각 5건 이상 섞고, 현장 우선순위와 다른 결과를 관찰 항목으로 남긴다.
+
+## 일괄 처리와 보고서 예외 UX
+
+- 사전검증은 요청 ID와 결과 ID의 집합·행 수를 먼저 확인한다. 실행은 `requested_count = items.count = success_count + failure_count`와 결과 행별 성공 판정을 모두 확인한 뒤 성공 행만 로컬에 적용한다.
+- stale revision과 권한 변경은 실패 행에 코드·원인·복구 안내를 표시한다. 실패 행 때문에 성공 행을 되돌리거나 목록에서 숨기지 않는다.
+- 실행 성공 뒤 응답이 유실되면 WPF의 `마지막 일괄 결과 복구`가 원래 mutation key를 그대로 재전송한다. 새 key로 전체를 반복하지 않으며 서버 receipt의 최초 응답 snapshot으로 결과를 복구한다.
+- 보고서 초안 생성은 선택한 source의 서버 ID/version/revision/hash를 고정하고 `고정 근거 확인` 표에 적격 여부를 표시한다. source type이 2종 미만이거나 WPF에서 검증할 수 없는 유형은 저장하지 않는다.
+- 저장 직전 같은 source를 다시 조회한다. 상태, 공개 version, 선정 revision 또는 hash가 초안 시점과 다르면 로컬 보고서 파일과 동기화 큐를 만들기 전에 중단하고 새 초안을 요구한다.
+
+## UX 측정과 개발 항목 전환
+
+`role-metrics.csv`에는 성공 여부와 소요 시간 외에 재시도, 도움 요청, 화면 이동 수를 기록한다. `role-observations.csv`에는 장갑, 거치 위치, 한 손 사용, 사진 촬영, 짧은 메모, 신호등식 입력, 네트워크 상태를 각각 명시한다. 화면 녹화 또는 시간 기록은 같은 `run_id` 아래 상대경로로 연결한다.
+
+모든 관찰은 `development-items.csv`의 항목 하나와 1:1로 연결한다. 결정은 `ACCEPTED(수용)`, `REJECTED(불수용)`, `REVIEW(검토)` 중 하나이며 결정 근거, P0~P3, 담당, 기한, 측정 가능한 완료 기준을 반드시 남긴다. `common_product`는 현장과 무관하게 제품에 반영할 요구, `device_or_mdm_setting`은 단말·MDM 설정, `site_layout_or_training`은 거치·동선·교육을 포함한 현장별 선호다.

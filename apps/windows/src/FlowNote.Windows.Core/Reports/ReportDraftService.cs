@@ -209,6 +209,17 @@ public sealed class ReportDraftService(
         CancellationToken cancellationToken = default)
     {
         var selected = selectedSources.ToList();
+        if (serverClient is null)
+        {
+            throw new InvalidOperationException("보고서 저장 직전 원천 재검증을 위해 서버 연결이 필요합니다.");
+        }
+        var verification = await FreezeServerSourcesAsync(serverClient, selected, cancellationToken);
+        if (!verification.Valid)
+        {
+            throw new InvalidOperationException(
+                "보고서 원천 재검증에 실패했습니다. " +
+                string.Join(" / ", verification.Verifications.Where(item => !item.Valid).Select(item => item.Result)));
+        }
         var localDocument = SaveDraftAsDocument(folderId, title, content, actorName, selected, summary);
         var sourceMap = MapServerReportSources(selected);
         ServerReportResponse? saved = null;
@@ -226,6 +237,106 @@ public sealed class ReportDraftService(
         }
 
         return new ReportServerSaveResult(saved, localDocument, sourceMap.SkippedSources, syncResult);
+    }
+
+    public async Task<ReportSourceFreezeResult> FreezeServerSourcesAsync(
+        FlowNoteServerDocumentClient serverClient,
+        IEnumerable<ReportSourceCandidateRecord> selectedSources,
+        CancellationToken cancellationToken = default)
+    {
+        var selected = selectedSources.ToList();
+        ValidateSourceSet(selected);
+        using var connection = database.OpenConnection();
+        var frozen = new List<ReportSourceCandidateRecord>();
+        var verifications = new List<ReportSourceVerificationRecord>();
+
+        foreach (var source in selected)
+        {
+            var request = TryMapServerReportSource(connection, source);
+            if (request is null)
+            {
+                verifications.Add(new ReportSourceVerificationRecord(
+                    source.SourceType, source.SourceId, source.SourceVersionId, source.SourceRevision,
+                    source.SourceHashSha256, false, $"{source.Title}: 서버 원천 ID를 확인할 수 없습니다."));
+                continue;
+            }
+
+            if (request.SourceType == "FIELD_COMMENT")
+            {
+                var current = await serverClient.GetFieldCommentAsync(request.SourceId, cancellationToken);
+                var valid = current.Status == "SELECTED" &&
+                    !string.IsNullOrWhiteSpace(current.DocumentVersionId) &&
+                    current.SourceHashSha256.Length == 64 &&
+                    SnapshotMatches(source, current.DocumentVersionId, current.ReviewRevision, current.SourceHashSha256);
+                var result = valid
+                    ? "SELECTED 상태와 version/revision/hash를 고정했습니다."
+                    : "SELECTED 상태 또는 version/revision/hash가 선택 시점과 다릅니다.";
+                verifications.Add(new ReportSourceVerificationRecord(
+                    request.SourceType, request.SourceId, current.DocumentVersionId, current.ReviewRevision,
+                    current.SourceHashSha256, valid, result));
+                if (valid)
+                {
+                    frozen.Add(source with
+                    {
+                        SourceVersionId = current.DocumentVersionId,
+                        SourceRevision = current.ReviewRevision,
+                        SourceHashSha256 = current.SourceHashSha256,
+                        ServerSourceId = request.SourceId
+                    });
+                }
+                continue;
+            }
+
+            if (request.SourceType == "DOCUMENT")
+            {
+                var current = await serverClient.GetDocumentAsync(request.SourceId, cancellationToken);
+                var versionId = current.PublishedVersionId;
+                var hash = current.PublishedVersion?.File.HashSha256;
+                var valid = current.Status == "PUBLISHED" &&
+                    !string.IsNullOrWhiteSpace(versionId) &&
+                    !string.IsNullOrWhiteSpace(hash) &&
+                    hash.Length == 64 &&
+                    SnapshotMatches(source, versionId, null, hash);
+                var result = valid
+                    ? "현재 공개 version/hash를 고정했습니다."
+                    : "공개 상태 또는 version/hash가 선택 시점과 다릅니다.";
+                verifications.Add(new ReportSourceVerificationRecord(
+                    request.SourceType, request.SourceId, versionId, null, hash, valid, result));
+                if (valid)
+                {
+                    frozen.Add(source with
+                    {
+                        SourceVersionId = versionId,
+                        SourceRevision = null,
+                        SourceHashSha256 = hash,
+                        ServerSourceId = request.SourceId
+                    });
+                }
+                continue;
+            }
+
+            verifications.Add(new ReportSourceVerificationRecord(
+                request.SourceType, request.SourceId, request.SourceVersionId, request.SourceRevision,
+                request.SourceHashSha256, false,
+                $"{source.Title}: WPF 저장 전 검증을 지원하지 않는 원천 유형입니다."));
+        }
+
+        return new ReportSourceFreezeResult(frozen, verifications);
+    }
+
+    private static bool SnapshotMatches(
+        ReportSourceCandidateRecord selected,
+        string? currentVersionId,
+        int? currentRevision,
+        string? currentHash)
+    {
+        if (string.IsNullOrWhiteSpace(selected.SourceHashSha256))
+        {
+            return true;
+        }
+        return string.Equals(selected.SourceVersionId, currentVersionId, StringComparison.Ordinal) &&
+            selected.SourceRevision == currentRevision &&
+            string.Equals(selected.SourceHashSha256, currentHash, StringComparison.OrdinalIgnoreCase);
     }
 
     public (
@@ -327,6 +438,8 @@ public sealed class ReportDraftService(
                     source_version_id,
                     trace_id,
                     source_hash_sha256,
+                    source_revision,
+                    snapshot_verified,
                     relation_type,
                     title,
                     detail,
@@ -339,6 +452,8 @@ public sealed class ReportDraftService(
                     $source_version_id,
                     $trace_id,
                     $source_hash_sha256,
+                    $source_revision,
+                    $snapshot_verified,
                     $relation_type,
                     $title,
                     $detail,
@@ -352,7 +467,16 @@ public sealed class ReportDraftService(
             insert.Parameters.AddWithValue("$trace_id", $"trace_{Guid.NewGuid():N}");
             insert.Parameters.AddWithValue(
                 "$source_hash_sha256",
-                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.Detail))).ToLowerInvariant());
+                string.IsNullOrWhiteSpace(source.SourceHashSha256)
+                    ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.Detail))).ToLowerInvariant()
+                    : source.SourceHashSha256);
+            insert.Parameters.AddWithValue("$source_revision", source.SourceRevision ?? (object)DBNull.Value);
+            var snapshotVerified =
+                !string.IsNullOrWhiteSpace(source.SourceVersionId) &&
+                source.SourceHashSha256?.Length == 64 &&
+                (!string.Equals(source.SourceType, "FIELD_COMMENT", StringComparison.OrdinalIgnoreCase) ||
+                 source.SourceRevision is not null);
+            insert.Parameters.AddWithValue("$snapshot_verified", snapshotVerified ? 1 : 0);
             insert.Parameters.AddWithValue("$relation_type", string.IsNullOrWhiteSpace(source.RelationType) ? DBNull.Value : source.RelationType);
             insert.Parameters.AddWithValue("$title", string.IsNullOrWhiteSpace(source.Title) ? DBNull.Value : source.Title);
             insert.Parameters.AddWithValue("$detail", string.IsNullOrWhiteSpace(source.Detail) ? DBNull.Value : source.Detail);
@@ -500,7 +624,9 @@ public sealed class ReportDraftService(
                 : Clean(source.SourceVersionId, string.Empty).Length > 0
                     ? source.SourceVersionId
                     : null,
-            RelationType = Clean(source.RelationType, DefaultRelationType(sourceType))
+            RelationType = Clean(source.RelationType, DefaultRelationType(sourceType)),
+            SourceRevision = source.SourceRevision,
+            SourceHashSha256 = source.SourceHashSha256
         };
     }
 
