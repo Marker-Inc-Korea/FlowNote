@@ -4,6 +4,7 @@ using FlowNote.Windows.Core.ServerApi;
 using Microsoft.Data.Sqlite;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Xunit;
 
 namespace FlowNote.Windows.Core.Tests;
@@ -107,6 +108,28 @@ public sealed class DocumentSyncConflictPersistenceTests
     }
 
     [Fact]
+    public async Task ClientPreservesUnstructuredConflictReason()
+    {
+        using var http = new HttpClient(new StringConflictHandler())
+        {
+            BaseAddress = new Uri("https://sync.example/")
+        };
+        var client = new FlowNoteServerDocumentClient(http);
+
+        var exception = await Assert.ThrowsAsync<FlowNoteServerConflictException>(() =>
+            client.UpdateDocumentStatusAsync(
+                "server-document",
+                "ARCHIVED",
+                "관리자 보관",
+                baseRevision: 7,
+                mutationKey: "status-conflict-test"));
+
+        Assert.Equal("SERVER_CONFLICT", exception.ConflictCode);
+        Assert.Equal("Transition PUBLISHED -> ARCHIVED is not allowed.", exception.Message);
+        Assert.Contains("Transition PUBLISHED -> ARCHIVED", exception.ResponseBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task NetworkFailureRestartAndDuplicateRetryPreserveOneQueueAndMapping()
     {
         var database = CreateDatabase();
@@ -170,6 +193,99 @@ public sealed class DocumentSyncConflictPersistenceTests
             ScalarLong(
                 connection,
                 "SELECT COUNT(*) FROM server_id_mappings WHERE entity_type = 'document_version' AND local_id = $value;",
+                documentId));
+    }
+
+    [Fact]
+    public async Task DocumentTagsUseMutationReceiptKeyAndReadBackBeforeQueueIsSynced()
+    {
+        var database = CreateDatabase();
+        var suffix = Guid.NewGuid().ToString("N");
+        var documentId = $"doc-tags-{suffix}";
+        var relativePath = Path.Combine("Files", "CoreSyncTests", $"tags-{suffix}.txt");
+        var absolutePath = Path.Combine(FlowNoteLocalDatabase.DefaultDataDirectory, relativePath);
+        var serverScope = $"https://tag-authority-{suffix}.example/";
+        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
+        await File.WriteAllTextAsync(absolutePath, $"tag authority evidence {suffix}");
+        InsertPendingDocument(database, documentId, relativePath);
+        var updatedAt = DateTime.UtcNow;
+        using (var connection = database.OpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE documents
+                SET server_document_id = $server_document_id,
+                    server_version_id = $server_version_id,
+                    server_revision = 5,
+                    synced_at = $now
+                WHERE document_id = $document_id;
+                INSERT INTO server_id_mappings (
+                    entity_type, local_id, local_version_no, server_document_id,
+                    server_version_id, server_revision, synced_at)
+                VALUES (
+                    'document', $document_id, 0, $server_document_id,
+                    $server_version_id, 5, $now);
+                INSERT INTO server_bindings (
+                    server_scope, server_instance_id, server_epoch, schema_contract,
+                    api_contract_min, api_contract_max, status,
+                    observed_server_instance_id, observed_server_epoch, updated_at)
+                VALUES (
+                    $server_scope, 'srv-tag-authority', 1, 1,
+                    1, 1, 'ACTIVE', 'srv-tag-authority', 1, $now);
+                """;
+            command.Parameters.AddWithValue("$document_id", documentId);
+            command.Parameters.AddWithValue("$server_document_id", $"server-{documentId}");
+            command.Parameters.AddWithValue("$server_version_id", $"version-{documentId}");
+            command.Parameters.AddWithValue("$now", updatedAt.ToString("O"));
+            command.Parameters.AddWithValue("$server_scope", serverScope);
+            command.ExecuteNonQuery();
+        }
+        var record = new FlowNote.Windows.Core.Documents.DocumentRecord(
+            0,
+            documentId,
+            0,
+            "태그 권위 문서",
+            Path.GetFileName(absolutePath),
+            "Text",
+            "WORKING",
+            "user-admin",
+            updatedAt,
+            updatedAt,
+            relativePath,
+            1,
+            null,
+            ["line-a", "press-a"]);
+        var handler = new TagAuthorityHandler(
+            $"server-{documentId}",
+            $"version-{documentId}",
+            ["line-a", "press-a"]);
+        using var http = new HttpClient(handler)
+        {
+            BaseAddress = new Uri(serverScope)
+        };
+
+        var result = await new ServerSyncService(database).QueueAndTrySyncDocumentTagsAsync(
+            record,
+            new FlowNoteServerDocumentClient(http),
+            "user-admin");
+
+        Assert.Equal(1, result.Synced);
+        Assert.Equal(1, handler.PutCount);
+        Assert.Equal(1, handler.ReadBackCount);
+        Assert.Contains("mutationKey=wpf%3Adocument-tags%3A", handler.PutRequestUri);
+        Assert.Equal("[\"line-a\",\"press-a\"]", handler.PutBody);
+        using var verify = database.OpenConnection();
+        Assert.Equal(
+            1L,
+            ScalarLong(
+                verify,
+                "SELECT COUNT(*) FROM server_sync_queue WHERE entity_type = 'document_tags' AND entity_id = $value AND status = 'SYNCED';",
+                documentId));
+        Assert.Equal(
+            6L,
+            ScalarLong(
+                verify,
+                "SELECT server_revision FROM documents WHERE document_id = $value;",
                 documentId));
     }
 
@@ -337,6 +453,20 @@ public sealed class DocumentSyncConflictPersistenceTests
         }
     }
 
+    private sealed class StringConflictHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = new StringContent(
+                    "{\"detail\":\"Transition PUBLISHED -> ARCHIVED is not allowed.\"}",
+                    Encoding.UTF8,
+                    "application/json")
+            });
+    }
+
     private sealed class UnavailableHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
@@ -404,5 +534,67 @@ public sealed class DocumentSyncConflictPersistenceTests
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             });
         }
+    }
+
+    private sealed class TagAuthorityHandler(
+        string serverDocumentId,
+        string serverVersionId,
+        IReadOnlyList<string> tags) : HttpMessageHandler
+    {
+        public int PutCount { get; private set; }
+        public int ReadBackCount { get; private set; }
+        public string PutRequestUri { get; private set; } = string.Empty;
+        public string PutBody { get; private set; } = string.Empty;
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (request.RequestUri?.AbsolutePath.EndsWith("/api/v1/sync/manifest", StringComparison.Ordinal) == true)
+            {
+                return JsonResponse(
+                    "{\"server_instance_id\":\"srv-tag-authority\",\"server_epoch\":1,\"schema_contract\":1,\"api_contract_min\":1,\"api_contract_max\":1,\"server_cursor\":0}");
+            }
+            if (request.Method == HttpMethod.Put)
+            {
+                PutCount++;
+                PutRequestUri = request.RequestUri?.ToString() ?? string.Empty;
+                PutBody = request.Content is null
+                    ? string.Empty
+                    : await request.Content.ReadAsStringAsync(cancellationToken);
+                return JsonResponse(DocumentJson());
+            }
+            if (request.Method == HttpMethod.Get)
+            {
+                ReadBackCount++;
+                return JsonResponse(DocumentJson());
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        }
+
+        private string DocumentJson() => JsonSerializer.Serialize(new
+        {
+            document_id = serverDocumentId,
+            title = "태그 권위 문서",
+            description = (string?)null,
+            document_type = "Text",
+            owner_id = (string?)null,
+            category_id = (string?)null,
+            status = "WORKING",
+            revision = 6,
+            latest_version_id = serverVersionId,
+            published_version_id = (string?)null,
+            created_at = DateTime.UtcNow,
+            updated_at = DateTime.UtcNow,
+            tags,
+            latest_version = (object?)null,
+            published_version = (object?)null
+        });
+
+        private static HttpResponseMessage JsonResponse(string json) =>
+            new(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
     }
 }

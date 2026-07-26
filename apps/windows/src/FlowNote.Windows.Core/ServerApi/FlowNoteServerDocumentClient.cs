@@ -154,6 +154,7 @@ public sealed class FlowNoteServerDocumentClient
         string? changeReason = null,
         int? baseRevision = null,
         string? expectedPublishedVersionId = null,
+        string? mutationKey = null,
         CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PostAsJsonAsync(
@@ -162,7 +163,8 @@ public sealed class FlowNoteServerDocumentClient
             {
                 ChangeReason = changeReason,
                 BaseRevision = baseRevision,
-                ExpectedPublishedVersionId = expectedPublishedVersionId
+                ExpectedPublishedVersionId = expectedPublishedVersionId,
+                MutationKey = mutationKey
             },
             cancellationToken);
         return await ReadJsonResponse<ServerDocumentResponse>(response, cancellationToken);
@@ -173,6 +175,7 @@ public sealed class FlowNoteServerDocumentClient
         string status,
         string? changeReason = null,
         int? baseRevision = null,
+        string? mutationKey = null,
         CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PatchAsJsonAsync(
@@ -181,8 +184,25 @@ public sealed class FlowNoteServerDocumentClient
             {
                 Status = status,
                 ChangeReason = changeReason,
-                BaseRevision = baseRevision
+                BaseRevision = baseRevision,
+                MutationKey = mutationKey
             },
+            cancellationToken);
+        return await ReadJsonResponse<ServerDocumentResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerDocumentResponse> ReplaceDocumentTagsAsync(
+        string documentId,
+        IReadOnlyList<string> tags,
+        int baseRevision,
+        string mutationKey,
+        CancellationToken cancellationToken = default)
+    {
+        var query =
+            $"baseRevision={baseRevision}&mutationKey={Uri.EscapeDataString(mutationKey)}";
+        using var response = await httpClient.PutAsJsonAsync(
+            $"api/v1/documents/{Uri.EscapeDataString(documentId)}/tags?{query}",
+            tags,
             cancellationToken);
         return await ReadJsonResponse<ServerDocumentResponse>(response, cancellationToken);
     }
@@ -740,7 +760,24 @@ public sealed class FlowNoteServerDocumentClient
         try
         {
             using var json = JsonDocument.Parse(errorBody);
-            var detail = json.RootElement.GetProperty("detail");
+            if (!json.RootElement.TryGetProperty("detail", out var detail))
+            {
+                return UnstructuredConflict(errorBody);
+            }
+
+            if (detail.ValueKind == JsonValueKind.String)
+            {
+                return new FlowNoteServerConflictException(
+                    "SERVER_CONFLICT",
+                    detail.GetString() ?? "서버 요청이 충돌했습니다.",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    errorBody);
+            }
+
             string? ReadString(string name) =>
                 detail.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
                     ? value.GetString()
@@ -761,15 +798,18 @@ public sealed class FlowNoteServerDocumentClient
         }
         catch (JsonException)
         {
-            return new FlowNoteServerConflictException(
-                "SERVER_CONFLICT",
-                "서버가 충돌을 반환했지만 상세 응답을 해석하지 못했습니다.",
-                null,
-                null,
-                null,
-                null,
-                null,
-                errorBody);
+            return UnstructuredConflict(errorBody);
         }
     }
+
+    private static FlowNoteServerConflictException UnstructuredConflict(string errorBody) =>
+        new(
+            "SERVER_CONFLICT",
+            "서버가 충돌을 반환했지만 상세 응답을 해석하지 못했습니다.",
+            null,
+            null,
+            null,
+            null,
+            null,
+            errorBody);
 }

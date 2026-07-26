@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-07-22 현재 OpenAPI에 등록된 128개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-07-26 현재 OpenAPI에 등록된 128개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -41,12 +41,12 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/documents/published` | Published document list |
 | GET | `/api/v1/documents/{document_id}` | Document detail |
 | GET | `/api/v1/documents/{document_id}/published` | Published version |
-| PUT | `/api/v1/documents/{document_id}/tags` | Replace document tags |
-| PATCH | `/api/v1/documents/{document_id}/status` | Change document status |
+| PUT | `/api/v1/documents/{document_id}/tags` | Replace document tags with base revision and optional mutation key |
+| PATCH | `/api/v1/documents/{document_id}/status` | Change document status with base revision and optional mutation key |
 | GET | `/api/v1/documents/{document_id}/versions` | Version list |
 | POST | `/api/v1/documents/{document_id}/versions` | Register new version; optional multipart `idempotencyKey` returns the existing version on retry |
 | PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | Change version status |
-| POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | Publish selected version |
+| POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | Publish selected version with base revision and optional mutation key |
 | DELETE | `/api/v1/documents/{document_id}` | Soft-delete a document using its base revision and change reason |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | Issue one-time controlled copy grant for the current published version |
 | GET | `/api/v1/controlled-copies/{token}` | Stream the session-bound controlled copy once |
@@ -141,7 +141,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 
 The server uses HMAC-signed Bearer access tokens plus the `auth_sessions` table. Login creates a session. Refresh rotates the access token ID and refresh token hash. Logout revokes the session.
 
-Document write responses carry the server-authoritative aggregate `revision`. Version registration, status changes, publish, tag replacement, and soft delete compare the caller's base revision and relevant latest/published version before committing. Stale state, deleted documents, reused idempotency keys, and file-hash mismatches return structured HTTP 409 details; clients must preserve these as administrator-resolved conflicts instead of ordinary automatic retries.
+Document write responses carry the server-authoritative aggregate `revision`. Version registration, status changes, publish, tag replacement, and soft delete compare the caller's base revision and relevant latest/published version before committing. Publish, status, and tag mutations store the normalized intent and first successful response in `document_mutation_receipts` within the same transaction. Replaying the same mutation key and intent returns that response without another revision or audit event; reusing the key for another intent returns a structured HTTP 409 conflict. WPF reads the document back after a successful response and marks the queue `SYNCED` only after the authoritative status, published version, tags, and revision agree.
 
 Development defaults such as `admin / 1234` and the default token secret are local development values only.
 
@@ -210,7 +210,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-07-22, the FastAPI suite and `scripts/verify-preserved-tests.ps1` collection/JUnit guard are aligned at 149 unique node IDs. A direct FastAPI rerun passed all 149 tests, WPF Core passed all 43 tests, the WPF app build completed with no warnings or errors, and Ruff passed for `app` and `tests`. This is not the integrated baseline because the shared-DB smoke and Android checks were `NOT_RUN` on the macOS ARM64 host. A complete current baseline still requires those checks under one preserved Windows x64 run ID with `partial_run=false` and `verification-summary.json=PASSED`. The earlier preserved `p0-baseline-144-macos-precheck-20260722-002` run remains a historical 144-test partial result and is not promoted to the current baseline.
+As of 2026-07-26, the FastAPI suite passed all 150 unique node IDs and WPF Core passed all 45 tests. The current `scripts/verify-preserved-tests.ps1` guard still expects 149 FastAPI and 43 WPF Core tests, so it is not aligned with this source state. Ruff passed for `app` and `tests`; the WPF app, sync migration tool, and sync convergence project also built without warnings or errors on the macOS ARM64 host. This is not an integrated baseline because the shared-DB smoke and Android checks were not run under one Windows x64 run ID, and the guard counts still need to be updated.
 
 The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no management API for that sensitive-data policy. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. Query and retention audit operations are restricted to the configured customer/site scope. The server lifespan runs expired-query retention on the configured interval, while `system-admin` can run scoped bulk retention, expire one query, or place and release a reasoned legal hold. An active hold blocks all three expiry paths. WPF mutations send a stable `operationKey` and the latest detail `stateTag`; duplicate/lost-response retries return the original result, while stale, already-expired, already-released, and concurrent operations return `409`. Legal-hold rows and linked audit history are never deleted by release or expiry.
 

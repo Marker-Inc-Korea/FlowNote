@@ -1,6 +1,6 @@
 # 0001 Initial FlowNote API Schema
 
-FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기준은 2026-07-22 현재 `services/api/app/db/models.py`다. 앱 시작 시 `services/api/app/db/init_db.py`가 기존 WPF 로컬 스키마가 아닌지 먼저 확인한 뒤 `Base.metadata.create_all()`로 서버 테이블을 보장한다.
+FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기준은 2026-07-26 현재 `services/api/app/db/models.py`와 역할별 `models_*.py`다. 앱 시작 시 `services/api/app/db/init_db.py`가 기존 WPF 로컬 스키마가 아닌지 먼저 확인한 뒤 `Base.metadata.create_all()`로 서버 테이블을 보장한다.
 
 ## Version
 
@@ -22,6 +22,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `file_objects` | Server-local stored file metadata |
 | `documents` | Document metadata and latest/published version refs |
 | `document_versions` | Version metadata, change reason, latest/published flags |
+| `document_mutation_receipts` | Publish/status/tag mutation key, intent hash, applied revision, and first response snapshot |
 | `tag_definitions` | Tag dictionary |
 | `document_tags` | Document-tag relation |
 | `terminal_devices` | Field terminal registry basis |
@@ -70,7 +71,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 - Creating or uploading a version does not automatically publish the document.
 - Controlled copy can only target the current published version; grants expire quickly and are consumed once.
 - FieldComment must reference at least one of document, structure item, or work record.
-- FieldComment review writes and report saves use domain revisions plus immutable mutation receipts; report/source/document creation commits as one transaction.
+- Document publish/status/tag writes, FieldComment review writes, and report saves use domain revisions plus immutable mutation receipts; each receipt commits with its aggregate mutation.
 - Sync manifest identifies the server installation and explicit recovery epoch. Reconciliation records classify WPF queue inventory without rewriting domain source rows and require administrator approval for every proposed action.
 - External AI calls are disabled by default. A generic HTTPS JSON adapter exists only for explicit `test` scope; no provider-specific production client or production activation is configured.
 - The active `ai_sensitive_data_policies` row for a customer/site scope adds deny terms and customer identifiers to the provider-boundary content filter.

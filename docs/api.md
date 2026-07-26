@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. `/`, `/api/v1/health`, `/api/v1/health/db`, `/api/v1/health/sync-manifest`, `GET /api/v1/sync/manifest`, `GET /api/v1/tags`를 제외한 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-07-22 현재 전역 FastAPI 앱에 등록된 method/path 조합과 요청·응답 코드 기준이다. FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-07-26 현재 전역 FastAPI 앱에 등록된 method/path 조합과 요청·응답 코드 기준이다. 문서 상태·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -88,13 +88,13 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 
 서버는 `server_identity` singleton row의 설치 식별자와 epoch를 manifest에 제공한다. `server_cursor`는 현재 `channel_messages.id` 최댓값이며 메시지가 없으면 0이다. WPF는 서버 URL별 binding을 저장하고 API contract 1이 서버의 `api_contract_min`~`api_contract_max` 범위에 포함되는지 검사한다. 처음 확인한 서버는 활성화하지만, 이미 다른 서버 URL binding이 있는 상태에서 새 URL을 확인하거나 저장한 instance/epoch가 달라지거나 서버 cursor가 로컬 cursor보다 낮으면 `RECONCILIATION_REQUIRED`로 전환한다. 이때 알림 polling과 `server_sync_queue` 자동 전송을 중지하며 기존 mapping, cursor, 처리 `message_id`, 큐를 보존한다.
 
-run 생성 요청은 `clientId`, 선택적 `previousServerInstanceId`·`previousServerEpoch`, `triggerReason`, `clientCursor`, 최대 10,000개의 `items`를 받는다. 각 항목은 `clientItemId`, `entityType`, `localId`, `localVersionNo`, `idempotencyKey`, 선택적 `localHashSha256`·이전 서버 문서/버전 ID를 포함한다. 현재 판정 대상은 `document`, `document_version`, `field_comment`, `field_comment_attachment`, `document_access_log`, `report`다. 응답 결과와 제안 조치는 다음 셋이다.
+run 생성 요청은 `clientId`, 선택적 `previousServerInstanceId`·`previousServerEpoch`, `triggerReason`, `clientCursor`, 최대 10,000개의 `items`를 받는다. 각 항목은 `clientItemId`, `entityType`, `localId`, `localVersionNo`, `idempotencyKey`, 선택적 `localHashSha256`·이전 서버 문서/버전 ID를 포함한다. 현재 판정 대상은 `document`, `document_version`, `document_publish`, `document_status`, `document_tags`, `field_comment`, `field_comment_attachment`, `document_access_log`, `report`다. 문서 공개·상태·태그는 `document_mutation_receipts.mutation_key`와 저장 응답을 대조한다. 응답 결과와 제안 조치는 다음 셋이다.
 
 | 결과 | 의미 | WPF 조치 |
 | --- | --- | --- |
 | `CONFIRMED` / `REBOUND` | 같은 idempotency key가 있고 제공된 hash도 일치 | 응답의 현재 server ID/revision/hash로 mapping 재결합하고 큐를 `SYNCED`로 종결 |
 | `ABSENT` / `REQUEUE` | 같은 idempotency key의 서버 row가 없음 | 기존 큐의 서버 ID를 비우고 `PENDING`으로 되돌려 동일 key로 재전송 |
-| `DIVERGED` / `CONFLICT` | 지원하지 않는 entity이거나 비교 hash 부재·불일치 | 큐를 `DISCARDED`로 종결하되 `RECONCILIATION_DIVERGED`, 상세, 해결자·시각을 보존 |
+| `DIVERGED` / `CONFLICT` | 비교 hash 부재·불일치 또는 자동 결합 불가 | 자동 덮어쓰지 않고 양쪽 hash, `APPROVED_CONFLICT`, 관리자 사유·승인자·시각을 보존한 뒤 승인된 충돌 종결로 전환 |
 
 run 생성은 업무 도메인 원천을 수정하지 않고 서버와 WPF 양쪽에 판정 이력을 추가한다. 적용 요청은 run의 모든 항목을 한 번씩 포함하고 각 `action`이 서버 제안 조치와 같아야 한다. 서버는 승인자·항목별 사유·승인 사유와 `sync.reconciliation.approved` 활동 이력을 저장한다. 그 응답을 받은 WPF는 한 로컬 transaction에서 큐·mapping·binding을 갱신하고 해당 서버 scope의 알림 cursor를 0으로 되돌려 재추적한다. 기존 처리 `message_id`는 삭제하지 않는다. 이후 `PENDING` 재전송을 재개한다.
 
@@ -120,12 +120,12 @@ run 생성은 업무 도메인 원천을 수정하지 않고 서버와 WPF 양�
 | GET | `/api/v1/documents/published` | 공개 문서 목록 |
 | GET | `/api/v1/documents/{document_id}` | 문서 상세 |
 | GET | `/api/v1/documents/{document_id}/published` | 공개 버전 조회 |
-| PUT | `/api/v1/documents/{document_id}/tags` | `baseRevision` query 기준이 일치할 때 문서 태그 교체 |
-| PATCH | `/api/v1/documents/{document_id}/status` | JSON `baseRevision` 기준 문서 상태 변경 |
+| PUT | `/api/v1/documents/{document_id}/tags` | `baseRevision`, `mutationKey` query 기준 문서 태그 전체 교체 |
+| PATCH | `/api/v1/documents/{document_id}/status` | JSON `baseRevision`, `mutationKey` 기준 문서 상태 변경 |
 | GET | `/api/v1/documents/{document_id}/versions` | 문서 버전 목록 |
 | POST | `/api/v1/documents/{document_id}/versions` | 새 파일 버전 등록. multipart `idempotencyKey`를 보내면 같은 키의 재시도는 기존 버전을 반환 |
 | PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | JSON `baseRevision` 기준 버전 상태 변경 |
-| POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | JSON `baseRevision`과 예상 공개본 기준으로 특정 버전을 공개 버전으로 지정 |
+| POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | JSON `baseRevision`, 예상 공개본, `mutationKey` 기준으로 특정 버전을 공개 버전으로 지정 |
 | DELETE | `/api/v1/documents/{document_id}` | `baseRevision`, `changeReason`으로 문서를 soft delete. 공개 포인터 해제와 감사를 함께 저장 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | 현재 공개 버전의 1회성 controlled copy 티켓 발급 |
 | GET | `/api/v1/controlled-copies/{token}` | 발급 사용자·로그인 세션에 묶인 controlled copy 1회 스트리밍 |
@@ -134,7 +134,9 @@ run 생성은 업무 도메인 원천을 수정하지 않고 서버와 WPF 양�
 
 문서 생성 시 허용되는 상태는 `WORKING`, `IN_REVIEW`, `ARCHIVED`이다. `PUBLISHED`는 publish 엔드포인트로만 만든다.
 
-문서 응답과 목록은 서버 권위의 `revision`을 포함한다. 버전 등록 multipart는 `baseRevision`, `baseVersionId`, `fileHashSha256`, `idempotencyKey`를 받을 수 있다. WPF는 네 값을 모두 보내며 서버는 최신 버전 ID와 revision을 원자적으로 비교한 뒤 새 버전 번호를 배정한다. publish JSON은 `baseRevision`, `expectedPublishedVersionId`, `changeReason`, 문서 상태 JSON은 `baseRevision`, `status`, `changeReason`, 버전 상태 JSON도 `baseRevision`, `status`, `changeReason`을 사용한다. 태그 전체 교체는 필수 `baseRevision` query가 맞을 때만 수행한다.
+문서 응답과 목록은 서버 권위의 `revision`을 포함한다. 버전 등록 multipart는 `baseRevision`, `baseVersionId`, `fileHashSha256`, `idempotencyKey`를 받을 수 있다. WPF는 네 값을 모두 보내며 서버는 최신 버전 ID와 revision을 원자적으로 비교한 뒤 새 버전 번호를 배정한다. publish JSON은 `baseRevision`, `expectedPublishedVersionId`, `changeReason`, `mutationKey`, 문서 상태 JSON은 `baseRevision`, `status`, `changeReason`, `mutationKey`를 사용한다. 태그 전체 교체는 필수 `baseRevision`과 선택 `mutationKey` query를 사용한다. 버전 상태 API는 `baseRevision`, `status`, `changeReason`을 사용한다.
+
+공개·문서 상태·태그 교체는 서버 권위 mutation이다. 서버는 정규화한 intent hash와 최초 성공 응답을 `document_mutation_receipts`에 문서 변경과 같은 transaction으로 저장한다. 같은 key·같은 intent 재요청은 저장 응답을 반환하고 revision·이력·알림·receipt를 추가하지 않는다. 같은 key를 다른 intent에 사용하면 409 `IDEMPOTENCY_KEY_REUSED`다. WPF는 큐의 같은 key를 그대로 `mutationKey`로 보내고 2xx 뒤 `GET /documents/{document_id}`를 다시 읽어 상태, 공개 버전 ID, 태그와 revision을 확인한 뒤에만 큐를 `SYNCED`로 종결한다. 응답 유실 때도 같은 key로 재전송하므로 receipt 응답에 재결합된다.
 
 문서 버전 등록의 선택적 `idempotencyKey`는 공백을 제거한 뒤 최대 160자로 제한하며 서버 `document_versions.idempotency_key`에 유일하게 저장한다. 같은 키·같은 파일 hash를 같은 문서에 다시 보내면 새 파일이나 버전을 만들지 않고 기존 버전을 반환한다. 다른 문서 사용, 같은 키의 다른 파일 또는 최초 문서 등록의 핵심 메타데이터 불일치는 409 `IDEMPOTENCY_KEY_REUSED`다. 특정 버전 publish도 이미 그 버전이 현재 공개 버전이고 문서·버전 공개 상태가 일치하면 revision을 다시 올리지 않고 현재 문서를 반환한다.
 
@@ -155,7 +157,7 @@ run 생성은 업무 도메인 원천을 수정하지 않고 서버와 WPF 양�
 }
 ```
 
-충돌 코드는 `STALE_REVISION`, `STALE_BASE_VERSION`, `PUBLISHED_VERSION_CHANGED`, `DOCUMENT_DELETED`, `IDEMPOTENCY_KEY_REUSED`, `FILE_HASH_MISMATCH`를 구분한다. WPF 구 공개/상태 큐에 서버 기준 revision이 없으면 서버 호출 전에 `LEGACY_BASE_MISSING` 충돌로 전환한다. 클라이언트는 이를 자동 일반 재시도하지 않고 충돌 작업함에 보존한다. 네트워크 단절·timeout은 409가 아니므로 안정된 idempotency key로 재시도한다.
+충돌 코드는 `STALE_REVISION`, `STALE_BASE_VERSION`, `PUBLISHED_VERSION_CHANGED`, `DOCUMENT_DELETED`, `IDEMPOTENCY_KEY_REUSED`, `FILE_HASH_MISMATCH`, WPF read-back 불일치 `DOCUMENT_READ_BACK_MISMATCH`를 구분한다. WPF 구 공개/상태/태그 큐에 서버 기준 revision이 없으면 서버 호출 전에 `LEGACY_BASE_MISSING` 충돌로 전환한다. 클라이언트는 이를 자동 일반 재시도하지 않고 충돌 작업함에 양쪽 hash와 원 응답을 보존한다. 네트워크 단절·timeout은 409가 아니므로 안정된 idempotency key로 재시도한다.
 
 controlled copy는 `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`만 요청할 수 있다. 서버는 요청 시점과 전송 시점에 문서가 삭제되지 않은 `PUBLISHED` 상태인지, 요청 버전이 `published_version_id`와 일치하고 `version_status = PUBLISHED`, `is_published = true`인지 다시 검사한다. 티켓은 기본 60초, 최대 300초이며 발급 사용자와 `auth_sessions.session_id`에 묶이고 첫 전송 시 소비된다. 다른 사용자·다른 로그인 세션, 만료, 재사용은 거부한다.
 

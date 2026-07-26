@@ -1,6 +1,6 @@
 # 서버 동기화 실패와 재시도 UX
 
-이 문서는 2026-07-22 현재 `ServerSyncService`, 실패 진단 코드와 WPF 이력 화면 기준이다. 아래 누적 건수는 당시 보존 DB의 검증 기록이며 고정 기대값이 아니다.
+이 문서는 2026-07-26 현재 `ServerSyncService`, 실패 진단 코드와 WPF 이력 화면 기준이다. 아래 누적 건수는 당시 보존 DB의 검증 기록이며 고정 기대값이 아니다.
 
 ## 화면 기준
 
@@ -11,10 +11,10 @@
 화면 상단 요약의 대기, 실패, 보류, 완료 수는 목록 표시 한도와 관계없이 SQLite 전체 큐를 집계한다. 목록에는 현재 최대 500건을 표시하며, 요약에 전체 건수와 실제 표시 건수를 함께 보여준다.
 
 - `상태`: `대기`, `실패`, `충돌`, `완료`, `폐기`
-- `우선순위`: 운영자가 먼저 확인할 순서. `10 설정 필요`, `11 로그인 필요`, `12 연결 확인`, `20 파일 확인`, `30 문서 먼저`, `31 버전 먼저`, `32 FieldComment 먼저`, `33 근거 먼저`, `50 재시도`, `80 별도 정리`, `81 별도 전환`, `90 완료`
-- `분류`: 서버 URL 미설정, 인증 만료, 네트워크 실패, 로컬 파일 누락, 선행 문서 미동기화, 선행 문서 버전 미동기화, 선행 FieldComment 미동기화, 보고서 근거 미동기화, 구 FieldNote 큐, 구 형식 큐, 실제 서버 오류, 재시도 가능, 완료
-- `대상`: 문서, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 접근 로그, 보고서
-- `작업`: 문서 전송, 버전 전송, 공개 전송, 상태 전송, FieldComment 전송, 검토 변경 전송, 첨부 전송, 열람 시작/종료/자동 종료/다운로드 차단 전송, 보고서 서버 저장
+- `우선순위`: 운영자가 먼저 확인할 순서. `10 설정 필요`, `11 로그인 필요`, `12 연결 확인`, `20 파일 확인`, `21 입력 확인`, `30 문서 먼저`, `31 버전 먼저`, `32 FieldComment 먼저`, `33 근거 먼저`, `50 재시도`, `80 별도 정리`, `81 별도 전환`, `90 완료`
+- `분류`: 서버 URL 미설정, 인증 만료, 네트워크 실패, 로컬 파일 누락, 서버 검증 거부, 선행 문서 미동기화, 선행 문서 버전 미동기화, 선행 FieldComment 미동기화, 보고서 근거 미동기화, 구 FieldNote 큐, 구 형식 큐, 실제 서버 오류, 재시도 가능, 완료
+- `대상`: 문서, 문서 버전, 문서 공개, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, FieldComment 첨부, 접근 로그, 보고서
+- `작업`: 문서 전송, 버전 전송, 공개 전송, 상태 전송, 태그 전체 교체, FieldComment 전송, 검토 변경 전송, 첨부 전송, 열람 시작/종료/자동 종료/다운로드 차단 전송, 보고서 서버 저장
 - `시도`: 서버 전송 시도 횟수
 - `마지막 시도`: 마지막 재시도 시간
 - `조치`: 운영자가 먼저 할 일
@@ -28,11 +28,11 @@
 - `로컬 변경 재시도`: 서버 상세를 다시 읽어 최신 `revision`, 최신/공개 버전 ID를 로컬과 큐에 저장하고 `PENDING`으로 바꾼 뒤 로컬 변경을 새 서버 기준에서 재시도한다. 파일/공개/상태 의미가 여전히 맞는지 관리자가 확인한 경우에만 사용한다.
 - `서버본 유지·폐기`: 로컬 전송 요청을 `DISCARDED`로 종결한다. 로컬 문서와 파일, 충돌 원 응답, 큐 행은 삭제하지 않는다.
 
-두 선택은 `resolution_action`, 사유, 해결자, 해결 시각과 `activity_history`에 남고 앱 재시작 뒤에도 표시된다. 사유 없이 버튼을 누를 수 없다.
+두 선택은 `resolution_action`, 사유, 해결자, 해결 시각과 `activity_history`에 남고 앱 재시작 뒤에도 표시된다. 사유 없이 버튼을 누를 수 없다. reconciliation의 DIVERGED는 양쪽 hash와 `resolution_status = APPROVED_CONFLICT`도 함께 보존한다.
 
 `서버 재결합` 탭은 서버 URL·instance·epoch 변경 또는 cursor 역행으로 자동 전송과 polling이 중지된 경우에 사용한다. `판정 실행`은 로컬 `server_sync_queue` 전체를 idempotency key와 선택적 파일 hash, 기존 mapping과 함께 서버에 보내 `CONFIRMED/REBOUND`, `ABSENT/REQUEUE`, `DIVERGED/CONFLICT` 판정을 저장한다. `승인 적용`은 관리자 사유가 필수이며 모든 항목의 서버 제안 조치를 그대로 확인한다. 적용되면 재결합은 mapping과 큐 상태를 한 transaction에서 갱신하고, binding을 새 instance/epoch로 활성화하며, 해당 scope의 cursor를 0부터 재추적한 뒤 `PENDING` 전송을 재개한다. 처리한 `message_id`, 기존 큐와 로컬 원천은 삭제하지 않는다.
 
-재시도 루프는 선행 문서, 문서 버전, FieldComment, 보고서 근거가 아직 서버 ID로 연결되지 않은 항목을 `보류`로 집계한다. 보류 항목은 `FAILED` 상태와 한글 실패 사유를 유지하지만 실제 서버 호출을 하지 않고 `attempt_count`를 올리지 않는다. 같은 재시도 배치 안에 선행 항목이 같이 있으면 문서 등록이 먼저 처리된 뒤 후행 버전, 공개, 상태, FieldComment, 검토 변경, 첨부, 접근 로그, 보고서 항목을 이어서 전송한다.
+재시도 루프는 선행 문서, 문서 버전, FieldComment, 보고서 근거가 아직 서버 ID로 연결되지 않은 항목을 `보류`로 집계한다. 보류 항목은 `FAILED` 상태와 한글 실패 사유를 유지하지만 실제 서버 호출을 하지 않고 `attempt_count`를 올리지 않는다. 같은 재시도 배치 안에서는 문서 등록 → 버전 → 공개 → 상태 → 태그 → FieldComment → 검토 → 첨부 → 접근 로그 → 보고서 순서로 처리한다. 앞 mutation 성공 뒤 read-back한 revision과 최신/공개 버전 ID를 같은 run의 뒤쪽 현재 형식 큐 기준값으로 넘긴다. 구 큐의 누락 기준값은 자동 보완하지 않는다.
 
 ## 실패 문구
 
@@ -46,15 +46,25 @@
 - 구 FieldNote 큐: `구 FieldNote 큐는 현재 FieldComment 동기화 대상이 아니어서 자동 전송하지 않았습니다. 관리자 검토 후 FieldComment 전환 또는 별도 마이그레이션으로 정리하세요. 로컬 데이터는 삭제되지 않습니다.`
 - 구 형식 create 큐: `구 형식 create 큐는 현재 서버 동기화 계약의 자동 전송 대상이 아닙니다. 원본 이력은 보존하고 관리자 검토 후 현재 action으로 별도 마이그레이션하세요. 서버 호출과 시도 횟수 증가는 수행하지 않았으며 로컬 데이터는 삭제되지 않습니다.`
 
-## 문서 버전/공개/상태 우선순위
+## 문서 버전/공개/상태/태그 권위
 
-서버-WPF 동기화는 로컬 저장을 먼저 성공시키고, 재시도 시 같은 문서 또는 보고서 근거 단위의 선행 조건을 우선한다. 현재 재시도 순서는 문서 등록, 문서 버전, 공개, 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그 시작/종료/자동 종료/다운로드 차단, 보고서 저장이다. 문서 최초 등록이 서버에 성공해야 문서 버전, FieldComment, 첨부, 접근 로그가 서버 문서 ID에 연결된다.
+서버-WPF 동기화는 로컬 저장을 먼저 성공시키고, 재시도 시 같은 문서 또는 보고서 근거 단위의 선행 조건을 우선한다. 문서 최초 등록이 서버에 성공해야 후행 버전, 공개, 상태, 태그, FieldComment, 첨부, 접근 로그가 서버 문서 ID에 연결된다.
 
 신규 큐는 서버에서 마지막으로 확인한 `revision`, 최신 버전 ID, 공개 버전 ID와 로컬 파일 SHA-256을 snapshot으로 남긴다. 구 큐처럼 base revision이 없는 호환 경로에서 서버에 같은 번호의 버전이 이미 있으면 SHA-256이 같은 경우에만 로컬 `server_version_id`, `synced_at`, `server_id_mappings`를 복구한다. hash가 다르면 `FILE_HASH_MISMATCH` 충돌이다. 신규 큐는 서버가 revision 확인 뒤 다음 버전 번호를 배정하므로 로컬 번호와 서버 번호의 우연한 일치를 성공 조건으로 쓰지 않는다.
 
-공개는 항상 특정 로컬 버전 번호의 서버 버전 ID가 확인된 뒤 서버 publish API를 호출한다. 문서 상태는 현재 로컬 `documents.status`를 서버 상태 API에 반영한다. 상태가 `PUBLISHED`이면 공개 대상 버전의 서버 버전 ID가 먼저 있어야 한다.
+공개는 항상 특정 로컬 버전 번호의 서버 버전 ID가 확인된 뒤 서버 publish API를 호출한다. 문서 상태와 태그는 enqueue 시 `payload_json`에 고정한 값으로 전송한다. 공개·상태·태그는 큐의 안정 key를 서버 `mutationKey`로 보내며 서버는 같은 transaction에 `document_mutation_receipts`를 저장한다. WPF는 2xx 뒤 문서 상세를 다시 읽어 공개 버전 ID, 상태, 태그와 revision이 일치할 때만 로컬 mapping과 큐를 `SYNCED`로 저장한다. 응답 유실은 같은 key를 다시 보내 receipt를 재생하며 revision·이력·알림·receipt가 늘지 않는다.
 
-FieldComment 검토 큐는 enqueue 시점의 `review_revision`을 `base_domain_revision`에 고정하고 큐의 안정된 idempotency key를 서버 `mutationKey`로 보낸다. 서버가 409 `FIELD_COMMENT_STALE_REVIEW_REVISION` 또는 `IDEMPOTENCY_KEY_REUSED`를 반환하면 자동 재시도하지 않고 원 응답과 충돌 코드를 보존한다. 성공할 때는 응답 `review_revision`을 로컬 FieldComment에 반영한 뒤 큐를 종결한다.
+권위와 충돌 해결표:
+
+| 대상 | 서버 권위 값 | WPF 성공 조건 | 불일치 처리 |
+| --- | --- | --- | --- |
+| 문서 상태 | `documents.status`, `revision` | read-back 상태와 큐 snapshot 상태 일치 | `DOCUMENT_READ_BACK_MISMATCH` 또는 stale 충돌 보존 |
+| 공개 버전 | `published_version_id`, 공개 버전 flag, `revision` | read-back 공개 ID가 요청 서버 버전 ID와 일치 | 자동 재공개 금지, 양쪽 ID/hash와 관리자 사유 요구 |
+| 태그 | 서버 `document_tags` 전체 집합, `revision` | 정렬·대소문자 정규화 집합이 snapshot과 일치 | 자동 합집합/덮어쓰기 금지, 최신 서버본 확인 |
+
+태그는 서버 권위 동기화 대상에 포함한다. 최초 문서 등록의 tags뿐 아니라 이후 WPF 전체 교체도 `document_tags/replace_document_tags` action으로 큐에 남긴다.
+
+FieldComment 검토 큐는 enqueue 시점의 상태·정리 내용·분석 내용·전이 사유를 `payload_json`에 고정하고 직전 서버 `review_revision`을 `base_domain_revision`으로 보존한다. 오프라인에서 `ANALYZED → REVIEWED → SELECTED`가 연속 입력되면 각 mutation을 별도 key와 snapshot으로 처리하고 앞 응답 revision을 다음 큐 기준값으로 넘긴다. 서버가 409 `FIELD_COMMENT_STALE_REVIEW_REVISION` 또는 `IDEMPOTENCY_KEY_REUSED`를 반환하면 자동 재시도하지 않고 원 응답과 충돌 코드를 보존한다. 성공할 때는 응답 `review_revision`을 로컬 FieldComment에 반영한 뒤 해당 큐를 종결한다.
 
 FieldComment 첨부는 경로의 서버 comment ID를 multipart `parentCommentId`로, 로컬 파일의 SHA-256을 `fileSha256`으로 함께 보낸다. 부모 불일치, 요청/실파일 hash 불일치, 같은 key의 다른 파일 재사용은 충돌로 보존한다.
 
@@ -69,6 +79,20 @@ FieldComment 첨부는 경로의 서버 comment ID를 multipart `parentCommentId
 로컬 저장 직후 문구는 `로컬 저장 완료 · 서버 확인 대기`, 큐 적재 뒤에는 `서버 확인 대기/재시도 필요`, 409 뒤에는 `충돌 · 관리자 선택 필요` 의미로 표시한다. 서버 응답 수신과 로컬 서버 ID/revision 매핑 저장까지 끝나 `SYNCED`가 된 경우에만 `서버 동기화 완료` 또는 `서버에 반영했습니다`를 표시한다. 다른 비완료 큐가 남아 있는 전체 재시도 요약도 완료로 표시하지 않는다.
 
 알림함은 사용자 업무 알림을 우선하므로 자동 재시도 요약을 새 알림으로 만들지 않는다.
+
+## backlog 운영 상태와 처리 기준
+
+`ServerSyncBacklogAuditService`와 `FlowNote.Windows.SyncMigrationTool --backlog-audit`는 공통 SQLite를 초기화하거나 복제하지 않고 읽기 전용으로 전수 분류한다. 결과 JSON은 `run_id`, DB 실행 전후 SHA-256, 큐 canonical hash, 무결성/FK, 중복, 지원 대상 고아 mapping/report source, 모든 비완료 row의 운영 상태와 다음 조치를 보존한다.
+
+| 운영 상태 | 담당자 | 처리 기한 | 자동 재시도 한도 | 수동 종결 기준 |
+| --- | --- | --- | --- | --- |
+| 보존 구 형식 | 동기화 관리자 | 30일 안에 전환 또는 보존 종결 승인 | 0회 | 원천/hash를 유지하고 승인자·사유·전환/보존 결정을 기록 |
+| 선행 조건 대기 | 문서 운영 담당자 | 다음 동기화 배치 전 선행 ID 확인 | 서버 호출 0회 | 선행 항목 수렴 뒤 자동 재평가하며 임의 폐기 금지 |
+| 재시도 가능 | 동기화 운영 담당자 | 4시간 안 | 최대 5회 | 5회 뒤 실제 오류·응답을 붙여 수동 조치로 승격 |
+| 수동 조치 필요 | 서버 또는 문서 운영 담당자 | 1영업일 안 | 0회 | URL·인증·원본 복구 증거 또는 복구 불가 승인 사유 기록 |
+| reconciliation 충돌 | 승인 관리자 | 7일 안 | 0회 | 양쪽 hash, 관리자 사유, 승인자, `APPROVED_CONFLICT` 또는 승인된 재시도 상태 기록 |
+
+`sync-convergence-20260726-01` 최종 읽기 전용 감사 시점에는 비완료 1,184건이 모두 운영 상태와 다음 조치를 가졌고 사유 없는 `FAILED/PENDING`은 0건이었다. 분포는 보존 구 형식 829건, 선행 조건 대기 301건, 수동 조치 필요 28건, reconciliation 충돌 26건이다. 422 의미 검증 거부와 403 권한 거부는 무의미한 자동 재시도 대신 수동 조치로 분류한다. idempotency key 중복과 mapping 복합키 중복, 지원 대상 orphan mapping/report source는 모두 0건이었다. 별도로 과거 스모크가 서버 ID를 직접 source로 저장한 `legacy-report-source-*` 40건은 현재 지원 source와 합치지 않고 보존 구 형식으로 유지한다. DB 실행 전후 SHA-256은 같았다. 같은 run의 신규 정상 mutation 13건은 모두 `SYNCED`였고 재실행 뒤 서버 문서·버전·mutation receipt·revision 증가는 0건이었다. 이 수치는 누적 DB의 시점 기록이므로 회귀 테스트의 고정 기대값으로 사용하지 않는다.
 
 ## 2026-07-10 실패 큐 분류와 잔여 PENDING 정리
 
