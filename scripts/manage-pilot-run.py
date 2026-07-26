@@ -14,9 +14,14 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts import pilot_windows_server_evidence as windows_server_evidence
+except ModuleNotFoundError:
+    import pilot_windows_server_evidence as windows_server_evidence
+
 
 RUN_ID_PATTERN = re.compile(r"^PILOT-\d{8}-\d{4}-[A-Z0-9_-]+-\d{3}$")
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 RUN_PROFILES = ("full_pilot", "windows_server_rehearsal")
 RESPONSIBILITY_AREAS = (
     "server",
@@ -65,6 +70,8 @@ WINDOWS_SERVER_REHEARSAL_GATES = (
     "permission_negative_tests",
     "disk_full_stop_and_rollback",
     "long_network_outage_recovery",
+    "server_restore_separate_pc",
+    "wpf_restore_separate_pc",
     "approved_package_rollback",
 )
 REQUIRED_ROLES = ("admin", "line_foreman", "team_lead", "team_member")
@@ -179,7 +186,7 @@ def validate_run_id(value: str) -> str:
 
 
 def empty_record(run_id: str, profile: str) -> dict[str, Any]:
-    return {
+    record = {
         "schema_version": SCHEMA_VERSION,
         "run_id": run_id,
         "profile": profile,
@@ -300,6 +307,8 @@ def empty_record(run_id: str, profile: str) -> dict[str, Any]:
             for area in REQUIRED_APPROVALS
         },
     }
+    record["authorization"].update(windows_server_evidence.authorization_defaults())
+    return record
 
 
 def write_json(path: Path, value: dict[str, Any]) -> None:
@@ -348,6 +357,13 @@ def prepare(args: argparse.Namespace) -> int:
             "- 익명 서버 ID:\n- 익명 Windows 클라이언트 ID:\n"
             "- 익명 Android 단말 ID:\n- 이전 승인 서버 버전:\n"
             "- 이전 승인 WPF 버전:\n- 이전 승인 Android 버전:\n"
+            "- 이전 승인 서버 패키지 SHA-256/signer SHA-256:\n"
+            "- 이전 승인 WPF MSI SHA-256/signer SHA-256:\n"
+            "- 서버 복구 승인 RTO/RPO(초):\n"
+            "- WPF 복구 승인 RTO/RPO(초):\n"
+            "- rollback 승인 RTO/RPO(초):\n"
+            "- rollback 의사결정권자 역할 ID:\n"
+            "- 비상 연락 흐름 ID:\n"
             "- 운영 승인자/서명:\n- 보안 승인자/서명:\n"
             "- 현장 승인자/서명:\n"
         ),
@@ -404,6 +420,8 @@ def prepare(args: argparse.Namespace) -> int:
     for path, header in templates.items():
         if not path.exists():
             path.write_text(header, encoding="utf-8")
+    if args.profile == "windows_server_rehearsal":
+        windows_server_evidence.write_templates(run_root, args.run_id)
     print(f"파일럿 실행 폴더 준비: {run_root}")
     print(f"기계 판정표: {record_path}")
     print("초기 판정: PENDING")
@@ -1195,6 +1213,16 @@ def verify(args: argparse.Namespace) -> int:
                 run_root,
                 gates.get("wpf_restore_separate_pc", {}).get("evidence"),
                 "wpf",
+            )
+        )
+    else:
+        failures.extend(
+            windows_server_evidence.verification_failures(
+                run_root,
+                args.run_id,
+                record,
+                evidence_failures,
+                restore_comparison_failures,
             )
         )
 
