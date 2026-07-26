@@ -78,6 +78,20 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
                     "wpf": "wpf-approved-1",
                     "android": "",
                 },
+                "rollback_decision_authority": "ROLE-ROLLBACK-01",
+                "emergency_contact_flow": "FLOW-EMERGENCY-01",
+                "recovery_objectives": {
+                    target: {"rto_seconds": 300, "rpo_seconds": 60}
+                    for target in manage_pilot_run.windows_server_evidence.RECOVERY_TARGETS
+                },
+                "previous_approved_packages": {
+                    target: {
+                        "version": f"{target}-approved-1",
+                        "sha256": "a" * 64,
+                        "signer_sha256": "b" * 64,
+                    }
+                    for target in ("server", "wpf")
+                },
                 "evidence": ["proof.txt"],
             }
         )
@@ -103,9 +117,243 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
                     "evidence": ["proof.txt"],
                 }
             )
+        self.write_windows_server_raw_evidence(record)
         return record
 
-    def test_prepare_creates_schema_three_authorization_templates(self) -> None:
+    def write_csv(self, relative_path: str, fieldnames: list[str], rows: list[dict]) -> None:
+        path = self.run_root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def write_restore_comparison(self, target: str) -> str:
+        restore_root = self.run_root / "backup-restore"
+        restore_root.mkdir(parents=True, exist_ok=True)
+        manifests = {}
+        for phase, machine_id in (("before", "SOURCE-01"), ("after", "RESTORE-02")):
+            path = restore_root / f"{target}-{phase}.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "run_id": self.run_id,
+                        "target": target,
+                        "phase": phase,
+                        "machine_id": machine_id,
+                        "backup_set_id": "BACKUP-001",
+                        "restore_approval_id": "APPROVAL-001",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manifests[phase] = path
+        relative = f"backup-restore/{target}-comparison.json"
+        (self.run_root / relative).write_text(
+            json.dumps(
+                {
+                    "run_id": self.run_id,
+                    "target": target,
+                    "result": "PASS",
+                    "before_manifest": f"backup-restore/{target}-before.json",
+                    "after_manifest": f"backup-restore/{target}-after.json",
+                    "before_manifest_sha256": manage_pilot_run.sha256(
+                        manifests["before"]
+                    ),
+                    "after_manifest_sha256": manage_pilot_run.sha256(
+                        manifests["after"]
+                    ),
+                    "source_machine_id": "SOURCE-01",
+                    "restore_machine_id": "RESTORE-02",
+                    "backup_set_id": "BACKUP-001",
+                    "restore_approval_id": "APPROVAL-001",
+                    "table_counts_equal": True,
+                    "table_count_mismatch_count": 0,
+                    "file_manifest_equal": True,
+                    "file_mismatch_counts": {
+                        "missing": 0,
+                        "extra": 0,
+                        "size": 0,
+                        "sha256": 0,
+                    },
+                    "database_checks": {
+                        "before_quick_check_ok": True,
+                        "before_integrity_check_ok": True,
+                        "before_foreign_key_violation_count": 0,
+                        "after_quick_check_ok": True,
+                        "after_integrity_check_ok": True,
+                        "after_foreign_key_violation_count": 0,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return relative
+
+    def write_windows_server_raw_evidence(self, record: dict) -> None:
+        windows = manage_pilot_run.windows_server_evidence
+        package_rows = []
+        for role in windows.PACKAGE_ROLES:
+            previous_target = (
+                "server"
+                if role == "server_previous"
+                else "wpf" if role == "wpf_msi_previous" else None
+            )
+            baseline = (
+                record["authorization"]["previous_approved_packages"][previous_target]
+                if previous_target
+                else {
+                    "version": "candidate-2",
+                    "sha256": "c" * 64,
+                    "signer_sha256": "d" * 64,
+                }
+            )
+            package_rows.append(
+                {
+                    "pilot_run_id": self.run_id,
+                    "artifact_role": role,
+                    "artifact_name": f"{role}.bin",
+                    "version": baseline["version"],
+                    "sha256": baseline["sha256"],
+                    "approved_sha256": baseline["sha256"],
+                    "signer_sha256": baseline["signer_sha256"],
+                    "approved_signer_sha256": baseline["signer_sha256"],
+                    "signature_status": "PASS",
+                    "chain_status": "PASS",
+                    "timestamp_status": "PASS",
+                    "secret_count": 0,
+                    "sqlite_count": 0,
+                    "customer_file_count": 0,
+                    "result": "PASS",
+                    "evidence": "proof.txt",
+                }
+            )
+        self.write_csv(
+            "packages/windows-server-packages.csv",
+            list(package_rows[0]),
+            package_rows,
+        )
+        install_rows = [
+            {
+                "pilot_run_id": self.run_id,
+                "case_id": case,
+                "machine_id": "WIN-01",
+                "package_version": "candidate-2",
+                "exit_code": "0",
+                "data_preserved": "TRUE",
+                "observed_version": (
+                    "NOT_INSTALLED" if case == "wpf_remove" else "candidate-2"
+                ),
+                "result": "PASS",
+                "evidence": "proof.txt",
+            }
+            for case in windows.INSTALL_CASES
+        ]
+        self.write_csv("install/windows-lifecycle.csv", list(install_rows[0]), install_rows)
+        runtime_rows = [
+            {
+                "pilot_run_id": self.run_id,
+                "case_id": case,
+                "machine_id": "WIN-01",
+                "dependency_mode": "framework-dependent",
+                "detected_version": "NOT_INSTALLED" if case.endswith("_absent") else "10.0",
+                "expected_behavior_observed": "TRUE",
+                "result": "PASS",
+                "evidence": "proof.txt",
+            }
+            for case in windows.RUNTIME_CASES
+        ]
+        self.write_csv(
+            "install/windows-runtime-matrix.csv", list(runtime_rows[0]), runtime_rows
+        )
+        fault_rows = [
+            {
+                "pilot_run_id": self.run_id,
+                "case_id": case,
+                "machine_id": "WIN-01",
+                "failure_detected": "TRUE",
+                "unauthorized_client_blocked": "TRUE",
+                "approved_client_reconnected": "TRUE",
+                "normal_work_resumed": "TRUE",
+                "resumed_at": "2026-07-22T17:00:00+09:00",
+                "change_approval_id": "CHANGE-001",
+                "result": "PASS",
+                "evidence": "proof.txt",
+            }
+            for case in windows.FAULT_CASES
+        ]
+        self.write_csv(
+            "scenario-results/windows-server-fault-injections.csv",
+            list(fault_rows[0]),
+            fault_rows,
+        )
+        recovery_rows = [
+            {
+                "pilot_run_id": self.run_id,
+                "target": target,
+                "approved_rto_seconds": 300,
+                "measured_rto_seconds": 240,
+                "approved_rpo_seconds": 60,
+                "measured_rpo_seconds": 30,
+                "resumed_at": "2026-07-22T17:30:00+09:00",
+                "result": "PASS",
+                "evidence": "proof.txt",
+            }
+            for target in windows.RECOVERY_TARGETS
+        ]
+        self.write_csv(
+            "scenario-results/recovery-objectives.csv",
+            list(recovery_rows[0]),
+            recovery_rows,
+        )
+        workflow_rows = [
+            {
+                "pilot_run_id": self.run_id,
+                "workflow_id": workflow,
+                "audit_event_id": f"AUDIT-{workflow}",
+                "checked_at": "2026-07-22T17:40:00+09:00",
+                "result": "PASS",
+                "evidence": "proof.txt",
+            }
+            for workflow in windows.ROLLBACK_WORKFLOWS
+        ]
+        self.write_csv(
+            "scenario-results/rollback-workflows.csv",
+            list(workflow_rows[0]),
+            workflow_rows,
+        )
+        promotion_rows = []
+        for target in windows.PROMOTION_TARGETS:
+            baseline = record["authorization"]["previous_approved_packages"][target]
+            promotion_rows.append(
+                {
+                    "pilot_run_id": self.run_id,
+                    "target": target,
+                    "candidate_version": "candidate-2",
+                    "previous_version": baseline["version"],
+                    "previous_sha256": baseline["sha256"],
+                    "previous_signer_sha256": baseline["signer_sha256"],
+                    "coordinated_backup_set_id": "BACKUP-001",
+                    "promotion_approval_id": "PROMOTION-001",
+                    "rollback_decision_authority": "ROLE-ROLLBACK-01",
+                    "emergency_contact_flow_id": "FLOW-EMERGENCY-01",
+                    "result": "PASS",
+                    "evidence": "proof.txt",
+                }
+            )
+        self.write_csv(
+            "approvals/package-promotion-and-rollback.csv",
+            list(promotion_rows[0]),
+            promotion_rows,
+        )
+        for target in ("server", "wpf"):
+            comparison = self.write_restore_comparison(target)
+            record["gates"][f"{target}_restore_separate_pc"]["evidence"] = [
+                "proof.txt",
+                comparison,
+            ]
+
+    def test_prepare_creates_schema_four_windows_server_templates(self) -> None:
         run_id = "PILOT-20260722-1310-LOCALCHECK-002"
         with contextlib.redirect_stdout(io.StringIO()):
             result = manage_pilot_run.prepare(
@@ -121,7 +369,7 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
             (self.evidence_root / run_id / "pilot-run.json").read_text(encoding="utf-8")
         )
         self.assertEqual(0, result)
-        self.assertEqual(3, record["schema_version"])
+        self.assertEqual(4, record["schema_version"])
         self.assertEqual("windows_server_rehearsal", record["profile"])
         self.assertTrue(
             (
@@ -134,6 +382,14 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
         self.assertTrue(
             (
                 self.evidence_root / run_id / "approvals" / "rehearsal-authorization.md"
+            ).is_file()
+        )
+        self.assertTrue(
+            (
+                self.evidence_root
+                / run_id
+                / "packages"
+                / "windows-server-packages.csv"
             ).is_file()
         )
 
@@ -168,6 +424,64 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
         self.assertIn(
             "책임 영역 server는 담당자와 독립 승인자가 달라야 합니다.",
             report["failures"],
+        )
+
+    def test_windows_package_hash_mismatch_fails_closed(self) -> None:
+        record = self.complete_record()
+        path = self.run_root / "packages" / "windows-server-packages.csv"
+        with path.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.DictReader(stream))
+        rows[0]["sha256"] = "e" * 64
+        self.write_csv(
+            "packages/windows-server-packages.csv", list(rows[0]), rows
+        )
+
+        result, report = self.verify(record)
+
+        self.assertEqual(1, result)
+        self.assertTrue(
+            any(
+                "패키지 hash가 승인값과 다릅니다" in item
+                for item in report["failures"]
+            )
+        )
+
+    def test_recovery_measurement_over_approved_rto_fails_closed(self) -> None:
+        record = self.complete_record()
+        path = self.run_root / "scenario-results" / "recovery-objectives.csv"
+        with path.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.DictReader(stream))
+        rows[0]["measured_rto_seconds"] = "301"
+        self.write_csv(
+            "scenario-results/recovery-objectives.csv", list(rows[0]), rows
+        )
+
+        result, report = self.verify(record)
+
+        self.assertEqual(1, result)
+        self.assertTrue(
+            any("실측 RTO가 승인 목표를 초과" in item for item in report["failures"])
+        )
+
+    def test_rollback_requires_all_six_workflows_in_same_run(self) -> None:
+        record = self.complete_record()
+        path = self.run_root / "scenario-results" / "rollback-workflows.csv"
+        with path.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.DictReader(stream))
+        rows = [row for row in rows if row["workflow_id"] != "audit_log"]
+        rows[0]["pilot_run_id"] = "PILOT-20260722-1300-OTHER-001"
+        self.write_csv(
+            "scenario-results/rollback-workflows.csv", list(rows[0]), rows
+        )
+
+        result, report = self.verify(record)
+
+        self.assertEqual(1, result)
+        self.assertTrue(
+            any("audit_log 행은 정확히 1개" in item for item in report["failures"])
+        )
+        self.assertTrue(
+            any("run_id가 현재 실행과 다릅니다" in item for item in report["failures"])
         )
 
     def test_full_pilot_prepare_creates_android_raw_evidence_templates(self) -> None:

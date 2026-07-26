@@ -133,9 +133,22 @@ Start-Transcript -Path (Join-Path $RunRoot "install\windows-server-rehearsal.txt
 | `long_network_outage_recovery` | 승인 방화벽 규칙으로 사전 승인 시간 동안 단절 후 복구; 실패/재시도 원시 로그 보존 | `scenario-results/long-outage-*`, `server-logs/long-outage-*`, `windows-logs/long-outage-*` | 단절 중 허위 성공 없음, 재연결 뒤 중복·손실·권한 우회 0, 핵심 업무 재개 |
 | `disk_full_stop_and_rollback` | 운영 볼륨이 아닌 격리된 제한 용량 시험 볼륨/snapshot에서 DB·파일 저장 공간 부족 주입 | `scenario-results/disk-full-*`, `integrity/disk-full-*`, `incident-and-rollback/disk-full-*` | 부분 파일·부분 commit 없이 fail-closed, 원시 실패 증거 보존, 공간/이전 승인본 복구 뒤 DB 무결성과 업무 재개 |
 | `permission_negative_tests` | 비활성·권한 없는 계정의 로그인, 문서/controlled copy/관리 API 접근 거부 확인 | `scenario-results/permission-negative-*` | 모든 미승인 접근 거부, 로컬 계정 우회와 파일 유출 0 |
-| `approved_package_rollback` | 사전 확정한 이전 승인 서버/WPF 패키지와 같은 시점 데이터 세트로 복귀 | `incident-and-rollback/server-*`, `incident-and-rollback/wpf-*` | 이전 승인 버전 식별자/hash 일치, DB 무결성 정상, 로그인·목록·열람·FieldComment 재개 |
+| `server_restore_separate_pc`, `wpf_restore_separate_pc` | `verify-pilot-restore.py capture/compare`로 원본과 별도 PC의 DB+파일 세트를 비교 | `backup-restore/server-*`, `backup-restore/wpf-*` | 별도 익명 장비, 같은 백업·승인 ID, DB row/quick/integrity/FK와 파일 경로·크기·SHA-256 불일치 0 |
+| `approved_package_rollback` | 사전 확정한 이전 승인 서버/WPF 패키지와 같은 시점 데이터 세트로 복귀 | `incident-and-rollback/server-*`, `incident-and-rollback/wpf-*`, `scenario-results/rollback-workflows.csv` | 이전 승인 버전/hash/signer 일치, 승인 RTO/RPO 이내, 로그인·문서 열람·FieldComment·동기화·알림·감사 로그 재개 |
 
 디스크 부족 시험은 실제 운영 볼륨을 임의로 채우지 않는다. 격리된 시험 볼륨 또는 되돌릴 수 있는 승인 snapshot만 사용하고, 주입 전 중단 승인·백업·복귀 명령을 먼저 검토한다. 네트워크·방화벽·인증서 변경도 원복 명령과 접근 경로를 먼저 확보한다. 실패 시 transcript와 실패 상태를 먼저 보존하며 같은 파일명으로 재실행 결과를 덮어쓰지 않는다.
+
+schema version 4의 `windows_server_rehearsal`은 게이트의 `PASS`만 신뢰하지 않는다. 다음 원시 CSV의 모든 필수 행이 현재 `run_id`이고, 각 행이 실행 폴더 안의 실제 증거 파일을 가리켜야 한다.
+
+| 원시 판정표 | 필수 범위 |
+| --- | --- |
+| `packages/windows-server-packages.csv` | 후보 서버 패키지, 후보 WPF MSI/EXE, 이전 승인 서버 패키지/WPF MSI의 hash·signer·chain·timestamp와 비밀/SQLite/고객 파일 혼입 0건 |
+| `install/windows-lifecycle.csv` | 서버 신규 설치, WPF 신규 설치·업그레이드·제거·재설치 |
+| `install/windows-runtime-matrix.csv` | .NET Desktop Runtime 설치/미설치, WebView2 설치/미설치 |
+| `scenario-results/windows-server-fault-injections.csv` | 작업 스케줄러, 재부팅, 인증서 갱신·폐기·만료·미신뢰, 포트 차단, DNS/고정 주소 변경, 시간 오차, 재부팅 중 전송, 업그레이드 중단, 잘못된 패키지 서명 |
+| `scenario-results/recovery-objectives.csv` | 서버 복구, WPF 복구, rollback의 승인·실측 RTO/RPO와 업무 재개 시각 |
+| `approvals/package-promotion-and-rollback.csv` | 후보 승격 승인, 이전 승인 버전/hash/signer, 같은 시점 통합 백업 세트, rollback 결정권자와 비상 연락 흐름 |
+| `scenario-results/rollback-workflows.csv` | 로그인, 문서 열람, FieldComment, 동기화, 알림, 감사 로그 |
 
 모든 게이트 완료 후 운영·보안·현장 승인자가 `pilot-run.json`과 원시 증거를 대조해 서명한 다음 판정한다.
 
@@ -144,6 +157,34 @@ Stop-Transcript
 py -3 scripts\manage-pilot-run.py verify --run-id $RunId --evidence-root $EvidenceRoot
 if ((Get-Content (Join-Path $RunRoot "pilot-verification.json") -Raw | ConvertFrom-Json).result -ne "PASS") { throw "파일럿 판정 실패" }
 ```
+
+### 설치 지원 환경 matrix
+
+아래 조합은 지원을 선언하는 표가 아니라 리허설에서 채워야 할 최소 matrix다. 운영체제 build와 runtime 정확한 버전은 현장 승인값으로 기록하며, 실기하지 않은 조합은 지원 완료로 표시하지 않는다.
+
+| Windows 역할 | OS/아키텍처 | WPF 패키지 | .NET Desktop Runtime | WebView2 | 필수 실기 |
+| --- | --- | --- | --- | --- | --- |
+| 서버 전용 PC | 승인 Windows Server 또는 Windows Pro x64 | 미설치 | 서버 패키지 방식에 따른 승인 Python/runtime | 해당 없음 | 신규 설치, 작업 스케줄러, 무로그인 재부팅 자동 시작, HTTPS |
+| 서버+관리 WPF PC | 승인 Windows x64 | framework-dependent MSI | WPF 대상 major 설치 | Evergreen 설치 | 서버 재부팅과 WPF 재연결, PDF 열람 |
+| 관리/현장 WPF PC | 승인 Windows x64 | framework-dependent MSI | 설치/미설치 두 조건 | 설치/미설치 두 조건 | 신규 설치, 업그레이드, 제거, 재설치, 의존성 안내 |
+| 관리/현장 WPF PC | 승인 Windows x64 | self-contained MSI | 별도 Desktop Runtime 비필수 | 설치/미설치 두 조건 | 신규 설치, 업그레이드, 제거, 재설치, PDF 실패 안내/복구 |
+
+`install/windows-runtime-matrix.csv`에는 `dotnet_desktop_present`, `dotnet_desktop_absent`, `webview2_present`, `webview2_absent`가 각각 정확히 한 행 있어야 한다. 실제 지원 범위는 이 네 행과 설치 수명주기 원시 결과가 모두 PASS인 조합으로 제한한다.
+
+### 패키지 검증과 승격
+
+서버 배포 묶음이 ZIP처럼 Authenticode를 직접 담을 수 없는 형식이면 패키지 SHA-256을 적은 별도 release manifest를 Authenticode로 서명한다. 이때 서버 패키지의 signer는 해당 detached manifest의 인증서 SHA-256 지문이다. manifest와 패키지는 한 승인 단위이며 하나만 교체할 수 없다.
+
+배포 준비 PC에서 후보와 이전 승인본을 모두 확보한 뒤 `scripts\verify-windows-server-packages.ps1`을 실행한다. 스크립트는 `signtool verify /pa /all /v`, signer 인증서 SHA-256, 승인 hash, timestamp, 포함 파일 목록을 대조하고 `packages/windows-server-packages.csv`와 artifact별 transcript를 같은 `run_id`에 남긴다. 기존 실행 결과가 있으면 덮어쓰지 않는다.
+
+1. 운영·보안 책임자가 후보 서버 패키지와 WPF MSI/EXE의 hash·signer를 독립 경로로 대조한다.
+2. 비밀, SQLite/WAL/SHM, `storage`, `Files`, 고객 문서 혼입이 0건인지 확인한다.
+3. 설치 matrix와 장애 주입, 별도 PC 복구를 완료한다.
+4. rollback 결정권자가 이전 승인 서버/WPF 버전·hash·signer와 같은 시점 통합 백업 세트를 고정한다.
+5. 운영·보안·현장 최종 승인 후에만 후보를 승인 저장소의 배포 가능 상태로 승격한다.
+6. 어느 단계든 결과가 바뀌면 현재 run을 중단하고 새 `run_id`로 처음부터 대조한다.
+
+rollback 결정권자와 비상 연락망은 실제 이름이나 연락처가 아니라 `pilot-run.json`의 익명 역할 ID와 승인된 외부 연락 흐름 ID로 연결한다. 장애 감지자는 배포를 중단하고 운영 책임자에게 알리며, rollback 결정권자가 데이터 보호 책임자와 동일 백업 세트를 확인한 뒤 복귀를 승인한다. 보안 사고 가능성이 있으면 보안 승인자가 연결 차단과 인증서 폐기를 결정하고, 현장 책임자는 업무 중단·재개 시각을 확인한다. 실제 연락처는 Git이 아닌 접근 통제 운영 저장소에서 관리한다.
 
 ## 서버 설치 절차
 
@@ -688,9 +729,11 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 | EXE/MSI 서명 인증서·hash 전달 경로 | 미확정 | `<run_id>/packages/windows-*` | 대기 |
 | 서버 DB+`storage` 백업 주기·보존·RPO/RTO | 미확정 | `<run_id>/approvals/data-protection-*` | 대기 |
 | WPF DB+`Files` 백업 주기·보존·RPO/RTO | 미확정 | `<run_id>/approvals/data-protection-*` | 대기 |
+| rollback RTO/RPO·의사결정권자 역할 ID | 미확정 | `<run_id>/approvals/package-promotion-and-rollback.csv`, `scenario-results/recovery-objectives.csv` | 착수 금지 |
+| 비상 연락 흐름 ID·운영/보안/현장 escalation | 미확정 | `<run_id>/approvals/rehearsal-authorization-*` | 착수 금지 |
 | 복구 PC·복구 경로·복구 승인자 | 미확정 | `<run_id>/backup-restore/*` | 대기 |
 
-현장 값이 확정되면 예시 명령과 실제 값이 충돌하지 않는지 검토하고 이 표, 설치 전후 점검표, 파일럿 manifest를 함께 갱신한다. 현장별 선호는 공통 기본값으로 올리지 않고 설정·교육 기록으로 분리한다.
+2026-07-26 현재 이 저장소에는 실제 승인자, 운영 인증서, 승인 장비, 이전 승인 패키지, RTO/RPO 또는 비상 연락 흐름의 승인 원시 증거가 제공되지 않았다. 따라서 값을 추정해 확정하지 않으며 이 표의 상태는 `착수 금지/대기`다. 현장 값이 확정되면 예시 명령과 실제 값이 충돌하지 않는지 검토하고 이 표, 설치 전후 점검표, 파일럿 manifest를 함께 갱신한다. 현장별 선호는 공통 기본값으로 올리지 않고 설정·교육 기록으로 분리한다.
 
 ### 서버 복구 순서
 

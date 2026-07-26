@@ -102,6 +102,12 @@ macOS ARM64 보조 run `p0-baseline-144-macos-precheck-20260722-002`에서 FastA
 
 `verify-android-release.sh`의 신규 `android-delivery.csv`도 동일한 8개 condition과 `elapsed_seconds`·`allowed_seconds` 열을 사용하도록 배포 문서와 Android README를 갱신했다. 정상·Doze는 30초, 5분 단절은 `30 + page_seconds`를 강제하고, 누락·서버 receipt 중복은 0건, crash 경계 표시 중복은 최대 1건만 허용한다. 이번 요청은 문서 갱신이므로 실제 고객 유사망 파일럿, APK 설치/rollback, 전체 테스트·빌드는 실행하지 않았고 기존 테스트 DB·로그·산출물은 삭제하지 않았다.
 
+## 2026-07-26 Windows/서버 리허설 원시 증거 판정 강화
+
+`manage-pilot-run.py` schema version 4는 `windows_server_rehearsal`에서 이전 승인 패키지 hash/signer, 서버 복구·WPF 복구·rollback RTO/RPO, rollback 결정권자와 비상 연락 흐름을 사전 승인값으로 요구한다. 후보·이전 승인 서버/WPF 패키지, 설치/runtime matrix, 13개 장애 주입, 별도 PC 복구 comparison, 같은 시점 rollback 백업 세트와 rollback 후 6개 핵심 업무의 원시 결과를 같은 `run_id`로 대조한다. 게이트 요약만 PASS로 바꾸거나 원시값 사이의 hash·signer·버전·백업 세트·RTO/RPO가 다르면 FAIL이다.
+
+`python3 -m unittest discover -s scripts -p 'test_*.py'`로 scripts 단위 테스트 16건을 실행해 모두 통과했다. Markdown 상대 링크와 Python 문법 검사, `git diff --check`도 통과했다. 현재 환경에는 PowerShell/signtool, 서명 패키지, Windows 시험 장비, 고객 유사망과 실제 승인값이 없으므로 패키지 실서명 검증과 설치·재부팅·인증서·방화벽·복구 실기는 실행하지 않았고 실제 리허설 판정은 `착수 금지/대기`다.
+
 ## 2026-07-22 우선순위 5 Windows/서버 리허설 판정 분리
 
 `manage-pilot-run.py` schema version 3은 기존 전체 범위 `full_pilot`과 Windows/서버 고객 유사망 리허설용 `windows_server_rehearsal`을 분리한다. 두 프로필 모두 server, certificate, windows, android, data protection, field operations, support, AI의 담당자와 독립 승인자, 영역별 범위·중단 기준·증거 저장소·승인 원시 증거를 요구한다. 통합 사전 승인에는 익명 시험 장비 ID, 5개 이상 중단 기준, 보존 기한, 이전 승인 버전이 있어야 하며 담당자와 승인자가 같으면 FAIL이다.
