@@ -897,6 +897,7 @@ def test_scope_readiness_counts_approved_ground_truth_and_category_gaps() -> Non
         initial_smoke_ground_truth_count = initial_body["smoke_regression_readiness"]["ground_truth_count"]
         assert initial_body["ground_truth_gap"] == max(48 - initial_ground_truth_count, 0)
         assert initial_body["ground_truth_per_category_scenario_minimum"] == 2
+        assert initial_body["human_sample_review_ready"] is initial_body["human_sample_review"]["complete"]
         assert initial_body["provider_review_ready"] is False
         assert initial_body["provider_start_ready"] is False
         assert initial_body["scope"]["customer_scope"] == "DEFAULT"

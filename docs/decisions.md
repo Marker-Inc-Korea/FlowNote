@@ -1,6 +1,6 @@
 # FlowNote 설계 결정
 
-이 문서는 2026-07-22 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
+이 문서는 2026-07-26 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
 
 ## 2026-07-15. FieldComment 원천 불변과 단계형 검토 결정
 
@@ -32,11 +32,19 @@
 - 최종 승인 시 8범주×3유형×2건 coverage와 각 사례 snapshot hash를 검증한다. 승인본은 수정하지 않고 대체 version을 만들어 이전 version을 `SUPERSEDED`로 남긴다.
 - 모든 provider 준비도 판정은 최신 `FIELD_READINESS` 승인 dataset version과 정확히 결합된 evaluation `run_id`를 요구한다. 다른 version이나 ad-hoc 평가의 성공을 재사용하지 않는다.
 - AI 질의 감사 조회와 보존 조작은 서버 설정의 고객·현장 scope에 고정한다. 원문과 저장 응답의 기본 보존은 90일이며 단일 즉시 만료를 허용하되, 근거 번호가 있는 활성 `ai_query_legal_holds`는 정기·수동·단일 만료보다 우선한다. hold 설정과 해제는 원문을 복제하지 않고 불변 감사 metadata로 누적한다.
-- 실제 현장 준비도는 승인된 `ANONYMOUS_FIELD`/`PILOT` 사례와 `FIELD_READINESS` dataset만 사용한다. 합성 `SMOKE_REGRESSION` dataset과 evaluation run은 같은 준비도 판정이나 분자에 합치지 않는다. 동일 snapshot 두 번 평가와 사람 2인의 독립 표본 검토가 모두 끝나기 전 provider 심사는 `PENDING`이다.
+- `ANONYMOUS_FIELD`와 `PILOT`은 `FIELD_READINESS` 계열로 분리 보존하되 승인 `FIELD_READINESS` dataset 구성과 provider 착수 48건에는 고객 승인을 받은 `ANONYMOUS_FIELD`만 사용한다. 합성 `SMOKE_REGRESSION` dataset, `PILOT` 사례와 evaluation run은 실제 익명 현장 분자에 합치지 않는다. 동일 snapshot 두 번 평가와 사람 2인의 독립 표본 검토가 모두 끝나기 전 provider 심사는 `PENDING`이다.
 - 승인본 평가가 없으면 `PENDING`, 결합 평가가 임계값에 미달하면 `FAIL`이다. 두 상태 모두 외부 provider 경계만 닫고 후보 재생성, 내부 품질 점검, 문서·FieldComment·작업순서·보고서 입력은 계속 허용한다.
 - 포함·제외 reference 모두 재검증 가능한 content hash와 근거 설명을 갖고, 제외 reference는 제외 사유도 필수다. provenance는 전체 source snapshot hash와 두 승인자를 질문 원본과 별도로 보존한다.
 - WPF 사례 운영은 서버 후보 선택과 수동 제외 원천 입력을 분리하고 `includePending=true`로 첫 승인 대기 사례를 조회한다. 개별 사례의 등록·2차 승인은 보고서 작성 role에 허용하되 동일 사용자 재승인은 금지한다. dataset 최종 승인·폐기는 더 좁은 승인 role을 유지한다.
 - dataset ID 기반 구성 변경·상태 전이는 고객·현장·DB scope를 다시 확인하고, 대체 대상은 라인·준비도 계열·dataset key까지 같은 불변 version만 허용한다. 승인자 분리 규칙은 API 검사뿐 아니라 DB 제약으로도 유지한다.
+
+## 2026-07-26. 실제 현장 표본 검토는 24칸 독립 판정과 제3 합의를 사용
+
+- 승인된 실제 익명 현장 dataset snapshot을 동일하게 통과한 두 평가 run이 있어야 사람 표본 검토를 시작한다.
+- 표본은 결과 확인 전에 계획 참조를 고정하고 8범주×3유형의 각 칸에서 1건씩 총 24건을 선택한다. 두 검토자는 같은 표본에서 인용 trace·의미, 상충 표시와 권한 경계를 독립 판정한다.
+- 두 decision snapshot이 같으면 완료한다. 하나라도 다르면 불일치 case를 `PENDING_CONSENSUS`로 보존하고 앞선 두 사람과 다른 제3 검토자가 해당 case만 합의해야 provider 착수 게이트를 연다.
+- 독립 판정과 제3 합의는 `ai_field_readiness_sample_reviews`에 추가 row로 남긴다. 원래 판정, dataset/evaluation 결합과 sample hash는 수정하거나 삭제하지 않는다.
+- 실제 현장 dataset은 분기마다 교체 필요를 검토하고 scope·권한·원천 hash·검색 정책·고객 승인 변경이나 누출 발견 시 즉시 새 불변 version으로 교체한다.
 
 ## 2026-06-30. 현재 문서 기준
 

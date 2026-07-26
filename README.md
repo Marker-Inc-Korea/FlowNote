@@ -117,6 +117,7 @@ flowchart LR
 - 제외 사유와 데이터 품질 지표
 - 독립 2인 승인 ground-truth 사례
 - 불변 dataset version과 오프라인 회귀 평가
+- 실제 익명 현장 24칸 독립 표본 검토와 불일치 제3 합의
 - 외부 전송 승인, 프롬프트 수명주기, kill switch, 한도·보존·감사·legal hold
 
 실제 외부 AI provider를 사용하는 사용자 검색·요약 화면은 아직 운영 범위에 포함되지 않는다. 외부 호출 경계는 기본 비활성 상태이며, 현재는 근거 데이터와 안전장치를 검증하는 단계다.
@@ -152,9 +153,9 @@ flowchart LR
 
 | 검증 대상 | 결과 |
 | --- | --- |
-| FastAPI OpenAPI | 루트 `GET /` 포함 128개 method/path |
-| SQLAlchemy ORM | 59개 테이블 |
-| FastAPI 테스트 | 150개 통과 |
+| FastAPI OpenAPI | 루트 `GET /` 포함 130개 method/path |
+| SQLAlchemy ORM | 60개 테이블 |
+| FastAPI 테스트 | 151개 통과 |
 | Python 정적 검사 | Ruff 통과 |
 | WPF Core 테스트 | 45개 통과 |
 | WPF 앱 빌드 | 경고 0개, 오류 0개 |

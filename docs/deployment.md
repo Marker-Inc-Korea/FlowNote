@@ -245,6 +245,22 @@ FLOWNOTE_AI_RETENTION_SCHEDULER_INTERVAL_SECONDS=3600
 
 AI 항목은 provider adapter 안전장치와 운영 제어면의 scope 설정이다. 운영 `.env`에서는 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`, `FLOWNOTE_AI_PROVIDER_ADAPTER_MODE=DISABLED`, `FLOWNOTE_AI_NETWORK_TEST_SCOPE_ENABLED=false`를 유지한다. generic 네트워크 adapter는 `environment=test`와 `NETWORK_TEST`, 명시 시험 scope, HTTPS endpoint, 환경 변수 자격증명을 모두 요구하므로 운영 배포에서 활성화할 수 없다. provider/model/scope 값이나 provider 자격증명 설정 여부는 기능 활성 허가가 아니다. 후보 read model API와 `system-admin` 전용 운영 제어 API는 호출 플래그와 무관하게 동작한다. provider 자격증명은 `FLOWNOTE_AI_<PROVIDER>_API_KEY` 형식의 서버 환경/비밀 저장소에만 두고 DB·문서·클라이언트 설정에 기록하지 않는다.
 
+### Provider 증거 대장과 운영 책임
+
+provider별 실제 값은 고객 승인 ground-truth dataset, 동일 snapshot 2회 평가, 독립 표본 검토와 보안 문서의 12개 심사가 모두 끝난 뒤 고객별 비공개 운영대장에 기록한다. 이 저장소에는 provider 계약서, 고객 승인서, 자격증명, 담당자 개인정보나 실제 고객 경로를 넣지 않는다. 아직 값이 정해지지 않은 항목은 다음과 같이 `PENDING`으로 유지한다.
+
+| 운영 항목 | 실제 값 기록 기준 | 현재 상태 |
+| --- | --- | --- |
+| provider/model | 승인 대상의 정확한 provider·model·review version | `PENDING` |
+| 증거 위치 | 접근 통제된 계약·보안·시험·고객 승인 대장의 문서 ID/version | `PENDING` |
+| 기술/보안/법무/고객 책임자 | 실제 사용자 ID, 대리자, 승인 시각과 연락 절차 | `PENDING` |
+| 승인 만료·재검토 | 고객 승인 만료일, 계약·보안 재검토일, 사전 알림 시점 | `PENDING` |
+| 철회 책임 | 기능 플래그·kill switch·전송 승인 철회를 수행하고 호출 0건을 확인할 담당자 | `PENDING` |
+| 비용 모니터링 | 일 요청·동시성·일 비용 상한, 경보 수신자, 초과 시 중지 책임자 | `PENDING` |
+| 장애 모니터링 | timeout·429·5xx 경보 기준, provider 상태 확인자, 중단·복구 승인자 | `PENDING` |
+
+승인 만료, 고객 철회, 계약·처리 지역·학습 사용 조건 변경, 비용 상한 초과, 반복 timeout·429·5xx, 정보 유출 의심 중 하나가 발생하면 외부 호출을 먼저 중지하고 관련 승인을 철회한다. 복구는 새 review version과 고객 승인, 동일 snapshot 회귀를 다시 통과한 뒤 별도 승인한다. 현재는 운영 provider client와 실제 책임자가 없으므로 이 절의 어떤 항목도 `PASS`로 해석하지 않는다.
+
 5. 서버 실행 래퍼를 저장소에서 운영 폴더로 복사하고 작업 스케줄러에 등록한다. 등록 명령은 관리자 PowerShell에서 실행한다.
 
 ```powershell
@@ -567,6 +583,8 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - `C:\FlowNote\Server\.env`에 운영 DB 경로, storage 경로, 토큰 비밀값이 들어 있고 기본 개발 비밀값이 남아 있지 않은지 확인한다.
 - `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`인지 확인한다. 현재 코드는 운영 provider 연동 완료 상태가 아니다.
 - `system-admin`으로 WPF `AI 운영` 화면에 접속해 전역/현장 kill switch가 의도한 상태인지 확인한다. 외부 호출을 준비하지 않은 설치는 기능 플래그뿐 아니라 kill switch도 켠 상태를 유지한다.
+- 실제 익명 현장 dataset 48건, 동일 snapshot 평가 2회, 24칸 독립 표본 검토와 필요 시 제3 합의가 없으면 provider 증거 대장의 모든 미확정 값을 `PENDING`으로 유지한다.
+- provider 착수 심사 시에는 비공개 운영대장의 증거 위치, 승인 만료·철회 책임자, 비용·장애 모니터링 책임자와 경보 기준이 실제 값으로 정해졌는지 확인한다. 하나라도 미확정이면 외부 호출을 활성화하지 않는다.
 - 전송 승인과 활성 프롬프트가 시험 범위·만료일·목적·원천 유형에 맞는지 확인하고, 감사 CSV 내보내기는 현장 정책상 필요한 경우에만 허용한다.
 - 만료 보존 작업은 서버 시작과 함께 기본 1시간 간격 스케줄러가 실행한다. 운영 주기와 담당자를 정하고, 즉시 처리가 필요하면 `system-admin`의 API/WPF 실행 기능을 사용한다.
 - 고객·현장 scope의 단일 AI 질의 즉시 만료와 legal hold 설정·해제는 `system-admin`의 WPF `AI 운영 > 감사·보존` 또는 서버 API로 수행한다. hold에는 승인된 근거 번호와 사유를 기록하고, 해제 전에는 주기·일괄·단일 만료가 해당 질의를 처리하지 않는지 확인한다.
@@ -801,7 +819,7 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 현재 코드는 FastAPI 150건·WPF Core 45건을 수집하지만 스크립트 guard는 149건·43건이므로, guard를 보정하기 전에는 표준 실행이 현재 소스의 유효 기준선이 될 수 없다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 현재 코드는 FastAPI 151건·WPF Core 45건을 수집하지만 스크립트 guard는 149건·43건이므로, guard를 보정하기 전에는 표준 실행이 현재 소스의 유효 기준선이 될 수 없다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 

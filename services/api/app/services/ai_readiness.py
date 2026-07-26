@@ -17,6 +17,7 @@ from app.db.models import (
     AISearchGroundTruthCase,
     AISearchGroundTruthProvenance,
 )
+from app.services.ai_field_readiness_reviews import sample_review_summary
 
 
 SOURCE_MINIMUMS = {
@@ -112,7 +113,10 @@ def scope_readiness(
         ground_truth_statement = ground_truth_statement.where(AISearchGroundTruthCase.line_scope == line_scope)
     ground_truth_rows = session.execute(ground_truth_statement).all()
     field_ground_truth = [
-        case for case, provenance in ground_truth_rows if provenance.readiness_track == "FIELD_READINESS"
+        case
+        for case, provenance in ground_truth_rows
+        if provenance.readiness_track == "FIELD_READINESS"
+        and provenance.data_classification == "ANONYMOUS_FIELD"
     ]
     smoke_ground_truth = [
         case for case, provenance in ground_truth_rows if provenance.readiness_track == "SMOKE_REGRESSION"
@@ -178,6 +182,7 @@ def scope_readiness(
                 "ranking_stable": run.ranking_stable,
                 "case_count": metrics.get("case_count", 0),
                 "passed_count": metrics.get("passed_count", 0),
+                "source_coverage_complete": metrics.get("source_coverage_complete", False),
                 "top_k_inclusion_rate": metrics.get("top_k_inclusion_rate", metrics.get("recall_at_k", 0)),
                 "excluded_source_violation": metrics.get("excluded_source_violation", 0),
                 "permission_leak_violation": metrics.get("permission_leak_violation", 0),
@@ -266,6 +271,7 @@ def scope_readiness(
         and latest_evaluation["candidate_identity_stable"]
         and latest_evaluation["ranking_stable"]
         and latest_evaluation["case_count"] >= GROUND_TRUTH_MINIMUM
+        and latest_evaluation["source_coverage_complete"]
         and latest_evaluation["top_k_inclusion_rate"] >= TOP_K_INCLUSION_THRESHOLD
         and latest_evaluation["excluded_source_violation"] == 0
         and latest_evaluation["permission_leak_violation"] == 0
@@ -275,7 +281,37 @@ def scope_readiness(
         and latest_evaluation["conflict_disclosure_rate"] >= CONFLICT_DISCLOSURE_THRESHOLD
     )
     dataset_ready = latest_approved_dataset is not None
-    ready = source_ready and ground_truth_ready and dataset_ready and evaluation_ready and provider_review_ready
+    human_sample_review = (
+        sample_review_summary(
+            session,
+            dataset_version_id=latest_approved_dataset.dataset_version_id,
+            dataset_snapshot_hash=latest_approved_dataset.snapshot_hash or "",
+        )
+        if latest_approved_dataset is not None
+        else {
+            "status": "NOT_STARTED",
+            "evaluation_run_id": None,
+            "dataset_snapshot_hash": None,
+            "independent_reviewer_count": 0,
+            "independent_review_ids": [],
+            "independent_reviewer_ids": [],
+            "sample_hash": None,
+            "sample_case_count": 0,
+            "disagreement_case_keys": [],
+            "consensus_review_id": None,
+            "consensus_reviewer_id": None,
+            "complete": False,
+        }
+    )
+    human_sample_review_ready = bool(human_sample_review["complete"])
+    ready = (
+        source_ready
+        and ground_truth_ready
+        and dataset_ready
+        and evaluation_ready
+        and human_sample_review_ready
+        and provider_review_ready
+    )
     readiness_failures = []
     if not source_ready:
         readiness_failures.append("SOURCE_COVERAGE_INCOMPLETE")
@@ -285,6 +321,8 @@ def scope_readiness(
         readiness_failures.append("NO_APPROVED_DATASET_VERSION")
     if dataset_ready and not evaluation_ready:
         readiness_failures.append("LATEST_APPROVED_DATASET_EVALUATION_MISSING_OR_FAILED")
+    if not human_sample_review_ready:
+        readiness_failures.append("INDEPENDENT_SAMPLE_REVIEW_INCOMPLETE")
     if not provider_review_ready:
         readiness_failures.append("PROVIDER_REVIEW_INCOMPLETE")
     return {
@@ -366,6 +404,8 @@ def scope_readiness(
         "ground_truth_ready": ground_truth_ready,
         "evaluation_ready": evaluation_ready,
         "dataset_ready": dataset_ready,
+        "human_sample_review": human_sample_review,
+        "human_sample_review_ready": human_sample_review_ready,
         "provider_review_ready": provider_review_ready,
         "provider_start_ready": ready,
         "ai_provider_readiness_status": (

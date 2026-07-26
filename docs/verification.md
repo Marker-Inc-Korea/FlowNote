@@ -10,7 +10,7 @@
 | `run_id` | 없음 | 없음 |
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
-| FastAPI | 현재 코드 150건, 스크립트 guard 149건으로 불일치 | 동일 |
+| FastAPI | 현재 코드 151건, 스크립트 guard 149건으로 불일치 | 동일 |
 | WPF Core | 현재 코드 45건, 스크립트 guard 43건으로 불일치 | 동일 |
 | WPF 앱 | 목표 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
@@ -21,6 +21,14 @@
 보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 이 실행과 앞선 실패 실행의 DB·로그·요약은 삭제하거나 덮어쓰지 않는다. 현재 작업 환경은 macOS ARM64이므로 Windows x64 무생략 실행과 같은 환경에서의 경고 재확인은 수행할 수 없다.
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
+
+## 2026-07-26 후보 7 실제 현장 AI ground-truth 기초 강화
+
+고객 승인 `ANONYMOUS_FIELD` 48건만 provider 착수 분자에 포함하고 합성/시험·`PILOT`은 제외하도록 준비도 집계를 좁혔다. 동일 dataset snapshot의 완전히 같은 평가 2회가 있어야 24개 범주·유형 칸의 사람 표본 검토를 시작하며 첫 검토 판정은 두 번째 제출 전 다른 사용자에게 숨긴다. 두 독립 decision이 다르면 제3 사용자의 합의 row가 앞선 두 review ID와 불일치 case를 연결해야 `human_sample_review_ready=true`가 된다. SQL 검증기도 표본 scope·역할 분리·미합의 불일치를 검사한다.
+
+현재 코드에서 루트 `GET /`를 포함한 OpenAPI 130개 method/path 조합, SQLAlchemy ORM 60개 테이블과 중복 없는 FastAPI pytest 151건을 확인했다. 서버 README의 API 표 130개는 OpenAPI와 누락·초과 0건이다. `python -m ruff check services/api/app services/api/tests scripts/verify-ai-field-readiness.py`와 AI·DB 집중 회귀 14건이 통과했다. 커밋 전 재검증에서는 관련 회귀 9건이 123.48초에 통과했고 이어 누적 보존 SQLite를 그대로 사용한 FastAPI 전체 151건이 256.43초에 모두 통과했다.
+
+집중 회귀를 처음 병렬 실행했을 때 두 pytest 프로세스가 같은 보존 SQLite를 사용해 `database is locked` 2건을 남겼고 누적 DB에 완료된 표본 검토가 이미 있는 상황을 초기 상태로 가정한 assertion 1건도 발견했다. 해당 실패 기록과 DB는 삭제하지 않았다. 테스트를 누적 데이터에 안전하게 고친 뒤 중복 프로세스가 없는 단일 실행으로 관련 회귀를 다시 통과했다. 실제 고객 승인 dataset, 실제 책임자와 검증 계정이 없으므로 `verify-ai-field-readiness.py`의 실제 운영 실행은 하지 않았으며 provider 심사와 외부 호출은 `PENDING`이다. Windows 공통 DB 스모크·WPF·Android·실단말 검증도 이번 실행 범위가 아니므로 무생략 통합 기준선은 계속 `대기`다.
 
 ## 2026-07-26 작업 102 현재 코드·문서 재대조
 

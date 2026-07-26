@@ -197,6 +197,8 @@ AI 자동 조언과 자동 의사결정은 아직 범위에 넣지 않는다. �
 
 `ai_ground_truth_dataset_cases`는 dataset version과 사례의 다대다 구성 snapshot이다. version 안에서 사례 ID와 case key는 각각 유일하며, 구성 시 사례 본문·범주/유형·포함/제외 근거·허용 순위·`as_of`의 hash를 저장한다. 최종 승인 시 현재 사례 hash와 다시 비교한다. `ai_evaluation_dataset_bindings`는 평가 `run_id`를 정확한 `dataset_version_id`와 dataset snapshot hash에 1:1로 결합한다. 따라서 준비도 판정과 과거 run 조회는 최신 사례 집합을 추정하지 않고 당시 승인본으로 재현한다.
 
+`ai_field_readiness_sample_reviews`는 승인된 실제 익명 현장 dataset snapshot과 48건 평가 run에 묶인 사람 표본 검토다. 독립 검토는 24개 범주·유형 칸마다 1건씩 같은 표본을 사용하며 표본 계획 참조·case key 집합·sample hash와 인용 trace/의미, 상충 표시, 권한 경계 판정을 보존한다. 같은 run에서 같은 사용자의 중복 검토를 막고 독립 검토자는 서로 달라야 한다. 두 decision hash가 다르면 제3 사용자의 `CONSENSUS` row가 앞선 review pair를 연결해야 완료된다. 원래 두 row와 불일치 판정은 수정하거나 삭제하지 않는다.
+
 `ai_search_evaluation_runs`는 실행 ID/라벨, 요청자와 평가 대상 사용자, ID/hash·순위 안정성, scope, precision@k, recall@k/top-k 포함률, 제외 원천 노출, 권한 누출, 존재하지 않는 인용, citation trace·의미 일치, 상충 표시율과 provider 착수 가능 지표를 보존한다. `ai_search_evaluation_cases`는 질문, 기대/실제 `SUFFICIENT` 또는 `INSUFFICIENT_EVIDENCE`, 기대 근거 JSON, 실제 candidate/source/version/trace/content hash snapshot, 제외 근거와 사유, ranking hash를 보존한다. 테스트와 사람형 스모크의 회귀 기록이므로 자동 삭제하지 않는다.
 
 `ai_provider_onboarding_reviews`는 고객·현장·provider·model·review version을 유일하게 묶는다. 체크리스트 JSON은 계약 조건, provider 보존 기간, 학습 사용 여부, 전송/처리 지역, TLS, timeout, 429, 5xx, 비용 한도, kill switch, 법무 승인, 고객 승인을 각각 `PENDING`/`PASS`/`FAIL`과 근거 참조로 보존한다. 기술·보안·법무·고객 상태는 `PENDING`/`APPROVED`/`REJECTED`, 검토자와 시각을 별도로 기록한다. 새 심사는 기존 row를 덮어쓰지 않고 새 version을 만들며 체크리스트 전건 `PASS`와 네 영역 `APPROVED`가 함께 있어야 착수 승인이다.

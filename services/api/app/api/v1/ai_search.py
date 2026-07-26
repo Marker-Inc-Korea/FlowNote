@@ -1321,6 +1321,20 @@ def approve_ground_truth_case(
     if duplicate is not None:
         raise HTTPException(status_code=409, detail="caseKey already exists in this customer/site scope")
     content_filter = load_sensitive_filter(session, settings)
+    case_text_filter = content_filter.filter("\n".join(
+        [payload.question, payload.provenance_note]
+        + [reference.rationale or "" for reference in payload.expected_evidence]
+        + [
+            value
+            for reference in payload.expected_excluded
+            for value in (reference.rationale or "", reference.exclusion_reason or "")
+        ]
+    ))
+    if not case_text_filter.allowed or case_text_filter.detections:
+        raise HTTPException(
+            status_code=422,
+            detail="ground-truth question and provenance must contain no sensitive or identifying data",
+        )
     rebuild_ai_search_candidates(session, content_filter)
     candidates = session.scalars(select(AISearchCandidate).order_by(AISearchCandidate.candidate_id)).all()
     approver = session.scalar(select(UserAccount).where(UserAccount.user_id == current_user.user_id))
@@ -1655,6 +1669,13 @@ def _replace_dataset_members(
     }
     if len(provenance) != len(unique_ids):
         raise HTTPException(status_code=422, detail="all cases must be approved in the dataset readiness track")
+    if dataset.readiness_track == "FIELD_READINESS" and any(
+        item.data_classification != "ANONYMOUS_FIELD" for item in provenance.values()
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="FIELD_READINESS datasets require only ANONYMOUS_FIELD cases",
+        )
     session.query(AIGroundTruthDatasetCase).filter(
         AIGroundTruthDatasetCase.dataset_version_id == dataset.dataset_version_id
     ).delete(synchronize_session=False)
@@ -2190,6 +2211,7 @@ def run_evaluation(
         and quality_gate_passed
         and source_coverage_complete and readiness.missing_reviewed_count == 0
         and scoped_readiness["source_ready"] and scoped_readiness["ground_truth_ready"]
+        and scoped_readiness["human_sample_review_ready"]
         and scoped_readiness["provider_review_ready"]
         and selected_dataset is not None
         and len(selected_ground_truth_ids) == len(case_results)

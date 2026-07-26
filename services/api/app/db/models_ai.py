@@ -288,6 +288,68 @@ class AIEvaluationDatasetBinding(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class AIFieldReadinessSampleReview(Base):
+    """Independent human review of one immutable field-readiness evaluation snapshot."""
+
+    __tablename__ = "ai_field_readiness_sample_reviews"
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_version_id",
+            "evaluation_run_id",
+            "reviewer_id",
+            name="uq_ai_field_sample_review_actor",
+        ),
+        UniqueConstraint("review_pair_hash", name="uq_ai_field_sample_review_pair"),
+        CheckConstraint(
+            "review_role IN ('INDEPENDENT', 'CONSENSUS')",
+            name="ck_ai_field_sample_review_role",
+        ),
+        CheckConstraint(
+            "(review_role = 'INDEPENDENT' AND review_pair_hash IS NULL "
+            "AND resolved_review_ids_json IS NULL) OR "
+            "(review_role = 'CONSENSUS' AND review_pair_hash IS NOT NULL "
+            "AND resolved_review_ids_json IS NOT NULL)",
+            name="ck_ai_field_sample_review_pair_role",
+        ),
+        Index(
+            "ix_ai_field_sample_review_dataset_run",
+            "dataset_version_id",
+            "evaluation_run_id",
+            "review_role",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    review_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    dataset_version_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("ai_ground_truth_dataset_versions.dataset_version_id"),
+        nullable=False,
+        index=True,
+    )
+    evaluation_run_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("ai_search_evaluation_runs.run_id"),
+        nullable=False,
+        index=True,
+    )
+    dataset_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    review_role: Mapped[str] = mapped_column(String(20), nullable=False)
+    reviewer_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id"), nullable=False
+    )
+    sampling_plan_reference: Mapped[str] = mapped_column(String(500), nullable=False)
+    sample_case_keys_json: Mapped[str] = mapped_column(Text, nullable=False)
+    sample_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    findings_json: Mapped[str] = mapped_column(Text, nullable=False)
+    decision_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    review_pair_hash: Mapped[str | None] = mapped_column(String(64))
+    resolved_review_ids_json: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class AIPromptVersion(Base):
     __tablename__ = "ai_prompt_versions"
     __table_args__ = (

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.ai_field_readiness_reviews import router as ai_field_readiness_reviews_router
 from app.api.v1.ai_search import router as ai_search_router
 from app.api.v1.ai_queries import router as ai_queries_router
 from app.api.v1.ai_operations import router as ai_operations_router
@@ -35,6 +36,7 @@ api_v1_router.include_router(terminal_devices_router)
 api_v1_router.include_router(work_sequences_router)
 api_v1_router.include_router(reports_router)
 api_v1_router.include_router(ai_search_router)
+api_v1_router.include_router(ai_field_readiness_reviews_router)
 api_v1_router.include_router(ai_queries_router)
 api_v1_router.include_router(ai_operations_router)
 api_v1_router.include_router(channels_router)
