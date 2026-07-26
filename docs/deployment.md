@@ -138,7 +138,7 @@ Start-Transcript -Path (Join-Path $RunRoot "install\windows-server-rehearsal.txt
 
 디스크 부족 시험은 실제 운영 볼륨을 임의로 채우지 않는다. 격리된 시험 볼륨 또는 되돌릴 수 있는 승인 snapshot만 사용하고, 주입 전 중단 승인·백업·복귀 명령을 먼저 검토한다. 네트워크·방화벽·인증서 변경도 원복 명령과 접근 경로를 먼저 확보한다. 실패 시 transcript와 실패 상태를 먼저 보존하며 같은 파일명으로 재실행 결과를 덮어쓰지 않는다.
 
-schema version 4의 `windows_server_rehearsal`은 게이트의 `PASS`만 신뢰하지 않는다. 다음 원시 CSV의 모든 필수 행이 현재 `run_id`이고, 각 행이 실행 폴더 안의 실제 증거 파일을 가리켜야 한다.
+schema version 5의 `windows_server_rehearsal`은 게이트의 `PASS`만 신뢰하지 않는다. 다음 원시 CSV의 모든 필수 행이 현재 `run_id`이고, 각 행이 실행 폴더 안의 실제 증거 파일을 가리켜야 한다.
 
 | 원시 판정표 | 필수 범위 |
 | --- | --- |

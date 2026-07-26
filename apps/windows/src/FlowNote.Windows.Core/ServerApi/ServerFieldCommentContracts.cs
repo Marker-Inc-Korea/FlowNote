@@ -348,6 +348,23 @@ public sealed record ServerFieldCommentBulkReviewItemResponse
 
     [JsonPropertyName("field_comment")]
     public ServerFieldCommentResponse? FieldComment { get; init; }
+
+    public string ResultLabel => Success switch
+    {
+        true => "성공",
+        false => "실패",
+        null when Allowed => "실행 가능",
+        _ => "실행 불가"
+    };
+
+    public string RecoveryGuidance => FailureCode switch
+    {
+        "FIELD_COMMENT_STALE_REVIEW_REVISION" => "다른 검토가 먼저 반영됨 · 최신 revision 조회 후 다시 선택",
+        "HTTP_403" => "권한이 변경되었거나 부족함 · 역할/채널 권한 확인",
+        "IDEMPOTENCY_KEY_REUSED" => "같은 mutation key의 요청 내용이 다름 · 원래 요청으로 결과 복구",
+        null or "" => Success is true ? "서버 revision/receipt 반영 완료" : "사전검증 통과",
+        _ => "실패 원인을 해소한 뒤 실패 항목만 새 mutation key로 재실행"
+    };
 }
 
 public sealed record ServerFieldCommentBulkReviewResponse
@@ -363,6 +380,24 @@ public sealed record ServerFieldCommentBulkReviewResponse
 
     [JsonPropertyName("items")]
     public IReadOnlyList<ServerFieldCommentBulkReviewItemResponse> Items { get; init; } = [];
+}
+
+public sealed record ServerFieldCommentQualityItemResponse
+{
+    [JsonPropertyName("issue_type")]
+    public string IssueType { get; init; } = string.Empty;
+
+    [JsonPropertyName("comment_id")]
+    public string? CommentId { get; init; }
+
+    [JsonPropertyName("report_id")]
+    public string? ReportId { get; init; }
+
+    [JsonPropertyName("age_days")]
+    public int? AgeDays { get; init; }
+
+    [JsonPropertyName("detail")]
+    public string Detail { get; init; } = string.Empty;
 }
 
 public sealed record ServerFieldCommentAttachmentFileResponse

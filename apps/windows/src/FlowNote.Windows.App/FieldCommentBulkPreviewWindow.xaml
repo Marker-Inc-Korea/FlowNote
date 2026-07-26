@@ -19,16 +19,18 @@
                 <DataGridTextColumn Header="FieldComment" Binding="{Binding CommentId}" Width="210" />
                 <DataGridTextColumn Header="현재" Binding="{Binding FromStatus}" Width="90" />
                 <DataGridTextColumn Header="대상" Binding="{Binding TargetStatus}" Width="90" />
+                <DataGridTextColumn Header="결과" Binding="{Binding ResultLabel}" Width="82" />
                 <DataGridCheckBoxColumn Header="허용" Binding="{Binding Allowed}" Width="60" />
                 <DataGridTextColumn Header="실패 코드" Binding="{Binding FailureCode}" Width="160" />
                 <DataGridTextColumn Header="실패 원인" Binding="{Binding FailureReason}" Width="*" />
+                <DataGridTextColumn Header="복구 안내" Binding="{Binding RecoveryGuidance}" Width="260" />
                 <DataGridTextColumn Header="revision" Binding="{Binding ReviewRevision}" Width="76" />
                 <DataGridTextColumn Header="receipt" Binding="{Binding Receipt}" Width="170" />
             </DataGrid.Columns>
         </DataGrid>
         <StackPanel Grid.Row="2" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Width="100" Height="32" Margin="0,0,8,0" Content="취소" IsCancel="True" />
-            <Button Width="140" Height="32" Content="허용 항목 실행" IsDefault="True" Click="ExecuteButton_Click" />
+            <Button x:Name="CancelButton" Width="100" Height="32" Margin="0,0,8,0" Content="취소" IsCancel="True" />
+            <Button x:Name="ExecuteButton" Width="140" Height="32" Content="허용 항목 실행" IsDefault="True" Click="ExecuteButton_Click" />
         </StackPanel>
     </Grid>
 </Window>

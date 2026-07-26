@@ -481,6 +481,8 @@ public sealed partial class FlowNoteLocalDatabase
                 source_version_id TEXT NULL,
                 trace_id TEXT NULL,
                 source_hash_sha256 TEXT NULL,
+                source_revision INTEGER NULL,
+                snapshot_verified INTEGER NOT NULL DEFAULT 0,
                 relation_type TEXT NULL,
                 title TEXT NULL,
                 detail TEXT NULL,
@@ -553,6 +555,8 @@ public sealed partial class FlowNoteLocalDatabase
         EnsureColumn(connection, "server_id_mappings", "server_file_hash_sha256", "TEXT NULL");
         EnsureColumn(connection, "report_sources", "trace_id", "TEXT NULL");
         EnsureColumn(connection, "report_sources", "source_hash_sha256", "TEXT NULL");
+        EnsureColumn(connection, "report_sources", "source_revision", "INTEGER NULL");
+        EnsureColumn(connection, "report_sources", "snapshot_verified", "INTEGER NOT NULL DEFAULT 0");
         using (var reportSourceBackfill = connection.CreateCommand())
         {
             reportSourceBackfill.CommandText = """

@@ -21,7 +21,7 @@ except ModuleNotFoundError:
 
 
 RUN_ID_PATTERN = re.compile(r"^PILOT-\d{8}-\d{4}-[A-Z0-9_-]+-\d{3}$")
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 RUN_PROFILES = ("full_pilot", "windows_server_rehearsal")
 RESPONSIBILITY_AREAS = (
     "server",
@@ -115,6 +115,7 @@ UX_CLASSIFICATIONS = (
     "device_or_mdm_setting",
     "site_layout_or_training",
 )
+UX_DECISIONS = ("ACCEPTED", "REJECTED", "REVIEW")
 ZERO_TOLERANCE_METRICS = (
     "data_loss",
     "permission_bypass",
@@ -244,7 +245,10 @@ def empty_record(run_id: str, profile: str) -> dict[str, Any]:
                 "approved_maximum_seconds": None,
                 "retry_count": None,
                 "help_request_count": None,
+                "screen_transition_count": None,
                 "critical_blockers": None,
+                "time_limit_approval_id": "",
+                "time_limit_approved_at": "",
                 "evidence": [],
             }
             for role in REQUIRED_ROLES
@@ -398,7 +402,7 @@ def prepare(args: argparse.Namespace) -> int:
         ),
         run_root / "scenario-results" / "role-metrics.csv": (
             "role,participant_id,scenario_id,required,success,elapsed_seconds,"
-            "retry_count,help_request_count,critical_blocker,evidence\n"
+            "retry_count,help_request_count,screen_transitions,critical_blocker,evidence\n"
         ),
         run_root / "scenario-results" / "restore-fault-injections.csv": (
             "injection_id,target,automatic_send_blocked,polling_blocked,"
@@ -409,12 +413,12 @@ def prepare(args: argparse.Namespace) -> int:
         run_root / "observations" / "role-observations.csv": (
             "observation_id,role,scenario_id,device_id,location,network,gloves,"
             "one_hand,lighting,terminal_position,input_moment,terminology_confusion,"
-            "button_confusion,actionable,success,elapsed_seconds,retry_count,"
-            "help_request_count,notes,evidence\n"
+            "button_confusion,photo_capture,short_memo,signal_input,actionable,success,"
+            "elapsed_seconds,retry_count,help_request_count,screen_transitions,notes,evidence\n"
         ),
         run_root / "observations" / "development-items.csv": (
-            "item_id,observation_id,priority,classification,title,acceptance_criteria,"
-            "owner,due_date,status,evidence\n"
+            "item_id,observation_id,decision,decision_basis,priority,classification,title,"
+            "acceptance_criteria,owner,due_date,status,evidence\n"
         ),
     }
     for path, header in templates.items():
@@ -722,12 +726,13 @@ def role_metrics_csv_failures(
             row for row in role_rows if csv_bool(row.get("required")) is True
         ]
         for scenario_id in required_scenarios:
-            if not any(
+            scenario_attempts = sum(
                 (row.get("scenario_id") or "").strip() == scenario_id
                 for row in required_rows
-            ):
+            )
+            if scenario_attempts < 2:
                 failures.append(
-                    f"역할 {role}의 필수 시나리오 {scenario_id} 분모가 없습니다."
+                    f"역할 {role}의 필수 시나리오 {scenario_id}는 동일 조건으로 2회 이상 반복해야 합니다."
                 )
         if any(csv_bool(row.get("required")) is None for row in role_rows):
             failures.append(f"역할 {role}의 required 값은 TRUE/FALSE여야 합니다.")
@@ -735,6 +740,7 @@ def role_metrics_csv_failures(
         elapsed_values: list[float] = []
         retries = 0
         help_requests = 0
+        screen_transitions = 0
         blockers = 0
         successful = 0
         for index, row in enumerate(required_rows, start=1):
@@ -753,7 +759,8 @@ def role_metrics_csv_failures(
                 elapsed = float((row.get("elapsed_seconds") or "").strip())
                 retry = int((row.get("retry_count") or "").strip())
                 help_count = int((row.get("help_request_count") or "").strip())
-                if elapsed < 0 or retry < 0 or help_count < 0:
+                screen_count = int((row.get("screen_transitions") or "").strip())
+                if elapsed < 0 or retry < 0 or help_count < 0 or screen_count < 0:
                     raise ValueError
             except ValueError:
                 failures.append(
@@ -763,6 +770,7 @@ def role_metrics_csv_failures(
                 elapsed_values.append(elapsed)
                 retries += retry
                 help_requests += help_count
+                screen_transitions += screen_count
             failures.extend(
                 evidence_failures(
                     run_root, [(row.get("evidence") or "").strip()], label
@@ -777,6 +785,7 @@ def role_metrics_csv_failures(
             ("successful_attempts", successful, "성공 건수"),
             ("retry_count", retries, "재시도 합계"),
             ("help_request_count", help_requests, "도움 요청 합계"),
+            ("screen_transition_count", screen_transitions, "화면 이동 합계"),
             ("critical_blockers", blockers, "치명적 blocker 합계"),
         )
         for field, raw_value, label in comparisons:
@@ -843,6 +852,9 @@ def ux_csv_failures(run_root: Path, expected: dict[str, Any]) -> list[str]:
             "input_moment",
             "terminology_confusion",
             "button_confusion",
+            "photo_capture",
+            "short_memo",
+            "signal_input",
         ):
             if not nonempty(row.get(field)):
                 failures.append(
@@ -864,6 +876,9 @@ def ux_csv_failures(run_root: Path, expected: dict[str, Any]) -> list[str]:
             "one_hand",
             "terminology_confusion",
             "button_confusion",
+            "photo_capture",
+            "short_memo",
+            "signal_input",
             "success",
         ):
             if csv_bool(row.get(field)) is None:
@@ -874,7 +889,8 @@ def ux_csv_failures(run_root: Path, expected: dict[str, Any]) -> list[str]:
             elapsed = float((row.get("elapsed_seconds") or "").strip())
             retry = int((row.get("retry_count") or "").strip())
             help_count = int((row.get("help_request_count") or "").strip())
-            if elapsed < 0 or retry < 0 or help_count < 0:
+            screen_count = int((row.get("screen_transitions") or "").strip())
+            if elapsed < 0 or retry < 0 or help_count < 0 or screen_count < 0:
                 raise ValueError
         except ValueError:
             failures.append(
@@ -913,11 +929,16 @@ def ux_csv_failures(run_root: Path, expected: dict[str, Any]) -> list[str]:
         if not item_id or item_id in item_ids:
             failures.append(f"UX 개발 항목 {index}의 item_id가 없거나 중복입니다.")
         item_ids.add(item_id)
-        if observation_id not in actionable_ids:
+        if observation_id not in observation_ids:
             failures.append(
-                f"UX 개발 항목 {item_id or index}가 조치 가능 관찰을 참조하지 않습니다."
+                f"UX 개발 항목 {item_id or index}가 존재하지 않는 관찰을 참조합니다."
             )
         linked_observations.append(observation_id)
+        decision = (row.get("decision") or "").strip()
+        if decision not in UX_DECISIONS:
+            failures.append(
+                f"UX 개발 항목 {item_id or index}의 수용/불수용/검토 결정이 올바르지 않습니다."
+            )
         priority = (row.get("priority") or "").strip()
         classification = (row.get("classification") or "").strip()
         if priority not in priority_counts:
@@ -932,7 +953,14 @@ def ux_csv_failures(run_root: Path, expected: dict[str, Any]) -> list[str]:
             )
         else:
             classification_counts[classification] += 1
-        for field in ("title", "acceptance_criteria", "owner", "due_date", "status"):
+        for field in (
+            "decision_basis",
+            "title",
+            "acceptance_criteria",
+            "owner",
+            "due_date",
+            "status",
+        ):
             if not nonempty(row.get(field)):
                 failures.append(
                     f"UX 개발 항목 {item_id or index}의 {field} 값이 없습니다."
@@ -950,11 +978,11 @@ def ux_csv_failures(run_root: Path, expected: dict[str, Any]) -> list[str]:
                 f"UX 개발 항목 {item_id or index}",
             )
         )
-    if set(linked_observations) != actionable_ids or len(linked_observations) != len(
-        actionable_ids
+    if set(linked_observations) != observation_ids or len(linked_observations) != len(
+        observation_ids
     ):
         failures.append(
-            "모든 조치 가능 관찰은 정확히 하나의 UX 개발 항목으로 변환되어야 합니다."
+            "모든 현장 관찰은 수용/불수용/검토와 근거를 가진 개발 항목 하나로 변환되어야 합니다."
         )
     if expected.get("actionable_findings") != len(actionable_ids):
         failures.append("UX 조치 가능 관찰 원시 건수와 요약값이 다릅니다.")
@@ -1262,6 +1290,8 @@ def verify(args: argparse.Namespace) -> int:
             failures.append(
                 f"역할 {role}의 성공률이 승인 기준에 미달하거나 미측정입니다."
             )
+        elif minimum_rate < 95 or rate < 95:
+            failures.append(f"역할 {role}의 성공률은 95% 이상이어야 합니다.")
         if (
             isinstance(required, int)
             and required > 0
@@ -1304,12 +1334,19 @@ def verify(args: argparse.Namespace) -> int:
         for count_name, count_label in (
             ("retry_count", "재시도"),
             ("help_request_count", "도움 요청"),
+            ("screen_transition_count", "화면 이동"),
         ):
             count = metric.get(count_name)
             if not isinstance(count, int) or count < 0:
                 failures.append(f"역할 {role}의 {count_label} 횟수가 미측정입니다.")
         if metric.get("critical_blockers") != 0:
             failures.append(f"역할 {role}의 치명적 blocker가 0이 아닙니다.")
+        if not nonempty(metric.get("time_limit_approval_id")) or not nonempty(
+            metric.get("time_limit_approved_at")
+        ):
+            failures.append(
+                f"역할 {role}의 실제 관찰값 기반 시간 한도 승인 ID/시각이 없습니다."
+            )
         failures.extend(
             evidence_failures(run_root, metric.get("evidence"), f"역할 {role}")
         )

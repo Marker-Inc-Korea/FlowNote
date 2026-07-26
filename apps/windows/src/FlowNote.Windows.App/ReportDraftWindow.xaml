@@ -9,7 +9,7 @@
         Background="{StaticResource WindowBackgroundBrush}">
     <Grid Margin="14">
         <Grid.RowDefinitions>
-            <RowDefinition Height="92" />
+            <RowDefinition Height="126" />
             <RowDefinition Height="*" />
             <RowDefinition Height="180" />
             <RowDefinition Height="30" />
@@ -22,6 +22,10 @@
                 CornerRadius="4"
                 Padding="12">
             <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="70" />
+                    <RowDefinition Height="32" />
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="260" />
                     <ColumnDefinition Width="*" />
@@ -53,6 +57,19 @@
                         Margin="0,22,0,0"
                         Content="문서 저장"
                         Click="SaveDocumentButton_Click" />
+                <DockPanel Grid.Row="1"
+                           Grid.ColumnSpan="4"
+                           Margin="0,4,0,0">
+                    <Button DockPanel.Dock="Right"
+                            Width="116"
+                            Height="28"
+                            Content="고정 근거 확인"
+                            Click="ShowVerificationButton_Click" />
+                    <TextBlock x:Name="SourceSnapshotTextBlock"
+                               Margin="0,5,12,0"
+                               Foreground="{StaticResource SecondaryTextBrush}"
+                               Text="초안 생성 시 서버에서 원천 version/revision/hash를 고정합니다." />
+                </DockPanel>
             </Grid>
         </Border>
 
@@ -79,6 +96,7 @@
                     <DataGrid x:Name="FieldCommentGrid"
                               ItemsSource="{Binding FieldComments}"
                               SelectionMode="Extended"
+                              SelectionChanged="SourceGrid_SelectionChanged"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
                               CanUserAddRows="False"
@@ -105,6 +123,7 @@
                     <DataGrid x:Name="DocumentGrid"
                               ItemsSource="{Binding Documents}"
                               SelectionMode="Extended"
+                              SelectionChanged="SourceGrid_SelectionChanged"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
                               CanUserAddRows="False"
@@ -131,6 +150,7 @@
                     <DataGrid x:Name="WorkHistoryGrid"
                               ItemsSource="{Binding WorkHistory}"
                               SelectionMode="Extended"
+                              SelectionChanged="SourceGrid_SelectionChanged"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
                               CanUserAddRows="False"
