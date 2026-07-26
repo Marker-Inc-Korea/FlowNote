@@ -17,6 +17,10 @@ if (options.ShowHelp)
 
         --approve는 dry-run 결과의 sourceRowId만 받습니다. 구 FieldNote 첨부는 부모 본문 row도 함께
         승인해야 합니다. 승인 실행은 원본 큐와 파일을 수정·삭제하지 않고 신규 큐와 감사 행만 추가합니다.
+
+        누적 backlog 읽기 전용 감사:
+          dotnet run --project apps/windows/src/FlowNote.Windows.SyncMigrationTool -- \
+            --backlog-audit --database PATH --run-id RUN_ID --output PATH
         """);
     return;
 }
@@ -27,6 +31,20 @@ var serializerOptions = new JsonSerializerOptions
     WriteIndented = true,
     PropertyNamingPolicy = JsonNamingPolicy.CamelCase
 };
+
+if (options.BacklogAudit)
+{
+    if (string.IsNullOrWhiteSpace(options.RunId) || string.IsNullOrWhiteSpace(options.OutputPath))
+    {
+        throw new ArgumentException("backlog 감사에는 --run-id와 --output이 필요합니다.");
+    }
+    var audit = new ServerSyncBacklogAuditService(options.DatabasePath).Create(options.RunId);
+    var outputPath = Path.GetFullPath(options.OutputPath);
+    Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+    File.WriteAllText(outputPath, JsonSerializer.Serialize(audit, serializerOptions));
+    Console.WriteLine(outputPath);
+    return;
+}
 
 if (!options.Execute)
 {
@@ -48,9 +66,12 @@ static ToolOptions ParseArguments(string[] args)
     var databasePath = FlowNoteLocalDatabase.DefaultDatabasePath;
     var execute = false;
     var showHelp = false;
+    var backlogAudit = false;
     var approvedIds = new SortedSet<long>();
     string? approvedBy = null;
     string? planHash = null;
+    string? runId = null;
+    string? outputPath = null;
 
     for (var index = 0; index < args.Length; index++)
     {
@@ -61,6 +82,15 @@ static ToolOptions ParseArguments(string[] args)
                 break;
             case "--execute":
                 execute = true;
+                break;
+            case "--backlog-audit":
+                backlogAudit = true;
+                break;
+            case "--run-id":
+                runId = RequireValue(args, ref index, "--run-id");
+                break;
+            case "--output":
+                outputPath = RequireValue(args, ref index, "--output");
                 break;
             case "--approve":
                 foreach (var value in RequireValue(args, ref index, "--approve").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -87,7 +117,16 @@ static ToolOptions ParseArguments(string[] args)
         }
     }
 
-    return new ToolOptions(Path.GetFullPath(databasePath), execute, showHelp, approvedIds.ToArray(), approvedBy, planHash);
+    return new ToolOptions(
+        Path.GetFullPath(databasePath),
+        execute,
+        backlogAudit,
+        showHelp,
+        approvedIds.ToArray(),
+        approvedBy,
+        planHash,
+        runId,
+        outputPath);
 }
 
 static string RequireValue(string[] args, ref int index, string option)
@@ -102,7 +141,10 @@ static string RequireValue(string[] args, ref int index, string option)
 internal sealed record ToolOptions(
     string DatabasePath,
     bool Execute,
+    bool BacklogAudit,
     bool ShowHelp,
     IReadOnlyList<long> ApprovedRowIds,
     string? ApprovedBy,
-    string? PlanHash);
+    string? PlanHash,
+    string? RunId,
+    string? OutputPath);

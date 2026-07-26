@@ -165,6 +165,9 @@ public sealed record ServerDocumentVersionPublishRequest
 
     [JsonPropertyName("expectedPublishedVersionId")]
     public string? ExpectedPublishedVersionId { get; init; }
+
+    [JsonPropertyName("mutationKey")]
+    public string? MutationKey { get; init; }
 }
 
 public sealed record ServerDocumentStatusUpdateRequest
@@ -177,6 +180,9 @@ public sealed record ServerDocumentStatusUpdateRequest
 
     [JsonPropertyName("baseRevision")]
     public int? BaseRevision { get; init; }
+
+    [JsonPropertyName("mutationKey")]
+    public string? MutationKey { get; init; }
 }
 
 public sealed record ServerControlledCopyGrantResponse

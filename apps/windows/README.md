@@ -4,7 +4,7 @@
 
 현재 프로젝트는 WPF UI `net10.0-windows`, Core와 스모크 테스트 `net10.0`을 대상으로 한다. 현재 기능 목록은 `FlowNote.Windows.App`, `FlowNote.Windows.Core`, `FlowNote.Windows.SmokeTests` 코드에 실제 연결된 범위만 포함한다.
 
-이 문서는 2026-07-22 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
+이 문서는 2026-07-26 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
 
 ## 현재 구현
 
@@ -33,10 +33,11 @@
 - AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
 - `AI 정답셋`: 후보 포함 근거와 수동 제외 원천으로 사례 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·대체·폐기, 평가 run 실행·이전 run 비교
 - `system-admin` 전용 `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현재 현장 kill switch와 호출·비용·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 일괄 실행, 고객/현장 질의 상세, 단일 즉시 만료와 legal hold 설정·해제·감사 read-back
-- 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장. FieldComment 검토 base revision·mutation key, 첨부 부모·파일 SHA-256, 보고서 source 집합 hash, 문서 버전·첨부 idempotency key 전달과 큐 깊이·최장 대기·최근 처리량·실패 분포·row별 운영 상태 표시 포함
+- 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장. 공개·상태·태그 mutation receipt와 read-back, FieldComment 검토 base revision·mutation key, 첨부 부모·파일 SHA-256, 보고서 source 집합 hash, 문서 버전·첨부 idempotency key 전달과 큐 깊이·최장 대기·최근 처리량·실패 분포·row별 운영 상태 표시 포함
 - 서버 복구 경계 보호: sync manifest의 instance/epoch/API contract와 알림 cursor를 URL별 binding에 저장하고, URL·instance·epoch 변경 또는 cursor 역행 시 자동 전송과 polling 중지
 - 이력 창 `서버 재결합`: 전체 큐 inventory의 `CONFIRMED`/`ABSENT`/`DIVERGED` 판정과 `REBOUND`/`REQUEUE`/`CONFLICT` 제안 검토, 관리자 사유 승인 뒤 mapping·큐·binding 적용과 cursor 0 재추적
 - 보존 동기화 실패 전환 CLI: FAILED 큐를 읽기 전용 dry-run으로 분류하고, plan hash와 row별 운영자 승인을 받은 구 `create`/FieldNote 항목만 현재 action의 별도 큐로 무손실 전환
+- 동기화 backlog 읽기 전용 감사: 큐 운영 상태·담당자·처리 기한·자동 재시도 한도·수동 종결 기준과 DB 전후 SHA-256, 무결성, 중복, 고아 mapping/source를 JSON으로 보존
 
 WPF에는 `/api/v1/ai/queries`를 호출하는 실제 외부 AI 질의 실행 화면이나 운영 provider client가 없다. AI 화면은 외부 호출 없는 근거 후보 운영 점검, `AI 정답셋`, `system-admin` 전용 운영 제어 화면으로 분리되어 있다.
 
@@ -66,6 +67,7 @@ apps/windows/
   src/FlowNote.Windows.Core/    로컬 DB, 서비스, 정책, 서버 API 클라이언트
   src/FlowNote.Windows.Core.Tests/  서버 알림 cursor 등 Core 단위 테스트
   src/FlowNote.Windows.SmokeTests/  콘솔 스모크 테스트
+  src/FlowNote.Windows.SyncConvergenceTests/  서버 권위 mutation과 재실행 멱등 수렴 검증
   src/FlowNote.Windows.SyncMigrationTool/  보존 FAILED 큐 진단·승인 전환 CLI
 ```
 
@@ -119,7 +121,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-현재 FastAPI 코드와 표준 스크립트의 수집/JUnit guard는 모두 149건이다. macOS 사전 검증에서 FastAPI 149건, WPF Core 43건과 WPF 앱 build가 통과했다. Windows 누적 공통 DB 스모크와 Android build는 `NOT_RUN`이며 Windows에서 이 단계를 한 run으로 완료해 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
+현재 FastAPI 코드는 150건, WPF Core는 45건을 수집한다. 표준 스크립트의 수집/JUnit guard는 아직 FastAPI 149건·WPF Core 43건이어서 현재 코드와 맞지 않는다. 이번 macOS 검증에서 WPF Core 45건과 WPF 앱·동기화 마이그레이션 도구·수렴 검증 프로젝트 빌드는 경고·오류 없이 통과했다. Windows 누적 공통 DB 스모크와 Android build를 새 기준으로 한 run에서 완료해 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

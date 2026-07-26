@@ -10,8 +10,8 @@
 | `run_id` | 없음 | 없음 |
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
-| FastAPI | 목표 149/149, failure/error/skipped 0 | 동일 |
-| WPF Core | 목표 43/43, failed/error/skipped 0 | 동일 |
+| FastAPI | 현재 코드 150건, 스크립트 guard 149건으로 불일치 | 동일 |
+| WPF Core | 현재 코드 45건, 스크립트 guard 43건으로 불일치 | 동일 |
 | WPF 앱 | 목표 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 목표 unit 15/15, failure/error/skipped 0, debug build PASS | 동일 |
@@ -21,6 +21,12 @@
 보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 이 실행과 앞선 실패 실행의 DB·로그·요약은 삭제하거나 덮어쓰지 않는다. 현재 작업 환경은 macOS ARM64이므로 Windows x64 무생략 실행과 같은 환경에서의 경고 재확인은 수행할 수 없다.
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
+
+## 2026-07-26 문서 동기화 수렴 변경 검증
+
+현재 코드는 루트 `GET /`를 포함한 OpenAPI 128개 method/path 조합과 SQLAlchemy ORM 59개 테이블을 제공한다. 새 `document_mutation_receipts`는 문서 공개·상태·태그 mutation의 intent hash, 적용 revision과 최초 성공 응답을 같은 transaction에 보존한다. WPF는 같은 mutation key로 재시도하고 성공 응답 뒤 서버 문서를 다시 읽어 상태·공개 버전·태그·revision이 일치할 때만 큐를 `SYNCED`로 종결한다. reconciliation은 이 세 mutation의 receipt를 판정 원천으로 사용하며 승인 종결 상태도 보존한다.
+
+FastAPI 150건과 WPF Core 45건은 모두 통과했고 Ruff도 통과했다. WPF 앱, 동기화 마이그레이션 도구와 새 동기화 수렴 검증 프로젝트는 경고·오류 없이 빌드됐다. 첫 FastAPI 전체 실행은 별도 pytest 프로세스가 같은 보존 SQLite를 사용해 7건이 `database is locked`로 실패했지만, 해당 프로세스가 끝난 뒤 단독으로 다시 실행해 150건 전체 통과를 확인했다. 실패 중 생성된 테스트 DB·파일은 삭제하지 않았다. `scripts/verify-preserved-tests.ps1`은 아직 FastAPI 149건·WPF Core 43건을 고정하므로 현재 소스 상태에서 표준 통합 기준선을 만들 수 없다. guard를 현재 수치로 보정하고 Windows 누적 공통 DB 스모크와 Android 검증까지 같은 run ID로 실행해야 한다.
 
 ## 2026-07-26 Windows 통합 기준선 게이트 보강
 
@@ -112,7 +118,7 @@ Git 추적 Markdown 42개를 목록화하고 작업 정책 원문 `AGENTS.md`를
 
 당시 작업 시작 시 Git 작업 트리와 `main...origin/main`은 깨끗해 반영할 미커밋 코드는 없었다. 서버 복구 manifest/reconciliation, WPF 재결합 경계와 관련 상위 문서는 그 시점 코드와 일치했다. 다만 `services/api/README.md`의 FastAPI 수집 기준만 서버 복구 회귀 6건이 추가되기 전인 137건에 머물러 있어 당시 수집값 143건으로 갱신했다.
 
-그 재대조에서 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 143건을 수집했다. 당시 OpenAPI는 루트 `GET /`를 포함한 122개 method/path 조합이고 SQLAlchemy ORM은 57개 테이블이었다. 전체 테스트·WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았으며 기존 SQLite, 로그와 테스트 산출물은 삭제하지 않았다. 이 수치는 이후 AI 보존 변경 전 기록이며 현재 기준은 이 문서 최상단의 128개 API·58개 테이블·149개 테스트를 따른다.
+그 재대조에서 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 143건을 수집했다. 당시 OpenAPI는 루트 `GET /`를 포함한 122개 method/path 조합이고 SQLAlchemy ORM은 57개 테이블이었다. 전체 테스트·WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았으며 기존 SQLite, 로그와 테스트 산출물은 삭제하지 않았다. 이 수치는 이후 AI 보존 변경 전 기록이며 현재 기준은 이 문서 최상단의 128개 API·59개 테이블·150개 테스트를 따른다.
 
 ## 2026-07-21 작업 102 서버 복구 reconciliation 문서 갱신
 
@@ -126,7 +132,7 @@ Git 추적 Markdown 42개를 전부 목록화했다. 작업 정책 원문 `AGENT
 
 이 절을 처음 작성한 시점의 OpenAPI는 루트 `GET /`를 포함한 116개 method/path 조합이었고 ORM은 FieldComment 검토·보고서·작업순서 mutation receipt를 포함한 54개 테이블이었다. 이후 서버 복구 reconciliation 시점에는 122개 API와 57개 테이블이었다. 당시에도 작업순서는 `board_revision`과 mutation receipt를 쓰는 FastAPI 권위 aggregate였고, FieldComment 검토는 `review_revision`, 보고서는 `report_revision`과 내용/source 집합 hash를 권위값으로 사용했다. WPF는 작업순서 서버 snapshot을 직접 읽고, 검토·첨부·보고서 재시도에는 base revision·mutation key·파일/source hash를 전달해 응답 read-back을 로컬에 보존했다.
 
-이 절 작성 당시 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 137건을 수집했다. 새 3건은 FieldComment 검토 동시성/receipt 재생, 첨부 응답 유실 재시도, 보고서 선정 뒤 source 변경 409 차단이었다. 전체 pytest는 당시 문서 갱신 중 새로 실행하지 않았으며, 직전 134 passed는 새 3건 추가 전의 역사적 결과로 보존한다. 당시 macOS에서 실행 가능한 WPF Core 테스트는 작업순서 서버 권위 정책 5건을 포함해 33 passed, failed/skipped 0이었고 Android `testDebugUnitTest`는 Java Runtime 부재로 테스트 시작 전 환경 실패였다. WPF 앱 build·누적 스모크·Android build도 Windows 표준 기준선으로 새로 실행하지 않았다. 이후 143건 통과 기록도 역사적 결과이며 현재 수집 기준은 문서 최상단의 149건이다.
+이 절 작성 당시 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 137건을 수집했다. 새 3건은 FieldComment 검토 동시성/receipt 재생, 첨부 응답 유실 재시도, 보고서 선정 뒤 source 변경 409 차단이었다. 전체 pytest는 당시 문서 갱신 중 새로 실행하지 않았으며, 직전 134 passed는 새 3건 추가 전의 역사적 결과로 보존한다. 당시 macOS에서 실행 가능한 WPF Core 테스트는 작업순서 서버 권위 정책 5건을 포함해 33 passed, failed/skipped 0이었고 Android `testDebugUnitTest`는 Java Runtime 부재로 테스트 시작 전 환경 실패였다. WPF 앱 build·누적 스모크·Android build도 Windows 표준 기준선으로 새로 실행하지 않았다. 이후 143건 통과 기록도 역사적 결과이며 현재 수집 기준은 문서 최상단의 150건이다.
 
 이 절 작성 당시 `scripts/verify-preserved-tests.ps1`의 `$expectedFastApiTestCount`는 131이었고 이후 같은 날의 중간 단계에서 144건으로 복구됐다. 현재 guard는 149건이지만 새 Windows x64 무생략 `PASSED` 기준선은 아직 확보하지 못했다. 기존 `baseline-131-macos-precheck-20260721-001`은 당시 결과로 보존하지만 현재 코드 기준선으로 승격하지 않는다. 기존 실패 run, SQLite, 로그, 파일은 삭제하거나 초기화하지 않았다.
 

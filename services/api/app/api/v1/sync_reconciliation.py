@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from typing import Annotated
 from uuid import uuid4
 
@@ -15,6 +16,7 @@ from app.db.models import (
     ChannelMessage,
     Document,
     DocumentAccessLog,
+    DocumentMutationReceipt,
     DocumentVersion,
     FieldComment,
     FieldCommentAttachment,
@@ -135,6 +137,20 @@ def _classify(
         server_version_id = version.version_id
         server_revision = document.revision
         server_hash = file_object.hash_sha256
+    elif entity_type in {"document_publish", "document_status", "document_tags"}:
+        receipt = session.scalar(
+            select(DocumentMutationReceipt).where(
+                DocumentMutationReceipt.mutation_key == item.idempotency_key
+            )
+        )
+        if receipt is None:
+            return "ABSENT", "REQUEUE", None, None, None, None, "동일 mutation key receipt가 서버에 없습니다."
+        response = json.loads(receipt.response_json)
+        server_document_id = receipt.document_id
+        server_version_id = response.get("latest_version_id")
+        server_revision = receipt.applied_revision
+        latest_version = response.get("latest_version") or {}
+        server_hash = (latest_version.get("file") or {}).get("hash_sha256")
     else:
         model_and_id = {
             "field_comment": (FieldComment, FieldComment.comment_id),
@@ -185,7 +201,10 @@ def _item_payload(item: ReconciliationItem) -> dict[str, object | None]:
         "server_hash_sha256": item.server_hash_sha256,
         "details": item.details,
         "resolution_action": item.resolution_action,
+        "resolution_status": item.resolution_status,
         "resolution_reason": item.resolution_reason,
+        "resolved_by": item.resolved_by,
+        "resolved_at": item.resolved_at,
     }
 
 
@@ -314,6 +333,11 @@ def approve_reconciliation_run(
         if action != item.proposed_action:
             raise HTTPException(status_code=409, detail=f"{item_id} 판정과 승인 조치가 일치하지 않습니다.")
         item.resolution_action = action
+        item.resolution_status = {
+            "REBOUND": "REBOUND_CONFIRMED",
+            "REQUEUE": "REQUEUED_FOR_RETRY",
+            "CONFLICT": "APPROVED_CONFLICT",
+        }[action]
         item.resolution_reason = resolution.reason.strip()
         item.resolved_by = current_user.user_id
         item.resolved_at = now

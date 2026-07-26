@@ -148,15 +148,15 @@ flowchart LR
 
 ## 검증 스냅샷
 
-2026-07-24 현재 저장소에서 컴포넌트 기준선을 다시 실행했다.
+2026-07-26 현재 서버와 Windows 컴포넌트 기준선을 다시 실행했다. Android 결과는 2026-07-24 검증 기록을 유지한다.
 
 | 검증 대상 | 결과 |
 | --- | --- |
 | FastAPI OpenAPI | 루트 `GET /` 포함 128개 method/path |
-| SQLAlchemy ORM | 58개 테이블 |
-| FastAPI 테스트 | 149개 통과 |
+| SQLAlchemy ORM | 59개 테이블 |
+| FastAPI 테스트 | 150개 통과 |
 | Python 정적 검사 | Ruff 통과 |
-| WPF Core 테스트 | 43개 통과 |
+| WPF Core 테스트 | 45개 통과 |
 | WPF 앱 빌드 | 경고 0개, 오류 0개 |
 | Android 단위 테스트 | 15개 통과 |
 | Android debug 빌드·lint | `assembleDebug`, `lintDebug` 통과 |

@@ -64,7 +64,7 @@
 
 - 릴리스 기준선은 C#·Android Java compiler warning 허용 목록을 두지 않고 0건만 인정한다. WPF Core와 앱은 `TreatWarningsAsErrors=true`, Android Java compile은 `-Werror`, Gradle은 `--warning-mode=fail`로 실행한다.
 - `CS8604`는 SDK 차이에 따른 허용 경고가 아니라 nullable 역할 값을 non-null 생성자에 넘긴 코드 결함으로 분류한다. 역할이 없을 때 `string.Empty`로 정규화해 권한 검사가 fail-closed가 되도록 수정했으며, 같은 Windows x64 matrix에서 warning-as-error 빌드를 통과해야 종결한다.
-- `verification-summary.json`은 소스 커밋, FastAPI 149건, WPF Core 43건, Android unit 15건, WPF·Android build, 공통 DB 전후 무결성, 오늘 문서와 과거 문서 version 증가, Git 전후 상태를 구조화해 남긴다.
+- `verification-summary.json`은 소스 커밋, FastAPI·WPF Core·Android unit 수집/실행 수, WPF·Android build, 공통 DB 전후 무결성, 오늘 문서와 과거 문서 version 증가, Git 전후 상태를 구조화해 남긴다. 현재 코드는 FastAPI 150건·WPF Core 45건이지만 표준 스크립트 guard는 149건·43건이므로 보정 전에는 통합 기준선을 만들 수 없다.
 - 첫 무생략 `PASSED`는 기준선 후보로만 본다. 기존 증거를 보존한 채 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 최신 유효 기준선으로 확정한다.
 - SDK/compiler 차이로 새 경고가 나타나면 경고를 숨기거나 임시 허용하지 않는다. 실행별 `environment.json`과 원본 build log를 비교해 코드 결함인지 지원 matrix 차이인지 먼저 결정하고, matrix 변경은 새 결정 기록과 두 번의 무생략 실행으로 검증한다.
 

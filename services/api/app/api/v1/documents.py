@@ -1,500 +1,59 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from hashlib import sha256
 from pathlib import Path
 from typing import Annotated
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import case, delete, desc, select, update
+from sqlalchemy import case, desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.v1.document_support import (
+    CREATABLE_DOCUMENT_STATUSES,
+    DOCUMENT_STATUSES,
+    VERSION_STATUSES,
+    DocumentDeleteRequest,
+    DocumentListItem,
+    DocumentResponse,
+    DocumentStatusUpdateRequest,
+    DocumentVersionPublishRequest,
+    DocumentVersionResponse,
+    DocumentVersionStatusUpdateRequest,
+    claim_revision as _claim_revision,
+    clean_change_reason as _clean_change_reason,
+    clean_idempotency_key as _clean_idempotency_key,
+    clean_optional as _clean_optional,
+    clean_tags as _clean_tags,
+    conflict as _conflict,
+    delete_stored_file as _delete_stored_file,
+    document_mutation_intent_hash as _document_mutation_intent_hash,
+    document_mutation_replay as _document_mutation_replay,
+    document_response as _document_response,
+    latest_version_for_document as _latest_version_for_document,
+    new_public_id as _new_public_id,
+    path_sha256 as _path_sha256,
+    published_version_for_document as _published_version_for_document,
+    record_activity as _record_activity,
+    replace_document_tags as _replace_document_tags,
+    require_live_document as _require_live_document,
+    save_file_object as _save_file_object,
+    store_document_mutation_receipt as _store_document_mutation_receipt,
+    tag_response as _tag_response,
+    upload_sha256 as _upload_sha256,
+    validate_change_reason as _validate_change_reason,
+    validate_document_status_transition as _validate_document_status_transition,
+    validate_status as _validate_status,
+    validate_user_id as _validate_user_id,
+    version_response as _version_response,
+)
 from app.core.auth import DocumentGovernanceUser, DocumentWriteUser, get_current_user
 from app.core.config import Settings, get_settings
-from app.core.storage import resolve_storage_root, store_upload_file
-from app.db.models import ActivityHistory, Document, DocumentTag, DocumentVersion, FileObject
-from app.db.models import TagDefinition, UserAccount
+from app.core.storage import resolve_storage_root
+from app.db.models import Document, DocumentVersion, FileObject
 from app.db.session import get_db_session
 
 router = APIRouter(prefix="/documents", tags=["documents"], dependencies=[Depends(get_current_user)])
-
-DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "PUBLISHED", "ARCHIVED"}
-CREATABLE_DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "ARCHIVED"}
-VERSION_STATUSES = {"WORKING", "IN_REVIEW", "APPROVED", "PUBLISHED", "ARCHIVED"}
-DOCUMENT_STATUS_TRANSITIONS = {
-    "WORKING": {"IN_REVIEW", "ARCHIVED"},
-    "IN_REVIEW": {"WORKING", "ARCHIVED"},
-    "PUBLISHED": {"IN_REVIEW", "ARCHIVED"},
-    "ARCHIVED": {"WORKING", "IN_REVIEW"},
-}
-
-
-class FileObjectResponse(BaseModel):
-    storage_type: str
-    storage_key: str
-    original_filename: str
-    extension: str | None
-    mime_type: str | None
-    file_family: str | None
-    size_bytes: int | None
-    hash_sha256: str | None
-
-
-class DocumentVersionResponse(BaseModel):
-    version_id: str
-    document_id: str
-    version_no: int
-    version_label: str | None
-    change_reason: str
-    version_status: str
-    is_latest: bool
-    is_published: bool
-    created_by: str | None
-    created_at: datetime
-    file: FileObjectResponse
-
-
-class DocumentResponse(BaseModel):
-    document_id: str
-    title: str
-    description: str | None
-    document_type: str
-    owner_id: str | None
-    category_id: str | None
-    status: str
-    revision: int
-    latest_version_id: str | None
-    published_version_id: str | None
-    created_at: datetime
-    updated_at: datetime
-    tags: list[str] = Field(default_factory=list)
-    latest_version: DocumentVersionResponse | None = None
-    published_version: DocumentVersionResponse | None = None
-
-
-class DocumentListItem(BaseModel):
-    document_id: str
-    title: str
-    document_type: str
-    status: str
-    revision: int
-    latest_version_id: str | None
-    latest_version_no: int | None = None
-    latest_filename: str | None = None
-    published_version_id: str | None = None
-    published_version_no: int | None = None
-    published_filename: str | None = None
-    tags: list[str] = Field(default_factory=list)
-    updated_at: datetime
-
-
-class DocumentStatusUpdateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    status: str = Field(min_length=1)
-    change_reason: str | None = Field(default=None, alias="changeReason")
-    base_revision: int | None = Field(default=None, alias="baseRevision", ge=1)
-
-
-class DocumentVersionStatusUpdateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    status: str = Field(min_length=1)
-    change_reason: str | None = Field(default=None, alias="changeReason")
-    base_revision: int = Field(alias="baseRevision", ge=1)
-
-
-class DocumentVersionPublishRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    change_reason: str | None = Field(default=None, alias="changeReason")
-    base_revision: int | None = Field(default=None, alias="baseRevision", ge=1)
-    expected_published_version_id: str | None = Field(
-        default=None, alias="expectedPublishedVersionId"
-    )
-
-
-class DocumentDeleteRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    change_reason: str = Field(alias="changeReason", min_length=1)
-    base_revision: int = Field(alias="baseRevision", ge=1)
-
-
-def _new_public_id(prefix: str) -> str:
-    return f"{prefix}_{uuid4().hex}"
-
-
-def _validate_change_reason(change_reason: str) -> str:
-    cleaned = change_reason.strip()
-    if not cleaned:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="changeReason is required.",
-        )
-    return cleaned
-
-
-def _clean_change_reason(change_reason: str | None) -> str | None:
-    if change_reason is None:
-        return None
-    cleaned = change_reason.strip()
-    return cleaned or None
-
-
-def _validate_status(value: str, allowed: set[str], field_name: str = "status") -> str:
-    cleaned = value.strip().upper()
-    if cleaned not in allowed:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"{field_name} has an unsupported value.",
-        )
-    return cleaned
-
-
-def _validate_document_status_transition(before: str, after: str) -> None:
-    if before == after:
-        return
-    if after == "PUBLISHED":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Document cannot be set to PUBLISHED without a published version.",
-        )
-    if after not in DOCUMENT_STATUS_TRANSITIONS.get(before, set()):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"Document status transition {before} -> {after} is not allowed.",
-        )
-
-
-def _clean_optional(value: str | None) -> str | None:
-    if value is None:
-        return None
-    cleaned = value.strip()
-    return cleaned or None
-
-
-def _clean_idempotency_key(value: str | None) -> str | None:
-    cleaned = _clean_optional(value)
-    if cleaned is None:
-        return None
-    if len(cleaned) > 160:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="idempotencyKey is too long.",
-        )
-    return cleaned
-
-
-def _conflict(
-    code: str,
-    message: str,
-    *,
-    document: Document | None = None,
-    expected_revision: int | None = None,
-    extra: dict[str, object | None] | None = None,
-) -> HTTPException:
-    detail: dict[str, object | None] = {
-        "code": code,
-        "message": message,
-        "documentId": document.document_id if document is not None else None,
-        "expectedRevision": expected_revision,
-        "currentRevision": document.revision if document is not None else None,
-        "currentStatus": document.status if document is not None else None,
-        "currentLatestVersionId": document.latest_version_id if document is not None else None,
-        "currentPublishedVersionId": (
-            document.published_version_id if document is not None else None
-        ),
-    }
-    if extra:
-        detail.update(extra)
-    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
-
-
-def _require_live_document(session: Session, document_id: str) -> Document:
-    document = session.scalar(select(Document).where(Document.document_id == document_id))
-    if document is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
-    if document.deleted_at is not None or document.status == "DELETED":
-        raise _conflict(
-            "DOCUMENT_DELETED",
-            "The server document was deleted; a local resend cannot restore it implicitly.",
-            document=document,
-        )
-    return document
-
-
-def _claim_revision(session: Session, document: Document, expected_revision: int | None) -> int:
-    base_revision = document.revision if expected_revision is None else expected_revision
-    claimed = session.execute(
-        update(Document)
-        .where(
-            Document.id == document.id,
-            Document.deleted_at.is_(None),
-            Document.revision == base_revision,
-        )
-        .values(revision=Document.revision + 1)
-    )
-    if claimed.rowcount != 1:
-        session.rollback()
-        current = session.scalar(select(Document).where(Document.id == document.id))
-        raise _conflict(
-            "STALE_REVISION",
-            "The document changed after the client base revision. Administrator resolution is required.",
-            document=current,
-            expected_revision=base_revision,
-        )
-    document.revision = base_revision + 1
-    return document.revision
-
-
-async def _upload_sha256(upload: UploadFile) -> str:
-    digest = sha256()
-    await upload.seek(0)
-    while chunk := await upload.read(1024 * 1024):
-        digest.update(chunk)
-    await upload.seek(0)
-    return digest.hexdigest()
-
-
-def _path_sha256(path: Path) -> str:
-    digest = sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _normalize_tag_code(value: str) -> str:
-    return "-".join(value.strip().lower().split())
-
-
-def _clean_tags(values: list[str] | None) -> list[str]:
-    if not values:
-        return []
-
-    tags: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        for item in value.split(","):
-            cleaned = item.strip()
-            if not cleaned:
-                continue
-            key = _normalize_tag_code(cleaned)
-            if key in seen:
-                continue
-            seen.add(key)
-            tags.append(cleaned)
-    return tags
-
-
-def _tag_response(session: Session, document_id: str) -> list[str]:
-    rows = session.execute(
-        select(TagDefinition.name)
-        .join(DocumentTag, DocumentTag.tag_id == TagDefinition.tag_id)
-        .where(DocumentTag.document_id == document_id, TagDefinition.is_active.is_(True))
-        .order_by(TagDefinition.name)
-    ).all()
-    return [row[0] for row in rows]
-
-
-def _ensure_tag(session: Session, name: str, *, tag_type: str = "custom") -> TagDefinition:
-    code = _normalize_tag_code(name)
-    existing = session.scalar(
-        select(TagDefinition).where(TagDefinition.tag_type == tag_type, TagDefinition.code == code)
-    )
-    if existing is not None:
-        if existing.name != name:
-            existing.name = name
-        if not existing.is_active:
-            existing.is_active = True
-        return existing
-
-    tag = TagDefinition(
-        tag_id=_new_public_id("tag"),
-        tag_type=tag_type,
-        code=code,
-        name=name,
-    )
-    session.add(tag)
-    session.flush()
-    return tag
-
-
-def _replace_document_tags(session: Session, document_id: str, tags: list[str]) -> None:
-    session.execute(delete(DocumentTag).where(DocumentTag.document_id == document_id))
-    for name in tags:
-        tag = _ensure_tag(session, name)
-        session.add(DocumentTag(document_id=document_id, tag_id=tag.tag_id))
-
-
-def _validate_user_id(session: Session, user_id: str | None, field_name: str) -> str | None:
-    if user_id is None:
-        return None
-    exists = session.scalar(select(UserAccount.id).where(UserAccount.user_id == user_id))
-    if exists is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"{field_name} must reference an existing user_id.",
-        )
-    return user_id
-
-
-def _record_activity(
-    session: Session,
-    *,
-    event_type: str,
-    actor_id: str | None,
-    target_type: str,
-    target_id: str | None,
-    target_title: str | None,
-    message: str,
-    before_value: str | None = None,
-    after_value: str | None = None,
-    change_reason: str | None = None,
-) -> None:
-    session.add(
-        ActivityHistory(
-            history_id=_new_public_id("hist"),
-            event_type=event_type,
-            actor_id=actor_id,
-            target_type=target_type,
-            target_id=target_id,
-            target_title=target_title,
-            message=message,
-            before_value=before_value,
-            after_value=after_value,
-            change_reason=change_reason,
-        )
-    )
-
-
-def _delete_stored_file(storage_root: Path, storage_key: str) -> None:
-    target_path = (storage_root / Path(storage_key)).resolve()
-    try:
-        target_path.relative_to(storage_root)
-    except ValueError:
-        return
-    if target_path.exists() and target_path.is_file():
-        target_path.unlink()
-
-
-def _file_response(file_object: FileObject) -> FileObjectResponse:
-    return FileObjectResponse(
-        storage_type=file_object.storage_type,
-        storage_key=file_object.storage_key,
-        original_filename=file_object.original_filename,
-        extension=file_object.extension,
-        mime_type=file_object.mime_type,
-        file_family=file_object.file_family,
-        size_bytes=file_object.size_bytes,
-        hash_sha256=file_object.hash_sha256,
-    )
-
-
-def _version_response(version: DocumentVersion, file_object: FileObject) -> DocumentVersionResponse:
-    return DocumentVersionResponse(
-        version_id=version.version_id,
-        document_id=version.document_id,
-        version_no=version.version_no,
-        version_label=version.version_label,
-        change_reason=version.change_reason,
-        version_status=version.version_status,
-        is_latest=version.is_latest,
-        is_published=version.is_published,
-        created_by=version.created_by,
-        created_at=version.created_at,
-        file=_file_response(file_object),
-    )
-
-
-def _latest_version_for_document(
-    session: Session,
-    document_id: str,
-) -> tuple[DocumentVersion, FileObject] | None:
-    row = session.execute(
-        select(DocumentVersion, FileObject)
-        .join(FileObject, DocumentVersion.file_object_id == FileObject.id)
-        .where(DocumentVersion.document_id == document_id, DocumentVersion.is_latest.is_(True))
-    ).first()
-    if row is None:
-        return None
-    return row[0], row[1]
-
-
-def _published_version_for_document(
-    session: Session,
-    document_id: str,
-) -> tuple[DocumentVersion, FileObject] | None:
-    row = session.execute(
-        select(DocumentVersion, FileObject)
-        .join(FileObject, DocumentVersion.file_object_id == FileObject.id)
-        .where(
-            DocumentVersion.document_id == document_id,
-            DocumentVersion.version_id
-            == select(Document.published_version_id)
-            .where(Document.document_id == document_id)
-            .scalar_subquery(),
-            DocumentVersion.is_published.is_(True),
-            DocumentVersion.version_status == "PUBLISHED",
-        )
-    ).first()
-    if row is None:
-        return None
-    return row[0], row[1]
-
-
-def _document_response(session: Session, document: Document) -> DocumentResponse:
-    latest = _latest_version_for_document(session, document.document_id)
-    latest_response = _version_response(*latest) if latest is not None else None
-    published = _published_version_for_document(session, document.document_id)
-    published_response = _version_response(*published) if published is not None else None
-    tags = _tag_response(session, document.document_id)
-    return DocumentResponse(
-        document_id=document.document_id,
-        title=document.title,
-        description=document.description,
-        document_type=document.document_type,
-        owner_id=document.owner_id,
-        category_id=document.category_id,
-        status=document.status,
-        revision=document.revision,
-        latest_version_id=document.latest_version_id,
-        published_version_id=document.published_version_id,
-        created_at=document.created_at,
-        updated_at=document.updated_at,
-        tags=tags,
-        latest_version=latest_response,
-        published_version=published_response,
-    )
-
-
-async def _save_file_object(
-    upload: UploadFile,
-    *,
-    app_settings: Settings,
-    document_id: str,
-    version_no: int,
-) -> FileObject:
-    storage_root = resolve_storage_root(app_settings.storage_root)
-    stored = await store_upload_file(
-        upload,
-        storage_root=storage_root,
-        document_id=document_id,
-        version_no=version_no,
-    )
-    return FileObject(
-        storage_key=stored.storage_key,
-        original_filename=stored.original_filename,
-        extension=stored.extension,
-        mime_type=stored.mime_type,
-        file_family=stored.file_family,
-        size_bytes=stored.size_bytes,
-        hash_sha256=stored.hash_sha256,
-    )
 
 
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -725,17 +284,40 @@ def get_published_document_version(
 def replace_document_tags(
     document_id: str,
     tags: list[str],
-    _current_user: DocumentWriteUser,
+    current_user: DocumentWriteUser,
     base_revision: Annotated[int, Query(alias="baseRevision", ge=1)],
     session: Annotated[Session, Depends(get_db_session)],
+    mutation_key: Annotated[str | None, Query(alias="mutationKey")] = None,
 ) -> DocumentResponse:
+    cleaned_tags = _clean_tags(tags)
+    mutation_key = _clean_idempotency_key(mutation_key)
+    intent_hash = _document_mutation_intent_hash(
+        "REPLACE_TAGS",
+        document_id,
+        {"baseRevision": base_revision, "tags": cleaned_tags},
+    )
+    replay = _document_mutation_replay(
+        session, mutation_key, "REPLACE_TAGS", document_id, intent_hash
+    )
+    if replay is not None:
+        return replay
     document = _require_live_document(session, document_id)
 
     _claim_revision(session, document, base_revision)
-    _replace_document_tags(session, document_id, _clean_tags(tags))
+    _replace_document_tags(session, document_id, cleaned_tags)
+    session.flush()
+    response = _document_response(session, document)
+    _store_document_mutation_receipt(
+        session,
+        mutation_key=mutation_key,
+        mutation_type="REPLACE_TAGS",
+        intent_hash=intent_hash,
+        document=document,
+        response=response,
+        actor_id=current_user.user_id,
+    )
     session.commit()
-    session.refresh(document)
-    return _document_response(session, document)
+    return response
 
 
 @router.patch("/{document_id}/status", response_model=DocumentResponse)
@@ -746,6 +328,21 @@ def update_document_status(
     session: Annotated[Session, Depends(get_db_session)],
 ) -> DocumentResponse:
     target_status = _validate_status(payload.status, DOCUMENT_STATUSES)
+    mutation_key = _clean_idempotency_key(payload.mutation_key)
+    intent_hash = _document_mutation_intent_hash(
+        "UPDATE_STATUS",
+        document_id,
+        {
+            "baseRevision": payload.base_revision,
+            "changeReason": _clean_change_reason(payload.change_reason),
+            "status": target_status,
+        },
+    )
+    replay = _document_mutation_replay(
+        session, mutation_key, "UPDATE_STATUS", document_id, intent_hash
+    )
+    if replay is not None:
+        return replay
     document = _require_live_document(session, document_id)
 
     before = document.status
@@ -765,9 +362,19 @@ def update_document_status(
             after_value=target_status,
             change_reason=_clean_change_reason(payload.change_reason),
         )
+    session.flush()
+    response = _document_response(session, document)
+    _store_document_mutation_receipt(
+        session,
+        mutation_key=mutation_key,
+        mutation_type="UPDATE_STATUS",
+        intent_hash=intent_hash,
+        document=document,
+        response=response,
+        actor_id=current_user.user_id,
+    )
     session.commit()
-    session.refresh(document)
-    return _document_response(session, document)
+    return response
 
 
 @router.get("/{document_id}/versions", response_model=list[DocumentVersionResponse])
@@ -857,6 +464,22 @@ def publish_document_version(
     app_settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> DocumentResponse:
+    mutation_key = _clean_idempotency_key(payload.mutation_key)
+    intent_hash = _document_mutation_intent_hash(
+        "PUBLISH_VERSION",
+        document_id,
+        {
+            "baseRevision": payload.base_revision,
+            "changeReason": _clean_change_reason(payload.change_reason),
+            "expectedPublishedVersionId": payload.expected_published_version_id,
+            "versionId": version_id,
+        },
+    )
+    replay = _document_mutation_replay(
+        session, mutation_key, "PUBLISH_VERSION", document_id, intent_hash
+    )
+    if replay is not None:
+        return replay
     document = _require_live_document(session, document_id)
     row = session.execute(
         select(DocumentVersion)
@@ -905,7 +528,18 @@ def publish_document_version(
         and version.is_published
         and version.version_status == "PUBLISHED"
     ):
-        return _document_response(session, document)
+        response = _document_response(session, document)
+        _store_document_mutation_receipt(
+            session,
+            mutation_key=mutation_key,
+            mutation_type="PUBLISH_VERSION",
+            intent_hash=intent_hash,
+            document=document,
+            response=response,
+            actor_id=current_user.user_id,
+        )
+        session.commit()
+        return response
 
     if (
         payload.expected_published_version_id is not None
@@ -969,9 +603,19 @@ def publish_document_version(
             change_reason=_clean_change_reason(payload.change_reason),
         )
 
+    session.flush()
+    response = _document_response(session, document)
+    _store_document_mutation_receipt(
+        session,
+        mutation_key=mutation_key,
+        mutation_type="PUBLISH_VERSION",
+        intent_hash=intent_hash,
+        document=document,
+        response=response,
+        actor_id=current_user.user_id,
+    )
     session.commit()
-    session.refresh(document)
-    return _document_response(session, document)
+    return response
 
 
 @router.post(

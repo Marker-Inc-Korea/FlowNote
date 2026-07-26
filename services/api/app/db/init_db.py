@@ -2,7 +2,7 @@ from hashlib import pbkdf2_hmac
 from hmac import compare_digest
 import secrets
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import inspect, or_, select, text
 
 from app.db.base import Base
 from app.db.models import SchemaMigration, ServerIdentity, UserAccount
@@ -382,6 +382,21 @@ def _ensure_document_revision(database: Database) -> None:
             )
 
 
+def _ensure_reconciliation_resolution_status(database: Database) -> None:
+    inspector = inspect(database.engine)
+    if "reconciliation_items" not in inspector.get_table_names():
+        return
+    existing = {
+        column["name"] for column in inspector.get_columns("reconciliation_items")
+    }
+    if "resolution_status" in existing:
+        return
+    with database.engine.begin() as connection:
+        connection.execute(
+            text("ALTER TABLE reconciliation_items ADD COLUMN resolution_status VARCHAR(30)")
+        )
+
+
 def _ensure_terminal_device_schema(database: Database) -> None:
     if not database.database_url.startswith("sqlite"):
         return
@@ -718,6 +733,7 @@ def initialize_database(database: Database) -> None:
     _ensure_auth_session_device_column(database)
     _ensure_document_access_log_reason_column(database)
     _ensure_document_revision(database)
+    _ensure_reconciliation_resolution_status(database)
     _ensure_work_sequence_columns(database)
     _ensure_ai_evidence_snapshot_has_no_candidate_fk(database)
     _ensure_ai_search_candidate_content_hash(database)

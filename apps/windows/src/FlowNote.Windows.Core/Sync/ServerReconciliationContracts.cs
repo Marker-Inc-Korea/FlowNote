@@ -114,6 +114,9 @@ public sealed record ServerReconciliationItem
 
     [JsonPropertyName("details")]
     public string? Details { get; init; }
+
+    [JsonPropertyName("resolution_status")]
+    public string? ResolutionStatus { get; init; }
 }
 
 public sealed record ServerReconciliationRun
@@ -189,4 +192,5 @@ public sealed record LocalReconciliationItem(
     int? ServerRevision,
     string? ServerHashSha256,
     string? Details,
-    string? ResolutionAction);
+    string? ResolutionAction,
+    string? ResolutionStatus);

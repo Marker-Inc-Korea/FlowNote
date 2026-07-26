@@ -2,7 +2,7 @@
 
 이 디렉터리는 FlowNote FastAPI 서버 테스트를 보관한다.
 
-범위와 수집 기준선은 2026-07-22 현재 테스트 코드 기준이다.
+범위와 수집 기준선은 2026-07-26 현재 테스트 코드 기준이다.
 
 ## 현재 테스트 범위
 
@@ -17,7 +17,7 @@
 - Android 승인 단말 로그인, 마지막 접속 갱신, 단말 등록/변경/비활성화/폐기/교체, 기존 세션 폐기와 권한 검증
 - 문서 등록, 파일 저장, SHA-256, 크기, MIME/확장자 메타데이터
 - 새 문서 버전 등록과 이전 최신 버전 `SUPERSEDED` 처리
-- 문서 상태 변경, 버전 상태 변경, 명시적 공개 버전 지정, 공개 문서 조회
+- 문서 상태 변경, 버전 상태 변경, 명시적 공개 버전 지정, 공개 문서 조회, 공개·상태·태그 mutation receipt 재생과 key 재사용 충돌
 - 문서 태그 생성/교체와 태그 사전 조회
 - 문서 쓰기, FieldComment 등록, 열람 로그 조회 권한 검증
 - FieldComment 등록, 목록, 문서별 조회, 원천 불변·삭제 차단, 단계형 관리자 검토, 담당자·기한, 최대 200건 일괄 처리, 원천 hash 감사와 품질 작업함/지표
@@ -48,6 +48,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-07-22 현재 FastAPI 테스트 코드는 중복 없는 node ID 149개를 수집하고 저장소 루트 `scripts/verify-preserved-tests.ps1`의 수집/JUnit guard도 149개다. macOS 사전 검증에서 149 passed, failure/error/skipped 0을 확인했다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1 -RunId <승인된-run-id>` 한 번으로 FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존한다. macOS에서는 WPF/Android가 `NOT_RUN`이므로 새 Windows 통합 `PASSED` run을 확보하기 전까지 최신 통합 기준선으로 승격하지 않는다.
+2026-07-26 현재 FastAPI 테스트 코드는 중복 없는 node ID 150개를 수집해 모두 통과했다. 저장소 루트 `scripts/verify-preserved-tests.ps1`의 수집/JUnit guard는 아직 149개여서 현재 코드와 맞지 않는다. 이번 변경의 문서 mutation receipt·reconciliation 집중 회귀 20건도 macOS에서 통과했다. 전체 표준 검증은 guard를 현재 수치로 보정한 뒤 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1 -RunId <승인된-run-id>` 한 번으로 FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존해야 한다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.

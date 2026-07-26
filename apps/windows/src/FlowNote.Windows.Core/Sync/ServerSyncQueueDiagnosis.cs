@@ -7,6 +7,38 @@ public sealed record ServerSyncQueueDiagnosis(
     string OperatorAction,
     bool IsDependencyHold)
 {
+    public string ResponsibleRole => OperationalState switch
+    {
+        "보존 구 형식" => "동기화 관리자",
+        "선행 조건 대기" => "문서 운영 담당자",
+        "수동 조치 필요" => Category is "서버 URL 미설정" or "인증 만료"
+            ? "서버 운영 담당자"
+            : "문서 운영 담당자",
+        "reconciliation 충돌" => "승인 관리자",
+        _ => "동기화 운영 담당자"
+    };
+
+    public string HandlingDeadline => OperationalState switch
+    {
+        "보존 구 형식" => "30일 안에 전환 또는 보존 종결 승인",
+        "선행 조건 대기" => "다음 동기화 배치 전 선행 ID 확인",
+        "수동 조치 필요" => "1영업일 안에 설정·인증·원본 복구",
+        "reconciliation 충돌" => "7일 안에 관리자 승인 종결",
+        "완료" => "종결",
+        _ => "4시간 안에 최대 5회 자동 재시도"
+    };
+
+    public int AutoRetryLimit => OperationalState == "재시도 가능" ? 5 : 0;
+
+    public string ManualClosureCriteria => OperationalState switch
+    {
+        "보존 구 형식" => "원천과 hash를 보존하고 승인자·사유·전환/보존 결정을 기록",
+        "reconciliation 충돌" => "양쪽 hash와 관리자 사유·승인자·KEEP_SERVER/RETRY_LOCAL 종결 상태를 기록",
+        "수동 조치 필요" => "설정·인증·원본 복구 증거를 확인하거나 복구 불가 사유로 승인 종결",
+        "완료" => "SYNCED 또는 승인된 DISCARDED",
+        _ => "지원 대상은 SYNCED까지 재시도하며 임의 폐기하지 않음"
+    };
+
     public string OperationalState
     {
         get
@@ -21,13 +53,19 @@ public sealed record ServerSyncQueueDiagnosis(
                 return "보존 구 형식";
             }
 
+            if (Category is "문서 충돌")
+            {
+                return "reconciliation 충돌";
+            }
+
             if (Category is "선행 문서 버전 미동기화" or "선행 문서 미동기화" or
                 "선행 FieldComment 미동기화" or "보고서 근거 미동기화")
             {
                 return "선행 조건 대기";
             }
 
-            if (Category is "로컬 파일 누락" or "서버 URL 미설정" or "인증 만료")
+            if (Category is "로컬 파일 누락" or "서버 URL 미설정" or "인증 만료" or
+                "서버 검증 거부")
             {
                 return "수동 조치 필요";
             }
@@ -187,6 +225,17 @@ public static class ServerSyncQueueDiagnostics
                 33,
                 "33 근거 먼저",
                 "보고서 근거 문서, FieldComment, 작업순서 이력을 먼저 서버에 등록한 뒤 재시도하세요.",
+                true);
+        }
+
+        if (lastError.Contains("422 Unprocessable Entity", StringComparison.Ordinal) ||
+            lastError.Contains("403 Forbidden", StringComparison.Ordinal))
+        {
+            return new ServerSyncQueueDiagnosis(
+                "서버 검증 거부",
+                21,
+                "21 입력 확인",
+                "서버 권위 규칙과 권한을 확인하고 원천 상태를 바로잡거나 관리자 사유로 종결하세요.",
                 true);
         }
 

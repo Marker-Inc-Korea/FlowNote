@@ -1,6 +1,6 @@
 # FlowNote 문서
 
-이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-22 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
+이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-07-26 현재 개발된 코드 기준을 우선하며, 아직 구현되지 않은 기능은 후속 범위로 분리한다.
 
 전체 문서 갱신 범위는 Git이 추적하는 제품·구현 Markdown이다. `AGENTS.md`는 작업 정책 원문이므로 제품 코드 설명과 분리하고, 가상환경·빌드 캐시·테스트 산출물 안의 Markdown은 생성·보존 기록이므로 갱신 대상에서 제외한다.
 
@@ -37,7 +37,7 @@
 - FieldComment는 문서 버전이 아니라 현장 원천 기록이다.
 - FieldComment 원천 핵심 필드는 생성 후 수정·삭제하지 않고, 관리자 해석은 담당자·기한·정리·분석·상태·전이 사유와 원천 hash 감사로 분리한다. WPF에는 상세 필터와 저장된 보기, 다중 선택 검토 preview·품질 작업함·서버 역추적 화면이 있다. FastAPI에는 요청당 최대 200건을 입력 순서대로 사전검증하고 항목별 revision·mutation receipt로 부분 성공 처리하는 일괄 검토, 원자형 호환 일괄 경로, 감사·품질 API, 보고서 source와 생성 최종 문서·버전을 잇는 통합 역추적 API가 구현되어 있다.
 - 보고서 초안과 최종 저장은 서로 다른 source type 2종 이상을 요구한다. FieldComment는 `SELECTED`이면서 관찰 문서 버전과 원천 작성자가 있어야 하고 문서는 현재 공개 버전만 사용할 수 있다. 각 source는 version, 독립 trace ID와 저장 시점 SHA-256을 고정하며 최종 문서 저장 직전에 원천을 다시 검증한다.
-- WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다. 문서 버전과 FieldComment 첨부도 서버 idempotency key를 사용하며, 작업내역 화면에서 큐 깊이·최장 대기·최근 처리량·실패 분포와 row별 운영 상태를 확인한다. 서버본 유지로 종결한 `DISCARDED`도 전체 보존 건수에는 포함하되 재시도 대상 큐 깊이에서는 제외한다.
+- WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다. 공개·상태·태그는 안정된 mutation key와 서버 receipt를 사용하고, 2xx 응답 뒤 서버 문서 상태를 다시 읽어야 `SYNCED`로 종결한다. 작업내역 화면에서는 큐 깊이·최장 대기·최근 처리량·실패 분포와 row별 운영 상태를 확인한다. 서버본 유지로 종결한 `DISCARDED`도 전체 보존 건수에는 포함하되 재시도 대상 큐 깊이에서는 제외한다.
 - 작업순서는 동기화 큐 대상이 아니다. WPF 관리자·TV 화면은 FastAPI snapshot을 권위 원천으로 읽고, 관리 화면은 `board_revision`, mutation key, `baseBoardRevision`으로 서버를 직접 변경한다. 서버 미연결·조회 실패에서는 로컬 row를 읽기 캐시·초안으로만 표시하고 확정 변경을 차단한다.
 - Windows 보존 동기화 전환 CLI는 FAILED 큐를 읽기 전용 dry-run으로 분류하고 plan hash와 row별 승인을 요구한다. 승인된 구 `create`/FieldNote 항목은 기존 원천·큐·파일을 수정하지 않고 현재 action의 신규 큐와 감사 이력으로 연결한다.
 - WPF에는 AI 근거 후보 운영 점검 화면과 `AI 정답셋` 화면이 있다. `AI 정답셋`의 `사례·원천 구성` 창은 서버 후보를 포함 근거로 선택하고 실제 원천 ID·제외 사유를 제외 근거로 입력해 사례를 첫 승인 상태로 등록하며, `includePending=true`로 조회한 미승인 사례를 다른 사용자가 2차 승인할 수 있게 한다. 이어서 승인 사례를 불변 dataset version으로 구성하고 작성·검토·독립 2단계 승인·평가 run 비교를 수행한다. FastAPI는 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth를 저장하고 고정 원천 snapshot과 접근권한을 재검증한 뒤에만 활성화한다.
@@ -52,7 +52,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-22 현재 pytest node ID 149건을 중복 없이 수집하며 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 수집/JUnit guard도 149건이다. macOS 사전 검증에서 FastAPI 149건과 WPF Core 43건 통과, WPF 앱 빌드 경고·오류 0을 확인했다. Android와 Windows 누적 공통 DB 스모크는 `NOT_RUN`이며 Windows 무생략 `partial_run=false`, `verification-summary.json=PASSED` 기준선은 아직 확보해야 한다.
+- FastAPI 코드는 2026-07-26 현재 pytest node ID 150건을 중복 없이 수집해 모두 통과했고 WPF Core 테스트 45건도 통과했다. 표준 스크립트 `scripts/verify-preserved-tests.ps1`은 아직 FastAPI 149건·WPF Core 43건을 고정하므로 현재 코드와 맞지 않는다. 새 수치로 스크립트를 보정하고 Windows 누적 공통 DB 스모크와 Android 검증까지 한 run에서 통과하기 전에는 `partial_run=false`, `verification-summary.json=PASSED` 통합 기준선으로 인정하지 않는다.
 
 ## 일일 기록
 
