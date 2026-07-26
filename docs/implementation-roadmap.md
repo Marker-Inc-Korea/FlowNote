@@ -1,6 +1,6 @@
 # FlowNote 구현 로드맵
 
-이 문서는 2026-07-22 현재 코드에서 완료된 범위와, 아직 구현되지 않은 예외 작업을 분리한다. “완료된 기반”은 코드가 존재하는 항목이며 운영 실기 통과를 뜻하지 않는다.
+이 문서는 2026-07-26 현재 코드에서 완료된 범위와, 아직 구현되지 않은 예외 작업을 분리한다. “완료된 기반”은 코드가 존재하는 항목이며 운영 실기 통과를 뜻하지 않는다.
 
 ## 완료된 기반
 
@@ -33,7 +33,7 @@
 - AI 검색 근거 후보 read model의 재생성, 목록 조회, 품질 점검 API
 - 안정 후보 ID·내용 hash와 오프라인 ground-truth 근거/제외/순위 회귀 평가 API 및 결과 누적
 - 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth 첫 승인·독립 2차 승인, 원천 snapshot/provenance 고정, 후보의 `readiness_track` 판정과 실제 현장/스모크 준비도 분리, 48건 비민감 스모크 시드·검증 도구
-- 불변 ground-truth dataset version의 작성·구성·검토·독립 2단계 승인·대체·폐기, 승인 version 결합 평가 run과 scope 격리, 실제 익명 현장 24칸 독립 표본 검토와 제3 합의 기록
+- 불변 ground-truth dataset version의 작성·구성·검토·독립 2단계 승인·대체·폐기, 승인 version 결합 평가 run과 scope 격리, 실제 익명 현장 24칸 독립 표본 검토와 제3 합의 서버 API·DB 기록
 - WPF AI 근거 후보 운영 점검, `AI 정답셋`, 사례·원천 구성 화면과 서버 API 클라이언트
 - FastAPI `system-admin` 전용 외부 AI 전송 승인·프롬프트·운영 정책·감사·보존 API와 WPF `AI 운영` 화면. 고객·현장 scope별 질의 상세, 단일 만료와 legal hold 설정·해제, 이중 확인·멱등 재시도·서버 read-back 포함
 - FastAPI 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인 API
@@ -48,7 +48,7 @@
 ## 설계 완료, 부분 구현
 
 - 외부 AI 1단계의 범위, 데이터 모델, API, 보안·보존 계약을 정리하고 질의 생성·조회 라우터, ORM 테이블, 기능 플래그·전송 승인, 원천 권한·민감정보 필터, 최소 payload provider adapter와 인용·규칙 기반 의미 검증을 구현했다. fake/recording adapter, timeout/429/5xx 재시도, 응답 JSON·크기·중복·prompt injection 방어, 호출 후 승인·원천·권한 재검증도 포함한다. 전송 승인·프롬프트 수명주기·전역/현장 kill switch와 한도·보존 정책·정제 감사, 자동 만료 보존 스케줄러, 일괄·단일 즉시 실행, 활성 legal hold 우선순위 및 WPF 일괄 운영 UI도 구현했다. 허용 범위는 근거 검색과 요약이며, provider별 운영 연동은 아직 구현하지 않았다.
-- 현재 동작하는 AI 기능은 `ai_search_candidates` 재생성·목록·품질 API, scope별 ground-truth 사례·원천 구성과 2인 승인, 실제 현장/스모크 준비도 분리, 불변 dataset version의 작성·검토·독립 승인과 결합 회귀 평가, 24칸 독립 표본 검토·불일치 제3 합의, 결과 누적, WPF 근거 후보 점검·`AI 정답셋` 화면, 외부 질의의 비활성 기본값·승인·목적·원천 권한·민감정보·최소 payload·근거 snapshot·응답 검증·감사 게이트, `system-admin` 전용 운영 제어면이다. 후보 재생성은 문서의 활성 `smoke-regression` custom 태그를 기준으로 문서·연결 FieldComment·작업순서 이력·보고서 source의 `readiness_track`을 전파하고 준비도 API는 `field_readiness`와 `smoke_regression_readiness`를 별도 반환한다. generic 네트워크 adapter는 명시적 test scope에서만 동작하며 운영 호출로 간주하지 않는다. 합성/시험 48건과 `PILOT` 사례는 고객 승인 `ANONYMOUS_FIELD` 준비도나 운영 provider 승인을 뜻하지 않는다.
+- 현재 동작하는 AI 기능은 `ai_search_candidates` 재생성·목록·품질 API, scope별 ground-truth 사례·원천 구성과 2인 승인, 실제 현장/스모크 준비도 분리, 불변 dataset version의 작성·검토·독립 승인과 결합 회귀 평가, 24칸 독립 표본 검토·불일치 제3 합의 서버 API, 결과 누적, WPF 근거 후보 점검·`AI 정답셋` 화면, 외부 질의의 비활성 기본값·승인·목적·원천 권한·민감정보·최소 payload·근거 snapshot·응답 검증·감사 게이트, `system-admin` 전용 운영 제어면이다. 표본 검토용 WPF 화면과 클라이언트는 아직 없다. 후보 재생성은 문서의 활성 `smoke-regression` custom 태그를 기준으로 문서·연결 FieldComment·작업순서 이력·보고서 source의 `readiness_track`을 전파하고 준비도 API는 `field_readiness`와 `smoke_regression_readiness`를 별도 반환한다. generic 네트워크 adapter는 명시적 test scope에서만 동작하며 운영 호출로 간주하지 않는다. 합성/시험 48건과 `PILOT` 사례는 고객 승인 `ANONYMOUS_FIELD` 준비도나 운영 provider 승인을 뜻하지 않는다.
 
 ## 개발 우선순위 원칙
 
@@ -66,7 +66,7 @@
 
 ## 다음 우선순위
 
-1. 현재 코드는 FastAPI 151건·WPF Core 45건을 수집하지만 `scripts/verify-preserved-tests.ps1` guard는 149건·43건이다. 먼저 guard를 현재 수치로 보정한 뒤 Windows x64 표준 환경에서 누적 공통 DB 스모크 전후 무결성, Android 단위 테스트·debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, 단일 `PASSED` 실행 ID를 남긴다.
+1. 현재 코드는 FastAPI 151건·WPF Core 48건을 수집하지만 `scripts/verify-preserved-tests.ps1` guard는 149건·43건이다. 먼저 guard를 현재 수치로 보정한 뒤 Windows x64 표준 환경에서 누적 공통 DB 스모크 전후 무결성, Android 단위 테스트·debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, 단일 `PASSED` 실행 ID를 남긴다.
 2. [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
 4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다. APK 설치·rollback은 승인 ADB serial, 동일 signer와 더 낮은 이전 versionCode를 확인하고, AAB는 관리형 스토어가 전달한 서명 APK를 별도로 검증한다. `full_pilot`의 전달·무결성·보안·단말 수명주기·패키지 승인 원시 CSV와 같은 `run_id`의 실제 증거가 모두 PASS일 때만 완료한다.

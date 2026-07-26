@@ -1,6 +1,6 @@
 # WPF 사용자별 알림 cursor 보존 정책
 
-이 문서는 2026-07-22 현재 `ServerNotificationCursorService`, `ServerEpochGuardService`, `ServerReconciliationService` 구현 기준이다.
+이 문서는 2026-07-26 현재 `ServerNotificationCursorService`, `ServerEpochGuardService`, `ServerReconciliationService` 구현 기준이다.
 
 WPF의 서버 채널 알림 polling 위치는 공통 로컬 SQLite의 `server_notification_cursors`에 저장한다. 키는 정규화한 서버 scope와 서버 로그인 `user_id`의 조합이다. 서버 scope는 URL의 scheme, IDN host, 명시 포트와 base path를 포함하며 query, fragment, 사용자 정보는 제외한다.
 

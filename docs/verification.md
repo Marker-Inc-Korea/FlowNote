@@ -11,7 +11,7 @@
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
 | FastAPI | 현재 코드 151건, 스크립트 guard 149건으로 불일치 | 동일 |
-| WPF Core | 현재 코드 45건, 스크립트 guard 43건으로 불일치 | 동일 |
+| WPF Core | 현재 코드 48건, 스크립트 guard 43건으로 불일치 | 동일 |
 | WPF 앱 | 목표 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 목표 unit 15/15, failure/error/skipped 0, debug build PASS | 동일 |
@@ -21,6 +21,14 @@
 보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 이 실행과 앞선 실패 실행의 DB·로그·요약은 삭제하거나 덮어쓰지 않는다. 현재 작업 환경은 macOS ARM64이므로 Windows x64 무생략 실행과 같은 환경에서의 경고 재확인은 수행할 수 없다.
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
+
+## 2026-07-26 작업 201 전체 Markdown 현재 코드 재대조
+
+Git이 추적하는 Markdown 43개를 모두 현재 FastAPI, Windows WPF, Android와 운영·검증 스크립트에 대조했다. `AGENTS.md`는 작업 정책 원문으로, `docs/daily/`의 날짜별 실행 수치와 현장 소리 기록은 당시 증거로 보존했다. 다만 과거 문서 안에서도 현재 코드 기준이라고 명시한 API·스키마·테스트 설명은 2026-07-26 구현에 맞췄다. 새 실제 현장 표본 검토는 FastAPI·서버 DB에만 있고 WPF 화면과 클라이언트는 없다는 경계도 제품·시스템·API·클라이언트 문서에 반영했다.
+
+현재 코드에서 루트 `GET /`를 포함한 OpenAPI 130개 method/path 조합, SQLAlchemy ORM 60개 테이블, `Settings` 36개 항목을 다시 산출했다. `services/api/README.md`의 API 표는 누락·초과 0건이고 세 스키마 문서에는 60개 테이블이 모두 있다. FastAPI 전체 151건과 WPF Core 48건이 통과했으며 Ruff도 통과했다. WPF 앱은 단독 재실행에서 경고 0개·오류 0개로 빌드됐다. 처음 WPF Core 테스트와 앱 빌드를 병렬 실행했을 때 공유 Core DLL 복사 재시도 경고 1건이 있었으나 두 작업이 끝난 뒤 단독 빌드에서는 재현되지 않았다.
+
+Android 기본 Java 탐색은 Runtime을 찾지 못해 실패했고 wrapper class 직접 실행도 classpath 오류로 실패했다. Android Studio JBR 21의 Java를 명시해 단위 테스트와 debug 빌드를 `--rerun-tasks`로 다시 실행한 결과 15건, 실패·오류·건너뜀 0건과 `BUILD SUCCESSFUL`을 확인했다. 이 실행은 macOS 컴포넌트 검증이며 Windows 공통 DB 스모크, Android lint·계측·실단말, Windows x64 통합 실행은 포함하지 않는다. `scripts/verify-preserved-tests.ps1`의 FastAPI 149건·WPF Core 43건 guard가 현재 151건·48건과 달라 무생략 통합 기준선은 계속 `대기`다. 기존 SQLite, 로그, 빌드·테스트 산출물은 삭제하거나 초기화하지 않았다.
 
 ## 2026-07-26 후보 7 실제 현장 AI ground-truth 기초 강화
 
@@ -138,7 +146,7 @@ Git 추적 Markdown 42개를 목록화하고 작업 정책 원문 `AGENTS.md`를
 
 당시 작업 시작 시 Git 작업 트리와 `main...origin/main`은 깨끗해 반영할 미커밋 코드는 없었다. 서버 복구 manifest/reconciliation, WPF 재결합 경계와 관련 상위 문서는 그 시점 코드와 일치했다. 다만 `services/api/README.md`의 FastAPI 수집 기준만 서버 복구 회귀 6건이 추가되기 전인 137건에 머물러 있어 당시 수집값 143건으로 갱신했다.
 
-그 재대조에서 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 143건을 수집했다. 당시 OpenAPI는 루트 `GET /`를 포함한 122개 method/path 조합이고 SQLAlchemy ORM은 57개 테이블이었다. 전체 테스트·WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았으며 기존 SQLite, 로그와 테스트 산출물은 삭제하지 않았다. 이 수치는 이후 AI 보존 변경 전 기록이며 현재 기준은 이 문서 최상단의 128개 API·59개 테이블·150개 테스트를 따른다.
+그 재대조에서 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 143건을 수집했다. 당시 OpenAPI는 루트 `GET /`를 포함한 122개 method/path 조합이고 SQLAlchemy ORM은 57개 테이블이었다. 전체 테스트·WPF·Android 빌드와 통합 스모크는 새로 실행하지 않았으며 기존 SQLite, 로그와 테스트 산출물은 삭제하지 않았다. 이 수치는 이후 AI 보존 변경 전 기록이며 현재 기준은 이 문서 최상단의 130개 API·60개 테이블·151개 테스트를 따른다.
 
 ## 2026-07-21 작업 102 서버 복구 reconciliation 문서 갱신
 
@@ -152,7 +160,7 @@ Git 추적 Markdown 42개를 전부 목록화했다. 작업 정책 원문 `AGENT
 
 이 절을 처음 작성한 시점의 OpenAPI는 루트 `GET /`를 포함한 116개 method/path 조합이었고 ORM은 FieldComment 검토·보고서·작업순서 mutation receipt를 포함한 54개 테이블이었다. 이후 서버 복구 reconciliation 시점에는 122개 API와 57개 테이블이었다. 당시에도 작업순서는 `board_revision`과 mutation receipt를 쓰는 FastAPI 권위 aggregate였고, FieldComment 검토는 `review_revision`, 보고서는 `report_revision`과 내용/source 집합 hash를 권위값으로 사용했다. WPF는 작업순서 서버 snapshot을 직접 읽고, 검토·첨부·보고서 재시도에는 base revision·mutation key·파일/source hash를 전달해 응답 read-back을 로컬에 보존했다.
 
-이 절 작성 당시 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 137건을 수집했다. 새 3건은 FieldComment 검토 동시성/receipt 재생, 첨부 응답 유실 재시도, 보고서 선정 뒤 source 변경 409 차단이었다. 전체 pytest는 당시 문서 갱신 중 새로 실행하지 않았으며, 직전 134 passed는 새 3건 추가 전의 역사적 결과로 보존한다. 당시 macOS에서 실행 가능한 WPF Core 테스트는 작업순서 서버 권위 정책 5건을 포함해 33 passed, failed/skipped 0이었고 Android `testDebugUnitTest`는 Java Runtime 부재로 테스트 시작 전 환경 실패였다. WPF 앱 build·누적 스모크·Android build도 Windows 표준 기준선으로 새로 실행하지 않았다. 이후 143건 통과 기록도 역사적 결과이며 현재 수집 기준은 문서 최상단의 150건이다.
+이 절 작성 당시 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 137건을 수집했다. 새 3건은 FieldComment 검토 동시성/receipt 재생, 첨부 응답 유실 재시도, 보고서 선정 뒤 source 변경 409 차단이었다. 전체 pytest는 당시 문서 갱신 중 새로 실행하지 않았으며, 직전 134 passed는 새 3건 추가 전의 역사적 결과로 보존한다. 당시 macOS에서 실행 가능한 WPF Core 테스트는 작업순서 서버 권위 정책 5건을 포함해 33 passed, failed/skipped 0이었고 Android `testDebugUnitTest`는 Java Runtime 부재로 테스트 시작 전 환경 실패였다. WPF 앱 build·누적 스모크·Android build도 Windows 표준 기준선으로 새로 실행하지 않았다. 이후 143건 통과 기록도 역사적 결과이며 현재 수집 기준은 문서 최상단의 151건이다.
 
 이 절 작성 당시 `scripts/verify-preserved-tests.ps1`의 `$expectedFastApiTestCount`는 131이었고 이후 같은 날의 중간 단계에서 144건으로 복구됐다. 현재 guard는 149건이지만 새 Windows x64 무생략 `PASSED` 기준선은 아직 확보하지 못했다. 기존 `baseline-131-macos-precheck-20260721-001`은 당시 결과로 보존하지만 현재 코드 기준선으로 승격하지 않는다. 기존 실패 run, SQLite, 로그, 파일은 삭제하거나 초기화하지 않았다.
 
@@ -304,7 +312,7 @@ FastAPI 수집 목록은 128개 node ID, 중복 0개로 대조했고 macOS 보�
 
 검증은 외부 호출 없이 fake/recording adapter와 로컬 candidate ranking으로 먼저 반복한다. prompt version, policy 또는 검색 구현을 바꾸기 전후에 같은 승인 case ID를 평가하고 `previous_run_delta`의 candidate 추가/제거, content hash와 순위 변경을 비교한다. 실패 run과 case row, fake payload, 로그는 삭제하지 않는다. 사람이 뽑은 표본 응답은 두 검토자가 근거 적합성, 누락, 과장, 상충 표시, `참고 요약` 표현과 자동 조치로 오인될 문구가 없는지를 각각 확인한다. 두 판단이 다르면 `PENDING`으로 두고 합의 근거를 새 검토 기록으로 남긴다.
 
-실제 현장 승인본은 `scripts/verify-ai-field-readiness.py`에 dataset version과 고정 고객·현장·라인·DB scope를 주어 검증한다. 이 도구의 SQL 단계는 48건/24칸, dataset 네 actor와 case 두 승인자 분리, `ANONYMOUS_FIELD`/`PILOT` provenance, 중복·orphan·hash·제외 이유를 검사한다. 이어 같은 승인 snapshot을 두 번 평가하고 두 번째 run의 `previous_run_delta`와 100%/0건 임계값을 비교한다. 비밀번호는 `FLOWNOTE_FIELD_READINESS_VERIFY_PASSWORD`에만 두며 검증기 설정은 `FAKE` adapter와 `ai_external_call_enabled=false`를 강제한다.
+실제 현장 승인본은 `scripts/verify-ai-field-readiness.py`에 dataset version과 고정 고객·현장·라인·DB scope를 주어 검증한다. 이 절을 처음 작성했을 때 SQL 단계는 `ANONYMOUS_FIELD`/`PILOT` provenance를 허용했지만, 2026-07-26 현재 검증기는 provider 착수 48건을 고객 승인 `ANONYMOUS_FIELD`로만 제한한다. SQL은 48건/24칸, dataset 네 actor와 case 두 승인자 분리, 중복·orphan·hash·제외 이유를 검사한다. 이어 같은 승인 snapshot을 두 번 평가하고 두 번째 run의 `previous_run_delta`와 100%/0건 임계값을 비교한다. 비밀번호는 `FLOWNOTE_FIELD_READINESS_VERIFY_PASSWORD`에만 두며 검증기 설정은 `FAKE` adapter와 `ai_external_call_enabled=false`를 강제한다.
 
 사람 표본 검토는 자동 평가와 별개로 두 명이 같은 run/dataset snapshot에서 독립 수행한다. 각 검토자는 근거 적합성, 누락, 과장, 상충 표시, `참고 요약` 표현을 판정하고 reviewer ID·시각·근거를 남긴다. 불일치는 자동 합격으로 병합하지 않고 `PENDING`으로 유지한 채 제3의 합의 기록 또는 새 dataset version으로 종결한다.
 
