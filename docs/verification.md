@@ -22,6 +22,12 @@
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
 
+## 2026-07-26 작업 102 현재 코드·문서 재대조
+
+작업 시작 시 Git 작업 트리는 깨끗했고 `main`은 `origin/main`과 동기화된 상태였다. 최근 반영된 `manage-pilot-run.py` schema version 4와 Windows/서버 패키지 증거 판정은 배포·파일럿·검증 문서에 이미 반영되어 있어 기능 설명을 추가로 고치지 않았다.
+
+현재 코드에서 루트 `GET /`를 포함한 OpenAPI 128개 method/path 조합, SQLAlchemy ORM 59개 테이블, `Settings` 36개 항목을 다시 산출했다. 서버 README의 API 표는 128개 조합과 누락·초과 없이 일치했다. FastAPI는 중복 없는 150개 node ID를 수집했고 WPF Core는 45개 테스트를 확인했으며, `scripts` 단위 테스트 16건은 모두 통과했다. 이번 작업은 문서 재대조가 범위이므로 FastAPI·WPF 전체 실행과 Windows x64 통합 스모크, Android 검증은 새로 실행하지 않았다. 기존 SQLite, 로그와 테스트 산출물은 삭제하거나 초기화하지 않았다.
+
 ## 2026-07-26 문서 동기화 수렴 변경 검증
 
 현재 코드는 루트 `GET /`를 포함한 OpenAPI 128개 method/path 조합과 SQLAlchemy ORM 59개 테이블을 제공한다. 새 `document_mutation_receipts`는 문서 공개·상태·태그 mutation의 intent hash, 적용 revision과 최초 성공 응답을 같은 transaction에 보존한다. WPF는 같은 mutation key로 재시도하고 성공 응답 뒤 서버 문서를 다시 읽어 상태·공개 버전·태그·revision이 일치할 때만 큐를 `SYNCED`로 종결한다. reconciliation은 이 세 mutation의 receipt를 판정 원천으로 사용하며 승인 종결 상태도 보존한다.
