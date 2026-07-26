@@ -48,6 +48,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `ai_ground_truth_dataset_versions` | Immutable scoped dataset version, lifecycle, coverage, replacement, and approval history |
 | `ai_ground_truth_dataset_cases` | Frozen case composition and case snapshot hashes for a dataset version |
 | `ai_evaluation_dataset_bindings` | One-to-one binding from an evaluation run to its approved dataset snapshot |
+| `ai_field_readiness_sample_reviews` | Immutable 24-cell independent human reviews, disagreements, and third-person consensus for a field dataset/run snapshot |
 | `ai_prompt_versions` | Approved immutable prompt versions by allowed purpose |
 | `ai_queries` | AI query text/hash, purpose, status, response storage policy, and retention metadata |
 | `ai_query_legal_holds` | Query preservation order, authority reference, active/released state, and placement/release audit |

@@ -28,6 +28,8 @@ ZERO_FIELDS = {
     "provenance_violation_count", "snapshot_hash_violation_count", "orphan_reference_count",
     "reference_hash_violation_count", "missing_rationale_count",
     "missing_exclusion_reason_count",
+    "sample_review_scope_violation_count", "sample_review_actor_violation_count",
+    "sample_review_pending_disagreement_count",
 }
 
 
@@ -86,6 +88,8 @@ def main() -> int:
     violations = {key: integrity[key] for key in ZERO_FIELDS if integrity.get(key) != 0}
     if integrity.get("expected_source_type_count") != 4:
         violations["expected_source_type_count"] = integrity.get("expected_source_type_count", 0)
+    if integrity.get("sample_review_complete_count", 0) < 1:
+        violations["sample_review_complete_count"] = integrity.get("sample_review_complete_count", 0)
     if integrity.get("dataset_count") != 1 or integrity.get("case_count") != 48 or violations:
         print(json.dumps({"status": "FAILED", "integrity": integrity}, ensure_ascii=False, sort_keys=True))
         return 1

@@ -1,6 +1,6 @@
 # AI 준비 ground-truth와 48건 회귀 기준
 
-이 문서는 2026-07-22 현재 `ai_search` API, WPF `AI 정답셋`, 시드·검증 스크립트 구현 기준이다. 실제 현장 데이터셋·승인자·provider 심사가 아직 없는 부분은 운영 착수 조건으로 구분한다.
+이 문서는 2026-07-26 현재 `ai_search` API, WPF `AI 정답셋`, 시드·검증 스크립트 구현 기준이다. 실제 현장 데이터셋·승인자·provider 심사가 아직 없는 부분은 운영 착수 조건으로 구분한다.
 
 외부 provider를 운영 연결하기 전에 근거 검색 품질을 같은 snapshot에서 반복 평가한다. 기준 매트릭스는 안전, 품질, 설비 이상, 작업 보류, 재작업, 인수인계, 최신 공개 문서, 상충 기록의 8범주와 `NORMAL`, `EXCLUSION`, `CONFLICT` 3유형을 조합하고 각 칸에 2건씩 둬 총 48건이다.
 
@@ -11,7 +11,7 @@
 `ai_search_ground_truth_provenance`는 질문 본문과 분리해 다음을 보존한다.
 
 - 데이터 분류: `SYNTHETIC`, `TEST`, `ANONYMOUS_FIELD`, `PILOT`
-- 준비도 계열: `SYNTHETIC`/`TEST`는 `SMOKE_REGRESSION`, `ANONYMOUS_FIELD`/`PILOT`은 `FIELD_READINESS`
+- 준비도 계열: `SYNTHETIC`/`TEST`는 `SMOKE_REGRESSION`, `ANONYMOUS_FIELD`/`PILOT`은 `FIELD_READINESS`. 다만 승인 `FIELD_READINESS` dataset 구성과 provider 착수 48건에는 고객 승인을 받은 `ANONYMOUS_FIELD`만 허용
 - 원천 snapshot hash, 비민감 여부, provenance 설명
 - 첫 승인자/시각과 서로 다른 두 번째 승인자/시각
 - `PENDING_SECOND_APPROVAL`, `APPROVED`, `REJECTED` 상태
@@ -79,4 +79,48 @@ services/api/.venv/bin/python scripts/verify-ai-field-readiness.py \
   --line-scope LINE_SCOPE --username verifier-account
 ```
 
-검증기는 승인 dataset과 고객·현장·선택적 라인·DB fingerprint를 정확히 결합한다. SQL 단계에서 48건, 24칸×2건, case key 중복, 작성자/검토자/1차/2차 승인자 분리, `ANONYMOUS_FIELD`/`PILOT` provenance, snapshot/reference hash, 제외 이유와 네 원천 orphan을 검사한다. 이어 외부 호출을 비활성화한 `FAKE` adapter로 같은 dataset snapshot을 두 번 평가해 candidate ID/content hash/rank의 `previous_run_delta`, top-k, citation trace·의미 일치, 상충 표시와 세 가지 0건 위반 지표를 확인한다. 실제 원천이나 승인자가 부족하면 실패 상태를 그대로 유지하며 합성 사례를 이 dataset에 보충하지 않는다.
+검증기는 승인 dataset과 고객·현장·선택적 라인·DB fingerprint를 정확히 결합한다. SQL 단계에서 48건, 24칸×2건, case key 중복, 작성자/검토자/1차/2차 승인자 분리, `ANONYMOUS_FIELD` provenance, snapshot/reference hash, 제외 이유와 네 원천 orphan을 검사한다. 이어 외부 호출을 비활성화한 `FAKE` adapter로 같은 dataset snapshot을 두 번 평가해 candidate ID/content hash/rank의 `previous_run_delta`, top-k, citation trace·의미 일치, 상충 표시와 세 가지 0건 위반 지표를 확인한다. 실제 원천이나 승인자가 부족하면 실패 상태를 그대로 유지하며 합성 사례나 `PILOT` 사례를 이 48건에 보충하지 않는다.
+
+## 실제 익명 현장 원천의 책임과 반출 금지
+
+실제 현장 원천은 고객의 서면 승인을 받은 범위에서만 `ANONYMOUS_FIELD` 또는 제한 파일럿 `PILOT`으로 등록한다. 익명화 책임자는 고객이 지정한 현장 데이터 책임자이고 FlowNote 운영 담당자는 익명화 결과의 형식·추적값·승인 상태만 확인한다. 실제 담당자 이름, 승인 문서 번호와 유효기간은 고객별 비공개 운영대장에 기록하며 저장소 문서에는 쓰지 않는다. 현재 실제 담당자와 승인 값은 정해지지 않았으므로 상태는 `PENDING`이다.
+
+다음 정보가 남아 있으면 익명 현장셋으로 반입하지 않는다.
+
+- 고객명·협력사명·공장명·주소·계약번호·고객이 식별자로 지정한 코드
+- 성명, 사번, 전화번호, 이메일, 얼굴, 차량번호와 개인을 알아볼 수 있는 자유서술
+- 계정, 비밀번호, API key, token, 인증서·개인키, 내부 URL, 로컬 절대경로
+- 고객이 대외비·영업비밀·수출통제 대상으로 지정한 원문이나 승인 범위 밖 사진·첨부
+- 삭제·비공개 문서, `EXCLUDED`/`ARCHIVED` FieldComment, 접근권한 밖 채널과 라인의 내용
+
+승인 원천은 승인된 고객 서버 안에서 익명화하고 원본 파일이나 원문 DB를 개발 저장소·개인 PC·공용 메신저·이메일·외부 AI 서비스로 반출하지 않는다. 검증 환경에는 승인된 최소 발췌와 source/version/trace/hash만 옮긴다. DB fingerprint는 경로나 접속 문자열이 아니라 `database_scope()`가 만든 driver+hash를 사용한다. 반출 금지 대상이 발견되면 해당 case는 활성화하지 않고 `PENDING` 또는 `REJECTED`로 남긴 뒤 고객 책임자에게 되돌린다.
+
+## 독립 표본 검토 양식과 불일치 처리
+
+승인된 `FIELD_READINESS` dataset snapshot을 동일하게 통과한 두 evaluation run 가운데 하나를 표본 검토 run으로 고정한다. 결과를 보기 전에 표본 계획 참조를 확정하고 24개 범주·유형 칸마다 1건씩 총 24건을 선택한다. 두 검토자는 같은 case 목록을 서로 독립적으로 확인하고 다음 항목을 case별로 기록한다.
+
+| 필드 | 기록 기준 |
+| --- | --- |
+| dataset/run | `dataset_version_id`, dataset snapshot hash, 두 번의 비교 run ID, 검토 대상 run ID |
+| 표본 계획 | 변경 불가능한 `samplingPlanReference`, 24개 case key와 sample hash |
+| 인용 추적 | source/version/trace/content hash가 승인 원천으로 이어지면 `PASS`, 아니면 `FAIL` |
+| 인용 의미 | 질문·기대 근거·실제 후보의 의미가 일치하면 `PASS`, 아니면 `FAIL` |
+| 상충 표시 | `CONFLICT` case에서 양쪽 근거와 상충이 드러나면 `PASS`, 아니면 `FAIL`; 다른 유형은 `NOT_APPLICABLE` |
+| 권한 경계 | 제외 근거·권한 밖 원천이 노출되지 않으면 `PASS`, 아니면 `FAIL` |
+| 검토 메모 | 판단 근거를 재검토할 수 있는 짧은 설명. 원문 개인정보나 고객 식별정보는 복제하지 않음 |
+
+`POST /api/v1/ai-search/field-readiness/sample-reviews`는 두 독립 검토자의 표본·판정을 `ai_field_readiness_sample_reviews`에 각각 보존한다. 첫 검토만 있을 때는 다른 사용자의 조회 응답에서 판정과 decision hash를 숨기고 표본 계획·case 목록만 제공한다. 두 결과가 같으면 `COMPLETED`다. 하나라도 다르면 `PENDING_CONSENSUS`이며 불일치 case key를 그대로 보존한다. 이 상태를 임의로 `PASS`로 바꾸지 않는다. 합의가 필요한 경우 앞선 두 사람과 다른 제3 검토자가 불일치 case만 다시 판정하고 두 review ID를 연결한다. 제3 기록이 없으면 provider 착수 게이트는 계속 닫힌다. 원래 두 판정은 수정하거나 삭제하지 않는다.
+
+작성자·dataset 검토자·1차 승인자·2차 승인자는 모두 달라야 한다. 표본의 두 검토자도 서로 달라야 하며 제3 합의자는 두 표본 검토자와 달라야 한다. 실제 사용자 배정이 끝나지 않은 상태는 `PENDING`이고 대리 계정이나 공용 계정으로 분리를 충족한 것으로 보지 않는다.
+
+## Dataset 교체 주기
+
+정기 교체 검토는 분기 1회 실시한다. 다음 사건이 발생하면 정기일을 기다리지 않고 새 dataset version을 만든다.
+
+- 문서 분류·권한 정책, 고객·현장·라인 scope 또는 DB fingerprint 변경
+- 48건 가운데 원천 version/hash가 바뀌거나 원천이 폐기·비공개·권한 밖으로 전환
+- 후보 생성·순위·인용·상충 판정 정책의 의미 있는 변경
+- 익명화 누락, 권한 누출, 존재하지 않는 인용, 제외 근거 노출 발견
+- 고객 승인 만료·철회 또는 표본 검토 불일치의 재발
+
+승인 dataset은 제자리 수정하지 않는다. 같은 dataset key의 다음 version에 교체 사유와 `replaces_dataset_version_id`를 남기고 사례 48건·24칸, 네 사람의 dataset 역할 분리, 동일 snapshot 2회 평가와 독립 표본 검토를 다시 완료한다. 이전 version과 evaluation·검토 기록은 `SUPERSEDED` 이력으로 보존한다.

@@ -599,6 +599,25 @@ def _ensure_ai_ground_truth_indexes(database: Database) -> None:
         ))
 
 
+def _ensure_ai_field_readiness_sample_review_columns(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+    with database.engine.begin() as connection:
+        columns = {
+            row[1]
+            for row in connection.execute(
+                text("PRAGMA table_info(ai_field_readiness_sample_reviews)")
+            )
+        }
+        if columns and "resolved_review_ids_json" not in columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_field_readiness_sample_reviews "
+                    "ADD COLUMN resolved_review_ids_json TEXT"
+                )
+            )
+
+
 def _seed_default_admin_account(database: Database) -> None:
     with database.session() as session:
         existing = session.scalar(
@@ -738,6 +757,7 @@ def initialize_database(database: Database) -> None:
     _ensure_ai_evidence_snapshot_has_no_candidate_fk(database)
     _ensure_ai_search_candidate_content_hash(database)
     _ensure_ai_ground_truth_indexes(database)
+    _ensure_ai_field_readiness_sample_review_columns(database)
     _ensure_ai_operations_columns(database)
     with database.session() as session:
         identity = session.get(ServerIdentity, 1)

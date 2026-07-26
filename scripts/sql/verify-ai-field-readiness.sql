@@ -64,6 +64,127 @@ reference_checks AS (
            ELSE 0
          END AS source_exists
   FROM all_references r
+),
+dataset_reviews AS (
+  SELECT r.*, d.snapshot_hash AS approved_snapshot_hash,
+         b.dataset_snapshot_hash AS bound_snapshot_hash,
+         e.status AS evaluation_status,
+         e.candidate_identity_stable,
+         e.ranking_stable,
+         CASE WHEN json_extract(e.metrics_json, '$.case_count') = 48
+                   AND json_extract(e.metrics_json, '$.passed_count') = 48
+                   AND json_extract(e.metrics_json, '$.source_coverage_complete') = 1
+                   AND json_extract(e.metrics_json, '$.top_k_inclusion_rate') = 1.0
+                   AND json_extract(e.metrics_json, '$.citation_trace_success_rate') = 1.0
+                   AND json_extract(e.metrics_json, '$.citation_semantic_match_rate') = 1.0
+                   AND json_extract(e.metrics_json, '$.conflict_disclosure_rate') = 1.0
+                   AND json_extract(e.metrics_json, '$.excluded_source_violation') = 0
+                   AND json_extract(e.metrics_json, '$.permission_leak_violation') = 0
+                   AND json_extract(e.metrics_json, '$.nonexistent_citation_violation') = 0
+                   AND json_extract(e.metrics_json, '$.readiness_track') = 'FIELD_READINESS'
+                   AND json_extract(e.metrics_json, '$.dataset_version_id') = d.dataset_version_id
+                   AND json_extract(e.metrics_json, '$.dataset_snapshot_hash') = d.snapshot_hash
+              THEN 1 ELSE 0 END AS evaluation_quality_ready
+  FROM selected_dataset d
+  JOIN ai_field_readiness_sample_reviews r USING (dataset_version_id)
+  LEFT JOIN ai_evaluation_dataset_bindings b
+    ON b.run_id = r.evaluation_run_id
+   AND b.dataset_version_id = r.dataset_version_id
+  LEFT JOIN ai_search_evaluation_runs e ON e.run_id = r.evaluation_run_id
+),
+stable_review_runs AS (
+  SELECT DISTINCT reviewed.evaluation_run_id
+  FROM dataset_reviews reviewed
+  WHERE reviewed.evaluation_quality_ready = 1
+    AND EXISTS (
+      SELECT 1
+      FROM ai_evaluation_dataset_bindings other_binding
+      JOIN ai_search_evaluation_runs other_run
+        ON other_run.run_id = other_binding.run_id
+      WHERE other_binding.dataset_version_id = reviewed.dataset_version_id
+        AND other_binding.dataset_snapshot_hash = reviewed.dataset_snapshot_hash
+        AND other_binding.run_id <> reviewed.evaluation_run_id
+        AND other_run.status = 'PASSED'
+        AND other_run.candidate_identity_stable = 1
+        AND other_run.ranking_stable = 1
+        AND json_extract(other_run.metrics_json, '$.case_count') = 48
+        AND json_extract(other_run.metrics_json, '$.passed_count') = 48
+        AND json_extract(other_run.metrics_json, '$.source_coverage_complete') = 1
+        AND json_extract(other_run.metrics_json, '$.top_k_inclusion_rate') = 1.0
+        AND json_extract(other_run.metrics_json, '$.citation_trace_success_rate') = 1.0
+        AND json_extract(other_run.metrics_json, '$.citation_semantic_match_rate') = 1.0
+        AND json_extract(other_run.metrics_json, '$.conflict_disclosure_rate') = 1.0
+        AND json_extract(other_run.metrics_json, '$.excluded_source_violation') = 0
+        AND json_extract(other_run.metrics_json, '$.permission_leak_violation') = 0
+        AND json_extract(other_run.metrics_json, '$.nonexistent_citation_violation') = 0
+        AND (SELECT count(*) FROM ai_search_evaluation_cases current_case
+             WHERE current_case.run_id = reviewed.evaluation_run_id) = 48
+        AND NOT EXISTS (
+          SELECT 1
+          FROM ai_search_evaluation_cases current_case
+          LEFT JOIN ai_search_evaluation_cases other_case
+            ON other_case.run_id = other_binding.run_id
+           AND other_case.case_key = current_case.case_key
+          WHERE current_case.run_id = reviewed.evaluation_run_id
+            AND (
+              other_case.id IS NULL
+              OR other_case.actual_evidence_json <> current_case.actual_evidence_json
+              OR other_case.ranking_hash <> current_case.ranking_hash
+              OR other_case.passed <> current_case.passed
+            )
+        )
+    )
+),
+review_sample_coverage AS (
+  SELECT r.review_id, count(j.value) AS sample_count,
+         count(DISTINCT c.category || ':' || c.scenario_type) AS matrix_cell_count
+  FROM dataset_reviews r
+  JOIN json_each(r.sample_case_keys_json) j
+  LEFT JOIN ai_ground_truth_dataset_cases sample_member
+    ON sample_member.dataset_version_id = r.dataset_version_id
+   AND sample_member.case_key = j.value
+  LEFT JOIN ai_search_ground_truth_cases c
+    ON c.ground_truth_case_id = sample_member.ground_truth_case_id
+  WHERE r.review_role = 'INDEPENDENT'
+  GROUP BY r.review_id
+),
+review_pairs AS (
+  SELECT first_review.review_id AS first_review_id,
+         second_review.review_id AS second_review_id,
+         first_review.evaluation_run_id,
+         first_review.sample_hash,
+         first_review.decision_hash AS first_decision_hash,
+         second_review.decision_hash AS second_decision_hash
+  FROM dataset_reviews first_review
+  JOIN dataset_reviews second_review
+    ON second_review.evaluation_run_id = first_review.evaluation_run_id
+   AND second_review.sample_hash = first_review.sample_hash
+   AND second_review.id > first_review.id
+  JOIN review_sample_coverage first_coverage
+    ON first_coverage.review_id = first_review.review_id
+  JOIN review_sample_coverage second_coverage
+    ON second_coverage.review_id = second_review.review_id
+  JOIN stable_review_runs stable_run
+    ON stable_run.evaluation_run_id = first_review.evaluation_run_id
+  WHERE first_review.review_role = 'INDEPENDENT'
+    AND second_review.review_role = 'INDEPENDENT'
+    AND first_review.reviewer_id <> second_review.reviewer_id
+    AND first_coverage.sample_count = 24
+    AND first_coverage.matrix_cell_count = 24
+    AND second_coverage.sample_count = 24
+    AND second_coverage.matrix_cell_count = 24
+    AND first_review.dataset_snapshot_hash = first_review.approved_snapshot_hash
+    AND second_review.dataset_snapshot_hash = second_review.approved_snapshot_hash
+    AND first_review.bound_snapshot_hash = first_review.approved_snapshot_hash
+    AND second_review.bound_snapshot_hash = second_review.approved_snapshot_hash
+    AND first_review.evaluation_status = 'PASSED'
+    AND second_review.evaluation_status = 'PASSED'
+    AND first_review.candidate_identity_stable = 1
+    AND second_review.candidate_identity_stable = 1
+    AND first_review.ranking_stable = 1
+    AND second_review.ranking_stable = 1
+    AND first_review.evaluation_quality_ready = 1
+    AND second_review.evaluation_quality_ready = 1
 )
 SELECT
   (SELECT count(*) FROM selected_dataset) AS dataset_count,
@@ -85,7 +206,7 @@ SELECT
    WHERE approval_status <> 'APPROVED' OR case_first_approved_by = case_second_approved_by
       OR case_second_approved_by IS NULL) AS case_approval_violation_count,
   (SELECT count(*) FROM dataset
-   WHERE data_classification NOT IN ('ANONYMOUS_FIELD', 'PILOT')
+   WHERE data_classification <> 'ANONYMOUS_FIELD'
       OR provenance_track <> 'FIELD_READINESS' OR contains_sensitive_data <> 0) AS provenance_violation_count,
   (SELECT count(*) FROM dataset
    WHERE length(source_snapshot_hash) <> 64 OR length(member_snapshot_hash) <> 64) AS snapshot_hash_violation_count,
@@ -97,4 +218,55 @@ SELECT
   (SELECT count(*) FROM (
      SELECT source_type FROM reference_checks
      WHERE disposition = 'EXPECTED' GROUP BY source_type
-   )) AS expected_source_type_count;
+   )) AS expected_source_type_count,
+  (SELECT count(*) FROM dataset_reviews
+   WHERE length(dataset_snapshot_hash) <> 64
+      OR dataset_snapshot_hash <> approved_snapshot_hash
+      OR bound_snapshot_hash <> approved_snapshot_hash
+      OR evaluation_status <> 'PASSED'
+      OR candidate_identity_stable <> 1
+      OR ranking_stable <> 1
+      OR evaluation_quality_ready <> 1
+      OR NOT EXISTS (
+        SELECT 1 FROM stable_review_runs stable_run
+        WHERE stable_run.evaluation_run_id = dataset_reviews.evaluation_run_id
+      )
+      OR trim(coalesce(sampling_plan_reference, '')) = ''
+      OR length(sample_hash) <> 64
+      OR length(decision_hash) <> 64) AS sample_review_scope_violation_count,
+  (SELECT count(*) FROM dataset_reviews consensus
+   WHERE consensus.review_role = 'CONSENSUS'
+     AND (
+       consensus.review_pair_hash IS NULL
+       OR consensus.resolved_review_ids_json IS NULL
+       OR (SELECT count(DISTINCT value)
+           FROM json_each(consensus.resolved_review_ids_json)) <> 2
+       OR EXISTS (
+         SELECT 1 FROM dataset_reviews independent
+         WHERE independent.evaluation_run_id = consensus.evaluation_run_id
+           AND independent.review_role = 'INDEPENDENT'
+           AND independent.reviewer_id = consensus.reviewer_id
+       )
+     )) AS sample_review_actor_violation_count,
+  (SELECT count(*) FROM review_pairs pair
+   WHERE pair.first_decision_hash = pair.second_decision_hash
+      OR EXISTS (
+        SELECT 1 FROM dataset_reviews consensus
+        WHERE consensus.evaluation_run_id = pair.evaluation_run_id
+          AND consensus.review_role = 'CONSENSUS'
+          AND consensus.sample_hash = pair.sample_hash
+          AND consensus.review_pair_hash IS NOT NULL
+          AND (SELECT count(*) FROM json_each(consensus.resolved_review_ids_json) ids
+               WHERE ids.value IN (pair.first_review_id, pair.second_review_id)) = 2
+      )) AS sample_review_complete_count,
+  (SELECT count(*) FROM review_pairs pair
+   WHERE pair.first_decision_hash <> pair.second_decision_hash
+     AND NOT EXISTS (
+       SELECT 1 FROM dataset_reviews consensus
+       WHERE consensus.evaluation_run_id = pair.evaluation_run_id
+         AND consensus.review_role = 'CONSENSUS'
+         AND consensus.sample_hash = pair.sample_hash
+         AND consensus.review_pair_hash IS NOT NULL
+         AND (SELECT count(*) FROM json_each(consensus.resolved_review_ids_json) ids
+              WHERE ids.value IN (pair.first_review_id, pair.second_review_id)) = 2
+     )) AS sample_review_pending_disagreement_count;

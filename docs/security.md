@@ -333,6 +333,25 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 | 법무 승인 | 적용 계약·개인정보·국외 이전·고객 데이터 조항의 승인자와 시각이 기록됨 |
 | 고객 승인 | 고객·현장·provider·model·목적·원천 유형·만료가 명시된 승인이 기록됨 |
 
+심사 착수 전에는 다음 증거 목록만 준비한다. provider 이름, 실제 증거 위치, 검토자, 승인일, 만료일이 정해지기 전에는 빈칸을 임의 값으로 채우지 않고 `PENDING`으로 둔다. `evidenceReference`에는 비밀값이나 고객 원문을 넣지 않고 접근 통제된 계약·보안·운영·고객 승인 대장의 문서 ID와 version만 기록한다.
+
+| 체크 키 | 주 승인 영역 | 필요한 증거 |
+| --- | --- | --- |
+| `contract_terms` | 법무 | 적용 계약 version, 허용·금지 목적, 책임·재위탁·변경 통지 조항 |
+| `data_retention` | 보안·법무 | 입력·출력·로그별 저장 위치/기간, 삭제 요청·계약 종료 삭제 절차와 확인 방식 |
+| `training_use` | 법무·고객 | 입력·출력·metadata의 학습/개선 사용 조건, opt-out 적용 증거 |
+| `transfer_region` | 보안·법무·고객 | 처리·저장·백업 지역, 국외 이전 근거와 고객 허용 범위 |
+| `tls` | 기술·보안 | TLS 최소 버전, 인증서 검증, 비밀 저장·회전 시험 결과 |
+| `timeout` | 기술 | 연결·응답 timeout 설정, 무한 대기 차단과 timeout 시험 결과 |
+| `rate_limit_429` | 기술 | `Retry-After`/backoff, 최대 시도, 중복 비용 방지 시험 결과 |
+| `server_error_5xx` | 기술 | 재시도 가능 오류 구분, 최대 시도, 장애 격리·정제 로그 시험 결과 |
+| `cost_limit` | 기술·고객 | 단가 근거, 일 요청/동시성/비용 상한, 초과 차단과 알림 시험 결과 |
+| `kill_switch` | 기술·보안 | 전역·현장 중지, 승인 철회 뒤 provider spy 호출 0건인 시험 결과 |
+| `legal_approval` | 법무 | 승인 문서 ID/version, 승인자, 승인일, 만료·재검토일 |
+| `customer_approval` | 고객 | 고객·현장·provider·model·목적·원천 유형, 승인자, 승인일, 만료·철회 조건 |
+
+기술 책임자는 timeout·429·5xx·비용 계측·kill switch 증거를, 보안 책임자는 전송 지역·TLS·비밀 회전·보존 통제를, 법무 책임자는 계약·학습 사용·국외 이전·승인 만료를, 고객 승인 책임자는 허용 scope·원천 유형·철회 여부를 확인한다. 네 책임자의 실제 사용자 ID와 대리 절차는 고객별 비공개 운영대장에 실제 값이 정해진 뒤 기록한다. 현재 값은 모두 `PENDING`이다.
+
 `ai_provider_onboarding_reviews`는 위 12개 항목과 기술·보안·법무·고객 네 영역의 `PENDING`/`APPROVED`/`REJECTED`, 검토자·검토 시각을 불변 review version으로 보존한다. 체크리스트 전건 `PASS`와 네 영역 `APPROVED`가 모두 있어야 provider 착수 게이트를 통과한다. 별도의 `ai_transfer_approvals`, 활성 프롬프트, 비용/timeout 정책, 기능 플래그와 kill switch는 이후에도 각각 유효해야 하며 이 심사 하나가 다른 통제를 대체하지 않는다. 현재 provider별 운영 client는 승인되지 않았으므로 기술·보안·법무·고객 상태를 모두 `PENDING`으로 해석하고 외부 호출을 계속 차단한다.
 
 ### Ground-truth dataset 권한·감사 경계
@@ -340,6 +359,7 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 - 개별 ground-truth 사례의 첫 등록과 2차 승인은 보고서 작성 role인 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`에 허용한다. 첫 등록자는 첫 승인자가 되고, 같은 사용자의 2차 승인은 서버가 거부한다. `includePending=true` 조회는 운영 화면에서 대기 사례를 찾기 위한 것이며 사례를 활성화하거나 준비도에 포함하지 않는다.
 - dataset 작성·구성·검토는 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`에 허용한다. 최종 2단계 승인은 `admin`, `system-admin`, `document-admin`, `department-manager`만 허용한다.
 - 역할만으로 자기 승인을 허용하지 않는다. 작성자, 검토자, 1차 승인자, 2차 승인자의 사용자 ID가 모두 달라야 하며 서버가 상태 전이마다 검사하고 DB check constraint도 동일한 분리를 강제한다. WPF 버튼 비활성화는 안내일 뿐 서버 검사를 대체하지 않는다.
+- 실제 현장 평가의 독립 표본은 24개 범주·유형 칸에서 1건씩 고정한다. 두 표본 검토자는 같은 표본을 독립 판정하고 서로 달라야 한다. 결과가 다르면 `PENDING_CONSENSUS`를 유지하며 앞선 두 사람과 다른 제3 검토자의 합의 기록 없이는 provider 착수 게이트를 통과하지 않는다.
 - dataset 조회·구성 변경·상태 전이는 고객·현장·DB scope를 ID 조건과 함께 검사한다. 대체 version 생성은 라인과 준비도 계열까지 같아야 하므로 다른 scope의 ID를 이용한 교차 운영을 허용하지 않는다.
 - 생성, 구성 변경, 검토 요청, 검토, 각 승인, 폐기는 `ai_operation_audit_events`에 actor, dataset version, 사유와 결과 상태를 남긴다. 승인 snapshot과 과거 evaluation run은 보존하며 앱 재시작이나 새 version 생성으로 덮어쓰지 않는다.
 - 승인 dataset의 구성 변경은 `409`로 거부한다. 대체 version은 이전 승인본을 참조하고 최종 승인 때만 이전 상태를 `SUPERSEDED`로 전환한다. 이는 삭제가 아니며 과거 run의 dataset/hash 결합은 유지된다.
