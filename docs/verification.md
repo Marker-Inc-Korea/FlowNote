@@ -38,6 +38,12 @@ PowerShell 공식 파서로 표준 스크립트의 구문 오류 0건을 확인�
 
 Windows x64 기준선 표의 두 `run_id`는 아직 비어 있다. 같은 clean 소스 커밋에서 옵션 없는 `.\scripts\verify-preserved-tests.ps1`을 새 `run_id`로 2회 실행해 두 요약이 모두 `partial_run=false`, `PASSED`가 된 뒤에만 위 표와 로드맵을 실제 값으로 확정한다.
 
+## 2026-07-28 작업 102 현재 코드·문서 재대조
+
+작업을 시작할 때 Git 작업 트리는 깨끗했고 `main`과 `origin/main`도 같은 커밋을 가리켰다. 현재 표준 검증 스크립트는 FastAPI 154건·WPF Core 71건·Android 16건을 기대하지만 Windows·배포·서버·문서 목차와 검증 절차 일부에는 이전 WPF Core guard 67건이 현재 기준처럼 남아 있었다.
+
+현재 기준으로 읽히는 문장은 WPF Core guard 71건과 수집 목록·TRX `total/passed=71/71` 대조 결과에 맞췄다. 과거 실행 당시의 테스트 수와 실패 기록은 그대로 보존했다. Windows x64 무생략 통합 검증 2회는 새로 실행하지 않았으므로 최신 유효 기준선과 재현 실행은 계속 `대기`다.
+
 ## 2026-07-27 작업 201 전체 Markdown 현재 코드 재대조
 
 저장소에서 확인한 Markdown 45개를 현재 FastAPI, Windows WPF, Android와 운영·검증 스크립트에 대조했다. Git이 추적하는 43개에는 작업 정책 `AGENTS.md`와 날짜별 실행·현장 기록이 포함된다. Git에서 제외된 샘플 등록 결과 2개도 확인했지만 누적 테스트 기록이므로 수정하거나 추적 대상으로 바꾸지 않았다. 날짜별 실행 수치와 결정 당시 설명은 역사적 증거로 보존하고 현재 코드 기준이라고 명시한 문서의 기준일과 수치만 갱신했다.
@@ -324,7 +330,7 @@ FieldComment 정제 스모크의 기존 6개 슬롯은 범주마다 `NORMAL-01/0
 
 마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. `wpf-smoke-database-evidence.json`에는 주요 테이블 실행 전후 통계, 오늘 문서 ID, 과거 기존 문서의 이전·신규 버전과 무결성 결과가 저장된다. 통제된 기준선은 실행마다 설정이 식별되는 관리형 FastAPI를 사용하므로 시작 전에 `5184` 포트를 비워야 한다. 해당 포트에 이미 건강한 서버가 있으면 환경 실패로 중단하고 외부 프로세스는 종료하지 않는다.
 
-한 run ID의 `verification-summary.json`이 `partial_run=false`, `status=PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선 후보가 된다. FastAPI는 수집·고유 node ID·JUnit passed가 모두 154이고 failure/error/skipped가 0이어야 한다. WPF Core는 total/passed 67과 failed/error/skipped 0, Android는 total/passed 16과 failure/error/skipped 0이어야 한다. WPF·Android build의 compiler warning과 error도 0이어야 한다. DB 전후 무결성, 오늘 사진·인수인계 2건, 기존 과거 문서 version `+1`, Git 전후 clean과 금지 산출물 0이 요약과 원본 증거에서 일치해야 한다. 같은 커밋에서 새 `run_id`로 한 번 더 동일하게 통과한 뒤 최상단 현황표에 두 실행을 기록한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+한 run ID의 `verification-summary.json`이 `partial_run=false`, `status=PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선 후보가 된다. FastAPI는 수집·고유 node ID·JUnit passed가 모두 154이고 failure/error/skipped가 0이어야 한다. WPF Core는 total/passed 71과 failed/error/skipped 0, Android는 total/passed 16과 failure/error/skipped 0이어야 한다. WPF·Android build의 compiler warning과 error도 0이어야 한다. DB 전후 무결성, 오늘 사진·인수인계 2건, 기존 과거 문서 version `+1`, Git 전후 clean과 금지 산출물 0이 요약과 원본 증거에서 일치해야 한다. 같은 커밋에서 새 `run_id`로 한 번 더 동일하게 통과한 뒤 최상단 현황표에 두 실행을 기록한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
 
