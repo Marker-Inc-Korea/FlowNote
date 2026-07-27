@@ -8,6 +8,10 @@ public sealed class ServerReconciliationService(
     FlowNoteLocalDatabase database,
     ServerEpochGuardService epochGuard)
 {
+    public ServerBindingRecord? GetBinding(FlowNoteServerDocumentClient client) =>
+        epochGuard.Get(
+            ServerNotificationCursorService.NormalizeServerScope(client.BaseAddress));
+
     public async Task<ServerReconciliationRun> CreateRunAsync(
         FlowNoteServerDocumentClient client,
         string administratorUserId,
@@ -177,6 +181,11 @@ public sealed class ServerReconciliationService(
         if (binding.ServerEpoch != binding.ObservedServerEpoch)
         {
             return "EPOCH_CHANGED";
+        }
+        var faultCode = ServerRecoveryGuidance.InferFaultCode(binding.BlockReason);
+        if (faultCode is "partial_restore" or "old_database_new_files" or "missing_file" or "wrong_server_epoch")
+        {
+            return faultCode.ToUpperInvariant();
         }
         return cursor > 0 ? "CURSOR_REGRESSED" : "SERVER_URL_CHANGED";
     }

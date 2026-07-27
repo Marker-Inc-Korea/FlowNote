@@ -15,8 +15,10 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from scripts import pilot_restore_gate
     from scripts import pilot_windows_server_evidence as windows_server_evidence
 except ModuleNotFoundError:
+    import pilot_restore_gate
     import pilot_windows_server_evidence as windows_server_evidence
 
 
@@ -412,8 +414,8 @@ def prepare(args: argparse.Namespace) -> int:
         run_root / "scenario-results" / "restore-fault-injections.csv": (
             "injection_id,target,automatic_send_blocked,polling_blocked,"
             "reconciliation_required,admin_approved_rebind,normal_operation_resumed,"
-            "result,evidence\n"
-            + "".join(f"{case},,,,,,,NOT_RUN,\n" for case in RESTORE_FAULT_CASES)
+            "result,screen_evidence,wpf_log_evidence,server_audit_evidence\n"
+            + "".join(f"{case},,,,,,,NOT_RUN,,,\n" for case in RESTORE_FAULT_CASES)
         ),
         run_root / "observations" / "role-observations.csv": (
             "observation_id,role,scenario_id,device_id,location,network,gloves,"
@@ -681,42 +683,13 @@ def csv_bool(value: Any) -> bool | None:
 
 
 def restore_fault_injection_failures(run_root: Path) -> list[str]:
-    rows, failures = read_csv_rows(
+    return pilot_restore_gate.fault_injection_failures(
         run_root,
-        "scenario-results/restore-fault-injections.csv",
-        "복구 장애 주입",
+        RESTORE_FAULT_CASES,
+        read_csv_rows,
+        csv_bool,
+        evidence_failures,
     )
-    grouped = {case: [] for case in RESTORE_FAULT_CASES}
-    for row in rows:
-        injection_id = (row.get("injection_id") or "").strip()
-        if injection_id in grouped:
-            grouped[injection_id].append(row)
-    for case, matching in grouped.items():
-        if len(matching) != 1:
-            failures.append(f"복구 장애 주입 {case} 행은 정확히 1개여야 합니다.")
-            continue
-        row = matching[0]
-        if (row.get("target") or "").strip() not in ("server", "wpf", "both"):
-            failures.append(f"복구 장애 주입 {case}의 target이 올바르지 않습니다.")
-        for field in (
-            "automatic_send_blocked",
-            "polling_blocked",
-            "reconciliation_required",
-            "admin_approved_rebind",
-            "normal_operation_resumed",
-        ):
-            if csv_bool(row.get(field)) is not True:
-                failures.append(f"복구 장애 주입 {case}의 {field}가 TRUE가 아닙니다.")
-        if (row.get("result") or "").strip() != "PASS":
-            failures.append(f"복구 장애 주입 {case}의 원시 판정이 PASS가 아닙니다.")
-        failures.extend(
-            evidence_failures(
-                run_root,
-                [(row.get("evidence") or "").strip()],
-                f"복구 장애 주입 {case}",
-            )
-        )
-    return failures
 
 
 def role_metrics_csv_failures(
@@ -1093,9 +1066,29 @@ def restore_comparison_failures(
                 "after_foreign_key_violation_count"
             )
             == 0
+            and report.get("database_checks", {}).get("before_capture_stable")
+            is True
+            and report.get("database_checks", {}).get("before_checkpoint_clean")
+            is True
+            and report.get("database_checks", {}).get("after_capture_stable")
+            is True
+            and report.get("database_checks", {}).get("after_checkpoint_clean")
+            is True
+            and report.get("file_capture_checks", {}).get("before_capture_stable")
+            is True
+            and report.get("file_capture_checks", {}).get("after_capture_stable")
+            is True
         ):
             return []
     return [f"{target} 복구 게이트에 같은 run_id의 PASS comparison JSON이 없습니다."]
+
+
+def restore_set_binding_failures(
+    run_root: Path, server_evidence: Any, wpf_evidence: Any
+) -> list[str]:
+    return pilot_restore_gate.restore_set_binding_failures(
+        run_root, server_evidence, wpf_evidence
+    )
 
 
 def verify(args: argparse.Namespace) -> int:
@@ -1248,6 +1241,13 @@ def verify(args: argparse.Namespace) -> int:
                 "wpf",
             )
         )
+        failures.extend(
+            restore_set_binding_failures(
+                run_root,
+                gates.get("server_restore_separate_pc", {}).get("evidence"),
+                gates.get("wpf_restore_separate_pc", {}).get("evidence"),
+            )
+        )
     else:
         failures.extend(
             windows_server_evidence.verification_failures(
@@ -1256,6 +1256,13 @@ def verify(args: argparse.Namespace) -> int:
                 record,
                 evidence_failures,
                 restore_comparison_failures,
+            )
+        )
+        failures.extend(
+            restore_set_binding_failures(
+                run_root,
+                gates.get("server_restore_separate_pc", {}).get("evidence"),
+                gates.get("wpf_restore_separate_pc", {}).get("evidence"),
             )
         )
 

@@ -44,9 +44,19 @@ public partial class HistoryWindow : Window
             .ToList();
         ReconciliationGrid.ItemsSource = items;
         var reviewRun = serverReconciliation.GetLatestReviewRunId();
+        var binding = serverDocumentClient is null
+            ? null
+            : serverReconciliation.GetBinding(serverDocumentClient);
+        var guidance = ServerRecoveryGuidance.FromBinding(binding);
         ReconciliationSummaryTextBlock.Text = reviewRun is null
             ? $"재결합 판정 이력 {items.Count}건. 검토 대기 run이 없습니다."
             : $"검토 대기 run: {reviewRun}. REBOUND·REQUEUE·CONFLICT 전 항목을 확인한 뒤 승인 사유를 입력하세요.";
+        ReconciliationSummaryTextBlock.Text =
+            $"{guidance.Status} {ReconciliationSummaryTextBlock.Text}";
+        RecoveryBlockCauseTextBlock.Text = guidance.BlockCause;
+        RecoveryPreservedSourcesTextBlock.Text = guidance.PreservedSources;
+        RecoveryProhibitedActionsTextBlock.Text = guidance.ProhibitedActions;
+        RecoveryNextStepTextBlock.Text = guidance.NextStep;
     }
 
     private async void CreateReconciliationButton_Click(object sender, RoutedEventArgs e)

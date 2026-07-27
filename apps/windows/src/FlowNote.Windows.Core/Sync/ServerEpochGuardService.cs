@@ -10,6 +10,13 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
     public const string ActiveStatus = "ACTIVE";
     public const string ReconciliationRequiredStatus = "RECONCILIATION_REQUIRED";
     public const int SupportedApiContract = 1;
+    private static readonly HashSet<string> RestoreFaultCodes =
+    [
+        "partial_restore",
+        "old_database_new_files",
+        "missing_file",
+        "wrong_server_epoch"
+    ];
 
     public async Task<ServerBindingRecord> EnsureReadyAsync(
         FlowNoteServerDocumentClient client,
@@ -35,13 +42,16 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
         if (existing is null)
         {
             var hasOtherBinding = HasOtherBinding(connection, transaction, scope);
+            var manifestFaultReason = DetermineManifestFaultReason(manifest);
+            var reason = manifestFaultReason ??
+                (hasOtherBinding ? "저장된 서버 URL과 다른 주소가 감지되었습니다." : null);
             Insert(
                 connection,
                 transaction,
                 scope,
                 manifest,
-                hasOtherBinding ? ReconciliationRequiredStatus : ActiveStatus,
-                hasOtherBinding ? "저장된 서버 URL과 다른 주소가 감지되었습니다." : null);
+                reason is null ? ActiveStatus : ReconciliationRequiredStatus,
+                reason);
         }
         else
         {
@@ -76,6 +86,12 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
             throw new InvalidOperationException(
                 $"서버 API 계약 범위({manifest.ApiContractMin}~{manifest.ApiContractMax})가 이 WPF 계약({SupportedApiContract})과 호환되지 않습니다.");
         }
+        if (!string.IsNullOrWhiteSpace(manifest.RestoreFaultCode) &&
+            !RestoreFaultCodes.Contains(manifest.RestoreFaultCode.Trim().ToLowerInvariant()))
+        {
+            throw new InvalidOperationException(
+                $"지원하지 않는 복구 장애 코드입니다: {manifest.RestoreFaultCode}");
+        }
     }
 
     private static string? DetermineBlockReason(
@@ -83,6 +99,11 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
         ServerSyncManifest manifest,
         long clientCursor)
     {
+        var manifestFaultReason = DetermineManifestFaultReason(manifest);
+        if (manifestFaultReason is not null)
+        {
+            return manifestFaultReason;
+        }
         if (!string.Equals(existing.ServerInstanceId, manifest.ServerInstanceId, StringComparison.Ordinal))
         {
             return "서버 instance ID가 변경되었습니다. 다른 서버 연결 또는 빈 DB 초기화 여부를 확인하세요.";
@@ -98,6 +119,17 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
         return existing.ReconciliationRequired
             ? existing.BlockReason ?? "관리자 reconciliation 승인이 필요합니다."
             : null;
+    }
+
+    private static string? DetermineManifestFaultReason(ServerSyncManifest manifest)
+    {
+        if (string.IsNullOrWhiteSpace(manifest.RestoreFaultCode))
+        {
+            return null;
+        }
+        return ServerRecoveryGuidance.ForFault(
+            manifest.RestoreFaultCode.Trim().ToLowerInvariant(),
+            manifest.RestoreBlockReason).BlockCause;
     }
 
     private static bool HasOtherBinding(SqliteConnection connection, SqliteTransaction transaction, string scope)

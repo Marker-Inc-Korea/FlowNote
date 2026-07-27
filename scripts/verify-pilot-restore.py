@@ -13,6 +13,17 @@ from pathlib import Path
 from typing import Any
 
 
+def path_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"exists": False, "bytes": 0, "modified_ns": None}
+    stat = path.stat()
+    return {
+        "exists": True,
+        "bytes": stat.st_size,
+        "modified_ns": stat.st_mtime_ns,
+    }
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -29,11 +40,17 @@ def database_evidence(database: Path) -> dict[str, Any]:
     if not database.is_file():
         raise ValueError(f"SQLite 파일이 없습니다: {database}")
 
+    database_before = path_state(database)
+    wal_path = Path(f"{database}-wal")
+    shm_path = Path(f"{database}-shm")
+    wal_before = path_state(wal_path)
+    shm_before = path_state(shm_path)
     connection = sqlite3.connect(
         f"file:{database.resolve().as_posix()}?mode=ro", uri=True
     )
     try:
         connection.execute("PRAGMA query_only = ON")
+        journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
         quick_check = [row[0] for row in connection.execute("PRAGMA quick_check")]
         integrity_check = [
             row[0] for row in connection.execute("PRAGMA integrity_check")
@@ -62,15 +79,36 @@ def database_evidence(database: Path) -> dict[str, Any]:
     finally:
         connection.close()
 
+    database_hash = sha256(database)
+    database_after = path_state(database)
+    wal_after = path_state(wal_path)
+    shm_after = path_state(shm_path)
+    capture_stable = (
+        database_before == database_after
+        and wal_before == wal_after
+        and shm_before == shm_after
+    )
+    checkpoint_clean = not wal_after["exists"] or wal_after["bytes"] == 0
     return {
         "path_label": database.name,
         "bytes": database.stat().st_size,
-        "sha256": sha256(database),
+        "sha256": database_hash,
+        "journal_mode": journal_mode,
         "quick_check": quick_check,
         "integrity_check": integrity_check,
         "foreign_key_check": foreign_key_check,
         "foreign_key_check_error": foreign_key_check_error,
         "table_counts": counts,
+        "quiescence": {
+            "capture_stable": capture_stable,
+            "checkpoint_clean": checkpoint_clean,
+            "database_before": database_before,
+            "database_after": database_after,
+            "wal_before": wal_before,
+            "wal_after": wal_after,
+            "shm_before": shm_before,
+            "shm_after": shm_after,
+        },
     }
 
 
@@ -78,6 +116,13 @@ def file_evidence(root: Path) -> dict[str, Any]:
     if not root.is_dir():
         raise ValueError(f"파일 루트가 없습니다: {root}")
 
+    before_paths = sorted(
+        (path for path in root.rglob("*") if path.is_file()),
+        key=lambda item: item.as_posix(),
+    )
+    before_states = {
+        path.relative_to(root).as_posix(): path_state(path) for path in before_paths
+    }
     files: list[dict[str, Any]] = []
     for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
         if path.is_symlink():
@@ -91,11 +136,19 @@ def file_evidence(root: Path) -> dict[str, Any]:
                 }
             )
 
+    after_paths = sorted(
+        (path for path in root.rglob("*") if path.is_file()),
+        key=lambda item: item.as_posix(),
+    )
+    after_states = {
+        path.relative_to(root).as_posix(): path_state(path) for path in after_paths
+    }
     return {
         "root_label": root.name,
         "file_count": len(files),
         "total_bytes": sum(item["bytes"] for item in files),
         "files": files,
+        "capture_stable": before_states == after_states,
     }
 
 
@@ -111,9 +164,18 @@ def validate_run_id(value: str) -> str:
     return value
 
 
+def write_evidence(path: Path, payload: dict[str, Any]) -> None:
+    if path.exists():
+        raise ValueError(f"기존 증거를 덮어쓸 수 없습니다: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+
 def capture(args: argparse.Namespace) -> int:
     evidence = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": args.run_id,
         "target": args.target,
         "phase": args.phase,
@@ -130,16 +192,16 @@ def capture(args: argparse.Namespace) -> int:
         / "backup-restore"
         / f"{args.target}-{args.phase}.json"
     )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    write_evidence(output, evidence)
 
     integrity_ok = (
         evidence["database"]["quick_check"] == ["ok"]
         and evidence["database"]["integrity_check"] == ["ok"]
         and not evidence["database"]["foreign_key_check"]
         and evidence["database"]["foreign_key_check_error"] is None
+        and evidence["database"]["quiescence"]["capture_stable"]
+        and evidence["database"]["quiescence"]["checkpoint_clean"]
+        and evidence["file_set"]["capture_stable"]
     )
     print(f"증거 저장: {output}")
     print(f"DB quick_check: {evidence['database']['quick_check']}")
@@ -151,6 +213,14 @@ def capture(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
     print(f"파일: {evidence['file_set']['file_count']}건")
+    print(
+        "쓰기 정지 관찰: "
+        f"{'정상' if evidence['database']['quiescence']['capture_stable'] and evidence['file_set']['capture_stable'] else '변경 감지'}"
+    )
+    print(
+        "SQLite checkpoint 잔여: "
+        f"{'없음' if evidence['database']['quiescence']['checkpoint_clean'] else 'WAL 잔여 있음'}"
+    )
     return 0 if integrity_ok else 1
 
 
@@ -216,6 +286,17 @@ def compare(args: argparse.Namespace) -> int:
         failures.append(
             f"복구 DB foreign key 검사 오류: {after_db['foreign_key_check_error']}"
         )
+    for phase, database, file_set in (
+        ("원천", before_db, before["file_set"]),
+        ("복구", after_db, after["file_set"]),
+    ):
+        quiescence = database.get("quiescence", {})
+        if quiescence.get("capture_stable") is not True:
+            failures.append(f"{phase} DB 증거 수집 중 쓰기 변경이 감지되었습니다.")
+        if quiescence.get("checkpoint_clean") is not True:
+            failures.append(f"{phase} DB에 checkpoint되지 않은 WAL이 남아 있습니다.")
+        if file_set.get("capture_stable") is not True:
+            failures.append(f"{phase} 파일 증거 수집 중 쓰기 변경이 감지되었습니다.")
 
     before_files = before["file_set"]
     after_files = after["file_set"]
@@ -250,7 +331,7 @@ def compare(args: argparse.Namespace) -> int:
         failures.append("파일 상대경로·크기·SHA-256 목록이 다릅니다.")
 
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": before.get("run_id"),
         "target": before.get("target"),
         "compared_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -276,6 +357,26 @@ def compare(args: argparse.Namespace) -> int:
             "after_quick_check_ok": after_db["quick_check"] == ["ok"],
             "after_integrity_check_ok": after_db.get("integrity_check") == ["ok"],
             "after_foreign_key_violation_count": len(after_db["foreign_key_check"]),
+            "before_capture_stable": before_db.get("quiescence", {}).get(
+                "capture_stable"
+            )
+            is True,
+            "before_checkpoint_clean": before_db.get("quiescence", {}).get(
+                "checkpoint_clean"
+            )
+            is True,
+            "after_capture_stable": after_db.get("quiescence", {}).get(
+                "capture_stable"
+            )
+            is True,
+            "after_checkpoint_clean": after_db.get("quiescence", {}).get(
+                "checkpoint_clean"
+            )
+            is True,
+        },
+        "file_capture_checks": {
+            "before_capture_stable": before_files.get("capture_stable") is True,
+            "after_capture_stable": after_files.get("capture_stable") is True,
         },
         "table_counts_equal": not table_count_mismatches,
         "table_count_mismatch_count": len(table_count_mismatches),
@@ -299,11 +400,74 @@ def compare(args: argparse.Namespace) -> int:
     output = args.output or args.after.with_name(
         f"{before.get('target', 'restore')}-comparison.json"
     )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    write_evidence(output, report)
     print(f"비교 결과: {report['result']}")
+    print(f"증거 저장: {output}")
+    for failure in failures:
+        print(f"FAIL: {failure}", file=sys.stderr)
+    return 0 if not failures else 1
+
+
+def compare_set(args: argparse.Namespace) -> int:
+    server = json.loads(args.server.read_text(encoding="utf-8"))
+    wpf = json.loads(args.wpf.read_text(encoding="utf-8"))
+    failures: list[str] = []
+    for report, target in ((server, "server"), (wpf, "wpf")):
+        if report.get("target") != target:
+            failures.append(f"{target} 비교 파일의 target이 올바르지 않습니다.")
+        if report.get("result") != "PASS":
+            failures.append(f"{target} 복구 비교가 PASS가 아닙니다.")
+        database_checks = report.get("database_checks", {})
+        file_capture_checks = report.get("file_capture_checks", {})
+        if (
+            report.get("table_counts_equal") is not True
+            or report.get("table_count_mismatch_count") != 0
+            or report.get("file_manifest_equal") is not True
+            or report.get("file_mismatch_counts")
+            != {"missing": 0, "extra": 0, "size": 0, "sha256": 0}
+            or any(
+                database_checks.get(field) is not True
+                for field in (
+                    "before_quick_check_ok",
+                    "before_integrity_check_ok",
+                    "after_quick_check_ok",
+                    "after_integrity_check_ok",
+                    "before_capture_stable",
+                    "before_checkpoint_clean",
+                    "after_capture_stable",
+                    "after_checkpoint_clean",
+                )
+            )
+            or database_checks.get("before_foreign_key_violation_count") != 0
+            or database_checks.get("after_foreign_key_violation_count") != 0
+            or file_capture_checks.get("before_capture_stable") is not True
+            or file_capture_checks.get("after_capture_stable") is not True
+        ):
+            failures.append(f"{target} 비교의 DB·파일 0건 조건이 완전하지 않습니다.")
+    for field, label in (
+        ("run_id", "run ID"),
+        ("backup_set_id", "백업 세트 ID"),
+        ("restore_approval_id", "복구 승인 ID"),
+    ):
+        if not server.get(field) or server.get(field) != wpf.get(field):
+            failures.append(f"server와 wpf의 {label}가 없거나 다릅니다.")
+
+    report = {
+        "schema_version": 1,
+        "run_id": server.get("run_id"),
+        "result": "PASS" if not failures else "FAIL",
+        "failures": failures,
+        "backup_set_id": server.get("backup_set_id"),
+        "restore_approval_id": server.get("restore_approval_id"),
+        "server_comparison": args.server.name,
+        "server_comparison_sha256": sha256(args.server),
+        "wpf_comparison": args.wpf.name,
+        "wpf_comparison_sha256": sha256(args.wpf),
+        "compared_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    output = args.output or args.server.with_name("restore-set-comparison.json")
+    write_evidence(output, report)
+    print(f"통합 비교 결과: {report['result']}")
     print(f"증거 저장: {output}")
     for failure in failures:
         print(f"FAIL: {failure}", file=sys.stderr)
@@ -337,6 +501,15 @@ def parser() -> argparse.ArgumentParser:
     compare_parser.add_argument("--after", required=True, type=Path)
     compare_parser.add_argument("--output", type=Path)
     compare_parser.set_defaults(handler=compare)
+
+    set_parser = commands.add_parser(
+        "compare-set",
+        help="server와 wpf 비교가 같은 백업 세트·복구 승인에 속하는지 검증합니다.",
+    )
+    set_parser.add_argument("--server", required=True, type=Path)
+    set_parser.add_argument("--wpf", required=True, type=Path)
+    set_parser.add_argument("--output", type=Path)
+    set_parser.set_defaults(handler=compare_set)
     return result
 
 

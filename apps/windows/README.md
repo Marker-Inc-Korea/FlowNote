@@ -34,8 +34,8 @@
 - `AI 정답셋`: 후보 포함 근거와 수동 제외 원천으로 사례 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·대체·폐기, 평가 run 실행·이전 run 비교
 - `system-admin` 전용 `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현재 현장 kill switch와 호출·비용·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 일괄 실행, 고객/현장 질의 상세, 단일 즉시 만료와 legal hold 설정·해제·감사 read-back
 - 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장. 공개·상태·태그 mutation receipt와 read-back, FieldComment 검토 base revision·mutation key, 첨부 부모·파일 SHA-256, 보고서 source 집합 hash, 문서 버전·첨부 idempotency key 전달과 큐 깊이·최장 대기·최근 처리량·실패 분포·row별 운영 상태 표시 포함
-- 서버 복구 경계 보호: sync manifest의 instance/epoch/API contract와 알림 cursor를 URL별 binding에 저장하고, URL·instance·epoch 변경 또는 cursor 역행 시 자동 전송과 polling 중지
-- 이력 창 `서버 재결합`: 전체 큐 inventory의 `CONFIRMED`/`ABSENT`/`DIVERGED` 판정과 `REBOUND`/`REQUEUE`/`CONFLICT` 제안 검토, 관리자 사유 승인 뒤 mapping·큐·binding 적용과 cursor 0 재추적
+- 서버 복구 경계 보호: sync manifest의 instance/epoch/API contract와 알림 cursor를 URL별 binding에 저장하고, URL·instance·epoch 변경, cursor 역행 또는 `partial_restore`·`old_database_new_files`·`missing_file`·`wrong_server_epoch` 복구 장애 신호 시 자동 전송과 polling 중지
+- 이력 창 `서버 재결합`: 차단 원인, 보존된 원천, 승인 전 금지 행동, 다음 단계를 분리해 표시하고 전체 큐 inventory의 `CONFIRMED`/`ABSENT`/`DIVERGED` 판정과 `REBOUND`/`REQUEUE`/`CONFLICT` 제안 검토, 관리자 사유 승인 뒤 mapping·큐·binding 적용과 cursor 0 재추적
 - 보존 동기화 실패 전환 CLI: FAILED 큐를 읽기 전용 dry-run으로 분류하고, plan hash와 row별 운영자 승인을 받은 구 `create`/FieldNote 항목만 현재 action의 별도 큐로 무손실 전환
 - 동기화 backlog 읽기 전용 감사: 큐 운영 상태·담당자·처리 기한·자동 재시도 한도·수동 종결 기준과 DB 전후 SHA-256, 무결성, 중복, 고아 mapping/source를 JSON으로 보존
 
@@ -119,11 +119,11 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Win
 
 WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 사진/인수인계 문서 2건과 기존 과거 문서의 신규 버전을 SQL로 다시 확인한다. 결과는 `wpf-smoke-database-evidence.json`에 문서 ID, 이전·신규 버전, 무결성 값과 함께 보존하며 표준 스크립트의 단계별 로그·WPF Core TRX·최종 요약과 한 run ID를 공유한다.
 
-별도 PC 복구 리허설에서는 `scripts/verify-pilot-restore.py`의 `wpf` 대상을 사용해 앱이 종료된 WPF DB와 `Files`의 복구 전후 증거를 수집·비교한다. 이 도구의 통과는 테이블별 row 수, 파일 상대경로·크기·SHA-256, DB `quick_check`와 foreign key 일치를 뜻하며 실제 별도 PC 복구 절차 자체를 대신하지 않는다.
+별도 PC 복구 리허설에서는 `scripts/verify-pilot-restore.py`의 `wpf` 대상을 사용해 앱이 종료된 WPF DB와 `Files`의 복구 전후 증거를 수집·비교한다. 도구는 수집 중 DB·파일 불변과 checkpoint되지 않은 WAL 부재도 검사하며 같은 실행 경로의 기존 증거를 덮어쓰지 않는다. server와 wpf 비교를 마친 뒤 `compare-set`으로 두 대상의 `backup-set-id`·`restore-approval-id`가 서로도 같은지 확인한다. 이 도구의 통과는 실제 별도 PC 복구 절차 자체를 대신하지 않는다.
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-현재 FastAPI 코드는 154건, WPF Core는 55건을 수집하며 표준 스크립트 guard도 FastAPI 154건·WPF Core 55건·Android 16건으로 맞췄다. WPF Core 기대값은 기존 52건에 인증서·시간 초과·서버 주소 연결 실패 안내 회귀 3건을 더한 값이다. 이후에도 실제 수집값과 원시 JUnit/TRX 수가 일치할 때만 기대값을 바꾼다. 이번 macOS 검증에서 WPF Core 55건과 WPF 앱 빌드는 경고·오류 없이 통과했지만, Windows 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
+현재 FastAPI 코드는 154건, WPF Core는 67건을 수집하며 표준 스크립트 guard도 FastAPI 154건·WPF Core 67건·Android 16건으로 맞췄다. WPF Core에는 네 복구 장애의 차단 안내, 명시적 manifest 장애 신호, 장애별 관리자 승인 재결합 뒤 정상화 검증 12건이 포함된다. 이후에도 실제 수집값과 원시 JUnit/TRX 수가 일치할 때만 기대값을 바꾼다. 이번 macOS 검증에서 WPF Core 67건과 WPF 앱 빌드는 경고·오류 없이 통과했지만, Windows 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

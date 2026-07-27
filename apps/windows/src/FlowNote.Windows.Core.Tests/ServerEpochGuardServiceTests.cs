@@ -9,6 +9,125 @@ namespace FlowNote.Windows.Core.Tests;
 
 public sealed class ServerEpochGuardServiceTests
 {
+    [Theory]
+    [InlineData("partial_restore", "부분 복구")]
+    [InlineData("old_database_new_files", "이전 시점 DB")]
+    [InlineData("missing_file", "원천 파일")]
+    [InlineData("wrong_server_epoch", "서버 epoch")]
+    public void EachRestoreFaultShowsCausePreservationProhibitionAndNextStep(
+        string faultCode,
+        string expectedCause)
+    {
+        var guidance = ServerRecoveryGuidance.ForFault(
+            faultCode, "장애 주입 증거를 보존했습니다.");
+
+        Assert.Contains(expectedCause, guidance.BlockCause);
+        Assert.Contains("동기화 큐", guidance.PreservedSources);
+        Assert.Contains("message_id", guidance.PreservedSources);
+        Assert.Contains("자동 전송", guidance.ProhibitedActions);
+        Assert.Contains("polling", guidance.ProhibitedActions);
+        Assert.Contains("삭제·덮어쓰기", guidance.ProhibitedActions);
+        Assert.Contains("backup-set-id", guidance.NextStep);
+        Assert.Contains("restore-approval-id", guidance.NextStep);
+        Assert.Contains("승인 적용", guidance.NextStep);
+    }
+
+    [Theory]
+    [InlineData("partial_restore")]
+    [InlineData("old_database_new_files")]
+    [InlineData("missing_file")]
+    [InlineData("wrong_server_epoch")]
+    public void ExplicitRestoreFaultManifestBlocksFirstSendAndPollingObservation(
+        string faultCode)
+    {
+        var artifactDirectory = Path.Combine(
+            Path.GetTempPath(),
+            "flownote-restore-fault-guard-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(artifactDirectory);
+        var database = new FlowNoteLocalDatabase(
+            Path.Combine(artifactDirectory, "flownote.local.sqlite"));
+        database.Initialize();
+        var service = new ServerEpochGuardService(database);
+        var manifest = Manifest("srv-restore", 2, 0) with
+        {
+            RestoreFaultCode = faultCode,
+            RestoreBlockReason = "자동 장애 주입 검증"
+        };
+
+        var binding = service.Observe(
+            "https://factory-restore.example/", manifest, clientCursor: 0);
+
+        Assert.True(binding.ReconciliationRequired);
+        Assert.Contains("자동 장애 주입 검증", binding.BlockReason);
+        Assert.Throws<ServerReconciliationRequiredException>(() =>
+            service.Observe(
+                "https://factory-restore.example/",
+                manifest,
+                clientCursor: 0,
+                throwWhenBlocked: true));
+    }
+
+    [Theory]
+    [InlineData("partial_restore")]
+    [InlineData("old_database_new_files")]
+    [InlineData("missing_file")]
+    [InlineData("wrong_server_epoch")]
+    public async Task EachRestoreFaultRequiresApprovalBeforeNormalOperationResumes(
+        string faultCode)
+    {
+        var artifactDirectory = Path.Combine(
+            Path.GetTempPath(),
+            "flownote-restore-rejoin-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(artifactDirectory);
+        var database = new FlowNoteLocalDatabase(
+            Path.Combine(artifactDirectory, "flownote.local.sqlite"));
+        database.Initialize();
+        var guard = new ServerEpochGuardService(database);
+        const string scope = "https://factory-fault-rejoin.example/";
+        var faultManifest = Manifest("srv-new", 2, 0) with
+        {
+            RestoreFaultCode = faultCode,
+            RestoreBlockReason = "복구 장애 주입"
+        };
+        Assert.True(guard.Observe(scope, faultManifest, 0).ReconciliationRequired);
+        SeedReconciliationState(database, scope);
+
+        using var http = new HttpClient(
+            new ReconciliationHandler(faultCode.ToUpperInvariant()))
+        {
+            BaseAddress = new Uri(scope)
+        };
+        var client = new FlowNoteServerDocumentClient(http);
+        var service = new ServerReconciliationService(database, guard);
+        var run = await service.CreateRunAsync(client, "user-admin");
+        Assert.Equal(faultCode.ToUpperInvariant(), run.TriggerReason);
+        Assert.True(guard.Get(scope)?.ReconciliationRequired);
+
+        await service.ApplyRunAsync(
+            client, run.RunId, "user-admin", $"{faultCode} 원천 대조 승인");
+        var resumed = guard.Observe(
+            scope,
+            Manifest("srv-new", 2, 0),
+            clientCursor: 0);
+
+        Assert.False(resumed.ReconciliationRequired);
+        using var connection = database.OpenConnection();
+        Assert.Equal(
+            "ACTIVE",
+            ScalarText(
+                connection,
+                "SELECT status FROM server_bindings " +
+                "WHERE server_scope='https://factory-fault-rejoin.example/';"));
+        Assert.Equal(
+            1L,
+            Scalar(
+                connection,
+                "SELECT COUNT(*) FROM reconciliation_runs " +
+                "WHERE status='APPLIED';"));
+    }
+
     [Fact]
     public void EpochChangeAndCursorRegressionBlockWithoutDeletingSyncState()
     {
@@ -154,7 +273,8 @@ public sealed class ServerEpochGuardServiceTests
         return Convert.ToString(command.ExecuteScalar())!;
     }
 
-    private sealed class ReconciliationHandler : HttpMessageHandler
+    private sealed class ReconciliationHandler(
+        string triggerReason = "INSTANCE_CHANGED") : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -167,7 +287,7 @@ public sealed class ServerEpochGuardServiceTests
                   "run_id":"recon-test-run",
                   "server_instance_id":"srv-new",
                   "server_epoch":2,
-                  "trigger_reason":"INSTANCE_CHANGED",
+                  "trigger_reason":"{{triggerReason}}",
                   "status":"{{status}}",
                   "client_cursor":10,
                   "server_cursor":0,
