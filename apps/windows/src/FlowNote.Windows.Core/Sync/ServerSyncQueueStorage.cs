@@ -421,6 +421,7 @@ public sealed partial class ServerSyncService
             FROM server_sync_queue
             WHERE status IN ('PENDING', 'FAILED')
             ORDER BY
+                CASE WHEN entity_type = 'report' THEN 1 ELSE 0 END,
                 COALESCE(
                     CASE
                         WHEN entity_type = 'report' THEN (
