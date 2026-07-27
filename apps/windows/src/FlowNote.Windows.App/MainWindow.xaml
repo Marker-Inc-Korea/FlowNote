@@ -16,18 +16,21 @@
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}" />
             <Setter Property="Background" Value="{StaticResource PanelMutedBrush}" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
         </Style>
         <Style x:Key="HeaderSubmenuItemStyle" TargetType="{x:Type MenuItem}">
             <Setter Property="MinWidth" Value="184" />
             <Setter Property="Padding" Value="12,7" />
             <Setter Property="FontSize" Value="13" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
         </Style>
     </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="32" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0"
@@ -155,7 +158,8 @@
 
                     <MenuItem Header="문서 운영  ▾"
                               Style="{StaticResource HeaderTopMenuItemStyle}">
-                        <MenuItem Header="새 폴더"
+                        <MenuItem x:Name="NewFolderButton"
+                                  Header="새 폴더"
                                   Style="{StaticResource HeaderSubmenuItemStyle}"
                                   Click="NewFolderButton_Click" />
                         <MenuItem x:Name="RegisterDocumentButton"
@@ -197,7 +201,51 @@
             </DockPanel>
         </Border>
 
-        <Grid Grid.Row="1" Margin="14">
+        <Border Grid.Row="1"
+                Padding="18,8"
+                Background="{StaticResource PanelMutedBrush}"
+                BorderBrush="{StaticResource PanelBorderBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,16,0">
+                    <TextBlock x:Name="RolePriorityTextBlock"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource PrimaryTextBrush}" />
+                    <TextBlock x:Name="PermissionGuideTextBlock"
+                               Margin="0,3,0,0"
+                               FontSize="11"
+                               Foreground="{StaticResource SecondaryTextBrush}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <Button x:Name="QuickTaskOneButton"
+                            MinWidth="118"
+                            Height="32"
+                            Padding="10,0"
+                            Click="QuickTaskButton_Click" />
+                    <Button x:Name="QuickTaskTwoButton"
+                            MinWidth="118"
+                            Height="32"
+                            Margin="6,0,0,0"
+                            Padding="10,0"
+                            Click="QuickTaskButton_Click" />
+                    <Button x:Name="QuickTaskThreeButton"
+                            MinWidth="118"
+                            Height="32"
+                            Margin="6,0,0,0"
+                            Padding="10,0"
+                            Click="QuickTaskButton_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" Margin="14">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="282" />
                 <ColumnDefinition Width="12" />
@@ -287,17 +335,23 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="1.4*" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="126" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="검색"
                                    Margin="0,0,10,0"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource PrimaryTextBrush}"
                                    VerticalAlignment="Center" />
-                        <TextBox Grid.Column="1"
+                        <TextBox x:Name="DocumentSearchTextBox"
+                                 Grid.Column="1"
                                  Height="30"
+                                 ToolTip="파일명, 제목, 태그, 사용자, 최근 코멘트 검색"
+                                 TextChanged="DocumentSearchTextBox_TextChanged"
+                                 KeyDown="DocumentSearchTextBox_KeyDown"
                                  VerticalContentAlignment="Center" />
                         <TextBlock Grid.Column="2"
-                                   Text="태그"
+                                   Text="등록 태그"
                                    Margin="14,0,8,0"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource PrimaryTextBrush}"
@@ -308,11 +362,29 @@
                                  ToolTip="쉼표로 여러 태그를 입력"
                                  VerticalContentAlignment="Center" />
                         <TextBlock Grid.Column="4"
-                                   Text="파일 목록"
+                                   Text="상태"
                                    Margin="12,0,0,0"
                                    FontWeight="SemiBold"
-                                   Foreground="{StaticResource SecondaryTextBrush}"
+                                   Foreground="{StaticResource PrimaryTextBrush}"
                                    VerticalAlignment="Center" />
+                        <ComboBox x:Name="DocumentFilterComboBox"
+                                  Grid.Column="5"
+                                  Height="30"
+                                  Margin="8,0,0,0"
+                                  SelectedIndex="0"
+                                  SelectionChanged="DocumentFilterComboBox_SelectionChanged">
+                            <ComboBoxItem Content="전체 상태" Tag="ALL" />
+                            <ComboBoxItem Content="작업중" Tag="WORKING" />
+                            <ComboBoxItem Content="검토중" Tag="IN_REVIEW" />
+                            <ComboBoxItem Content="공개" Tag="PUBLISHED" />
+                            <ComboBoxItem Content="보관" Tag="ARCHIVED" />
+                        </ComboBox>
+                        <Button Grid.Column="6"
+                                Height="30"
+                                Margin="8,0,0,0"
+                                Padding="10,0"
+                                Content="선택 문서 열기"
+                                Click="OpenSelectedDocumentButton_Click" />
                     </Grid>
                 </Border>
 
@@ -372,15 +444,23 @@
             </Grid>
         </Grid>
 
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
                 Background="{StaticResource PanelBackgroundBrush}"
                 BorderBrush="{StaticResource PanelBorderBrush}"
-                BorderThickness="0,1,0,0">
-            <TextBlock Margin="16,0"
-                       Text="{Binding StatusText}"
-                       FontSize="12"
-                       Foreground="{StaticResource SecondaryTextBrush}"
-                       VerticalAlignment="Center" />
+                BorderThickness="0,1,0,0"
+                Padding="16,6">
+            <StackPanel>
+                <TextBlock Text="{Binding StatusText}"
+                           FontSize="12"
+                           Foreground="{StaticResource SecondaryTextBrush}"
+                           TextWrapping="Wrap" />
+                <TextBlock x:Name="SyncStateTextBlock"
+                           Margin="0,3,0,0"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource PrimaryTextBrush}"
+                           TextWrapping="Wrap" />
+            </StackPanel>
         </Border>
     </Grid>
 </Window>

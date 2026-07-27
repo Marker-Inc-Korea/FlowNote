@@ -404,6 +404,11 @@ def prepare(args: argparse.Namespace) -> int:
             "role,participant_id,scenario_id,required,success,elapsed_seconds,"
             "retry_count,help_request_count,screen_transitions,critical_blocker,evidence\n"
         ),
+        run_root / "scenario-results" / "role-ux-comparison.csv": (
+            "comparison_id,role,participant_id,scenario_id,ui_phase,ui_build,"
+            "success,elapsed_seconds,click_count,screen_transitions,"
+            "help_request_count,screen_capture_evidence,notes\n"
+        ),
         run_root / "scenario-results" / "restore-fault-injections.csv": (
             "injection_id,target,automatic_send_blocked,polling_blocked,"
             "reconciliation_required,admin_approved_rebind,normal_operation_resumed,"
