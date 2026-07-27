@@ -3879,6 +3879,40 @@ try
                 "offline report save should not queue an unverified source snapshot");
 
             var aiEvaluationToken = $"ai-eval-{runId}-line-a-press-sensor-composite";
+            var aiReviewerUsername = $"smoke-ai-reviewer-{runStamp}";
+            var aiReviewerPassword = $"AI-Review-{runStamp}!";
+            var aiReviewerChangedPassword = $"AI-Review-Changed-{runStamp}!";
+            var aiReviewerAccount = await serverAccounts.CreateAsync(
+                new ServerAccountCreateRequest(
+                    aiReviewerUsername,
+                    $"AI 근거 독립 검토자 {runId}",
+                    "manager",
+                    aiReviewerPassword,
+                    $"고위험 FieldComment 독립 검토 계정 발급 run={runId}"));
+            using var aiReviewerHttpClient = FlowNoteServerApiEnvironment.CreateHttpClient(
+                serverSmokeBaseUrl,
+                TimeSpan.FromSeconds(20))
+                ?? throw new InvalidOperationException("AI 근거 독립 검토에는 서버 URL이 필요합니다.");
+            var aiReviewerAuth = new FlowNoteServerAuthClient(aiReviewerHttpClient);
+            var aiReviewerLogin = await aiReviewerAuth.TryLoginAsync(aiReviewerUsername, aiReviewerPassword)
+                ?? throw new InvalidOperationException("AI 근거 독립 검토자 로그인이 필요합니다.");
+            aiReviewerHttpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", aiReviewerLogin.AccessToken);
+            Require(
+                await aiReviewerAuth.TryChangePasswordAsync(aiReviewerPassword, aiReviewerChangedPassword),
+                "AI 근거 독립 검토자는 임시 비밀번호를 변경해야 합니다.");
+            aiReviewerHttpClient.DefaultRequestHeaders.Authorization = null;
+            aiReviewerLogin = await aiReviewerAuth.TryLoginAsync(aiReviewerUsername, aiReviewerChangedPassword)
+                ?? throw new InvalidOperationException("비밀번호 변경 뒤 AI 근거 독립 검토자 재로그인이 필요합니다.");
+            Require(
+                aiReviewerLogin.UserId == aiReviewerAccount.Account.UserId &&
+                aiReviewerLogin.Role == "manager" &&
+                aiReviewerLogin.UserId != serverLogin.UserId,
+                "AI 근거 독립 검토자는 분석자와 다른 manager 계정이어야 합니다.");
+            aiReviewerHttpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", aiReviewerLogin.AccessToken);
+            var aiReviewerDocuments = new FlowNoteServerDocumentClient(aiReviewerHttpClient);
+
             var aiServerEvidenceFile = Path.Combine(testDirectory, $"server-ai-quality-evidence-{runId}.txt");
             File.WriteAllText(
                 aiServerEvidenceFile,
@@ -3952,7 +3986,7 @@ try
                     IdempotencyKey = $"wpf-smoke-ai-reviewed-{runId}"
                 });
             var aiReviewedSourceHashBefore = aiServerReviewedComment.SourceHashSha256;
-            aiServerReviewedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
+            aiServerReviewedComment = await aiReviewerDocuments.UpdateFieldCommentReviewAsync(
                 aiServerReviewedComment.CommentId,
                 new ServerFieldCommentReviewRequest
                 {
@@ -3972,7 +4006,7 @@ try
                     Status = "REVIEWED",
                     NormalizedContent = "보류 발생 사항은 다음 조 인수인계 대상으로 분류됨.",
                     AnalysisContent = "보류 사유와 전달 누락 여부를 보고서 근거로 남긴다.",
-                    ReviewedBy = serverLogin.UserId,
+                    ReviewedBy = aiReviewerLogin.UserId,
                     AnalyzedBy = serverLogin.UserId,
                     TransitionReason = "독립 검토 완료 근거를 회귀 계약에 고정함",
                     MutationKey = $"wpf-smoke-ai-reviewed-transition-{runId}"
@@ -3995,7 +4029,7 @@ try
                     IdempotencyKey = $"wpf-smoke-ai-selected-{runId}"
                 });
             var aiSelectedSourceHashBefore = aiServerSelectedComment.SourceHashSha256;
-            aiServerSelectedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
+            aiServerSelectedComment = await aiReviewerDocuments.UpdateFieldCommentReviewAsync(
                 aiServerSelectedComment.CommentId,
                 new ServerFieldCommentReviewRequest
                 {
@@ -4015,19 +4049,19 @@ try
                     Status = "REVIEWED",
                     NormalizedContent = "센서 재영점 절차 누락 위험을 관리자 검토 대상으로 선정함.",
                     AnalysisContent = "AI 검색 후보에서 절차 누락 위험 사례로 역추적 가능해야 한다.",
-                    ReviewedBy = serverLogin.UserId,
+                    ReviewedBy = aiReviewerLogin.UserId,
                     AnalyzedBy = serverLogin.UserId,
                     TransitionReason = "선정 전 관리자 검토를 완료함",
                     MutationKey = $"wpf-smoke-ai-selected-review-{runId}"
                 });
-            aiServerSelectedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
+            aiServerSelectedComment = await aiReviewerDocuments.UpdateFieldCommentReviewAsync(
                 aiServerSelectedComment.CommentId,
                 new ServerFieldCommentReviewRequest
                 {
                     Status = "SELECTED",
                     NormalizedContent = "센서 재영점 절차 누락 위험을 관리자 검토 대상으로 선정함.",
                     AnalysisContent = "AI 검색 후보에서 절차 누락 위험 사례로 역추적 가능해야 한다.",
-                    ReviewedBy = serverLogin.UserId,
+                    ReviewedBy = aiReviewerLogin.UserId,
                     AnalyzedBy = serverLogin.UserId,
                     TransitionReason = "복합 보고서의 FieldComment 근거로 선정함",
                     MutationKey = $"wpf-smoke-ai-selected-transition-{runId}"
