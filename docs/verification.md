@@ -20,6 +20,14 @@
 
 보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 2026-07-27 현재 수집값은 FastAPI 154건, WPF Core 67건, Android 16건이며 스크립트 기대값도 154/67/16으로 맞췄다. macOS ARM64에서 복구 변경 뒤 WPF Core 67건과 WPF 앱 빌드가 경고·오류 없이 통과했다. Windows 누적 공통 DB 스모크와 실제 별도 PC 복구는 실행하지 않았으므로 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
 
+## 2026-07-27 후보 7 full_pilot UX 재검증 게이트
+
+`manage-pilot-run.py`의 판정표를 schema version 6으로 올리고 수용한 P0/P1 UX 개발 항목을 같은 개발 주기의 수정 전후 실측과 연결했다. 각 항목은 `development_cycle_id`, `comparison_id`, `VERIFIED` 또는 `CLOSED` 상태가 필요하다. 비교 원시는 같은 역할·익명 참여자·시나리오·개발 주기에서 `BEFORE`와 `AFTER`를 각각 2회 이상 수행하고 서로 다른 UI build, 중복 없는 시도 번호, 화면 증거를 남겨야 한다. `AFTER` 전건 성공과 중앙 완료 시간·화면 이동·도움 요청 비악화를 만족하지 않으면 `full_pilot`은 실패한다.
+
+Python 문법 검사와 Ruff, `scripts/test_manage_pilot_run.py` 16건, `git diff --check`가 통과했다. Git 제외 증거 저장소에 `PILOT-20260727-1405-LOCALPREP-001`의 `full_pilot` 폴더를 준비했으며 초기 `PENDING` 판정표를 그대로 검증해 441개 미충족 조건과 `FAIL`을 `pilot-verification.json`에 남겼다. 이 실행은 현장값을 채우거나 통과를 모의한 실행이 아니다.
+
+실제 관리자·반장·조장·작업자 반복 수행, 오늘 사진·인수인계와 기존 과거 문서 version 증가를 포함한 Windows 누적 공통 DB 스모크, 고객 유사망·승인 실단말 관찰은 현재 macOS 환경과 제공되지 않은 현장 책임자·장비로 실행하지 않았다. 고객 승인 DB, dataset version, 고객·현장·라인 scope, 검증 계정과 비밀번호도 제공되지 않아 실제 `verify-ai-field-readiness.py` 실행은 하지 않았다. 올바른 FastAPI 가상환경에서 명령 도움말과 필수 인자는 확인했으며, 고객 승인 `ANONYMOUS_FIELD` 48건이 없는 상태를 합성 또는 `PILOT` 자료로 채우지 않았고 provider 착수 상태는 계속 `대기`다.
+
 ## 2026-07-27 후보 6 서버·WPF 별도 PC 복구와 재결합 UX
 
 `verify-pilot-restore.py`는 복구 전후 수집 중 DB·WAL·SHM과 파일 집합이 바뀌지 않았는지, checkpoint되지 않은 WAL이 남지 않았는지 검사한다. 기존 capture·comparison 경로는 덮어쓰지 않으며 `compare-set`은 server와 wpf comparison의 `run_id`, `backup_set_id`, `restore_approval_id`가 모두 같은지 별도 JSON으로 남긴다. 파일럿 최종 판정도 두 comparison의 공통 세트·승인 ID와 전후 정지/checkpoint 증거를 다시 확인한다.

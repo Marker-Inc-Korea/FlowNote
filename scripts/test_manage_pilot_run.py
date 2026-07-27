@@ -361,7 +361,7 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
                 comparison,
             ]
 
-    def test_prepare_creates_schema_five_windows_server_templates(self) -> None:
+    def test_prepare_creates_schema_six_windows_server_templates(self) -> None:
         run_id = "PILOT-20260722-1310-LOCALCHECK-002"
         with contextlib.redirect_stdout(io.StringIO()):
             result = manage_pilot_run.prepare(
@@ -377,7 +377,7 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
             (self.evidence_root / run_id / "pilot-run.json").read_text(encoding="utf-8")
         )
         self.assertEqual(0, result)
-        self.assertEqual(5, record["schema_version"])
+        self.assertEqual(6, record["schema_version"])
         self.assertEqual("windows_server_rehearsal", record["profile"])
         self.assertTrue(
             (
@@ -531,6 +531,29 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
         self.assertTrue(
             (run_root / "scenario-results" / "restore-fault-injections.csv").is_file()
         )
+        with (
+            run_root / "scenario-results" / "role-ux-comparison.csv"
+        ).open(newline="", encoding="utf-8") as stream:
+            self.assertEqual(
+                [
+                    "comparison_id",
+                    "development_cycle_id",
+                    "attempt_no",
+                    "role",
+                    "participant_id",
+                    "scenario_id",
+                    "ui_phase",
+                    "ui_build",
+                    "success",
+                    "elapsed_seconds",
+                    "click_count",
+                    "screen_transitions",
+                    "help_request_count",
+                    "screen_capture_evidence",
+                    "notes",
+                ],
+                next(csv.reader(stream)),
+            )
         failures = manage_pilot_run.android_delivery_csv_failures(run_root)
         self.assertTrue(any("PASS가 아닙니다" in failure for failure in failures))
 
@@ -935,6 +958,150 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
         }
 
         self.assertEqual([], manage_pilot_run.ux_csv_failures(self.run_root, expected))
+
+    def test_accepted_p0_p1_requires_same_cycle_before_after_revalidation(
+        self,
+    ) -> None:
+        observations = [
+            {
+                "observation_id": "OBS-P1",
+                "role": "team_member",
+                "scenario_id": "TEAM-MEMBER-HANDOVER",
+            }
+        ]
+        items = [
+            {
+                "item_id": "UX-P1",
+                "observation_id": "OBS-P1",
+                "decision": "ACCEPTED",
+                "priority": "P1",
+                "status": "VERIFIED",
+                "development_cycle_id": "CYCLE-20260727-01",
+                "comparison_id": "COMPARE-P1",
+            }
+        ]
+        comparison_path = (
+            self.run_root / "scenario-results" / "role-ux-comparison.csv"
+        )
+        comparison_path.parent.mkdir(parents=True, exist_ok=True)
+        fields = [
+            "comparison_id",
+            "development_cycle_id",
+            "attempt_no",
+            "role",
+            "participant_id",
+            "scenario_id",
+            "ui_phase",
+            "ui_build",
+            "success",
+            "elapsed_seconds",
+            "click_count",
+            "screen_transitions",
+            "help_request_count",
+            "screen_capture_evidence",
+            "notes",
+        ]
+        with comparison_path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fields)
+            writer.writeheader()
+            for phase, build, elapsed, transitions, help_count in (
+                ("BEFORE", "wpf-before", 20, 5, 1),
+                ("AFTER", "wpf-after", 12, 3, 0),
+            ):
+                for attempt_no in (1, 2):
+                    writer.writerow(
+                        {
+                            "comparison_id": "COMPARE-P1",
+                            "development_cycle_id": "CYCLE-20260727-01",
+                            "attempt_no": attempt_no,
+                            "role": "team_member",
+                            "participant_id": "PARTICIPANT-01",
+                            "scenario_id": "TEAM-MEMBER-HANDOVER",
+                            "ui_phase": phase,
+                            "ui_build": build,
+                            "success": "TRUE",
+                            "elapsed_seconds": elapsed,
+                            "click_count": 4,
+                            "screen_transitions": transitions,
+                            "help_request_count": help_count,
+                            "screen_capture_evidence": "proof.txt",
+                            "notes": "same approved scenario",
+                        }
+                    )
+
+        self.assertEqual(
+            [],
+            manage_pilot_run.ux_revalidation_csv_failures(
+                self.run_root, observations, items
+            ),
+        )
+
+        items[0]["comparison_id"] = ""
+        failures = manage_pilot_run.ux_revalidation_csv_failures(
+            self.run_root, observations, items
+        )
+        self.assertTrue(
+            any(
+                "development_cycle_id와 comparison_id가 필요" in failure
+                for failure in failures
+            )
+        )
+
+    def test_p0_p1_revalidation_rejects_after_regression(self) -> None:
+        observations = [
+            {
+                "observation_id": "OBS-P0",
+                "role": "admin",
+                "scenario_id": "ADMIN-REVIEW-REPORT",
+            }
+        ]
+        items = [
+            {
+                "item_id": "UX-P0",
+                "observation_id": "OBS-P0",
+                "decision": "ACCEPTED",
+                "priority": "P0",
+                "status": "CLOSED",
+                "development_cycle_id": "CYCLE-20260727-02",
+                "comparison_id": "COMPARE-P0",
+            }
+        ]
+        rows = []
+        for phase, build, elapsed in (
+            ("BEFORE", "wpf-before", 10),
+            ("AFTER", "wpf-after", 11),
+        ):
+            for attempt_no in (1, 2):
+                rows.append(
+                    {
+                        "comparison_id": "COMPARE-P0",
+                        "development_cycle_id": "CYCLE-20260727-02",
+                        "attempt_no": attempt_no,
+                        "role": "admin",
+                        "participant_id": "PARTICIPANT-ADMIN-01",
+                        "scenario_id": "ADMIN-REVIEW-REPORT",
+                        "ui_phase": phase,
+                        "ui_build": build,
+                        "success": "TRUE",
+                        "elapsed_seconds": elapsed,
+                        "click_count": 4,
+                        "screen_transitions": 3,
+                        "help_request_count": 0,
+                        "screen_capture_evidence": "proof.txt",
+                        "notes": "same approved scenario",
+                    }
+                )
+        self.write_csv(
+            "scenario-results/role-ux-comparison.csv", list(rows[0]), rows
+        )
+
+        failures = manage_pilot_run.ux_revalidation_csv_failures(
+            self.run_root, observations, items
+        )
+
+        self.assertTrue(
+            any("AFTER 중앙 완료 시간이 BEFORE보다 나빠졌습니다" in item for item in failures)
+        )
 
 
 if __name__ == "__main__":
