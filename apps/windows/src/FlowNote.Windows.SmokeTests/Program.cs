@@ -3828,112 +3828,55 @@ try
                     ("$server_document_id", reportResult.GeneratedDocumentId!)) == 3,
                 "local report document should write document, document_version, and report server id mappings");
 
+            var offlineReportTitle = $"Windows offline blocked report {runStamp}";
             var offlineReportContent = services.Reports.BuildDraftContent(
-                $"Windows offline queued report {runStamp}",
-                "Windows smoke stores a local report first and retries server save.",
+                offlineReportTitle,
+                "Windows smoke blocks an unverified report before creating local state.",
                 reportSources,
                 smokeActorName);
+            var offlineReportDocumentCountBefore = ScalarLong(
+                reportConnection,
+                "SELECT COUNT(*) FROM documents WHERE title = $title;",
+                ("$title", offlineReportTitle));
+            var offlineReportQueueCountBefore = ScalarLong(
+                reportConnection,
+                "SELECT COUNT(*) FROM server_sync_queue WHERE entity_type = 'report';");
             using var unavailableReportHttpClient = new HttpClient
             {
                 BaseAddress = new Uri("http://127.0.0.1:9/"),
                 Timeout = TimeSpan.FromSeconds(2)
             };
             var unavailableReportServer = new FlowNoteServerDocumentClient(unavailableReportHttpClient);
-            var offlineReportResult = await services.Reports.SaveDraftToServerAsync(
-                unavailableReportServer,
-                currentDocumentFolder.Id,
-                $"Windows offline queued report {runStamp}",
-                "Windows smoke stores a local report first and retries server save.",
-                offlineReportContent,
-                reportSources,
-                smokeActorName);
-            Require(!offlineReportResult.SyncResult.Success, "missing server client should keep report sync queued locally");
-            Require(offlineReportResult.ReportId is null, "offline report save should not have a server report id yet");
+            var offlineReportBlocked = false;
+            try
+            {
+                _ = await services.Reports.SaveDraftToServerAsync(
+                    unavailableReportServer,
+                    currentDocumentFolder.Id,
+                    offlineReportTitle,
+                    "Windows smoke blocks an unverified report before creating local state.",
+                    offlineReportContent,
+                    reportSources,
+                    smokeActorName);
+            }
+            catch (HttpRequestException)
+            {
+                offlineReportBlocked = true;
+            }
+            Require(
+                offlineReportBlocked,
+                "offline report save should stop when the source snapshot cannot be reverified");
             Require(
                 ScalarLong(
                     reportConnection,
-                    """
-                    SELECT COUNT(*)
-                    FROM documents
-                    WHERE document_id = $document_id
-                      AND server_report_id IS NULL;
-                    """,
-                    ("$document_id", offlineReportResult.LocalDocument.DocumentId)) == 1,
-                "offline report save should keep a local report document without a server report id");
+                    "SELECT COUNT(*) FROM documents WHERE title = $title;",
+                    ("$title", offlineReportTitle)) == offlineReportDocumentCountBefore,
+                "offline report save should not create an unverified local report");
             Require(
                 ScalarLong(
                     reportConnection,
-                    """
-                    SELECT COUNT(*)
-                    FROM server_sync_queue
-                    WHERE entity_type = 'report'
-                      AND entity_id = $document_id
-                      AND action = 'register_report'
-                      AND status = 'FAILED'
-                      AND attempt_count >= 1
-                      AND last_attempt_at IS NOT NULL
-                      AND last_error IS NOT NULL;
-                    """,
-                    ("$document_id", offlineReportResult.LocalDocument.DocumentId)) == 1,
-                "offline report save should leave a failed report sync queue row");
-            Require(
-                ScalarLong(
-                    reportConnection,
-                    """
-                    SELECT COUNT(*)
-                    FROM report_sources
-                    WHERE local_report_document_id = $document_id
-                      AND source_type IN ('FIELD_COMMENT', 'DOCUMENT', 'WORK_SEQUENCE_ITEM', 'WORK_SEQUENCE_HISTORY');
-                    """,
-                    ("$document_id", offlineReportResult.LocalDocument.DocumentId)) == 4,
-                "offline report save should preserve all local report source links");
-
-            _ = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
-            Require(
-                ScalarLong(
-                    reportConnection,
-                    """
-                    SELECT COUNT(*)
-                    FROM server_sync_queue
-                    WHERE entity_type = 'report'
-                      AND entity_id = $document_id
-                      AND status = 'SYNCED'
-                      AND server_report_id IS NOT NULL
-                      AND attempt_count >= 1;
-                    """,
-                    ("$document_id", offlineReportResult.LocalDocument.DocumentId)) == 1,
-                "report retry should sync the queued report after the server client is available");
-            var retriedReportId = ScalarString(
-                reportConnection,
-                """
-                SELECT server_report_id
-                FROM documents
-                WHERE document_id = $document_id
-                  AND server_report_id IS NOT NULL
-                  AND server_document_id IS NOT NULL
-                  AND synced_at IS NOT NULL;
-                """,
-                ("$document_id", offlineReportResult.LocalDocument.DocumentId));
-            Require(
-                retriedReportId?.StartsWith("report_", StringComparison.Ordinal) == true,
-                "retried report should link the local document to a server report id");
-            var retriedReportDetail = await serverDocuments.GetReportAsync(retriedReportId!);
-            Require(
-                retriedReportDetail.Sources.Any(item => item.SourceType == "FIELD_COMMENT" && item.SourceId == serverFieldComment.CommentId),
-                "retried report detail should trace the FieldComment source");
-            Require(
-                retriedReportDetail.Sources.Any(item => item.SourceType == "WORK_SEQUENCE_HISTORY" && item.SourceId == reportSequenceHistorySource.ChangeId),
-                "retried report detail should trace the work sequence history source");
-            var offlineReportTitle = $"Windows offline queued report {runStamp}";
-            var serverReportCountBeforeDuplicateRetry = (await serverDocuments.ListReportsAsync()).Count(item => item.Title == offlineReportTitle);
-            _ = await services.ServerSync.QueueAndTrySyncReportAsync(
-                offlineReportResult.LocalDocument,
-                serverDocuments,
-                serverLogin.UserId);
-            var serverReportCountAfterDuplicateRetry = (await serverDocuments.ListReportsAsync()).Count(item => item.Title == offlineReportTitle);
-            Require(
-                serverReportCountAfterDuplicateRetry == serverReportCountBeforeDuplicateRetry,
-                "repeated report retry should not create a duplicate server report");
+                    "SELECT COUNT(*) FROM server_sync_queue WHERE entity_type = 'report';") == offlineReportQueueCountBefore,
+                "offline report save should not queue an unverified source snapshot");
 
             var aiEvaluationToken = $"ai-eval-{runId}-line-a-press-sensor-composite";
             var aiServerEvidenceFile = Path.Combine(testDirectory, $"server-ai-quality-evidence-{runId}.txt");
