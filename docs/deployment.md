@@ -133,7 +133,7 @@ Start-Transcript -Path (Join-Path $RunRoot "install\windows-server-rehearsal.txt
 | `long_network_outage_recovery` | 승인 방화벽 규칙으로 사전 승인 시간 동안 단절 후 복구; 실패/재시도 원시 로그 보존 | `scenario-results/long-outage-*`, `server-logs/long-outage-*`, `windows-logs/long-outage-*` | 단절 중 허위 성공 없음, 재연결 뒤 중복·손실·권한 우회 0, 핵심 업무 재개 |
 | `disk_full_stop_and_rollback` | 운영 볼륨이 아닌 격리된 제한 용량 시험 볼륨/snapshot에서 DB·파일 저장 공간 부족 주입 | `scenario-results/disk-full-*`, `integrity/disk-full-*`, `incident-and-rollback/disk-full-*` | 부분 파일·부분 commit 없이 fail-closed, 원시 실패 증거 보존, 공간/이전 승인본 복구 뒤 DB 무결성과 업무 재개 |
 | `permission_negative_tests` | 비활성·권한 없는 계정의 로그인, 문서/controlled copy/관리 API 접근 거부 확인 | `scenario-results/permission-negative-*` | 모든 미승인 접근 거부, 로컬 계정 우회와 파일 유출 0 |
-| `server_restore_separate_pc`, `wpf_restore_separate_pc` | `verify-pilot-restore.py capture/compare`로 원본과 별도 PC의 DB+파일 세트를 비교 | `backup-restore/server-*`, `backup-restore/wpf-*` | 별도 익명 장비, 같은 백업·승인 ID, DB row/quick/integrity/FK와 파일 경로·크기·SHA-256 불일치 0 |
+| `server_restore_separate_pc`, `wpf_restore_separate_pc` | `verify-pilot-restore.py capture/compare/compare-set`으로 원본과 별도 PC의 DB+파일 세트를 비교 | `backup-restore/server-*`, `backup-restore/wpf-*`, `backup-restore/restore-set-comparison.json` | 수집 중 쓰기 변경·checkpoint WAL 0, 별도 익명 장비, 두 대상 공통 백업·승인 ID, DB row/quick/integrity/FK와 파일 경로·크기·SHA-256 불일치 0 |
 | `approved_package_rollback` | 사전 확정한 이전 승인 서버/WPF 패키지와 같은 시점 데이터 세트로 복귀 | `incident-and-rollback/server-*`, `incident-and-rollback/wpf-*`, `scenario-results/rollback-workflows.csv` | 이전 승인 버전/hash/signer 일치, 승인 RTO/RPO 이내, 로그인·문서 열람·FieldComment·동기화·알림·감사 로그 재개 |
 
 디스크 부족 시험은 실제 운영 볼륨을 임의로 채우지 않는다. 격리된 시험 볼륨 또는 되돌릴 수 있는 승인 snapshot만 사용하고, 주입 전 중단 승인·백업·복귀 명령을 먼저 검토한다. 네트워크·방화벽·인증서 변경도 원복 명령과 접근 경로를 먼저 확보한다. 실패 시 transcript와 실패 상태를 먼저 보존하며 같은 파일명으로 재실행 결과를 덮어쓰지 않는다.
@@ -770,7 +770,7 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 7. WPF 실행 전 서버 계정 로그인이 가능한지 확인한다.
 8. WPF가 `RECONCILIATION_REQUIRED`를 표시하면 자동 전송·polling이 중지된 상태에서 `이력 > 서버 재결합`의 모든 `REBOUND`/`REQUEUE`/`CONFLICT` 항목과 승인 사유를 검토해 적용한다. 기존 큐·mapping·처리 `message_id`를 삭제하거나 수동 초기화하지 않는다.
 9. 승인 적용 뒤 cursor 0 재추적과 `PENDING` 재전송이 재개되는지 확인한다.
-10. `scripts\verify-pilot-restore.py`로 복구 전후 `server` 증거를 비교한다. 전후에는 동일한 익명 백업 세트·복구 승인 ID와 서로 다른 원본/복구 PC ID를 기록하고, 테이블별 원천 개수, `storage` 상대경로·크기·SHA-256, `quick_check`, `integrity_check`, foreign key가 모두 통과했는지 확인한다. DB 본파일 크기·SHA-256은 물리 복사 추적용 참고값으로 함께 보존한다.
+10. `scripts\verify-pilot-restore.py`로 복구 전후 `server` 증거를 비교한다. 전후에는 동일한 익명 백업 세트·복구 승인 ID와 서로 다른 원본/복구 PC ID를 기록하고, 수집 중 DB·파일 불변, checkpoint WAL 부재, 테이블별 원천 개수, `storage` 상대경로·크기·SHA-256, `quick_check`, `integrity_check`, foreign key가 모두 통과했는지 확인한다. DB 본파일 크기·SHA-256은 물리 복사 추적용 참고값으로 함께 보존한다.
 
 ### WPF 복구 순서
 
@@ -780,7 +780,8 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 4. `FLOWNOTE_LOCAL_DATA_DIR`, `FLOWNOTE_LOCAL_DATABASE_PATH`, `FLOWNOTE_API_BASE_URL` 값이 복구 위치와 맞는지 확인한다.
 5. WPF 앱을 실행해 로그인, 문서 목록, 문서 열람, FieldComment 등록/조회, 보고서 근거 조회를 확인한다.
 6. 복구 후 저장소 루트에서 `.\scripts\verify-preserved-tests.ps1` 또는 운영자가 지정한 동등 점검을 실행한다. 운영 환경에서 전체 개발 테스트를 실행할 수 없으면 최소한 서버 health, DB health, WPF 로그인, 문서 목록, 문서 열람, FieldComment, 보고서 근거 조회를 수동 점검표로 남긴다.
-7. `scripts\verify-pilot-restore.py`로 복구 전후 `wpf` 증거를 비교한다. 전후에는 동일한 익명 백업 세트·복구 승인 ID와 서로 다른 원본/복구 PC ID를 기록하고, 테이블별 원천 개수, `Files` 상대경로·크기·SHA-256, `quick_check`, `integrity_check`, foreign key가 모두 통과했는지 확인한다. DB 본파일 크기·SHA-256은 물리 복사 추적용 참고값으로 함께 보존한다.
+7. `scripts\verify-pilot-restore.py`로 복구 전후 `wpf` 증거를 비교한다. 전후에는 동일한 익명 백업 세트·복구 승인 ID와 서로 다른 원본/복구 PC ID를 기록하고, 수집 중 DB·파일 불변, checkpoint WAL 부재, 테이블별 원천 개수, `Files` 상대경로·크기·SHA-256, `quick_check`, `integrity_check`, foreign key가 모두 통과했는지 확인한다.
+8. server와 wpf comparison을 `compare-set`으로 묶어 `backup-set-id`와 `restore-approval-id`가 두 대상 사이에서도 같은지 확인한다. 기존 comparison이나 실패 증거가 있으면 같은 경로에 다시 쓰지 말고 새 `run_id`를 사용한다.
 
 ### 부분 복원 장애 대응
 
@@ -792,7 +793,7 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 | WPF DB만 복원하고 `Files\`가 누락됨 | 로컬 문서 목록, 열람 로그, 동기화 큐는 있으나 로컬 파일 미리보기와 첨부 열람이 실패한다. | 같은 시점의 `Files\`를 재복원한다. 서버에 이미 동기화된 문서는 서버 열람으로 대체할 수 있지만, 로컬 미동기화 파일은 재수집 전까지 보존 장애로 기록한다. |
 | WPF `Files\`만 복원하고 DB가 누락됨 | 파일은 있으나 로컬 문서, 첨부, 큐, 열람 이력과 연결되지 않는다. | 같은 시점의 WPF DB를 재복원한다. DB가 없으면 파일은 삭제하지 않고 운영자가 서버 등록 여부와 로컬 재등록 필요 여부를 판단한다. |
 
-부분 복원, 오래된 DB와 새 파일, 누락 파일, 잘못된 서버 epoch는 같은 파일럿 `run_id`에서 각각 주입한다. 승인 전에는 WPF binding이 `RECONCILIATION_REQUIRED`이고 자동 전송·알림 polling이 모두 중지되어야 한다. 관리자가 서버 판정과 모든 `REBOUND/REQUEUE/CONFLICT`를 승인한 뒤에만 cursor 0 재추적과 전송을 재개한다. 결과는 `scenario-results/restore-fault-injections.csv`의 네 필수 행과 화면·WPF 로그·서버 reconciliation 감사 파일로 연결한다.
+부분 복원, 오래된 DB와 새 파일, 누락 파일, 잘못된 서버 epoch는 같은 파일럿 `run_id`에서 각각 주입한다. 승인 전에는 WPF binding이 `RECONCILIATION_REQUIRED`이고 자동 전송·알림 polling이 모두 중지되어야 한다. `이력 > 서버 재결합`에는 차단 원인, 보존된 원천, 승인 전 금지 행동, 다음 단계가 표시되어야 한다. 관리자가 서버 판정과 모든 `REBOUND/REQUEUE/CONFLICT`를 승인한 뒤에만 cursor 0 재추적과 전송을 재개한다. `restore-fault-injections.csv`의 각 행은 target `both`와 서로 다른 `screen_evidence`, `wpf_log_evidence`, `server_audit_evidence`를 가져야 한다. 증거 경로를 장애 사이에 재사용하거나 기존 실패 상태와 승인 전 증거를 덮어쓰지 않는다.
 
 ## 장애 시 보존 파일
 
@@ -825,7 +826,7 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 현재 코드와 스크립트 guard는 FastAPI 154건·WPF Core 55건·Android 16건으로 일치한다. 같은 clean 소스 커밋에서 Windows x64 무생략 실행이 2회 연속 통과하기 전에는 유효 기준선으로 확정하지 않는다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 현재 코드와 스크립트 guard는 FastAPI 154건·WPF Core 67건·Android 16건으로 일치한다. 같은 clean 소스 커밋에서 Windows x64 무생략 실행이 2회 연속 통과하기 전에는 유효 기준선으로 확정하지 않는다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 

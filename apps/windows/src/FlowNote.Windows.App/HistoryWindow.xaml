@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="이력"
         Width="1060"
-        Height="560"
+        Height="680"
         MinWidth="860"
-        MinHeight="460"
+        MinHeight="580"
         Background="{StaticResource WindowBackgroundBrush}">
     <Grid Margin="14">
         <Grid.RowDefinitions>
@@ -155,12 +155,43 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
                             <TextBlock x:Name="ReconciliationSummaryTextBlock"
                                        Foreground="{StaticResource SecondaryTextBrush}"
                                        VerticalAlignment="Center"
                                        TextWrapping="Wrap" />
-                            <StackPanel Grid.Row="1"
+                            <Border Grid.Row="1"
+                                    Margin="0,10,0,0"
+                                    Padding="10"
+                                    Background="{StaticResource WindowBackgroundBrush}"
+                                    BorderBrush="{StaticResource PanelBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="4">
+                                <StackPanel>
+                                    <TextBlock Text="차단 원인" FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryTextBrush}" />
+                                    <TextBlock x:Name="RecoveryBlockCauseTextBlock"
+                                               Margin="0,2,0,8" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <TextBlock Text="보존된 원천" FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryTextBrush}" />
+                                    <TextBlock x:Name="RecoveryPreservedSourcesTextBlock"
+                                               Margin="0,2,0,8" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <TextBlock Text="승인 전 금지 행동" FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryTextBrush}" />
+                                    <TextBlock x:Name="RecoveryProhibitedActionsTextBlock"
+                                               Margin="0,2,0,8" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <TextBlock Text="다음 단계" FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryTextBrush}" />
+                                    <TextBlock x:Name="RecoveryNextStepTextBlock"
+                                               Margin="0,2,0,0" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryTextBrush}" />
+                                </StackPanel>
+                            </Border>
+                            <StackPanel Grid.Row="2"
                                         Margin="0,8,0,0"
                                         Orientation="Horizontal"
                                         HorizontalAlignment="Right">

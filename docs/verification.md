@@ -11,14 +11,20 @@
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
 | FastAPI | 현재 코드·스크립트 guard 154건, Windows 무생략 실행 대기 | 동일 |
-| WPF Core | 현재 코드·스크립트 guard 55건, Windows 무생략 실행 대기 | 동일 |
+| WPF Core | 현재 코드·스크립트 guard 67건, Windows 무생략 실행 대기 | 동일 |
 | WPF 앱 | 목표 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 목표 unit 16/16, failure/error/skipped 0, debug build PASS | 동일 |
 | SQLite | 목표 전후 `quick_check=ok`, FK 위반 0 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
-보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 2026-07-27에 다시 수집한 값은 FastAPI 154건, WPF Core 55건, Android 16건이며 스크립트 기대값도 154/55/16으로 맞췄다. macOS ARM64 보조 검증에서는 FastAPI 154건, 기존 WPF Core 52건, Android 16건과 debug build·lint, Ruff, WPF 앱 빌드가 통과했다. 이번 Windows 배포 안내 보완에서는 WPF Core 55건과 WPF 앱 빌드가 경고·오류 없이 통과했다. 인증 사용자 scope 추가 뒤 AI 호출 후 권한 재검사의 사용자 재구성에서 scope 전달이 빠져 발생한 FastAPI 6건 실패는 해당 값을 보존하도록 고친 뒤 AI 질의 16건과 전체 154건을 다시 통과했다. 동시 실행으로 SQLite 잠금이 발생한 앞선 실패와 이 실패의 DB·JUnit·TRX·로그도 삭제하거나 덮어쓰지 않았다.
+보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 2026-07-27 현재 수집값은 FastAPI 154건, WPF Core 67건, Android 16건이며 스크립트 기대값도 154/67/16으로 맞췄다. macOS ARM64에서 복구 변경 뒤 WPF Core 67건과 WPF 앱 빌드가 경고·오류 없이 통과했다. Windows 누적 공통 DB 스모크와 실제 별도 PC 복구는 실행하지 않았으므로 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
+
+## 2026-07-27 후보 6 서버·WPF 별도 PC 복구와 재결합 UX
+
+`verify-pilot-restore.py`는 복구 전후 수집 중 DB·WAL·SHM과 파일 집합이 바뀌지 않았는지, checkpoint되지 않은 WAL이 남지 않았는지 검사한다. 기존 capture·comparison 경로는 덮어쓰지 않으며 `compare-set`은 server와 wpf comparison의 `run_id`, `backup_set_id`, `restore_approval_id`가 모두 같은지 별도 JSON으로 남긴다. 파일럿 최종 판정도 두 comparison의 공통 세트·승인 ID와 전후 정지/checkpoint 증거를 다시 확인한다.
+
+복구 장애 원시 CSV는 네 장애마다 server와 wpf를 함께 대상으로 하고 화면, WPF 로그, 서버 reconciliation 감사의 세 증거를 각각 요구한다. WPF는 명시적 복구 장애 신호를 첫 manifest 관찰부터 `RECONCILIATION_REQUIRED`로 차단하며 재결합 탭에 차단 원인, 보존된 원천, 승인 전 금지 행동과 다음 단계를 나누어 표시한다. 네 장애 각각의 차단, 판정 run, 관리자 승인 적용, 장애 신호 해제 뒤 `ACTIVE` 복귀를 포함해 Python 도구 18건과 WPF Core 67건이 통과했고 WPF 앱은 macOS에서 Windows 타기팅을 명시해 경고 0개·오류 0개로 빌드했다. 실제 별도 Windows PC, 서버 쓰기 중지 운영 절차, 네 장애의 화면·로그·감사와 승인 후 정상 업무 재개 증거는 이 환경에서 만들 수 없으므로 파일럿 실기 게이트는 `대기`다.
 
 기대값은 테스트 파일 수나 과거 로그만 보고 바꾸지 않는다. 테스트 추가·삭제 근거를 먼저 확인하고 Windows x64 표준 환경에서 FastAPI `pytest --collect-only -q`의 전체 node ID와 중복 제거 수, pytest JUnit 실행 수, WPF Core TRX의 total/passed, Android JUnit의 total/passed를 각각 확인한다. 그 수가 모두 일치할 때 `scripts/verify-preserved-tests.ps1`의 세 기대값을 갱신한다. 변경을 반영한 같은 소스 커밋과 clean worktree에서 새 `RunId` 두 개로 옵션 없는 표준 실행을 연속 수행하고, 각 `verification-summary.json`을 원시 node ID 목록·JUnit·TRX·단계 로그와 다시 대조한다. 실행 전후 Git 상태와 금지 추적·스테이징 수도 두 run 모두 0이어야 한다.
 

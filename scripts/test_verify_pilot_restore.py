@@ -45,9 +45,21 @@ class PilotRestoreVerificationTests(unittest.TestCase):
         return database, files
 
     def capture(self, phase: str, machine_id: str, database: Path, files: Path) -> Path:
+        return self.capture_target(
+            "server", phase, machine_id, database, files
+        )
+
+    def capture_target(
+        self,
+        target: str,
+        phase: str,
+        machine_id: str,
+        database: Path,
+        files: Path,
+    ) -> Path:
         args = argparse.Namespace(
             run_id=self.run_id,
-            target="server",
+            target=target,
             phase=phase,
             database=database,
             files=files,
@@ -58,7 +70,7 @@ class PilotRestoreVerificationTests(unittest.TestCase):
         )
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(0, verify_pilot_restore.capture(args))
-        return self.root / self.run_id / "backup-restore" / f"server-{phase}.json"
+        return self.root / self.run_id / "backup-restore" / f"{target}-{phase}.json"
 
     def test_separate_machine_lossless_restore_passes_with_zero_mismatches(
         self,
@@ -83,6 +95,10 @@ class PilotRestoreVerificationTests(unittest.TestCase):
             report["file_mismatch_counts"],
         )
         self.assertTrue(report["database_checks"]["after_integrity_check_ok"])
+        self.assertTrue(report["database_checks"]["before_capture_stable"])
+        self.assertTrue(report["database_checks"]["before_checkpoint_clean"])
+        self.assertTrue(report["database_checks"]["after_capture_stable"])
+        self.assertTrue(report["file_capture_checks"]["after_capture_stable"])
 
     def test_same_machine_or_hash_mismatch_fails_closed(self) -> None:
         before_db, before_files = self.create_set("source")
@@ -107,6 +123,62 @@ class PilotRestoreVerificationTests(unittest.TestCase):
         self.assertEqual(1, report["file_mismatch_counts"]["size"])
         self.assertEqual(1, report["file_mismatch_counts"]["sha256"])
         self.assertTrue(any("별도 PC" in failure for failure in report["failures"]))
+
+    def test_server_and_wpf_must_share_backup_set_and_restore_approval(self) -> None:
+        comparisons: dict[str, Path] = {}
+        for target in ("server", "wpf"):
+            before_db, before_files = self.create_set(f"{target}-source")
+            after_db, after_files = self.create_set(f"{target}-restore")
+            before = self.capture_target(
+                target, "before", f"{target}-source-01", before_db, before_files
+            )
+            after = self.capture_target(
+                target, "after", f"{target}-restore-02", after_db, after_files
+            )
+            output = (
+                self.root
+                / self.run_id
+                / "backup-restore"
+                / f"{target}-comparison.json"
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    0,
+                    verify_pilot_restore.compare(
+                        argparse.Namespace(
+                            before=before, after=after, output=output
+                        )
+                    ),
+                )
+            comparisons[target] = output
+
+        output = (
+            self.root
+            / self.run_id
+            / "backup-restore"
+            / "restore-set-comparison.json"
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = verify_pilot_restore.compare_set(
+                argparse.Namespace(
+                    server=comparisons["server"],
+                    wpf=comparisons["wpf"],
+                    output=output,
+                )
+            )
+
+        report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(0, result)
+        self.assertEqual("PASS", report["result"])
+        self.assertEqual("BACKUP-SET-007", report["backup_set_id"])
+        self.assertEqual("APPROVAL-007", report["restore_approval_id"])
+
+    def test_existing_evidence_is_never_overwritten(self) -> None:
+        database, files = self.create_set("source")
+        self.capture("before", "SERVER-SOURCE-01", database, files)
+
+        with self.assertRaisesRegex(ValueError, "덮어쓸 수 없습니다"):
+            self.capture("before", "SERVER-SOURCE-01", database, files)
 
 
 if __name__ == "__main__":

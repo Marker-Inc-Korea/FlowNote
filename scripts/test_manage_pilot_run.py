@@ -183,6 +183,14 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
                         "after_quick_check_ok": True,
                         "after_integrity_check_ok": True,
                         "after_foreign_key_violation_count": 0,
+                        "before_capture_stable": True,
+                        "before_checkpoint_clean": True,
+                        "after_capture_stable": True,
+                        "after_checkpoint_clean": True,
+                    },
+                    "file_capture_checks": {
+                        "before_capture_stable": True,
+                        "after_capture_stable": True,
                     },
                 }
             ),
@@ -620,12 +628,24 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
             "admin_approved_rebind",
             "normal_operation_resumed",
             "result",
-            "evidence",
+            "screen_evidence",
+            "wpf_log_evidence",
+            "server_audit_evidence",
         ]
         with path.open("w", newline="", encoding="utf-8") as stream:
             writer = csv.DictWriter(stream, fieldnames=fieldnames)
             writer.writeheader()
             for case in manage_pilot_run.RESTORE_FAULT_CASES:
+                screen = f"{case}-screen.png"
+                wpf_log = f"{case}-wpf.log"
+                server_audit = f"{case}-server-audit.json"
+                (self.run_root / screen).write_bytes(b"screen")
+                (self.run_root / wpf_log).write_text(
+                    "blocked\nresumed\n", encoding="utf-8"
+                )
+                (self.run_root / server_audit).write_text(
+                    '{"status":"APPLIED"}\n', encoding="utf-8"
+                )
                 writer.writerow(
                     {
                         "injection_id": case,
@@ -636,12 +656,34 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
                         "admin_approved_rebind": "TRUE",
                         "normal_operation_resumed": "TRUE",
                         "result": "PASS",
-                        "evidence": "proof.txt",
+                        "screen_evidence": screen,
+                        "wpf_log_evidence": wpf_log,
+                        "server_audit_evidence": server_audit,
                     }
                 )
 
         self.assertEqual(
             [], manage_pilot_run.restore_fault_injection_failures(self.run_root)
+        )
+
+    def test_server_and_wpf_restore_comparisons_must_share_both_ids(self) -> None:
+        server = self.write_restore_comparison("server")
+        wpf = self.write_restore_comparison("wpf")
+        self.assertEqual(
+            [],
+            manage_pilot_run.restore_set_binding_failures(
+                self.run_root, [server], [wpf]
+            ),
+        )
+
+        wpf_path = self.run_root / wpf
+        report = json.loads(wpf_path.read_text(encoding="utf-8"))
+        report["restore_approval_id"] = "APPROVAL-OTHER"
+        wpf_path.write_text(json.dumps(report), encoding="utf-8")
+        self.assertTrue(
+            manage_pilot_run.restore_set_binding_failures(
+                self.run_root, [server], [wpf]
+            )
         )
 
     def test_restore_comparison_is_bound_to_both_manifest_hashes(self) -> None:
@@ -700,6 +742,14 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
                         "after_quick_check_ok": True,
                         "after_integrity_check_ok": True,
                         "after_foreign_key_violation_count": 0,
+                        "before_capture_stable": True,
+                        "before_checkpoint_clean": True,
+                        "after_capture_stable": True,
+                        "after_checkpoint_clean": True,
+                    },
+                    "file_capture_checks": {
+                        "before_capture_stable": True,
+                        "after_capture_stable": True,
                     },
                 }
             ),

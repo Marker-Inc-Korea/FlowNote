@@ -21,6 +21,12 @@ public sealed record ServerSyncManifest
 
     [JsonPropertyName("server_cursor")]
     public long ServerCursor { get; init; }
+
+    [JsonPropertyName("restore_fault_code")]
+    public string? RestoreFaultCode { get; init; }
+
+    [JsonPropertyName("restore_block_reason")]
+    public string? RestoreBlockReason { get; init; }
 }
 
 public sealed record ReconciliationInventoryItemRequest
