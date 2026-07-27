@@ -249,6 +249,17 @@ public sealed class ReportDraftService(
         using var connection = database.OpenConnection();
         var frozen = new List<ReportSourceCandidateRecord>();
         var verifications = new List<ReportSourceVerificationRecord>();
+        var workSequenceSourceIds = selected
+            .Where(source => Clean(source.SourceType, string.Empty).ToUpperInvariant()
+                is "WORK_SEQUENCE_ITEM" or "WORK_SEQUENCE_HISTORY")
+            .Select(source => source.SourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        var workSequenceEvidence = workSequenceSourceIds.Count == 0
+            ? ServerWorkSequenceEvidence.Empty
+            : await LoadServerWorkSequenceEvidenceAsync(
+                serverClient,
+                workSequenceSourceIds,
+                cancellationToken);
 
         foreach (var source in selected)
         {
@@ -315,6 +326,57 @@ public sealed class ReportDraftService(
                 continue;
             }
 
+            if (request.SourceType == "WORK_SEQUENCE_ITEM")
+            {
+                workSequenceEvidence.Items.TryGetValue(request.SourceId, out var current);
+                var latestChange = workSequenceEvidence.History.Values
+                    .Where(item => item.ItemId == request.SourceId)
+                    .OrderBy(item => item.CreatedAt)
+                    .ThenBy(item => item.ChangeId, StringComparer.Ordinal)
+                    .LastOrDefault();
+                var versionId = latestChange?.ChangeId ?? current?.ItemId;
+                var valid = current is not null &&
+                    (string.IsNullOrWhiteSpace(source.SourceVersionId) ||
+                     string.Equals(source.SourceVersionId, versionId, StringComparison.Ordinal));
+                var result = valid
+                    ? "서버 작업순서 항목과 최신 변경 기록을 확인했습니다."
+                    : "작업순서 항목이 없거나 선택한 뒤 최신 변경 기록이 달라졌습니다.";
+                verifications.Add(new ReportSourceVerificationRecord(
+                    request.SourceType, request.SourceId, versionId, null, null, valid, result));
+                if (valid)
+                {
+                    frozen.Add(source with
+                    {
+                        SourceVersionId = versionId,
+                        ServerSourceId = request.SourceId
+                    });
+                }
+                continue;
+            }
+
+            if (request.SourceType == "WORK_SEQUENCE_HISTORY")
+            {
+                workSequenceEvidence.History.TryGetValue(request.SourceId, out var current);
+                var versionId = current?.ChangeId;
+                var valid = current is not null &&
+                    (string.IsNullOrWhiteSpace(source.SourceVersionId) ||
+                     string.Equals(source.SourceVersionId, versionId, StringComparison.Ordinal));
+                var result = valid
+                    ? "서버 작업순서 변경 기록을 확인했습니다."
+                    : "작업순서 변경 기록이 없거나 선택한 기록과 다릅니다.";
+                verifications.Add(new ReportSourceVerificationRecord(
+                    request.SourceType, request.SourceId, versionId, null, null, valid, result));
+                if (valid)
+                {
+                    frozen.Add(source with
+                    {
+                        SourceVersionId = versionId,
+                        ServerSourceId = request.SourceId
+                    });
+                }
+                continue;
+            }
+
             verifications.Add(new ReportSourceVerificationRecord(
                 request.SourceType, request.SourceId, request.SourceVersionId, request.SourceRevision,
                 request.SourceHashSha256, false,
@@ -322,6 +384,46 @@ public sealed class ReportDraftService(
         }
 
         return new ReportSourceFreezeResult(frozen, verifications);
+    }
+
+    private static async Task<ServerWorkSequenceEvidence> LoadServerWorkSequenceEvidenceAsync(
+        FlowNoteServerDocumentClient serverClient,
+        IReadOnlySet<string> sourceIds,
+        CancellationToken cancellationToken)
+    {
+        var items = new Dictionary<string, ServerWorkSequenceItemResponse>(StringComparer.Ordinal);
+        var history = new Dictionary<string, ServerWorkSequenceHistoryResponse>(StringComparer.Ordinal);
+        var boards = await serverClient.ListWorkSequenceBoardsAsync(cancellationToken);
+
+        foreach (var board in boards)
+        {
+            var current = await serverClient.GetWorkSequenceBoardAsync(board.BoardId, cancellationToken);
+            foreach (var item in current.Items)
+            {
+                if (sourceIds.Contains(item.ItemId))
+                {
+                    items[item.ItemId] = item;
+                }
+            }
+
+            var changes = await serverClient.ListWorkSequenceHistoryAsync(board.BoardId, cancellationToken);
+            foreach (var change in changes)
+            {
+                if (sourceIds.Contains(change.ChangeId) ||
+                    change.ItemId is not null && sourceIds.Contains(change.ItemId))
+                {
+                    history[change.ChangeId] = change;
+                }
+            }
+
+            if (sourceIds.All(sourceId => items.ContainsKey(sourceId) || history.ContainsKey(sourceId)) &&
+                items.Keys.All(itemId => history.Values.Any(change => change.ItemId == itemId)))
+            {
+                break;
+            }
+        }
+
+        return new ServerWorkSequenceEvidence(items, history);
     }
 
     private static bool SnapshotMatches(
@@ -642,5 +744,14 @@ public sealed class ReportDraftService(
             "WORK_RECORD_VERSION" => "work_record_version",
             _ => "related"
         };
+    }
+
+    private sealed record ServerWorkSequenceEvidence(
+        IReadOnlyDictionary<string, ServerWorkSequenceItemResponse> Items,
+        IReadOnlyDictionary<string, ServerWorkSequenceHistoryResponse> History)
+    {
+        public static ServerWorkSequenceEvidence Empty { get; } = new(
+            new Dictionary<string, ServerWorkSequenceItemResponse>(StringComparer.Ordinal),
+            new Dictionary<string, ServerWorkSequenceHistoryResponse>(StringComparer.Ordinal));
     }
 }
