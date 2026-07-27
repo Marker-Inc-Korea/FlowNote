@@ -1981,12 +1981,10 @@ try
             var aiOperatorUsername = $"smoke-ai-system-{accountSuffix}";
             var aiOperatorPassword = $"AI-System-{accountSuffix}!";
             var aiOperatorChangedPassword = $"AI-System-Changed-{accountSuffix}!";
-            await serverAccounts.CreateAsync(new ServerAccountCreateRequest(
+            ServerSmokeSystemAdmin.EnsureAccount(
                 aiOperatorUsername,
                 $"AI 보존 운영 스모크 {runId}",
-                "system-admin",
-                aiOperatorPassword,
-                $"AI 단일 만료·legal hold 사람형 스모크 run={runId}"));
+                aiOperatorPassword);
             using var aiOperationsHttpClient = FlowNoteServerApiEnvironment.CreateHttpClient(
                 serverSmokeBaseUrl, TimeSpan.FromSeconds(20))
                 ?? throw new InvalidOperationException("AI 보존 운영 스모크에는 서버 URL이 필요합니다.");
