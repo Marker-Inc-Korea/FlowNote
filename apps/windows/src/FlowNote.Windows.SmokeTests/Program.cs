@@ -249,7 +249,7 @@ try
         var unauthorizedLogin = await serverAwareAuth.LoginAsync("admin", "1234");
         Require(!unauthorizedLogin.Success, "server 401 should not fall back to local admin credentials");
         Require(
-            unauthorizedLogin.FailureReason == "서버 로그인 ID 또는 비밀번호가 올바르지 않습니다.",
+            unauthorizedLogin.FailureReason == ServerAccessDenialPolicy.Message(HttpStatusCode.Unauthorized, null),
             "server 401 should show the Korean server login failure message");
     }
 
@@ -259,7 +259,7 @@ try
         var forbiddenLogin = await serverAwareAuth.LoginAsync("admin", "1234");
         Require(!forbiddenLogin.Success, "server 403 should not fall back to local admin credentials");
         Require(
-            forbiddenLogin.FailureReason == "서버 계정이 비활성 상태입니다. 관리자에게 문의하세요.",
+            forbiddenLogin.FailureReason == ServerAccessDenialPolicy.Message(HttpStatusCode.Forbidden, null),
             "server 403 should show the Korean inactive server account message");
     }
 
