@@ -274,8 +274,8 @@ def test_query_operations_read_back_are_idempotent_stale_safe_and_preserve_hold_
                     query_text=f"WPF 보존 조작 원문 {item_id}", query_hash="1" * 64,
                     purpose="EVIDENCE_SUMMARY", status="SUCCEEDED",
                     response_storage_mode="STORE_90_DAYS", response_text="보존 응답",
-                    response_hash="2" * 64, retention_until=now - timedelta(seconds=1),
-                    response_retention_until=now - timedelta(seconds=1),
+                    response_hash="2" * 64, retention_until=now + timedelta(days=90),
+                    response_retention_until=now + timedelta(days=90),
                 ))
             session.commit()
 

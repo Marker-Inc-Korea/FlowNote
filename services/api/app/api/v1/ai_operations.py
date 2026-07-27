@@ -747,6 +747,7 @@ def expire_query_now(
         customer_scope=row.customer_scope, site_scope=row.site_scope,
         target_type="AI_QUERY", target_id=row.query_id, detail={"reason": payload.reason},
     )
+    session.flush()
     result = run_retention(session, now=now, query_id=query_id, operation_key=payload.operation_key)
     return {"queryId": query_id, **result}
 
