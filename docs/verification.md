@@ -40,6 +40,16 @@ Python 문법 검사와 Ruff, `scripts/test_manage_pilot_run.py` 16건, `git dif
 
 이 문서는 테스트 DB와 산출물 보존 규칙을 지키면서 FlowNote의 현재 검증 순서를 한 번에 실행하는 기준이다. 실패하더라도 SQLite DB, 로그, 테스트 입력 파일, 출력 파일, 렌더링 결과, 스모크 테스트 산출물은 삭제하지 않는다.
 
+## 2026-07-27 작업 102 보고서 근거와 FieldComment 검토 동기화 문서 갱신
+
+작업 시작 시 Git 작업 트리는 깨끗했고 `main`은 `origin/main`과 같은 상태였다. 이후 최근 WPF Core와 스모크 변경을 기준 문서에 다시 대조했다. WPF 보고서 화면은 `SELECTED` FieldComment, 현재 공개 문서, 작업순서 이력을 후보로 제공한다. Core는 `WORK_SEQUENCE_ITEM`과 `WORK_SEQUENCE_HISTORY`도 저장 전에 서버에서 확인한다. 최초 원천 검증에 실패하면 로컬 보고서 파일과 전송 대기 기록을 만들지 않으며 검증 뒤 전송이 실패한 경우에만 보고서 큐를 보존한다. 여러 문서의 근거를 모은 보고서는 모든 비보고서 대기 항목 뒤에 처리한다.
+
+FieldComment 검토는 `ANALYZED → REVIEWED → SELECTED`를 단계별 큐 기록으로 남긴다. 직접 검토 요청은 확인하지 않은 `baseReviewRevision`을 비워 두고 동기화 요청은 저장한 기준 revision을 유지한다. 고위험 원천의 분석은 기존 관리자 계정이, 검토와 선정은 임시 비밀번호를 변경한 별도 `manager` 계정이 맡는 스모크 흐름도 문서에 반영했다.
+
+이번 변경은 기존 코드에 맞춘 문서 갱신이다. 코드와 사용자 노출 문구는 수정하지 않았으며 관련 WPF Core 테스트와 스모크를 새로 실행하기 전 문서 정합성 검사부터 수행했다. 테스트를 실행하면 기존 SQLite, 로그와 산출물을 삭제하거나 초기화하지 않고 그대로 누적한다.
+
+문서 갱신 뒤 `ReportDraftServerSourceVerificationTests`와 `ServerFieldCommentContractTests` 4건을 실행해 모두 통과했다. 변경 문서 5개의 로컬 링크와 `git diff --check`도 확인했다. 전체 WPF Core와 Windows 누적 공통 DB 스모크는 이번 작업에서 실행하지 않았다.
+
 ## 2026-07-27 작업 102 현재 코드·문서 재대조
 
 작업을 시작할 때 Git 작업 트리는 깨끗했고 `main`과 `origin/main`도 같은 상태였다. 현재 코드와 개발 문서를 다시 대조한 결과, 서버 README의 검증 문단에 WPF Core 테스트 수만 이전 값인 52건으로 남아 있었다. 현재 코드와 표준 검증 스크립트에 맞춰 55건으로 바로잡았으며, 그 밖의 기능 설명은 이미 구현과 일치해 수정하지 않았다.

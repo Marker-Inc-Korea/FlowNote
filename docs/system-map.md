@@ -166,7 +166,7 @@ WPF 로컬 DB는 공개 버전을 `documents.published_version_no`와 `document_
 
 허용 role의 제한 다운로드는 WPF 로컬 원본 복사가 아니라 서버 controlled copy를 사용한다. WPF가 현재 공개 버전의 티켓을 요청하면 서버는 공개 상태, 저장소 경계, 크기와 SHA-256을 검사하고 사용자·로그인 세션에 묶인 기본 60초 1회성 grant를 발급한다. 같은 Bearer 세션으로 한 번만 스트리밍하며 WPF는 저장 뒤 응답 SHA-256과 실제 파일을 다시 대조한다. 발급·허용·완료·실패·차단은 문서 접근 로그와 활동 이력으로 추적한다.
 
-서버-WPF 동기화에서는 같은 문서의 서버 ID 선행 조건을 우선한다. 재시도 큐는 문서 등록, 문서 버전, 공개, 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 순서로 처리한다. 문서 최초 등록이 서버 ID를 받아야 문서 버전, FieldComment, 접근 로그가 후속 서버 ID에 연결된다. 공개는 해당 버전의 서버 버전 ID가 있어야 실행하고, `PUBLISHED` 상태 변경은 공개 버전 매핑이 있어야 서버에 반영한다. 공개·문서 상태 큐에 생성 당시의 `base_server_revision`이 없는 구 항목은 최신값을 추정해 보내지 않고 서버 호출 전에 `LEGACY_BASE_MISSING` 충돌로 보존한다.
+서버-WPF 동기화에서는 같은 문서의 서버 ID 선행 조건을 우선한다. 재시도 큐는 문서 등록, 문서 버전, 공개, 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 순서로 처리한다. 보고서는 여러 문서의 근거를 묶어도 모든 비보고서 전송 대기 항목보다 뒤에 배치한다. 문서 최초 등록이 서버 ID를 받아야 문서 버전, FieldComment, 접근 로그가 후속 서버 ID에 연결된다. 공개는 해당 버전의 서버 버전 ID가 있어야 실행하고 `PUBLISHED` 상태 변경은 공개 버전 매핑이 있어야 서버에 반영한다. 공개·문서 상태 큐에 생성 당시의 `base_server_revision`이 없는 구 항목은 최신값을 추정해 보내지 않고 서버 호출 전에 `LEGACY_BASE_MISSING` 충돌로 보존한다.
 
 ## FieldComment
 
@@ -194,9 +194,9 @@ Windows와 Android의 알림은 장기적으로 개인 메신저가 아니라 �
 
 ## 보고서
 
-보고서는 FieldComment, 문서, 작업순서 항목/이력을 근거로 수동 초안을 만들고 문서로 저장하는 최소 흐름이 구현되어 있다. WPF 초안 화면은 서로 다른 source type을 2종 이상 선택한 뒤 서버에서 각 원천의 상태와 version/revision/hash를 확인한다. 현재 WPF에서 초안 고정을 지원하는 원천은 `FIELD_COMMENT`와 `DOCUMENT`이며, 검증할 수 없는 원천 유형이나 달라진 snapshot이 하나라도 있으면 초안 생성을 중단한다. 검증을 통과한 snapshot은 저장 직전에 다시 확인한다.
+보고서는 FieldComment, 문서, 작업순서 항목/이력을 근거로 수동 초안을 만들고 문서로 저장하는 최소 흐름이 구현되어 있다. WPF 초안 화면은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_HISTORY` 후보 가운데 서로 다른 source type을 2종 이상 선택하게 한다. Core의 초안 고정은 `WORK_SEQUENCE_ITEM`도 지원하며 작업순서 항목은 서버의 현재 항목과 최신 변경 기록을, 작업순서 이력은 선택한 변경 기록의 존재와 ID를 확인한다. 검증할 수 없는 원천 유형이나 달라진 snapshot이 하나라도 있으면 초안 생성을 중단한다. 검증을 통과한 snapshot은 저장 직전에 다시 확인한다.
 
-재검증을 통과하면 WPF는 로컬 보고서 문서와 source를 `report_sources`에 보존한 뒤 `/api/v1/reports` 저장을 시도한다. 실패하면 `server_sync_queue`에 남기고, 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다. 서버는 FieldComment의 관찰 버전과 선정 `review_revision`, 원천 hash를 `report_sources`에 고정한다. 최종 문서 저장 직전에 상태·version·revision·hash·채널 권한을 다시 읽고 달라졌으면 `409`로 차단한다. 생성 문서는 source의 type/ID/version/revision/trace/hash를 포함해 최종 문서에서 원천까지 역추적된다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
+최초 재검증에서 서버에 연결할 수 없거나 source가 달라졌으면 WPF는 로컬 보고서 파일, `report_sources`, `server_sync_queue`를 만들지 않는다. 재검증을 통과하면 로컬 보고서 문서와 source를 보존한 뒤 `/api/v1/reports` 저장을 시도한다. 이 시점 이후 전송이 실패하면 `server_sync_queue`에 남기고 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다. 서버는 FieldComment의 관찰 버전과 선정 `review_revision`, 원천 hash를 `report_sources`에 고정한다. 최종 문서 저장 직전에 상태·version·revision·hash·채널 권한을 다시 읽고 달라졌으면 `409`로 차단한다. 생성 문서는 source의 type/ID/version/revision/trace/hash를 포함해 최종 문서에서 원천까지 역추적된다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
 
 ## 후속 연동
 
