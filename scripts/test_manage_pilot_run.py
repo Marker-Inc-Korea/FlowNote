@@ -393,6 +393,19 @@ class WindowsServerRehearsalVerificationTests(unittest.TestCase):
             ).is_file()
         )
 
+    def test_windows_server_profile_has_exact_required_fault_matrix(self) -> None:
+        fault_cases = manage_pilot_run.windows_server_evidence.FAULT_CASES
+
+        self.assertEqual(13, len(fault_cases))
+        self.assertEqual(len(fault_cases), len(set(fault_cases)))
+        self.assertIn("certificate_renewal", fault_cases)
+        self.assertIn("certificate_validation_error", fault_cases)
+        self.assertIn("firewall_port_block", fault_cases)
+        self.assertIn("fixed_address_change", fault_cases)
+        self.assertIn("time_sync_drift", fault_cases)
+        self.assertIn("disk_space_low", fault_cases)
+        self.assertIn("long_network_disconnect", fault_cases)
+
     def verify(self, record: dict) -> tuple[int, dict]:
         path = self.run_root / "pilot-run.json"
         path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")

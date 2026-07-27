@@ -19,7 +19,8 @@ public static class FlowNoteServerApiEnvironment
         }
 
         var normalizedBaseUrl = apiBaseUrl.EndsWith('/') ? apiBaseUrl : $"{apiBaseUrl}/";
-        if (!Uri.TryCreate(normalizedBaseUrl, UriKind.Absolute, out var baseAddress))
+        if (!Uri.TryCreate(normalizedBaseUrl, UriKind.Absolute, out var baseAddress) ||
+            baseAddress.Scheme is not ("http" or "https"))
         {
             return null;
         }

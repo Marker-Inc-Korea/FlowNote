@@ -210,6 +210,10 @@ Write-Check "WebView2 Runtime 확인" ($webView2Entries.Count -gt 0) "$($webView
 if ($webView2Entries.Count -gt 0) {
     $webView2Entries | Format-Table -AutoSize
 }
+else {
+    $failures += 1
+    Write-Host "[다음 조치] Microsoft Edge WebView2 Runtime을 승인된 사내 배포 경로에서 설치한 뒤 FlowNote를 다시 실행하고 이 점검을 재실행하세요."
+}
 
 if ($CheckSignature.IsPresent) {
     if (-not (Get-Command $SignToolPath -ErrorAction SilentlyContinue)) {
@@ -235,6 +239,16 @@ if ($CheckSignature.IsPresent) {
 }
 
 if ($failures -gt 0) {
+    if (-not $msiExists) {
+        Write-Host "[다음 조치] ProductVersion, Runtime, SelfContained, ArtifactRoot가 승인 패키지와 같은지 확인하세요."
+    }
+    if (-not $installFolderExists) {
+        Write-Host "[다음 조치] 승인된 MSI의 hash와 signer를 확인한 뒤 관리자 권한 설치 로그와 함께 다시 설치하세요."
+    }
+    if (-not $SelfContained.IsPresent -and -not $desktopRuntime) {
+        Write-Host "[다음 조치] .NET Windows Desktop Runtime 10을 승인된 사내 배포 경로에서 설치하거나 승인된 self-contained MSI를 사용하세요."
+    }
+    Write-Host "[다음 조치] 실패 상태와 설치 로그를 같은 run_id 증거 폴더에 보존하고, 원인을 해결하기 전에는 배포를 계속하지 마세요."
     throw "WPF MSI install verification failed with $failures failure(s)."
 }
 

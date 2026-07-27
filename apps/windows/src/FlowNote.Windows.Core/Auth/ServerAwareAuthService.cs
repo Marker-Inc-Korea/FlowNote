@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Authentication;
 using FlowNote.Windows.Core.ServerApi;
 
 namespace FlowNote.Windows.Core.Auth;
@@ -63,13 +64,14 @@ public sealed class ServerAwareAuthService(AuthService localAuth, HttpClient? se
 
             return LoginResult.Failed("서버 로그인에 실패했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.");
         }
-        catch (HttpRequestException)
+        catch (Exception exception) when (
+            exception is HttpRequestException
+                or TaskCanceledException
+                or TimeoutException
+                or AuthenticationException)
         {
-            return null;
-        }
-        catch (TaskCanceledException)
-        {
-            return null;
+            return LoginResult.Failed(
+                ServerConnectionGuidance.LoginFailure(exception));
         }
     }
 }

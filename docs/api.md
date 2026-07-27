@@ -43,8 +43,8 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 - 서버 로그인은 서버 `user_accounts`의 `is_active`와 `status = ACTIVE`를 모두 만족해야 한다.
 - Android 현장 단말 로그인은 `deviceId`가 `terminal_devices.device_id`에 존재하고 `status = ACTIVE`여야 한다. 승인되지 않았거나 비활성 단말이면 403을 반환한다.
 - 서버 로그인 성공 시 WPF는 서버 응답의 사용자 ID, 표시 이름, role을 현재 세션 기준으로 사용한다.
-- 서버가 로그인 요청에 401 또는 403을 반환하면 WPF는 로컬 계정 로그인으로 우회하지 않는다.
-- 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 WPF 로컬 계정 로그인을 사용한다.
+- 서버 URL이 설정된 경우 WPF는 401·403뿐 아니라 인증서·주소·방화벽·시간 초과 오류에서도 로컬 계정 로그인으로 자동 우회하지 않는다.
+- 서버 URL이 없는 승인된 로컬 운영 PC에서만 WPF 로컬 계정 로그인을 사용한다.
 - 서버 PC 운영 스크립트는 비상/초기 운영 경로로 유지하고, 설치형 WPF 운영은 서버 계정 API를 사용한다.
 - refresh는 같은 `auth_sessions` row에서 access token ID와 refresh token hash를 회전한다. 이전 access token과 이전 refresh token은 거부된다.
 - Android가 `deviceId`로 로그인한 세션은 `auth_sessions.device_id`에 승인 단말 ID를 보존한다. refresh는 같은 세션의 단말 ID를 유지한다.
