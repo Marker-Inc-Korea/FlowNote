@@ -31,7 +31,7 @@ New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
 $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
 $expectedFastApiTestCount = 154
-$expectedWpfCoreTestCount = 67
+$expectedWpfCoreTestCount = 71
 $expectedAndroidUnitTestCount = 16
 $stepDisplayNames = @{
     "Check Windows baseline toolchain versions" = "Windows x64 표준 도구 확인"
@@ -49,6 +49,30 @@ $stepDisplayNames = @{
     "Check git status after verification" = "검증 후 Git 상태 확인"
 }
 $script:stepNumber = 0
+$script:plannedStepCount = 1
+if (-not $SkipGitArtifactCheck) {
+    $script:plannedStepCount += 3
+}
+if (-not $SkipFastApiPytest) {
+    $script:plannedStepCount += 2
+}
+if (-not $SkipWpfBuild) {
+    $script:plannedStepCount += 2
+}
+if (-not $SkipWpfSmoke) {
+    $script:plannedStepCount += 3
+}
+if (-not $SkipAndroidBuild) {
+    $script:plannedStepCount++
+}
+if ($RunAndroidDeviceSmoke) {
+    $script:plannedStepCount++
+}
+$script:currentStepDisplayName = "검증 준비"
+$script:currentStepStatus = "RUNNING"
+$script:currentExpectedValue = "FastAPI 154건, WPF Core 71건, Android 16건과 모든 필수 단계 통과"
+$script:currentActualValue = "아직 실행하지 않음"
+$script:currentNextAction = "Windows x64 표준 도구 확인부터 순서대로 실행합니다."
 $script:stepResults = New-Object System.Collections.Generic.List[object]
 $script:isPartialRun = $SkipFastApiPytest -or $SkipWpfBuild -or $SkipWpfSmoke -or $SkipAndroidBuild -or $SkipGitArtifactCheck
 $script:sourceCommit = $null
@@ -65,11 +89,14 @@ $script:fastApiEvidence = [ordered]@{
 $script:wpfEvidence = [ordered]@{
     core_tests = [ordered]@{
         expected = $expectedWpfCoreTestCount
+        collected = $null
+        unique_node_ids = $null
         total = $null
         passed = $null
         failed = $null
         errors = $null
         skipped = $null
+        collection_matches_trx = $null
     }
     app_build = [ordered]@{
         status = "NOT_RUN"
@@ -126,17 +153,47 @@ $script:gitArtifactEvidence = [ordered]@{
     staged_personal_paths = $null
 }
 $script:trackedFilesBefore = @()
-Write-Host "Integrated verification run ID: $RunId"
-Write-Host "Preserved run artifacts: $runArtifactDir"
+Write-Host "FlowNote 통합 검증 시작"
+Write-Host "실행 ID: $RunId"
+Write-Host "현재 단계: $($script:currentStepDisplayName) (0/$($script:plannedStepCount))"
+Write-Host "기대값: $($script:currentExpectedValue)"
+Write-Host "실제값: $($script:currentActualValue)"
+Write-Host "다음 조치: $($script:currentNextAction)"
+Write-Host "보존된 증거 경로: $runArtifactDir"
 
 function Write-RunSummary {
     param(
         [string]$Status,
         [string]$Failure = "",
         [string]$FailureStep = "",
+        [string]$ExpectedValue = "",
+        [string]$ActualValue = "",
         [string]$NextAction = "",
         [string]$EvidencePath = ""
     )
+
+    if ([string]::IsNullOrWhiteSpace($ExpectedValue)) {
+        $ExpectedValue = $script:currentExpectedValue
+    }
+    if ([string]::IsNullOrWhiteSpace($ActualValue)) {
+        $ActualValue = $script:currentActualValue
+    }
+    if ([string]::IsNullOrWhiteSpace($NextAction)) {
+        $NextAction = $script:currentNextAction
+    }
+    if ([string]::IsNullOrWhiteSpace($EvidencePath)) {
+        $EvidencePath = $runArtifactDir
+    }
+    $failureExpectedValue = ""
+    $failureActualValue = ""
+    $failureNextAction = ""
+    $failureEvidencePath = ""
+    if (-not [string]::IsNullOrWhiteSpace($Failure)) {
+        $failureExpectedValue = $ExpectedValue
+        $failureActualValue = $ActualValue
+        $failureNextAction = $NextAction
+        $failureEvidencePath = $EvidencePath
+    }
 
     $summary = [ordered]@{
         run_id = $RunId
@@ -146,10 +203,24 @@ function Write-RunSummary {
         artifact_directory = $runArtifactDir
         generated_at = (Get-Date).ToString("O")
         failure = $Failure
-        failure_context = [ordered]@{
-            "실패 단계" = $FailureStep
+        progress = [ordered]@{
+            "현재 단계" = $script:currentStepDisplayName
+            "단계 상태" = $script:currentStepStatus
+            "단계 번호" = $script:stepNumber
+            "전체 단계" = $script:plannedStepCount
+            "기대값" = $ExpectedValue
+            "실제값" = $ActualValue
+            "중단 원인" = $Failure
             "다음 조치" = $NextAction
             "보존된 증거 경로" = $EvidencePath
+        }
+        failure_context = [ordered]@{
+            "실패 단계" = $FailureStep
+            "기대값" = $failureExpectedValue
+            "실제값" = $failureActualValue
+            "중단 원인" = $Failure
+            "다음 조치" = $failureNextAction
+            "보존된 증거 경로" = $failureEvidencePath
         }
         partial_run = $script:isPartialRun
         options = [ordered]@{
@@ -169,6 +240,141 @@ function Write-RunSummary {
     $summary | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $runArtifactDir "verification-summary.json")
 }
 
+function Get-StepExpectedValue {
+    param([string]$Name)
+
+    switch ($Name) {
+        "Check Windows baseline toolchain versions" {
+            return "Windows x64, PowerShell 5.1 이상, .NET/Windows Desktop 10.x, Python 3.11 이상, x64 JDK 17, Android SDK 35"
+        }
+        "Check .gitignore coverage for known test/build artifact paths" {
+            return "알려진 테스트·빌드 산출물 경로가 모두 Git 제외 대상"
+        }
+        "Check current git status before verification" {
+            return "검증 전 Git clean, 금지 추적·스테이징·개인 경로 0건"
+        }
+        "Collect FastAPI pytest tests" {
+            return "FastAPI node ID 총 154건, 고유 154건, 중복 0건"
+        }
+        "Run FastAPI pytest" {
+            return "FastAPI JUnit total/passed 154/154, 실패·오류·건너뜀 0건"
+        }
+        "Run WPF Core tests" {
+            return "WPF Core 수집/고유 71/71, TRX total/passed 71/71, 실패·오류·건너뜀 0건"
+        }
+        "Build WPF app" {
+            return "WPF 앱 빌드 PASSED, compiler warning 0건, error 0건"
+        }
+        "Check shared WPF SQLite integrity before smoke" {
+            return "스모크 전 공통 SQLite quick_check=ok, FK 위반 0건"
+        }
+        "Run integrated WPF smoke against shared SQLite and preserved FastAPI" {
+            return "오늘 사진·인수인계 2건 등록·목록 조회, 기존 과거 문서 version +1, quick_check=ok, FK·중복 0건"
+        }
+        "Check shared WPF SQLite integrity after smoke" {
+            return "스모크 후 공통 SQLite quick_check=ok, FK 위반 0건"
+        }
+        "Run Android unit tests and debug build" {
+            return "Android JUnit total/passed 16/16, 실패·오류·건너뜀 0건, debug build PASSED"
+        }
+        "Run approved Android physical-device instrumentation smoke" {
+            return "승인 Android 실단말 1대에서 계측 스모크 통과"
+        }
+        "Check git status after verification" {
+            return "검증 후 Git clean, 신규 금지 추적·스테이징·개인 경로 0건"
+        }
+        default {
+            return "해당 단계의 모든 검증 조건 통과"
+        }
+    }
+}
+
+function Get-StepActualValue {
+    param(
+        [string]$Name,
+        [string]$Failure = ""
+    )
+
+    switch ($Name) {
+        "Check Windows baseline toolchain versions" {
+            return "운영체제=$([Environment]::OSVersion.VersionString), 플랫폼=$([Environment]::OSVersion.Platform), PowerShell=$($PSVersionTable.PSVersion); 검사 결과=$Failure"
+        }
+        "Collect FastAPI pytest tests" {
+            return "수집=$($script:fastApiEvidence.collected), 고유=$($script:fastApiEvidence.unique_node_ids)"
+        }
+        "Run FastAPI pytest" {
+            return "passed=$($script:fastApiEvidence.passed), failures=$($script:fastApiEvidence.failures), errors=$($script:fastApiEvidence.errors), skipped=$($script:fastApiEvidence.skipped)"
+        }
+        "Run WPF Core tests" {
+            return "수집=$($script:wpfEvidence.core_tests.collected), 고유=$($script:wpfEvidence.core_tests.unique_node_ids), total=$($script:wpfEvidence.core_tests.total), passed=$($script:wpfEvidence.core_tests.passed), failed=$($script:wpfEvidence.core_tests.failed), errors=$($script:wpfEvidence.core_tests.errors), skipped=$($script:wpfEvidence.core_tests.skipped), 수집-TRX 일치=$($script:wpfEvidence.core_tests.collection_matches_trx)"
+        }
+        "Build WPF app" {
+            return "status=$($script:wpfEvidence.app_build.status), compiler_warnings=$($script:wpfEvidence.app_build.compiler_warnings), errors=$($script:wpfEvidence.app_build.errors)"
+        }
+        "Check shared WPF SQLite integrity before smoke" {
+            return "quick_check=$($script:wpfEvidence.database_before.quick_check), FK 위반=$($script:wpfEvidence.database_before.foreign_key_violations)"
+        }
+        "Run integrated WPF smoke against shared SQLite and preserved FastAPI" {
+            return "status=$($script:wpfEvidence.smoke.status), 오늘 SQL 행=$($script:wpfEvidence.smoke.today_sql_verified_rows), 과거 version=$($script:wpfEvidence.smoke.past_previous_version)->$($script:wpfEvidence.smoke.past_new_version), quick_check=$($script:wpfEvidence.smoke.quick_check), FK 위반=$($script:wpfEvidence.smoke.foreign_key_violations), mapping 중복=$($script:wpfEvidence.smoke.mapping_duplicates), idempotency 중복=$($script:wpfEvidence.smoke.idempotency_duplicates)"
+        }
+        "Check shared WPF SQLite integrity after smoke" {
+            return "quick_check=$($script:wpfEvidence.database_after.quick_check), FK 위반=$($script:wpfEvidence.database_after.foreign_key_violations)"
+        }
+        "Run Android unit tests and debug build" {
+            return "total=$($script:androidEvidence.unit_tests.total), passed=$($script:androidEvidence.unit_tests.passed), failures=$($script:androidEvidence.unit_tests.failures), errors=$($script:androidEvidence.unit_tests.errors), skipped=$($script:androidEvidence.unit_tests.skipped), build=$($script:androidEvidence.debug_build.status)"
+        }
+        "Check current git status before verification" {
+            return "worktree_clean=$($script:gitArtifactEvidence.worktree_clean_before); 중단 원인=$Failure"
+        }
+        "Check git status after verification" {
+            return "worktree_clean=$($script:gitArtifactEvidence.worktree_clean_after), 신규 금지 추적=$($script:gitArtifactEvidence.new_forbidden_tracked_files), 금지 스테이징=$($script:gitArtifactEvidence.staged_forbidden_artifacts), 개인 경로=$($script:gitArtifactEvidence.staged_personal_paths)"
+        }
+        default {
+            if ([string]::IsNullOrWhiteSpace($Failure)) {
+                return "단계 통과"
+            }
+            return $Failure
+        }
+    }
+}
+
+function Get-StepNextAction {
+    param([string]$Name)
+
+    switch -Wildcard ($Name) {
+        "Check Windows baseline toolchain versions" {
+            return "표시된 실제 환경을 Windows x64 표준 도구 기대값에 맞춘 뒤, 보존 증거를 유지하고 새 RunId로 다시 실행하세요."
+        }
+        "Check *git*" {
+            return "Git 상태와 금지 산출물 목록을 확인해 소스만 clean 상태로 만든 뒤, 로컬 증거는 보존하고 새 RunId로 다시 실행하세요."
+        }
+        "Collect FastAPI pytest tests" {
+            return "보존된 node ID 목록에서 추가·삭제·중복 이력을 대조한 뒤 기대값 또는 테스트 구성을 바로잡고 새 RunId로 다시 실행하세요."
+        }
+        "Run FastAPI pytest" {
+            return "FastAPI JUnit과 단계 로그에서 실패·오류·건너뜀 또는 수집 불일치를 확인한 뒤 새 RunId로 다시 실행하세요."
+        }
+        "Run WPF Core tests" {
+            return "WPF TRX의 total/passed와 테스트 추가·삭제 이력을 대조한 뒤 guard 또는 테스트를 바로잡고 새 RunId로 다시 실행하세요."
+        }
+        "Build WPF app" {
+            return "WPF 빌드 로그의 첫 warning/error를 수정한 뒤 새 RunId로 다시 실행하세요."
+        }
+        "Check shared WPF SQLite integrity*" {
+            return "보존된 SQLite 무결성 증거에서 quick_check와 FK 위반을 확인해 복구한 뒤, DB를 삭제하지 말고 새 RunId로 다시 실행하세요."
+        }
+        "Run integrated WPF smoke*" {
+            return "WPF 스모크 로그와 DB 증거에서 오늘 문서, 과거 version, 무결성 실제값을 확인한 뒤 새 RunId로 다시 실행하세요."
+        }
+        "Run Android unit tests and debug build" {
+            return "Android JUnit과 빌드 로그의 첫 실패·warning을 수정한 뒤 새 RunId로 다시 실행하세요."
+        }
+        default {
+            return "해당 단계 로그와 verification-summary.json을 확인해 원인을 수정한 뒤, 보존된 증거는 유지하고 새 RunId로 다시 실행하세요."
+        }
+    }
+}
+
 function Invoke-Step {
     param(
         [string]$Name,
@@ -179,11 +385,27 @@ function Invoke-Step {
     $safeName = ($Name.ToLowerInvariant() -replace "[^a-z0-9]+", "-").Trim([char[]]"-")
     $logPath = Join-Path $runArtifactDir ("{0:D2}-{1}.log" -f $script:stepNumber, $safeName)
     $startedAt = Get-Date
+    $script:currentStepDisplayName = if ($stepDisplayNames.ContainsKey($Name)) {
+        $stepDisplayNames[$Name]
+    } else {
+        $Name
+    }
+    $script:currentStepStatus = "RUNNING"
+    $script:currentExpectedValue = Get-StepExpectedValue $Name
+    $script:currentActualValue = "실행 중"
+    $script:currentNextAction = "이 단계가 끝나면 결과를 요약에 기록하고 다음 단계로 진행합니다."
 
     Write-Host ""
-    Write-Host "==> $Name"
+    Write-Host "[$($script:stepNumber)/$($script:plannedStepCount)] 현재 단계: $($script:currentStepDisplayName)"
+    Write-Host "기대값: $($script:currentExpectedValue)"
+    Write-Host "실제값: $($script:currentActualValue)"
+    Write-Host "보존된 증거 경로: $runArtifactDir"
+    Write-RunSummary -Status "RUNNING"
     try {
         & $Action *>&1 | Tee-Object -FilePath $logPath
+        $script:currentStepStatus = "PASSED"
+        $script:currentActualValue = Get-StepActualValue $Name
+        $script:currentNextAction = "다음 검증 단계로 진행합니다."
         $script:stepResults.Add([pscustomobject]@{
             number = $script:stepNumber
             name = $Name
@@ -197,10 +419,19 @@ function Invoke-Step {
     }
     catch {
         $failure = $_.Exception.Message
-        $failureStep = if ($stepDisplayNames.ContainsKey($Name)) { $stepDisplayNames[$Name] } else { $Name }
-        $nextAction = "해당 단계 로그와 verification-summary.json을 확인해 원인을 수정한 뒤, 보존된 증거는 유지하고 새 RunId로 다시 실행하세요."
+        $failureStep = $script:currentStepDisplayName
+        $expectedValue = Get-StepExpectedValue $Name
+        $actualValue = Get-StepActualValue $Name $failure
+        $nextAction = Get-StepNextAction $Name
+        $script:currentStepStatus = "FAILED"
+        $script:currentExpectedValue = $expectedValue
+        $script:currentActualValue = $actualValue
+        $script:currentNextAction = $nextAction
         "FAILED: $failure" | Add-Content -Encoding UTF8 $logPath
         "실패 단계: $failureStep" | Add-Content -Encoding UTF8 $logPath
+        "기대값: $expectedValue" | Add-Content -Encoding UTF8 $logPath
+        "실제값: $actualValue" | Add-Content -Encoding UTF8 $logPath
+        "중단 원인: $failure" | Add-Content -Encoding UTF8 $logPath
         "다음 조치: $nextAction" | Add-Content -Encoding UTF8 $logPath
         "보존된 증거 경로: $runArtifactDir" | Add-Content -Encoding UTF8 $logPath
         $script:stepResults.Add([pscustomobject]@{
@@ -213,10 +444,14 @@ function Invoke-Step {
             failure = $failure
         })
         Write-RunSummary -Status "FAILED" -Failure $failure -FailureStep $failureStep `
+            -ExpectedValue $expectedValue -ActualValue $actualValue `
             -NextAction $nextAction -EvidencePath $runArtifactDir
         Write-Host ""
         Write-Host "검증 실패"
         Write-Host "실패 단계: $failureStep"
+        Write-Host "기대값: $expectedValue"
+        Write-Host "실제값: $actualValue"
+        Write-Host "중단 원인: $failure"
         Write-Host "다음 조치: $nextAction"
         Write-Host "보존된 증거 경로: $runArtifactDir"
         throw
@@ -227,7 +462,7 @@ function Assert-CommandAvailable {
     param([string]$Name)
 
     if ($null -eq (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        throw "Required command is not available: $Name"
+        throw "필수 명령을 찾을 수 없음: $Name"
     }
 }
 
@@ -255,15 +490,15 @@ function Assert-StandardToolchain {
     Write-Host "OS: $([Environment]::OSVersion.VersionString)"
     Write-Host "PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
-        throw "The standard integrated baseline must run on Windows. Detected: $([Environment]::OSVersion.Platform)"
+        throw "표준 통합 기준선은 Windows x64에서 실행해야 함. 감지 플랫폼=$([Environment]::OSVersion.Platform)."
     }
     if (-not [Environment]::Is64BitOperatingSystem -or -not [Environment]::Is64BitProcess) {
-        throw "The standard integrated baseline requires a 64-bit Windows OS and 64-bit PowerShell process."
+        throw "표준 통합 기준선에는 64비트 Windows와 64비트 PowerShell 프로세스가 필요함."
     }
 
     $minimumPowerShell = [Version]"5.1"
     if ($PSVersionTable.PSVersion -lt $minimumPowerShell) {
-        throw "PowerShell 5.1 or newer is required. Detected: $($PSVersionTable.PSVersion)"
+        throw "PowerShell 5.1 이상이 필요함. 감지 버전=$($PSVersionTable.PSVersion)."
     }
 
     Assert-CommandAvailable "git"
@@ -274,12 +509,12 @@ function Assert-StandardToolchain {
     $dotnetSdkVersion = (& dotnet --version).Trim()
     Write-Host ".NET SDK: $dotnetSdkVersion"
     if ($LASTEXITCODE -ne 0 -or $dotnetSdkVersion -notmatch "^10\.") {
-        throw ".NET SDK 10.x is required. Detected: $dotnetSdkVersion"
+        throw ".NET SDK 10.x가 필요함. 감지 버전=$dotnetSdkVersion."
     }
     $dotnetRuntimes = @(& dotnet --list-runtimes)
     Write-Host (".NET runtimes: {0}" -f ($dotnetRuntimes -join "; "))
     if ($LASTEXITCODE -ne 0 -or -not ($dotnetRuntimes -match "^Microsoft\.WindowsDesktop\.App 10\.")) {
-        throw ".NET Windows Desktop Runtime 10.x is required."
+        throw ".NET Windows Desktop Runtime 10.x가 필요함."
     }
 
     $javaExecutable = (Get-Command java).Source
@@ -295,21 +530,21 @@ function Assert-StandardToolchain {
     $javaVersionText = $javaVersionLines -join "`n"
     Write-Host ("Java: {0}" -f ($javaVersionLines -join "; "))
     if ($javaVersionText -notmatch 'version "17(?:\.|\")') {
-        throw "JDK 17 is required for the Android baseline. Detected: $javaVersionText"
+        throw "Android 기준선에는 JDK 17이 필요함. 감지 값=$javaVersionText."
     }
     $javacVersion = (& javac -version 2>&1) -join " "
     Write-Host "Javac: $javacVersion"
     if ($LASTEXITCODE -ne 0 -or $javacVersion -notmatch "javac 17(?:\.|$)") {
-        throw "JDK 17 compiler is required. Detected: $javacVersion"
+        throw "JDK 17 compiler가 필요함. 감지 값=$javacVersion."
     }
     if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME)) {
-        throw "JAVA_HOME must point to the JDK 17 installation."
+        throw "JAVA_HOME은 JDK 17 설치 경로를 가리켜야 함."
     }
     $javaHomeExecutable = Join-Path $env:JAVA_HOME "bin/java.exe"
     $pathJavaExecutable = (Get-Command java).Source
     if (-not (Test-Path $javaHomeExecutable -PathType Leaf) -or
         (Resolve-Path $javaHomeExecutable).Path -ne (Resolve-Path $pathJavaExecutable).Path) {
-        throw "JAVA_HOME and PATH java must point to the same JDK 17 installation."
+        throw "JAVA_HOME과 PATH의 java는 같은 JDK 17 설치 경로를 가리켜야 함."
     }
     $javaSettingsLog = Join-Path $runArtifactDir "java-settings.log"
     $javaSettingsProcess = Start-Process -FilePath $javaExecutable `
@@ -321,7 +556,7 @@ function Assert-StandardToolchain {
         throw "Unable to inspect Java runtime properties."
     }
     if ($javaSettings -notmatch "(?m)^\s*os\.arch\s*=\s*amd64\s*$") {
-        throw "An x64 JDK 17 is required; java os.arch must be amd64."
+        throw "x64 JDK 17이 필요하며 java os.arch는 amd64여야 함."
     }
 
     $androidSdkRoot = $env:ANDROID_SDK_ROOT
@@ -329,34 +564,34 @@ function Assert-StandardToolchain {
         $androidSdkRoot = $env:ANDROID_HOME
     }
     if ([string]::IsNullOrWhiteSpace($androidSdkRoot) -or -not (Test-Path $androidSdkRoot -PathType Container)) {
-        throw "ANDROID_SDK_ROOT or ANDROID_HOME must point to an installed Android SDK."
+        throw "ANDROID_SDK_ROOT 또는 ANDROID_HOME은 설치된 Android SDK 경로를 가리켜야 함."
     }
     Write-Host "Android SDK root: $androidSdkRoot"
     foreach ($relativePath in @("platforms/android-35", "build-tools/35.0.0", "platform-tools")) {
         $requiredPath = Join-Path $androidSdkRoot $relativePath
         if (-not (Test-Path $requiredPath -PathType Container)) {
-            throw "Required Android SDK component is missing: $requiredPath"
+            throw "필수 Android SDK 구성요소가 없음: $requiredPath"
         }
     }
 
     $gradleWrapperScript = Join-Path $repoRoot "apps/android/gradlew.bat"
     if (-not (Test-Path $gradleWrapperScript -PathType Leaf) -or
         (Get-Content -Raw $gradleWrapperScript) -notmatch "GRADLE_VERSION=8\.10\.2") {
-        throw "Android Gradle Wrapper 8.10.2 is required."
+        throw "Android Gradle Wrapper 8.10.2가 필요함."
     }
     $androidBuildFile = Join-Path $repoRoot "apps/android/build.gradle"
     if ((Get-Content -Raw $androidBuildFile) -notmatch 'com\.android\.application" version "8\.7\.3"') {
-        throw "Android Gradle Plugin 8.7.3 is required."
+        throw "Android Gradle Plugin 8.7.3이 필요함."
     }
 
     $apiPython = Join-Path $repoRoot "services/api/.venv/Scripts/python.exe"
     if (-not (Test-Path $apiPython -PathType Leaf)) {
-        throw "FastAPI virtualenv python not found: $apiPython"
+        throw "FastAPI 가상환경 Python을 찾을 수 없음: $apiPython"
     }
     $pythonVersion = (& $apiPython --version 2>&1) -join " "
     Write-Host "Python: $pythonVersion"
     if ($LASTEXITCODE -ne 0 -or $pythonVersion -notmatch "Python 3\.(1[1-9]|[2-9][0-9])\.") {
-        throw "Python 3.11 or newer is required. Detected: $pythonVersion"
+        throw "Python 3.11 이상이 필요함. 감지 값=$pythonVersion."
     }
 
     $script:sourceCommit = (& git rev-parse HEAD).Trim()
@@ -604,8 +839,9 @@ if (-not $SkipFastApiPytest) {
         try {
             $junitPath = Join-Path $runArtifactDir "fastapi-pytest.xml"
             & $python -m pytest --junitxml $junitPath
-            if ($LASTEXITCODE -ne 0) {
-                throw "FastAPI pytest failed with exit code $LASTEXITCODE."
+            $pytestExitCode = $LASTEXITCODE
+            if (-not (Test-Path $junitPath -PathType Leaf)) {
+                throw "FastAPI JUnit이 생성되지 않음: exit_code=$pytestExitCode, path=$junitPath."
             }
             $junitCounts = Get-JUnitCounts $junitPath
             $script:fastApiEvidence.passed = $junitCounts.Tests - $junitCounts.Failures - $junitCounts.Errors - $junitCounts.Skipped
@@ -616,12 +852,13 @@ if (-not $SkipFastApiPytest) {
                 $null -ne $script:fastApiEvidence.collected -and
                 $junitCounts.Tests -eq $script:fastApiEvidence.collected
             )
-            if (-not $script:fastApiEvidence.collection_matches_junit -or
+            if ($pytestExitCode -ne 0 -or
+                -not $script:fastApiEvidence.collection_matches_junit -or
                 $junitCounts.Tests -ne $expectedFastApiTestCount -or
                 $junitCounts.Failures -ne 0 -or
                 $junitCounts.Errors -ne 0 -or
                 $junitCounts.Skipped -ne 0) {
-                throw "FastAPI JUnit mismatch: tests=$($junitCounts.Tests), failures=$($junitCounts.Failures), errors=$($junitCounts.Errors), skipped=$($junitCounts.Skipped)."
+                throw "FastAPI JUnit 불일치: exit_code=$pytestExitCode, 기대=$expectedFastApiTestCount, tests=$($junitCounts.Tests), passed=$($script:fastApiEvidence.passed), failures=$($junitCounts.Failures), errors=$($junitCounts.Errors), skipped=$($junitCounts.Skipped)."
             }
             Write-Host "FastAPI collection/JUnit match: collected=$($script:fastApiEvidence.collected), unique=$($script:fastApiEvidence.unique_node_ids), tests=$($junitCounts.Tests)"
             Write-Host "FastAPI JUnit: passed=$($script:fastApiEvidence.passed), failures=0, errors=0, skipped=0"
@@ -634,16 +871,37 @@ if (-not $SkipFastApiPytest) {
 
 if (-not $SkipWpfBuild) {
     Invoke-Step "Run WPF Core tests" {
+        $collectionLogPath = Join-Path $runArtifactDir "wpf-core-collection.log"
+        $collectionOutput = @(& dotnet test ".\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj" `
+            --list-tests `
+            -p:TreatWarningsAsErrors=true 2>&1)
+        $collectionExitCode = $LASTEXITCODE
+        $collectionOutput | Set-Content -Encoding UTF8 $collectionLogPath
+        $collectionOutput | ForEach-Object { Write-Host $_ }
+        if ($collectionExitCode -ne 0) {
+            throw "WPF Core 테스트 수집 실패: exit_code=$collectionExitCode."
+        }
+        $wpfNodeIds = @($collectionOutput | Where-Object {
+            $_ -match "^\s+FlowNote\.Windows\.Core\.Tests\."
+        } | ForEach-Object { $_.Trim() })
+        $wpfUniqueNodeIds = @($wpfNodeIds | Sort-Object -Unique)
+        $wpfNodeIds | Set-Content -Encoding UTF8 (Join-Path $runArtifactDir "wpf-core-collected-tests.txt")
+        $script:wpfEvidence.core_tests.collected = $wpfNodeIds.Count
+        $script:wpfEvidence.core_tests.unique_node_ids = $wpfUniqueNodeIds.Count
+        if ($wpfNodeIds.Count -ne $expectedWpfCoreTestCount -or
+            $wpfUniqueNodeIds.Count -ne $expectedWpfCoreTestCount) {
+            throw "WPF Core 수집 불일치: 기대=$expectedWpfCoreTestCount, 수집=$($wpfNodeIds.Count), 고유=$($wpfUniqueNodeIds.Count)."
+        }
+        Write-Host "WPF Core 수집: total=$($wpfNodeIds.Count), unique=$($wpfUniqueNodeIds.Count)"
+
         $trxPath = Join-Path $runArtifactDir "wpf-core-tests.trx"
         & dotnet test ".\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj" `
             --logger ("trx;LogFileName={0}" -f [IO.Path]::GetFileName($trxPath)) `
             --results-directory $runArtifactDir `
             -p:TreatWarningsAsErrors=true
-        if ($LASTEXITCODE -ne 0) {
-            throw "WPF Core tests failed with exit code $LASTEXITCODE."
-        }
+        $wpfTestExitCode = $LASTEXITCODE
         if (-not (Test-Path $trxPath -PathType Leaf)) {
-            throw "WPF Core test TRX was not created: $trxPath"
+            throw "WPF Core TRX가 생성되지 않음: exit_code=$wpfTestExitCode, path=$trxPath."
         }
         [xml]$trx = Get-Content -Raw $trxPath
         $counters = $trx.SelectSingleNode("//*[local-name()='Counters']")
@@ -660,13 +918,19 @@ if (-not $SkipWpfBuild) {
         $script:wpfEvidence.core_tests.failed = $wpfFailed
         $script:wpfEvidence.core_tests.errors = $wpfErrors
         $script:wpfEvidence.core_tests.skipped = $wpfSkipped
-        if ($wpfTotal -ne $expectedWpfCoreTestCount -or
+        $script:wpfEvidence.core_tests.collection_matches_trx = (
+            $wpfTotal -eq $script:wpfEvidence.core_tests.collected
+        )
+        if ($wpfTestExitCode -ne 0 -or
+            $wpfTotal -ne $expectedWpfCoreTestCount -or
             $wpfPassed -ne $expectedWpfCoreTestCount -or
             $wpfFailed -ne 0 -or
             $wpfErrors -ne 0 -or
-            $wpfSkipped -ne 0) {
-            throw "WPF Core TRX mismatch: expected=$expectedWpfCoreTestCount, total=$wpfTotal, passed=$wpfPassed, failed=$wpfFailed, errors=$wpfErrors, skipped=$wpfSkipped."
+            $wpfSkipped -ne 0 -or
+            -not $script:wpfEvidence.core_tests.collection_matches_trx) {
+            throw "WPF Core TRX 불일치: exit_code=$wpfTestExitCode, 기대=$expectedWpfCoreTestCount, 수집=$($script:wpfEvidence.core_tests.collected), total=$wpfTotal, passed=$wpfPassed, failed=$wpfFailed, errors=$wpfErrors, skipped=$wpfSkipped."
         }
+        Write-Host "WPF Core 수집/TRX 일치: collected=$($script:wpfEvidence.core_tests.collected), total=$wpfTotal"
         Write-Host "WPF Core TRX: total=$wpfTotal, passed=$wpfPassed, failed=0, errors=0, skipped=0"
     }
 
@@ -974,5 +1238,17 @@ if (-not $SkipGitArtifactCheck) {
 
 Write-Host ""
 $finalStatus = if ($script:isPartialRun) { "PASSED_PARTIAL" } else { "PASSED" }
+$script:currentStepDisplayName = "검증 완료"
+$script:currentStepStatus = $finalStatus
+$script:currentExpectedValue = "모든 계획 단계 통과"
+$script:currentActualValue = "$($script:stepResults.Count)/$($script:plannedStepCount)단계 통과, partial_run=$($script:isPartialRun)"
+$script:currentNextAction = if ($script:isPartialRun) {
+    "생략한 단계를 포함해 새 RunId로 무생략 검증을 실행하세요."
+} else {
+    "원시 증거와 verification-summary.json을 대조해 기준선으로 기록하세요."
+}
 Write-RunSummary -Status $finalStatus
-Write-Host "Verification sequence completed with status $finalStatus for run ID $RunId. Test DBs, logs, and artifacts were not deleted."
+Write-Host "검증 완료: status=$finalStatus, run_id=$RunId"
+Write-Host "실제값: $($script:currentActualValue)"
+Write-Host "다음 조치: $($script:currentNextAction)"
+Write-Host "테스트 DB, 로그, 산출물은 삭제하지 않았습니다."

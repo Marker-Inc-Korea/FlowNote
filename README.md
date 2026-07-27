@@ -154,7 +154,7 @@ flowchart LR
 
 ## 내부 기술 검증 스냅샷
 
-2026-07-27 현재 서버·Windows 컴포넌트와 Android 단위 테스트를 다시 확인했다. 아래 결과는 현재까지 확인한 내부 기술 검증 범위다.
+2026-07-28 현재 서버·Windows 컴포넌트와 Android 단위 테스트의 최신 확인 결과는 아래와 같다.
 
 | 검증 대상 | 결과 |
 | --- | --- |
@@ -226,7 +226,15 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
 ```
 
-전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 현재 수집값은 FastAPI 154건, WPF Core 71건, Android 16건이지만 스크립트의 WPF Core 기대값은 67건이므로 먼저 현재 수집값과 TRX 수에 맞춰야 한다. 이후 같은 clean 소스 커밋에서 새 실행 ID로 2회 연속 통과해야 기준선으로 인정한다. 실패 단계·다음 조치·보존 증거 경로는 콘솔과 실행별 `verification-summary.json`에 한글로 남긴다. 테스트 DB, 로그와 산출물은 회귀 분석 근거로 로컬에 계속 보존하되 Git에는 포함하지 않는다. 자세한 갱신·대조 절차는 [검증 자동화 문서](./docs/verification.md)를 따른다.
+전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 현재 guard는 FastAPI 154건, WPF Core 71건, Android 16건이다. WPF Core는 67건 guard 이후 추가된 테스트 4건의 커밋 이력과 현재 수집 목록 71건, TRX `total/passed=71/71`을 대조해 맞췄다. 스크립트는 WPF 수집 목록과 TRX 수도 실행마다 다시 비교한다.
+
+| Windows x64 통합 기준선 | 첫 실행 | 재현 실행 |
+| --- | --- | --- |
+| 판정 | `대기` | `대기` |
+| `run_id` | 없음 | 없음 |
+| 요구 결과 | `partial_run=false`, `PASSED` | 같은 clean 소스 커밋에서 새 `run_id`로 동일 결과 |
+
+실패 단계·기대값·실제값·중단 원인·다음 조치·보존 증거 경로는 콘솔과 실행별 `verification-summary.json`에 한글로 남긴다. 테스트 DB, 로그와 산출물은 회귀 분석 근거로 로컬에 계속 보존하되 Git에는 포함하지 않는다. 자세한 갱신·대조 절차는 [검증 자동화 문서](./docs/verification.md)를 따른다.
 
 ## 설계 문서
 
