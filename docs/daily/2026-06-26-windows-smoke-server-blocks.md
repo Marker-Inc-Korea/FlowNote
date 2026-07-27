@@ -15,7 +15,7 @@
 - 서버 API는 인증, 승인 단말, 문서와 controlled copy, FieldComment 원천·검토·감사·품질, 접근 로그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가와 외부 AI 질의 안전장치, sync manifest·관리자 승인형 reconciliation을 제공한다.
 - Windows 앱은 로컬 SQLite를 우선 사용하며 서버 동기화 큐와 서버 ID 매핑 테이블을 가진다.
 - 서버 연계 테스트에서 생성된 로그, DB, 입력 파일, 출력 파일은 보존한다.
-- 2026-07-26 현재 FastAPI 코드는 151건을 수집하지만 표준 통합 스크립트의 수집/JUnit guard는 149건이어서 현재 코드와 맞지 않는다. 과거 `baseline-131`과 `p0-baseline-144-macos-precheck-20260722-002`는 당시 일부 환경만 실행한 보조 기록이며 현재 통합 기준선이 아니다. guard를 현재 수치로 보정한 뒤 WPF Core 테스트·앱 빌드·공통 DB 스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 같은 실행 ID로 묶은 Windows x64 무생략 `PASSED` run을 새로 확보해야 한다.
+- 2026-07-27 현재 FastAPI 154건과 Android 16건은 표준 통합 스크립트 guard와 일치하지만 WPF Core는 실제 71건보다 guard가 4건 적은 67건이다. 과거 `baseline-131`과 `p0-baseline-144-macos-precheck-20260722-002`는 당시 일부 환경만 실행한 보조 기록이며 현재 통합 기준선이 아니다. WPF Core guard를 현재 수집값과 TRX 수에 맞춘 뒤 앱 빌드·공통 DB 스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 같은 실행 ID로 묶은 Windows x64 무생략 `PASSED` run을 새로 확보해야 한다.
 
 ## 주의
 
