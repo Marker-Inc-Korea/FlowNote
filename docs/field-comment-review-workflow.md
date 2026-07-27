@@ -1,6 +1,6 @@
 # FieldComment 검토·분석·선정 운영
 
-이 문서는 2026-07-26 현재 FastAPI FieldComment 검토 API·데이터 모델과 WPF 관리자 검토 화면을 기준으로, FieldComment 원천 기록을 관리자 해석과 섞지 않고 보고서 근거로 정제하는 운영 계약을 정리한다.
+이 문서는 2026-07-27 현재 FastAPI FieldComment 검토 API·데이터 모델과 WPF 관리자 검토 화면을 기준으로, FieldComment 원천 기록을 관리자 해석과 섞지 않고 보고서 근거로 정제하는 운영 계약을 정리한다.
 
 ## 원천과 해석의 분리
 
@@ -38,6 +38,7 @@
 - 잘못 제외한 원천은 `EXCLUDED → NEW`, 잘못 보관한 원천은 `ARCHIVED → EXCLUDED → NEW`로만 재개한다. 중간 상태를 건너뛰지 않는다.
 - 서버와 WPF 상태가 충돌하거나 현장 진술이 상충하면 원천 본문을 병합하지 않는다. `conflict_flag`로 `CONFLICT / 검토 필요`를 표시하고 `conflict_basis`에 상충 지점·판단 근거·선정/제외 사유를 남긴다. `red` 신호 또는 상충 표지가 있는 원천을 `REVIEWED`, `SELECTED`, `EXCLUDED`, `ARCHIVED`로 바꿀 때는 분석자와 다른 사용자가 결정해야 하며 판단 근거도 필수다.
 - 충돌 해결자는 해당 라인 책임자 또는 보고서 책임자이며 최종 `SELECTED/EXCLUDED` 결정 충돌은 결정 역할 보유자만 종결한다. WPF는 자동으로 `NEW → ANALYZED → REVIEWED` 단계를 보간하지 않는다. 해결자는 서버 snapshot을 새로 읽고 담당자·기한·정리·분석을 함께 비교한 뒤 `재적용`, `서버본 유지`, `재검토 전환` 중 하나와 사유를 감사에 남긴다.
+- WPF 동기화는 `ANALYZED`, `REVIEWED`, `SELECTED` 전이를 하나로 합치지 않고 단계마다 별도 큐 기록과 mutation key를 남긴다. 직접 서버를 검토할 때는 확인하지 않은 `baseReviewRevision`을 임의 값으로 보내지 않으며 동기화 큐는 저장해 둔 기준 revision을 그대로 사용한다. `red` 또는 상충 원천의 분석과 결정은 서로 다른 로그인 계정으로 수행한다.
 - 원천 보완, 담당자 변경, 기한 재산정, 분석 근거 변경, 충돌 해결로 결론이 달라질 가능성이 있으면 재검토한다. 단순 오탈자라도 이미 `SELECTED`인 원천의 관리자 해석을 바꿀 때는 `REVIEWED`로 되돌린 뒤 다시 선정한다.
 - 원천 hash 불일치, 관찰 문서 버전 누락, 권한 부족은 재시도로 우회하지 않는다. 품질 작업함에서 원인을 해소한 뒤 같은 idempotency key로 다시 전송한다.
 
@@ -53,6 +54,7 @@
 
 - 보고서의 `FIELD_COMMENT` source는 `SELECTED`만 허용하며 연결 시 해당 FieldComment의 `document_version_id`를 `report_sources.source_version_id`에 고정한다.
 - `DOCUMENT` source는 현재 `PUBLISHED` 버전만 허용한다. 비공개 문서와 최신 작업중 버전, 과거 공개본이 아닌 버전은 후보에 섞지 않는다.
+- WPF 화면은 작업순서 변경 이력을 보고서 후보로 제공한다. Core는 `WORK_SEQUENCE_ITEM`을 받으면 서버의 현재 항목과 최신 변경 기록을, `WORK_SEQUENCE_HISTORY`를 받으면 선택한 변경 기록의 존재와 ID를 저장 전에 확인한다.
 - 초안 생성과 승인에는 서로 다른 source type이 최소 2종 필요하다. 같은 `source_type + source_id + source_version_id` 중복은 거부한다.
 - 각 `report_sources` row는 독립 `trace_id`, 고정 `source_version_id`, FieldComment의 `source_revision`, 저장 시점 `source_hash_sha256`를 가진다. source 요청의 선택적 `sourceRevision/sourceHashSha256`가 현재 값과 다르면 고정 단계부터 409다. 승인 및 파일 생성 직전에 상태·version·revision·hash·채널 권한을 다시 읽어 하나라도 달라지면 409로 차단한다.
 - 생성된 최종 보고서 문서 본문에도 source type/ID/version/revision/trace/hash를 기록하므로 최종 문서에서 FieldComment 원문·첨부·관찰 문서 버전까지 역추적한다.
@@ -113,7 +115,7 @@
 - stale revision과 권한 변경은 실패 행에 코드·원인·복구 안내를 표시한다. 실패 행 때문에 성공 행을 되돌리거나 목록에서 숨기지 않는다.
 - 실행 성공 뒤 응답이 유실되면 WPF의 `마지막 일괄 결과 복구`가 원래 mutation key를 그대로 재전송한다. 새 key로 전체를 반복하지 않으며 서버 receipt의 최초 응답 snapshot으로 결과를 복구한다.
 - 보고서 초안 생성은 선택한 source의 서버 ID/version/revision/hash를 고정하고 `고정 근거 확인` 표에 적격 여부를 표시한다. source type이 2종 미만이거나 WPF에서 검증할 수 없는 유형은 저장하지 않는다.
-- 저장 직전 같은 source를 다시 조회한다. 상태, 공개 version, 선정 revision 또는 hash가 초안 시점과 다르면 로컬 보고서 파일과 동기화 큐를 만들기 전에 중단하고 새 초안을 요구한다.
+- 저장 직전 같은 source를 다시 조회한다. 서버에 연결할 수 없거나 상태, 공개 version, 선정 revision, 작업순서 변경 기록 또는 hash가 초안 시점과 다르면 로컬 보고서 파일과 동기화 큐를 만들기 전에 중단하고 새 초안을 요구한다.
 
 ## UX 측정과 개발 항목 전환
 

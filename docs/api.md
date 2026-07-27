@@ -294,7 +294,7 @@ FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revi
 
 보고서 draft와 최종 저장은 서로 다른 `sourceType` 최소 2종을 요구하며 같은 type/id/version 중복을 거부한다. 응답의 각 source는 `source_type`, `source_id`, 고정 `source_version_id`, FieldComment `source_revision`, 독립 `trace_id`, 저장 시점 `source_hash_sha256`를 반환한다. 최종 승인 직전에 같은 상태/version/revision/hash와 채널 권한을 다시 검사하며 불일치하면 `409`로 차단한다. 승인된 보고서의 draft ID로 source를 교체할 수 없다.
 
-보고서 source 타입은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `WORK_RECORD_VERSION`을 사용한다. 서버 저장은 `SELECTED` FieldComment와 현재 공개 문서 버전만 허용하며 FieldComment의 관찰 문서 버전을 source에 자동 고정한다. 활성 업무 채널에 연결된 source는 actor의 활성 멤버십을 검사한다. 현재 WPF 로컬 초안 후보도 `SELECTED` FieldComment, 공개 문서, 작업순서 항목/이력만 노출하며, `SELECTED` 전이에는 관찰 문서 버전과 원천 작성자가 필요하다.
+보고서 source 타입은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `WORK_RECORD_VERSION`을 사용한다. 서버 저장은 `SELECTED` FieldComment와 현재 공개 문서 버전만 허용하며 FieldComment의 관찰 문서 버전을 source에 자동 고정한다. 활성 업무 채널에 연결된 source는 actor의 활성 멤버십을 검사한다. 현재 WPF 초안 화면은 `SELECTED` FieldComment, 공개 문서, 작업순서 이력을 후보로 노출한다. WPF Core의 저장 전 검증은 `WORK_SEQUENCE_ITEM`도 받아 현재 항목과 최신 변경 기록을 확인하고 `WORK_SEQUENCE_HISTORY`는 선택한 변경 기록의 존재와 ID를 확인한다. 최초 원천 검증에서 서버에 연결할 수 없거나 snapshot이 달라졌으면 로컬 보고서 파일과 동기화 큐를 만들지 않는다. `SELECTED` 전이에는 관찰 문서 버전과 원천 작성자가 필요하다.
 
 목록·상세·source 조회는 응답 직전에 각 고정 원천을 다시 읽는다. `FIELD_COMMENT`는 현재 `SELECTED`, `DOCUMENT`는 현재 공개본, 작업순서·작업내역은 현재 추적 가능한 원천이어야 하며, 원천과 연결된 활성 채널이 있으면 호출자는 그 채널의 활성 멤버이거나 `admin`/`system-admin`이어야 한다. 하나라도 실패하면 목록은 보고서 전체를 제외하고 상세와 source는 모두 같은 `404 RESOURCE_NOT_FOUND`를 반환한다. 개별 source ID, 유형, 상태와 존재 여부는 응답하지 않는다. 원천을 초안에 넣는 요청도 없는 원천·비공개 원천·권한 밖 원천을 모두 `404 SOURCE_NOT_VISIBLE`로 처리한다.
 
