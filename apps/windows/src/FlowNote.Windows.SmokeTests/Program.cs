@@ -3317,13 +3317,10 @@ try
                 orderedQueueDocument.DocumentId,
                 $"Ordered retry field comment {runId}.",
                 smokeActorName);
-            orderedQueueFieldComment = services.FieldComments.UpdateReview(
-                orderedQueueFieldComment.CommentId,
-                "정방향 큐 재시도 보고서 근거",
-                "공개된 v2 문서와 대조해 보고서 source로 선정함.",
-                "SELECTED",
-                smokeActorName,
-                "정방향 큐 보고서 근거 선정");
+            orderedQueueFieldComment = FieldCommentSmokeReview.SelectForReport(
+                services.FieldComments,
+                orderedQueueFieldComment,
+                smokeActorName);
             var orderedQueueAttachmentFile = Path.Combine(testDirectory, $"server-ordered-field-comment-attachment-{runId}.txt");
             File.WriteAllText(orderedQueueAttachmentFile, $"Server ordered FieldComment attachment smoke test {runId}.");
             var orderedQueueAttachment = services.FieldComments.AddAttachment(

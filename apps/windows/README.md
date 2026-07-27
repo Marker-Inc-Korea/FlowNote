@@ -115,7 +115,7 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Win
 
 스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 없으면 `http://127.0.0.1:5184`의 로컬 FastAPI 서버를 자동 확인한다. 해당 서버가 실행 중이면 서버 로그인, 문서 등록, 버전, 공개 조회까지 서버 연동 블록을 검증하고, 실행 중이 아니면 기존 로컬 SQLite 검증만 계속한다.
 
-표준 통합 실행은 저장소 루트의 `scripts/verify-preserved-tests.ps1`을 사용한다. 스크립트가 새 `FLOWNOTE_SMOKE_RUN_ID`와 증거 폴더를 주입하고 비어 있는 `5184` 포트에 누적 Windows 스모크 FastAPI를 직접 시작한다. 이미 건강한 서버가 있으면 그 설정을 추정해 재사용하지 않고 환경 실패로 중단한다. 구 FAILED 큐 dry-run·승인 재실행 멱등성, 서버 viewer 비밀번호 변경·Windows/승인 Android 세션·비활성화 차단, AI ground-truth 평가와 provider 차단, AI 보존 설정→재조회→일괄 만료 차단→해제→단일 만료→감사 조회, cursor 재시작 복구, SQLite 무결성·매핑/idempotency 중복을 같은 실행 ID로 검증한다.
+표준 통합 실행은 저장소 루트의 `scripts/verify-preserved-tests.ps1`을 사용한다. 스크립트가 새 `FLOWNOTE_SMOKE_RUN_ID`와 증거 폴더를 주입하고 비어 있는 `5184` 포트에 누적 Windows 스모크 FastAPI를 직접 시작한다. 이미 건강한 서버가 있으면 그 설정을 추정해 재사용하지 않고 환경 실패로 중단한다. AI 보존 검증에 필요한 `system-admin` 계정은 일반 관리자 API로 만들지 않는다. 스크립트가 `FLOWNOTE_ENVIRONMENT=test`와 `FLOWNOTE_SMOKE_SERVER_DATABASE_PATH`를 설정하고, 파일명이 `flownote.windows-smoke.sqlite3`인 기존 시험 DB에서만 전용 계정을 준비한다. 환경, 경로 또는 파일 조건이 하나라도 맞지 않으면 계정을 만들지 않고 즉시 중단한다. 구 FAILED 큐 dry-run·승인 재실행 멱등성, 서버 viewer 비밀번호 변경·Windows/승인 Android 세션·비활성화 차단, AI ground-truth 평가와 provider 차단, AI 보존 설정→재조회→일괄 만료 차단→해제→단일 만료→감사 조회, cursor 재시작 복구, SQLite 무결성·매핑/idempotency 중복을 같은 실행 ID로 검증한다.
 
 WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 사진/인수인계 문서 2건과 기존 과거 문서의 신규 버전을 SQL로 다시 확인한다. 결과는 `wpf-smoke-database-evidence.json`에 문서 ID, 이전·신규 버전, 무결성 값과 함께 보존하며 표준 스크립트의 단계별 로그·WPF Core TRX·최종 요약과 한 run ID를 공유한다.
 
