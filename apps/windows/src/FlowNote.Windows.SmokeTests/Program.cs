@@ -2468,6 +2468,8 @@ try
                 "handover follow-up should create a channel event linking the FieldComment back to the source handover");
         }
 
+        await ServerSmokeReconciliation.ApproveIfRequiredAsync(
+            services, serverDocuments, serverLogin.UserId, runId);
         var queuedRetryResult = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
         Console.WriteLine(queuedRetryResult.Message);
         Require(queuedRetryResult.Attempted >= 8, "queued retry should attempt all offline server sync queue rows");
