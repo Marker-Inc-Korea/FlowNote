@@ -3317,8 +3317,9 @@ try
                 orderedQueueDocument.DocumentId,
                 $"Ordered retry field comment {runId}.",
                 smokeActorName);
-            orderedQueueFieldComment = FieldCommentSmokeReview.SelectForReport(
+            orderedQueueFieldComment = await FieldCommentSmokeReview.SelectForReportAsync(
                 services.FieldComments,
+                services.ServerSync,
                 orderedQueueFieldComment,
                 smokeActorName);
             var orderedQueueAttachmentFile = Path.Combine(testDirectory, $"server-ordered-field-comment-attachment-{runId}.txt");
@@ -3373,7 +3374,6 @@ try
             _ = await services.ServerSync.QueueAndTrySyncAccessLogAsync(orderedQueueClosedAccessLog, "view_closed", null);
             _ = await services.ServerSync.QueueAndTrySyncAccessLogAsync(orderedQueueStartedAccessLog, "view_started", null);
             _ = await services.ServerSync.QueueAndTrySyncFieldCommentAttachmentAsync(orderedQueueAttachment, null);
-            _ = await services.ServerSync.QueueAndTrySyncFieldCommentReviewAsync(orderedQueueFieldComment, null, serverLogin.UserId);
             _ = await services.ServerSync.QueueAndTrySyncFieldCommentAsync(orderedQueueFieldComment, null);
             _ = await services.ServerSync.QueueAndTrySyncDocumentStatusAsync(orderedQueueArchived, null);
             _ = await services.ServerSync.QueueAndTrySyncDocumentPublishAsync(orderedQueuePublished, null);
@@ -3382,7 +3382,7 @@ try
 
             var orderedRetryStartedAt = DateTime.UtcNow;
             var orderedRetryResult = await services.ServerSync.RetryPendingAsync(serverDocuments, serverLogin.UserId);
-            Require(orderedRetryResult.Synced >= 10, "document queue retry should process the reverse-queued document, FieldComment review, access log, and report flow");
+            Require(orderedRetryResult.Synced >= 12, "document queue retry should process the reverse-queued document, FieldComment reviews, access log, and report flow");
             Require(
                 ScalarLong(
                     syncConnection,
@@ -3420,7 +3420,7 @@ try
                     ("$comment_id", orderedQueueFieldComment.CommentId),
                     ("$attachment_id", orderedQueueAttachment.AttachmentId),
                     ("$log_id", orderedQueueAccessLogId.ToString()),
-                    ("$report_id", orderedReportDocument.DocumentId)) == 10,
+                    ("$report_id", orderedReportDocument.DocumentId)) == 12,
                 "full ordered retry should mark document, version, publish, status, FieldComment review, attachment, access logs, and report as synced");
 
             var orderedAttemptOrder = ScalarString(
