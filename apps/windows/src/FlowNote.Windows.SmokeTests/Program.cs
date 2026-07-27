@@ -3986,7 +3986,7 @@ try
                     IdempotencyKey = $"wpf-smoke-ai-reviewed-{runId}"
                 });
             var aiReviewedSourceHashBefore = aiServerReviewedComment.SourceHashSha256;
-            aiServerReviewedComment = await aiReviewerDocuments.UpdateFieldCommentReviewAsync(
+            aiServerReviewedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
                 aiServerReviewedComment.CommentId,
                 new ServerFieldCommentReviewRequest
                 {
@@ -3999,7 +3999,7 @@ try
                     TransitionReason = "회귀 근거의 분석 단계와 담당 기한을 보존함",
                     MutationKey = $"wpf-smoke-ai-reviewed-analyze-{runId}"
                 });
-            aiServerReviewedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
+            aiServerReviewedComment = await aiReviewerDocuments.UpdateFieldCommentReviewAsync(
                 aiServerReviewedComment.CommentId,
                 new ServerFieldCommentReviewRequest
                 {
@@ -4029,7 +4029,7 @@ try
                     IdempotencyKey = $"wpf-smoke-ai-selected-{runId}"
                 });
             var aiSelectedSourceHashBefore = aiServerSelectedComment.SourceHashSha256;
-            aiServerSelectedComment = await aiReviewerDocuments.UpdateFieldCommentReviewAsync(
+            aiServerSelectedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
                 aiServerSelectedComment.CommentId,
                 new ServerFieldCommentReviewRequest
                 {
@@ -4042,7 +4042,7 @@ try
                     TransitionReason = "선정 전 분석 근거와 담당 기한을 보존함",
                     MutationKey = $"wpf-smoke-ai-selected-analyze-{runId}"
                 });
-            aiServerSelectedComment = await serverDocuments.UpdateFieldCommentReviewAsync(
+            aiServerSelectedComment = await aiReviewerDocuments.UpdateFieldCommentReviewAsync(
                 aiServerSelectedComment.CommentId,
                 new ServerFieldCommentReviewRequest
                 {
