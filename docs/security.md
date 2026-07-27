@@ -267,7 +267,7 @@ FastAPI 서버는 HMAC 서명 Bearer access token과 `auth_sessions` 테이블�
 - refresh 후 이전 access token과 이전 refresh token은 거부된다.
 - logout은 세션을 `REVOKED`로 변경한다.
 - 보호 API는 세션 상태, 폐기 시각, access token ID, 만료 시각과 세션에 묶인 단말의 현재 `ACTIVE` 상태를 모두 검증한다. refresh도 계정과 단말 활성 상태를 다시 확인한다.
-- 현재 예외로 `GET /api/v1/tags`는 인증 없이 태그 목록을 조회할 수 있고, 태그 생성은 문서 쓰기 role을 요구한다.
+- 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 태그 생성과 그 밖의 보호 API는 각 경로에 맞는 인증과 role을 요구한다.
 - WPF는 서버가 401 또는 403으로 로그인 실패를 응답하면 로컬 계정 로그인으로 우회하지 않는다.
 - 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 WPF 로컬 계정 로그인을 사용한다.
 
