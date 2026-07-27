@@ -236,7 +236,7 @@ public sealed record ServerFieldCommentReviewRequest
     public string? ConflictBasis { get; init; }
 
     [JsonPropertyName("baseReviewRevision")]
-    public int BaseReviewRevision { get; init; }
+    public int? BaseReviewRevision { get; init; }
 
     [JsonPropertyName("mutationKey")]
     public string MutationKey { get; init; } = string.Empty;
