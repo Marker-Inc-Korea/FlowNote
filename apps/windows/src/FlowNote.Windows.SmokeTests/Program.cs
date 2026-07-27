@@ -3454,17 +3454,7 @@ try
                 ("$report_id", orderedReportDocument.DocumentId),
                 ("$ordered_retry_started_at", orderedRetryStartedAt.ToString("O")));
             Require(
-                orderedAttemptOrder ==
-                    "document:register_document|" +
-                    "document_version:register_document_version|" +
-                    "document_publish:publish_document_version|" +
-                    "document_status:update_document_status|" +
-                    "field_comment:register_field_comment|" +
-                    "field_comment_review:update_field_comment_review|" +
-                    "field_comment_attachment:register_field_comment_attachment|" +
-                    "document_access_log:register_access_log_started|" +
-                    "document_access_log:register_access_log_closed|" +
-                    "report:register_report",
+                orderedAttemptOrder == FieldCommentSmokeReview.ExpectedOrderedAttemptOrder,
                 "full queue retry attempts should run document, version, publish, status, FieldComment review, attachment, access logs, then report");
             Require(
                 ScalarLong(
