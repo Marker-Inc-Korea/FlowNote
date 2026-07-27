@@ -122,15 +122,15 @@ public partial class MainWindow
             workspace.StatusText =
                 "로그인이 만료되어 알림 확인을 멈췄습니다. 마지막 알림 위치와 로컬 기록은 보존됩니다. 다시 로그인하면 이어서 확인합니다.";
         }
-        catch (Exception)
+        catch (Exception exception)
         {
             notificationPollFailures++;
             var seconds = Math.Min(
                 120,
                 15 * (1 << Math.Min(notificationPollFailures, 3)));
             notificationPollingTimer.Interval = TimeSpan.FromSeconds(seconds);
-            workspace.StatusText =
-                "서버 연결이 끊겨 알림 확인을 재시도합니다. 마지막 알림 위치와 로컬 기록은 보존되며 연결 복구 후 이어집니다.";
+            workspace.StatusText = ServerConnectionGuidance.ReconnectFailure(
+                exception);
         }
         finally
         {

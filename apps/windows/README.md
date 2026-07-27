@@ -102,7 +102,7 @@ apps/windows/
 - `CanWriteReports`, `CanDownloadDocuments`: `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`
 - `CanReadAccessLogs`, `CanManageUsers`: `admin`, `system-admin`
 
-서버 URL이 설정된 상태에서 서버가 401 또는 403으로 로그인 실패를 응답하면 로컬 계정으로 우회하지 않는다. 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 로컬 계정 로그인을 사용한다.
+서버 URL이 설정된 상태에서는 서버가 401 또는 403을 반환하거나 인증서·주소·방화벽·시간 초과로 연결에 실패해도 로컬 계정으로 자동 우회하지 않는다. 로그인 화면은 인증서와 PC 시간, 현재 서버 주소, 방화벽을 순서대로 확인하도록 안내한다. 서버 URL이 없는 승인된 로컬 운영 PC에서만 로컬 계정 로그인을 사용한다.
 서버 로그인 성공 시에는 같은 로그인 ID의 로컬 role과 다르더라도 서버 응답 role이 화면 버튼과 정책 결과의 기준이다.
 임시 비밀번호 서버 로그인은 메인 화면보다 비밀번호 변경 창을 먼저 표시하며, 변경 성공 후 새 비밀번호 재로그인을 요구한다. 서버 계정 화면의 401은 재로그인, 403은 권한 부족으로 안내하고 작업 버튼을 비활성화한다. 서버 연결이 끊겨도 열린 서버 계정 화면을 로컬 계정 화면으로 자동 전환하지 않는다.
 
@@ -123,7 +123,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-현재 FastAPI 코드는 154건, WPF Core는 52건을 수집하며 표준 스크립트 guard도 FastAPI 154건·WPF Core 52건·Android 16건으로 맞췄다. WPF Core 기대값은 기존 48건에 권한 없음·단말 비승인·다른 현장 범위·원천 비공개 안내 회귀 4건을 더한 값이다. 이후에도 실제 수집값과 원시 JUnit/TRX 수가 일치할 때만 기대값을 바꾼다. 이번 macOS 검증에서 WPF Core 52건과 WPF 앱 빌드는 경고·오류 없이 통과했지만, Windows 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
+현재 FastAPI 코드는 154건, WPF Core는 55건을 수집하며 표준 스크립트 guard도 FastAPI 154건·WPF Core 55건·Android 16건으로 맞췄다. WPF Core 기대값은 기존 52건에 인증서·시간 초과·서버 주소 연결 실패 안내 회귀 3건을 더한 값이다. 이후에도 실제 수집값과 원시 JUnit/TRX 수가 일치할 때만 기대값을 바꾼다. 이번 macOS 검증에서 WPF Core 55건과 WPF 앱 빌드는 경고·오류 없이 통과했지만, Windows 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

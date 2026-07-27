@@ -303,7 +303,7 @@ Invoke-RestMethod http://<서버IP>:5184/api/v1/health/db
 
 ## 운영 계정 발급과 변경 절차
 
-서버 계정과 WPF 로컬 계정은 같은 로그인 ID를 쓸 수 있지만 관리 위치가 다르다. 서버 URL이 설정된 WPF는 서버 계정으로 로그인하고, 서버가 401 또는 403을 반환하면 로컬 계정으로 우회하지 않는다. 서버 URL이 없거나 서버에 연결할 수 없는 경우에만 WPF 로컬 계정을 사용한다.
+서버 계정과 WPF 로컬 계정은 같은 로그인 ID를 쓸 수 있지만 관리 위치가 다르다. 서버 URL이 설정된 WPF는 서버 계정으로 로그인하며 401·403, 인증서 오류, 주소 오류, 연결 거부와 timeout에서 로컬 계정으로 자동 우회하지 않는다. 서버 URL이 없는 승인된 로컬 운영 PC에서만 WPF 로컬 계정을 사용한다.
 
 ### 최초 서버 관리자 계정
 
@@ -531,6 +531,8 @@ $env:FLOWNOTE_API_BASE_URL = "http://<서버IP>:5184"
 
 self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 서명 인증서로 EXE와 MSI를 서명한 배포 PC에서는 `-CheckSignature`도 함께 사용한다.
 
+점검이 실패하면 출력된 `[다음 조치]`를 위에서부터 수행한다. framework-dependent MSI에서 .NET Windows Desktop Runtime 10이 없으면 승인된 runtime을 설치하거나 승인된 self-contained MSI로 다시 설치한다. WebView2가 없으면 승인된 사내 배포본을 설치한다. 설치 폴더가 없으면 패키지 hash와 signer, `msiexec` 설치 로그를 먼저 대조한다. 실패 로그와 화면은 같은 `run_id`의 Git 제외 증거 폴더에 보존하고, 원인 해결 전에는 다음 PC 배포를 진행하지 않는다.
+
 ## 운영 환경 변수
 
 운영에서는 상대 경로보다 절대 경로를 사용한다. 환경 변수는 Windows 시스템 환경 변수, 서비스 계정 환경 변수, 실행 스크립트, 또는 Git에 포함하지 않는 `.env`에 둔다.
@@ -636,7 +638,9 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 ### 클라이언트
 
 - WPF 로그인 화면에서 서버 계정으로 로그인한다.
+- 로그인 화면의 서버 대상이 승인된 HTTPS 운영 주소와 같은지 확인한다. 인증서 오류는 PC 날짜·시간, 인증서 SAN의 운영 서버 이름, 사내 인증서 신뢰 배포와 갱신 상태를 순서대로 확인한다. 주소 변경 또는 연결 실패는 `FLOWNOTE_API_BASE_URL`, DNS, 방화벽, 서버 health를 확인하고 설정 변경 뒤 WPF를 다시 실행한다.
 - 서버 계정 로그인 실패가 명확한 401 또는 403이면 로컬 계정으로 자동 전환되지 않는지 확인한다.
+- 서버 URL이 설정된 상태의 인증서 오류·주소 오류·연결 거부·시간 초과에서도 로컬 계정으로 자동 전환되지 않고, 로컬 데이터와 동기화 대기 기록 보존 및 다음 조치가 한글로 표시되는지 확인한다.
 - 같은 로그인 ID가 로컬 SQLite에도 있을 때 서버 로그인 성공 후 화면 버튼 권한이 서버 응답 role 기준으로 계산되는지 확인한다.
 - 서버 로그인한 `admin`, `system-admin`의 사용자 관리 화면이 서버 계정 생성·role/상태 변경·임시 비밀번호 재설정·활성 세션 폐기를 수행하는지 확인한다.
 - 로컬 로그인 사용자 관리 화면의 창 제목, 목록, 상세 안내가 로컬 SQLite 계정 전용임을 표시하는지 확인한다.
@@ -821,7 +825,7 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 현재 코드와 스크립트 guard는 FastAPI 154건·WPF Core 52건·Android 16건으로 일치한다. 같은 clean 소스 커밋에서 Windows x64 무생략 실행이 2회 연속 통과하기 전에는 유효 기준선으로 확정하지 않는다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 현재 코드와 스크립트 guard는 FastAPI 154건·WPF Core 55건·Android 16건으로 일치한다. 같은 clean 소스 커밋에서 Windows x64 무생략 실행이 2회 연속 통과하기 전에는 유효 기준선으로 확정하지 않는다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 

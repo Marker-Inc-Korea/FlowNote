@@ -277,7 +277,7 @@ $componentRefXml = [string]::Join([Environment]::NewLine, $componentRefs)
 $wixContent = @"
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="FlowNote Windows Client" Manufacturer="FlowNote" Version="$ProductVersion" UpgradeCode="$upgradeCode" Scope="perMachine">
-    <MajorUpgrade DowngradeErrorMessage="A newer FlowNote Windows Client is already installed." />
+    <MajorUpgrade DowngradeErrorMessage="더 최신 FlowNote Windows 클라이언트가 설치되어 있습니다. 승인된 rollback 절차 없이 이전 버전을 설치할 수 없습니다." />
     <MediaTemplate EmbedCab="yes" />
 
     <StandardDirectory Id="ProgramFilesFolder">
