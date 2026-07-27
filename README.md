@@ -162,7 +162,7 @@ flowchart LR
 | SQLAlchemy ORM | 60개 테이블 |
 | FastAPI 테스트 | 154개 통과 |
 | Python 정적 검사 | Ruff 통과 |
-| WPF Core 테스트 | 52개 통과 |
+| WPF Core 테스트 | 71개 통과 |
 | WPF 앱 빌드 | 경고 0개, 오류 0개 |
 | Android 단위 테스트 | 16개 통과 |
 | Android debug 빌드·lint | `assembleDebug`, `lintDebug` 통과 |
@@ -226,7 +226,7 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
 ```
 
-전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI 154건, WPF Core 67건, Android 단위 테스트 16건, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 기대값은 실제 수집값과 JUnit/TRX 수가 일치할 때만 갱신하며, 같은 clean 소스 커밋에서 새 실행 ID로 2회 연속 통과해야 기준선으로 인정한다. 실패 단계·다음 조치·보존 증거 경로는 콘솔과 실행별 `verification-summary.json`에 한글로 남긴다. 테스트 DB, 로그와 산출물은 회귀 분석 근거로 로컬에 계속 보존하되 Git에는 포함하지 않는다. 자세한 갱신·대조 절차는 [검증 자동화 문서](./docs/verification.md)를 따른다.
+전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 현재 수집값은 FastAPI 154건, WPF Core 71건, Android 16건이지만 스크립트의 WPF Core 기대값은 67건이므로 먼저 현재 수집값과 TRX 수에 맞춰야 한다. 이후 같은 clean 소스 커밋에서 새 실행 ID로 2회 연속 통과해야 기준선으로 인정한다. 실패 단계·다음 조치·보존 증거 경로는 콘솔과 실행별 `verification-summary.json`에 한글로 남긴다. 테스트 DB, 로그와 산출물은 회귀 분석 근거로 로컬에 계속 보존하되 Git에는 포함하지 않는다. 자세한 갱신·대조 절차는 [검증 자동화 문서](./docs/verification.md)를 따른다.
 
 ## 설계 문서
 

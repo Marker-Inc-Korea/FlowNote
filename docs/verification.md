@@ -11,14 +11,22 @@
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
 | FastAPI | 현재 코드·스크립트 guard 154건, Windows 무생략 실행 대기 | 동일 |
-| WPF Core | 현재 코드·스크립트 guard 67건, Windows 무생략 실행 대기 | 동일 |
+| WPF Core | 현재 코드 71건, 스크립트 guard 67건으로 갱신 필요 | 갱신 뒤 Windows 무생략 실행 대기 |
 | WPF 앱 | 목표 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 목표 unit 16/16, failure/error/skipped 0, debug build PASS | 동일 |
 | SQLite | 목표 전후 `quick_check=ok`, FK 위반 0 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
-보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 2026-07-27 현재 수집값은 FastAPI 154건, WPF Core 67건, Android 16건이며 스크립트 기대값도 154/67/16으로 맞췄다. macOS ARM64에서 복구 변경 뒤 WPF Core 67건과 WPF 앱 빌드가 경고·오류 없이 통과했다. Windows 누적 공통 DB 스모크와 실제 별도 PC 복구는 실행하지 않았으므로 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
+보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 2026-07-27 현재 수집값은 FastAPI 154건, WPF Core 71건, Android 16건이다. 스크립트 기대값은 154/67/16이므로 WPF Core guard를 현재 수집값과 TRX 수에 맞춰야 한다. macOS ARM64에서 WPF Core 71건과 WPF 앱 빌드가 경고·오류 없이 통과했다. Windows 누적 공통 DB 스모크와 실제 별도 PC 복구는 실행하지 않았으므로 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
+
+## 2026-07-27 작업 201 전체 Markdown 현재 코드 재대조
+
+저장소에서 확인한 Markdown 45개를 현재 FastAPI, Windows WPF, Android와 운영·검증 스크립트에 대조했다. Git이 추적하는 43개에는 작업 정책 `AGENTS.md`와 날짜별 실행·현장 기록이 포함된다. Git에서 제외된 샘플 등록 결과 2개도 확인했지만 누적 테스트 기록이므로 수정하거나 추적 대상으로 바꾸지 않았다. 날짜별 실행 수치와 결정 당시 설명은 역사적 증거로 보존하고 현재 코드 기준이라고 명시한 문서의 기준일과 수치만 갱신했다.
+
+루트 `GET /`를 포함한 API는 131개 method/path 조합이며 `services/api/README.md`와 누락·초과 없이 일치한다. `/api/v1` 아래 130개 조합은 `docs/api.md`에 모두 있고 SQLAlchemy ORM 60개 테이블은 세 스키마 문서에 빠짐없이 반영되어 있다. `Settings` 39개 항목도 서버 README와 `.env.example`에서 모두 확인했다. 추적 Markdown의 상대 링크와 현재 구현 명칭도 함께 검사했다.
+
+FastAPI 전체 154건과 Ruff, WPF Core 71건, WPF 앱 빌드, Android 단위 테스트 16건·debug 빌드·lint가 통과했다. WPF Core 실제 수집·실행값은 71건이지만 `scripts/verify-preserved-tests.ps1`은 67건을 기대하므로 표준 Windows 통합 실행 전에 guard 갱신이 필요하다. 이번 작업은 문서 갱신 범위여서 스크립트는 수정하지 않았다. Windows 누적 공통 DB 스모크, Windows x64 무생략 실행 2회, 승인 Android 실단말과 별도 PC 복구는 실행하지 않았으며 통합 기준선은 `대기`다. 테스트 SQLite, 로그와 빌드 산출물은 삭제하거나 초기화하지 않았다.
 
 ## 2026-07-27 후보 7 full_pilot UX 재검증 게이트
 
@@ -194,7 +202,7 @@ Git 추적 Markdown 42개를 전부 목록화했다. 작업 정책 원문 `AGENT
 
 이 절을 처음 작성한 시점의 OpenAPI는 루트 `GET /`를 포함한 116개 method/path 조합이었고 ORM은 FieldComment 검토·보고서·작업순서 mutation receipt를 포함한 54개 테이블이었다. 이후 서버 복구 reconciliation 시점에는 122개 API와 57개 테이블이었다. 당시에도 작업순서는 `board_revision`과 mutation receipt를 쓰는 FastAPI 권위 aggregate였고, FieldComment 검토는 `review_revision`, 보고서는 `report_revision`과 내용/source 집합 hash를 권위값으로 사용했다. WPF는 작업순서 서버 snapshot을 직접 읽고, 검토·첨부·보고서 재시도에는 base revision·mutation key·파일/source hash를 전달해 응답 read-back을 로컬에 보존했다.
 
-이 절 작성 당시 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 137건을 수집했다. 새 3건은 FieldComment 검토 동시성/receipt 재생, 첨부 응답 유실 재시도, 보고서 선정 뒤 source 변경 409 차단이었다. 전체 pytest는 당시 문서 갱신 중 새로 실행하지 않았으며, 직전 134 passed는 새 3건 추가 전의 역사적 결과로 보존한다. 당시 macOS에서 실행 가능한 WPF Core 테스트는 작업순서 서버 권위 정책 5건을 포함해 33 passed, failed/skipped 0이었고 Android `testDebugUnitTest`는 Java Runtime 부재로 테스트 시작 전 환경 실패였다. WPF 앱 build·누적 스모크·Android build도 Windows 표준 기준선으로 새로 실행하지 않았다. 이후 143건 통과 기록도 역사적 결과이며 현재 수집 기준은 문서 최상단의 151건이다.
+이 절 작성 당시 `.venv/bin/python -m pytest --collect-only -q`는 중복 없는 137건을 수집했다. 새 3건은 FieldComment 검토 동시성/receipt 재생, 첨부 응답 유실 재시도, 보고서 선정 뒤 source 변경 409 차단이었다. 전체 pytest는 당시 문서 갱신 중 새로 실행하지 않았으며 직전 134 passed는 새 3건 추가 전의 역사적 결과로 보존한다. 당시 macOS에서 실행 가능한 WPF Core 테스트는 작업순서 서버 권위 정책 5건을 포함해 33 passed, failed/skipped 0이었고 Android `testDebugUnitTest`는 Java Runtime 부재로 테스트 시작 전 환경 실패였다. WPF 앱 build·누적 스모크·Android build도 Windows 표준 기준선으로 새로 실행하지 않았다. 이후 143건 통과 기록도 역사적 결과이며 현재 수집 기준은 문서 최상단의 최신 현황을 따른다.
 
 이 절 작성 당시 `scripts/verify-preserved-tests.ps1`의 `$expectedFastApiTestCount`는 131이었고 이후 같은 날의 중간 단계에서 144건으로 복구됐다. 현재 guard는 149건이지만 새 Windows x64 무생략 `PASSED` 기준선은 아직 확보하지 못했다. 기존 `baseline-131-macos-precheck-20260721-001`은 당시 결과로 보존하지만 현재 코드 기준선으로 승격하지 않는다. 기존 실패 run, SQLite, 로그, 파일은 삭제하거나 초기화하지 않았다.
 
