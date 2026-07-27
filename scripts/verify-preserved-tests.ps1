@@ -713,6 +713,7 @@ if (-not $SkipWpfSmoke) {
         $previousEnvironment = $env:FLOWNOTE_ENVIRONMENT
         $previousDatabaseUrl = $env:FLOWNOTE_DATABASE_URL
         $previousStorageRoot = $env:FLOWNOTE_STORAGE_ROOT
+        $previousSmokeServerDatabasePath = $env:FLOWNOTE_SMOKE_SERVER_DATABASE_PATH
         $previousAiEnabled = $env:FLOWNOTE_AI_EXTERNAL_CALL_ENABLED
         $previousSmokeArtifactDir = $env:FLOWNOTE_SMOKE_ARTIFACT_DIR
         $managedApiProcess = $null
@@ -741,6 +742,7 @@ if (-not $SkipWpfSmoke) {
                 $env:FLOWNOTE_ENVIRONMENT = "test"
                 $env:FLOWNOTE_DATABASE_URL = "sqlite:///./data/flownote.windows-smoke.sqlite3"
                 $env:FLOWNOTE_STORAGE_ROOT = "./storage/windows-smoke"
+                $env:FLOWNOTE_SMOKE_SERVER_DATABASE_PATH = Join-Path $apiDir "data/flownote.windows-smoke.sqlite3"
                 $env:FLOWNOTE_AI_EXTERNAL_CALL_ENABLED = "false"
                 $apiOutLog = Join-Path $runArtifactDir "fastapi-server.out.log"
                 $apiErrLog = Join-Path $runArtifactDir "fastapi-server.err.log"
@@ -824,6 +826,7 @@ if (-not $SkipWpfSmoke) {
             $env:FLOWNOTE_ENVIRONMENT = $previousEnvironment
             $env:FLOWNOTE_DATABASE_URL = $previousDatabaseUrl
             $env:FLOWNOTE_STORAGE_ROOT = $previousStorageRoot
+            $env:FLOWNOTE_SMOKE_SERVER_DATABASE_PATH = $previousSmokeServerDatabasePath
             $env:FLOWNOTE_AI_EXTERNAL_CALL_ENABLED = $previousAiEnabled
             $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $previousSmokeArtifactDir
         }
