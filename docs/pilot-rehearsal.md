@@ -36,7 +36,7 @@ Windows/서버 고객 유사망 리허설은 `windows_server_rehearsal` 프로�
 
 실제 사람 이름, 연락처, 장비명, 고객명, IP와 공유 경로는 Git 문서에 적지 않는다. 접근 통제되고 Git에서 제외된 `<증거 저장소>/<run_id>/pilot-run.json`과 `approvals/` 원시에 실제 값을 기록한다. 저장소 문서에는 익명 역할/장비 식별자와 증거 상대경로만 남긴다. 2026-07-26 현재 실제 책임자·시험 장비·운영 인증서·이전 승인 서버/WPF 버전과 hash/signer·RTO/RPO·rollback 결정권자·비상 연락 흐름은 제공되지 않았다. 임의 값으로 채우지 않으며, 해당 값과 서명 원시 증거가 들어오기 전 상태는 `LOCALCHECK FAIL / 리허설 착수 금지`다.
 
-schema version 5의 각 `responsibilities.<area>`에는 `owner`, `approver`, `test_scope`, `stop_criteria`, `evidence_repository`, `approval_evidence`를 모두 기록한다. 통합 `authorization`에는 다음 값을 기록한다.
+schema version 6의 각 `responsibilities.<area>`에는 `owner`, `approver`, `test_scope`, `stop_criteria`, `evidence_repository`, `approval_evidence`를 모두 기록한다. 통합 `authorization`에는 다음 값을 기록한다.
 
 | 필드 | 현장 확정 기준 | 현재 판정 |
 | --- | --- | --- |
@@ -101,7 +101,7 @@ pilot-evidence/<run_id>/
 py -3 scripts\manage-pilot-run.py prepare --run-id PILOT-YYYYMMDD-HHMM-SITE-001 --evidence-root D:\FlowNotePilotEvidence
 ```
 
-준비 명령은 `scenario-results/android-delivery.csv`, `scenario-results/role-metrics.csv`, `scenario-results/restore-fault-injections.csv`, `observations/role-observations.csv`, `observations/development-items.csv`도 기존 파일을 덮어쓰지 않고 만든다. 익명 참여자 ID만 사용해 원시 관찰값을 적고, 집계한 분모·성공·중앙값·최대 시간·재시도·도움 요청·화면 이동 수는 `pilot-run.json` schema version 5에 옮긴다. 최종 검증은 요약값을 신뢰하지 않고 역할 원시 행에서 다시 계산해 일치 여부를 확인한다. Android 전달 항목은 `full_pilot` 프로필에서 정상, Doze, 5분 단절, 재부팅, 서버 주소 변경, access token 만료, refresh 거부, 강제 중지 뒤 kiosk 재실행을 각각 전건 성공과 허용 시간 이내로 기록해야 한다. 정상·Doze의 `allowed_seconds`는 30, 5분 단절의 값은 `30 + page_seconds`로 고정하며 임의 완화할 수 없다. 나머지 시나리오도 사전 승인한 양수 허용 시간과 측정 최대 시간을 반드시 기록한다.
+준비 명령은 `scenario-results/android-delivery.csv`, `scenario-results/role-metrics.csv`, `scenario-results/restore-fault-injections.csv`, `observations/role-observations.csv`, `observations/development-items.csv`도 기존 파일을 덮어쓰지 않고 만든다. 익명 참여자 ID만 사용해 원시 관찰값을 적고, 집계한 분모·성공·중앙값·최대 시간·재시도·도움 요청·화면 이동 수는 `pilot-run.json` schema version 6에 옮긴다. 최종 검증은 요약값을 신뢰하지 않고 역할 원시 행에서 다시 계산해 일치 여부를 확인한다. Android 전달 항목은 `full_pilot` 프로필에서 정상, Doze, 5분 단절, 재부팅, 서버 주소 변경, access token 만료, refresh 거부, 강제 중지 뒤 kiosk 재실행을 각각 전건 성공과 허용 시간 이내로 기록해야 한다. 정상·Doze의 `allowed_seconds`는 30, 5분 단절의 값은 `30 + page_seconds`로 고정하며 임의 완화할 수 없다. 나머지 시나리오도 사전 승인한 양수 허용 시간과 측정 최대 시간을 반드시 기록한다.
 
 `windows_server_rehearsal` 준비 과정에서는 원시 판정표 7개를 함께 만든다.
 
@@ -190,7 +190,7 @@ MDM 정책 보고서에서 단말 전체 암호화, 6자리 이상 화면 잠금
 7. 로그인 token과 outbox 본문/새 첨부를 `run-as` 또는 MDM 승인 저장소 검사로 확인해 평문 검색 결과 0건, backup 불가, Keystore key 비반출을 기록한다. 키 무효화 모의 후 단말 격리·미전송 판정 절차를 수행한다.
 8. 서명 APK 신규 설치, 같은 키 업그레이드, 승인 이전 APK rollback을 수행하고 `apksigner` 인증서 SHA-256, APK SHA-256, package/versionCode/versionName과 설치 로그를 보존한다.
 
-알림 계측 CSV는 최소 `scenario_id`, `condition`, `delivery_run_id`, `message_id`, `created_at_utc`, `recovery_ready_at_utc`, `displayed_at_utc`, `receipt_at_utc`, `page_seconds`, `elapsed_seconds`, `allowed_seconds`, `result`, `evidence`를 가진다. schema version 5 `full_pilot`의 기계 판정 대상 condition은 `normal`, `doze`, `disconnect_5m`, `reboot`, `address_change`, `access_token_expiry`, `refresh_rejected`, `force_stop_kiosk_restart`다. 각 condition은 원시 CSV에 1개 이상의 시도 행이 있어야 하고 모든 행이 `ANDROID-DELIVERY-*` ID, 수치형 측정/허용 시간, `PASS`, 같은 실행 폴더의 실제 증거를 가져야 한다. 정상·Doze는 `displayed_at-created_at <= 30초`, 5분 단절은 `displayed_at-recovery_ready_at <= 30초+page_seconds`로 계산하고 나머지는 사전 승인한 허용 시간과 비교한다. Logcat의 각 `page_ok`에 대해 `cursor_before`, `cursor_after`, `received`, `advanced`, `stale_or_duplicate`를 서버 응답/감사 로그와 대조한다. full page가 연속되는 101건 이상 backlog도 만들어 마지막 `message_id`까지 도달해야 하며, 누락 메시지·서버 receipt 중복 row는 각각 0건이어야 한다.
+알림 계측 CSV는 최소 `scenario_id`, `condition`, `delivery_run_id`, `message_id`, `created_at_utc`, `recovery_ready_at_utc`, `displayed_at_utc`, `receipt_at_utc`, `page_seconds`, `elapsed_seconds`, `allowed_seconds`, `result`, `evidence`를 가진다. schema version 6 `full_pilot`의 기계 판정 대상 condition은 `normal`, `doze`, `disconnect_5m`, `reboot`, `address_change`, `access_token_expiry`, `refresh_rejected`, `force_stop_kiosk_restart`다. 각 condition은 원시 CSV에 1개 이상의 시도 행이 있어야 하고 모든 행이 `ANDROID-DELIVERY-*` ID, 수치형 측정/허용 시간, `PASS`, 같은 실행 폴더의 실제 증거를 가져야 한다. 정상·Doze는 `displayed_at-created_at <= 30초`, 5분 단절은 `displayed_at-recovery_ready_at <= 30초+page_seconds`로 계산하고 나머지는 사전 승인한 허용 시간과 비교한다. Logcat의 각 `page_ok`에 대해 `cursor_before`, `cursor_after`, `received`, `advanced`, `stale_or_duplicate`를 서버 응답/감사 로그와 대조한다. full page가 연속되는 101건 이상 backlog도 만들어 마지막 `message_id`까지 도달해야 하며, 누락 메시지·서버 receipt 중복 row는 각각 0건이어야 한다.
 
 누락·서버 receipt 중복·crash 경계 표시 중복 집계는 `scenario-results/android-delivery-integrity.csv`, 보안 8개 항목은 `integrity/android-security.csv`, 발급·비활성화·분실·교체는 `scenario-results/android-device-lifecycle.csv`, 후보/이전 승인 패키지는 `packages/android-release-approval.csv`에 기록한다. `pilot-run.json`의 요약값과 게이트만 PASS로 바꿔서는 통과하지 않으며 원시 집계가 요약과 일치하고 각 원시 행의 PASS와 같은 `run_id` 안의 증거 파일이 모두 존재해야 한다. 단위/instrumentation 결과는 `android-logs/test-*`, 실단말·MDM 결과는 `android-logs/device-*`와 `mdm-*`로 분리하고 서로 대체하지 않는다.
 
@@ -268,8 +268,10 @@ Windows 로그인 직후 표시하는 첫 업무 3개는 다음 순서를 기준
 
 ### Windows UX 변경 전후 비교
 
-`scenario-results/role-ux-comparison.csv`에는 같은 익명 참여자, 같은 승인 테스트 문서와 서버 상태, 같은 역할, 같은 `scenario_id`를 `BEFORE`와 `AFTER` 두 행으로 기록한다. 준비 도구가 만드는 열의 의미는 다음과 같다.
+`scenario-results/role-ux-comparison.csv`에는 같은 익명 참여자, 같은 승인 테스트 문서와 서버 상태, 같은 역할, 같은 `scenario_id`를 `BEFORE`와 `AFTER`로 기록한다. 수용한 P0/P1 개발 항목은 `development-items.csv`의 `development_cycle_id`, `comparison_id`로 이 비교와 연결한다. 준비 도구가 만드는 열의 의미는 다음과 같다.
 
+- `development_cycle_id`: 관찰을 수정하고 재검증한 같은 개발 주기 식별자
+- `attempt_no`: `BEFORE` 또는 `AFTER` 단계 안에서 중복 없는 1 이상의 시도 번호
 - `ui_phase`: `BEFORE` 또는 `AFTER`
 - `ui_build`: 실제 실행한 WPF 버전 또는 commit 식별자
 - `elapsed_seconds`: 로그인 뒤 업무 완료까지의 실측 시간
@@ -286,7 +288,7 @@ Windows 로그인 직후 표시하는 첫 업무 3개는 다음 순서를 기준
 | `WPF-HANDOVER-FOLLOW-UP` | 로그인 완료 | 인수인계 수신 확인 뒤 후속 FieldComment 생성 결과 확인 |
 | `WPF-REVIEW-REPORT` | 관리자 로그인 완료 | FieldComment 검토 뒤 보고서에서 근거 선정 확인 |
 
-각 단계는 최소 2회 반복하고 실제 값을 기록한다. `AFTER`의 화면 이동 수 또는 전체 시도 중앙 완료 시간이 `BEFORE`보다 나빠지면 통과로 판정하지 않는다. 도움 요청 수가 늘거나 색상을 보지 않고 오류·보류·충돌의 상태, 보존 여부, 다음 조치를 설명하지 못한 경우 원인과 후속 항목을 남긴다. WPF 빌드와 자동 테스트 통과는 이 현장 비교를 대신하지 않는다. 변경 전 화면이나 실측값을 확보하지 못한 run은 `미측정`으로 유지하고 임의 수치를 채우지 않는다.
+각 단계는 최소 2회 반복하고 실제 값을 기록한다. 수용한 P0/P1은 같은 역할·익명 참여자·시나리오·개발 주기로 묶고 `BEFORE`와 `AFTER`를 각각 하나의 UI build에서 측정하며 두 단계의 build는 달라야 한다. `AFTER`는 모든 시도가 성공해야 하며 중앙 완료 시간·중앙 화면 이동 수·중앙 도움 요청 수 중 하나라도 `BEFORE`보다 나빠지면 통과로 판정하지 않는다. 개발 항목 `status`는 재검증을 마친 `VERIFIED` 또는 `CLOSED`여야 한다. WPF 빌드와 자동 테스트 통과는 이 현장 비교를 대신하지 않는다. 변경 전 화면이나 실측값을 확보하지 못한 run은 `미측정`으로 유지하고 임의 수치를 채우지 않는다.
 
 관찰 결과는 다음 필드를 가진 개발 항목으로 변환한다.
 
@@ -316,7 +318,7 @@ Windows 로그인 직후 표시하는 첫 업무 3개는 다음 순서를 기준
 
 운영·보안·현장 서명 후에는 다음 명령을 실행한다. 도구는 필수 책임 영역, 고객 유사 장비 수, 모든 필수 게이트, 증거 파일 존재, 역할별 승인 성공률/중앙 시간, 0건 지표, 서버/WPF/Android rollback과 정상 업무 재개, 남은 항목의 책임자·기한·중단 영향, 3자 최종 승인을 같은 `run_id` 안에서 확인한다. 종료 코드 0과 `pilot-verification.json`의 `PASS`가 함께 있어야 하며, 이 결과는 서명 내용과 원천 증거의 사람 교차 검토를 대체하지 않는다.
 
-schema version 5의 `full_pilot` 판정은 역할별 95% 이상 성공률, 시나리오별 2회 이상 반복, 실제 관찰값 기반 시간 한도 승인 ID/시각, 최대 시간·재시도·도움 요청·화면 이동 수, 평문 token/outbox·외부 공유·잔존 secure cache 0건, Android 알림 누락·서버 receipt 중복 0건, crash 경계 표시 중복 최대 1건, 분실·비활성 단말 재접속 차단과 교체 이력 보존도 별도로 강제한다. 서버/WPF comparison은 서로 다른 익명 장비 ID, 동일 백업 세트·복구 승인 ID, DB `quick_check`·`integrity_check`·FK, 테이블별 row 수, 파일 상대경로·크기·SHA-256 불일치 0건이어야 한다. 부분 복원·오래된 DB와 새 파일·누락 파일·잘못된 epoch 장애 주입은 자동 전송과 polling을 모두 차단하고 관리자 승인 재결합 뒤 정상화되어야 한다. Keystore token, outbox, 암호화 사진, 잘못된 키 복호화 실패, 종료 후 cache 정리, `FLAG_SECURE`, 공유 경로 부재와 backup 차단은 각각 확인해야 한다. 모든 UX 관찰은 수용/불수용/검토와 근거를 가진 개발 항목 하나로 변환하고 P0~P3 합계와 `common_product`·`device_or_mdm_setting`·`site_layout_or_training` 분류 합계가 변환 건수와 일치해야 한다. 게이트·역할·Android 전달/보안/단말 수명주기·UX 변환·rollback·최종 승인의 증거 목록에는 같은 실행 폴더 안에 실제 존재하는 상대경로만 넣는다. `windows_server_rehearsal` 판정은 Android·역할별 UX 실기를 제외하고 서버/WPF/HTTPS·망·시간·권한·장기 단절·디스크 부족·별도 PC 복구·rollback 게이트와 해당 0건 지표를 강제한다. 추가로 패키지 5개 원시 행의 hash/signer 불일치와 혼입이 0건이고, 13개 장애 주입이 모두 복구되며, 서버 복구·WPF 복구·rollback의 실측 RTO/RPO가 승인값 이내이고, rollback 뒤 6개 핵심 업무가 같은 `run_id`에서 PASS여야 한다.
+schema version 6의 `full_pilot` 판정은 역할별 95% 이상 성공률, 시나리오별 2회 이상 반복, 실제 관찰값 기반 시간 한도 승인 ID/시각, 최대 시간·재시도·도움 요청·화면 이동 수, 평문 token/outbox·외부 공유·잔존 secure cache 0건, Android 알림 누락·서버 receipt 중복 0건, crash 경계 표시 중복 최대 1건, 분실·비활성 단말 재접속 차단과 교체 이력 보존도 별도로 강제한다. 서버/WPF comparison은 서로 다른 익명 장비 ID, 동일 백업 세트·복구 승인 ID, DB `quick_check`·`integrity_check`·FK, 테이블별 row 수, 파일 상대경로·크기·SHA-256 불일치 0건이어야 한다. 부분 복원·오래된 DB와 새 파일·누락 파일·잘못된 epoch 장애 주입은 자동 전송과 polling을 모두 차단하고 관리자 승인 재결합 뒤 정상화되어야 한다. Keystore token, outbox, 암호화 사진, 잘못된 키 복호화 실패, 종료 후 cache 정리, `FLAG_SECURE`, 공유 경로 부재와 backup 차단은 각각 확인해야 한다. 모든 UX 관찰은 수용/불수용/검토와 근거를 가진 개발 항목 하나로 변환하고 P0~P3 합계와 `common_product`·`device_or_mdm_setting`·`site_layout_or_training` 분류 합계가 변환 건수와 일치해야 한다. 수용한 P0/P1은 같은 개발 주기의 수정 전후를 동일 역할·참여자·시나리오로 각각 2회 이상 측정하고 `AFTER` 전건 성공, 중앙 완료 시간·화면 이동·도움 요청 비악화를 증명해야 한다. 게이트·역할·Android 전달/보안/단말 수명주기·UX 변환·rollback·최종 승인의 증거 목록에는 같은 실행 폴더 안에 실제 존재하는 상대경로만 넣는다. `windows_server_rehearsal` 판정은 Android·역할별 UX 실기를 제외하고 서버/WPF/HTTPS·망·시간·권한·장기 단절·디스크 부족·별도 PC 복구·rollback 게이트와 해당 0건 지표를 강제한다. 추가로 패키지 5개 원시 행의 hash/signer 불일치와 혼입이 0건이고, 13개 장애 주입이 모두 복구되며, 서버 복구·WPF 복구·rollback의 실측 RTO/RPO가 승인값 이내이고, rollback 뒤 6개 핵심 업무가 같은 `run_id`에서 PASS여야 한다.
 
 ```powershell
 py -3 scripts\manage-pilot-run.py verify --run-id PILOT-YYYYMMDD-HHMM-SITE-001 --evidence-root D:\FlowNotePilotEvidence
