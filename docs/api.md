@@ -544,6 +544,7 @@ WPF `AI 정답셋` 화면이 사용하는 API와 현장 표본 운영을 위해 
 | `POST` | `/api/v1/ai-search/evaluations` | `datasetVersionId`로 승인 snapshot 전체 평가. ad-hoc `cases`/`groundTruthCaseIds`와 혼용 금지 |
 | `GET` | `/api/v1/ai-search/evaluations` | 저장된 run 목록. `datasetVersionId` 필터 지원 |
 | `GET` | `/api/v1/ai-search/evaluations/{run_id}` | 사례별 실패 코드와 기대·실제·제외 원천 trace 조회. `compareToRunId` 비교 지원 |
+| `GET` | `/api/v1/ai-search/field-readiness/sample-plan` | 승인 dataset과 통과한 evaluation run에 고정된 24칸 표본, 기대·실제·제외 근거 trace 조회 |
 | `POST` | `/api/v1/ai-search/field-readiness/sample-reviews` | 같은 dataset/evaluation 표본의 독립 판정 또는 불일치 제3 합의 기록. WPF `24칸 독립 검토`가 판정 제출에 사용 |
 | `GET` | `/api/v1/ai-search/field-readiness/sample-reviews` | 판정 은닉, 불일치 case, 합의와 완료 상태 조회. WPF `24칸 독립 검토`가 현재 단계와 편집 범위 판단에 사용 |
 
