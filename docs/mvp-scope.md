@@ -1,6 +1,6 @@
 # FlowNote MVP 범위
 
-이 문서는 2026-07-27 현재 코드 기준이다. 구현되지 않은 기능은 “현재 제외 범위”, “후속 계층 착수 기준”, “후속 MVP 후보”에만 둔다.
+이 문서는 2026-07-28 현재 코드 기준이다. 구현되지 않은 기능은 “현재 제외 범위”, “후속 계층 착수 기준”, “후속 MVP 후보”에만 둔다.
 
 ## 현재 MVP 구현
 
@@ -31,7 +31,7 @@
 - Android 보안 본문 열람용 승인 단말·사용자·세션·현재 공개 버전 바인딩 1회 grant, 크기·SHA-256 검증, 내부 캐시 자동 정리와 화면 캡처 차단
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
 - WPF 로컬 저장 후 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장 큐와 서버 ID 매핑
-- WPF MSI 패키징 스크립트와 FastAPI 작업 스케줄러 등록/관리 스크립트
+- 같은 소스와 버전에서 framework-dependent와 self-contained WPF MSI를 함께 만드는 패키징 스크립트, .NET Desktop Runtime 설치 차단 안내와 FastAPI 작업 스케줄러 등록·검증/관리 스크립트
 
 Android 보안 뷰어의 승인 실단말 검증, 운영 배포용 서명/MDM/인증서, 현장별 단말 등록·비활성화 운영 절차, foreground service의 Doze·강제 중지/MDM 복구 실기, 채널/인수인계 UX 고도화는 아직 완료 범위가 아니다. 초기 알림 전달은 WPF 창 활성 polling과 Android 로그인 세션 foreground service의 사내망 HTTPS polling으로 구현되어 있다.
 
@@ -45,7 +45,7 @@ MVP의 성공 기준은 AI가 답변하는 것이 아니라 현장 문서와 현
 
 - 운영 provider client를 통한 실제 외부 AI 검색/요약, 작업 조언과 자동 의사결정
 - MES/ERP 자동 수신 어댑터
-- 현장별 설치 검증, 코드 서명, self-contained 설치 패키지
+- 현장별 설치·코드 서명 실기 검증과 운영 승인
 - 클라우드 배포
 - 일반 브라우저 사용자 화면
 - 개인 메신저 수집
