@@ -23,7 +23,7 @@ except ModuleNotFoundError:
 
 
 RUN_ID_PATTERN = re.compile(r"^PILOT-\d{8}-\d{4}-[A-Z0-9_-]+-\d{3}$")
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 RUN_PROFILES = ("full_pilot", "windows_server_rehearsal")
 RESPONSIBILITY_AREAS = (
     "server",

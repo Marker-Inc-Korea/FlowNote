@@ -11,8 +11,10 @@ from typing import Any, Callable
 
 PACKAGE_ROLES = (
     "server_candidate",
-    "wpf_msi_candidate",
-    "wpf_exe_candidate",
+    "wpf_framework_msi_candidate",
+    "wpf_framework_exe_candidate",
+    "wpf_self_contained_msi_candidate",
+    "wpf_self_contained_exe_candidate",
     "server_previous",
     "wpf_msi_previous",
 )
@@ -24,10 +26,21 @@ INSTALL_CASES = (
     "wpf_reinstall",
 )
 RUNTIME_CASES = (
-    "dotnet_desktop_present",
+    "framework_dotnet_desktop_present",
+    "framework_dotnet_desktop_absent",
+    "self_contained_dotnet_desktop_present",
+    "self_contained_dotnet_desktop_absent",
+    "framework_webview2_present",
+    "framework_webview2_absent",
+    "self_contained_webview2_present",
+    "self_contained_webview2_absent",
+)
+STARTUP_UX_ROLES = ("admin", "general_user")
+STARTUP_UX_SCENARIOS = (
     "dotnet_desktop_absent",
-    "webview2_present",
     "webview2_absent",
+    "invalid_server_address",
+    "certificate_validation_error",
 )
 FAULT_CASES = (
     "server_task_scheduler",
@@ -99,6 +112,15 @@ def templates(run_id: str) -> dict[str, str]:
     runtime_rows = "".join(
         f"{run_id},{case},,,,,NOT_RUN,\n" for case in RUNTIME_CASES
     )
+    startup_ux_rows = "".join(
+        f"{run_id},{role},{attempt},{scenario},,,,,,,NOT_RUN,\n"
+        for role, attempt, scenario in (
+            ("admin", 1, "dotnet_desktop_absent"),
+            ("admin", 2, "certificate_validation_error"),
+            ("general_user", 1, "webview2_absent"),
+            ("general_user", 2, "invalid_server_address"),
+        )
+    )
     fault_rows = "".join(
         f"{run_id},{case},,,,,,,,NOT_RUN,\n" for case in FAULT_CASES
     )
@@ -128,6 +150,12 @@ def templates(run_id: str) -> dict[str, str]:
             "pilot_run_id,case_id,machine_id,dependency_mode,detected_version,"
             "expected_behavior_observed,result,evidence\n"
             + runtime_rows
+        ),
+        "install/windows-startup-ux.csv": (
+            "pilot_run_id,role,attempt_no,scenario_id,participant_id,"
+            "missing_item_identified,preserved_data_identified,owner_identified,"
+            "next_action_selected,selected_action,result,evidence\n"
+            + startup_ux_rows
         ),
         "scenario-results/windows-server-fault-injections.csv": (
             "pilot_run_id,case_id,machine_id,failure_detected,"
@@ -388,6 +416,7 @@ def _runtime_failures(
     )
     for case_id, row in required.items():
         version = (row.get("detected_version") or "").strip()
+        dependency_mode = (row.get("dependency_mode") or "").strip()
         if case_id.endswith("_absent") and version != "NOT_INSTALLED":
             failures.append(
                 f"Windows 의존 runtime matrix {case_id}는 NOT_INSTALLED여야 합니다."
@@ -396,6 +425,78 @@ def _runtime_failures(
             failures.append(
                 f"Windows 의존 runtime matrix {case_id}의 설치 버전이 없습니다."
             )
+        if case_id.startswith("framework_") and dependency_mode != "framework-dependent":
+            failures.append(
+                f"Windows 의존 runtime matrix {case_id}는 framework-dependent MSI 결과여야 합니다."
+            )
+        if (
+            case_id.startswith("self_contained_")
+            and dependency_mode != "self-contained"
+        ):
+            failures.append(
+                f"Windows 의존 runtime matrix {case_id}는 self-contained MSI 결과여야 합니다."
+            )
+    return failures
+
+
+def _startup_ux_failures(
+    run_root: Path,
+    run_id: str,
+    evidence_failures: Callable[[Path, Any, str], list[str]],
+) -> list[str]:
+    rows, failures = _read_rows(
+        run_root, "install/windows-startup-ux.csv", "Windows 시작 실패 UX"
+    )
+    required_keys = {
+        (role, str(attempt))
+        for role in STARTUP_UX_ROLES
+        for attempt in (1, 2)
+    }
+    rows_by_key: dict[tuple[str, str], list[dict[str, str]]] = {
+        key: [] for key in required_keys
+    }
+    for row in rows:
+        key = (
+            (row.get("role") or "").strip(),
+            (row.get("attempt_no") or "").strip(),
+        )
+        if key in rows_by_key:
+            rows_by_key[key].append(row)
+
+    scenarios: set[str] = set()
+    for key, matching in rows_by_key.items():
+        role, attempt = key
+        label = f"Windows 시작 실패 UX {role} {attempt}회"
+        if len(matching) != 1:
+            failures.append(f"{label} 행은 정확히 1개여야 합니다.")
+            continue
+        row = matching[0]
+        failures.extend(
+            _base_row_failures(run_root, run_id, row, label, evidence_failures)
+        )
+        scenario = (row.get("scenario_id") or "").strip()
+        if scenario not in STARTUP_UX_SCENARIOS:
+            failures.append(f"{label}의 scenario_id가 승인 matrix에 없습니다.")
+        else:
+            scenarios.add(scenario)
+        for field in ("participant_id", "selected_action"):
+            if not _nonempty(row.get(field)):
+                failures.append(f"{label}의 {field} 값이 없습니다.")
+        for field in (
+            "missing_item_identified",
+            "preserved_data_identified",
+            "owner_identified",
+            "next_action_selected",
+        ):
+            if _boolean(row.get(field)) is not True:
+                failures.append(f"{label}의 {field}가 TRUE가 아닙니다.")
+
+    missing_scenarios = set(STARTUP_UX_SCENARIOS) - scenarios
+    if missing_scenarios:
+        failures.append(
+            "Windows 시작 실패 UX 4개 시나리오를 모두 확인하지 않았습니다: "
+            + ", ".join(sorted(missing_scenarios))
+        )
     return failures
 
 
@@ -463,7 +564,7 @@ def _promotion_failures(
     }
     candidate_roles = {
         "server": "server_candidate",
-        "wpf": "wpf_msi_candidate",
+        "wpf": "wpf_self_contained_msi_candidate",
     }
     backup_ids: set[str] = set()
     previous = authorization.get("previous_approved_packages", {})
@@ -606,6 +707,7 @@ def verification_failures(
     )
     failures.extend(_install_failures(run_root, run_id, evidence_failures))
     failures.extend(_runtime_failures(run_root, run_id, evidence_failures))
+    failures.extend(_startup_ux_failures(run_root, run_id, evidence_failures))
     failures.extend(
         _simple_case_failures(
             run_root,

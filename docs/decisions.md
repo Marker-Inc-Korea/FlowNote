@@ -269,7 +269,7 @@
 
 ## 2026-07-06. WPF MSI 런타임과 서명 기준
 
-- `package-wpf-msi.ps1`의 기본 산출물은 framework-dependent MSI다. 설치 대상 PC에 대상 버전의 `.NET Windows Desktop Runtime`이 보장되지 않으면 `-SelfContained` MSI를 별도 생성한다.
+- 당시 `package-wpf-msi.ps1`의 기본 산출물은 framework-dependent MSI였고 Runtime을 보장할 수 없으면 `-SelfContained`를 별도 생성했다. 이 생성 방식은 2026-07-28 결정으로 대체되어 현재 기본 명령은 두 변형을 함께 만든다.
 - self-contained MSI는 .NET 런타임 파일을 포함하지만 WebView2 Evergreen Runtime은 포함하지 않는다. WebView2 Runtime은 설치 전 별도 점검과 설치 절차로 관리한다.
 - MSI 파일 세트에는 WPF 실행 파일, `.deps.json`, `.runtimeconfig.json`, 앱 DLL, 의존 DLL, 네이티브 DLL만 포함한다. 로컬 SQLite, WAL/SHM, `Data`/`Files`, 테스트 산출물, 고객 파일 패턴이 publish 파일 세트에 있으면 패키징을 실패시킨다.
 - framework-dependent와 self-contained MSI를 번갈아 만들 때 publish 폴더의 이전 파일이 섞이지 않도록 `package-wpf-msi.ps1`는 publish 폴더를 비운 뒤 새로 생성한다.
@@ -501,3 +501,15 @@
 - `red` 신호 또는 `conflict_flag = true`인 FieldComment는 독립 검토 대상으로 고정한다. 분석자와 같은 사용자의 검토·선정·제외·보관 결정을 서버가 거부한다.
 - WPF와 Android는 공개 오류 코드로 권한 없음, 단말 비승인, 다른 현장 범위, 원천 없음·비공개를 구분한다. 서버 오류 원문, token, 내부 경로, stack trace는 화면에 표시하지 않는다.
 - 여러 고객·현장을 한 서버에서 지원하는 변경은 전 엔티티 scope 모델, 기존 데이터 백필, 검색·감사 격리, 무손실 migration과 rollback 도구를 포함한 별도 결정 없이는 시작하지 않는다.
+
+## 2026-07-28. Windows 서버·WPF 설치 생명주기와 시작 실패 UX
+
+- FastAPI 서버는 `C:\FlowNote\Server`에 설치하고 `SYSTEM` 최고 권한과 `AtStartup` 트리거를 쓰는 `\FlowNote\FlowNoteApi` 작업 스케줄러로 자동 시작한다. Windows 서비스 래퍼나 사용자 로그인 시작 프로그램은 현재 배포 기준으로 채택하지 않는다.
+- WPF 실행 파일은 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`, 로컬 SQLite와 `Files`는 `C:\FlowNote\LocalData`에 둔다. MSI 업그레이드·제거·재설치는 데이터 폴더를 소유하거나 삭제하지 않는다.
+- 서명 후보 생성 명령은 같은 소스와 버전으로 framework-dependent와 self-contained MSI를 모두 만든다. publish 폴더, 파일 목록과 EXE 서명 대상도 변형별로 분리해 반대 변형의 런타임 파일이나 EXE를 재사용하지 않는다.
+- 고객 현장 PC 기본 후보는 self-contained MSI다. .NET Windows Desktop Runtime 10 x64의 설치·업데이트·증거 수집을 중앙 관리하는 PC만 framework-dependent MSI를 사용할 수 있다. framework-dependent MSI는 필요한 Desktop Runtime이 없으면 설치를 중단한다.
+- WebView2 Evergreen Runtime은 두 MSI의 공통 외부 전제조건이다. 포함된 WebView2 SDK DLL과 `WebView2Loader.dll`을 Evergreen Runtime 자체로 간주하지 않는다.
+- .NET Desktop Runtime, WebView2, 잘못된 서버 주소와 인증서 오류 안내는 오류 코드나 예외 원문 대신 `누락 항목`, `보존된 데이터`, `담당자`, `다음 조치`를 한글로 표시한다. 인증서 오류는 HTTP 또는 로컬 계정으로 강등하지 않는다.
+- framework-dependent와 self-contained EXE·MSI는 모두 조직 소유 코드 서명 인증서, SHA-256 digest와 SHA-256 RFC 3161 timestamp로 서명한다. 네 파일의 hash, signer, chain, timestamp가 승인값과 일치하지 않으면 후보를 배포하지 않는다.
+- 설치 생명주기, 서버 재부팅 뒤 health/login, 두 MSI의 Runtime·WebView2 matrix, 인증서·주소 오류와 사용자 판독 결과는 schema version 7의 하나의 `windows_server_rehearsal` run에 기록한다. 관리자와 일반 사용자는 각각 2회씩 화면만 보고 누락 항목·보존 데이터·담당자·다음 조치를 식별해야 한다.
+- 실제 승인 제품 버전, 코드 서명 인증서 지문, timestamp URL, 고객 PC와 증거 저장소는 제품 결정이 아니라 현장 승인값이다. 이 값과 Windows 실기 증거가 제공되지 않은 상태에서는 운영 배포를 PASS로 선언하지 않는다.

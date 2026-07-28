@@ -3,6 +3,8 @@ param(
     [string]$Runtime = "win-x64",
     [string]$ProductVersion = "0.1.0",
     [string]$OutputRoot = "artifacts\wpf-msi",
+    [ValidateSet("Both", "FrameworkDependent", "SelfContained")]
+    [string]$PackageMode = "Both",
     [switch]$SelfContained,
     [switch]$EnableWindowsTargeting,
     [switch]$Sign,
@@ -15,12 +17,37 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+if ($SelfContained.IsPresent) {
+    $PackageMode = "SelfContained"
+}
+
+if ($PackageMode -eq "Both") {
+    $commonParameters = @{
+        Configuration = $Configuration
+        Runtime = $Runtime
+        ProductVersion = $ProductVersion
+        OutputRoot = $OutputRoot
+        EnableWindowsTargeting = $EnableWindowsTargeting.IsPresent
+        Sign = $Sign.IsPresent
+        SignToolPath = $SignToolPath
+        SigningCertificateThumbprint = $SigningCertificateThumbprint
+        SigningCertificateSubjectName = $SigningCertificateSubjectName
+        TimestampUrl = $TimestampUrl
+    }
+    & $PSCommandPath @commonParameters -PackageMode FrameworkDependent
+    & $PSCommandPath @commonParameters -PackageMode SelfContained
+    Write-Host "Created framework-dependent and self-contained MSI candidates."
+    return
+}
+
+$isSelfContained = $PackageMode -eq "SelfContained"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $projectPath = Join-Path $repoRoot "apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj"
 $outputRootPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
-$publishPath = Join-Path $outputRootPath "publish\FlowNote.Windows.App"
-$wixPath = Join-Path $outputRootPath "FlowNote.Windows.App.wxs"
-$packageSuffix = if ($SelfContained.IsPresent) { "$ProductVersion-$Runtime-self-contained" } else { "$ProductVersion-$Runtime" }
+$modeName = if ($isSelfContained) { "self-contained" } else { "framework-dependent" }
+$publishPath = Join-Path $outputRootPath "publish\FlowNote.Windows.App-$modeName"
+$wixPath = Join-Path $outputRootPath "FlowNote.Windows.App-$modeName.wxs"
+$packageSuffix = if ($isSelfContained) { "$ProductVersion-$Runtime-self-contained" } else { "$ProductVersion-$Runtime" }
 $msiPath = Join-Path $outputRootPath "FlowNote.Windows.App-$packageSuffix.msi"
 $fileManifestPath = Join-Path $outputRootPath "FlowNote.Windows.App-$packageSuffix.files.txt"
 $upgradeCode = "8F1C478A-8D5F-48B9-8B6D-693313E3125C"
@@ -35,7 +62,7 @@ if (Test-Path -LiteralPath $publishPath) {
 
 New-Item -ItemType Directory -Force $publishPath | Out-Null
 
-$selfContainedValue = if ($SelfContained.IsPresent) { "true" } else { "false" }
+$selfContainedValue = if ($isSelfContained) { "true" } else { "false" }
 $publishArguments = @(
     "publish",
     $projectPath,
@@ -274,11 +301,36 @@ foreach ($file in $publishedFiles) {
 
 $componentXml = [string]::Join([Environment]::NewLine, $components)
 $componentRefXml = [string]::Join([Environment]::NewLine, $componentRefs)
+$wixNamespace = if ($isSelfContained) {
+    '<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">'
+}
+else {
+    '<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">'
+}
+$runtimePlatform = switch -Regex ($Runtime) {
+    "win-x64$" { "x64"; break }
+    "win-x86$" { "x86"; break }
+    "win-arm64$" { "arm64"; break }
+    default { "" }
+}
+if (-not $isSelfContained -and [string]::IsNullOrWhiteSpace($runtimePlatform)) {
+    throw "Framework-dependent MSI runtime check does not support Runtime '$Runtime'. Use win-x64, win-x86, or win-arm64."
+}
+$runtimeCheckXml = if ($isSelfContained) {
+    ""
+}
+else {
+@"
+    <netfx:DotNetCompatibilityCheck Property="FLOWNOTE_DOTNET_DESKTOP_CHECK" RuntimeType="desktop" Platform="$runtimePlatform" Version="10.0.0" RollForward="latestMinor" />
+    <Launch Condition="Installed OR FLOWNOTE_DOTNET_DESKTOP_CHECK = &quot;0&quot;" Message="FlowNote를 설치할 수 없습니다.&#xA;누락 항목: .NET Windows Desktop Runtime 10 ($runtimePlatform)&#xA;보존된 데이터: 기존 로컬 DB와 고객 파일은 변경하거나 삭제하지 않았습니다.&#xA;담당자: 현장 관리자 또는 Windows 설치 담당자&#xA;다음 조치: 승인된 .NET Windows Desktop Runtime 10을 설치하거나 self-contained MSI를 선택한 뒤 다시 설치하세요." />
+"@
+}
 $wixContent = @"
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+$wixNamespace
   <Package Name="FlowNote Windows Client" Manufacturer="FlowNote" Version="$ProductVersion" UpgradeCode="$upgradeCode" Scope="perMachine">
     <MajorUpgrade DowngradeErrorMessage="더 최신 FlowNote Windows 클라이언트가 설치되어 있습니다. 승인된 rollback 절차 없이 이전 버전을 설치할 수 없습니다." />
     <MediaTemplate EmbedCab="yes" />
+$runtimeCheckXml
 
     <StandardDirectory Id="ProgramFilesFolder">
       <Directory Id="INSTALLFOLDER" Name="FlowNote">
@@ -318,7 +370,11 @@ $componentXml
 
 Set-Content -LiteralPath $wixPath -Value $wixContent -Encoding UTF8
 
-wix build $wixPath -o $msiPath
+$wixBuildArguments = @("build", $wixPath, "-o", $msiPath)
+if (-not $isSelfContained) {
+    $wixBuildArguments += @("-ext", "WixToolset.Netfx.wixext")
+}
+wix @wixBuildArguments
 if ($LASTEXITCODE -ne 0) {
     throw "WiX build failed with exit code $LASTEXITCODE."
 }
