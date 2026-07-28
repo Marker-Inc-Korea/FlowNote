@@ -112,8 +112,8 @@
 ## 일괄 처리와 보고서 예외 UX
 
 - 사전검증은 요청 ID와 결과 ID의 집합·행 수를 먼저 확인한다. 실행은 `requested_count = items.count = success_count + failure_count`와 결과 행별 성공 판정을 모두 확인한 뒤 성공 행만 로컬에 적용한다.
-- stale revision과 권한 변경은 실패 행에 코드·원인·복구 안내를 표시한다. 실패 행 때문에 성공 행을 되돌리거나 목록에서 숨기지 않는다.
-- 실행 성공 뒤 응답이 유실되면 WPF의 `마지막 일괄 결과 복구`가 원래 mutation key를 그대로 재전송한다. 새 key로 전체를 반복하지 않으며 서버 receipt의 최초 응답 snapshot으로 결과를 복구한다.
+- stale revision과 권한 변경은 실패 행에 코드·원인·복구 안내를 표시한다. 화면에는 원천 보존 여부와 사용자가 바로 할 다음 행동을 한글로 먼저 표시하며 실패 행 때문에 성공 행을 되돌리거나 목록에서 숨기지 않는다.
+- 실행 성공 뒤 응답이 유실되면 WPF의 `일괄 결과 다시 확인`이 원래 mutation key를 그대로 재전송한다. 새 key로 전체를 반복하지 않으며 서버 receipt의 최초 응답 snapshot으로 결과를 복구한다.
 - 보고서 초안 생성은 선택한 source의 서버 ID/version/revision/hash를 고정하고 `고정 근거 확인` 표에 적격 여부를 표시한다. source type이 2종 미만이거나 WPF에서 검증할 수 없는 유형은 저장하지 않는다.
 - 저장 직전 같은 source를 다시 조회한다. 서버에 연결할 수 없거나 상태, 공개 version, 선정 revision, 작업순서 변경 기록 또는 hash가 초안 시점과 다르면 로컬 보고서 파일과 동기화 큐를 만들기 전에 중단하고 새 초안을 요구한다.
 
@@ -121,4 +121,4 @@
 
 `role-metrics.csv`에는 성공 여부와 소요 시간 외에 재시도, 도움 요청, 화면 이동 수를 기록한다. `role-observations.csv`에는 장갑, 거치 위치, 한 손 사용, 사진 촬영, 짧은 메모, 신호등식 입력, 네트워크 상태를 각각 명시한다. 화면 녹화 또는 시간 기록은 같은 `run_id` 아래 상대경로로 연결한다.
 
-모든 관찰은 `development-items.csv`의 항목 하나와 1:1로 연결한다. 결정은 `ACCEPTED(수용)`, `REJECTED(불수용)`, `REVIEW(검토)` 중 하나이며 결정 근거, P0~P3, 담당, 기한, 측정 가능한 완료 기준을 반드시 남긴다. `common_product`는 현장과 무관하게 제품에 반영할 요구, `device_or_mdm_setting`은 단말·MDM 설정, `site_layout_or_training`은 거치·동선·교육을 포함한 현장별 선호다.
+모든 관찰은 `development-items.csv`의 항목 하나와 1:1로 연결한다. 결정은 `ACCEPTED(수용)`, `REJECTED(불수용)`, `REVIEW(검토)` 중 하나이며 결정 근거, P0~P3, 담당, 기한, 측정 가능한 완료 기준을 반드시 남긴다. `common_product`는 현장과 무관하게 제품에 반영할 요구, `configuration_or_training`은 단말 설정과 교육, `site_layout`은 거치 위치와 현장 동선에 관한 요구다.

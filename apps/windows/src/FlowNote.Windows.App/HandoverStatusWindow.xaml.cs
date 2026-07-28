@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using FlowNote.Windows.Core.ServerApi;
@@ -129,11 +130,13 @@ public partial class HandoverStatusWindow : Window
             ?? $"Windows 확인 현황에서 후속 FieldComment를 작성했습니다. 제목: {handover.Title}";
         try
         {
-            var fieldComment = await channelClient!.CreateHandoverFollowUpFieldCommentAsync(
+            var result = await channelClient!.CreateHandoverFollowUpWithStatusAsync(
                 handover,
                 content,
                 currentUserId);
-            StatusTextBlock.Text = $"후속 FieldComment를 만들었습니다. 원천 인수인계: {handover.HandoverId}, FieldComment: {fieldComment.CommentId}";
+            StatusTextBlock.Text = result.ChannelMessagePublished
+                ? "후속 현장 코멘트와 채널 알림을 저장했습니다. 원천 인수인계와 처리 기록은 서버에 보존됩니다. 다음: 코멘트 검토에서 후속 조치를 확인하세요."
+                : "후속 현장 코멘트는 저장했지만 채널 알림은 보내지 못했습니다. 원천 인수인계와 코멘트는 서버에 보존됩니다. 다음: 같은 내용으로 다시 저장해 알림만 복구하세요. 코멘트는 중복 생성되지 않습니다.";
         }
         catch (Exception exception)
         {
@@ -182,9 +185,16 @@ public partial class HandoverStatusWindow : Window
 
     private static string BuildServerFailureMessage(Exception exception)
     {
-        var prefix = exception is FlowNoteServerAuthenticationException
-            ? "서버 인증이 만료되었습니다."
-            : "서버 인수인계 확인 현황을 처리하지 못했습니다.";
-        return $"{prefix} 로컬 데이터와 동기화 큐는 삭제되지 않습니다. {exception.Message}";
+        return exception switch
+        {
+            FlowNoteServerAuthenticationException =>
+                "로그인이 만료되어 작업을 확인하지 못했습니다. 기존 인수인계와 수신 확인 기록은 삭제되지 않습니다. 다음: 다시 로그인한 뒤 같은 작업을 다시 실행하세요.",
+            FlowNoteServerAccessException =>
+                "현재 계정에는 이 작업 권한이 없습니다. 기존 인수인계와 수신 확인 기록은 삭제되지 않습니다. 다음: 현장 관리자에게 로그인 ID와 필요한 업무를 전달하세요.",
+            HttpRequestException or TaskCanceledException =>
+                "서버 연결이 끊겨 작업 결과를 확인하지 못했습니다. 기존 인수인계와 수신 확인 기록은 삭제되지 않습니다. 다음: 네트워크를 확인한 뒤 새로고침하세요.",
+            _ =>
+                "인수인계 작업을 완료하지 못했습니다. 기존 인수인계와 수신 확인 기록은 삭제되지 않습니다. 다음: 목록을 새로고침한 뒤 다시 시도하세요."
+        };
     }
 }

@@ -332,6 +332,12 @@ public sealed record ServerHandoverResponse
     }
 }
 
+public sealed record ServerHandoverFollowUpResult(
+    ServerFieldCommentResponse FieldComment,
+    bool ChannelMessagePublished,
+    string OperationKey,
+    string? ChannelMessageId);
+
 public static class ChannelLabelFormatter
 {
     public static string FormatChannelType(string? value) => value switch

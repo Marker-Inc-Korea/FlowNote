@@ -85,7 +85,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/notification-channels/{channel_id}/members` | Add or reactivate channel member |
 | GET | `/api/v1/notification-channels/{channel_id}/members` | Channel member list |
 | PATCH | `/api/v1/notification-channels/{channel_id}/members/{member_id}` | Change member role or status |
-| POST | `/api/v1/notification-channels/{channel_id}/messages` | Create channel message |
+| POST | `/api/v1/notification-channels/{channel_id}/messages` | Create channel message; a repeated `FIELD_COMMENT_EVENT` for the same channel and FieldComment returns the existing message |
 | GET | `/api/v1/notification-channels/{channel_id}/messages` | Channel message list |
 | GET | `/api/v1/notifications` | Current user notification list; `X-FlowNote-Notification-Cursor` server high-water header |
 | PATCH | `/api/v1/notifications/{message_id}/read` | Mark channel message as read |
@@ -220,7 +220,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-07-28, FastAPI passes 154 unique node IDs, WPF Core passes 71 tests, and Android passes 16 unit tests. The `scripts/verify-preserved-tests.ps1` guard now expects the same 154/71/16 counts, and the WPF Core collection was matched against the TRX `total/passed=71/71` result. Future count changes must be justified by test changes and matched against FastAPI collection/unique node IDs, pytest JUnit, WPF TRX, and Android JUnit. Ruff passed for `app` and `tests`, and the WPF app built without warnings or errors on the macOS ARM64 host. This is not an integrated baseline because the shared-DB smoke and all checks were not run twice under one clean source commit on Windows x64.
+As of 2026-07-28, FastAPI passes 154 unique node IDs, WPF Core passes 74 tests on macOS, and Android passes 16 unit tests. The `scripts/verify-preserved-tests.ps1` guard now expects the same 154/74/16 counts. The WPF Core collection and TRX `total/passed=74/74` result still need to be matched on Windows x64. Future count changes must be justified by test changes and matched against FastAPI collection/unique node IDs, pytest JUnit, WPF TRX, and Android JUnit. Ruff passed for `app` and `tests`, and the WPF app built without warnings or errors on the macOS ARM64 host. This is not an integrated baseline because the shared-DB smoke and all checks were not run twice under one clean source commit on Windows x64.
 
 The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no management API for that sensitive-data policy. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. Query and retention audit operations are restricted to the configured customer/site scope. The server lifespan runs expired-query retention on the configured interval, while `system-admin` can run scoped bulk retention, expire one query, or place and release a reasoned legal hold. An active hold blocks all three expiry paths. WPF mutations send a stable `operationKey` and the latest detail `stateTag`; duplicate/lost-response retries return the original result, while stale, already-expired, already-released, and concurrent operations return `409`. Legal-hold rows and linked audit history are never deleted by release or expiry.
 

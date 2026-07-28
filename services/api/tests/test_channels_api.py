@@ -136,6 +136,19 @@ def test_channel_members_messages_notifications_and_read_status() -> None:
         message = message_response.json()
         assert message["message_type"] == "FIELD_COMMENT_EVENT"
         assert message["source_type"] == "FIELD_COMMENT"
+        retry_message_response = client.post(
+            f"/api/v1/notification-channels/{channel_id}/messages",
+            headers=lead_headers,
+            json={
+                "messageType": "FIELD_COMMENT_EVENT",
+                "sourceType": "FIELD_COMMENT",
+                "sourceId": f"comment-{suffix}",
+                "title": "응답 유실 뒤 같은 코멘트 알림 재전송",
+                "body": "중복 메시지를 만들지 않아야 합니다.",
+            },
+        )
+        assert retry_message_response.status_code == 201, retry_message_response.text
+        assert retry_message_response.json()["message_id"] == message["message_id"]
 
         list_response = client.get(
             f"/api/v1/notification-channels/{channel_id}/messages",
@@ -182,6 +195,15 @@ def test_channel_members_messages_notifications_and_read_status() -> None:
             assert saved_channel is not None
             assert saved_message is not None
             assert saved_message.source_id == f"comment-{suffix}"
+            same_source_messages = session.scalars(
+                select(ChannelMessage).where(
+                    ChannelMessage.channel_id == channel_id,
+                    ChannelMessage.message_type == "FIELD_COMMENT_EVENT",
+                    ChannelMessage.source_type == "FIELD_COMMENT",
+                    ChannelMessage.source_id == f"comment-{suffix}",
+                )
+            ).all()
+            assert len(same_source_messages) == 1
             assert saved_member is not None
             assert saved_member.last_read_message_id == message["message_id"]
 

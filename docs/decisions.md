@@ -72,7 +72,7 @@
 
 - 릴리스 기준선은 C#·Android Java compiler warning 허용 목록을 두지 않고 0건만 인정한다. WPF Core와 앱은 `TreatWarningsAsErrors=true`, Android Java compile은 `-Werror`, Gradle은 `--warning-mode=fail`로 실행한다.
 - `CS8604`는 SDK 차이에 따른 허용 경고가 아니라 nullable 역할 값을 non-null 생성자에 넘긴 코드 결함으로 분류한다. 역할이 없을 때 `string.Empty`로 정규화해 권한 검사가 fail-closed가 되도록 수정했으며, 같은 Windows x64 matrix에서 warning-as-error 빌드를 통과해야 종결한다.
-- `verification-summary.json`은 소스 커밋, FastAPI·WPF Core·Android unit 수집/실행 수, WPF·Android build, 공통 DB 전후 무결성, 오늘 문서와 과거 문서 version 증가, Git 전후 상태를 구조화해 남긴다. 2026-07-27에는 FastAPI 154건·WPF Core 71건·Android 16건을 수집했지만 표준 스크립트의 WPF Core 기대값은 67건이었다. 2026-07-28에 WPF Core 수집 목록과 TRX의 `total/passed=71/71`을 대조하고 기대값을 71건으로 갱신했다. Windows x64 무생략 실행 2회가 끝나기 전에는 통합 기준선으로 확정하지 않는다.
+- `verification-summary.json`은 소스 커밋, FastAPI·WPF Core·Android unit 수집/실행 수, WPF·Android build, 공통 DB 전후 무결성, 오늘 문서와 과거 문서 version 증가, Git 전후 상태를 구조화해 남긴다. 2026-07-27에는 FastAPI 154건·WPF Core 71건·Android 16건을 수집했지만 표준 스크립트의 WPF Core 기대값은 67건이었다. 2026-07-28에 WPF Core 수집 목록과 TRX의 `total/passed=71/71`을 대조하고 기대값을 71건으로 갱신했다. 이후 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가해 macOS에서 74/74를 확인하고 기대값을 74건으로 맞췄다. Windows 수집 목록과 TRX 대조를 포함한 x64 무생략 실행 2회가 끝나기 전에는 통합 기준선으로 확정하지 않는다.
 - 첫 무생략 `PASSED`는 기준선 후보로만 본다. 기존 증거를 보존한 채 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 최신 유효 기준선으로 확정한다.
 - SDK/compiler 차이로 새 경고가 나타나면 경고를 숨기거나 임시 허용하지 않는다. 실행별 `environment.json`과 원본 build log를 비교해 코드 결함인지 지원 matrix 차이인지 먼저 결정하고, matrix 변경은 새 결정 기록과 두 번의 무생략 실행으로 검증한다.
 
@@ -511,5 +511,13 @@
 - WebView2 Evergreen Runtime은 두 MSI의 공통 외부 전제조건이다. 포함된 WebView2 SDK DLL과 `WebView2Loader.dll`을 Evergreen Runtime 자체로 간주하지 않는다.
 - .NET Desktop Runtime, WebView2, 잘못된 서버 주소와 인증서 오류 안내는 오류 코드나 예외 원문 대신 `누락 항목`, `보존된 데이터`, `담당자`, `다음 조치`를 한글로 표시한다. 인증서 오류는 HTTP 또는 로컬 계정으로 강등하지 않는다.
 - framework-dependent와 self-contained EXE·MSI는 모두 조직 소유 코드 서명 인증서, SHA-256 digest와 SHA-256 RFC 3161 timestamp로 서명한다. 네 파일의 hash, signer, chain, timestamp가 승인값과 일치하지 않으면 후보를 배포하지 않는다.
-- 설치 생명주기, 서버 재부팅 뒤 health/login, 두 MSI의 Runtime·WebView2 matrix, 인증서·주소 오류와 사용자 판독 결과는 schema version 7의 하나의 `windows_server_rehearsal` run에 기록한다. 관리자와 일반 사용자는 각각 2회씩 화면만 보고 누락 항목·보존 데이터·담당자·다음 조치를 식별해야 한다.
+- 설치 생명주기, 서버 재부팅 뒤 health/login, 두 MSI의 Runtime·WebView2 matrix, 인증서·주소 오류와 사용자 판독 결과는 schema version 8의 하나의 `windows_server_rehearsal` run에 기록한다. 관리자와 일반 사용자는 각각 2회씩 화면만 보고 누락 항목·보존 데이터·담당자·다음 조치를 식별해야 한다.
 - 실제 승인 제품 버전, 코드 서명 인증서 지문, timestamp URL, 고객 PC와 증거 저장소는 제품 결정이 아니라 현장 승인값이다. 이 값과 Windows 실기 증거가 제공되지 않은 상태에서는 운영 배포를 PASS로 선언하지 않는다.
+
+## 2026-07-28. 역할별 핵심 업무 UX는 동일 조건 전후 실측으로 판정
+
+- 관리자·반장·조장·작업자는 문서 찾기·열람 후 FieldComment, 인수인계 후 후속 FieldComment, 검토 후 보고서 흐름을 각각 BEFORE 2회 이상 수행한다. 비관리자의 검토·보고서 흐름은 권한 부족 상태에서 원천 보존과 다음 행동을 이해하는지 측정한다.
+- BEFORE는 장갑 착용 여부, 한 손 사용 여부, 단말 거치 위치와 연결·단절 상태를 기록한다. 수용한 P0/P1의 AFTER는 같은 익명 참여자·시나리오·조건·시도 번호를 사용하고 BEFORE와 다른 하나의 UI build에서 2회 이상 수행한다.
+- AFTER는 전건 성공, 치명적 blocker·권한 우회·원천 유실·처리 결과 유실·중복 생성 0건이어야 한다. 원천 보존과 다음 행동을 사용자가 모두 이해해야 하며 중앙 완료 시간·화면 이동·도움 요청 중 하나라도 BEFORE보다 나빠지면 완료하지 않는다.
+- 현장 관찰은 `ACCEPTED`·`REJECTED`·`REVIEW`, P0~P3, `common_product`·`configuration_or_training`·`site_layout`으로 분류한다. 수용한 P0/P1은 `VERIFIED` 또는 `CLOSED` 상태와 실제 화면 증거가 없으면 종결하지 않는다.
+- 인수인계 후속 FieldComment는 같은 인수인계·작성자·내용에 안정된 요청 식별값을 사용한다. 원천 코멘트 저장 뒤 채널 알림이 실패하면 부분 성공으로 표시하고 재시도 시 기존 코멘트와 채널 메시지를 재사용한다.

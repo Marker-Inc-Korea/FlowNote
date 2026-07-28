@@ -66,7 +66,7 @@
 
 ## 다음 우선순위
 
-1. 현재 guard는 FastAPI 154건·WPF Core 71건·Android 16건이다. WPF Core는 67건 이후 추가된 테스트 4건의 이력, 고유 수집 목록 71건과 TRX `total/passed=71/71` 대조를 마쳤다. 남은 일은 Windows x64 표준 환경에서 누적 공통 DB 스모크 전후 무결성, Android 단위 테스트·debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, `PASSED` 실행 ID를 같은 clean 소스 커밋에서 2회 연속 남기는 것이다. 현재 최신 유효 기준선과 재현 실행은 모두 `대기`다.
+1. 현재 guard는 FastAPI 154건·WPF Core 74건·Android 16건이다. WPF Core 74건은 macOS에서 통과했으며 Windows 수집 목록과 TRX `total/passed=74/74` 대조가 남아 있다. Windows x64 표준 환경에서 누적 공통 DB 스모크 전후 무결성, Android 단위 테스트·debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, `PASSED` 실행 ID를 같은 clean 소스 커밋에서 2회 연속 남겨야 한다. 현재 최신 유효 기준선과 재현 실행은 모두 `대기`다.
 2. [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
 4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다. APK 설치·rollback은 승인 ADB serial, 동일 signer와 더 낮은 이전 versionCode를 확인하고, AAB는 관리형 스토어가 전달한 서명 APK를 별도로 검증한다. `full_pilot`의 전달·무결성·보안·단말 수명주기·패키지 승인 원시 CSV와 같은 `run_id`의 실제 증거가 모두 PASS일 때만 완료한다.

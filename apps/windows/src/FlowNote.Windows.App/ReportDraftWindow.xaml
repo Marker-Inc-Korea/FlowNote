@@ -55,7 +55,7 @@
                 <Button Grid.Column="3"
                         Height="32"
                         Margin="0,22,0,0"
-                        Content="문서 저장"
+                        Content="보고서 저장"
                         Click="SaveDocumentButton_Click" />
                 <DockPanel Grid.Row="1"
                            Grid.ColumnSpan="4"
@@ -68,7 +68,7 @@
                     <TextBlock x:Name="SourceSnapshotTextBlock"
                                Margin="0,5,12,0"
                                Foreground="{StaticResource SecondaryTextBrush}"
-                               Text="초안 생성 시 서버에서 원천 version/revision/hash를 고정합니다." />
+                               Text="초안을 만들 때 선택 근거의 버전·변경 번호·검증값을 서버에서 고정합니다." />
                 </DockPanel>
             </Grid>
         </Border>
