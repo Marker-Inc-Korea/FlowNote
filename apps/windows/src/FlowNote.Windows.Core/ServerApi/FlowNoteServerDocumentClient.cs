@@ -734,6 +734,41 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerAISearchEvaluationResponse>(response, cancellationToken);
     }
 
+    public async Task<ServerAIFieldReadinessSamplePlan> GetAIFieldReadinessSamplePlanAsync(
+        string datasetVersionId,
+        string evaluationRunId,
+        CancellationToken cancellationToken = default)
+    {
+        var path = "api/v1/ai-search/field-readiness/sample-plan"
+            + $"?datasetVersionId={Uri.EscapeDataString(datasetVersionId)}"
+            + $"&evaluationRunId={Uri.EscapeDataString(evaluationRunId)}";
+        using var response = await httpClient.GetAsync(path, cancellationToken);
+        return await ReadJsonResponse<ServerAIFieldReadinessSamplePlan>(response, cancellationToken);
+    }
+
+    public async Task<ServerAIFieldReadinessReviewListResponse> ListAIFieldReadinessSampleReviewsAsync(
+        string datasetVersionId,
+        string evaluationRunId,
+        CancellationToken cancellationToken = default)
+    {
+        var path = "api/v1/ai-search/field-readiness/sample-reviews"
+            + $"?datasetVersionId={Uri.EscapeDataString(datasetVersionId)}"
+            + $"&evaluationRunId={Uri.EscapeDataString(evaluationRunId)}";
+        using var response = await httpClient.GetAsync(path, cancellationToken);
+        return await ReadJsonResponse<ServerAIFieldReadinessReviewListResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerAIFieldReadinessReviewCreateResponse> CreateAIFieldReadinessSampleReviewAsync(
+        ServerAIFieldReadinessReviewCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            "api/v1/ai-search/field-readiness/sample-reviews",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerAIFieldReadinessReviewCreateResponse>(response, cancellationToken);
+    }
+
     private static void AddString(MultipartFormDataContent form, string name, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))

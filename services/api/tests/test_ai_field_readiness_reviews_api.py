@@ -216,16 +216,40 @@ def test_two_independent_sample_reviews_require_third_person_consensus() -> None
         first_id, first_headers = _add_user(client, "manager")
         second_id, second_headers = _add_user(client, "assistant-manager")
         third_id, third_headers = _add_user(client, "department-manager")
-        dataset_id, run_id, sample_keys = _seed_approved_dataset_and_stable_runs(
+        dataset_id, run_id, _ = _seed_approved_dataset_and_stable_runs(
             client, dataset_actors
         )
+        plan_response = client.get(
+            "/api/v1/ai-search/field-readiness/sample-plan",
+            headers=first_headers,
+            params={"datasetVersionId": dataset_id, "evaluationRunId": run_id},
+        )
+        assert plan_response.status_code == 200, plan_response.text
+        plan = plan_response.json()
+        assert len(plan["cases"]) == 24
+        assert len({
+            (item["category"], item["scenarioType"]) for item in plan["cases"]
+        }) == 24
+        sample_keys = [
+            (item["caseKey"], item["scenarioType"]) for item in plan["cases"]
+        ]
         base_payload = {
             "datasetVersionId": dataset_id,
             "evaluationRunId": run_id,
-            "samplingPlanReference": "field-review-plan://24-cell-stratified-v1",
+            "samplingPlanReference": plan["samplingPlanReference"],
             "reviewRole": "INDEPENDENT",
             "findings": _findings(sample_keys),
         }
+        changed_plan = {
+            **base_payload,
+            "samplingPlanReference": "field-review-plan://operator-selected",
+        }
+        changed_plan_response = client.post(
+            "/api/v1/ai-search/field-readiness/sample-reviews",
+            headers=first_headers,
+            json=changed_plan,
+        )
+        assert changed_plan_response.status_code == 409
         first = client.post(
             "/api/v1/ai-search/field-readiness/sample-reviews",
             headers=first_headers,
@@ -260,14 +284,16 @@ def test_two_independent_sample_reviews_require_third_person_consensus() -> None
         consensus_payload = {
             "datasetVersionId": dataset_id,
             "evaluationRunId": run_id,
-            "samplingPlanReference": "field-review-plan://24-cell-stratified-v1",
+            "samplingPlanReference": plan["samplingPlanReference"],
             "reviewRole": "CONSENSUS",
             "resolvesReviewIds": second_body["summary"]["independent_review_ids"],
             "findings": [{
                 "caseKey": sample_keys[0][0],
                 "citationTrace": "PASS",
                 "citationMeaning": "PASS",
-                "conflictDisclosure": "NOT_APPLICABLE",
+                "conflictDisclosure": (
+                    "PASS" if sample_keys[0][1] == "CONFLICT" else "NOT_APPLICABLE"
+                ),
                 "permissionBoundary": "PASS",
                 "note": "제3 검토에서 고정 근거 의미가 일치함을 합의함",
             }],

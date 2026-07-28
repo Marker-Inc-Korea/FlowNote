@@ -317,6 +317,7 @@ AI 검색 후보 API는 자동 조언이 아닌 “근거가 있는 검색과 �
 | POST | `/api/v1/ai-search/ground-truth-cases` | 범주·유형·근거·순위·시점과 데이터 분류/provenance를 첫 승인 상태로 저장. 등록 직후는 `PENDING_SECOND_APPROVAL`로 비활성 |
 | POST | `/api/v1/ai-search/ground-truth-cases/{ground_truth_case_id}/second-approval` | 첫 승인자와 다른 권한 사용자가 고정 근거와 접근권한을 다시 검증해 사례를 활성화 |
 | GET | `/api/v1/ai-search/ground-truth-cases` | 현재 scope의 질문 조회. 기본은 활성 승인 사례만 반환하고 운영용 `includePending=true`이면 미승인 사례도 포함한다. `lineScope`가 없으면 현장 공통 사례, 있으면 해당 라인 사례만 조회 |
+| GET | `/api/v1/ai-search/field-readiness/sample-plan` | 승인 dataset snapshot으로 24개 범주·유형 칸에서 1건씩 고정한 표본과 기대·실제·제외 trace 조회 |
 | POST | `/api/v1/ai-search/field-readiness/sample-reviews` | 동일 snapshot 2회 평가가 끝난 실제 현장 dataset의 24칸 독립 표본 판정 또는 제3 합의 기록 |
 | GET | `/api/v1/ai-search/field-readiness/sample-reviews` | dataset/run별 독립 검토자, 불일치 case, 합의와 완료 상태 조회 |
 | GET | `/api/v1/ai-search/readiness` | 고객·현장·선택적 라인·DB scope별 네 원천 수, 승인 질문 48건 및 범주×유형별 2건 부족분, 품질 임계값, provider 심사와 착수 가능 여부 조회 |
@@ -327,7 +328,9 @@ AI 검색 후보 API는 자동 조언이 아닌 “근거가 있는 검색과 �
 
 `GET /api/v1/ai-search/readiness`는 `field_readiness`와 `smoke_regression_readiness`를 별도 반환한다. provider 착수 가능은 고객 승인을 받은 `ANONYMOUS_FIELD` 계열에서 문서 10, 검토 가능한 FieldComment 100, 작업순서 이력 20, 보고서 source 10 후보와 독립 2인 승인 질문 48건을 요구한다. 여덟 범주와 `NORMAL`/`EXCLUSION`/`CONFLICT`의 24개 조합은 각각 2건 이상이어야 한다. 같은 scope의 실제 현장 승인 세트 전체 평가에서 candidate ID/content hash와 순위가 안정되고 top-k 포함률·인용 trace·인용 의미 일치율·상충 표시율이 모두 100%, 제외 근거 노출·권한 누출·존재하지 않는 인용이 각각 0건이어야 한다. 이어 24개 칸에서 1건씩 뽑은 같은 표본을 두 사람이 독립 검토해야 하며 불일치는 제3 합의 전까지 `PENDING_CONSENSUS`다. 스모크 48건과 `PILOT` 사례는 실제 익명 현장 48건으로 합산하지 않는다. 현재 provider/model의 기술·보안·법무·고객 심사와 필수 체크리스트까지 모두 승인되어야 `provider_start_ready=true`다. DB scope는 로컬 경로나 자격정보를 반환하지 않는 driver+hash 식별자다. `FLOWNOTE_AI_READINESS_GATE_ENABLED` 기본값은 `true`이며 미달 scope는 provider 호출 전에 `409 AI_READINESS_NOT_MET`로 차단한다. 이 판정은 외부 전송 승인이나 기능 플래그를 자동으로 켜지 않는다.
 
-표본 검토 API는 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`만 사용할 수 있다. 승인된 `FIELD_READINESS` dataset과 같은 snapshot에서 품질 기준을 모두 통과한 평가 run 2개가 있어야 검토를 등록한다. 독립 검토는 24개 칸에서 1건씩 고른 같은 case 목록과 같은 `samplingPlanReference`를 사용한다. 첫 검토자의 `findings`와 `decisionHash`는 두 번째 검토가 제출되기 전까지 다른 사용자에게 숨긴다. 두 판정이 다르면 앞선 검토자와 다른 제3 사용자가 불일치 case 전체만 `CONSENSUS`로 기록해야 완료된다. 이 기능은 현재 서버 API와 DB에만 있으며 WPF 표본 검토 화면과 클라이언트는 구현되어 있지 않다.
+표본 검토 API는 `admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`만 사용할 수 있다. 승인된 `FIELD_READINESS` dataset과 같은 snapshot에서 품질 기준을 모두 통과한 평가 run 2개가 있어야 계획을 조회하거나 검토를 등록한다. `sample-plan`은 dataset snapshot hash와 범주·유형별 case key 집합으로 24칸에서 1건씩 결정적으로 선택하고 `samplingPlanReference`, `sampleHash`, 질문, 기대·실제·제외 근거, ranking hash를 반환한다. 독립 검토 제출은 이 계획의 24건과 계획 참조가 정확히 같아야 한다. 첫 검토자의 `findings`와 `decisionHash`는 두 번째 검토가 제출되기 전까지 다른 사용자에게 숨긴다. 두 판정이 다르면 앞선 검토자와 다른 제3 사용자가 불일치 case 전체만 `CONSENSUS`로 기록해야 완료된다.
+
+WPF `AI 정답셋 > 24칸 독립 검토`는 위 세 API를 사용한다. 승인된 실제 현장 dataset과 그 dataset을 통과한 run을 함께 선택해야 버튼이 활성화된다. 첫 번째와 두 번째 검토 단계에서는 24건 전체를 편집하고 `PENDING_CONSENSUS`에서는 불일치 case만 편집한다. 오른쪽 trace 영역은 source/version/trace/content hash와 ranking hash를 표시한다. 첫 판정만 존재하면 비교 영역은 blind 안내만 표시하고 두 판정 제출 뒤에만 두 판단과 메모를 표시한다.
 
 WPF `AI 근거 후보 운영 점검` 화면은 `POST /api/v1/ai-search/candidates/rebuild`로 후보를 재생성한 뒤 `GET /api/v1/ai-search/quality`의 후보/제외/FieldComment 검토 지표와 `GET /api/v1/ai-search/readiness`의 서버 고객·현장·DB scope, 네 원천과 승인 질문 부족분, 범주/유형 누락, 운영 호출 차단 상태를 표시한다. 화면은 이 수치가 서버 DB 기준이며 WPF 공통 로컬 SQLite와 합산되지 않음을 명시한다. 후보 목록에서 운영자는 `trace_table`, `trace_id`, `trace_version_id`로 원문 문서 버전, FieldComment, 작업순서 이력, 보고서 source row로 이동해 근거를 확인하며 선택 후보의 추적값을 클립보드에 복사할 수 있다.
 

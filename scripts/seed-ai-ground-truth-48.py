@@ -638,43 +638,62 @@ def seed(database_url: str) -> dict[str, object]:
             )).all():
                 metadata = json.loads(item.metadata_json or "{}")
                 report_candidates.setdefault(metadata.get("report_id"), []).append(item)
+            for candidates in report_candidates.values():
+                candidates.sort(key=lambda item: item.candidate_id)
             as_of = now + timedelta(minutes=5)
             db_scope = database_scope(database_url)
             created = 0
+            positive_reference_index = 0
+            expected_source_type_counts = {
+                source_type: 0 for source_type in (
+                    "PUBLISHED_DOCUMENT_VERSION",
+                    "FIELD_COMMENT",
+                    "WORK_SEQUENCE_HISTORY",
+                    "REPORT_SOURCE",
+                )
+            }
             for category in QUESTION_CATEGORIES:
                 for scenario in SCENARIO_TYPES:
                     for variant in (1, 2):
                         case_key = f"{DATASET_VERSION}-{category.lower()}-{scenario.lower()}-{variant:02d}"
-                        if scenario == "NORMAL":
-                            comment = matrix_comments[(category, scenario, variant)]
-                            expected = [_candidate_reference(
-                                candidate_by_source[(comment.comment_id, comment.document_version_id)],
-                                "검토 상태·고정 문서 version·원천 hash를 가진 FieldComment 직접 근거",
-                            )]
-                            excluded = []
-                            question = f"{DATASET_VERSION}-{category.lower()}-normal-{variant}"
-                            outcome = "SUFFICIENT"
-                        elif scenario == "CONFLICT":
-                            comment = matrix_comments[(category, scenario, variant)]
-                            report = reports[(category, variant)]
-                            expected = [
+                        comment = matrix_comments[(category, scenario, variant)]
+                        report = reports[(category, variant)]
+                        source_pool = []
+                        if scenario != "EXCLUSION":
+                            source_pool = [
                                 _candidate_reference(
                                     candidate_by_source[positives[category][variant - 1]],
-                                    "현재 공개 문서 version을 상충 비교의 기준으로 고정함",
+                                    "현재 공개 문서 version과 content hash를 고정한 문서 근거",
                                 ),
                                 _candidate_reference(
                                     candidate_by_source[(comment.comment_id, comment.document_version_id)],
-                                    "선정 FieldComment의 상충 주장을 숨기지 않고 표시함",
+                                    "검토 상태와 원천 hash를 고정한 FieldComment 근거",
                                 ),
                                 _candidate_reference(
                                     candidate_by_source[(histories[(category, variant)].change_id, None)],
-                                    "작업순서 전이 이력을 상충 시점 근거로 고정함",
+                                    "작업순서 상태 전이 시점과 hash를 고정한 이력 근거",
                                 ),
-                                *[
-                                    _candidate_reference(item, "3종 원천을 묶은 보고서 source의 역추적 계약")
-                                    for item in report_candidates[report.report_id]
-                                ],
+                                _candidate_reference(
+                                    report_candidates[report.report_id][0],
+                                    "승인 보고서에서 원천 ID·version·hash로 역추적되는 보고서 근거",
+                                ),
                             ]
+                        if scenario == "NORMAL":
+                            expected = [source_pool[positive_reference_index % len(source_pool)]]
+                            positive_reference_index += 1
+                            excluded = []
+                            question = (
+                                f"{DATASET_VERSION}-{category.lower()}-normal-{variant}"
+                                if expected[0]["sourceType"] == "FIELD_COMMENT"
+                                else f"{DATASET_VERSION}-{category.lower()}-conflict"
+                            )
+                            outcome = "SUFFICIENT"
+                        elif scenario == "CONFLICT":
+                            expected = [
+                                source_pool[positive_reference_index % len(source_pool)],
+                                source_pool[(positive_reference_index + 1) % len(source_pool)],
+                            ]
+                            positive_reference_index += 2
                             excluded = []
                             question = f"{DATASET_VERSION}-{category.lower()}-conflict"
                             outcome = "SUFFICIENT"
@@ -686,6 +705,8 @@ def seed(database_url: str) -> dict[str, object]:
                             ]
                             question = f"{DATASET_VERSION}-{category.lower()}-exclusion-{variant}"
                             outcome = "INSUFFICIENT_EVIDENCE"
+                        for reference in expected:
+                            expected_source_type_counts[str(reference["sourceType"])] += 1
                         snapshot = {
                             "caseKey": case_key,
                             "customerScope": settings.ai_customer_scope,
@@ -772,6 +793,7 @@ def seed(database_url: str) -> dict[str, object]:
                 "fieldCommentStatusCounts": status_counts,
                 "reportCount": len(reports),
                 "reportSourceTypes": ["DOCUMENT", "FIELD_COMMENT", "WORK_SEQUENCE_HISTORY"],
+                "expectedSourceTypeCounts": expected_source_type_counts,
                 "domainTagAxes": sorted(DOMAIN_TAGS),
             }
 
