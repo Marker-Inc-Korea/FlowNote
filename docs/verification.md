@@ -11,18 +11,26 @@
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
 | FastAPI | 현재 코드·스크립트 guard 154건, Windows 무생략 실행 대기 | 동일 |
-| WPF Core | 현재 macOS 실행 74/74, 스크립트 guard 74건 | Windows 수집·TRX 무생략 실행 대기 |
+| WPF Core | 현재 macOS 실행 76/76, 스크립트 guard 74건으로 불일치 | guard 갱신과 Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 목표 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 목표 unit 20/20, failure/error/skipped 0, debug build PASS | 동일 |
 | SQLite | 목표 전후 `quick_check=ok`, FK 위반 0 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
-보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 이후 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건이 추가되어 현재 macOS 실행은 74/74로 통과했고 표준 스크립트 guard도 74건으로 맞췄다. Windows 수집 목록과 새 TRX의 `total/passed=74/74` 대조는 무생략 실행에서 확인해야 한다.
+보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 AI 현장 표본 검토 클라이언트 테스트 2건이 추가되어 현재 macOS 실행은 76/76이지만 guard는 74건에 머물러 있다. guard를 현재 코드에 맞추고 Windows 수집 목록과 새 TRX의 `total/passed=76/76`을 대조해야 한다.
 
-표준 스크립트는 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed 74건을 서로 대조한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 위치에 실패 단계와 중단 원인도 남긴다.
+표준 스크립트는 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed를 서로 대조한다. 현재 기대값은 74건이므로 76개를 수집하는 코드에서는 수집 단계에서 실패해야 한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 위치에 실패 단계와 중단 원인도 남긴다.
 
 현재 호스트는 macOS ARM64이고 PowerShell이 없어 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
+
+## 2026-07-28 작업 201 전체 Markdown 현재 코드 재대조
+
+Git이 추적하는 Markdown은 43개다. 작업 정책 원문 `AGENTS.md`와 현장 의견 원문 1개는 제품 코드 설명과 분리해 보존하고, 나머지 제품·구현 문서 41개를 FastAPI, Windows WPF, Android와 운영·검증 스크립트에 대조했다. 가상환경·빌드 캐시·`data/local`·`_workspace`의 Markdown은 생성 또는 보존 산출물이므로 수정하지 않았다.
+
+루트 `GET /`를 포함한 OpenAPI는 132개 method/path 조합이며 `services/api/README.md`의 132개 경로와 누락·초과 없이 일치한다. SQLAlchemy ORM은 60개 테이블이고 두 서버 스키마 문서에 모두 빠짐없이 반영되어 있다. 과거 요약 2곳에 남아 있던 “WPF 24칸 표본 검토 화면이 없다”는 설명은 현재 `AIFieldReadinessSampleReviewWindow`와 서버 클라이언트 구현에 맞춰 고쳤다. 현재 코드 기준을 2026-07-27로 표시한 문서는 2026-07-28로 갱신했다.
+
+FastAPI는 154개 node ID를 중복 없이 수집해 154건 모두 통과했고 Ruff도 통과했다. WPF Core는 76/76이 통과했으며 WPF 앱 교차 빌드는 경고 0개·오류 0개였다. Android 소스에는 `@Test` 20건이 있지만 현재 셸에서는 Java runtime을 찾지 못해 `testDebugUnitTest`, `assembleDebug`, `lintDebug`를 실행하지 못했다. 표준 스크립트의 WPF Core guard가 74건이라 현재 코드보다 2건 적은 사실을 모든 현재 기준 문서에 반영했다. 이번 요청은 문서 갱신이므로 스크립트는 수정하지 않았고 guard를 고치기 전까지 Windows x64 무생략 통합 기준선은 `대기`다. 테스트 DB, 로그와 빌드 산출물은 삭제하거나 초기화하지 않았다.
 
 ## 2026-07-28 작업 102 현재 API·검증 문서 재대조
 
