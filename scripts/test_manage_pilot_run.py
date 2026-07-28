@@ -398,7 +398,7 @@ class WindowsServerRehearsalVerificationTests(
                 comparison,
             ]
 
-    def test_prepare_creates_schema_seven_windows_server_templates(self) -> None:
+    def test_prepare_creates_schema_eight_windows_server_templates(self) -> None:
         run_id = "PILOT-20260722-1310-LOCALCHECK-002"
         with contextlib.redirect_stdout(io.StringIO()):
             result = manage_pilot_run.prepare(
@@ -414,7 +414,7 @@ class WindowsServerRehearsalVerificationTests(
             (self.evidence_root / run_id / "pilot-run.json").read_text(encoding="utf-8")
         )
         self.assertEqual(0, result)
-        self.assertEqual(7, record["schema_version"])
+        self.assertEqual(8, record["schema_version"])
         self.assertEqual("windows_server_rehearsal", record["profile"])
         self.assertTrue(
             (
@@ -609,6 +609,11 @@ class WindowsServerRehearsalVerificationTests(
                     "role",
                     "participant_id",
                     "scenario_id",
+                    "condition_id",
+                    "network",
+                    "gloves",
+                    "one_hand",
+                    "terminal_position",
                     "ui_phase",
                     "ui_build",
                     "success",
@@ -616,6 +621,12 @@ class WindowsServerRehearsalVerificationTests(
                     "click_count",
                     "screen_transitions",
                     "help_request_count",
+                    "source_preservation_understood",
+                    "next_action_understood",
+                    "source_loss_count",
+                    "receipt_loss_count",
+                    "duplicate_creation_count",
+                    "critical_blocker",
                     "screen_capture_evidence",
                     "notes",
                 ],

@@ -215,7 +215,8 @@
             <Button Width="150"
                     Height="34"
                     Margin="0,0,8,0"
-                    Content="후속 FieldComment"
+                    Content="후속 코멘트 저장"
+                    ToolTip="선택한 인수인계를 원천으로 보존하는 현장 코멘트를 저장합니다."
                     Click="FollowUpFieldCommentButton_Click" />
             <Button Width="84"
                     Height="34"

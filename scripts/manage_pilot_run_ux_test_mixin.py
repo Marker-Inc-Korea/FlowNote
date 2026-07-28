@@ -13,6 +13,73 @@ SPEC.loader.exec_module(manage_pilot_run)
 
 
 class ManagePilotRunUxTestMixin:
+    def test_before_baseline_requires_all_roles_three_flows_and_context_split(
+        self,
+    ) -> None:
+        rows = []
+        comparison_no = 0
+        for role, scenarios in manage_pilot_run.UX_ROLE_SCENARIOS.items():
+            for scenario in scenarios:
+                comparison_no += 1
+                for attempt_no in (1, 2):
+                    rows.append(
+                        {
+                            "comparison_id": f"BASELINE-{comparison_no:02}",
+                            "development_cycle_id": "",
+                            "attempt_no": attempt_no,
+                            "role": role,
+                            "participant_id": f"PARTICIPANT-{role}",
+                            "scenario_id": scenario,
+                            "condition_id": f"CONDITION-{attempt_no}",
+                            "network": "CONNECTED" if attempt_no == 1 else "DISCONNECTED",
+                            "gloves": "OFF" if attempt_no == 1 else "ON",
+                            "one_hand": "FALSE" if attempt_no == 1 else "TRUE",
+                            "terminal_position": "FIXED-STAND",
+                            "ui_phase": "BEFORE",
+                            "ui_build": "wpf-before",
+                            "success": "TRUE",
+                            "elapsed_seconds": 20,
+                            "click_count": 5,
+                            "screen_transitions": 4,
+                            "help_request_count": 0,
+                            "source_preservation_understood": "FALSE",
+                            "next_action_understood": "FALSE",
+                            "source_loss_count": 0,
+                            "receipt_loss_count": 0,
+                            "duplicate_creation_count": 0,
+                            "critical_blocker": "FALSE",
+                            "screen_capture_evidence": "proof.txt",
+                            "notes": "same approved baseline",
+                        }
+                    )
+        self.write_csv(
+            "scenario-results/role-ux-comparison.csv", list(rows[0]), rows
+        )
+
+        self.assertEqual(
+            [],
+            manage_pilot_run.ux_before_baseline_csv_failures(self.run_root),
+        )
+
+        rows = [
+            row
+            for row in rows
+            if not (
+                row["role"] == "team_member"
+                and row["scenario_id"] == "WPF-HANDOVER-FOLLOW-UP"
+            )
+        ]
+        self.write_csv(
+            "scenario-results/role-ux-comparison.csv", list(rows[0]), rows
+        )
+        failures = manage_pilot_run.ux_before_baseline_csv_failures(self.run_root)
+        self.assertTrue(
+            any(
+                "team_member의 WPF-HANDOVER-FOLLOW-UP BEFORE" in failure
+                for failure in failures
+            )
+        )
+
     def test_actionable_observations_convert_one_to_one_to_owned_items(self) -> None:
         observations_path = self.run_root / "observations" / "role-observations.csv"
         observations_path.parent.mkdir(parents=True)
@@ -104,7 +171,7 @@ class ManagePilotRunUxTestMixin:
                         "classification": (
                             "common_product"
                             if index == 0
-                            else "site_layout_or_training"
+                            else "site_layout"
                         ),
                         "title": "장갑 입력 개선" if index == 0 else "현장별 선호 보존",
                         "acceptance_criteria": "같은 조건에서 첫 시도 성공",
@@ -121,8 +188,8 @@ class ManagePilotRunUxTestMixin:
             "priorities": {"P0": 0, "P1": 0, "P2": 1, "P3": 3},
             "classifications": {
                 "common_product": 1,
-                "device_or_mdm_setting": 0,
-                "site_layout_or_training": 3,
+                "configuration_or_training": 0,
+                "site_layout": 3,
             },
         }
 
@@ -160,6 +227,11 @@ class ManagePilotRunUxTestMixin:
             "role",
             "participant_id",
             "scenario_id",
+            "condition_id",
+            "network",
+            "gloves",
+            "one_hand",
+            "terminal_position",
             "ui_phase",
             "ui_build",
             "success",
@@ -167,6 +239,12 @@ class ManagePilotRunUxTestMixin:
             "click_count",
             "screen_transitions",
             "help_request_count",
+            "source_preservation_understood",
+            "next_action_understood",
+            "source_loss_count",
+            "receipt_loss_count",
+            "duplicate_creation_count",
+            "critical_blocker",
             "screen_capture_evidence",
             "notes",
         ]
@@ -186,6 +264,11 @@ class ManagePilotRunUxTestMixin:
                             "role": "team_member",
                             "participant_id": "PARTICIPANT-01",
                             "scenario_id": "TEAM-MEMBER-HANDOVER",
+                            "condition_id": f"CONDITION-{attempt_no}",
+                            "network": "CONNECTED" if attempt_no == 1 else "DISCONNECTED",
+                            "gloves": "OFF" if attempt_no == 1 else "ON",
+                            "one_hand": "FALSE" if attempt_no == 1 else "TRUE",
+                            "terminal_position": "FIXED-STAND",
                             "ui_phase": phase,
                             "ui_build": build,
                             "success": "TRUE",
@@ -193,6 +276,12 @@ class ManagePilotRunUxTestMixin:
                             "click_count": 4,
                             "screen_transitions": transitions,
                             "help_request_count": help_count,
+                            "source_preservation_understood": "TRUE" if phase == "AFTER" else "FALSE",
+                            "next_action_understood": "TRUE" if phase == "AFTER" else "FALSE",
+                            "source_loss_count": 0,
+                            "receipt_loss_count": 0,
+                            "duplicate_creation_count": 0,
+                            "critical_blocker": "FALSE",
                             "screen_capture_evidence": "proof.txt",
                             "notes": "same approved scenario",
                         }
@@ -249,6 +338,11 @@ class ManagePilotRunUxTestMixin:
                         "role": "admin",
                         "participant_id": "PARTICIPANT-ADMIN-01",
                         "scenario_id": "ADMIN-REVIEW-REPORT",
+                        "condition_id": f"CONDITION-{attempt_no}",
+                        "network": "CONNECTED" if attempt_no == 1 else "DISCONNECTED",
+                        "gloves": "OFF" if attempt_no == 1 else "ON",
+                        "one_hand": "FALSE" if attempt_no == 1 else "TRUE",
+                        "terminal_position": "DESK-STAND",
                         "ui_phase": phase,
                         "ui_build": build,
                         "success": "TRUE",
@@ -256,6 +350,12 @@ class ManagePilotRunUxTestMixin:
                         "click_count": 4,
                         "screen_transitions": 3,
                         "help_request_count": 0,
+                        "source_preservation_understood": "TRUE" if phase == "AFTER" else "FALSE",
+                        "next_action_understood": "TRUE" if phase == "AFTER" else "FALSE",
+                        "source_loss_count": 0,
+                        "receipt_loss_count": 0,
+                        "duplicate_creation_count": 0,
+                        "critical_blocker": "FALSE",
                         "screen_capture_evidence": "proof.txt",
                         "notes": "same approved scenario",
                     }
@@ -274,3 +374,28 @@ class ManagePilotRunUxTestMixin:
                 for item in failures
             )
         )
+
+        for row in rows:
+            if row["ui_phase"] != "AFTER":
+                continue
+            row["elapsed_seconds"] = 9
+            row["source_preservation_understood"] = "FALSE"
+            row["next_action_understood"] = "FALSE"
+            row["source_loss_count"] = 1
+            row["receipt_loss_count"] = 1
+            row["duplicate_creation_count"] = 1
+            row["critical_blocker"] = "TRUE"
+        rows[-1]["terminal_position"] = "DIFFERENT-STAND"
+        self.write_csv(
+            "scenario-results/role-ux-comparison.csv", list(rows[0]), rows
+        )
+
+        failures = manage_pilot_run.ux_revalidation_csv_failures(
+            self.run_root, observations, items
+        )
+        self.assertTrue(any("유실·중복 생성은 모두 0" in item for item in failures))
+        self.assertTrue(
+            any("원천 보존 여부와 다음 행동을 모두 이해" in item for item in failures)
+        )
+        self.assertTrue(any("치명적 blocker는 0" in item for item in failures))
+        self.assertTrue(any("조건·시도 번호가 다릅니다" in item for item in failures))

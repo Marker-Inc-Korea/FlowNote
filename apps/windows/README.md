@@ -27,9 +27,9 @@
 - 관리자 파일 감시 후보 처리
 - 작업순서 관리자 화면과 TV 화면. 서버 snapshot·`board_revision`을 권위 원천으로 사용하고 mutation key와 `baseBoardRevision`으로 직접 변경하며, 미연결/조회 실패 시 로컬 row는 읽기 캐시·초안으로만 표시하고 모든 확정 변경을 차단
 - 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도. 재시도 큐는 source 집합 hash를 고정하고 서버 응답의 report revision·내용 hash·source 집합 hash를 로컬 문서에 보존
-- 채널함: 서버 내 채널, 채널 메시지/알림, 인수인계 조회, 읽음/수신 확인, 원천 링크 복사, 후속 FieldComment 생성
+- 채널함: 서버 내 채널, 채널 메시지/알림, 인수인계 조회, 읽음/수신 확인, 원천 링크 복사, 후속 FieldComment 생성. 같은 인수인계·작성자·내용은 안정된 요청 식별값을 재사용하고 채널 알림 실패를 부분 성공으로 구분해 원천 코멘트 중복을 막는다.
 - 채널 관리: 서버 채널 생성, 멤버 추가/제외
-- 인수인계 확인 현황: 수신자별 receipt 상태 변경, 후속 FieldComment 생성
+- 인수인계 확인 현황: 수신자별 receipt 상태 변경, 후속 FieldComment 생성과 원천/수신 확인 보존·다음 행동 안내
 - FastAPI 서버 인증과 승인 단말/문서/controlled copy/FieldComment/첨부/접근 로그/보고서/작업순서/채널·인수인계/AI 검색 근거·회귀 평가/외부 AI 운영 API 클라이언트
 - AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
 - `AI 정답셋`: 후보 포함 근거와 수동 제외 원천으로 사례 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·대체·폐기, 평가 run 실행·이전 run 비교
@@ -124,7 +124,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-현재 FastAPI 코드는 154건, WPF Core는 71건을 수집해 통과했다. 표준 스크립트 guard도 FastAPI 154건·WPF Core 71건·Android 16건으로 맞췄으며 WPF Core 수집 목록과 원시 TRX의 `total/passed=71/71`을 대조했다. 이번 macOS 검증에서 WPF Core 71건과 WPF 앱 빌드는 경고·오류 없이 통과했지만 Windows 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
+현재 FastAPI 코드는 154건, WPF Core는 74건을 기준으로 한다. 이번 macOS 검증에서 WPF Core 74/74와 WPF 앱 교차 빌드는 경고·오류 없이 통과했고 표준 스크립트 guard도 FastAPI 154건·WPF Core 74건·Android 16건으로 맞췄다. Windows 수집 목록과 원시 TRX의 `total/passed=74/74`, 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

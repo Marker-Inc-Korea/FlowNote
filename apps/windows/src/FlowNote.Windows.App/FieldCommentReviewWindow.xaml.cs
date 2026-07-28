@@ -171,13 +171,16 @@ public partial class FieldCommentReviewWindow : Window
                 changedAt);
             ReviewChanged = true;
             RefreshComments(syncResult.Success
-                ? $"FieldComment 검토 내용을 저장하고 서버에 반영했습니다: {FormatStatus(status)}"
-                : $"FieldComment 검토 내용을 로컬에 저장했습니다: {FormatStatus(status)}. 서버 동기화는 큐에 남겼습니다. {syncResult.Message}",
+                ? $"검토 내용을 서버에 저장했습니다: {FormatStatus(status)}. 원천 코멘트와 검토 이력은 함께 보존됩니다. 다음: 보고서에 쓸 항목은 '보고서선정' 상태인지 확인하세요."
+                : $"검토 내용은 이 PC에 저장했고 서버 반영은 대기 중입니다: {FormatStatus(status)}. 원천 코멘트와 동기화 기록은 보존됩니다. 다음: 이력의 동기화 큐에서 실패·충돌 사유를 확인한 뒤 다시 시도하세요.",
                 selected.CommentId);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentOutOfRangeException or HttpRequestException or TaskCanceledException)
         {
-            StatusTextBlock.Text = $"검토 저장에 실패했습니다. {exception.Message}";
+            StatusTextBlock.Text = BuildPreservedSourceFailureMessage(
+                exception,
+                "검토 내용을 저장하지 못했습니다.",
+                "목록을 새로고침한 뒤 최신 상태에서 다시 저장하세요.");
         }
     }
 
@@ -204,7 +207,7 @@ public partial class FieldCommentReviewWindow : Window
 
         if (serverClient is null)
         {
-            StatusTextBlock.Text = "항목별 사전검증과 receipt 보존을 위해 서버 연결이 필요합니다.";
+            StatusTextBlock.Text = "일괄 처리 결과를 항목별로 보존하려면 서버 연결이 필요합니다. 선택 항목과 원천 코멘트는 바뀌지 않았습니다. 다음: 서버 연결을 확인한 뒤 다시 실행하세요.";
             return;
         }
 
@@ -263,7 +266,7 @@ public partial class FieldCommentReviewWindow : Window
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentOutOfRangeException or HttpRequestException or TaskCanceledException)
         {
             StatusTextBlock.Text =
-                $"일괄 검토 응답을 확정하지 못했습니다. 성공 항목을 되돌리지 않으며 같은 mutation key로 '마지막 일괄 결과 복구'를 실행할 수 있습니다. {exception.Message}";
+                "일괄 처리 결과를 모두 확인하지 못했습니다. 이미 성공한 항목과 모든 원천 코멘트는 그대로 보존됩니다. 다음: '일괄 결과 다시 확인'을 눌러 같은 요청의 결과만 확인하세요.";
         }
     }
 
@@ -280,7 +283,7 @@ public partial class FieldCommentReviewWindow : Window
         }
         catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException)
         {
-            StatusTextBlock.Text = $"일괄 결과 복구에 실패했습니다. 같은 mutation key는 유지됩니다. {exception.Message}";
+            StatusTextBlock.Text = "일괄 처리 결과를 다시 확인하지 못했습니다. 이미 성공한 항목과 요청 식별값은 보존됩니다. 다음: 서버 연결을 확인한 뒤 같은 버튼을 다시 누르세요.";
         }
     }
 
@@ -316,7 +319,7 @@ public partial class FieldCommentReviewWindow : Window
         await RefreshQualityIssuesAsync();
         RefreshComments(
             $"{actionLabel} {execution.RequestedCount}건 · 성공 {execution.SuccessCount}건 · 실패 {execution.FailureCount}건. " +
-            "성공+실패 합계와 요청 수를 확인했고 항목별 revision/receipt를 보존했습니다.");
+            "성공 항목은 유지하고 항목별 변경 번호와 처리 결과를 보존했습니다. 다음: 실패 항목의 안내를 확인해 해당 항목만 다시 처리하세요.");
         new FieldCommentBulkPreviewWindow(execution) { Owner = this }.ShowDialog();
     }
 
@@ -360,7 +363,10 @@ public partial class FieldCommentReviewWindow : Window
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
-            StatusTextBlock.Text = $"서버 역추적 조회에 실패했습니다. {exception.Message}";
+            StatusTextBlock.Text = BuildPreservedSourceFailureMessage(
+                exception,
+                "원천 연결을 확인하지 못했습니다.",
+                "서버 연결을 확인한 뒤 '원천 연결 확인'을 다시 선택하세요.");
         }
     }
 
@@ -399,7 +405,10 @@ public partial class FieldCommentReviewWindow : Window
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
             qualityIssues = [];
-            StatusTextBlock.Text = $"서버 품질 작업함을 조회하지 못했습니다. {exception.Message}";
+            StatusTextBlock.Text = BuildPreservedSourceFailureMessage(
+                exception,
+                "품질 작업 목록을 확인하지 못했습니다.",
+                "서버 연결을 확인한 뒤 목록을 다시 조회하세요.");
         }
     }
 
@@ -570,8 +579,26 @@ public partial class FieldCommentReviewWindow : Window
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
-            EvidenceTextBlock.Text = $"서버 근거 표시 실패: {exception.Message}";
+            EvidenceTextBlock.Text = BuildPreservedSourceFailureMessage(
+                exception,
+                "서버 근거를 표시하지 못했습니다.",
+                "서버 연결을 확인한 뒤 같은 코멘트를 다시 선택하세요.");
         }
+    }
+
+    private static string BuildPreservedSourceFailureMessage(
+        Exception exception,
+        string action,
+        string retryAction)
+    {
+        var nextAction = exception switch
+        {
+            FlowNoteServerAuthenticationException => "다시 로그인한 뒤 같은 작업을 실행하세요.",
+            FlowNoteServerAccessException => "현장 관리자에게 로그인 ID와 필요한 업무 권한을 전달하세요.",
+            HttpRequestException or TaskCanceledException => retryAction,
+            _ => retryAction
+        };
+        return $"{action} 원천 코멘트와 기존 검토 이력은 보존됩니다. 다음: {nextAction}";
     }
 
     private static string FormatChannelAccess(string value) => value switch

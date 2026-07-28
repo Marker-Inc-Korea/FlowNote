@@ -11,18 +11,26 @@
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
 | FastAPI | 현재 코드·스크립트 guard 154건, Windows 무생략 실행 대기 | 동일 |
-| WPF Core | 현재 수집·TRX 71건, 스크립트 guard 71건 | Windows 무생략 실행 대기 |
+| WPF Core | 현재 macOS 실행 74/74, 스크립트 guard 74건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 목표 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 목표 unit 16/16, failure/error/skipped 0, debug build PASS | 동일 |
 | SQLite | 목표 전후 `quick_check=ok`, FK 위반 0 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
-보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 2026-07-28 현재 guard는 FastAPI 154건, WPF Core 71건, Android 16건이다. WPF Core는 기존 67건 guard 이후 `ReportDraftServerSourceVerificationTests` 2건과 `ServerFieldCommentContractTests` 2건이 추가된 이력을 확인했다. 현재 HEAD의 수집 목록은 중복 없이 71건이고 새 TRX도 `total=71`, `passed=71`, 실패·오류·건너뜀 0건이다. 이 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다.
+보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 이후 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건이 추가되어 현재 macOS 실행은 74/74로 통과했고 표준 스크립트 guard도 74건으로 맞췄다. Windows 수집 목록과 새 TRX의 `total/passed=74/74` 대조는 무생략 실행에서 확인해야 한다.
 
-표준 스크립트는 이제 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed 71건을 서로 대조한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 위치에 실패 단계와 중단 원인도 남긴다.
+표준 스크립트는 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed 74건을 서로 대조한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 위치에 실패 단계와 중단 원인도 남긴다.
 
 현재 호스트는 macOS ARM64이고 PowerShell이 없어 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
+
+## 2026-07-28 후보 4 역할별 핵심 업무 UX 준비 결과
+
+schema version 8은 관리자·반장·조장·작업자가 문서 찾기·열람 후 FieldComment, 인수인계 후 후속 FieldComment, 검토 후 보고서 흐름을 각각 BEFORE 2회 이상 수행했는지 확인한다. 장갑 착용·미착용, 한 손·양손, 단말 거치 위치, 연결·단절 조건을 원시 행에 기록하고 같은 참여자·시나리오·조건·시도 번호로 AFTER를 비교한다. 수용한 P0/P1은 BEFORE와 다른 UI build에서 AFTER 2회 이상, 전건 성공, 원천 보존과 다음 행동 이해, 원천·처리 결과 유실과 중복 생성·치명적 blocker 0건, 중앙 완료 시간·화면 이동·도움 요청 비악화를 모두 충족해야 한다.
+
+WPF는 인수인계 후속 코멘트 요청 식별값을 안정적으로 재사용하고, 코멘트 저장 뒤 채널 알림이 실패하면 부분 성공으로 표시한다. 권한 부족, 서버 연결 단절, 동기화 대기, 일부 항목만 성공, 최신 변경 번호 불일치 안내에는 보존된 원천과 다음 행동을 한글로 표시한다. FastAPI는 같은 채널·FieldComment 원천의 이벤트 재요청에 기존 메시지를 반환한다.
+
+macOS에서 Python 검증기 단위 테스트 18건, WPF Core 74건, FastAPI 채널 API 3건이 통과했다. WPF 앱 교차 빌드도 warning 0건·error 0건으로 통과했다. `PILOT-20260728-1113-UX04-001`은 `data/local/pilot-evidence/`에 schema version 8로 준비했으며 빈 초기 판정표를 다시 검증한 결과 460개 미충족 조건과 `FAIL`을 보존했다. 이 실패에는 역할·흐름별 BEFORE, 장갑·한 손·거치·단절 조건과 원천·처리 결과 유실·중복 생성 0건의 미측정이 포함된다. 실제 참여자 BEFORE/AFTER와 화면 증거는 입력하지 않았으므로 후보 4 완료 판정은 `대기`다.
 
 ## 2026-07-28 후보 1 Windows x64 통합 기준선 복구 준비
 

@@ -587,12 +587,27 @@ def create_channel_message(
     _ensure_channel_member(session, channel_id, current_user)
     message_type = _normalize_choice(request.message_type, MESSAGE_TYPES, "messageType")
     source_type = _normalize_choice(request.source_type, MESSAGE_SOURCE_TYPES, "sourceType")
+    source_id = request.source_id.strip()
+    if message_type == "FIELD_COMMENT_EVENT" and source_type == "FIELD_COMMENT":
+        existing = session.scalar(
+            select(ChannelMessage)
+            .where(
+                ChannelMessage.channel_id == channel_id,
+                ChannelMessage.message_type == message_type,
+                ChannelMessage.source_type == source_type,
+                ChannelMessage.source_id == source_id,
+            )
+            .order_by(ChannelMessage.id)
+        )
+        if existing is not None:
+            return _message_response(existing)
+
     message = ChannelMessage(
         message_id=_new_public_id("chmsg"),
         channel_id=channel_id,
         message_type=message_type,
         source_type=source_type,
-        source_id=request.source_id.strip(),
+        source_id=source_id,
         source_version_id=_clean_optional(request.source_version_id),
         title=request.title.strip(),
         body=_clean_optional(request.body),

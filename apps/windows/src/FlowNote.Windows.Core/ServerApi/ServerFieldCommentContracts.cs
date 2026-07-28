@@ -359,11 +359,11 @@ public sealed record ServerFieldCommentBulkReviewItemResponse
 
     public string RecoveryGuidance => FailureCode switch
     {
-        "FIELD_COMMENT_STALE_REVIEW_REVISION" => "다른 검토가 먼저 반영됨 · 최신 revision 조회 후 다시 선택",
-        "HTTP_403" => "권한이 변경되었거나 부족함 · 역할/채널 권한 확인",
-        "IDEMPOTENCY_KEY_REUSED" => "같은 mutation key의 요청 내용이 다름 · 원래 요청으로 결과 복구",
-        null or "" => Success is true ? "서버 revision/receipt 반영 완료" : "사전검증 통과",
-        _ => "실패 원인을 해소한 뒤 실패 항목만 새 mutation key로 재실행"
+        "FIELD_COMMENT_STALE_REVIEW_REVISION" => "다른 검토가 먼저 저장됨 · 원천은 보존됨 · 목록을 새로고침한 뒤 최신 상태에서 다시 선택",
+        "HTTP_403" => "현재 계정의 처리 권한이 부족함 · 원천은 보존됨 · 관리자에게 역할과 채널 권한 확인 요청",
+        "IDEMPOTENCY_KEY_REUSED" => "이전 요청과 내용이 다름 · 이전 처리 결과는 보존됨 · 일괄 결과를 다시 확인",
+        null or "" => Success is true ? "서버 변경 번호와 처리 결과 보존 완료" : "실행 전 확인 완료",
+        _ => "원천과 성공 항목은 보존됨 · 원인을 해소한 뒤 실패 항목만 다시 실행"
     };
 }
 

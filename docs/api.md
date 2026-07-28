@@ -265,7 +265,7 @@ FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revi
 | GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | 작업순서 변경으로 생성된 알림 후보 조회 |
 | PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | 작업순서 알림 후보 상태를 `CANDIDATE`, `SENT`, `DISMISSED` 중 하나로 변경 |
 
-채널 유형은 `LINE`, `EQUIPMENT`, `PROCESS`, `WORK_GROUP`, `HANDOVER`, `WORK_RECORD`, `CUSTOM`이다. 채널 메시지 유형은 `NOTICE`, `DOCUMENT_EVENT`, `FIELD_COMMENT_EVENT`, `WORK_SEQUENCE_EVENT`, `HANDOVER`, `SYSTEM`이다. 인수인계 상태는 `DRAFT`, `SENT`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`, `ARCHIVED`이고, 수신 상태는 `UNREAD`, `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`이다.
+채널 유형은 `LINE`, `EQUIPMENT`, `PROCESS`, `WORK_GROUP`, `HANDOVER`, `WORK_RECORD`, `CUSTOM`이다. 채널 메시지 유형은 `NOTICE`, `DOCUMENT_EVENT`, `FIELD_COMMENT_EVENT`, `WORK_SEQUENCE_EVENT`, `HANDOVER`, `SYSTEM`이다. 같은 채널의 같은 FieldComment를 원천으로 하는 `FIELD_COMMENT_EVENT` 재요청은 기존 메시지를 반환해 응답 유실 뒤 알림 중복을 막는다. 인수인계 상태는 `DRAFT`, `SENT`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`, `ARCHIVED`이고, 수신 상태는 `UNREAD`, `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`이다.
 
 채널 메시지와 인수인계는 `sourceType`, `sourceId`, `sourceVersionId`로 원천을 추적한다. 메시지 source는 `DOCUMENT`, `FIELD_COMMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `REPORT`, `HANDOVER`, `SYSTEM`을 허용한다. 인수인계 source는 `DOCUMENT`, `FIELD_COMMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `REPORT`, `CHANNEL_MESSAGE`를 허용한다.
 

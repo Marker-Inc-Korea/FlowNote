@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Windows;
 using FlowNote.Windows.Core.ServerApi;
 
@@ -147,7 +148,7 @@ public partial class ChannelInboxWindow : Window
 
         try
         {
-            await channelClient!.UpdateHandoverReceiptAsync(
+            var updated = await channelClient!.UpdateHandoverReceiptAsync(
                 handover.HandoverId,
                 receipt.ReceiptId,
                 new ServerHandoverReceiptUpdateRequest
@@ -155,8 +156,10 @@ public partial class ChannelInboxWindow : Window
                     ReceiptStatus = status,
                     Note = $"{label}: Windows 채널 수신함"
                 });
-            StatusTextBlock.Text = $"인수인계 수신 상태를 {label}(으)로 변경했습니다.";
-            await RefreshAsync();
+            ReplaceSelectedHandover(updated);
+            StatusTextBlock.Text =
+                $"인수인계를 {label}(으)로 저장했습니다. 수신 확인 기록은 서버에 보존됩니다. " +
+                "다음: 후속 조치가 필요하면 아래의 '후속 코멘트 저장'을 선택하세요.";
         }
         catch (Exception exception)
         {
@@ -197,12 +200,13 @@ public partial class ChannelInboxWindow : Window
 
         try
         {
-            var fieldComment = await channelClient!.CreateHandoverFollowUpFieldCommentAsync(
+            var result = await channelClient!.CreateHandoverFollowUpWithStatusAsync(
                 handover,
                 $"Windows 채널 수신함에서 후속 확인이 필요하다고 기록했습니다. 제목: {handover.Title}",
                 currentUserId);
-            StatusTextBlock.Text = $"후속 FieldComment를 만들었습니다. 원천 인수인계: {handover.HandoverId}, FieldComment: {fieldComment.CommentId}";
-            await RefreshAsync();
+            StatusTextBlock.Text = result.ChannelMessagePublished
+                ? "후속 현장 코멘트와 채널 알림을 저장했습니다. 원천 인수인계와 처리 기록은 서버에 보존됩니다. 다음: 코멘트 검토에서 후속 조치를 확인하세요."
+                : "후속 현장 코멘트는 저장했지만 채널 알림은 보내지 못했습니다. 원천 인수인계와 코멘트는 서버에 보존됩니다. 다음: 같은 버튼을 다시 눌러 알림만 복구하세요. 코멘트는 중복 생성되지 않습니다.";
         }
         catch (Exception exception)
         {
@@ -213,6 +217,20 @@ public partial class ChannelInboxWindow : Window
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private void ReplaceSelectedHandover(ServerHandoverResponse updated)
+    {
+        if (HandoverGrid.ItemsSource is not IEnumerable<ServerHandoverResponse> current)
+        {
+            return;
+        }
+
+        var handovers = current
+            .Select(item => item.HandoverId == updated.HandoverId ? updated : item)
+            .ToList();
+        HandoverGrid.ItemsSource = handovers;
+        HandoverGrid.SelectedItem = handovers.First(item => item.HandoverId == updated.HandoverId);
     }
 
     private bool EnsureServerConnected()
@@ -231,9 +249,16 @@ public partial class ChannelInboxWindow : Window
 
     private static string BuildServerFailureMessage(Exception exception)
     {
-        var prefix = exception is FlowNoteServerAuthenticationException
-            ? "서버 인증이 만료되었습니다."
-            : "서버 채널 정보를 불러오지 못했습니다.";
-        return $"{prefix} 로컬 데이터와 동기화 큐는 삭제되지 않습니다. {exception.Message}";
+        return exception switch
+        {
+            FlowNoteServerAuthenticationException =>
+                "로그인이 만료되어 작업을 확인하지 못했습니다. 기존 원천과 수신 확인 기록은 삭제되지 않습니다. 다음: 다시 로그인한 뒤 같은 작업을 다시 실행하세요.",
+            FlowNoteServerAccessException =>
+                "현재 계정에는 이 작업 권한이 없습니다. 기존 원천과 수신 확인 기록은 삭제되지 않습니다. 다음: 현장 관리자에게 로그인 ID와 필요한 업무를 전달하세요.",
+            HttpRequestException or TaskCanceledException =>
+                "서버 연결이 끊겨 작업 결과를 확인하지 못했습니다. 기존 원천과 수신 확인 기록은 삭제되지 않습니다. 다음: 네트워크를 확인한 뒤 새로고침하세요.",
+            _ =>
+                "채널 작업을 완료하지 못했습니다. 기존 원천과 수신 확인 기록은 삭제되지 않습니다. 다음: 목록을 새로고침한 뒤 다시 시도하세요."
+        };
     }
 }

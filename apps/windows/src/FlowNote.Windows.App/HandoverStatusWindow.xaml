@@ -162,7 +162,8 @@
                 <Button Grid.Column="5"
                         Height="34"
                         VerticalAlignment="Top"
-                        Content="후속 FieldComment"
+                        Content="후속 코멘트 저장"
+                        ToolTip="선택한 인수인계를 원천으로 보존하는 현장 코멘트를 저장합니다."
                         Click="FollowUpFieldCommentButton_Click" />
             </Grid>
         </Border>

@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace FlowNote.Windows.Core.ServerApi;
 
@@ -202,33 +204,97 @@ public sealed class FlowNoteServerChannelClient
         string actorId,
         CancellationToken cancellationToken = default)
     {
+        var result = await CreateHandoverFollowUpWithStatusAsync(
+            handover,
+            rawContent,
+            actorId,
+            cancellationToken);
+        return result.FieldComment;
+    }
+
+    public async Task<ServerHandoverFollowUpResult> CreateHandoverFollowUpWithStatusAsync(
+        ServerHandoverResponse handover,
+        string rawContent,
+        string actorId,
+        CancellationToken cancellationToken = default)
+    {
+        var cleanedContent = rawContent.Trim();
+        var operationKey = BuildHandoverFollowUpOperationKey(
+            handover.HandoverId,
+            actorId,
+            cleanedContent);
         var request = new ServerFieldCommentCreateRequest
         {
             WorkRecordId = handover.HandoverId,
             CommentType = "issue",
             InputMode = "free_text",
-            RawContent = $"원천 인수인계: {handover.HandoverId}{Environment.NewLine}{rawContent.Trim()}",
+            RawContent = $"원천 인수인계: {handover.HandoverId}{Environment.NewLine}{cleanedContent}",
             AuthorId = actorId,
             ReportedBy = actorId,
             EntrySource = "handover_follow_up",
             Category = "handover-follow-up",
             Priority = 2,
-            IdempotencyKey = $"handover-follow-up:{handover.HandoverId}:{Guid.NewGuid():N}"
+            IdempotencyKey = operationKey
         };
         using var response = await httpClient.PostAsJsonAsync("api/v1/field-comments", request, cancellationToken);
         var fieldComment = await ReadJsonResponse<ServerFieldCommentResponse>(response, cancellationToken);
-        await CreateChannelMessageAsync(
-            handover.ChannelId,
-            new ServerChannelMessageCreateRequest
+        try
+        {
+            var existingMessage = (await ListChannelMessagesAsync(
+                    handover.ChannelId,
+                    500,
+                    cancellationToken))
+                .FirstOrDefault(item =>
+                    item.SourceType == "FIELD_COMMENT" &&
+                    item.SourceId == fieldComment.CommentId);
+            if (existingMessage is not null)
             {
-                MessageType = "FIELD_COMMENT_EVENT",
-                SourceType = "FIELD_COMMENT",
-                SourceId = fieldComment.CommentId,
-                Title = $"인수인계 후속 FieldComment: {handover.Title}",
-                Body = $"원천 인수인계 {handover.HandoverId}에서 후속 FieldComment를 작성했습니다."
-            },
-            cancellationToken);
-        return fieldComment;
+                return new ServerHandoverFollowUpResult(
+                    fieldComment,
+                    true,
+                    operationKey,
+                    existingMessage.MessageId);
+            }
+
+            var message = await CreateChannelMessageAsync(
+                handover.ChannelId,
+                new ServerChannelMessageCreateRequest
+                {
+                    MessageType = "FIELD_COMMENT_EVENT",
+                    SourceType = "FIELD_COMMENT",
+                    SourceId = fieldComment.CommentId,
+                    Title = $"인수인계 후속 FieldComment: {handover.Title}",
+                    Body = $"원천 인수인계 {handover.HandoverId}에서 후속 FieldComment를 작성했습니다."
+                },
+                cancellationToken);
+            return new ServerHandoverFollowUpResult(
+                fieldComment,
+                true,
+                operationKey,
+                message.MessageId);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or HttpRequestException
+                or TaskCanceledException)
+        {
+            return new ServerHandoverFollowUpResult(
+                fieldComment,
+                false,
+                operationKey,
+                null);
+        }
+    }
+
+    internal static string BuildHandoverFollowUpOperationKey(
+        string handoverId,
+        string actorId,
+        string rawContent)
+    {
+        var source = $"{handoverId.Trim()}\n{actorId.Trim()}\n{rawContent.Trim()}";
+        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source)))
+            .ToLowerInvariant();
+        return $"handover-follow-up:{digest}";
     }
 
     private static async Task<T> ReadJsonResponse<T>(
