@@ -160,11 +160,11 @@ flowchart LR
 
 | 검증 대상 | 결과 |
 | --- | --- |
-| FastAPI OpenAPI | 루트 `GET /` 포함 131개 method/path |
+| FastAPI OpenAPI | 루트 `GET /` 포함 132개 method/path |
 | SQLAlchemy ORM | 60개 테이블 |
 | FastAPI 테스트 | 154개 통과 |
 | Python 정적 검사 | Ruff 통과 |
-| WPF Core 테스트 | 71개 통과 |
+| WPF Core 테스트 | 74개 통과 |
 | WPF 앱 빌드 | 경고 0개, 오류 0개 |
 | Android 단위 테스트 | 20개 통과 |
 | Android debug 빌드·lint | `assembleDebug`, `lintDebug` 통과 |
@@ -228,7 +228,7 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
 ```
 
-전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 현재 guard는 FastAPI 154건, WPF Core 71건, Android 20건이다. WPF Core는 67건 guard 이후 추가된 테스트 4건의 커밋 이력과 현재 수집 목록 71건, TRX `total/passed=71/71`을 대조해 맞췄다. 스크립트는 WPF 수집 목록과 TRX 수도 실행마다 다시 비교한다.
+전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 현재 guard는 FastAPI 154건, WPF Core 74건, Android 20건이다. WPF Core 74건은 macOS에서 통과했으며, Windows 수집 목록과 TRX `total/passed=74/74` 대조는 아직 남아 있다. 스크립트는 WPF 수집 목록과 TRX 수도 실행마다 다시 비교한다.
 
 | Windows x64 통합 기준선 | 첫 실행 | 재현 실행 |
 | --- | --- | --- |
