@@ -16,15 +16,18 @@
 
 ## 현재 화면 골격
 
+- 화면 상단에 전송 대기 건수, 단말 보존 상태, 다음 자동 재시도 시점, 자동 재시도 한도와 승인 단말 ID를 계속 표시
 - 서버 주소, 승인 단말 ID, 사용자 ID, 비밀번호 설정
 - `deviceId` 포함 서버 로그인
 - 공개 문서 목록과 문서 상세 메타데이터 조회. 상세 선택 시 문서/공개 버전 ID를 FieldComment 입력란에 연결
 - 공개 버전의 PDF, PNG/JPEG/WebP, UTF-8 TXT 본문 보안 열람
 - FieldComment 작성
-- 사진 선택과 FieldComment 첨부 재전송
+- 사진 선택 상태 안내와 미리보기, FieldComment 첨부 재전송. Android 10 이상에서는 선택한 사진의 축소 이미지를 표시하고 기기 저장이 끝나면 선택 상태와 미리보기를 비움
 - 신호등식 입력: `green`, `yellow`, `red`
 - 채널 알림 조회와 읽음 처리
 - 인수인계 조회와 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 확인
+
+주요 버튼은 한 줄 안에서 같은 너비를 사용하고 최소 높이를 56dp로 둔다. 전송 상태와 일반 작업 상태는 접근성 live region으로 갱신한다. 이 값은 코드에 반영된 화면 기준이며 장갑 착용, 한 손 조작, 실제 거치 위치에서의 터치 성공률은 승인 실단말 관찰로 확정한다.
 
 알림은 운영 로그인 동안 `specialUse` foreground service가 사내 HTTPS API를 기본 15초 간격으로 조회한다. 서버 주소와 사용자 조합을 hash한 scope별 cursor를 항목 표시 뒤 동기 저장하므로 앱 화면이 닫히거나 네트워크가 끊겨도 마지막 성공 위치에서 복구한다. 재부팅 시 유효한 로컬 세션이 있으면 `BOOT_COMPLETED` receiver가 서비스를 다시 시작하고, access 만료 시 refresh token을 한 번 회전한다. refresh가 거부되거나 단말이 비활성화되면 token을 폐기하고 서비스를 중단한다. Android는 채널 메시지나 인수인계를 outbox에 저장하지 않는다.
 
@@ -105,4 +108,4 @@ Windows 배포 준비 PC의 통합 기준선은 x64 JDK 17, Android Platform 35�
 
 2026-07-22 macOS 보조 run `p0-baseline-144-macos-precheck-20260722-002`은 FastAPI 144건만 통과했고 JDK/Android SDK 부재로 Android `testDebugUnitTest`와 `assembleDebug`는 `NOT_RUN`이다. 이 결과는 Android 기준선이 아니며 Windows x64 표준 환경의 같은 `run_id` 통합 실행에서 Android JUnit과 debug build가 통과해야 한다.
 
-현재 단위 테스트는 API 경로·로그인/FieldComment payload, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구, outbox 재시도 정책과 대기 상태 안내를 검증한다. outbox 일부 실패는 성공·실패·대기 건수와 재전송 안내를 표시하고, Keystore/암호문 오류는 초기화하지 말고 관리자에게 단말 교체 점검을 요청하도록 안내한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리가 동작하는지와 서로 다른 AES 키로 복호화가 실패하는지를 확인한다. 실제 단말의 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절은 승인 실단말 수동 검증 대상이다.
+현재 단위 테스트는 API 경로·로그인/FieldComment payload, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구, outbox 재시도 정책과 대기 상태 안내를 검증한다. outbox 일부 실패는 성공·실패·대기 건수와 재전송 안내를 표시하고, Keystore/암호문 오류는 초기화하지 말고 관리자에게 단말 교체 점검을 요청하도록 안내한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리가 동작하는지와 서로 다른 AES 키로 복호화가 실패하는지를 확인한다. 사진 선택 상태·축소 미리보기·저장 후 초기화, 56dp 버튼과 live region의 실제 접근성은 자동 테스트로 완료 판정하지 않는다. 실제 단말의 카메라·파일 선택기, 장갑·한 손 조작, 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절을 같은 수동 검증에서 확인한다.
