@@ -44,7 +44,7 @@
 - Windows 보존 동기화 전환 CLI는 FAILED 큐를 읽기 전용 dry-run으로 분류하고 plan hash와 row별 승인을 요구한다. 승인된 구 `create`/FieldNote 항목은 기존 원천·큐·파일을 수정하지 않고 현재 action의 신규 큐와 감사 이력으로 연결한다.
 - WPF에는 AI 근거 후보 운영 점검 화면과 `AI 정답셋` 화면이 있다. `AI 정답셋`의 `사례·원천 구성` 창은 서버 후보를 포함 근거로 선택하고 실제 원천 ID·제외 사유를 제외 근거로 입력해 사례를 첫 승인 상태로 등록하며, `includePending=true`로 조회한 미승인 사례를 다른 사용자가 2차 승인할 수 있게 한다. 이어서 승인 사례를 불변 dataset version으로 구성하고 작성·검토·독립 2단계 승인·평가 run 비교를 수행한다. FastAPI는 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth를 저장하고 고정 원천 snapshot과 접근권한을 재검증한 뒤에만 활성화한다.
 - AI provenance는 `ANONYMOUS_FIELD`/`PILOT`의 `FIELD_READINESS`와 `SYNTHETIC`/`TEST`의 `SMOKE_REGRESSION`을 분리해 보존한다. 다만 승인 `FIELD_READINESS` dataset과 provider 착수 48건에는 고객 승인을 받은 `ANONYMOUS_FIELD`만 포함하고 `PILOT`은 별도 기록으로 유지한다. 합성 48건 회귀 통과도 실제 현장 준비도나 운영 provider 착수 승인이 아니다.
-- 실제 익명 현장 24칸 독립 표본 검토와 불일치 제3 합의는 FastAPI와 서버 DB에 구현되어 있다. 현재 WPF에는 표본 판정·합의 화면과 API 클라이언트가 없다.
+- 실제 익명 현장 24칸 독립 표본 검토와 불일치 제3 합의는 FastAPI, 서버 DB와 WPF에 구현되어 있다. WPF `AI 정답셋`에서 승인된 `FIELD_READINESS` dataset과 통과한 평가 run을 선택하면 `24칸 독립 검토`를 열 수 있다. 첫 판정은 두 번째 제출 전까지 숨기고, 두 판정이 다르면 앞선 검토자가 아닌 제3 사용자에게 불일치 case만 표시한다.
 - 서버와 WPF에는 `system-admin` 전용 외부 AI 운영 제어면이 구현되어 있다. 전송 승인 생성·철회, 프롬프트 불변 버전의 검토·승인·활성화·폐기, 전역/현장 kill switch와 요청·동시성·timeout·비용·보존 한도, 정제 감사 조회/CSV 내보내기, 만료 보존 일괄·단일 실행과 법무·감사 legal hold 설정/해제를 관리한다. WPF 단일 만료와 hold 조작은 이중 확인, 낙관적 동시성 표식, 멱등 키와 서버 read-back을 사용한다. provider 비밀값은 반환하지 않고 설정 여부만 표시한다.
 - 외부 AI 질의·요약은 `/api/v1/ai/queries` 생성·조회, provider 중립 fake/recording adapter, 호출 로그 모델, 기능 플래그·승인·목적·원천 권한·민감정보·최소 payload·근거 snapshot·응답 의미 검증 게이트까지 구현되었다. generic 네트워크 adapter는 명시적 test scope로 제한되고 기본값은 비활성이다.
 - 고객·현장별 AI 금칙어와 고객 식별자는 `ai_sensitive_data_policies`에 버전별로 저장하고 활성 정책을 provider 직전 필터에 적용한다. 이를 관리하는 운영 API/UI는 아직 없다.
