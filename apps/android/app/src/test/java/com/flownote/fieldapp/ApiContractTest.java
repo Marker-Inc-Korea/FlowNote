@@ -42,6 +42,14 @@ public final class ApiContractTest {
                 .contains("다시 로그인"));
         assertTrue(FlowNoteApiClient.shouldDiscardStoredSession(401));
         assertTrue(!FlowNoteApiClient.shouldDiscardStoredSession(403));
+        assertTrue(FlowNoteApiClient.shouldDiscardStoredSession(
+                403,
+                "{\"detail\":{\"code\":\"DEVICE_NOT_APPROVED\"}}"
+        ));
+        assertTrue(!FlowNoteApiClient.shouldDiscardStoredSession(
+                403,
+                "{\"detail\":{\"code\":\"PERMISSION_DENIED\"}}"
+        ));
     }
 
     @Test

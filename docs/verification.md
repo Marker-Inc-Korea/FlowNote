@@ -14,7 +14,7 @@
 | WPF Core | 현재 macOS 실행 74/74, 스크립트 guard 74건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 목표 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
-| Android | 목표 unit 16/16, failure/error/skipped 0, debug build PASS | 동일 |
+| Android | 목표 unit 20/20, failure/error/skipped 0, debug build PASS | 동일 |
 | SQLite | 목표 전후 `quick_check=ok`, FK 위반 0 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
@@ -303,7 +303,7 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 8. WPF 공통 DB의 스모크 전 `quick_check`와 `foreign_key_check`를 별도 JSON 증거로 확인한다.
 9. `5184` 포트에 서버가 없으면 `FLOWNOTE_ENVIRONMENT=test`, `FLOWNOTE_SMOKE_SERVER_DATABASE_PATH`와 누적 `flownote.windows-smoke.sqlite3`, `storage/windows-smoke`를 사용하는 FastAPI를 시작한다. AI 보존 검증용 `system-admin`은 파일명이 `flownote.windows-smoke.sqlite3`인 기존 시험 DB에서만 준비한 뒤 같은 실행 ID로 WPF 통합 스모크를 실행한다. 환경, 경로 또는 파일 조건이 맞지 않으면 계정을 만들지 않고 중단한다.
 10. WPF 공통 DB의 스모크 후 무결성을 다시 확인한다.
-11. Android Java warning-as-error 조건에서 `testDebugUnitTest`와 `assembleDebug`를 실행한다. JUnit total/passed 16, failure/error/skipped 0을 확인하고 XML을 실행 ID 폴더에도 복사해 보존한다.
+11. Android Java warning-as-error 조건에서 `testDebugUnitTest`와 `assembleDebug`를 실행한다. JUnit total/passed 20, failure/error/skipped 0을 확인하고 XML을 실행 ID 폴더에도 복사해 보존한다.
 12. `-RunAndroidDeviceSmoke`를 지정하면 연결된 승인 실단말이 정확히 1대인지 확인하고 `connectedDebugAndroidTest`를 실행한다.
 13. 실행 후 `git status --short --untracked-files=all`, `git ls-files`, staged 파일 목록을 다시 점검한다. worktree가 다시 clean이고 신규 금지 추적·스테이징 산출물과 개인 경로가 모두 0이어야 하며, 전후 증거를 보존한다.
 
@@ -344,7 +344,7 @@ FieldComment 정제 스모크의 기존 6개 슬롯은 범주마다 `NORMAL-01/0
 
 마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. `wpf-smoke-database-evidence.json`에는 주요 테이블 실행 전후 통계, 오늘 문서 ID, 과거 기존 문서의 이전·신규 버전과 무결성 결과가 저장된다. 통제된 기준선은 실행마다 설정이 식별되는 관리형 FastAPI를 사용하므로 시작 전에 `5184` 포트를 비워야 한다. 해당 포트에 이미 건강한 서버가 있으면 환경 실패로 중단하고 외부 프로세스는 종료하지 않는다.
 
-한 run ID의 `verification-summary.json`이 `partial_run=false`, `status=PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선 후보가 된다. FastAPI는 수집·고유 node ID·JUnit passed가 모두 154이고 failure/error/skipped가 0이어야 한다. WPF Core는 total/passed 71과 failed/error/skipped 0, Android는 total/passed 16과 failure/error/skipped 0이어야 한다. WPF·Android build의 compiler warning과 error도 0이어야 한다. DB 전후 무결성, 오늘 사진·인수인계 2건, 기존 과거 문서 version `+1`, Git 전후 clean과 금지 산출물 0이 요약과 원본 증거에서 일치해야 한다. 같은 커밋에서 새 `run_id`로 한 번 더 동일하게 통과한 뒤 최상단 현황표에 두 실행을 기록한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+한 run ID의 `verification-summary.json`이 `partial_run=false`, `status=PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선 후보가 된다. FastAPI는 수집·고유 node ID·JUnit passed가 모두 154이고 failure/error/skipped가 0이어야 한다. WPF Core는 total/passed 71과 failed/error/skipped 0, Android는 total/passed 20과 failure/error/skipped 0이어야 한다. WPF·Android build의 compiler warning과 error도 0이어야 한다. DB 전후 무결성, 오늘 사진·인수인계 2건, 기존 과거 문서 version `+1`, Git 전후 clean과 금지 산출물 0이 요약과 원본 증거에서 일치해야 한다. 같은 커밋에서 새 `run_id`로 한 번 더 동일하게 통과한 뒤 최상단 현황표에 두 실행을 기록한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
 

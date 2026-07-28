@@ -2,7 +2,7 @@
 
 `apps/android/`는 FlowNote Android 현장 단말 클라이언트이다. 승인된 현장 태블릿 또는 러기드 단말에서 공개 문서 목록·상세와 PDF/이미지/TXT 앱 내부 보안 열람, FieldComment, 사진 기록, 신호등식 기록, 채널 알림 확인, 인수인계 확인을 수행한다.
 
-기능 목록은 2026-07-27 현재 `app/src/main` 코드 기준이며 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
+기능 목록은 2026-07-28 현재 `app/src/main` 코드 기준이며 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
 
 ## 기술 기준
 
@@ -26,7 +26,9 @@
 - 채널 알림 조회와 읽음 처리
 - 인수인계 조회와 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 확인
 
-알림은 운영 로그인 동안 `specialUse` foreground service가 사내 HTTPS API를 기본 15초 간격으로 조회한다. 서버 주소와 사용자 조합을 hash한 scope별 cursor를 항목 표시 뒤 동기 저장하므로 앱 화면이 닫히거나 네트워크가 끊겨도 마지막 성공 위치에서 복구한다. 재부팅 시 유효한 로컬 세션이 있으면 `BOOT_COMPLETED` receiver가 서비스를 다시 시작하고, access 만료 시 refresh token을 한 번 회전한다. refresh가 거부되면 token을 폐기하고 서비스를 중단한다. Android는 채널 메시지나 인수인계를 outbox에 저장하지 않는다.
+알림은 운영 로그인 동안 `specialUse` foreground service가 사내 HTTPS API를 기본 15초 간격으로 조회한다. 서버 주소와 사용자 조합을 hash한 scope별 cursor를 항목 표시 뒤 동기 저장하므로 앱 화면이 닫히거나 네트워크가 끊겨도 마지막 성공 위치에서 복구한다. 재부팅 시 유효한 로컬 세션이 있으면 `BOOT_COMPLETED` receiver가 서비스를 다시 시작하고, access 만료 시 refresh token을 한 번 회전한다. refresh가 거부되거나 단말이 비활성화되면 token을 폐기하고 서비스를 중단한다. Android는 채널 메시지나 인수인계를 outbox에 저장하지 않는다.
+
+FieldComment와 사진은 전송 전에 앱 전용 암호화 outbox에 먼저 저장한다. 앱 화면과 foreground service가 15초 주기로 전송 가능 항목을 재시도하므로 앱 재시작·재부팅·네트워크 재연결 뒤에도 같은 idempotency key로 이어서 보낸다. 화면에는 전송 대기 건수, 보존 상태, 다음 자동 재시도 시점과 자동 재시도 한도 초과 여부를 계속 표시한다. 로그인 만료·refresh 거부·단말 비활성화 때도 outbox를 지우지 않으며, 다시 로그인하거나 관리자가 단말 상태를 확인할 때 사용할 승인 단말 ID와 대기 건수를 안내한다. 사용자가 누르는 `재전송`은 자동 backoff와 시도 한도를 넘겨 대기 항목을 즉시 다시 시도한다.
 
 목표는 정상 사내망·서비스 실행 상태에서 서버 생성 후 30초 이내 표시, 5분 이상 단절 복구 후 30초+전송 시간 이내 따라잡기다. 동일 `message_id`는 같은 시스템 알림 ID를 사용하고 cursor를 각 표시 뒤 확정하므로 프로세스가 정확히 그 경계에서 죽을 때 허용되는 시각 중복은 최대 1건이다. 서버 알림 읽음과 인수인계 receipt는 기존 공개 ID/receipt row에 대한 멱등 갱신이어서 중복 서버 receipt는 0건이어야 한다. Android 사용자가 앱을 강제 중지하면 OS가 receiver와 service 재시작을 막으므로 MDM kiosk 재실행 또는 사용자 명시 재실행 전까지 목표 시간을 보장하지 않는다.
 
@@ -75,7 +77,7 @@ export FLOWNOTE_ANDROID_KEY_PASSWORD='보안 입력 경로에서 주입'
 
 조직 소유 서명키는 최소 2인 승인으로 오프라인/HSM 또는 승인된 비밀 저장소에 보관한다. 같은 applicationId의 무중단 업그레이드는 같은 키가 필요하다. 키 유출은 기존 키로 서명한 빌드 중단, MDM 차단, 새 applicationId 또는 승인된 키 회전 기능을 통한 재배포가 필요한 보안 사고다. 키 분실은 기존 앱을 새 키로 업그레이드할 수 없으므로 단말별 outbox 처리 후 제거·재등록 절차를 따른다.
 
-`scripts/verify-android-release.sh <run_id> <signed.apk|signed.aab> data/local/pilot-evidence`는 APK/AAB hash와 서명을 확인한다. APK는 applicationId, versionCode/versionName, non-debuggable, backup 비활성, cleartext 차단도 정적으로 확인한다. 설치 또는 rollback은 오배포를 막기 위해 `--device-serial <승인 adb serial>`을 반드시 함께 지정하며, `--rollback <previous.apk>`는 후보 APK를 먼저 설치한 뒤 동일 signer와 더 낮은 versionCode인 이전 승인 APK의 설치 성공까지 보존한다. AAB는 직접 설치·rollback할 수 없으므로 관리형 스토어가 실제 단말에 전달한 서명 APK를 별도로 검증해야 한다. 기존 `android-delivery.csv`가 없으면 8개 전달 측정 행을 만든다. 실제 키와 운영 패키지는 Git 제외다.
+`scripts/verify-android-release.sh <run_id> <signed.apk|signed.aab> data/local/pilot-evidence`는 APK/AAB hash와 서명을 확인한다. APK는 applicationId, versionCode/versionName, non-debuggable, backup 비활성, cleartext 차단도 정적으로 확인한다. 설치 또는 rollback은 오배포를 막기 위해 `--device-serial <승인 adb serial>`을 반드시 함께 지정한다. `--rollback <previous.apk>`는 후보 APK를 먼저 설치하고, 후보 앱이 실제 단말에서 보고한 outbox 대기 0건을 원시 로그로 보존한 뒤에만 동일 signer와 더 낮은 versionCode인 이전 승인 APK를 설치한다. 대기 항목이 있거나 단말 보고를 읽을 수 없으면 rollback을 중단한다. AAB는 직접 설치·rollback할 수 없으므로 관리형 스토어가 실제 단말에 전달한 서명 APK를 별도로 검증해야 한다. 기존 `android-delivery.csv`가 없으면 8개 전달 측정 행을 만든다. 실제 키와 운영 패키지는 Git 제외다.
 
 `manage-pilot-run.py prepare --profile full_pilot`은 같은 실행 폴더에 `android-delivery.csv`, 누락·receipt 중복·crash 경계 중복 집계용 `android-delivery-integrity.csv`, `android-security.csv`, `android-device-lifecycle.csv`, `android-release-approval.csv`를 만든다. 요약 JSON만 PASS로 바꾸는 것으로는 통과하지 않으며, 각 원시 행이 `PASS`이고 행별 증거가 같은 `run_id` 폴더 안에 실제로 있어야 한다. MDM 제품명, 자산 ID, kiosk 재실행 제한 시간, rollout ring, 승인 번호와 이전 승인 package hash는 현장 승인값이므로 Git 문서에 가정값을 넣지 않고 접근 통제된 실행 증거에 기록한다.
 
@@ -103,4 +105,4 @@ Windows 배포 준비 PC의 통합 기준선은 x64 JDK 17, Android Platform 35�
 
 2026-07-22 macOS 보조 run `p0-baseline-144-macos-precheck-20260722-002`은 FastAPI 144건만 통과했고 JDK/Android SDK 부재로 Android `testDebugUnitTest`와 `assembleDebug`는 `NOT_RUN`이다. 이 결과는 Android 기준선이 아니며 Windows x64 표준 환경의 같은 `run_id` 통합 실행에서 Android JUnit과 debug build가 통과해야 한다.
 
-현재 단위 테스트는 API 경로·로그인/FieldComment payload, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구와 outbox 재시도 정책을 검증한다. outbox 일부 실패는 성공·실패·대기 건수와 재전송 안내를 표시하고, Keystore/암호문 오류는 초기화하지 말고 관리자에게 단말 교체 점검을 요청하도록 안내한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리가 동작하는지와 서로 다른 AES 키로 복호화가 실패하는지를 확인한다. 실제 단말의 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절은 승인 실단말 수동 검증 대상이다.
+현재 단위 테스트는 API 경로·로그인/FieldComment payload, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구, outbox 재시도 정책과 대기 상태 안내를 검증한다. outbox 일부 실패는 성공·실패·대기 건수와 재전송 안내를 표시하고, Keystore/암호문 오류는 초기화하지 말고 관리자에게 단말 교체 점검을 요청하도록 안내한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리가 동작하는지와 서로 다른 AES 키로 복호화가 실패하는지를 확인한다. 실제 단말의 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절은 승인 실단말 수동 검증 대상이다.

@@ -52,6 +52,17 @@ public final class FlowNoteApiClient {
         return httpStatus == HttpURLConnection.HTTP_UNAUTHORIZED;
     }
 
+    static boolean shouldDiscardStoredSession(int httpStatus, String responseBody) {
+        if (shouldDiscardStoredSession(httpStatus)) {
+            return true;
+        }
+        if (httpStatus != HttpURLConnection.HTTP_FORBIDDEN || responseBody == null) {
+            return false;
+        }
+        return responseBody.contains("DEVICE_NOT_APPROVED")
+                || responseBody.contains("Terminal device is not approved");
+    }
+
     public JSONObject login(String username, String password, String deviceId) throws IOException, JSONException {
         StringBuilder body = new StringBuilder("{");
         JsonEscaper.appendStringField(body, "username", username, true);
@@ -99,7 +110,8 @@ public final class FlowNoteApiClient {
             int code = connection.getResponseCode();
             if (code < 200 || code >= 300) {
                 String error = readFully(connection.getErrorStream());
-                if (shouldDiscardStoredSession(code) && authenticationFailureListener != null) {
+                if (shouldDiscardStoredSession(code, error)
+                        && authenticationFailureListener != null) {
                     authenticationFailureListener.onAuthenticationRejected();
                 }
                 throw new IOException("HTTP " + code + ": " + error);
@@ -316,7 +328,8 @@ public final class FlowNoteApiClient {
         InputStream stream = code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream();
         String body = readFully(stream);
         if (code < 200 || code >= 300) {
-            if (shouldDiscardStoredSession(code) && authenticationFailureListener != null) {
+            if (shouldDiscardStoredSession(code, body)
+                    && authenticationFailureListener != null) {
                 authenticationFailureListener.onAuthenticationRejected();
             }
             throw new IOException("HTTP " + code + ": " + body);

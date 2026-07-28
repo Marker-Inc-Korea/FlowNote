@@ -32,7 +32,7 @@ $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
 $expectedFastApiTestCount = 154
 $expectedWpfCoreTestCount = 74
-$expectedAndroidUnitTestCount = 16
+$expectedAndroidUnitTestCount = 20
 $stepDisplayNames = @{
     "Check Windows baseline toolchain versions" = "Windows x64 표준 도구 확인"
     "Check .gitignore coverage for known test/build artifact paths" = "테스트·빌드 산출물 Git 제외 규칙 확인"
@@ -70,7 +70,7 @@ if ($RunAndroidDeviceSmoke) {
 }
 $script:currentStepDisplayName = "검증 준비"
 $script:currentStepStatus = "RUNNING"
-$script:currentExpectedValue = "FastAPI 154건, WPF Core 74건, Android 16건과 모든 필수 단계 통과"
+$script:currentExpectedValue = "FastAPI 154건, WPF Core 74건, Android 20건과 모든 필수 단계 통과"
 $script:currentActualValue = "아직 실행하지 않음"
 $script:currentNextAction = "Windows x64 표준 도구 확인부터 순서대로 실행합니다."
 $script:stepResults = New-Object System.Collections.Generic.List[object]
@@ -275,7 +275,7 @@ function Get-StepExpectedValue {
             return "스모크 후 공통 SQLite quick_check=ok, FK 위반 0건"
         }
         "Run Android unit tests and debug build" {
-            return "Android JUnit total/passed 16/16, 실패·오류·건너뜀 0건, debug build PASSED"
+            return "Android JUnit total/passed 20/20, 실패·오류·건너뜀 0건, debug build PASSED"
         }
         "Run approved Android physical-device instrumentation smoke" {
             return "승인 Android 실단말 1대에서 계측 스모크 통과"

@@ -21,14 +21,15 @@ public final class UserErrorMessage {
         }
         if (message.startsWith("HTTP 401")) {
             if (hasCode(message, "DEVICE_NOT_APPROVED")) {
-                return "승인되지 않았거나 비활성 상태인 단말입니다. 관리자에게 단말 승인 상태를 확인하세요.";
+                return deviceApprovalGuidance();
             }
-            return "로그인 정보가 만료되었거나 올바르지 않습니다. 다시 로그인하세요. (HTTP 401)";
+            return "로그인 정보가 만료되었거나 올바르지 않습니다. 현장 기록 전송 대기는 이 단말에 "
+                    + "보존됩니다. 다시 로그인하세요. 계속 실패하면 관리자에게 승인 단말 ID를 알려주세요.";
         }
         if (message.startsWith("HTTP 403")) {
             if (hasCode(message, "DEVICE_NOT_APPROVED")
                     || message.contains("Terminal device is not approved")) {
-                return "승인되지 않았거나 비활성 상태인 단말입니다. 관리자에게 단말 승인 상태를 확인하세요.";
+                return deviceApprovalGuidance();
             }
             return "현재 계정에는 이 작업 권한이 없습니다. 관리자에게 역할과 계정 상태를 확인하세요.";
         }
@@ -65,5 +66,10 @@ public final class UserErrorMessage {
     private static boolean hasCode(String message, String code) {
         return message.contains("\"code\":\"" + code + "\"")
                 || message.contains("\"code\": \"" + code + "\"");
+    }
+
+    private static String deviceApprovalGuidance() {
+        return "승인되지 않았거나 비활성 상태인 단말입니다. 현장 기록 전송 대기는 이 단말에 "
+                + "보존됩니다. 재설치하지 말고 관리자에게 화면의 승인 단말 ID와 대기 건수를 알려주세요.";
     }
 }

@@ -17,7 +17,8 @@ public final class UserErrorMessageTest {
         );
 
         assertEquals(
-                "승인되지 않았거나 비활성 상태인 단말입니다. 관리자에게 단말 승인 상태를 확인하세요.",
+                "승인되지 않았거나 비활성 상태인 단말입니다. 현장 기록 전송 대기는 이 단말에 "
+                        + "보존됩니다. 재설치하지 말고 관리자에게 화면의 승인 단말 ID와 대기 건수를 알려주세요.",
                 message
         );
         assertFalse(message.contains("Terminal device"));
