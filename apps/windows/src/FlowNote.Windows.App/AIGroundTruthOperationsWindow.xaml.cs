@@ -140,6 +140,7 @@ public partial class AIGroundTruthOperationsWindow : Window
         {
             selectedRun = await client.GetAISearchEvaluationAsync(row.RunId);
             ApplyRun(selectedRun);
+            UpdateActionButtons();
         }
         catch (Exception ex) { StatusTextBlock.Text = $"run 상세 조회 실패: {ex.Message}"; }
     }
@@ -170,6 +171,24 @@ public partial class AIGroundTruthOperationsWindow : Window
             ? row.TraceText : "실패 사례를 선택하면 기대·실제·제외 원천 식별자와 hash를 표시합니다.";
     }
 
+    private void SampleReviewButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (client is null || selectedDataset is null || selectedRun is null) return;
+        if (selectedDataset.ReadinessTrack != "FIELD_READINESS"
+            || selectedDataset.Status != "APPROVED"
+            || selectedRun.Status != "PASSED"
+            || selectedRun.DatasetVersionId != selectedDataset.DatasetVersionId)
+        {
+            StatusTextBlock.Text = "승인된 실제 현장 dataset과 그 dataset을 통과한 평가 run을 함께 선택하세요.";
+            return;
+        }
+        new AIFieldReadinessSampleReviewWindow(
+            client, selectedDataset, selectedRun, currentUserId)
+        {
+            Owner = this
+        }.ShowDialog();
+    }
+
     private void UpdateActionButtons()
     {
         var status = selectedDataset?.Status;
@@ -181,6 +200,11 @@ public partial class AIGroundTruthOperationsWindow : Window
             currentUserId != selectedDataset?.AuthorId && currentUserId != selectedDataset?.ReviewerId && currentUserId != selectedDataset?.FirstApprovedBy;
         RetireButton.IsEnabled = RolePermissionPolicy.CanApproveGroundTruth(currentRole) && status == "APPROVED";
         EvaluateButton.IsEnabled = status == "APPROVED";
+        SampleReviewButton.IsEnabled = client is not null
+            && selectedDataset?.ReadinessTrack == "FIELD_READINESS"
+            && status == "APPROVED"
+            && selectedRun?.Status == "PASSED"
+            && selectedRun.DatasetVersionId == selectedDataset.DatasetVersionId;
     }
 
     private static string FormatStatus(string value) => value switch

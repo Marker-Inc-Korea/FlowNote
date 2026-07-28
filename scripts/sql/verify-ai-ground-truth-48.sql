@@ -80,6 +80,17 @@ SELECT
   (SELECT count(*) FROM reference_checks WHERE source_exists = 0) AS orphan_reference_count,
   (SELECT count(*) FROM reference_checks WHERE length(content_hash) <> 64) AS reference_hash_violation_count,
   (SELECT count(*) FROM reference_checks WHERE trim(coalesce(rationale, '')) = '') AS missing_rationale_count,
+  (SELECT count(*) FROM (
+     SELECT source_type, count(*) AS actual
+     FROM reference_checks
+     WHERE disposition = 'EXPECTED'
+     GROUP BY source_type
+     HAVING actual <> 12
+   )) + CASE WHEN (
+     SELECT count(DISTINCT source_type)
+     FROM reference_checks
+     WHERE disposition = 'EXPECTED'
+   ) = 4 THEN 0 ELSE 1 END AS expected_source_balance_violation,
   abs((SELECT count(*) FROM matrix_comments) - 48) AS matrix_field_comment_count_violation,
   (SELECT count(*) FROM (
      SELECT status, count(*) AS actual FROM matrix_comments GROUP BY status

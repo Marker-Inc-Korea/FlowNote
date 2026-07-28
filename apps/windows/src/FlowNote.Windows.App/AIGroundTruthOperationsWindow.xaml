@@ -15,6 +15,8 @@
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock x:Name="ReadinessTextBlock" Margin="0,0,14,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                    <Button x:Name="SampleReviewButton" Width="126" Height="32" Margin="0,0,8,0"
+                            Content="24칸 독립 검토" Click="SampleReviewButton_Click" IsEnabled="False"/>
                     <Button Width="90" Height="32" Content="새로 고침" Click="RefreshButton_Click"/>
                 </StackPanel>
             </DockPanel>

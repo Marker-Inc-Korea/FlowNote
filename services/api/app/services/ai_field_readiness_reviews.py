@@ -10,9 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     AIEvaluationDatasetBinding,
+    AIGroundTruthDatasetCase,
     AIFieldReadinessSampleReview,
     AISearchEvaluationCase,
     AISearchEvaluationRun,
+    AISearchGroundTruthCase,
 )
 
 
@@ -74,6 +76,51 @@ def parse_resolved_review_ids(row: AIFieldReadinessSampleReview) -> list[str]:
 
 def review_pair_hash(first_review_id: str, second_review_id: str) -> str:
     return content_hash(sorted((first_review_id, second_review_id)))
+
+
+def fixed_sample_plan(
+    session: Session,
+    *,
+    dataset_version_id: str,
+    dataset_snapshot_hash: str,
+) -> dict[str, object]:
+    rows = session.execute(
+        select(
+            AISearchGroundTruthCase.case_key,
+            AISearchGroundTruthCase.category,
+            AISearchGroundTruthCase.scenario_type,
+        )
+        .join(
+            AIGroundTruthDatasetCase,
+            AIGroundTruthDatasetCase.ground_truth_case_id
+            == AISearchGroundTruthCase.ground_truth_case_id,
+        )
+        .where(AIGroundTruthDatasetCase.dataset_version_id == dataset_version_id)
+        .order_by(AISearchGroundTruthCase.case_key)
+    ).all()
+    by_cell: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for case_key, category, scenario_type in rows:
+        by_cell[(category, scenario_type)].append(case_key)
+
+    selected: list[str] = []
+    for category, scenario_type in sorted(by_cell):
+        candidates = sorted(by_cell[(category, scenario_type)])
+        selector = content_hash(
+            {
+                "datasetSnapshotHash": dataset_snapshot_hash,
+                "category": category,
+                "scenarioType": scenario_type,
+            }
+        )
+        selected.append(candidates[int(selector[:8], 16) % len(candidates)])
+    selected.sort()
+    return {
+        "sampling_plan_reference": (
+            f"field-review-plan://24-cell-stratified-v1/{dataset_snapshot_hash}"
+        ),
+        "sample_case_keys": selected,
+        "sample_hash": content_hash(selected),
+    }
 
 
 def disagreement_case_keys(

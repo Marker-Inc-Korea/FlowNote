@@ -28,6 +28,7 @@ ZERO_FIELDS = {
     "provenance_violation_count", "snapshot_hash_violation_count", "orphan_reference_count",
     "reference_hash_violation_count", "missing_rationale_count",
     "missing_exclusion_reason_count",
+    "expected_source_balance_violation_count",
     "sample_review_scope_violation_count", "sample_review_actor_violation_count",
     "sample_review_pending_disagreement_count",
 }

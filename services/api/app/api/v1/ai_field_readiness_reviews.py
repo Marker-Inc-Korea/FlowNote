@@ -15,6 +15,7 @@ from app.db.models import (
     AIGroundTruthDatasetCase,
     AIGroundTruthDatasetVersion,
     AIFieldReadinessSampleReview,
+    AISearchEvaluationCase,
     AISearchGroundTruthCase,
 )
 from app.db.session import get_db_session
@@ -24,6 +25,7 @@ from app.services.ai_field_readiness_reviews import (
     decision_snapshot,
     disagreement_case_keys,
     evaluation_snapshot_pair_is_stable,
+    fixed_sample_plan,
     review_pair_hash,
     sample_review_summary,
 )
@@ -141,6 +143,23 @@ def _finding_dicts(payload: SampleReviewCreate) -> list[dict[str, str]]:
     )
 
 
+def _fixed_plan(
+    session: Session,
+    dataset: AIGroundTruthDatasetVersion,
+) -> dict[str, object]:
+    plan = fixed_sample_plan(
+        session,
+        dataset_version_id=dataset.dataset_version_id,
+        dataset_snapshot_hash=dataset.snapshot_hash or "",
+    )
+    if len(plan["sample_case_keys"]) != SAMPLE_SIZE:
+        raise HTTPException(
+            status_code=409,
+            detail="approved dataset does not contain all 24 category/scenario cells",
+        )
+    return plan
+
+
 def _review_dict(
     row: AIFieldReadinessSampleReview,
     *,
@@ -178,6 +197,7 @@ def create_sample_review(
     _require_review_role(user)
     dataset = _dataset(session, settings, payload.dataset_version_id)
     _require_stable_evaluation_pair(session, dataset, payload.evaluation_run_id)
+    fixed_plan = _fixed_plan(session, dataset)
     if session.scalar(
         select(AIFieldReadinessSampleReview.id).where(
             AIFieldReadinessSampleReview.dataset_version_id == dataset.dataset_version_id,
@@ -225,6 +245,15 @@ def create_sample_review(
             raise HTTPException(
                 status_code=422,
                 detail="independent sample must contain one case from each of the 24 category/scenario cells",
+            )
+        if (
+            payload.sampling_plan_reference.strip()
+            != fixed_plan["sampling_plan_reference"]
+            or case_keys != fixed_plan["sample_case_keys"]
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="independent review must use the server-fixed sample plan",
             )
         if independent:
             first = independent[0]
@@ -307,6 +336,79 @@ def create_sample_review(
             dataset_snapshot_hash=dataset.snapshot_hash,
             evaluation_run_id=payload.evaluation_run_id,
         ),
+    }
+
+
+@router.get("/sample-plan")
+def get_sample_plan(
+    user: CurrentUser,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_db_session)],
+    dataset_version_id: Annotated[str, Query(alias="datasetVersionId")],
+    evaluation_run_id: Annotated[str, Query(alias="evaluationRunId")],
+) -> dict[str, object]:
+    _require_review_role(user)
+    dataset = _dataset(session, settings, dataset_version_id)
+    _require_stable_evaluation_pair(session, dataset, evaluation_run_id)
+    plan = _fixed_plan(session, dataset)
+    keys = list(plan["sample_case_keys"])
+    ground_truth = {
+        row.case_key: row
+        for row in session.scalars(
+            select(AISearchGroundTruthCase)
+            .join(
+                AIGroundTruthDatasetCase,
+                AIGroundTruthDatasetCase.ground_truth_case_id
+                == AISearchGroundTruthCase.ground_truth_case_id,
+            )
+            .where(
+                AIGroundTruthDatasetCase.dataset_version_id
+                == dataset.dataset_version_id,
+                AISearchGroundTruthCase.case_key.in_(keys),
+            )
+        ).all()
+    }
+    evaluated = {
+        row.case_key: row
+        for row in session.scalars(
+            select(AISearchEvaluationCase).where(
+                AISearchEvaluationCase.run_id == evaluation_run_id,
+                AISearchEvaluationCase.case_key.in_(keys),
+            )
+        ).all()
+    }
+    if len(ground_truth) != SAMPLE_SIZE or len(evaluated) != SAMPLE_SIZE:
+        raise HTTPException(
+            status_code=409,
+            detail="fixed sample is not complete in the selected evaluation run",
+        )
+    return {
+        "datasetVersionId": dataset.dataset_version_id,
+        "evaluationRunId": evaluation_run_id,
+        "datasetSnapshotHash": dataset.snapshot_hash,
+        "samplingPlanReference": plan["sampling_plan_reference"],
+        "sampleHash": plan["sample_hash"],
+        "cases": [
+            {
+                "caseKey": case_key,
+                "category": ground_truth[case_key].category,
+                "scenarioType": ground_truth[case_key].scenario_type,
+                "question": ground_truth[case_key].question,
+                "expectedOutcome": ground_truth[case_key].expected_outcome,
+                "expectedEvidence": json.loads(
+                    evaluated[case_key].expected_evidence_json
+                ),
+                "actualEvidence": json.loads(
+                    evaluated[case_key].actual_evidence_json
+                ),
+                "expectedExcluded": json.loads(
+                    evaluated[case_key].excluded_evidence_json
+                ),
+                "rankingHash": evaluated[case_key].ranking_hash,
+                "passed": evaluated[case_key].passed,
+            }
+            for case_key in keys
+        ],
     }
 
 

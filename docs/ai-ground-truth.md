@@ -26,6 +26,8 @@ WPF `AI 정답셋` 화면의 `사례·원천 구성` 창은 서버 `ai_search_ca
 
 dataset 운영은 사례 승인과 별도 권한 경계를 사용한다. 위 보고서 작성 role은 dataset 작성·구성·검토를 수행할 수 있지만 `FIRST_APPROVE`, `SECOND_APPROVE`, `RETIRE`는 `admin`, `system-admin`, `document-admin`, `department-manager`만 수행한다. 작성자·검토자·두 승인자는 모두 서로 달라야 하고 이 분리는 서버 상태 전이와 DB 제약으로 함께 보호된다. 대체본은 같은 고객·현장·DB·라인·준비도 계열과 같은 dataset key의 승인·대체·폐기 version만 참조할 수 있다.
 
+`AI 정답셋`에서 승인된 `FIELD_READINESS` dataset과 그 dataset을 통과한 평가 run을 각각 선택하면 `24칸 독립 검토`를 열 수 있다. 창은 서버가 dataset snapshot hash로 고정한 표본 계획, 24개 case와 sample hash를 먼저 읽는다. case를 선택하면 기대·실제·제외 원천의 source/version/trace/content hash와 ranking hash를 함께 표시한다. 첫 검토 뒤 두 번째 검토자에게는 같은 case와 근거만 보이고 첫 판단과 decision hash는 보이지 않는다. 두 판정이 모두 제출된 뒤에만 비교 내용을 표시하며 불일치가 있으면 앞선 두 사람이 아닌 사용자에게 불일치 case만 제3 합의 대상으로 연다.
+
 ## 비민감 48건 시드와 검증
 
 다음 명령은 이름에 `test`가 포함된 DB만 허용한다. 기존 DB와 실행 이력은 지우지 않고 `smoke48-v1` 고정 case key로 수렴한다. 별도 업무 폴더나 고객 식별자를 만들지 않는다.
@@ -48,7 +50,7 @@ services/api/.venv/bin/python scripts/verify-ai-ground-truth-48.py
 | 최신 공개 문서 `LATEST_PUBLISHED_DOCUMENT` | 분석/검토 FieldComment | 삭제·비공개 version + 제외 기록 | 현재 공개 version + 선정 기록 + 작업순서 + 보고서 source |
 | 상충 기록 `CONFLICTING_RECORDS` | 분석/검토 FieldComment | 제외 판정 + 정책 부정 원천 | 서로 다른 고정 원천을 함께 표시하는 복합 근거 |
 
-48개 FieldComment의 승인 상태 분포는 `ANALYZED 8`, `REVIEWED 8`, `SELECTED 16`, `EXCLUDED 16`이다. `NEW`를 매번 늘리는 방식은 사용하지 않는다. 각 행은 `assigned_to`, `review_due_at`, `last_transition_reason`, `activity_history.before_value/after_value`의 동일 source SHA-256을 보존한다. `SELECTED` 16건은 범주·variant별 보고서에 사용하고 각 보고서는 `DOCUMENT`, `FIELD_COMMENT`, `WORK_SEQUENCE_HISTORY` 세 source type을 가진다. source마다 고정 version ID, 저장 시점 source hash와 독립 trace ID를 보존한다.
+48개 FieldComment의 승인 상태 분포는 `ANALYZED 8`, `REVIEWED 8`, `SELECTED 16`, `EXCLUDED 16`이다. `NEW`를 매번 늘리는 방식은 사용하지 않는다. 각 행은 `assigned_to`, `review_due_at`, `last_transition_reason`, `activity_history.before_value/after_value`의 동일 source SHA-256을 보존한다. `NORMAL`의 기대 근거 1건과 `CONFLICT`의 기대 근거 2건을 합친 48개 reference는 `PUBLISHED_DOCUMENT_VERSION`, `FIELD_COMMENT`, `WORK_SEQUENCE_HISTORY`, `REPORT_SOURCE`에 각각 12개씩 배분한다. `SELECTED` 16건은 범주·variant별 보고서에 사용하고 각 보고서는 `DOCUMENT`, `FIELD_COMMENT`, `WORK_SEQUENCE_HISTORY` 세 source type을 가진다. source마다 고정 version ID, 저장 시점 source hash와 독립 trace ID를 보존한다.
 
 시드는 공개 문서 근거와 민감정보 형태, 고객 식별자 형태, 로컬 경로, 권한 밖 채널, 삭제/비공개 문서, `EXCLUDED`/`ARCHIVED` FieldComment 부정 근거를 함께 만든다. 모든 값은 합성 시험값이며 `TEST`/`SMOKE_REGRESSION` provenance를 가진다. 문서에는 `equipment`, `item`, `process`, `error_type` 네 축의 도메인 태그를 연결하며 고객 문서 트리나 BOM 구조를 만들거나 강제하지 않는다.
 
@@ -56,6 +58,7 @@ services/api/.venv/bin/python scripts/verify-ai-ground-truth-48.py
 
 - 48개 matrix FieldComment와 네 상태 분포, 담당자·기한·전이 사유
 - 감사 before/after source hash 동일성과 고정 idempotency key 중복 0건
+- 네 기대 원천 유형이 각각 12개인지와 원천 유형 누락 0건
 - 범주별 2개, 전체 16개 보고서와 보고서당 source type 2종 이상
 - 모든 report source의 고정 version, 64자리 source hash, trace ID
 - 문서별 설비/품목/공정/오류 유형 중 최소 2개 태그 축
@@ -79,7 +82,7 @@ services/api/.venv/bin/python scripts/verify-ai-field-readiness.py \
   --line-scope LINE_SCOPE --username verifier-account
 ```
 
-검증기는 승인 dataset과 고객·현장·선택적 라인·DB fingerprint를 정확히 결합한다. SQL 단계에서 48건, 24칸×2건, case key 중복, 작성자/검토자/1차/2차 승인자 분리, `ANONYMOUS_FIELD` provenance, snapshot/reference hash, 제외 이유와 네 원천 orphan을 검사한다. 이어 외부 호출을 비활성화한 `FAKE` adapter로 같은 dataset snapshot을 두 번 평가해 candidate ID/content hash/rank의 `previous_run_delta`, top-k, citation trace·의미 일치, 상충 표시와 세 가지 0건 위반 지표를 확인한다. 실제 원천이나 승인자가 부족하면 실패 상태를 그대로 유지하며 합성 사례나 `PILOT` 사례를 이 48건에 보충하지 않는다.
+검증기는 승인 dataset과 고객·현장·선택적 라인·DB fingerprint를 정확히 결합한다. SQL 단계에서 48건, 24칸×2건, case key 중복, 작성자/검토자/1차/2차 승인자 분리, `ANONYMOUS_FIELD` provenance, snapshot/reference hash, 제외 이유, 네 기대 원천의 12건씩 균형과 orphan을 검사한다. 이어 외부 호출을 비활성화한 `FAKE` adapter로 같은 dataset snapshot을 두 번 평가해 candidate ID/content hash/rank의 `previous_run_delta`, top-k, citation trace·의미 일치, 상충 표시와 세 가지 0건 위반 지표를 확인한다. 실제 원천이나 승인자가 부족하면 실패 상태를 그대로 유지하며 합성 사례나 `PILOT` 사례를 이 48건에 보충하지 않는다.
 
 ## 실제 익명 현장 원천의 책임과 반출 금지
 
@@ -97,7 +100,7 @@ services/api/.venv/bin/python scripts/verify-ai-field-readiness.py \
 
 ## 독립 표본 검토 양식과 불일치 처리
 
-승인된 `FIELD_READINESS` dataset snapshot을 동일하게 통과한 두 evaluation run 가운데 하나를 표본 검토 run으로 고정한다. 결과를 보기 전에 표본 계획 참조를 확정하고 24개 범주·유형 칸마다 1건씩 총 24건을 선택한다. 두 검토자는 같은 case 목록을 서로 독립적으로 확인하고 다음 항목을 case별로 기록한다.
+승인된 `FIELD_READINESS` dataset snapshot을 동일하게 통과한 두 evaluation run 가운데 하나를 표본 검토 run으로 고정한다. `GET /api/v1/ai-search/field-readiness/sample-plan`은 dataset snapshot hash와 범주·유형을 입력으로 각 칸의 2건 중 1건을 결정적으로 선택해 24개 case key, 변경 불가능한 계획 참조와 sample hash를 반환한다. 운영자가 결과를 보고 case를 바꾸는 방식은 허용하지 않으며 제출 API도 서버 계획과 다른 목록을 `409`로 거부한다. 두 검토자는 같은 case 목록을 서로 독립적으로 확인하고 다음 항목을 case별로 기록한다.
 
 | 필드 | 기록 기준 |
 | --- | --- |
@@ -112,6 +115,8 @@ services/api/.venv/bin/python scripts/verify-ai-field-readiness.py \
 `POST /api/v1/ai-search/field-readiness/sample-reviews`는 두 독립 검토자의 표본·판정을 `ai_field_readiness_sample_reviews`에 각각 보존한다. 첫 검토만 있을 때는 다른 사용자의 조회 응답에서 판정과 decision hash를 숨기고 표본 계획·case 목록만 제공한다. 두 결과가 같으면 `COMPLETED`다. 하나라도 다르면 `PENDING_CONSENSUS`이며 불일치 case key를 그대로 보존한다. 이 상태를 임의로 `PASS`로 바꾸지 않는다. 합의가 필요한 경우 앞선 두 사람과 다른 제3 검토자가 불일치 case만 다시 판정하고 두 review ID를 연결한다. 제3 기록이 없으면 provider 착수 게이트는 계속 닫힌다. 원래 두 판정은 수정하거나 삭제하지 않는다.
 
 작성자·dataset 검토자·1차 승인자·2차 승인자는 모두 달라야 한다. 표본의 두 검토자도 서로 달라야 하며 제3 합의자는 두 표본 검토자와 달라야 한다. 실제 사용자 배정이 끝나지 않은 상태는 `PENDING`이고 대리 계정이나 공용 계정으로 분리를 충족한 것으로 보지 않는다.
+
+운영 책임은 분리한다. 현장 데이터 책임자는 고객 승인 범위와 익명화를 확인하고 dataset 작성자·검토자·두 승인자는 48건 구성과 snapshot 승인을 맡는다. 두 표본 검토자는 WPF에서 근거 trace와 권한 경계를 독립 판정하고 제3 합의자는 불일치만 해결한다. 시스템 운영자는 계정·감사·검증 실행과 provider 비활성 상태를 확인하지만 현장 판단을 대신 입력하지 않는다.
 
 ## Dataset 교체 주기
 

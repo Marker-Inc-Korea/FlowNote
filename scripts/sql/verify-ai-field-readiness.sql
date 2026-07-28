@@ -219,6 +219,17 @@ SELECT
      SELECT source_type FROM reference_checks
      WHERE disposition = 'EXPECTED' GROUP BY source_type
    )) AS expected_source_type_count,
+  (SELECT count(*) FROM (
+     SELECT source_type, count(*) AS actual
+     FROM reference_checks
+     WHERE disposition = 'EXPECTED'
+     GROUP BY source_type
+     HAVING actual <> 12
+   )) + CASE WHEN (
+     SELECT count(DISTINCT source_type)
+     FROM reference_checks
+     WHERE disposition = 'EXPECTED'
+   ) = 4 THEN 0 ELSE 1 END AS expected_source_balance_violation_count,
   (SELECT count(*) FROM dataset_reviews
    WHERE length(dataset_snapshot_hash) <> 64
       OR dataset_snapshot_hash <> approved_snapshot_hash
