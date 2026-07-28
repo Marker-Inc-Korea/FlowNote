@@ -544,8 +544,8 @@ WPF `AI 정답셋` 화면이 사용하는 API와 현장 표본 운영을 위해 
 | `POST` | `/api/v1/ai-search/evaluations` | `datasetVersionId`로 승인 snapshot 전체 평가. ad-hoc `cases`/`groundTruthCaseIds`와 혼용 금지 |
 | `GET` | `/api/v1/ai-search/evaluations` | 저장된 run 목록. `datasetVersionId` 필터 지원 |
 | `GET` | `/api/v1/ai-search/evaluations/{run_id}` | 사례별 실패 코드와 기대·실제·제외 원천 trace 조회. `compareToRunId` 비교 지원 |
-| `POST` | `/api/v1/ai-search/field-readiness/sample-reviews` | 같은 dataset/evaluation 표본의 독립 판정 또는 불일치 제3 합의 기록. 현재 WPF는 직접 호출하지 않음 |
-| `GET` | `/api/v1/ai-search/field-readiness/sample-reviews` | 판정 은닉, 불일치 case, 합의와 완료 상태 조회. 현재 WPF는 직접 호출하지 않음 |
+| `POST` | `/api/v1/ai-search/field-readiness/sample-reviews` | 같은 dataset/evaluation 표본의 독립 판정 또는 불일치 제3 합의 기록. WPF `24칸 독립 검토`가 판정 제출에 사용 |
+| `GET` | `/api/v1/ai-search/field-readiness/sample-reviews` | 판정 은닉, 불일치 case, 합의와 완료 상태 조회. WPF `24칸 독립 검토`가 현재 단계와 편집 범위 판단에 사용 |
 
 dataset 상태는 `DRAFT → IN_REVIEW → PENDING_FIRST_APPROVAL → PENDING_SECOND_APPROVAL → APPROVED`다. 작성자, 검토자, 1차 승인자, 2차 승인자는 모두 달라야 하며 서버 상태 전이와 DB 제약이 이를 함께 강제한다. 최종 승인은 총 48건과 8범주×3유형 각 2건을 요구하고 사례 snapshot hash를 다시 확인한다. 대체 version은 같은 고객·현장·DB·라인·준비도 계열과 같은 `datasetKey`의 불변 version만 참조할 수 있다. 대체 version 승인 시 이전 승인본은 삭제·수정하지 않고 `SUPERSEDED`, 명시적 폐기는 `RETIRED`가 된다. dataset 상세·구성 변경·상태 전이는 현재 고객·현장·DB scope 밖의 ID를 `404`로 처리한다.
 

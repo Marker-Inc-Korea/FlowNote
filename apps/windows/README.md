@@ -32,7 +32,7 @@
 - 인수인계 확인 현황: 수신자별 receipt 상태 변경, 후속 FieldComment 생성과 원천/수신 확인 보존·다음 행동 안내
 - FastAPI 서버 인증과 승인 단말/문서/controlled copy/FieldComment/첨부/접근 로그/보고서/작업순서/채널·인수인계/AI 검색 근거·회귀 평가/외부 AI 운영 API 클라이언트
 - AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
-- `AI 정답셋`: 후보 포함 근거와 수동 제외 원천으로 사례 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·대체·폐기, 평가 run 실행·이전 run 비교
+- `AI 정답셋`: 후보 포함 근거와 수동 제외 원천으로 사례 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·대체·폐기, 평가 run 실행·이전 run 비교, 실제 익명 현장 24칸 독립 표본 검토와 불일치 제3 합의
 - `system-admin` 전용 `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 전역/현재 현장 kill switch와 호출·비용·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 일괄 실행, 고객/현장 질의 상세, 단일 즉시 만료와 legal hold 설정·해제·감사 read-back
 - 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장. 공개·상태·태그 mutation receipt와 read-back, FieldComment 검토 base revision·mutation key, 첨부 부모·파일 SHA-256, 보고서 source 집합 hash, 문서 버전·첨부 idempotency key 전달과 큐 깊이·최장 대기·최근 처리량·실패 분포·row별 운영 상태 표시 포함
 - 서버 복구 경계 보호: sync manifest의 instance/epoch/API contract와 알림 cursor를 URL별 binding에 저장하고, URL·instance·epoch 변경, cursor 역행 또는 `partial_restore`·`old_database_new_files`·`missing_file`·`wrong_server_epoch` 복구 장애 신호 시 자동 전송과 polling 중지
@@ -44,7 +44,7 @@ WPF에는 `/api/v1/ai/queries`를 호출하는 실제 외부 AI 질의 실행 �
 
 AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트, `AI 근거 후보 운영 점검` 화면에 구현되어 있다. 이 화면은 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`, `/api/v1/ai-search/readiness`를 호출해 외부 AI 호출 전 데이터 품질, 원천 추적 가능성, 서버 scope별 실제 현장/스모크 준비도를 확인한다. `AI 정답셋`의 `사례·원천 구성` 창은 후보를 포함 근거로 선택하고 실제 source ID·선택적 version ID·제외 사유·설명을 제외 근거로 입력한다. 첫 등록 사례는 비활성으로 남고 다른 사용자가 2차 승인해야 활성화된다. 승인 사례는 dataset version으로 묶어 작성자·검토자·두 승인자를 분리하고, 승인 snapshot에 결합한 평가 run을 실행·비교한다. 합성/시험 회귀와 실제 현장 준비도는 별도 계열로 유지한다.
 
-실제 익명 현장 dataset의 24칸 독립 표본 검토와 불일치 제3 합의는 FastAPI와 서버 DB에 구현되어 있다. 현재 WPF에는 이 표본을 입력하거나 합의하는 화면과 API 클라이언트가 없으므로 서버 API를 직접 사용해야 한다.
+실제 익명 현장 dataset의 24칸 독립 표본 검토와 불일치 제3 합의는 FastAPI, 서버 DB와 WPF에 구현되어 있다. `AI 정답셋`에서 승인된 `FIELD_READINESS` dataset과 그 dataset을 통과한 평가 run을 함께 선택하면 `24칸 독립 검토`가 활성화된다. 화면은 서버가 고정한 표본 계획과 기대·실제·제외 근거 trace를 보여주며, 첫 판정은 두 번째 제출 전까지 숨긴다. 두 판정이 다르면 앞선 두 사람과 다른 제3 사용자에게 불일치 case만 열어 합의를 받는다.
 
 `AI 운영` 화면은 `/api/v1/ai-operations`를 통해 승인, 프롬프트, 전역/현장 운영 정책과 질의 감사 메타데이터를 조회·변경한다. provider 자격증명·질의 원문·응답 원문은 표시하지 않으며 provider 자격증명은 설정 여부만 표시한다. 감사 CSV는 현장 정책에서 내보내기를 허용한 경우에만 저장할 수 있다. 서버는 설정된 주기로 만료 보존을 자동 처리하며, 화면의 실행 버튼은 다음 주기를 기다리지 않고 같은 일괄 처리를 즉시 요청한다. 감사·보존 탭은 선택 질의의 고객/현장, hold 상태, 두 보존 예정 시각, 전체 hold/감사 이력을 read-back한다. 단일 만료와 hold 설정·해제는 사유·근거 번호, 이중 확인, 최신 상태 태그와 안정 operation key를 사용하며 응답 유실은 같은 요청으로 한 번 재시도한다. 성공 뒤 query/hold/audit를 서버에서 다시 읽기 전에는 완료로 표시하지 않는다.
 
