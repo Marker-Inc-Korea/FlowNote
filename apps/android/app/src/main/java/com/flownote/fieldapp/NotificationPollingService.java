@@ -33,6 +33,7 @@ public final class NotificationPollingService extends Service {
 
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private SecureSessionStore sessionStore;
+    private OfflineQueueStore outbox;
     private SharedPreferences preferences;
     private String runId;
     private volatile boolean pollRunning;
@@ -41,6 +42,7 @@ public final class NotificationPollingService extends Service {
     public void onCreate() {
         super.onCreate();
         sessionStore = new SecureSessionStore(this);
+        outbox = new OfflineQueueStore(this);
         preferences = getSharedPreferences(SecureSessionStore.PREFERENCES_NAME, MODE_PRIVATE);
         runId = "ANDROID-DELIVERY-" + UUID.randomUUID();
         preferences.edit().putString("delivery_run_id", runId).commit();
@@ -57,6 +59,7 @@ public final class NotificationPollingService extends Service {
     @Override
     public void onDestroy() {
         executor.shutdownNow();
+        outbox.close();
         super.onDestroy();
     }
 
@@ -93,6 +96,10 @@ public final class NotificationPollingService extends Service {
 
         FlowNoteApiClient client = new FlowNoteApiClient(serverUrl, getContentResolver());
         client.setAccessToken(sessionStore.accessToken());
+        client.setAuthenticationFailureListener(() -> {
+            sessionStore.clear();
+            stopSelf();
+        });
         boolean caughtUp = preferences.getBoolean(caughtUpKey, false);
         NotificationCursorTracker tracker = new NotificationCursorTracker(cursor, caughtUp);
         int pageNumber = 0;
@@ -150,7 +157,17 @@ public final class NotificationPollingService extends Service {
                 .putLong(cursorKey, tracker.cursor())
                 .putBoolean(caughtUpKey, tracker.caughtUp())
                 .commit();
-        updateServiceNotification("마지막 확인 " + Instant.now());
+        OfflineQueueStore.SyncSummary outboxSummary = outbox.retryPending(client, userId);
+        int pendingOutbox = outboxSummary.remainingCount;
+        updateServiceNotification(
+                pendingOutbox == 0
+                        ? "알림 연결 정상 · 전송 대기 0건"
+                        : "알림 연결 정상 · 전송 대기 " + pendingOutbox + "건"
+        );
+        Log.i(TAG, runId + " outbox_ok success=" + outboxSummary.successCount
+                + " failed=" + outboxSummary.failedCount
+                + " pending=" + pendingOutbox
+                + " at=" + Instant.now());
         Log.i(TAG, runId + " poll_ok cursor=" + tracker.cursor()
                 + " pages=" + pageNumber
                 + " received=" + totalReceived

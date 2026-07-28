@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -11,9 +12,12 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.util.Log;
+import android.util.Size;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
@@ -28,9 +32,23 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     private static final int REQUEST_PICK_PHOTO = 1001;
+    private static final long OUTBOX_REFRESH_MILLIS = 15_000L;
+    private static final String OUTBOX_LOG_TAG = "FlowNoteOutbox";
+    private static final String EXTRA_OUTBOX_AUDIT_NONCE = "flownote_outbox_audit_nonce";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable outboxRefresh = new Runnable() {
+        @Override
+        public void run() {
+            refreshOutboxStatus();
+            OutboxQueueStatus queueStatus = outbox.queueStatus(System.currentTimeMillis());
+            if (!retryInProgress && sessionStore.hasSession() && queueStatus.readyCount > 0) {
+                retryOutbox(false);
+            }
+            mainHandler.postDelayed(this, OUTBOX_REFRESH_MILLIS);
+        }
+    };
 
     private SharedPreferences preferences;
     private SecureSessionStore sessionStore;
@@ -46,11 +64,15 @@ public final class MainActivity extends Activity {
     private EditText commentInput;
     private RadioGroup signalGroup;
     private TextView statusText;
+    private TextView outboxStatusText;
+    private TextView photoStatusText;
+    private ImageView photoPreview;
     private LinearLayout contentArea;
     private Uri selectedPhotoUri;
     private String accessToken;
     private String refreshToken;
     private String currentUserId;
+    private volatile boolean retryInProgress;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,6 +87,28 @@ public final class MainActivity extends Activity {
         requestNotificationPermission();
         startNotificationDelivery();
         updateStatus("서버 주소와 승인 단말 ID를 확인한 뒤 로그인하세요.");
+        refreshOutboxStatus();
+        logOutboxAudit(getIntent());
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        mainHandler.removeCallbacks(outboxRefresh);
+        mainHandler.post(outboxRefresh);
+    }
+
+    @Override
+    protected void onStop() {
+        mainHandler.removeCallbacks(outboxRefresh);
+        super.onStop();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        logOutboxAudit(intent);
     }
 
     @Override
@@ -85,6 +129,17 @@ public final class MainActivity extends Activity {
         title.setPadding(0, 0, 0, 14);
         root.addView(title);
 
+        outboxStatusText = text("", 16, "#1F2A30");
+        outboxStatusText.setBackgroundColor(Color.parseColor("#E7F1EB"));
+        outboxStatusText.setPadding(dp(14), dp(14), dp(14), dp(14));
+        outboxStatusText.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        root.addView(outboxStatusText);
+
+        statusText = text("", 14, "#3D4852");
+        statusText.setPadding(0, dp(12), 0, dp(12));
+        statusText.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        root.addView(statusText);
+
         serverUrlInput = input("서버 주소 예: http://10.0.0.10:8000", InputType.TYPE_CLASS_TEXT);
         deviceIdInput = input("승인 단말 ID", InputType.TYPE_CLASS_TEXT);
         usernameInput = input("사용자 ID", InputType.TYPE_CLASS_TEXT);
@@ -95,15 +150,15 @@ public final class MainActivity extends Activity {
         root.addView(passwordInput);
 
         LinearLayout loginRow = row();
-        loginRow.addView(button("로그인", view -> login()));
-        loginRow.addView(button("로그아웃", view -> logout()));
-        loginRow.addView(button("재전송", view -> retryOutbox()));
+        addRowButton(loginRow, "로그인", view -> login());
+        addRowButton(loginRow, "로그아웃", view -> logout());
+        addRowButton(loginRow, "재전송", view -> retryOutbox(true));
         root.addView(loginRow);
 
         LinearLayout navRow = row();
-        navRow.addView(button("공개 문서", view -> loadPublishedDocuments()));
-        navRow.addView(button("알림", view -> loadNotifications()));
-        navRow.addView(button("인수인계", view -> loadHandovers()));
+        addRowButton(navRow, "공개 문서", view -> loadPublishedDocuments());
+        addRowButton(navRow, "알림", view -> loadNotifications());
+        addRowButton(navRow, "인수인계", view -> loadHandovers());
         root.addView(navRow);
 
         TextView formTitle = text("FieldComment / 사진 / 신호등 입력", 18, "#236C4A");
@@ -126,13 +181,20 @@ public final class MainActivity extends Activity {
         root.addView(signalGroup);
 
         LinearLayout commentRow = row();
-        commentRow.addView(button("사진 선택", view -> pickPhoto()));
-        commentRow.addView(button("저장/전송", view -> enqueueAndRetryComment()));
+        addRowButton(commentRow, "사진 선택·확인", view -> pickPhoto());
+        addRowButton(commentRow, "기기에 저장·전송", view -> enqueueAndRetryComment());
         root.addView(commentRow);
 
-        statusText = text("", 14, "#3D4852");
-        statusText.setPadding(0, 16, 0, 16);
-        root.addView(statusText);
+        photoStatusText = text("사진 선택 안 됨", 15, "#3D4852");
+        photoStatusText.setPadding(dp(12), dp(10), dp(12), dp(10));
+        root.addView(photoStatusText);
+
+        photoPreview = new ImageView(this);
+        photoPreview.setAdjustViewBounds(true);
+        photoPreview.setMaxHeight(dp(180));
+        photoPreview.setContentDescription("선택한 현장 사진 미리보기");
+        photoPreview.setVisibility(View.GONE);
+        root.addView(photoPreview);
 
         contentArea = new LinearLayout(this);
         contentArea.setOrientation(LinearLayout.VERTICAL);
@@ -146,6 +208,8 @@ public final class MainActivity extends Activity {
         button.setId(id);
         button.setText(label);
         button.setTextSize(15);
+        button.setMinHeight(dp(56));
+        button.setPadding(dp(10), dp(8), dp(10), dp(8));
         return button;
     }
 
@@ -155,6 +219,7 @@ public final class MainActivity extends Activity {
         editText.setTextSize(15);
         editText.setInputType(inputType);
         editText.setSingleLine((inputType & InputType.TYPE_TEXT_FLAG_MULTI_LINE) == 0);
+        editText.setMinHeight(dp(52));
         return editText;
     }
 
@@ -176,9 +241,33 @@ public final class MainActivity extends Activity {
     private Button button(String label, View.OnClickListener listener) {
         Button button = new Button(this);
         button.setText(label);
+        button.setTextSize(15);
         button.setAllCaps(false);
+        button.setMinHeight(dp(56));
+        button.setMinWidth(dp(72));
+        button.setPadding(dp(10), dp(8), dp(10), dp(8));
         button.setOnClickListener(listener);
         return button;
+    }
+
+    private void addRowButton(
+            LinearLayout target,
+            String label,
+            View.OnClickListener listener
+    ) {
+        Button button = button(label, listener);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+        );
+        params.setMarginStart(dp(2));
+        params.setMarginEnd(dp(2));
+        target.addView(button, params);
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void restoreSettings() {
@@ -225,9 +314,14 @@ public final class MainActivity extends Activity {
                 currentUserId = payload.getString("user_id");
                 saveSettings();
                 postStatus("로그인 완료: " + payload.optString("display_name"));
-                mainHandler.post(this::startNotificationDelivery);
+                mainHandler.post(() -> {
+                    startNotificationDelivery();
+                    refreshOutboxStatus();
+                    retryOutbox(false);
+                });
             } catch (Exception exc) {
                 postStatus("로그인 실패: " + UserErrorMessage.from(exc));
+                mainHandler.post(this::refreshOutboxStatus);
             }
         });
     }
@@ -239,6 +333,7 @@ public final class MainActivity extends Activity {
         currentUserId = null;
         sessionStore.clear();
         stopService(new Intent(this, NotificationPollingService.class));
+        mainHandler.post(this::refreshOutboxStatus);
     }
 
     private void logout() {
@@ -253,6 +348,7 @@ public final class MainActivity extends Activity {
             } finally {
                 clearRejectedSession();
                 postStatus("로그아웃했습니다. 보안 열람 임시 파일을 정리했습니다.");
+                mainHandler.post(this::refreshOutboxStatus);
             }
         });
     }
@@ -416,9 +512,13 @@ public final class MainActivity extends Activity {
                 String handoverId = handover.optString("handover_id");
                 String receiptId = receipt.optString("receipt_id");
                 LinearLayout row = row();
-                row.addView(button("읽음", view -> updateReceipt(handoverId, receiptId, "READ")));
-                row.addView(button("확인", view -> updateReceipt(handoverId, receiptId, "ACKNOWLEDGED")));
-                row.addView(button("후속필요", view -> updateReceipt(handoverId, receiptId, "FOLLOW_UP_REQUIRED")));
+                addRowButton(row, "읽음", view -> updateReceipt(handoverId, receiptId, "READ"));
+                addRowButton(row, "확인", view -> updateReceipt(handoverId, receiptId, "ACKNOWLEDGED"));
+                addRowButton(
+                        row,
+                        "후속 필요",
+                        view -> updateReceipt(handoverId, receiptId, "FOLLOW_UP_REQUIRED")
+                );
                 contentArea.addView(row);
             }
         }
@@ -460,8 +560,42 @@ public final class MainActivity extends Activity {
                     selectedPhotoUri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
             );
-            updateStatus("사진 선택 완료");
+            photoStatusText.setText("사진 1장 선택됨 · 미리보기를 확인한 뒤 기기에 저장·전송하세요.");
+            updateStatus("사진 선택 완료. 아래 미리보기를 확인하세요.");
+            loadPhotoPreview(selectedPhotoUri);
         }
+    }
+
+    private void loadPhotoPreview(Uri photoUri) {
+        if (Build.VERSION.SDK_INT < 29) {
+            photoPreview.setVisibility(View.GONE);
+            photoStatusText.setText(
+                    "사진 1장 선택됨 · 기기에 저장·전송하기 전에 선택한 사진을 확인했습니다."
+            );
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                Bitmap thumbnail = getContentResolver().loadThumbnail(
+                        photoUri,
+                        new Size(dp(320), dp(180)),
+                        null
+                );
+                mainHandler.post(() -> {
+                    if (photoUri.equals(selectedPhotoUri)) {
+                        photoPreview.setImageBitmap(thumbnail);
+                        photoPreview.setVisibility(View.VISIBLE);
+                    }
+                });
+            } catch (Exception exc) {
+                mainHandler.post(() -> {
+                    photoPreview.setVisibility(View.GONE);
+                    photoStatusText.setText(
+                            "사진 1장 선택됨 · 미리보기를 열지 못했습니다. 사진을 다시 선택해 확인하세요."
+                    );
+                });
+            }
+        });
     }
 
     private void enqueueAndRetryComment() {
@@ -490,8 +624,12 @@ public final class MainActivity extends Activity {
             return;
         }
         selectedPhotoUri = null;
-        updateStatus("임시 저장 완료. 서버 전송을 시도합니다.");
-        retryOutbox();
+        photoPreview.setImageDrawable(null);
+        photoPreview.setVisibility(View.GONE);
+        photoStatusText.setText("사진 선택 안 됨");
+        refreshOutboxStatus();
+        updateStatus("기기에 암호화해 저장했습니다. 서버 전송을 시도합니다.");
+        retryOutbox(false);
     }
 
     private String signalLevel() {
@@ -508,18 +646,42 @@ public final class MainActivity extends Activity {
         return null;
     }
 
-    private void retryOutbox() {
+    private void retryOutbox(boolean manual) {
+        if (retryInProgress) {
+            if (manual) {
+                updateStatus("이미 전송을 시도하고 있습니다.");
+            }
+            return;
+        }
+        OutboxQueueStatus before = outbox.queueStatus(System.currentTimeMillis());
+        if (before.pendingCount == 0) {
+            refreshOutboxStatus();
+            if (manual) {
+                updateStatus("전송 대기 기록이 없습니다.");
+            }
+            return;
+        }
+        if (!sessionStore.hasSession()) {
+            refreshOutboxStatus();
+            updateStatus("현장 기록은 이 단말에 보존되어 있습니다. 다시 로그인한 뒤 전송합니다.");
+            return;
+        }
+        retryInProgress = true;
         rebuildApiClient();
-        updateStatus("재전송 중...");
+        updateStatus((manual ? "수동" : "자동") + " 재전송 중...");
         executor.execute(() -> {
             try {
-                OfflineQueueStore.SyncSummary summary = outbox.retryPending(apiClient, currentUserId);
+                OfflineQueueStore.SyncSummary summary = outbox.retryPending(
+                        apiClient,
+                        currentUserId,
+                        manual
+                );
                 if (summary.failedCount > 0) {
                     postStatus(
-                            "일부 기록을 보내지 못했습니다. 성공 " + summary.successCount +
+                            "현장 기록은 이 단말에 보존되어 있습니다. 성공 " + summary.successCount +
                                     "건, 실패 " + summary.failedCount +
                                     "건, 대기 " + summary.remainingCount +
-                                    "건입니다. 네트워크와 로그인 상태를 확인한 뒤 재전송하세요."
+                                    "건입니다. 네트워크와 로그인 상태를 확인하세요."
                     );
                 } else {
                     postStatus(
@@ -529,8 +691,38 @@ public final class MainActivity extends Activity {
                 }
             } catch (Exception exc) {
                 postStatus("재전송 실패: " + UserErrorMessage.from(exc));
+            } finally {
+                retryInProgress = false;
+                mainHandler.post(this::refreshOutboxStatus);
             }
         });
+    }
+
+    private void refreshOutboxStatus() {
+        OutboxQueueStatus queueStatus = outbox.queueStatus(System.currentTimeMillis());
+        outboxStatusText.setText(OutboxStatusMessage.format(
+                queueStatus,
+                System.currentTimeMillis(),
+                sessionStore.hasSession(),
+                deviceIdInput.getText().toString()
+        ));
+    }
+
+    private void logOutboxAudit(Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        String nonce = intent.getStringExtra(EXTRA_OUTBOX_AUDIT_NONCE);
+        if (nonce == null || nonce.trim().isEmpty()) {
+            return;
+        }
+        OutboxQueueStatus queueStatus = outbox.queueStatus(System.currentTimeMillis());
+        Log.i(
+                OUTBOX_LOG_TAG,
+                "audit_nonce=" + nonce
+                        + " pending=" + queueStatus.pendingCount
+                        + " blocked=" + queueStatus.blockedCount
+        );
     }
 
     private void updateStatus(String message) {

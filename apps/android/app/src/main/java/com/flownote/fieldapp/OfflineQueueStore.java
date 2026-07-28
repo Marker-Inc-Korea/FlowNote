@@ -103,6 +103,10 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
     }
 
     public List<OutboxItem> listPending(long nowMillis) {
+        return listPending(nowMillis, false);
+    }
+
+    private List<OutboxItem> listPending(long nowMillis, boolean ignoreSchedule) {
         List<OutboxItem> items = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query(
                 "outbox",
@@ -115,7 +119,7 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
         )) {
             while (cursor.moveToNext()) {
                 OutboxItem item = readItem(cursor);
-                if (OutboxRetryPolicy.shouldRetry(
+                if (ignoreSchedule || OutboxRetryPolicy.shouldRetry(
                         item.status,
                         item.attemptCount,
                         nowMillis,
@@ -137,10 +141,55 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
         }
     }
 
+    public OutboxQueueStatus queueStatus(long nowMillis) {
+        int pending = 0;
+        int ready = 0;
+        int blocked = 0;
+        long nextRetryAt = Long.MAX_VALUE;
+        try (Cursor cursor = getReadableDatabase().query(
+                "outbox",
+                new String[]{"status", "attempt_count", "last_attempt_at"},
+                "status IN ('PENDING', 'FAILED')",
+                null,
+                null,
+                null,
+                null
+        )) {
+            while (cursor.moveToNext()) {
+                pending++;
+                String status = cursor.getString(0);
+                int attemptCount = cursor.getInt(1);
+                long lastAttemptAt = cursor.getLong(2);
+                if (attemptCount >= OutboxRetryPolicy.MAX_AUTOMATIC_ATTEMPTS) {
+                    blocked++;
+                    continue;
+                }
+                if (OutboxRetryPolicy.shouldRetry(status, attemptCount, nowMillis, lastAttemptAt)) {
+                    ready++;
+                    nextRetryAt = Math.min(nextRetryAt, nowMillis);
+                } else {
+                    nextRetryAt = Math.min(
+                            nextRetryAt,
+                            lastAttemptAt + OutboxRetryPolicy.delayMillis(attemptCount)
+                    );
+                }
+            }
+        }
+        return new OutboxQueueStatus(pending, ready, blocked, nextRetryAt);
+    }
+
     public SyncSummary retryPending(FlowNoteApiClient apiClient, String createdBy) {
+        return retryPending(apiClient, createdBy, false);
+    }
+
+    public SyncSummary retryPending(
+            FlowNoteApiClient apiClient,
+            String createdBy,
+            boolean ignoreSchedule
+    ) {
         int success = 0;
         int failed = 0;
-        for (OutboxItem item : listPending(System.currentTimeMillis())) {
+        for (OutboxItem item : listPending(System.currentTimeMillis(), ignoreSchedule)) {
             markAttempt(item.localId, item.attemptCount + 1);
             try {
                 String commentId = item.serverId;

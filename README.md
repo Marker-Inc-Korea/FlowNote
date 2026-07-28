@@ -164,7 +164,7 @@ flowchart LR
 | Python 정적 검사 | Ruff 통과 |
 | WPF Core 테스트 | 71개 통과 |
 | WPF 앱 빌드 | 경고 0개, 오류 0개 |
-| Android 단위 테스트 | 16개 통과 |
+| Android 단위 테스트 | 20개 통과 |
 | Android debug 빌드·lint | `assembleDebug`, `lintDebug` 통과 |
 
 이 결과는 macOS ARM64 개발 호스트에서 실행한 API·Core 테스트, Windows 대상 교차 빌드, Android 개발 빌드를 기준으로 한다. 개별 내부 검증은 기능 개발과 함께 계속 진행한다. 실제 Windows UI 조작, 공통 누적 SQLite를 사용하는 Windows 통합 스모크, 승인 Android 실단말, 운영 HTTPS·코드 서명·MDM 검증을 한 실행 ID로 묶은 전체 구성요소 통합 기준선은 아직 `대기`다. 상세 실행 기록과 과거 실패 증거는 [검증 자동화 문서](./docs/verification.md)에 보존한다.
@@ -226,7 +226,7 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
 ```
 
-전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 현재 guard는 FastAPI 154건, WPF Core 71건, Android 16건이다. WPF Core는 67건 guard 이후 추가된 테스트 4건의 커밋 이력과 현재 수집 목록 71건, TRX `total/passed=71/71`을 대조해 맞췄다. 스크립트는 WPF 수집 목록과 TRX 수도 실행마다 다시 비교한다.
+전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 현재 guard는 FastAPI 154건, WPF Core 71건, Android 20건이다. WPF Core는 67건 guard 이후 추가된 테스트 4건의 커밋 이력과 현재 수집 목록 71건, TRX `total/passed=71/71`을 대조해 맞췄다. 스크립트는 WPF 수집 목록과 TRX 수도 실행마다 다시 비교한다.
 
 | Windows x64 통합 기준선 | 첫 실행 | 재현 실행 |
 | --- | --- | --- |

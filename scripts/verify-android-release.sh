@@ -124,6 +124,31 @@ if [[ -n "$rollback_apk" ]]; then
   [[ -n "$candidate_signer" && "$candidate_signer" == "$rollback_signer" ]] || fail "rollback APK signer does not match the release candidate"
   [[ "$rollback_version_code" =~ ^[0-9]+$ && "$candidate_version_code" =~ ^[0-9]+$ ]] || fail "candidate or rollback versionCode is not numeric"
   (( rollback_version_code < candidate_version_code )) || fail "rollback APK must have a lower versionCode than the release candidate"
+
+  outbox_audit_nonce="${run_id}-rollback-$(date +%s)-$$"
+  adb -s "$device_serial" shell am start -W \
+    --activity-clear-top \
+    -n com.flownote.fieldapp/.MainActivity \
+    --es flownote_outbox_audit_nonce "$outbox_audit_nonce" \
+    > "$android_logs_dir/android-outbox-audit-launch.txt"
+  outbox_audit_line=""
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    adb -s "$device_serial" logcat -d -v brief FlowNoteOutbox:I '*:S' \
+      > "$android_logs_dir/android-outbox-audit-log.txt" || true
+    outbox_audit_line="$(
+      grep -F "audit_nonce=$outbox_audit_nonce " \
+        "$android_logs_dir/android-outbox-audit-log.txt" | tail -n 1 || true
+    )"
+    [[ -z "$outbox_audit_line" ]] || break
+    sleep 1
+  done
+  [[ -n "$outbox_audit_line" ]] || fail "candidate APK did not report the on-device outbox state"
+  outbox_pending="$(sed -n 's/.* pending=\([0-9][0-9]*\) .*/\1/p' <<< "$outbox_audit_line")"
+  [[ "$outbox_pending" =~ ^[0-9]+$ ]] || fail "on-device outbox pending count could not be read"
+  [[ "$outbox_pending" == "0" ]] || fail \
+    "rollback is blocked because the approved device has $outbox_pending pending outbox item(s)"
+  printf '%s\n' "$outbox_audit_line" > "$integrity_dir/android-outbox-before-rollback.txt"
+
   adb -s "$device_serial" install -r -d "$rollback_apk" > "$packages_dir/android-rollback-install.txt"
   grep -q 'Success' "$packages_dir/android-rollback-install.txt" || fail "previous approved APK rollback did not report Success"
 fi
