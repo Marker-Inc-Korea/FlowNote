@@ -25,6 +25,10 @@ public sealed class ServerConnectionGuidanceTests
         Assert.Contains("인증서", result.FailureReason);
         Assert.Contains("날짜와 시간", result.FailureReason);
         Assert.Contains("자동 전환하지 않", result.FailureReason);
+        Assert.Contains("누락 항목:", result.FailureReason);
+        Assert.Contains("보존된 데이터:", result.FailureReason);
+        Assert.Contains("담당자:", result.FailureReason);
+        Assert.Contains("다음 조치:", result.FailureReason);
         Assert.DoesNotContain("TLS failed", result.FailureReason);
     }
 
@@ -41,7 +45,8 @@ public sealed class ServerConnectionGuidanceTests
         Assert.NotNull(result);
         Assert.False(result.Success);
         Assert.Contains("시간이 초과", result.FailureReason);
-        Assert.Contains("서버 주소", result.FailureReason);
+        Assert.Contains("HTTPS 주소", result.FailureReason);
+        Assert.Contains("다음 조치:", result.FailureReason);
     }
 
     [Fact]
@@ -62,6 +67,8 @@ public sealed class ServerConnectionGuidanceTests
         Assert.False(result.Success);
         Assert.Contains("FLOWNOTE_API_BASE_URL", result.FailureReason);
         Assert.Contains("다시 실행", result.FailureReason);
+        Assert.Contains("보존된 데이터:", result.FailureReason);
+        Assert.Contains("담당자:", result.FailureReason);
         Assert.DoesNotContain("private-server", result.FailureReason);
         Assert.DoesNotContain("secret", result.FailureReason);
     }

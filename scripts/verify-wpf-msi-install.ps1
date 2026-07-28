@@ -17,7 +17,8 @@ $artifactRootPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $Artifact
 $packageSuffix = if ($SelfContained.IsPresent) { "$ProductVersion-$Runtime-self-contained" } else { "$ProductVersion-$Runtime" }
 $msiPath = Join-Path $artifactRootPath "FlowNote.Windows.App-$packageSuffix.msi"
 $manifestPath = Join-Path $artifactRootPath "FlowNote.Windows.App-$packageSuffix.files.txt"
-$publishPath = Join-Path $artifactRootPath "publish\FlowNote.Windows.App"
+$modeName = if ($SelfContained.IsPresent) { "self-contained" } else { "framework-dependent" }
+$publishPath = Join-Path $artifactRootPath "publish\FlowNote.Windows.App-$modeName"
 $exePath = Join-Path $publishPath "FlowNote.Windows.App.exe"
 
 function Write-Check {
@@ -34,6 +35,19 @@ function Write-Check {
     else {
         Write-Host "[$status] $Name - $Detail"
     }
+}
+
+function Write-RecoveryGuidance {
+    param(
+        [string]$MissingItem,
+        [string]$Owner,
+        [string]$NextAction
+    )
+
+    Write-Host "[누락 항목] $MissingItem"
+    Write-Host "[보존된 데이터] 기존 로컬 DB, 고객 파일, 동기화 대기 기록은 변경하거나 삭제하지 않았습니다."
+    Write-Host "[담당자] $Owner"
+    Write-Host "[다음 조치] $NextAction"
 }
 
 function Test-ForbiddenPackagePath {
@@ -107,6 +121,10 @@ $msiExists = Test-Path -LiteralPath $msiPath
 Write-Check "MSI 파일 존재" $msiExists $msiPath
 if (-not $msiExists) {
     $failures += 1
+}
+else {
+    $msiSha256 = (Get-FileHash -LiteralPath $msiPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-Check "MSI SHA-256 계산" $true $msiSha256
 }
 
 $fileList = @()
@@ -192,17 +210,26 @@ if (-not $SelfContained.IsPresent -and -not $desktopRuntime) {
     $failures += 1
 }
 
+$webView2ClientId = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 $webView2Entries = @()
 foreach ($registryPath in @(
-    "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\*",
-    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\*"
+    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$webView2ClientId",
+    "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$webView2ClientId",
+    "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$webView2ClientId"
 )) {
-    if (Test-Path -LiteralPath ($registryPath.TrimEnd("*"))) {
-        $webView2Entries += @(
-            Get-ItemProperty $registryPath -ErrorAction SilentlyContinue |
-                Where-Object { $_.name -like "*WebView2*" } |
-                Select-Object name, pv
-        )
+    if (Test-Path -LiteralPath $registryPath) {
+        $entry = Get-ItemProperty -LiteralPath $registryPath -ErrorAction SilentlyContinue
+        if (
+            $null -ne $entry -and
+            -not [string]::IsNullOrWhiteSpace([string]$entry.pv) -and
+            [string]$entry.pv -ne "0.0.0.0"
+        ) {
+            $webView2Entries += [pscustomobject]@{
+                Scope = if ($registryPath.StartsWith("HKCU:")) { "현재 사용자" } else { "컴퓨터" }
+                Version = [string]$entry.pv
+                RegistryPath = $registryPath
+            }
+        }
     }
 }
 
@@ -212,7 +239,10 @@ if ($webView2Entries.Count -gt 0) {
 }
 else {
     $failures += 1
-    Write-Host "[다음 조치] Microsoft Edge WebView2 Runtime을 승인된 사내 배포 경로에서 설치한 뒤 FlowNote를 다시 실행하고 이 점검을 재실행하세요."
+    Write-RecoveryGuidance `
+        -MissingItem "Microsoft Edge WebView2 Runtime" `
+        -Owner "현장 관리자 또는 Windows 설치 담당자" `
+        -NextAction "승인된 사내 WebView2 Evergreen Runtime을 설치한 뒤 FlowNote를 다시 실행하고 이 점검을 재실행하세요."
 }
 
 if ($CheckSignature.IsPresent) {
@@ -240,13 +270,22 @@ if ($CheckSignature.IsPresent) {
 
 if ($failures -gt 0) {
     if (-not $msiExists) {
-        Write-Host "[다음 조치] ProductVersion, Runtime, SelfContained, ArtifactRoot가 승인 패키지와 같은지 확인하세요."
+        Write-RecoveryGuidance `
+            -MissingItem "승인된 $modeName MSI" `
+            -Owner "배포 패키지 담당자" `
+            -NextAction "ProductVersion, Runtime, SelfContained, ArtifactRoot가 승인 패키지와 같은지 확인하세요."
     }
     if (-not $installFolderExists) {
-        Write-Host "[다음 조치] 승인된 MSI의 hash와 signer를 확인한 뒤 관리자 권한 설치 로그와 함께 다시 설치하세요."
+        Write-RecoveryGuidance `
+            -MissingItem "FlowNote WPF 설치 폴더" `
+            -Owner "Windows 설치 담당자" `
+            -NextAction "승인된 MSI의 hash와 signer를 확인한 뒤 관리자 권한 설치 로그와 함께 다시 설치하세요."
     }
     if (-not $SelfContained.IsPresent -and -not $desktopRuntime) {
-        Write-Host "[다음 조치] .NET Windows Desktop Runtime 10을 승인된 사내 배포 경로에서 설치하거나 승인된 self-contained MSI를 사용하세요."
+        Write-RecoveryGuidance `
+            -MissingItem ".NET Windows Desktop Runtime 10" `
+            -Owner "현장 관리자 또는 Windows 설치 담당자" `
+            -NextAction "승인된 .NET Windows Desktop Runtime 10을 설치하거나 승인된 self-contained MSI를 사용하세요."
     }
     Write-Host "[다음 조치] 실패 상태와 설치 로그를 같은 run_id 증거 폴더에 보존하고, 원인을 해결하기 전에는 배포를 계속하지 마세요."
     throw "WPF MSI install verification failed with $failures failure(s)."

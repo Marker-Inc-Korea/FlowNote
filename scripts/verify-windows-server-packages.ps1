@@ -31,6 +31,18 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$WpfCandidateApprovedSignerSha256,
     [Parameter(Mandatory = $true)]
+    [string]$WpfSelfContainedMsiCandidatePath,
+    [Parameter(Mandatory = $true)]
+    [string]$WpfSelfContainedExeCandidatePath,
+    [Parameter(Mandatory = $true)]
+    [string]$WpfSelfContainedCandidateManifestPath,
+    [Parameter(Mandatory = $true)]
+    [string]$WpfSelfContainedMsiCandidateApprovedSha256,
+    [Parameter(Mandatory = $true)]
+    [string]$WpfSelfContainedExeCandidateApprovedSha256,
+    [Parameter(Mandatory = $true)]
+    [string]$WpfSelfContainedCandidateApprovedSignerSha256,
+    [Parameter(Mandatory = $true)]
     [string]$ServerPreviousPath,
     [Parameter(Mandatory = $true)]
     [string]$ServerPreviousSignaturePath,
@@ -244,7 +256,7 @@ $artifacts = @(
         ApprovedSignerSha256 = $ServerCandidateApprovedSignerSha256
     },
     @{
-        Role = "wpf_msi_candidate"
+        Role = "wpf_framework_msi_candidate"
         ArtifactPath = $WpfMsiCandidatePath
         SignaturePath = $WpfMsiCandidatePath
         ManifestPath = $WpfCandidateManifestPath
@@ -253,13 +265,31 @@ $artifacts = @(
         ApprovedSignerSha256 = $WpfCandidateApprovedSignerSha256
     },
     @{
-        Role = "wpf_exe_candidate"
+        Role = "wpf_framework_exe_candidate"
         ArtifactPath = $WpfExeCandidatePath
         SignaturePath = $WpfExeCandidatePath
         ManifestPath = $WpfCandidateManifestPath
         Version = $WpfCandidateVersion
         ApprovedSha256 = $WpfExeCandidateApprovedSha256
         ApprovedSignerSha256 = $WpfCandidateApprovedSignerSha256
+    },
+    @{
+        Role = "wpf_self_contained_msi_candidate"
+        ArtifactPath = $WpfSelfContainedMsiCandidatePath
+        SignaturePath = $WpfSelfContainedMsiCandidatePath
+        ManifestPath = $WpfSelfContainedCandidateManifestPath
+        Version = $WpfCandidateVersion
+        ApprovedSha256 = $WpfSelfContainedMsiCandidateApprovedSha256
+        ApprovedSignerSha256 = $WpfSelfContainedCandidateApprovedSignerSha256
+    },
+    @{
+        Role = "wpf_self_contained_exe_candidate"
+        ArtifactPath = $WpfSelfContainedExeCandidatePath
+        SignaturePath = $WpfSelfContainedExeCandidatePath
+        ManifestPath = $WpfSelfContainedCandidateManifestPath
+        Version = $WpfCandidateVersion
+        ApprovedSha256 = $WpfSelfContainedExeCandidateApprovedSha256
+        ApprovedSignerSha256 = $WpfSelfContainedCandidateApprovedSignerSha256
     },
     @{
         Role = "server_previous"

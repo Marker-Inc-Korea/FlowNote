@@ -1,6 +1,6 @@
 # FlowNote 배포
 
-이 문서는 2026-07-27 현재 저장소의 실행 코드와 배포 스크립트 기준이다. 서명, MDM, 현장 인증서처럼 실제 운영 환경에서만 확정 가능한 내용은 후속 점검 항목으로 구분한다.
+이 문서는 2026-07-28 현재 저장소의 실행 코드와 배포 스크립트 기준이다. 서명, MDM, 현장 인증서처럼 실제 운영 환경에서만 확정 가능한 내용은 후속 점검 항목으로 구분한다.
 
 ## 기준
 
@@ -40,11 +40,12 @@ C:\FlowNote\
     storage\              서버 문서 파일, 첨부, 보고서 파일
     logs\                 서버 실행 로그
     .env                  서버 운영 환경 변수, Git 제외
-  Client\
-    FlowNote.Windows.App\ WPF 앱 실행 파일, .NET 실행 메타데이터, 의존 DLL
   LocalData\
     flownote.local.sqlite WPF 공통 SQLite
     Files\                WPF 로컬 파일 복사본과 첨부
+
+C:\Program Files\FlowNote\Client\FlowNote.Windows.App\
+  FlowNote.Windows.App.exe WPF 실행 파일, .NET 실행 메타데이터, 의존 DLL
 ```
 
 서버 PC에 WPF 앱도 함께 설치해 관리자 작업을 수행하는 경우 `C:\FlowNote\LocalData`를 공통 로컬 데이터 폴더로 사용한다. 현장 클라이언트 PC는 각 PC의 로컬 데이터 폴더를 사용하되, 서버 동기화가 필요한 경우 `FLOWNOTE_API_BASE_URL`만 서버 주소로 맞춘다.
@@ -73,6 +74,14 @@ C:\FlowNote\
 - WPF는 창 활성 중, Android는 로그인 동안 foreground service로 사내망 HTTPS를 15초 polling한다. Android는 서버 주소+사용자 scope별 cursor를 각 표시 뒤 보존하고 재부팅·단절 뒤 이어간다. access 401은 refresh를 1회 시도하고 거부되면 token과 서비스를 폐기한다. 외부 push 의존은 없고 사내 relay push는 후속 선택지다.
 - FastAPI 서버는 Windows 작업 스케줄러의 부팅 시 자동 실행 작업으로 등록한다. Python/FastAPI 프로세스를 Windows 서비스로 직접 등록하려면 별도 서비스 래퍼가 필요하므로, 초기 기준은 Windows 기본 기능만 사용하는 작업 스케줄러 방식으로 고정한다.
 - 서버 작업 이름은 기본 `\FlowNote\FlowNoteApi`다. 실행 래퍼는 `C:\FlowNote\Server\scripts\run-flownote-server.ps1`, 로그는 `C:\FlowNote\Server\logs`에 둔다.
+
+### Windows 설치·시작·런타임·서명 확정 정책
+
+- 서버 설치 루트는 `C:\FlowNote\Server`, WPF 설치 폴더는 `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`, WPF 데이터 폴더는 `C:\FlowNote\LocalData`로 고정한다. 현장 드라이브 변경은 사전 승인값으로만 허용하며 실행 파일 폴더와 데이터 폴더는 합치지 않는다.
+- FastAPI 자동 시작은 `SYSTEM` 최고 권한, `AtStartup` 트리거의 `\FlowNote\FlowNoteApi` 작업 스케줄러로 고정한다. Windows 서비스 래퍼와 사용자 로그인 시작 프로그램은 현재 채택 범위가 아니다.
+- 고객 현장 PC 기본 후보는 self-contained MSI다. 중앙 관리로 .NET Windows Desktop Runtime 10 x64의 설치·보안 업데이트·버전 증거를 보장하는 PC에만 framework-dependent MSI를 허용한다. 두 MSI 모두 WebView2 Evergreen Runtime을 별도 전제조건으로 둔다.
+- 운영 후보의 framework-dependent와 self-contained EXE·MSI 네 파일은 모두 조직 소유 코드 서명 인증서, SHA-256 digest, SHA-256 RFC 3161 timestamp로 서명한다. 서명 전 파일 hash와 서명자 인증서 SHA-256을 승인 대장에서 고정하고 `signtool verify /pa /all /v`가 하나라도 실패하면 배포하지 않는다.
+- 위 정책은 제품 기준으로 확정됐지만 승인 제품 버전, 인증서 지문, timestamp URL, 고객 PC 식별자와 실제 설치 결과는 현장별 값이다. 같은 `windows_server_rehearsal` run에서 실기 PASS가 생기기 전에는 운영 배포 완료로 표시하지 않는다.
 
 ## Android 운영 배포와 단말 수명주기
 
@@ -138,13 +147,14 @@ Start-Transcript -Path (Join-Path $RunRoot "install\windows-server-rehearsal.txt
 
 디스크 부족 시험은 실제 운영 볼륨을 임의로 채우지 않는다. 격리된 시험 볼륨 또는 되돌릴 수 있는 승인 snapshot만 사용하고, 주입 전 중단 승인·백업·복귀 명령을 먼저 검토한다. 네트워크·방화벽·인증서 변경도 원복 명령과 접근 경로를 먼저 확보한다. 실패 시 transcript와 실패 상태를 먼저 보존하며 같은 파일명으로 재실행 결과를 덮어쓰지 않는다.
 
-schema version 6의 `windows_server_rehearsal`은 게이트의 `PASS`만 신뢰하지 않는다. 다음 원시 CSV의 모든 필수 행이 현재 `run_id`이고, 각 행이 실행 폴더 안의 실제 증거 파일을 가리켜야 한다.
+schema version 7의 `windows_server_rehearsal`은 게이트의 `PASS`만 신뢰하지 않는다. 다음 원시 CSV의 모든 필수 행이 현재 `run_id`이고, 각 행이 실행 폴더 안의 실제 증거 파일을 가리켜야 한다.
 
 | 원시 판정표 | 필수 범위 |
 | --- | --- |
-| `packages/windows-server-packages.csv` | 후보 서버 패키지, 후보 WPF MSI/EXE, 이전 승인 서버 패키지/WPF MSI의 hash·signer·chain·timestamp와 비밀/SQLite/고객 파일 혼입 0건 |
+| `packages/windows-server-packages.csv` | 후보 서버 패키지, framework-dependent와 self-contained 후보 WPF MSI/EXE, 이전 승인 서버 패키지/WPF MSI의 hash·signer·chain·timestamp와 비밀/SQLite/고객 파일 혼입 0건 |
 | `install/windows-lifecycle.csv` | 서버 신규 설치, WPF 신규 설치·업그레이드·제거·재설치 |
-| `install/windows-runtime-matrix.csv` | .NET Desktop Runtime 설치/미설치, WebView2 설치/미설치 |
+| `install/windows-runtime-matrix.csv` | 두 WPF MSI 각각의 .NET Desktop Runtime 설치/미설치와 WebView2 설치/미설치 |
+| `install/windows-startup-ux.csv` | 관리자·일반 사용자 각 2회의 누락 항목·보존 데이터·담당자·다음 조치 식별 결과와 선택한 조치 |
 | `scenario-results/windows-server-fault-injections.csv` | 작업 스케줄러, 재부팅, 인증서 갱신·폐기·만료·미신뢰, 포트 차단, DNS/고정 주소 변경, 시간 오차, 재부팅 중 전송, 업그레이드 중단, 잘못된 패키지 서명 |
 | `scenario-results/recovery-objectives.csv` | 서버 복구, WPF 복구, rollback의 승인·실측 RTO/RPO와 업무 재개 시각 |
 | `approvals/package-promotion-and-rollback.csv` | 후보 승격 승인, 이전 승인 버전/hash/signer, 같은 시점 통합 백업 세트, rollback 결정권자와 비상 연락 흐름 |
@@ -169,7 +179,7 @@ if ((Get-Content (Join-Path $RunRoot "pilot-verification.json") -Raw | ConvertFr
 | 관리/현장 WPF PC | 승인 Windows x64 | framework-dependent MSI | 설치/미설치 두 조건 | 설치/미설치 두 조건 | 신규 설치, 업그레이드, 제거, 재설치, 의존성 안내 |
 | 관리/현장 WPF PC | 승인 Windows x64 | self-contained MSI | 별도 Desktop Runtime 비필수 | 설치/미설치 두 조건 | 신규 설치, 업그레이드, 제거, 재설치, PDF 실패 안내/복구 |
 
-`install/windows-runtime-matrix.csv`에는 `dotnet_desktop_present`, `dotnet_desktop_absent`, `webview2_present`, `webview2_absent`가 각각 정확히 한 행 있어야 한다. 실제 지원 범위는 이 네 행과 설치 수명주기 원시 결과가 모두 PASS인 조합으로 제한한다.
+`install/windows-runtime-matrix.csv`에는 `framework_dotnet_desktop_present`, `framework_dotnet_desktop_absent`, `self_contained_dotnet_desktop_present`, `self_contained_dotnet_desktop_absent`, `framework_webview2_present`, `framework_webview2_absent`, `self_contained_webview2_present`, `self_contained_webview2_absent`가 각각 정확히 한 행 있어야 한다. `install/windows-startup-ux.csv`에는 `admin`과 `general_user`의 1·2회차가 정확히 한 행씩 있어야 하며 네 시나리오를 중복 없이 모두 다룬다. 실제 지원 범위는 런타임 8행, UX 4행과 설치 수명주기 원시 결과가 모두 PASS인 조합으로 제한한다.
 
 ### 패키지 검증과 승격
 
@@ -384,7 +394,9 @@ WPF 앱은 MSI로 Windows PC에 설치한다. 기본 설치 위치는 `C:\Progra
 .\scripts\package-wpf-msi.ps1 -ProductVersion 0.1.0 -Runtime win-x64
 ```
 
-MSI 패키징은 WiX Toolset CLI를 사용한다. 배포 준비 PC에 `wix` 명령이 없으면 먼저 `dotnet tool install --global wix --version 5.0.2`로 설치한다. 최신 WiX 7은 OSMF EULA 수락 없이는 `wix build`가 실패하므로, WiX 7을 쓰려면 현장 또는 배포 담당자가 라이선스 조건을 확인하고 명시적으로 수락한 뒤 사용한다. 스크립트는 `dotnet publish` 결과와 WiX 중간 파일, MSI를 `artifacts\wpf-msi` 아래에 만들며 이 경로는 Git 제외 대상이다.
+이 명령은 같은 소스와 제품 버전으로 framework-dependent MSI와 self-contained MSI를 연속 생성한다. 한 종류만 다시 만들 때는 `-PackageMode FrameworkDependent` 또는 `-PackageMode SelfContained`를 명시한다. 기존 `-SelfContained` 옵션은 self-contained 한 종류를 만드는 호환 옵션으로 유지한다.
+
+MSI 패키징은 WiX Toolset CLI와 framework-dependent 전제조건 검사에 쓰는 `WixToolset.Netfx.wixext`를 사용한다. 배포 준비 PC에 `wix` 명령이 없으면 먼저 `dotnet tool install --global wix --version 5.0.2`로 설치하고, 같은 버전의 Netfx 확장을 `wix extension add WixToolset.Netfx.wixext/5.0.2`로 등록한다. 최신 WiX 7은 OSMF EULA 수락 없이는 `wix build`가 실패하므로, WiX 7을 쓰려면 현장 또는 배포 담당자가 라이선스 조건을 확인하고 명시적으로 수락한 뒤 사용한다. 스크립트는 `dotnet publish` 결과와 WiX 중간 파일, MSI를 `artifacts\wpf-msi` 아래에 만들며 이 경로는 Git 제외 대상이다.
 
 MSI에는 WPF 실행 파일, 실행에 필요한 `.deps.json`/`.runtimeconfig.json`, 의존 DLL과 네이티브 런타임 DLL만 포함한다. 패키징 스크립트는 디버그 심볼 `.pdb`와 문서 XML을 제외한다. 로컬 SQLite, WAL/SHM 파일, `Data\Files` 또는 테스트/샘플 등록 파일은 설치 폴더에 포함하지 않는다.
 
@@ -397,11 +409,11 @@ MSI에는 WPF 실행 파일, 실행에 필요한 `.deps.json`/`.runtimeconfig.js
 
 현재 패키징 스크립트 기준 MSI 파일 세트는 `FlowNote.Windows.App.exe`, `.deps.json`, `.runtimeconfig.json`, 앱/코어 DLL, `Microsoft.Data.Sqlite`, `Microsoft.Web.WebView2`, `SQLitePCLRaw`, `PdfPig`, `WebView2Loader.dll`, `e_sqlite3.dll`, `runtimes\win-x64\native\WebView2Loader.dll` 같은 실행 필수 파일만 포함해야 한다. 금지 파일 패턴은 스크립트가 생성 직전에 검사한다.
 
-`package-wpf-msi.ps1`는 publish 폴더를 매번 비운 뒤 새로 publish한다. framework-dependent MSI와 self-contained MSI를 번갈아 만들 때 이전 런타임 파일이 남아 다른 MSI에 섞이면 안 된다.
+`package-wpf-msi.ps1`는 `publish\FlowNote.Windows.App-framework-dependent`와 `publish\FlowNote.Windows.App-self-contained`를 분리하고 각 폴더를 publish 전에 비운다. 두 MSI를 연속 생성해도 이전 런타임 파일이나 반대 변형의 EXE가 섞이면 안 된다.
 
 ### .NET Desktop Runtime과 self-contained MSI
 
-기본 `package-wpf-msi.ps1` 명령은 framework-dependent MSI를 만든다. 이 방식은 설치 대상 PC에 FlowNote WPF 대상 프레임워크와 같은 계열의 `.NET Windows Desktop Runtime`이 설치되어 있어야 한다.
+`-PackageMode FrameworkDependent` MSI는 설치 대상 PC에 FlowNote WPF 대상 프레임워크와 같은 계열의 `.NET Windows Desktop Runtime`이 설치되어 있어야 한다. MSI는 WiX Netfx 검사로 .NET Windows Desktop Runtime 10 x64가 없으면 설치를 중단하고, 누락 항목·보존 데이터·담당자·다음 조치를 한글로 표시한다.
 
 설치 대상 PC에서 다음 명령으로 런타임을 확인한다.
 
@@ -416,10 +428,10 @@ dotnet --list-runtimes | Select-String "Microsoft.WindowsDesktop.App 10."
 - 클라이언트 설치파일 하나로 앱 실행에 필요한 .NET 런타임까지 고정해야 한다.
 - 여러 생산 PC의 .NET 런타임 패치 수준 차이로 장애 분석이 어려운 현장이다.
 
-self-contained MSI는 다음 명령으로 만든다.
+self-contained MSI 한 종류만 다시 만들 때는 다음 명령을 사용한다.
 
 ```powershell
-.\scripts\package-wpf-msi.ps1 -ProductVersion 0.1.0 -Runtime win-x64 -SelfContained
+.\scripts\package-wpf-msi.ps1 -ProductVersion 0.1.0 -Runtime win-x64 -PackageMode SelfContained
 ```
 
 산출물 이름은 `FlowNote.Windows.App-0.1.0-win-x64-self-contained.msi`처럼 `self-contained` 접미사를 붙인다. self-contained MSI는 .NET 런타임 파일을 함께 담기 때문에 framework-dependent MSI보다 크다. 단, WebView2 Runtime은 self-contained .NET 배포에 포함되지 않으므로 별도 점검과 설치 기준을 유지한다.
@@ -428,14 +440,14 @@ Windows가 아닌 배포 준비 PC에서 publish 가능 여부만 확인해야 �
 
 ### WebView2 Runtime 점검
 
-FlowNote WPF는 문서 미리보기와 뷰어에 WebView2를 사용한다. MSI에는 `Microsoft.Web.WebView2.*.dll`과 `WebView2Loader.dll` 같은 앱 의존 DLL만 포함하고, Microsoft Edge WebView2 Evergreen Runtime 자체는 현장 PC에 별도로 설치되어 있어야 한다.
+FlowNote WPF는 PDF 문서 미리보기와 뷰어에 WebView2를 사용한다. MSI에는 `Microsoft.Web.WebView2.*.dll`과 `WebView2Loader.dll` 같은 앱 의존 DLL만 포함하고, Microsoft Edge WebView2 Evergreen Runtime 자체는 현장 PC에 별도로 설치되어 있어야 한다.
 
 설치 대상 PC에서는 다음 중 하나로 WebView2 Runtime 설치 여부를 확인한다.
 
 ```powershell
-Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\*" |
-  Where-Object { $_.name -like "*WebView2*" } |
-  Select-Object name, pv
+$WebView2ClientId = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$WebView2ClientId" |
+  Select-Object pv
 ```
 
 또는 Windows 제어판의 프로그램 목록에서 `Microsoft Edge WebView2 Runtime`을 확인한다. 설치되어 있지 않으면 Microsoft의 Evergreen Standalone Installer를 현장 배포 파일에 포함해 관리자 권한으로 먼저 설치한다.
@@ -444,8 +456,10 @@ WebView2 Runtime이 없거나 손상된 PC에서 FlowNote가 문서 미리보기
 
 ```text
 문서 뷰어를 시작할 수 없습니다.
-Microsoft Edge WebView2 Runtime 설치 상태를 확인한 뒤 FlowNote를 다시 실행하세요.
-문제가 계속되면 현장 관리자에게 설치 점검을 요청하세요.
+누락 항목: Microsoft Edge WebView2 Runtime
+보존된 데이터: 문서 원본, 로컬 DB, 열람 이력은 삭제되지 않았습니다.
+담당자: 현장 관리자 또는 Windows 설치 담당자
+다음 조치: 승인된 WebView2 Runtime을 설치한 뒤 FlowNote를 다시 실행하세요. 계속 실패하면 설치 상태와 보안 정책 점검을 요청하세요.
 ```
 
 장애 기록에는 PC명, Windows 버전, WebView2 Runtime 설치 여부와 버전, FlowNote MSI 버전, 실행 사용자, 발생 시각을 남긴다.
@@ -472,8 +486,10 @@ Microsoft Edge WebView2 Runtime 설치 상태를 확인한 뒤 FlowNote를 다�
   -SigningCertificateSubjectName "FlowNote 코드서명 인증서 표시 이름" `
   -TimestampUrl "http://timestamp.digicert.com"
 
-signtool verify /pa .\artifacts\wpf-msi\publish\FlowNote.Windows.App\FlowNote.Windows.App.exe
+signtool verify /pa .\artifacts\wpf-msi\publish\FlowNote.Windows.App-framework-dependent\FlowNote.Windows.App.exe
+signtool verify /pa .\artifacts\wpf-msi\publish\FlowNote.Windows.App-self-contained\FlowNote.Windows.App.exe
 signtool verify /pa .\artifacts\wpf-msi\FlowNote.Windows.App-0.1.0-win-x64.msi
+signtool verify /pa .\artifacts\wpf-msi\FlowNote.Windows.App-0.1.0-win-x64-self-contained.msi
 ```
 
 인증서 표시 이름 대신 지문으로 지정해야 하면 `-SigningCertificateThumbprint <인증서 SHA1 지문>`을 사용한다. 스크립트 밖에서 수동 서명할 경우 최종 MSI만 서명하면 MSI 안에 포함된 EXE는 미서명 상태로 남을 수 있으므로, EXE 서명 후 MSI를 다시 생성하고 최종 MSI를 서명한다.
@@ -504,7 +520,7 @@ New-Item -ItemType Directory -Force C:\FlowNote\LocalData\Files
 
 ```powershell
 setx FLOWNOTE_LOCAL_DATA_DIR "C:\FlowNote\LocalData" /M
-setx FLOWNOTE_API_BASE_URL "http://<서버IP>:5184" /M
+setx FLOWNOTE_API_BASE_URL "https://<승인된 서버 DNS 이름>" /M
 ```
 
 환경 변수 변경 후 이미 열려 있던 PowerShell, 서비스, WPF 앱은 새 값을 읽지 못할 수 있으므로 새 세션에서 실행한다. `FLOWNOTE_LOCAL_DATABASE_PATH`는 특정 DB 파일 경로를 강제로 지정해야 할 때만 사용하며, 일반 운영에서는 `FLOWNOTE_LOCAL_DATA_DIR`만 둔다.
@@ -513,7 +529,7 @@ setx FLOWNOTE_API_BASE_URL "http://<서버IP>:5184" /M
 
 ```powershell
 $env:FLOWNOTE_LOCAL_DATA_DIR = "C:\FlowNote\LocalData"
-$env:FLOWNOTE_API_BASE_URL = "http://<서버IP>:5184"
+$env:FLOWNOTE_API_BASE_URL = "https://<승인된 서버 DNS 이름>"
 & "C:\Program Files\FlowNote\Client\FlowNote.Windows.App\FlowNote.Windows.App.exe"
 ```
 
@@ -743,21 +759,21 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 | 통합 시험 범위·5개 이상 중단 기준·시작/종료 시각 | 미확정 | `<run_id>/approvals/rehearsal-authorization-*` | 착수 금지 |
 | 익명 시험 서버·Windows 클라이언트 ID | 미확정 | `<run_id>/approvals/equipment-*` | 착수 금지 |
 | 이전 승인 서버/WPF 버전과 복귀 패키지 hash | 미확정 | `<run_id>/approvals/rollback-baseline-*` | 착수 금지 |
-| 서버 설치 경로·서비스 계정·자동 시작 방식 | 미확정 | `<run_id>/install/server-*` | 대기 |
+| 서버 설치 경로·서비스 계정·자동 시작 방식 | `C:\FlowNote\Server` / `SYSTEM` / `\FlowNote\FlowNoteApi` 부팅 트리거 | `<run_id>/install/server-*` | 제품 기준 확정·실기 대기 |
 | 운영 DNS 이름·API URL·TLS 종단 위치 | 미확정 | `<run_id>/network-and-certificate/network-*` | 대기 |
 | 인증서 발급자·SAN·유효기간·갱신 겹침 기간 | 미확정 | `<run_id>/network-and-certificate/certificate-*` | 대기 |
 | 허용 방화벽 원천 구간·포트 | 미확정 | `<run_id>/network-and-certificate/firewall-*` | 대기 |
 | 시간 원천·허용 오차·현장 시간대 | 미확정 | `<run_id>/network-and-certificate/time-*` | 대기 |
-| framework-dependent/self-contained 채택 범위 | 미확정 | `<run_id>/install/wpf-*` | 대기 |
-| .NET Desktop Runtime·WebView2 배포 방식/버전 | 미확정 | `<run_id>/install/prerequisites-*` | 대기 |
-| EXE/MSI 서명 인증서·hash 전달 경로 | 미확정 | `<run_id>/packages/windows-*` | 대기 |
+| framework-dependent/self-contained 채택 범위 | 고객 기본 self-contained / 중앙 관리 Runtime 보장 PC만 framework-dependent | `<run_id>/install/wpf-*` | 제품 기준 확정·실기 대기 |
+| .NET Desktop Runtime·WebView2 배포 방식/버전 | .NET Desktop Runtime 10 x64는 framework-dependent에만 필수 / WebView2 Evergreen은 두 MSI 모두 필수 | `<run_id>/install/prerequisites-*` | 방식 확정·승인 버전 대기 |
+| EXE/MSI 서명 인증서·hash 전달 경로 | 두 변형 EXE/MSI 모두 조직 인증서·SHA-256·RFC 3161 timestamp / 승인 저장소 전달 | `<run_id>/packages/windows-*` | 정책 확정·인증서/실기 대기 |
 | 서버 DB+`storage` 백업 주기·보존·RPO/RTO | 미확정 | `<run_id>/approvals/data-protection-*` | 대기 |
 | WPF DB+`Files` 백업 주기·보존·RPO/RTO | 미확정 | `<run_id>/approvals/data-protection-*` | 대기 |
 | rollback RTO/RPO·의사결정권자 역할 ID | 미확정 | `<run_id>/approvals/package-promotion-and-rollback.csv`, `scenario-results/recovery-objectives.csv` | 착수 금지 |
 | 비상 연락 흐름 ID·운영/보안/현장 escalation | 미확정 | `<run_id>/approvals/rehearsal-authorization-*` | 착수 금지 |
 | 복구 PC·복구 경로·복구 승인자 | 미확정 | `<run_id>/backup-restore/*` | 대기 |
 
-2026-07-27 현재 이 저장소에는 실제 승인자, 운영 인증서, 승인 장비, 이전 승인 패키지, RTO/RPO 또는 비상 연락 흐름의 승인 원시 증거가 제공되지 않았다. 따라서 값을 추정해 확정하지 않으며 이 표의 상태는 `착수 금지/대기`다. 현장 값이 확정되면 예시 명령과 실제 값이 충돌하지 않는지 검토하고 이 표, 설치 전후 점검표, 파일럿 manifest를 함께 갱신한다. 현장별 선호는 공통 기본값으로 올리지 않고 설정·교육 기록으로 분리한다.
+2026-07-28 현재 이 저장소에는 실제 승인자, 운영 인증서, 승인 장비, 이전 승인 패키지, RTO/RPO 또는 비상 연락 흐름의 승인 원시 증거가 제공되지 않았다. 제품 공통 설치·시작·런타임·서명 정책은 위와 같이 확정했지만 현장 실행값과 PASS를 추정하지 않는다. 현장 값이 확정되면 예시 명령과 실제 값이 충돌하지 않는지 검토하고 이 표, 설치 전후 점검표, 파일럿 manifest를 함께 갱신한다. 현장별 선호는 공통 기본값으로 올리지 않고 설정·교육 기록으로 분리한다.
 
 ### 서버 복구 순서
 
