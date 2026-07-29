@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import statistics
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -31,11 +32,23 @@ UX_ROLE_SCENARIOS = {
 }
 
 
+def parse_aware_timestamp(value: str | None) -> datetime | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
 def before_baseline_failures(
     run_root: Path,
     read_rows: Callable[[Path, str, str], tuple[list[dict[str, str]], list[str]]],
     parse_bool: Callable[[str | None], bool | None],
     check_evidence: Callable[[Path, object, str], list[str]],
+    authorization_approved_at: str | None = None,
 ) -> list[str]:
     rows, failures = read_rows(
         run_root,
@@ -59,6 +72,9 @@ def before_baseline_failures(
     observed_gloves: set[str] = set()
     observed_one_hand: set[bool] = set()
     observed_positions: set[str] = set()
+    row_identities: set[tuple[str, str, str, str, str, str]] = set()
+    condition_contexts: dict[str, tuple[str, str, bool, str]] = {}
+    authorization_timestamp = parse_aware_timestamp(authorization_approved_at)
 
     for index, row in enumerate(before_rows, start=1):
         label = f"UX BEFORE 행 {index}"
@@ -69,10 +85,14 @@ def before_baseline_failures(
         if pair in observed_pairs:
             observed_pairs[pair].append(row)
         for field in (
+            "pilot_run_id",
             "comparison_id",
             "attempt_no",
             "participant_id",
             "condition_id",
+            "measurement_status",
+            "started_at_utc",
+            "completed_at_utc",
             "network",
             "gloves",
             "one_hand",
@@ -82,17 +102,55 @@ def before_baseline_failures(
             "elapsed_seconds",
             "click_count",
             "screen_transitions",
+            "retry_count",
             "help_request_count",
+            "expected_result",
+            "actual_result",
             "source_preservation_understood",
             "next_action_understood",
             "source_loss_count",
             "receipt_loss_count",
             "duplicate_creation_count",
             "critical_blocker",
+            "source_ids",
             "screen_capture_evidence",
+            "source_trace_evidence",
         ):
             if not (row.get(field) or "").strip():
                 failures.append(f"{label}의 {field} 값이 없습니다.")
+
+        if (row.get("pilot_run_id") or "").strip() != run_root.name:
+            failures.append(f"{label}의 pilot_run_id가 실행 폴더 run_id와 다릅니다.")
+        if (row.get("measurement_status") or "").strip().upper() != "MEASURED":
+            failures.append(
+                f"{label}의 measurement_status는 실제 측정한 MEASURED여야 합니다."
+            )
+        participant_id = (row.get("participant_id") or "").strip()
+        if (
+            "@" in participant_id
+            or "\\" in participant_id
+            or "/" in participant_id
+            or any(character.isspace() for character in participant_id)
+        ):
+            failures.append(
+                f"{label}의 participant_id는 대응표와 분리한 익명 식별자여야 합니다."
+            )
+        started_at = parse_aware_timestamp(row.get("started_at_utc"))
+        completed_at = parse_aware_timestamp(row.get("completed_at_utc"))
+        if started_at is None or completed_at is None or completed_at < started_at:
+            failures.append(
+                f"{label}의 시작·완료 시각은 시간대가 있는 올바른 순서여야 합니다."
+            )
+        elif (
+            authorization_approved_at is not None
+            and (
+                authorization_timestamp is None
+                or authorization_timestamp > started_at
+            )
+        ):
+            failures.append(
+                f"{label}은 통합 사전 승인 시각보다 먼저 시작할 수 없습니다."
+            )
 
         network = (row.get("network") or "").strip().upper()
         gloves = (row.get("gloves") or "").strip().upper()
@@ -109,6 +167,14 @@ def before_baseline_failures(
             failures.append(f"{label}의 one_hand 값이 올바르지 않습니다.")
         else:
             observed_one_hand.add(one_hand)
+            condition_id = (row.get("condition_id") or "").strip()
+            terminal_position = (row.get("terminal_position") or "").strip()
+            context = (network, gloves, one_hand, terminal_position)
+            previous_context = condition_contexts.setdefault(condition_id, context)
+            if condition_id and previous_context != context:
+                failures.append(
+                    f"{label}의 condition_id가 다른 연결·장갑·손·거치 조건에 재사용됐습니다."
+                )
         for field in (
             "success",
             "source_preservation_understood",
@@ -122,17 +188,37 @@ def before_baseline_failures(
                 float((row.get("elapsed_seconds") or "").strip()),
                 int((row.get("click_count") or "").strip()),
                 int((row.get("screen_transitions") or "").strip()),
+                int((row.get("retry_count") or "").strip()),
                 int((row.get("help_request_count") or "").strip()),
                 int((row.get("source_loss_count") or "").strip()),
                 int((row.get("receipt_loss_count") or "").strip()),
                 int((row.get("duplicate_creation_count") or "").strip()),
             )
-            if min(values) < 0:
+            if values[0] <= 0 or min(values[1:]) < 0:
                 raise ValueError
         except ValueError:
             failures.append(
-                f"{label}의 시간·선택·화면 이동·도움 요청·유실·중복 값이 올바르지 않습니다."
+                f"{label}의 시간·선택·화면 이동·재시도·도움 요청·유실·중복 값이 올바르지 않습니다."
             )
+        source_ids = [
+            value.strip()
+            for value in (row.get("source_ids") or "").split(";")
+            if value.strip()
+        ]
+        if not source_ids or any(
+            value.upper() in {"0", "N/A", "NA", "UNKNOWN", "미측정"}
+            for value in source_ids
+        ):
+            failures.append(
+                f"{label}의 source_ids에는 실제 생성·조회한 원천 ID가 필요합니다."
+            )
+        expected_result = (row.get("expected_result") or "").strip().upper()
+        actual_result = (row.get("actual_result") or "").strip().upper()
+        if pair[1] == "WPF-REVIEW-REPORT-PERMISSION":
+            if expected_result != "HTTP_403" or actual_result != "HTTP_403":
+                failures.append(
+                    f"{label}의 비관리자 검토·보고서 권한 부족은 기대·실제 결과가 모두 HTTP_403이어야 합니다."
+                )
         failures.extend(
             check_evidence(
                 run_root,
@@ -140,9 +226,29 @@ def before_baseline_failures(
                 f"{label} 화면 증거",
             )
         )
+        failures.extend(
+            check_evidence(
+                run_root,
+                [(row.get("source_trace_evidence") or "").strip()],
+                f"{label} 원천 연결 증거",
+            )
+        )
         position = (row.get("terminal_position") or "").strip()
         if position:
             observed_positions.add(position)
+        identity = (
+            pair[0],
+            pair[1],
+            participant_id,
+            (row.get("condition_id") or "").strip(),
+            (row.get("attempt_no") or "").strip(),
+            "BEFORE",
+        )
+        if identity in row_identities:
+            failures.append(
+                f"{label}의 역할·시나리오·참여자·조건·시도 번호가 중복됩니다."
+            )
+        row_identities.add(identity)
 
     for (role, scenario), matching in sorted(observed_pairs.items()):
         if len(matching) < 2:
@@ -249,6 +355,7 @@ def revalidation_failures(
             phase: {
                 "elapsed_seconds": [],
                 "screen_transitions": [],
+                "retry_count": [],
                 "help_request_count": [],
             }
             for phase in phases
@@ -270,6 +377,24 @@ def revalidation_failures(
             gloves = (row.get("gloves") or "").strip().upper()
             one_hand = parse_bool(row.get("one_hand"))
             terminal_position = (row.get("terminal_position") or "").strip()
+            if (row.get("pilot_run_id") or "").strip() != run_root.name:
+                failures.append(
+                    f"{label}의 pilot_run_id가 실행 폴더 run_id와 다릅니다."
+                )
+            if (row.get("measurement_status") or "").strip().upper() != "MEASURED":
+                failures.append(
+                    f"{label}의 measurement_status는 실제 측정한 MEASURED여야 합니다."
+                )
+            started_at = parse_aware_timestamp(row.get("started_at_utc"))
+            completed_at = parse_aware_timestamp(row.get("completed_at_utc"))
+            if (
+                started_at is None
+                or completed_at is None
+                or completed_at < started_at
+            ):
+                failures.append(
+                    f"{label}의 시작·완료 시각은 시간대가 있는 올바른 순서여야 합니다."
+                )
             if not all(
                 (
                     role,
@@ -293,6 +418,16 @@ def revalidation_failures(
                 failures.append(f"{label}의 gloves는 ON/OFF여야 합니다.")
             if one_hand is None:
                 failures.append(f"{label}의 one_hand 값이 올바르지 않습니다.")
+            expected_result = (row.get("expected_result") or "").strip().upper()
+            actual_result = (row.get("actual_result") or "").strip().upper()
+            if not expected_result or not actual_result:
+                failures.append(f"{label}의 기대·실제 결과가 필요합니다.")
+            if scenario == "WPF-REVIEW-REPORT-PERMISSION" and (
+                expected_result != "HTTP_403" or actual_result != "HTTP_403"
+            ):
+                failures.append(
+                    f"{label}의 비관리자 권한 부족은 기대·실제 결과가 모두 HTTP_403이어야 합니다."
+                )
             identities.add((role, participant, scenario, cycle))
             if build:
                 builds[phase].add(build)
@@ -343,6 +478,7 @@ def revalidation_failures(
                 elapsed = float((row.get("elapsed_seconds") or "").strip())
                 click_count = int((row.get("click_count") or "").strip())
                 transitions = int((row.get("screen_transitions") or "").strip())
+                retry_count = int((row.get("retry_count") or "").strip())
                 help_count = int((row.get("help_request_count") or "").strip())
                 source_loss = int((row.get("source_loss_count") or "").strip())
                 receipt_loss = int((row.get("receipt_loss_count") or "").strip())
@@ -351,6 +487,7 @@ def revalidation_failures(
                     elapsed,
                     click_count,
                     transitions,
+                    retry_count,
                     help_count,
                     source_loss,
                     receipt_loss,
@@ -365,6 +502,7 @@ def revalidation_failures(
             else:
                 numeric[phase]["elapsed_seconds"].append(elapsed)
                 numeric[phase]["screen_transitions"].append(float(transitions))
+                numeric[phase]["retry_count"].append(float(retry_count))
                 numeric[phase]["help_request_count"].append(float(help_count))
                 if phase == "AFTER" and any(
                     value != 0 for value in (source_loss, receipt_loss, duplicates)
@@ -387,6 +525,20 @@ def revalidation_failures(
                     run_root,
                     [(row.get("screen_capture_evidence") or "").strip()],
                     f"{label} 화면 증거",
+                )
+            )
+            source_ids = [
+                value.strip()
+                for value in (row.get("source_ids") or "").split(";")
+                if value.strip()
+            ]
+            if not source_ids:
+                failures.append(f"{label}의 source_ids가 없습니다.")
+            failures.extend(
+                check_evidence(
+                    run_root,
+                    [(row.get("source_trace_evidence") or "").strip()],
+                    f"{label} 원천 연결 증거",
                 )
             )
 
@@ -422,6 +574,7 @@ def revalidation_failures(
         for field, label in (
             ("elapsed_seconds", "중앙 완료 시간"),
             ("screen_transitions", "중앙 화면 이동 수"),
+            ("retry_count", "중앙 재시도 수"),
             ("help_request_count", "중앙 도움 요청 수"),
         ):
             before_values = numeric["BEFORE"][field]

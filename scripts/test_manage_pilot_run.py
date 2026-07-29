@@ -398,7 +398,59 @@ class WindowsServerRehearsalVerificationTests(
                 comparison,
             ]
 
-    def test_prepare_creates_schema_eight_windows_server_templates(self) -> None:
+    def test_ux_before_contract_requires_three_independent_reviews(self) -> None:
+        record = self.complete_record()
+        record["ux_before_baseline"]["status"] = "COMPLETE"
+        record["ux_before_baseline"]["evidence"] = ["proof.txt"]
+        for index, approval in enumerate(
+            record["ux_before_baseline"]["review_approvals"].values()
+        ):
+            approval.update(
+                {
+                    "decision": "PASS",
+                    "signer": f"baseline-reviewer-{index}",
+                    "signed_at": "2026-07-22T18:00:00+09:00",
+                    "evidence": ["proof.txt"],
+                }
+            )
+        review_rows = [
+            {
+                "area": area,
+                "decision": approval["decision"],
+                "signer": approval["signer"],
+                "signed_at": approval["signed_at"],
+                "evidence": "proof.txt",
+            }
+            for area, approval in record["ux_before_baseline"][
+                "review_approvals"
+            ].items()
+        ]
+        self.write_csv(
+            "approvals/ux-before-baseline-review.csv",
+            list(review_rows[0]),
+            review_rows,
+        )
+
+        self.assertEqual(
+            [],
+            manage_pilot_run.ux_before_contract_failures(self.run_root, record),
+        )
+
+        record["ux_before_baseline"]["review_approvals"]["security"][
+            "decision"
+        ] = "PENDING"
+        failures = manage_pilot_run.ux_before_contract_failures(
+            self.run_root, record
+        )
+        self.assertTrue(
+            any("security 검토자의 PASS" in failure for failure in failures)
+        )
+
+    def test_candidate_two_ux_before_run_id_is_supported(self) -> None:
+        run_id = "PILOT-20260728-UX-BEFORE-001"
+        self.assertEqual(run_id, manage_pilot_run.validate_run_id(run_id))
+
+    def test_prepare_creates_schema_nine_windows_server_templates(self) -> None:
         run_id = "PILOT-20260722-1310-LOCALCHECK-002"
         with contextlib.redirect_stdout(io.StringIO()):
             result = manage_pilot_run.prepare(
@@ -414,7 +466,7 @@ class WindowsServerRehearsalVerificationTests(
             (self.evidence_root / run_id / "pilot-run.json").read_text(encoding="utf-8")
         )
         self.assertEqual(0, result)
-        self.assertEqual(8, record["schema_version"])
+        self.assertEqual(9, record["schema_version"])
         self.assertEqual("windows_server_rehearsal", record["profile"])
         self.assertTrue(
             (
@@ -479,6 +531,8 @@ class WindowsServerRehearsalVerificationTests(
 
         self.assertEqual(0, result)
         self.assertEqual("PASS", report["result"])
+        self.assertEqual("FAIL", report["ux_before_baseline"]["result"])
+        self.assertGreater(report["ux_before_baseline"]["failure_count"], 0)
 
     def test_startup_ux_requires_owner_and_next_action_identification(self) -> None:
         record = self.complete_record()
@@ -512,6 +566,24 @@ class WindowsServerRehearsalVerificationTests(
         self.assertIn(
             "책임 영역 server는 담당자와 독립 승인자가 달라야 합니다.",
             report["failures"],
+        )
+
+    def test_full_pilot_rejects_time_limit_approved_after_run_authorization(
+        self,
+    ) -> None:
+        record = self.complete_record()
+        record["profile"] = "full_pilot"
+        for metric in record["roles"].values():
+            metric["time_limit_approval_id"] = "LIMIT-FROM-BEFORE-001"
+            metric["time_limit_approved_at"] = "2026-07-22T13:01:00+09:00"
+
+        _result, report = self.verify(record)
+
+        self.assertTrue(
+            any(
+                "시간 한도는 현재 run 통합 승인 전에 승인된 값" in item
+                for item in report["failures"]
+            )
         )
 
     def test_windows_package_hash_mismatch_fails_closed(self) -> None:
@@ -603,6 +675,7 @@ class WindowsServerRehearsalVerificationTests(
         ).open(newline="", encoding="utf-8") as stream:
             self.assertEqual(
                 [
+                    "pilot_run_id",
                     "comparison_id",
                     "development_cycle_id",
                     "attempt_no",
@@ -610,6 +683,9 @@ class WindowsServerRehearsalVerificationTests(
                     "participant_id",
                     "scenario_id",
                     "condition_id",
+                    "measurement_status",
+                    "started_at_utc",
+                    "completed_at_utc",
                     "network",
                     "gloves",
                     "one_hand",
@@ -620,14 +696,19 @@ class WindowsServerRehearsalVerificationTests(
                     "elapsed_seconds",
                     "click_count",
                     "screen_transitions",
+                    "retry_count",
                     "help_request_count",
+                    "expected_result",
+                    "actual_result",
                     "source_preservation_understood",
                     "next_action_understood",
                     "source_loss_count",
                     "receipt_loss_count",
                     "duplicate_creation_count",
                     "critical_blocker",
+                    "source_ids",
                     "screen_capture_evidence",
+                    "source_trace_evidence",
                     "notes",
                 ],
                 next(csv.reader(stream)),

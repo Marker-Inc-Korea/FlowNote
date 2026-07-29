@@ -24,6 +24,7 @@ class ManagePilotRunUxTestMixin:
                 for attempt_no in (1, 2):
                     rows.append(
                         {
+                            "pilot_run_id": self.run_id,
                             "comparison_id": f"BASELINE-{comparison_no:02}",
                             "development_cycle_id": "",
                             "attempt_no": attempt_no,
@@ -31,6 +32,13 @@ class ManagePilotRunUxTestMixin:
                             "participant_id": f"PARTICIPANT-{role}",
                             "scenario_id": scenario,
                             "condition_id": f"CONDITION-{attempt_no}",
+                            "measurement_status": "MEASURED",
+                            "started_at_utc": (
+                                f"2026-07-22T04:0{attempt_no}:00+00:00"
+                            ),
+                            "completed_at_utc": (
+                                f"2026-07-22T04:0{attempt_no}:20+00:00"
+                            ),
                             "network": "CONNECTED" if attempt_no == 1 else "DISCONNECTED",
                             "gloves": "OFF" if attempt_no == 1 else "ON",
                             "one_hand": "FALSE" if attempt_no == 1 else "TRUE",
@@ -41,14 +49,27 @@ class ManagePilotRunUxTestMixin:
                             "elapsed_seconds": 20,
                             "click_count": 5,
                             "screen_transitions": 4,
+                            "retry_count": 0,
                             "help_request_count": 0,
+                            "expected_result": (
+                                "HTTP_403"
+                                if scenario == "WPF-REVIEW-REPORT-PERMISSION"
+                                else "WORKFLOW_COMPLETED"
+                            ),
+                            "actual_result": (
+                                "HTTP_403"
+                                if scenario == "WPF-REVIEW-REPORT-PERMISSION"
+                                else "WORKFLOW_COMPLETED"
+                            ),
                             "source_preservation_understood": "FALSE",
                             "next_action_understood": "FALSE",
                             "source_loss_count": 0,
                             "receipt_loss_count": 0,
                             "duplicate_creation_count": 0,
                             "critical_blocker": "FALSE",
+                            "source_ids": "SOURCE-001",
                             "screen_capture_evidence": "proof.txt",
+                            "source_trace_evidence": "proof.txt",
                             "notes": "same approved baseline",
                         }
                     )
@@ -60,6 +81,26 @@ class ManagePilotRunUxTestMixin:
             [],
             manage_pilot_run.ux_before_baseline_csv_failures(self.run_root),
         )
+
+        failures = manage_pilot_run.ux_before_baseline_csv_failures(
+            self.run_root, "2026-07-22T05:00:00+00:00"
+        )
+        self.assertTrue(
+            any("통합 사전 승인 시각보다 먼저 시작" in failure for failure in failures)
+        )
+
+        permission_row = next(
+            row
+            for row in rows
+            if row["scenario_id"] == "WPF-REVIEW-REPORT-PERMISSION"
+        )
+        permission_row["actual_result"] = "FEATURE_FAILURE"
+        self.write_csv(
+            "scenario-results/role-ux-comparison.csv", list(rows[0]), rows
+        )
+        failures = manage_pilot_run.ux_before_baseline_csv_failures(self.run_root)
+        self.assertTrue(any("HTTP_403이어야 합니다" in failure for failure in failures))
+        permission_row["actual_result"] = "HTTP_403"
 
         rows = [
             row
@@ -151,6 +192,9 @@ class ManagePilotRunUxTestMixin:
             "priority",
             "classification",
             "title",
+            "classification_basis",
+            "impacted_roles",
+            "source_preservation_risk",
             "acceptance_criteria",
             "owner",
             "due_date",
@@ -160,7 +204,7 @@ class ManagePilotRunUxTestMixin:
         with items_path.open("w", newline="", encoding="utf-8") as stream:
             writer = csv.DictWriter(stream, fieldnames=item_fields)
             writer.writeheader()
-            for index, _role in enumerate(manage_pilot_run.REQUIRED_ROLES):
+            for index, role in enumerate(manage_pilot_run.REQUIRED_ROLES):
                 writer.writerow(
                     {
                         "item_id": f"UX-{index:03}",
@@ -174,6 +218,9 @@ class ManagePilotRunUxTestMixin:
                             else "site_layout"
                         ),
                         "title": "장갑 입력 개선" if index == 0 else "현장별 선호 보존",
+                        "classification_basis": "관찰 범위에 따른 분류",
+                        "impacted_roles": role,
+                        "source_preservation_risk": "NONE",
                         "acceptance_criteria": "같은 조건에서 첫 시도 성공",
                         "owner": "product-owner",
                         "due_date": "2026-08-31",
@@ -221,6 +268,7 @@ class ManagePilotRunUxTestMixin:
         )
         comparison_path.parent.mkdir(parents=True, exist_ok=True)
         fields = [
+            "pilot_run_id",
             "comparison_id",
             "development_cycle_id",
             "attempt_no",
@@ -228,6 +276,9 @@ class ManagePilotRunUxTestMixin:
             "participant_id",
             "scenario_id",
             "condition_id",
+            "measurement_status",
+            "started_at_utc",
+            "completed_at_utc",
             "network",
             "gloves",
             "one_hand",
@@ -238,14 +289,19 @@ class ManagePilotRunUxTestMixin:
             "elapsed_seconds",
             "click_count",
             "screen_transitions",
+            "retry_count",
             "help_request_count",
+            "expected_result",
+            "actual_result",
             "source_preservation_understood",
             "next_action_understood",
             "source_loss_count",
             "receipt_loss_count",
             "duplicate_creation_count",
             "critical_blocker",
+            "source_ids",
             "screen_capture_evidence",
+            "source_trace_evidence",
             "notes",
         ]
         with comparison_path.open("w", newline="", encoding="utf-8") as stream:
@@ -258,6 +314,7 @@ class ManagePilotRunUxTestMixin:
                 for attempt_no in (1, 2):
                     writer.writerow(
                         {
+                            "pilot_run_id": self.run_id,
                             "comparison_id": "COMPARE-P1",
                             "development_cycle_id": "CYCLE-20260727-01",
                             "attempt_no": attempt_no,
@@ -265,6 +322,13 @@ class ManagePilotRunUxTestMixin:
                             "participant_id": "PARTICIPANT-01",
                             "scenario_id": "TEAM-MEMBER-HANDOVER",
                             "condition_id": f"CONDITION-{attempt_no}",
+                            "measurement_status": "MEASURED",
+                            "started_at_utc": (
+                                f"2026-07-22T05:0{attempt_no}:00+00:00"
+                            ),
+                            "completed_at_utc": (
+                                f"2026-07-22T05:0{attempt_no}:20+00:00"
+                            ),
                             "network": "CONNECTED" if attempt_no == 1 else "DISCONNECTED",
                             "gloves": "OFF" if attempt_no == 1 else "ON",
                             "one_hand": "FALSE" if attempt_no == 1 else "TRUE",
@@ -275,14 +339,19 @@ class ManagePilotRunUxTestMixin:
                             "elapsed_seconds": elapsed,
                             "click_count": 4,
                             "screen_transitions": transitions,
+                            "retry_count": 0,
                             "help_request_count": help_count,
+                            "expected_result": "WORKFLOW_COMPLETED",
+                            "actual_result": "WORKFLOW_COMPLETED",
                             "source_preservation_understood": "TRUE" if phase == "AFTER" else "FALSE",
                             "next_action_understood": "TRUE" if phase == "AFTER" else "FALSE",
                             "source_loss_count": 0,
                             "receipt_loss_count": 0,
                             "duplicate_creation_count": 0,
                             "critical_blocker": "FALSE",
+                            "source_ids": "SOURCE-001",
                             "screen_capture_evidence": "proof.txt",
+                            "source_trace_evidence": "proof.txt",
                             "notes": "same approved scenario",
                         }
                     )
@@ -332,6 +401,7 @@ class ManagePilotRunUxTestMixin:
             for attempt_no in (1, 2):
                 rows.append(
                     {
+                        "pilot_run_id": self.run_id,
                         "comparison_id": "COMPARE-P0",
                         "development_cycle_id": "CYCLE-20260727-02",
                         "attempt_no": attempt_no,
@@ -339,6 +409,13 @@ class ManagePilotRunUxTestMixin:
                         "participant_id": "PARTICIPANT-ADMIN-01",
                         "scenario_id": "ADMIN-REVIEW-REPORT",
                         "condition_id": f"CONDITION-{attempt_no}",
+                        "measurement_status": "MEASURED",
+                        "started_at_utc": (
+                            f"2026-07-22T06:0{attempt_no}:00+00:00"
+                        ),
+                        "completed_at_utc": (
+                            f"2026-07-22T06:0{attempt_no}:20+00:00"
+                        ),
                         "network": "CONNECTED" if attempt_no == 1 else "DISCONNECTED",
                         "gloves": "OFF" if attempt_no == 1 else "ON",
                         "one_hand": "FALSE" if attempt_no == 1 else "TRUE",
@@ -349,14 +426,19 @@ class ManagePilotRunUxTestMixin:
                         "elapsed_seconds": elapsed,
                         "click_count": 4,
                         "screen_transitions": 3,
+                        "retry_count": 0,
                         "help_request_count": 0,
+                        "expected_result": "WORKFLOW_COMPLETED",
+                        "actual_result": "WORKFLOW_COMPLETED",
                         "source_preservation_understood": "TRUE" if phase == "AFTER" else "FALSE",
                         "next_action_understood": "TRUE" if phase == "AFTER" else "FALSE",
                         "source_loss_count": 0,
                         "receipt_loss_count": 0,
                         "duplicate_creation_count": 0,
                         "critical_blocker": "FALSE",
+                        "source_ids": "SOURCE-001",
                         "screen_capture_evidence": "proof.txt",
+                        "source_trace_evidence": "proof.txt",
                         "notes": "same approved scenario",
                     }
                 )

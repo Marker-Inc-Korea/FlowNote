@@ -121,4 +121,10 @@
 
 `role-metrics.csv`에는 성공 여부와 소요 시간 외에 재시도, 도움 요청, 화면 이동 수를 기록한다. `role-observations.csv`에는 장갑, 거치 위치, 한 손 사용, 사진 촬영, 짧은 메모, 신호등식 입력, 네트워크 상태를 각각 명시한다. 화면 녹화 또는 시간 기록은 같은 `run_id` 아래 상대경로로 연결한다.
 
-모든 관찰은 `development-items.csv`의 항목 하나와 1:1로 연결한다. 결정은 `ACCEPTED(수용)`, `REJECTED(불수용)`, `REVIEW(검토)` 중 하나이며 결정 근거, P0~P3, 담당, 기한, 측정 가능한 완료 기준을 반드시 남긴다. `common_product`는 현장과 무관하게 제품에 반영할 요구, `configuration_or_training`은 단말 설정과 교육, `site_layout`은 거치 위치와 현장 동선에 관한 요구다.
+FieldComment가 들어가는 UX BEFORE는 `WPF-DOCUMENT-FIELD-COMMENT`, `WPF-HANDOVER-FOLLOW-UP`, 관리자용 `WPF-REVIEW-REPORT` 또는 비관리자용 `WPF-REVIEW-REPORT-PERMISSION`을 역할별로 2회 이상 측정한다. 각 원시 행에는 실행 폴더와 같은 `pilot_run_id`, 익명 참여자, 조건·시도 번호, `MEASURED`, 시간대 포함 시작·완료 시각, 장갑·한 손·거치·연결 조건, 완료 시간, 화면 이동, 재시도, 도움 요청, 실제 FieldComment·인수인계·보고서 source ID와 화면·감사 증거가 있어야 한다.
+
+비관리자 검토·보고서 시나리오의 기대 결과와 실제 결과는 모두 `HTTP_403`이다. 이 403은 권한 우회가 차단된 성공 결과이며 기능 실패로 분류하지 않는다. 반대로 403 없이 관리 기능에 들어가거나 원천·receipt가 유실된 경우에는 보안 또는 데이터 손실 후보로 즉시 분류한다.
+
+모든 관찰은 `development-items.csv`의 항목 하나와 1:1로 연결한다. 결정은 `ACCEPTED(수용)`, `REJECTED(불수용)`, `REVIEW(검토)` 중 하나이며 결정 근거, P0~P3, 영향 역할, 원천 보존 위험, 담당, 기한, 측정 가능한 완료 기준을 반드시 남긴다. `common_product`는 현장과 무관하게 제품에 반영할 요구, `configuration_or_training`은 단말 설정과 교육, `site_layout`은 거치 위치와 현장 동선에 관한 요구다. `classification_basis`에는 이 판단 근거를 적으며 한 현장의 거치 위치, 동선, 교육 수준이나 표현 선호만으로 `common_product`를 선택하지 않는다.
+
+운영·보안·현장 검토자는 원시 행과 개발 항목을 함께 확인한다. 참여자 대응표가 Git 또는 공용 로그에 없는지, 측정하지 않은 값을 0이나 성공으로 채우지 않았는지, 화면 증거와 source ID가 같은 `run_id`인지, 원천 보존 위험을 낮춰 적지 않았는지를 검토한 뒤 `pilot-run.json.ux_before_baseline.review_approvals`에 각각 서명한다. 이 승인은 전체 파일럿 통과가 아니라 신뢰할 수 있는 BEFORE와 후속 개발 항목 확정에 대한 승인이다.
