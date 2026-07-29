@@ -2,7 +2,7 @@
 
 ## 최신 유효 Windows x64 통합 기준선
 
-2026-07-28 현재 유효한 무생략 통합 기준선은 아직 없다. 아래 표는 기준선 확정 여부를 확인하는 단일 현황표다. `PASSED` 실행이 나온 뒤에도 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 재현 가능한 기준선으로 확정한다.
+2026-07-30 현재 유효한 무생략 통합 기준선은 아직 없다. 아래 표는 기준선 확정 여부를 확인하는 단일 현황표다. `PASSED` 실행이 나온 뒤에도 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 재현 가능한 기준선으로 확정한다.
 
 | 항목 | 최신 유효 기준선 | 재현 실행 |
 | --- | --- | --- |
@@ -11,18 +11,18 @@
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
 | FastAPI | 현재 코드·스크립트 guard 154건, Windows 무생략 실행 대기 | 동일 |
-| WPF Core | 현재 macOS 실행 76/76, 스크립트 guard 74건으로 불일치 | guard 갱신과 Windows 수집·TRX 무생략 실행 대기 |
+| WPF Core | 현재 macOS 수집·고유·TRX 76/76, 스크립트 guard 76건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 목표 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 목표 unit 20/20, failure/error/skipped 0, debug build PASS | 동일 |
 | SQLite | 목표 전후 `quick_check=ok`, FK 위반 0 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
-보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 AI 현장 표본 검토 클라이언트 테스트 2건이 추가되어 현재 macOS 실행은 76/76이지만 guard는 74건에 머물러 있다. guard를 현재 코드에 맞추고 Windows 수집 목록과 새 TRX의 `total/passed=76/76`을 대조해야 한다.
+보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 현재 macOS 수집 목록은 76건 모두 고유하고 새 TRX도 `total=76`, `passed=76`, `failed=0`, `error=0`, `notExecuted=0`이며 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 이 근거에 따라 스크립트 guard를 76건으로 맞췄으며 Windows x64의 새 수집 목록과 TRX도 동일한지 확인해야 한다.
 
-표준 스크립트는 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed를 서로 대조한다. 현재 기대값은 74건이므로 76개를 수집하는 코드에서는 수집 단계에서 실패해야 한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 위치에 실패 단계와 중단 원인도 남긴다.
+표준 스크립트는 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed를 서로 대조한다. 현재 기대값은 76건이며 수집·고유·TRX total/passed 중 하나라도 76과 다르거나 실패·오류·건너뜀이 있으면 중단한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 화면과 요약에 실패 단계, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 함께 남긴다.
 
-현재 호스트는 macOS ARM64이고 PowerShell이 없어 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
+변경된 실패 안내는 PowerShell SDK 보조 호스트로 macOS 환경 게이트를 의도적으로 실패시킨 `candidate1-macos-ux-failure-20260730-01`에서 확인했다. 콘솔·단계 로그·`verification-summary.json`은 현재 단계, 기대값, 실제값, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 모두 한 화면 구조로 남겼다. 현재 호스트는 macOS ARM64라 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
 
 ## 2026-07-28 작업 201 전체 Markdown 현재 코드 재대조
 
@@ -333,14 +333,14 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 .\scripts\verify-preserved-tests.ps1
 ```
 
-스크립트는 기본 `integrated-smoke-yyyyMMdd-HHmmss` 실행 ID를 만들며 `-RunId <값>`으로 현장 실행 ID를 지정할 수 있다. 단계별 로그, JUnit/TRX, 관리형 FastAPI 로그, WPF DB 증거, Android 결과, 환경 정보와 `verification-summary.json`은 Git 제외 경로 `data/local/integrated-smoke/<run-id>/`에 보존한다. 실패하면 즉시 종료하되 실패 단계까지의 DB·로그·산출물을 삭제하거나 초기화하지 않으며, 요약 파일에 실패 단계와 원인을 남긴다. 스크립트는 다음 순서로 실행한다.
+스크립트는 기본 `integrated-smoke-yyyyMMdd-HHmmss` 실행 ID를 만들며 `-RunId <값>`으로 현장 실행 ID를 지정할 수 있다. 단계별 로그, JUnit/TRX, 관리형 FastAPI 로그, WPF DB 증거, Android 결과, 환경 정보와 `verification-summary.json`은 Git 제외 경로 `data/local/integrated-smoke/<run-id>/`에 보존한다. 실패하면 즉시 종료하되 실패 단계까지의 DB·로그·산출물을 삭제하거나 초기화하지 않으며, 콘솔·단계 로그·요약 파일에서 현재 단계, 기대값, 실제값, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 한 번에 확인할 수 있게 남긴다. 스크립트는 다음 순서로 실행한다.
 
 1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
 2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 3. 실행 전 커밋 SHA를 기록하고 `git status --porcelain=v1 --untracked-files=all`이 비어 있는지 확인한다. `git ls-files`에서는 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않아야 한다.
 4. `services/api`에서 FastAPI pytest node ID 154개를 수집하고 중복 node ID가 0개인지 확인한다. 수집 목록은 `fastapi-collected-tests.txt`로 보존한다.
 5. FastAPI pytest를 실행하고 실행 ID별 JUnit을 보존한다. 수집 총수·고유 node ID 수·JUnit 실행 수가 모두 154인지 직접 대조한다.
-6. WPF Core 테스트를 warning-as-error로 실행하고 TRX의 total/passed가 모두 67인지 확인한다.
+6. WPF Core 테스트를 warning-as-error로 실행하고 수집·고유 테스트와 TRX의 total/passed가 모두 76인지 확인한다.
 7. WPF 앱을 warning-as-error로 빌드해 compiler warning과 error가 모두 0인지 확인한다.
 8. WPF 공통 DB의 스모크 전 `quick_check`와 `foreign_key_check`를 별도 JSON 증거로 확인한다.
 9. `5184` 포트에 서버가 없으면 `FLOWNOTE_ENVIRONMENT=test`, `FLOWNOTE_SMOKE_SERVER_DATABASE_PATH`와 누적 `flownote.windows-smoke.sqlite3`, `storage/windows-smoke`를 사용하는 FastAPI를 시작한다. AI 보존 검증용 `system-admin`은 파일명이 `flownote.windows-smoke.sqlite3`인 기존 시험 DB에서만 준비한 뒤 같은 실행 ID로 WPF 통합 스모크를 실행한다. 환경, 경로 또는 파일 조건이 맞지 않으면 계정을 만들지 않고 중단한다.
@@ -386,7 +386,7 @@ FieldComment 정제 스모크의 기존 6개 슬롯은 범주마다 `NORMAL-01/0
 
 마지막 로컬 SQLite 검사는 `quick_check=ok`, `foreign_key_check=0`, `server_sync_queue.idempotency_key` 중복 0, `server_id_mappings(entity_type, local_id, local_version_no)` 중복 0을 강제한다. `wpf-smoke-database-evidence.json`에는 주요 테이블 실행 전후 통계, 오늘 문서 ID, 과거 기존 문서의 이전·신규 버전과 무결성 결과가 저장된다. 통제된 기준선은 실행마다 설정이 식별되는 관리형 FastAPI를 사용하므로 시작 전에 `5184` 포트를 비워야 한다. 해당 포트에 이미 건강한 서버가 있으면 환경 실패로 중단하고 외부 프로세스는 종료하지 않는다.
 
-한 run ID의 `verification-summary.json`이 `partial_run=false`, `status=PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선 후보가 된다. FastAPI는 수집·고유 node ID·JUnit passed가 모두 154이고 failure/error/skipped가 0이어야 한다. WPF Core는 total/passed 71과 failed/error/skipped 0, Android는 total/passed 20과 failure/error/skipped 0이어야 한다. WPF·Android build의 compiler warning과 error도 0이어야 한다. DB 전후 무결성, 오늘 사진·인수인계 2건, 기존 과거 문서 version `+1`, Git 전후 clean과 금지 산출물 0이 요약과 원본 증거에서 일치해야 한다. 같은 커밋에서 새 `run_id`로 한 번 더 동일하게 통과한 뒤 최상단 현황표에 두 실행을 기록한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
+한 run ID의 `verification-summary.json`이 `partial_run=false`, `status=PASSED`이고 모든 필수 단계가 `PASSED`일 때만 최신 Windows 통합 기준선 후보가 된다. FastAPI는 수집·고유 node ID·JUnit passed가 모두 154이고 failure/error/skipped가 0이어야 한다. WPF Core는 수집·고유·TRX total/passed가 모두 76이고 failed/error/skipped가 0, Android는 total/passed 20과 failure/error/skipped 0이어야 한다. WPF·Android build의 compiler warning과 error도 0이어야 한다. DB 전후 무결성, 오늘 사진·인수인계 2건, 기존 과거 문서 version `+1`, Git 전후 clean과 금지 산출물 0이 요약과 원본 증거에서 일치해야 한다. 같은 커밋에서 새 `run_id`로 한 번 더 동일하게 통과한 뒤 최상단 현황표에 두 실행을 기록한다. 단계 생략 스위치를 사용한 실행이나 Windows가 아닌 환경의 부분 실행은 기준선 확정 근거가 아니다.
 
 Windows 통합 `PASSED`는 실제 운영 배포의 선행 조건이지 최종 완료 판정이 아니다. 이후 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)에 따라 깨끗한 PC의 설치·업그레이드·제거, HTTPS 인증서 갱신, 단말 교체, 고객 유사망 장애, 별도 PC 복구와 역할별 업무를 새 파일럿 `run_id`로 검증한다.
 
