@@ -24,8 +24,10 @@ except ModuleNotFoundError:
     import pilot_windows_server_evidence as windows_server_evidence
 
 
-RUN_ID_PATTERN = re.compile(r"^PILOT-\d{8}-\d{4}-[A-Z0-9_-]+-\d{3}$")
-SCHEMA_VERSION = 8
+RUN_ID_PATTERN = re.compile(
+    r"^PILOT-\d{8}-(?:\d{4}-[A-Z0-9_-]+|UX-BEFORE)-\d{3}$"
+)
+SCHEMA_VERSION = 9
 RUN_PROFILES = ("full_pilot", "windows_server_rehearsal")
 RESPONSIBILITY_AREAS = (
     "server",
@@ -189,7 +191,9 @@ EVIDENCE_DIRECTORIES = (
 def validate_run_id(value: str) -> str:
     if not RUN_ID_PATTERN.fullmatch(value) or "TOOLTEST" in value:
         raise argparse.ArgumentTypeError(
-            "run_id는 PILOT-YYYYMMDD-HHMM-현장코드-일련번호 형식이어야 하며 TOOLTEST를 포함할 수 없습니다."
+            "run_id는 PILOT-YYYYMMDD-HHMM-현장코드-일련번호 또는 "
+            "PILOT-YYYYMMDD-UX-BEFORE-일련번호 형식이어야 하며 "
+            "TOOLTEST를 포함할 수 없습니다."
         )
     return value
 
@@ -304,6 +308,19 @@ def empty_record(run_id: str, profile: str) -> dict[str, Any]:
             },
             "evidence": [],
         },
+        "ux_before_baseline": {
+            "status": "PENDING",
+            "review_approvals": {
+                area: {
+                    "decision": "PENDING",
+                    "signer": "",
+                    "signed_at": "",
+                    "evidence": [],
+                }
+                for area in REQUIRED_APPROVALS
+            },
+            "evidence": [],
+        },
         "rollback": {
             target: {
                 "result": "PENDING",
@@ -379,6 +396,10 @@ def prepare(args: argparse.Namespace) -> int:
             "- 운영 승인자/서명:\n- 보안 승인자/서명:\n"
             "- 현장 승인자/서명:\n"
         ),
+        run_root / "approvals" / "ux-before-baseline-review.csv": (
+            "area,decision,signer,signed_at,evidence\n"
+            + "".join(f"{area},PENDING,,,\n" for area in REQUIRED_APPROVALS)
+        ),
         run_root / "scenario-results" / "android-delivery.csv": (
             "scenario_id,condition,delivery_run_id,message_id,created_at_utc,"
             "recovery_ready_at_utc,displayed_at_utc,receipt_at_utc,page_seconds,"
@@ -413,13 +434,16 @@ def prepare(args: argparse.Namespace) -> int:
             "retry_count,help_request_count,screen_transitions,critical_blocker,evidence\n"
         ),
         run_root / "scenario-results" / "role-ux-comparison.csv": (
-            "comparison_id,development_cycle_id,attempt_no,role,participant_id,"
-            "scenario_id,condition_id,network,gloves,one_hand,terminal_position,"
-            "ui_phase,ui_build,"
+            "pilot_run_id,comparison_id,development_cycle_id,attempt_no,role,"
+            "participant_id,scenario_id,condition_id,measurement_status,"
+            "started_at_utc,completed_at_utc,network,gloves,one_hand,"
+            "terminal_position,ui_phase,ui_build,"
             "success,elapsed_seconds,click_count,screen_transitions,"
-            "help_request_count,source_preservation_understood,next_action_understood,"
+            "retry_count,help_request_count,expected_result,actual_result,"
+            "source_preservation_understood,next_action_understood,"
             "source_loss_count,receipt_loss_count,duplicate_creation_count,"
-            "critical_blocker,screen_capture_evidence,notes\n"
+            "critical_blocker,source_ids,screen_capture_evidence,"
+            "source_trace_evidence,notes\n"
         ),
         run_root / "scenario-results" / "restore-fault-injections.csv": (
             "injection_id,target,automatic_send_blocked,polling_blocked,"
@@ -435,6 +459,7 @@ def prepare(args: argparse.Namespace) -> int:
         ),
         run_root / "observations" / "development-items.csv": (
             "item_id,observation_id,decision,decision_basis,priority,classification,title,"
+            "classification_basis,impacted_roles,source_preservation_risk,"
             "acceptance_criteria,owner,due_date,status,development_cycle_id,"
             "comparison_id,evidence\n"
         ),
@@ -804,16 +829,190 @@ def role_metrics_csv_failures(
     return failures
 
 
-def ux_before_baseline_csv_failures(run_root: Path) -> list[str]:
+def ux_before_baseline_csv_failures(
+    run_root: Path, authorization_approved_at: str | None = None
+) -> list[str]:
     return pilot_role_ux.before_baseline_failures(
         run_root,
         read_csv_rows,
         csv_bool,
         evidence_failures,
+        authorization_approved_at,
     )
 
 
-def ux_csv_failures(run_root: Path, expected: dict[str, Any]) -> list[str]:
+def ux_before_contract_failures(
+    run_root: Path, record: dict[str, Any]
+) -> list[str]:
+    failures: list[str] = []
+    responsibilities = record.get("responsibilities", {})
+    for area in RESPONSIBILITY_AREAS:
+        assignment = responsibilities.get(area, {})
+        if not nonempty(assignment.get("owner")) or not nonempty(
+            assignment.get("approver")
+        ):
+            failures.append(
+                f"UX BEFORE 책임 영역 {area}의 담당자와 승인자가 모두 필요합니다."
+            )
+        elif normalized_identity(assignment.get("owner")) == normalized_identity(
+            assignment.get("approver")
+        ):
+            failures.append(
+                f"UX BEFORE 책임 영역 {area}는 담당자와 독립 승인자가 달라야 합니다."
+            )
+        for field, label in (
+            ("test_scope", "시험 범위"),
+            ("stop_criteria", "중단 기준"),
+            ("evidence_repository", "증거 저장소"),
+        ):
+            if not nonempty(assignment.get(field)):
+                failures.append(
+                    f"UX BEFORE 책임 영역 {area}의 {label}가 필요합니다."
+                )
+        failures.extend(
+            evidence_failures(
+                run_root,
+                assignment.get("approval_evidence"),
+                f"UX BEFORE 책임 영역 {area} 승인",
+            )
+        )
+
+    authorization = record.get("authorization", {})
+    approved_at = pilot_role_ux.parse_aware_timestamp(
+        authorization.get("approved_at")
+    )
+    if authorization.get("decision") != "PASS" or approved_at is None:
+        failures.append(
+            "UX BEFORE 측정 전 통합 승인 PASS와 시간대가 있는 승인 시각이 필요합니다."
+        )
+    for field, label in (
+        ("run_scope", "통합 시험 범위"),
+        ("evidence_repository", "통합 증거 저장소"),
+        ("rollback_decision_authority", "rollback 의사결정권자"),
+        ("emergency_contact_flow", "비상 연락 흐름"),
+    ):
+        if not nonempty(authorization.get(field)):
+            failures.append(f"UX BEFORE 사전 승인의 {label}가 필요합니다.")
+    stop_criteria = authorization.get("stop_criteria")
+    if (
+        not isinstance(stop_criteria, list)
+        or len(stop_criteria) < 5
+        or not all(nonempty(value) for value in stop_criteria)
+    ):
+        failures.append("UX BEFORE 사전 승인에는 5개 이상의 중단 기준이 필요합니다.")
+    for target in windows_server_evidence.RECOVERY_TARGETS:
+        objective = authorization.get("recovery_objectives", {}).get(target, {})
+        for metric in ("rto_seconds", "rpo_seconds"):
+            value = objective.get(metric)
+            if not isinstance(value, (int, float)) or value <= 0:
+                failures.append(
+                    f"UX BEFORE 사전 승인의 {target} {metric}가 0보다 커야 합니다."
+                )
+    failures.extend(
+        evidence_failures(
+            run_root, authorization.get("evidence"), "UX BEFORE 통합 사전 승인"
+        )
+    )
+
+    baseline = record.get("ux_before_baseline", {})
+    if baseline.get("status") != "COMPLETE":
+        failures.append(
+            "UX BEFORE 상태는 실제 측정과 공동 검토 뒤 COMPLETE여야 합니다."
+        )
+    approval_rows, approval_row_failures = read_csv_rows(
+        run_root,
+        "approvals/ux-before-baseline-review.csv",
+        "UX BEFORE 공동 검토 원시 승인",
+    )
+    failures.extend(approval_row_failures)
+    measurement_rows, _measurement_row_failures = read_csv_rows(
+        run_root,
+        "scenario-results/role-ux-comparison.csv",
+        "UX BEFORE 공동 검토 대상",
+    )
+    measured_completion_times = [
+        parsed
+        for row in measurement_rows
+        if (row.get("ui_phase") or "").strip().upper() == "BEFORE"
+        if (
+            parsed := pilot_role_ux.parse_aware_timestamp(
+                row.get("completed_at_utc")
+            )
+        )
+        is not None
+    ]
+    latest_measurement_completed_at = (
+        max(measured_completion_times) if measured_completion_times else None
+    )
+    raw_approvals: dict[str, dict[str, str]] = {}
+    for index, row in enumerate(approval_rows, start=1):
+        area = (row.get("area") or "").strip()
+        if area not in REQUIRED_APPROVALS or area in raw_approvals:
+            failures.append(
+                f"UX BEFORE 공동 검토 원시 승인 {index}의 area가 없거나 중복·범위 밖입니다."
+            )
+            continue
+        raw_approvals[area] = row
+    for area in REQUIRED_APPROVALS:
+        approval = baseline.get("review_approvals", {}).get(area, {})
+        signed_at = pilot_role_ux.parse_aware_timestamp(approval.get("signed_at"))
+        if (
+            approval.get("decision") != "PASS"
+            or not nonempty(approval.get("signer"))
+            or signed_at is None
+        ):
+            failures.append(
+                f"UX BEFORE {area} 검토자의 PASS·서명자·시간대 포함 서명 시각이 필요합니다."
+            )
+        elif (
+            latest_measurement_completed_at is not None
+            and signed_at < latest_measurement_completed_at
+        ):
+            failures.append(
+                f"UX BEFORE {area} 공동 검토는 모든 BEFORE 측정 완료 뒤 서명해야 합니다."
+            )
+        failures.extend(
+            evidence_failures(
+                run_root,
+                approval.get("evidence"),
+                f"UX BEFORE {area} 공동 검토",
+            )
+        )
+        raw = raw_approvals.get(area)
+        if raw is None:
+            failures.append(f"UX BEFORE {area} 공동 검토 원시 승인 행이 없습니다.")
+            continue
+        if any(
+            (raw.get(field) or "").strip() != str(approval.get(field) or "").strip()
+            for field in ("decision", "signer", "signed_at")
+        ):
+            failures.append(
+                f"UX BEFORE {area} 공동 검토 원시 승인과 JSON 요약이 다릅니다."
+            )
+        raw_evidence = (raw.get("evidence") or "").strip()
+        if raw_evidence not in approval.get("evidence", []):
+            failures.append(
+                f"UX BEFORE {area} 공동 검토 원시 증거가 JSON 증거 목록과 다릅니다."
+            )
+        failures.extend(
+            evidence_failures(
+                run_root, [raw_evidence], f"UX BEFORE {area} 공동 검토 원시 승인"
+            )
+        )
+    failures.extend(
+        evidence_failures(
+            run_root, baseline.get("evidence"), "UX BEFORE 완료 근거"
+        )
+    )
+    return failures
+
+
+def ux_csv_failures(
+    run_root: Path,
+    expected: dict[str, Any],
+    *,
+    require_revalidation: bool = True,
+) -> list[str]:
     observations, failures = read_csv_rows(
         run_root, "observations/role-observations.csv", "역할별 현장 관찰"
     )
@@ -954,6 +1153,9 @@ def ux_csv_failures(run_root: Path, expected: dict[str, Any]) -> list[str]:
         for field in (
             "decision_basis",
             "title",
+            "classification_basis",
+            "impacted_roles",
+            "source_preservation_risk",
             "acceptance_criteria",
             "owner",
             "due_date",
@@ -963,6 +1165,37 @@ def ux_csv_failures(run_root: Path, expected: dict[str, Any]) -> list[str]:
                 failures.append(
                     f"UX 개발 항목 {item_id or index}의 {field} 값이 없습니다."
                 )
+        impacted_roles = {
+            value.strip()
+            for value in (row.get("impacted_roles") or "").split(";")
+            if value.strip()
+        }
+        source_observation = next(
+            (
+                observation
+                for observation in observations
+                if (observation.get("observation_id") or "").strip()
+                == observation_id
+            ),
+            {},
+        )
+        source_role = (source_observation.get("role") or "").strip()
+        if (
+            not impacted_roles
+            or not impacted_roles.issubset(REQUIRED_ROLES)
+            or source_role not in impacted_roles
+        ):
+            failures.append(
+                f"UX 개발 항목 {item_id or index}의 impacted_roles는 원 관찰 역할을 포함한 유효 역할이어야 합니다."
+            )
+        if (row.get("source_preservation_risk") or "").strip().upper() not in (
+            "NONE",
+            "POTENTIAL",
+            "CONFIRMED",
+        ):
+            failures.append(
+                f"UX 개발 항목 {item_id or index}의 source_preservation_risk가 올바르지 않습니다."
+            )
         try:
             date.fromisoformat((row.get("due_date") or "").strip())
         except ValueError:
@@ -994,7 +1227,8 @@ def ux_csv_failures(run_root: Path, expected: dict[str, Any]) -> list[str]:
         failures.append("UX 개발 항목의 원시 우선순위 집계와 요약값이 다릅니다.")
     if expected.get("classifications") != classification_counts:
         failures.append("UX 개발 항목의 원시 분류 집계와 요약값이 다릅니다.")
-    failures.extend(ux_revalidation_csv_failures(run_root, observations, items))
+    if require_revalidation:
+        failures.extend(ux_revalidation_csv_failures(run_root, observations, items))
     return failures
 
 
@@ -1395,6 +1629,21 @@ def verify(args: argparse.Namespace) -> int:
             failures.append(
                 f"역할 {role}의 실제 관찰값 기반 시간 한도 승인 ID/시각이 없습니다."
             )
+        else:
+            limit_approved_at = pilot_role_ux.parse_aware_timestamp(
+                metric.get("time_limit_approved_at")
+            )
+            run_approved_at = pilot_role_ux.parse_aware_timestamp(
+                authorization.get("approved_at")
+            )
+            if (
+                limit_approved_at is None
+                or run_approved_at is None
+                or limit_approved_at > run_approved_at
+            ):
+                failures.append(
+                    f"역할 {role}의 시간 한도는 현재 run 통합 승인 전에 승인된 값이어야 합니다."
+                )
         failures.extend(
             evidence_failures(run_root, metric.get("evidence"), f"역할 {role}")
         )
@@ -1607,7 +1856,12 @@ def verify(args: argparse.Namespace) -> int:
         failures.extend(
             evidence_failures(run_root, ux_items.get("evidence"), "UX 개발 항목 변환")
         )
-        failures.extend(ux_before_baseline_csv_failures(run_root))
+        failures.extend(ux_before_contract_failures(run_root, record))
+        failures.extend(
+            ux_before_baseline_csv_failures(
+                run_root, authorization.get("approved_at")
+            )
+        )
         failures.extend(ux_csv_failures(run_root, ux_items))
 
     rollback = record.get("rollback", {})
@@ -1658,6 +1912,15 @@ def verify(args: argparse.Namespace) -> int:
     if record.get("status") != "PASS":
         failures.append("pilot-run.json의 최종 status가 PASS가 아닙니다.")
 
+    ux_before_failures = ux_before_contract_failures(run_root, record)
+    ux_before_failures.extend(
+        ux_before_baseline_csv_failures(
+            run_root, authorization.get("approved_at")
+        )
+    )
+    ux_before_failures.extend(
+        ux_csv_failures(run_root, ux_items, require_revalidation=False)
+    )
     report = {
         "schema_version": SCHEMA_VERSION,
         "run_id": args.run_id,
@@ -1665,10 +1928,20 @@ def verify(args: argparse.Namespace) -> int:
         "result": "PASS" if not failures else "FAIL",
         "failure_count": len(failures),
         "failures": failures,
+        "ux_before_baseline": {
+            "result": "PASS" if not ux_before_failures else "FAIL",
+            "failure_count": len(ux_before_failures),
+            "failures": ux_before_failures,
+        },
     }
     output = run_root / "pilot-verification.json"
     write_json(output, report)
     print(f"파일럿 판정: {report['result']}")
+    print(
+        "UX BEFORE 기준: "
+        f"{report['ux_before_baseline']['result']} "
+        f"({report['ux_before_baseline']['failure_count']}건 미충족)"
+    )
     print(f"판정 증거: {output}")
     for failure in failures:
         print(f"FAIL: {failure}", file=sys.stderr)
