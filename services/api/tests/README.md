@@ -49,6 +49,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-07-28 현재 FastAPI 테스트 코드는 중복 없는 node ID 154개를 수집해 모두 통과한다. 저장소 루트 `scripts/verify-preserved-tests.ps1`의 FastAPI 수집/JUnit guard도 154개로 맞춰져 있다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1 -RunId <승인된-run-id>`로 수행하며 FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존해야 한다. 다만 현재 WPF Core 코드는 76개가 통과하지만 스크립트 guard는 74개이므로, guard를 코드에 맞추기 전에는 무생략 통합 실행을 유효한 기준선으로 판정할 수 없다.
+2026-07-30 현재 FastAPI 테스트 코드는 중복 없는 node ID 154개를 수집해 모두 통과하며, 저장소 루트 `scripts/verify-preserved-tests.ps1`의 guard는 FastAPI 154개·WPF Core 76개·Android 20개로 현재 코드와 맞는다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1 -RunId <승인된-run-id>`로 수행하며 FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존해야 한다. Windows 수집 목록과 TRX의 `total/passed=76/76`을 확인하고 같은 clean 소스 커밋에서 무생략 실행 2회가 모두 통과하기 전에는 유효한 기준선으로 판정하지 않는다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.

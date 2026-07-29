@@ -228,7 +228,7 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
 ```
 
-전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 2026-07-28 현재 FastAPI 154건과 WPF Core 76건은 macOS에서 통과했지만, 스크립트 guard는 FastAPI 154건·WPF Core 74건·Android 20건에 머물러 있다. WPF Core 기대값을 현재 코드에 맞추고 Windows 수집 목록과 TRX `total/passed=76/76`을 대조하기 전에는 무생략 통합 실행을 유효한 기준선으로 판정할 수 없다.
+전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 2026-07-30 현재 스크립트 guard는 FastAPI 154건·WPF Core 76건·Android 20건으로 현재 코드와 맞는다. 다만 Windows x64 수집 목록과 TRX `total/passed=76/76`, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 실행이 같은 clean 소스 커밋에서 2회 통과하기 전에는 유효한 통합 기준선으로 판정하지 않는다.
 
 | Windows x64 통합 기준선 | 첫 실행 | 재현 실행 |
 | --- | --- | --- |

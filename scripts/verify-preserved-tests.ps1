@@ -31,7 +31,7 @@ New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
 $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
 $expectedFastApiTestCount = 154
-$expectedWpfCoreTestCount = 74
+$expectedWpfCoreTestCount = 76
 $expectedAndroidUnitTestCount = 20
 $stepDisplayNames = @{
     "Check Windows baseline toolchain versions" = "Windows x64 표준 도구 확인"
@@ -70,9 +70,10 @@ if ($RunAndroidDeviceSmoke) {
 }
 $script:currentStepDisplayName = "검증 준비"
 $script:currentStepStatus = "RUNNING"
-$script:currentExpectedValue = "FastAPI 154건, WPF Core 74건, Android 20건과 모든 필수 단계 통과"
+$script:currentExpectedValue = "FastAPI 154건, WPF Core 76건, Android 20건과 모든 필수 단계 통과"
 $script:currentActualValue = "아직 실행하지 않음"
 $script:currentNextAction = "Windows x64 표준 도구 확인부터 순서대로 실행합니다."
+$script:currentPreservedData = "기존 공통 SQLite와 테스트 산출물은 삭제하거나 초기화하지 않습니다."
 $script:stepResults = New-Object System.Collections.Generic.List[object]
 $script:isPartialRun = $SkipFastApiPytest -or $SkipWpfBuild -or $SkipWpfSmoke -or $SkipAndroidBuild -or $SkipGitArtifactCheck
 $script:sourceCommit = $null
@@ -169,6 +170,7 @@ function Write-RunSummary {
         [string]$ExpectedValue = "",
         [string]$ActualValue = "",
         [string]$NextAction = "",
+        [string]$PreservedData = "",
         [string]$EvidencePath = ""
     )
 
@@ -181,17 +183,22 @@ function Write-RunSummary {
     if ([string]::IsNullOrWhiteSpace($NextAction)) {
         $NextAction = $script:currentNextAction
     }
+    if ([string]::IsNullOrWhiteSpace($PreservedData)) {
+        $PreservedData = $script:currentPreservedData
+    }
     if ([string]::IsNullOrWhiteSpace($EvidencePath)) {
         $EvidencePath = $runArtifactDir
     }
     $failureExpectedValue = ""
     $failureActualValue = ""
     $failureNextAction = ""
+    $failurePreservedData = ""
     $failureEvidencePath = ""
     if (-not [string]::IsNullOrWhiteSpace($Failure)) {
         $failureExpectedValue = $ExpectedValue
         $failureActualValue = $ActualValue
         $failureNextAction = $NextAction
+        $failurePreservedData = $PreservedData
         $failureEvidencePath = $EvidencePath
     }
 
@@ -212,6 +219,8 @@ function Write-RunSummary {
             "실제값" = $ActualValue
             "중단 원인" = $Failure
             "다음 조치" = $NextAction
+            "재실행 전 조치" = $NextAction
+            "보존된 데이터" = $PreservedData
             "보존된 증거 경로" = $EvidencePath
         }
         failure_context = [ordered]@{
@@ -220,6 +229,8 @@ function Write-RunSummary {
             "실제값" = $failureActualValue
             "중단 원인" = $Failure
             "다음 조치" = $failureNextAction
+            "재실행 전 조치" = $failureNextAction
+            "보존된 데이터" = $failurePreservedData
             "보존된 증거 경로" = $failureEvidencePath
         }
         partial_run = $script:isPartialRun
@@ -260,7 +271,7 @@ function Get-StepExpectedValue {
             return "FastAPI JUnit total/passed 154/154, 실패·오류·건너뜀 0건"
         }
         "Run WPF Core tests" {
-            return "WPF Core 수집/고유 74/74, TRX total/passed 74/74, 실패·오류·건너뜀 0건"
+            return "WPF Core 수집/고유 76/76, TRX total/passed 76/76, 실패·오류·건너뜀 0건"
         }
         "Build WPF app" {
             return "WPF 앱 빌드 PASSED, compiler warning 0건, error 0건"
@@ -375,6 +386,25 @@ function Get-StepNextAction {
     }
 }
 
+function Get-StepPreservedData {
+    param([string]$Name)
+
+    switch -Wildcard ($Name) {
+        "Run WPF Core tests" {
+            return "WPF Core 수집 목록·원본 수집 로그·생성된 TRX와 이전 단계 증거, 기존 공통 SQLite를 삭제하거나 초기화하지 않았습니다."
+        }
+        "Run integrated WPF smoke*" {
+            return "공통 SQLite와 이번 스모크가 만든 문서·버전·로그·증거를 삭제하거나 초기화하지 않았습니다."
+        }
+        "Check shared WPF SQLite integrity*" {
+            return "공통 SQLite와 무결성 증거, 이전 단계 로그를 삭제하거나 초기화하지 않았습니다."
+        }
+        default {
+            return "기존 공통 SQLite와 테스트 산출물을 삭제하거나 초기화하지 않았고, 완료된 단계와 현재 실패의 로그·증거를 같은 실행 ID 폴더에 보존했습니다."
+        }
+    }
+}
+
 function Invoke-Step {
     param(
         [string]$Name,
@@ -394,6 +424,7 @@ function Invoke-Step {
     $script:currentExpectedValue = Get-StepExpectedValue $Name
     $script:currentActualValue = "실행 중"
     $script:currentNextAction = "이 단계가 끝나면 결과를 요약에 기록하고 다음 단계로 진행합니다."
+    $script:currentPreservedData = Get-StepPreservedData $Name
 
     Write-Host ""
     Write-Host "[$($script:stepNumber)/$($script:plannedStepCount)] 현재 단계: $($script:currentStepDisplayName)"
@@ -423,16 +454,20 @@ function Invoke-Step {
         $expectedValue = Get-StepExpectedValue $Name
         $actualValue = Get-StepActualValue $Name $failure
         $nextAction = Get-StepNextAction $Name
+        $preservedData = Get-StepPreservedData $Name
         $script:currentStepStatus = "FAILED"
         $script:currentExpectedValue = $expectedValue
         $script:currentActualValue = $actualValue
         $script:currentNextAction = $nextAction
+        $script:currentPreservedData = $preservedData
         "FAILED: $failure" | Add-Content -Encoding UTF8 $logPath
+        "현재 단계: $failureStep" | Add-Content -Encoding UTF8 $logPath
         "실패 단계: $failureStep" | Add-Content -Encoding UTF8 $logPath
         "기대값: $expectedValue" | Add-Content -Encoding UTF8 $logPath
         "실제값: $actualValue" | Add-Content -Encoding UTF8 $logPath
         "중단 원인: $failure" | Add-Content -Encoding UTF8 $logPath
-        "다음 조치: $nextAction" | Add-Content -Encoding UTF8 $logPath
+        "보존된 데이터: $preservedData" | Add-Content -Encoding UTF8 $logPath
+        "재실행 전 조치: $nextAction" | Add-Content -Encoding UTF8 $logPath
         "보존된 증거 경로: $runArtifactDir" | Add-Content -Encoding UTF8 $logPath
         $script:stepResults.Add([pscustomobject]@{
             number = $script:stepNumber
@@ -445,14 +480,16 @@ function Invoke-Step {
         })
         Write-RunSummary -Status "FAILED" -Failure $failure -FailureStep $failureStep `
             -ExpectedValue $expectedValue -ActualValue $actualValue `
-            -NextAction $nextAction -EvidencePath $runArtifactDir
+            -NextAction $nextAction -PreservedData $preservedData -EvidencePath $runArtifactDir
         Write-Host ""
         Write-Host "검증 실패"
+        Write-Host "현재 단계: $failureStep"
         Write-Host "실패 단계: $failureStep"
         Write-Host "기대값: $expectedValue"
         Write-Host "실제값: $actualValue"
         Write-Host "중단 원인: $failure"
-        Write-Host "다음 조치: $nextAction"
+        Write-Host "보존된 데이터: $preservedData"
+        Write-Host "재실행 전 조치: $nextAction"
         Write-Host "보존된 증거 경로: $runArtifactDir"
         throw
     }
