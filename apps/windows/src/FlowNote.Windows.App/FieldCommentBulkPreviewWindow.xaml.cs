@@ -14,7 +14,7 @@ public partial class FieldCommentBulkPreviewWindow : Window
         {
             SummaryTextBlock.Text =
                 $"요청 {preview.RequestedCount}건 · 성공 {preview.SuccessCount}건 · 실패 {preview.FailureCount}건 · " +
-                "부분 성공은 유지되며 모든 결과 행과 receipt를 보존합니다.";
+                "성공 항목은 재전송하지 않고 실패 항목만 재시도 대상으로 표시합니다.";
             CancelButton.Visibility = Visibility.Collapsed;
             ExecuteButton.Content = "결과 확인";
         }

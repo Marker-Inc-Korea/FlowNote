@@ -534,6 +534,14 @@ def test_report_approval_rejects_selected_source_revision_change_until_redrafted
         assert save_response.status_code == 409, save_response.text
         assert save_response.json()["detail"].startswith("Report source revision changed: trace_")
 
+        current_source = client.get(
+            f"/api/v1/field-comments/{field_comment['comment_id']}",
+            headers=headers,
+        )
+        assert current_source.status_code == 200, current_source.text
+        assert current_source.json()["review_revision"] == reselected.json()["review_revision"]
+        assert current_source.json()["source_hash_sha256"] == field_comment["source_hash_sha256"]
+
 
 def test_report_rejects_excluded_field_comment_source() -> None:
     with create_test_client() as client:

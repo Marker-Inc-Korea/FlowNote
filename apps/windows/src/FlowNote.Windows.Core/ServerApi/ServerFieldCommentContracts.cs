@@ -357,13 +357,39 @@ public sealed record ServerFieldCommentBulkReviewItemResponse
         _ => "실행 불가"
     };
 
+    public string RetryTargetLabel => Success switch
+    {
+        true => "재전송 안 함",
+        false when FailureCode == "FIELD_COMMENT_STALE_REVIEW_REVISION" => "재조회 후 다시 선택",
+        false when FailureCode == "HTTP_403" => "관리자 확인 후 다시 선택",
+        false => "실패 항목만 다시 선택",
+        null when Allowed => "실행 대상",
+        _ => "실행하지 않음"
+    };
+
     public string RecoveryGuidance => FailureCode switch
     {
-        "FIELD_COMMENT_STALE_REVIEW_REVISION" => "다른 검토가 먼저 저장됨 · 원천은 보존됨 · 목록을 새로고침한 뒤 최신 상태에서 다시 선택",
-        "HTTP_403" => "현재 계정의 처리 권한이 부족함 · 원천은 보존됨 · 관리자에게 역할과 채널 권한 확인 요청",
-        "IDEMPOTENCY_KEY_REUSED" => "이전 요청과 내용이 다름 · 이전 처리 결과는 보존됨 · 일괄 결과를 다시 확인",
+        "FIELD_COMMENT_STALE_REVIEW_REVISION" => WorkflowFailureGuidance.Format(
+            "최신 revision 충돌로 이 항목을 저장하지 못했습니다.",
+            "원천 코멘트와 이미 성공한 항목",
+            "현재 사용자와 검토 담당자",
+            "목록을 다시 조회해 원문을 비교한 뒤 이 실패 항목만 다시 선택하세요."),
+        "HTTP_403" => WorkflowFailureGuidance.Format(
+            "현재 계정의 처리 권한이 부족해 이 항목을 저장하지 못했습니다.",
+            "원천 코멘트와 이미 성공한 항목",
+            "현장 관리자",
+            "로그인 ID와 필요한 역할·채널 권한을 관리자에게 전달하세요."),
+        "IDEMPOTENCY_KEY_REUSED" => WorkflowFailureGuidance.Format(
+            "같은 요청 식별값에 다른 내용이 사용되어 결과를 적용하지 못했습니다.",
+            "이전 처리 결과와 원천 코멘트",
+            "현재 사용자",
+            "일괄 결과를 다시 확인하고 실패 항목만 새 요청으로 선택하세요."),
         null or "" => Success is true ? "서버 변경 번호와 처리 결과 보존 완료" : "실행 전 확인 완료",
-        _ => "원천과 성공 항목은 보존됨 · 원인을 해소한 뒤 실패 항목만 다시 실행"
+        _ => WorkflowFailureGuidance.Format(
+            "이 항목을 저장하지 못했습니다.",
+            "원천 코멘트와 이미 성공한 항목",
+            "현재 사용자 또는 오류 코드 담당자",
+            "원인을 해소한 뒤 이 실패 항목만 다시 선택하세요.")
     };
 }
 

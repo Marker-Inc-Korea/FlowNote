@@ -37,6 +37,13 @@ public static class FieldCommentBulkReviewResultValidator
         }
     }
 
+    public static IReadOnlyList<string> GetRetryTargetIds(
+        ServerFieldCommentBulkReviewResponse response) =>
+        response.Items
+            .Where(item => item.Success is false)
+            .Select(item => item.CommentId)
+            .ToList();
+
     private static void ValidateIdentity(
         ServerFieldCommentBulkReviewResponse response,
         IReadOnlyCollection<ServerFieldCommentBulkReviewItemRequest> requestedItems)

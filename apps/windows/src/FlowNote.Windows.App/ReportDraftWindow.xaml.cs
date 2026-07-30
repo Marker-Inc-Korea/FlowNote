@@ -55,7 +55,11 @@ public partial class ReportDraftWindow : Window
 
         if (serverReports is null)
         {
-            StatusTextBlock.Text = "선택 근거를 고정하려면 서버 연결이 필요합니다. 원천과 선택 항목은 바뀌지 않았습니다. 다음: 서버 연결을 확인한 뒤 초안을 다시 만드세요.";
+            StatusTextBlock.Text = WorkflowFailureGuidance.Format(
+                "서버 연결이 없어 선택 근거를 고정하지 못했습니다.",
+                "원천 기록과 현재 선택 항목",
+                "현재 사용자",
+                "서버 주소와 로그인을 확인한 뒤 초안을 다시 만드세요.");
             return;
         }
 
@@ -89,7 +93,11 @@ public partial class ReportDraftWindow : Window
         catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException)
         {
             frozenSources = null;
-            StatusTextBlock.Text = "선택 근거를 고정하지 못해 초안을 만들지 않았습니다. 원천과 선택 항목은 바뀌지 않았습니다. 다음: 서버 연결과 최신 원천 상태를 확인한 뒤 다시 시도하세요.";
+            StatusTextBlock.Text = WorkflowFailureGuidance.FromServerException(
+                exception,
+                "선택 근거를 고정하지 못해 초안을 만들지 않았습니다.",
+                "원천 기록과 현재 선택 항목",
+                "서버 연결과 최신 원천 상태를 확인한 뒤 다시 시도하세요.");
         }
     }
 
@@ -141,7 +149,11 @@ public partial class ReportDraftWindow : Window
         {
             frozenSources = null;
             SourceSnapshotTextBlock.Text = "저장 직전 선택 근거가 바뀌었거나 서버 확인이 끝나지 않았습니다.";
-            StatusTextBlock.Text = "보고서를 서버에 저장하지 않았습니다. 원천 기록과 기존 보고서는 그대로 보존됩니다. 다음: 코멘트 검토에서 최신 상태를 확인하고 근거를 다시 선택한 뒤 초안을 새로 만드세요.";
+            StatusTextBlock.Text = WorkflowFailureGuidance.FromServerException(
+                exception,
+                "보고서를 서버에 저장하지 못했습니다.",
+                "원천 기록, 기존 보고서와 현재 초안",
+                "코멘트 검토에서 최신 원문을 확인하고 근거를 다시 선택한 뒤 초안을 새로 만드세요.");
         }
     }
 

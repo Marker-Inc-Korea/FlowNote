@@ -155,7 +155,14 @@ def test_channel_members_messages_notifications_and_read_status() -> None:
             headers=lead_headers,
         )
         assert list_response.status_code == 200, list_response.text
-        assert any(item["message_id"] == message["message_id"] for item in list_response.json())
+        matching_messages = [
+            item
+            for item in list_response.json()
+            if item["source_type"] == "FIELD_COMMENT"
+            and item["source_id"] == f"comment-{suffix}"
+        ]
+        assert len(matching_messages) == 1
+        assert matching_messages[0]["message_id"] == message["message_id"]
 
         denied_messages = client.get(
             f"/api/v1/notification-channels/{channel_id}/messages",

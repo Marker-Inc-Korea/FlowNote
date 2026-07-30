@@ -23,6 +23,7 @@
                 <DataGridCheckBoxColumn Header="허용" Binding="{Binding Allowed}" Width="60" />
                 <DataGridTextColumn Header="실패 코드" Binding="{Binding FailureCode}" Width="160" />
                 <DataGridTextColumn Header="실패 원인" Binding="{Binding FailureReason}" Width="*" />
+                <DataGridTextColumn Header="재시도 대상" Binding="{Binding RetryTargetLabel}" Width="150" />
                 <DataGridTextColumn Header="복구 안내" Binding="{Binding RecoveryGuidance}" Width="260" />
                 <DataGridTextColumn Header="revision" Binding="{Binding ReviewRevision}" Width="76" />
                 <DataGridTextColumn Header="receipt" Binding="{Binding Receipt}" Width="170" />
