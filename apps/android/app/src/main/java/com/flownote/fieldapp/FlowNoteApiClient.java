@@ -63,6 +63,16 @@ public final class FlowNoteApiClient {
                 || responseBody.contains("Terminal device is not approved");
     }
 
+    static boolean isAuthenticationRejected(IOException exception) {
+        String message = exception.getMessage();
+        return message != null && (
+                message.startsWith("HTTP 401")
+                        || (message.startsWith("HTTP 403")
+                        && (message.contains("DEVICE_NOT_APPROVED")
+                        || message.contains("Terminal device is not approved")))
+        );
+    }
+
     public JSONObject login(String username, String password, String deviceId) throws IOException, JSONException {
         StringBuilder body = new StringBuilder("{");
         JsonEscaper.appendStringField(body, "username", username, true);
@@ -193,6 +203,40 @@ public final class FlowNoteApiClient {
         return getArray(ApiPaths.HANDOVERS);
     }
 
+    public JSONArray listNotificationChannels() throws IOException, JSONException {
+        return getArray(ApiPaths.NOTIFICATION_CHANNELS + "?status=ACTIVE");
+    }
+
+    public JSONArray listChannelMembers(String channelId) throws IOException, JSONException {
+        return getArray(ApiPaths.channelMembers(channelId));
+    }
+
+    public JSONObject createHandover(HandoverDraft draft) throws IOException, JSONException {
+        if (!draft.canQueue()) {
+            throw new IOException("Handover channel, recipients, source, title, and body are required.");
+        }
+        StringBuilder body = new StringBuilder("{");
+        JsonEscaper.appendStringField(body, "channelId", draft.channelId, true);
+        JsonEscaper.appendStringField(body, "title", draft.title, true);
+        JsonEscaper.appendStringField(body, "body", draft.body, true);
+        JsonEscaper.appendStringField(body, "sourceType", draft.sourceType, true);
+        JsonEscaper.appendStringField(body, "sourceId", draft.sourceId, true);
+        JsonEscaper.appendStringField(body, "sourceVersionId", draft.sourceVersionId, false);
+        body.append(",\"recipientIds\":[");
+        for (int index = 0; index < draft.recipientIds.size(); index++) {
+            if (index > 0) {
+                body.append(',');
+            }
+            body.append(JsonEscaper.quote(draft.recipientIds.get(index)));
+        }
+        body.append(']');
+        JsonEscaper.appendStringField(body, "entrySource", "android_field_terminal", false);
+        JsonEscaper.appendStringField(body, "deviceId", draft.deviceId, false);
+        JsonEscaper.appendStringField(body, "idempotencyKey", draft.idempotencyKey, false);
+        body.append('}');
+        return postJson(ApiPaths.HANDOVERS, body.toString(), true);
+    }
+
     public JSONObject updateHandoverReceipt(
             String handoverId,
             String receiptId,
@@ -229,16 +273,26 @@ public final class FlowNoteApiClient {
         return postJson(ApiPaths.FIELD_COMMENTS, body.toString(), true);
     }
 
-    public JSONObject uploadFieldCommentPhoto(String commentId, Uri photoUri, String createdBy)
+    public JSONObject uploadFieldCommentPhoto(
+            String commentId,
+            Uri photoUri,
+            String createdBy,
+            String idempotencyKey
+    )
             throws IOException, JSONException {
         InputStream source = contentResolver.openInputStream(photoUri);
         if (source == null) {
             throw new IOException("Photo content cannot be opened.");
         }
-        return uploadFieldCommentPhoto(commentId, source, createdBy);
+        return uploadFieldCommentPhoto(commentId, source, createdBy, idempotencyKey);
     }
 
-    public JSONObject uploadFieldCommentPhoto(String commentId, InputStream photoInput, String createdBy)
+    public JSONObject uploadFieldCommentPhoto(
+            String commentId,
+            InputStream photoInput,
+            String createdBy,
+            String idempotencyKey
+    )
             throws IOException, JSONException {
         String boundary = "FlowNoteAndroid" + System.currentTimeMillis();
         HttpURLConnection connection = openConnection(ApiPaths.fieldCommentAttachments(commentId), "POST", true);
@@ -248,6 +302,10 @@ public final class FlowNoteApiClient {
             writeFormField(output, boundary, "caption", "현장 사진 기록");
             if (createdBy != null && !createdBy.trim().isEmpty()) {
                 writeFormField(output, boundary, "createdBy", createdBy);
+            }
+            writeFormField(output, boundary, "parentCommentId", commentId);
+            if (idempotencyKey != null && !idempotencyKey.trim().isEmpty()) {
+                writeFormField(output, boundary, "idempotencyKey", idempotencyKey);
             }
             output.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
             output.write(("Content-Disposition: form-data; name=\"file\"; filename=\"field-photo.jpg\"\r\n")

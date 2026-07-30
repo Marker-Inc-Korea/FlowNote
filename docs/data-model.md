@@ -1,6 +1,6 @@
 # FlowNote 데이터 모델
 
-이 문서는 2026-07-28 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며, 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
+이 문서는 2026-07-30 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며, 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
 
 ## WPF 로컬 SQLite
 
@@ -70,7 +70,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-07-28 현재 ORM은 문서·FieldComment 검토·보고서·작업순서 mutation receipt, 서버 복구 reconciliation과 AI 질의 legal hold 모델을 포함한 60개 서버 테이블을 생성 기준으로 사용한다.
+2026-07-30 현재 ORM은 문서·FieldComment 검토·보고서·작업순서 mutation receipt, 서버 복구 reconciliation과 AI 질의 legal hold 모델을 포함한 60개 서버 테이블을 생성 기준으로 사용한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -100,7 +100,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `notification_channels` | 라인, 설비, 공정, 작업조, 작업내역 단위 업무 채널 |
 | `notification_channel_members` | 채널별 사용자 멤버십, 역할, 마지막 읽음 위치 |
 | `channel_messages` | 문서, FieldComment, 작업순서, 보고서, 인수인계 원천 이벤트 메시지 |
-| `handovers` | 인수인계 원문, 원천 연결, 채널 연결, 전체 상태 |
+| `handovers` | 인수인계 원문, 원천·채널 연결, 전체 상태, 생성 멱등키, Android 입력 출처와 승인 단말 ID |
 | `handover_receipts` | 수신자별 인수인계 읽음, 확인, 후속조치 필요 상태 |
 | `reports`, `report_sources` | 보고서와 근거 연결. 보고서는 `report_revision`, 내용 hash, source 집합 hash를 보존 |
 | `report_mutation_receipts` | 보고서 mutation key와 intent hash, report/revision, 두 hash, 생성 document/version, 최초 응답 JSON snapshot |
@@ -136,9 +136,11 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 `terminal_devices`는 개인 휴대폰 자동 등록 테이블이 아니라 승인된 현장 태블릿 또는 러기드 단말의 운영 기준이다. 단말 용도 `device_mode`는 현장 열람용 `viewer`와 관리 지원용 `admin_support`를 사용한다. 상태는 `ACTIVE`, `INACTIVE`, `RETIRED`이고 폐기 단말은 재활성화하지 않는다. `registered_by`, `updated_by`는 등록자와 마지막 변경자, `replaced_device_id`는 교체 단말이 대체한 기존 단말 ID를 보존한다. Android 앱은 로그인 시 `deviceId`를 보내며, 서버는 같은 ID가 `terminal_devices.device_id`에 있고 `status = ACTIVE`일 때만 세션을 만든다. 성공한 Android 세션은 `auth_sessions.device_id`에 단말 ID를 남기고 로그인 성공 때마다 `terminal_devices.last_seen_at`을 갱신한다. 등록, 정보 변경, 비활성화, 폐기, 교체 이력은 `activity_history`의 `terminal_device.*` 이벤트로 추적한다.
 
-Android 로컬 DB `flownote_android_outbox.db`는 장기 기준 데이터가 아니다. 네트워크 불안정 구간의 FieldComment와 사진 첨부 재전송을 위해 `local_id`, `kind`, Keystore AES-GCM 암호문인 `payload`, `idempotency_key`, 새 첨부의 앱 내부 암호화 파일 참조, 서버 `comment_id`, 상태, 시도 횟수, 마지막 시도 시각과 마지막 오류를 임시 보관한다. 새 사진은 선택 즉시 `filesDir/outbox-attachments/`의 AES-GCM 암호문으로 가져오며, 기존 설치에서 남은 persist URI는 전송 완료까지 읽기 호환만 유지한다. `PENDING`, `FAILED` 항목은 최대 12회 자동 시도하며 재시도 간격은 시도 횟수에 따라 `15초 → 30초 → 60초`로 증가하고 최대 15분으로 제한한다. 재전송 성공 후 서버 원천 ID를 연결하고 `SYNCED`로 전환하며 `SYNCED` 항목과 최대 시도 횟수에 도달한 항목은 자동 재전송하지 않는다.
+Android 로컬 DB `flownote_android_outbox.db`는 장기 기준 데이터가 아니다. 네트워크 불안정 구간의 FieldComment, 사진 첨부와 신규 인수인계 재전송을 위해 `local_id`, `kind`, Keystore AES-GCM 암호문인 `payload`, `idempotency_key`, 새 첨부의 앱 내부 암호화 파일 참조, 서버 원천 ID, 상태, 시도 횟수, 마지막 시도 시각과 암호화한 마지막 오류를 임시 보관한다. 기존 version 1 테이블의 `kind`와 JSON `payload`를 확장하므로 Android DB 열을 추가하거나 기존 암호문을 다시 쓰지 않는다. 구 평문 payload와 마지막 오류만 첫 DB open에서 같은 AES-GCM 형식으로 전환하고 기존 암호문은 그대로 읽는다.
 
-서버의 `documents`, `document_versions`, `field_comments`, `field_comment_attachments`, `document_access_logs`, `reports`는 각 생성 단위의 선택적 `idempotency_key`를 최대 160자로 저장하고 유일 인덱스로 보호한다. 앱 시작 시 기존 SQLite에도 누락된 열과 유일 인덱스를 보완한다. 동일 키 재요청은 같은 부모 원천에 속할 때 기존 row를 반환하고, 다른 문서나 FieldComment에 사용된 키는 충돌로 거부해 재시도 중복 파일과 중복 이력을 막는다.
+새 사진은 선택 즉시 `filesDir/outbox-attachments/`의 AES-GCM 암호문으로 가져오며, 기존 설치에서 남은 persist URI는 전송 완료까지 읽기 호환만 유지한다. 마지막으로 서버가 확인한 활성 채널·수신자 목록도 정규화한 서버 URL+사용자 scope별 AES-GCM 암호문으로 `SharedPreferences`에 보관한다. 이 선택 캐시는 단절·재부팅 중 작성에만 사용하고 실제 전송에서 서버가 멤버십과 원천을 재검사하며, 로그아웃·단말 거부 때 삭제한다. FieldComment, 사진과 인수인계는 각각 `android:{deviceId}:{localId}`, `android-photo:{localId}`, `android:{deviceId}:handover:{localId}` 멱등키를 사용한다. `PENDING`, `FAILED` 항목은 최대 12회 자동 시도하며 재시도 간격은 시도 횟수에 따라 `15초 → 30초 → 60초`로 증가하고 최대 15분으로 제한한다. 재전송 성공 후 서버 원천 ID를 연결하고 `SYNCED`로 전환하며 서버 저장을 확인한 암호화 사진 파일을 정리한다. `SYNCED` 항목과 최대 시도 횟수에 도달한 항목은 자동 재전송하지 않는다.
+
+서버의 `documents`, `document_versions`, `field_comments`, `field_comment_attachments`, `document_access_logs`, `reports`, `handovers`는 각 생성 단위의 선택적 `idempotency_key`를 최대 160자로 저장하고 유일 인덱스로 보호한다. Android 인수인계에는 이 키가 필수다. 앱 시작 시 기존 SQLite에도 누락된 열과 유일 인덱스를 보완하며 기존 `handovers`에는 `entry_source = field_user`, 선택 `device_id`를 additive migration으로 추가한다. 동일 키 재요청은 같은 부모 원천과 같은 요청일 때 기존 row를 반환하고, 다른 요청에 사용된 키는 충돌로 거부해 인수인계·채널 메시지·수신자 receipt와 첨부 중복을 막는다.
 
 `field_comments`의 원천 핵심 필드는 생성 후 ORM 수준에서 불변이며, 원천 row 자체의 ORM 삭제도 거부한다. 관리자 영역은 `assigned_to`, `review_due_at`, `review_revision`, `conflict_flag`, `conflict_basis`, 정리·분석·결정 사유를 별도로 가진다. 논리 `ASSIGNED`는 기존 DB 제약을 바꾸지 않고 `status = NEW AND assigned_to IS NOT NULL`로 표현한다. 관리자 대리 입력은 인증 입력자, `reported_by`, `operator_id`를 분리해 `field_comment.proxy_created` 감사에 보존한다.
 

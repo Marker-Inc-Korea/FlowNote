@@ -171,11 +171,28 @@ if [[ ! -e "$scenario_template" ]]; then
     echo 'AND-NOTIFY-ACCESS-EXPIRY,access_token_expiry,,,,,,,,,,NOT_RUN,'
     echo 'AND-NOTIFY-REFRESH-REJECTED,refresh_rejected,,,,,,,,,,NOT_RUN,'
     echo 'AND-NOTIFY-FORCESTOP,force_stop_kiosk_restart,,,,,,,,,,NOT_RUN,'
+    echo 'AND-HANDOVER-OFFLINE,offline_handover_reboot_retry,,,,,,,,,,NOT_RUN,'
+    echo 'AND-HANDOVER-IDEMPOTENCY,response_loss_same_key_retry,,,,,,,,,,NOT_RUN,'
+    echo 'AND-OUTBOX-DEVICE-INACTIVE,inactive_device_blocks_tokens_and_outbox,,,,,,,,,,NOT_RUN,'
+    echo 'AND-OUTBOX-KEYSTORE,keystore_failure_preservation_guidance,,,,,,,,,,NOT_RUN,'
   } > "$scenario_template"
+fi
+
+ux_template="$scenario_dir/android-field-ux.csv"
+if [[ ! -e "$ux_template" ]]; then
+  {
+    echo 'scenario_id,condition,participant_code,attempt,success,elapsed_seconds,help_requests,critical_blockers,source_id,handover_id,evidence,result'
+    echo 'AND-UX-GLOVE-HANDOVER,gloves,,,,,,,,,,NOT_RUN'
+    echo 'AND-UX-ONEHAND-HANDOVER,one_hand,,,,,,,,,,NOT_RUN'
+    echo 'AND-UX-MOUNTED-HANDOVER,mounted_device,,,,,,,,,,NOT_RUN'
+    echo 'AND-UX-PHOTO-RESET,photo_select_preview_save_reset,,,,,,,,,,NOT_RUN'
+  } > "$ux_template"
 fi
 
 {
   echo "result=PASS"
+  echo "verification_scope=package_static_and_requested_install_only"
+  echo "operational_scenarios=NOT_RUN"
   echo "run_id=$run_id"
   echo "artifact=$artifact_name"
   echo "artifact_type=$artifact_type"

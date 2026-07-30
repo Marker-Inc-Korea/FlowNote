@@ -75,6 +75,16 @@ final class EncryptedAttachmentStore {
         }
     }
 
+    void delete(String reference) {
+        if (reference == null || !reference.startsWith(PREFIX)) {
+            return;
+        }
+        File target = new File(directory, reference.substring(PREFIX.length()));
+        if (target.isFile() && !target.delete()) {
+            target.deleteOnExit();
+        }
+    }
+
     private static InputStream requireInput(ContentResolver resolver, Uri uri) throws IOException {
         InputStream input = resolver.openInputStream(uri);
         if (input == null) {

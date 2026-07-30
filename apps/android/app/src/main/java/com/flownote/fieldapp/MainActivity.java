@@ -13,7 +13,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
 import android.util.Log;
-import android.util.Size;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -30,7 +29,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public final class MainActivity extends Activity {
+public final class MainActivity extends Activity implements HandoverComposerView.Listener {
     private static final int REQUEST_PICK_PHOTO = 1001;
     private static final long OUTBOX_REFRESH_MILLIS = 15_000L;
     private static final String OUTBOX_LOG_TAG = "FlowNoteOutbox";
@@ -42,6 +41,9 @@ public final class MainActivity extends Activity {
         @Override
         public void run() {
             refreshOutboxStatus();
+            if (!hasUsableSecureStorage()) {
+                return;
+            }
             OutboxQueueStatus queueStatus = outbox.queueStatus(System.currentTimeMillis());
             if (!retryInProgress && sessionStore.hasSession() && queueStatus.readyCount > 0) {
                 retryOutbox(false);
@@ -52,6 +54,7 @@ public final class MainActivity extends Activity {
 
     private SharedPreferences preferences;
     private SecureSessionStore sessionStore;
+    private HandoverSelectionCache handoverSelectionCache;
     private OfflineQueueStore outbox;
     private FlowNoteApiClient apiClient;
 
@@ -68,22 +71,38 @@ public final class MainActivity extends Activity {
     private TextView photoStatusText;
     private ImageView photoPreview;
     private LinearLayout contentArea;
+    private HandoverComposerView handoverComposer;
     private Uri selectedPhotoUri;
     private String accessToken;
     private String refreshToken;
     private String currentUserId;
+    private String secureStorageError;
     private volatile boolean retryInProgress;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences("flownote-field-app", MODE_PRIVATE);
-        sessionStore = new SecureSessionStore(this);
         SecureViewerFiles.clean(this);
-        outbox = new OfflineQueueStore(this);
         buildUi();
-        restoreSettings();
+        serverUrlInput.setText(preferences.getString("server_url", ""));
+        deviceIdInput.setText(preferences.getString("device_id", ""));
+        usernameInput.setText(preferences.getString("username", ""));
+        try {
+            sessionStore = new SecureSessionStore(this);
+            handoverSelectionCache = new HandoverSelectionCache(this);
+            outbox = new OfflineQueueStore(this);
+            restoreSettings();
+        } catch (RuntimeException exc) {
+            secureStorageError = UserErrorMessage.from(exc);
+        }
+        handoverComposer.setIdentity(deviceIdInput.getText().toString(), currentUserId);
+        if (!hasUsableSecureStorage()) {
+            showSecureStorageError();
+            return;
+        }
         rebuildApiClient();
+        restoreCachedHandoverOptions();
         requestNotificationPermission();
         startNotificationDelivery();
         updateStatus("서버 주소와 승인 단말 ID를 확인한 뒤 로그인하세요.");
@@ -114,7 +133,9 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         executor.shutdownNow();
-        outbox.close();
+        if (outbox != null) {
+            outbox.close();
+        }
         super.onDestroy();
     }
 
@@ -196,6 +217,9 @@ public final class MainActivity extends Activity {
         photoPreview.setVisibility(View.GONE);
         root.addView(photoPreview);
 
+        handoverComposer = new HandoverComposerView(this, this);
+        root.addView(handoverComposer);
+
         contentArea = new LinearLayout(this);
         contentArea.setOrientation(LinearLayout.VERTICAL);
         root.addView(contentArea);
@@ -219,7 +243,7 @@ public final class MainActivity extends Activity {
         editText.setTextSize(15);
         editText.setInputType(inputType);
         editText.setSingleLine((inputType & InputType.TYPE_TEXT_FLAG_MULTI_LINE) == 0);
-        editText.setMinHeight(dp(52));
+        editText.setMinHeight(dp(56));
         return editText;
     }
 
@@ -274,6 +298,9 @@ public final class MainActivity extends Activity {
         serverUrlInput.setText(preferences.getString("server_url", ""));
         deviceIdInput.setText(preferences.getString("device_id", ""));
         usernameInput.setText(preferences.getString("username", ""));
+        if (sessionStore == null) {
+            return;
+        }
         accessToken = sessionStore.accessToken();
         refreshToken = sessionStore.refreshToken();
         currentUserId = preferences.getString("user_id", null);
@@ -290,7 +317,7 @@ public final class MainActivity extends Activity {
     }
 
     private void rebuildApiClient() {
-        String storedAccessToken = sessionStore.accessToken();
+        String storedAccessToken = sessionStore == null ? null : sessionStore.accessToken();
         if (storedAccessToken != null && !storedAccessToken.trim().isEmpty()) {
             accessToken = storedAccessToken;
         }
@@ -300,6 +327,9 @@ public final class MainActivity extends Activity {
     }
 
     private void login() {
+        if (!requireSecureStorage()) {
+            return;
+        }
         rebuildApiClient();
         updateStatus("로그인 중...");
         executor.execute(() -> {
@@ -315,6 +345,11 @@ public final class MainActivity extends Activity {
                 saveSettings();
                 postStatus("로그인 완료: " + payload.optString("display_name"));
                 mainHandler.post(() -> {
+                    handoverComposer.setIdentity(
+                            deviceIdInput.getText().toString(),
+                            currentUserId
+                    );
+                    restoreCachedHandoverOptions();
                     startNotificationDelivery();
                     refreshOutboxStatus();
                     retryOutbox(false);
@@ -327,16 +362,22 @@ public final class MainActivity extends Activity {
     }
 
     private void clearRejectedSession() {
+        clearHandoverSelectionCache();
         SecureViewerFiles.clean(this);
         accessToken = null;
         refreshToken = null;
         currentUserId = null;
-        sessionStore.clear();
+        if (sessionStore != null) {
+            sessionStore.clear();
+        }
         stopService(new Intent(this, NotificationPollingService.class));
         mainHandler.post(this::refreshOutboxStatus);
     }
 
     private void logout() {
+        if (!requireSecureStorage()) {
+            return;
+        }
         rebuildApiClient();
         executor.execute(() -> {
             try {
@@ -354,6 +395,9 @@ public final class MainActivity extends Activity {
     }
 
     private void loadPublishedDocuments() {
+        if (!requireSecureStorage()) {
+            return;
+        }
         rebuildApiClient();
         updateStatus("공개 문서 조회 중...");
         executor.execute(() -> {
@@ -403,6 +447,10 @@ public final class MainActivity extends Activity {
         JSONObject published = document.optJSONObject("published_version");
         if (published != null) {
             versionIdInput.setText(published.optString("version_id"));
+            handoverComposer.setDocumentSource(
+                    document.optString("document_id"),
+                    published.optString("version_id")
+            );
         }
         contentArea.addView(text("문서: " + document.optString("title"), 18, "#1F2A30"));
         contentArea.addView(text("상태: " + document.optString("status"), 15, "#3D4852"));
@@ -419,6 +467,9 @@ public final class MainActivity extends Activity {
     }
 
     private void openSecureViewer(String documentId, String versionId, String title) {
+        if (!requireSecureStorage()) {
+            return;
+        }
         if (accessToken == null || accessToken.trim().isEmpty()) {
             updateStatus("로그인 후 문서를 열람하세요.");
             return;
@@ -434,6 +485,9 @@ public final class MainActivity extends Activity {
     }
 
     private void loadNotifications() {
+        if (!requireSecureStorage()) {
+            return;
+        }
         rebuildApiClient();
         updateStatus("알림 조회 중...");
         executor.execute(() -> {
@@ -464,6 +518,9 @@ public final class MainActivity extends Activity {
     }
 
     private void markNotificationRead(String messageId) {
+        if (!requireSecureStorage()) {
+            return;
+        }
         executor.execute(() -> {
             try {
                 apiClient.markNotificationRead(
@@ -478,6 +535,9 @@ public final class MainActivity extends Activity {
     }
 
     private void loadHandovers() {
+        if (!requireSecureStorage()) {
+            return;
+        }
         rebuildApiClient();
         updateStatus("인수인계 조회 중...");
         executor.execute(() -> {
@@ -525,6 +585,9 @@ public final class MainActivity extends Activity {
     }
 
     private void updateReceipt(String handoverId, String receiptId, String receiptStatus) {
+        if (!requireSecureStorage()) {
+            return;
+        }
         executor.execute(() -> {
             try {
                 apiClient.updateHandoverReceipt(
@@ -556,10 +619,16 @@ public final class MainActivity extends Activity {
         }
         selectedPhotoUri = data.getData();
         if (selectedPhotoUri != null) {
-            getContentResolver().takePersistableUriPermission(
-                    selectedPhotoUri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-            );
+            try {
+                getContentResolver().takePersistableUriPermission(
+                        selectedPhotoUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                );
+            } catch (SecurityException exc) {
+                updateStatus("사진 접근 권한을 유지하지 못했습니다. 사진을 다시 선택하세요.");
+                selectedPhotoUri = null;
+                return;
+            }
             photoStatusText.setText("사진 1장 선택됨 · 미리보기를 확인한 뒤 기기에 저장·전송하세요.");
             updateStatus("사진 선택 완료. 아래 미리보기를 확인하세요.");
             loadPhotoPreview(selectedPhotoUri);
@@ -567,19 +636,13 @@ public final class MainActivity extends Activity {
     }
 
     private void loadPhotoPreview(Uri photoUri) {
-        if (Build.VERSION.SDK_INT < 29) {
-            photoPreview.setVisibility(View.GONE);
-            photoStatusText.setText(
-                    "사진 1장 선택됨 · 기기에 저장·전송하기 전에 선택한 사진을 확인했습니다."
-            );
-            return;
-        }
         executor.execute(() -> {
             try {
-                Bitmap thumbnail = getContentResolver().loadThumbnail(
+                Bitmap thumbnail = PhotoPreviewLoader.load(
+                        getContentResolver(),
                         photoUri,
-                        new Size(dp(320), dp(180)),
-                        null
+                        dp(320),
+                        dp(180)
                 );
                 mainHandler.post(() -> {
                     if (photoUri.equals(selectedPhotoUri)) {
@@ -599,6 +662,9 @@ public final class MainActivity extends Activity {
     }
 
     private void enqueueAndRetryComment() {
+        if (!requireSecureStorage()) {
+            return;
+        }
         String localId = UUID.randomUUID().toString();
         FieldCommentDraft draft = new FieldCommentDraft(
                 localId,
@@ -627,6 +693,9 @@ public final class MainActivity extends Activity {
         photoPreview.setImageDrawable(null);
         photoPreview.setVisibility(View.GONE);
         photoStatusText.setText("사진 선택 안 됨");
+        commentInput.setText("");
+        signalGroup.clearCheck();
+        commentInput.requestFocus();
         refreshOutboxStatus();
         updateStatus("기기에 암호화해 저장했습니다. 서버 전송을 시도합니다.");
         retryOutbox(false);
@@ -647,6 +716,9 @@ public final class MainActivity extends Activity {
     }
 
     private void retryOutbox(boolean manual) {
+        if (!requireSecureStorage()) {
+            return;
+        }
         if (retryInProgress) {
             if (manual) {
                 updateStatus("이미 전송을 시도하고 있습니다.");
@@ -677,11 +749,15 @@ public final class MainActivity extends Activity {
                         manual
                 );
                 if (summary.failedCount > 0) {
+                    String partial = summary.partialSuccessCount > 0
+                            ? ", 본문 저장 후 사진 재전송 대기 " + summary.partialSuccessCount + "건"
+                            : "";
                     postStatus(
-                            "현장 기록은 이 단말에 보존되어 있습니다. 성공 " + summary.successCount +
-                                    "건, 실패 " + summary.failedCount +
+                            "현장 기록은 이 단말에 보존되어 있습니다. 완료 " + summary.successCount +
+                                    "건" + partial +
+                                    ", 실패 " + summary.failedCount +
                                     "건, 대기 " + summary.remainingCount +
-                                    "건입니다. 네트워크와 로그인 상태를 확인하세요."
+                                    "건입니다. " + summary.lastErrorMessage
                     );
                 } else {
                     postStatus(
@@ -699,6 +775,12 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshOutboxStatus() {
+        if (!hasUsableSecureStorage()) {
+            outboxStatusText.setText(
+                    "보안 저장소 오류 · 입력을 저장하거나 전송하지 않습니다. 재설치·초기화하지 말고 관리자에게 단말 교체 점검을 요청하세요."
+            );
+            return;
+        }
         OutboxQueueStatus queueStatus = outbox.queueStatus(System.currentTimeMillis());
         outboxStatusText.setText(OutboxStatusMessage.format(
                 queueStatus,
@@ -710,6 +792,9 @@ public final class MainActivity extends Activity {
 
     private void logOutboxAudit(Intent intent) {
         if (intent == null) {
+            return;
+        }
+        if (!hasUsableSecureStorage()) {
             return;
         }
         String nonce = intent.getStringExtra(EXTRA_OUTBOX_AUDIT_NONCE);
@@ -734,7 +819,7 @@ public final class MainActivity extends Activity {
     }
 
     private void startNotificationDelivery() {
-        if (!sessionStore.hasSession()) {
+        if (!hasUsableSecureStorage() || !sessionStore.hasSession()) {
             return;
         }
         Intent intent = new Intent(this, NotificationPollingService.class);
@@ -747,5 +832,152 @@ public final class MainActivity extends Activity {
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1002);
         }
+    }
+
+    @Override
+    public void onRefreshChannels() {
+        if (!requireSecureStorage()) {
+            return;
+        }
+        if (!sessionStore.hasSession()) {
+            handoverComposer.showStatus("로그인한 뒤 업무 채널과 수신자를 불러오세요.");
+            return;
+        }
+        handoverComposer.setIdentity(deviceIdInput.getText().toString(), currentUserId);
+        rebuildApiClient();
+        String cacheServerUrl = serverUrlInput.getText().toString();
+        String cacheUserId = currentUserId;
+        handoverComposer.showStatus("업무 채널을 불러오는 중...");
+        executor.execute(() -> {
+            try {
+                JSONArray channels = apiClient.listNotificationChannels();
+                handoverSelectionCache.saveChannels(
+                        cacheServerUrl,
+                        cacheUserId,
+                        channels
+                );
+                mainHandler.post(() -> handoverComposer.setChannels(channels));
+            } catch (Exception exc) {
+                mainHandler.post(() -> handoverComposer.showStatus(
+                        "채널 조회 실패: " + UserErrorMessage.from(exc)
+                ));
+            }
+        });
+    }
+
+    @Override
+    public void onChannelSelected(String channelId) {
+        if (!requireSecureStorage()) {
+            return;
+        }
+        if (!sessionStore.hasSession()) {
+            handoverComposer.showStatus("로그인한 뒤 수신자를 불러오세요.");
+            return;
+        }
+        rebuildApiClient();
+        String cacheServerUrl = serverUrlInput.getText().toString();
+        String cacheUserId = currentUserId;
+        JSONArray cachedMembers = handoverSelectionCache.members(
+                cacheServerUrl,
+                cacheUserId,
+                channelId
+        );
+        if (cachedMembers.length() > 0) {
+            handoverComposer.setMembers(cachedMembers);
+            handoverComposer.showStatus(
+                    "마지막으로 확인한 수신자를 표시했습니다. 서버 최신 상태를 확인하는 중..."
+            );
+        } else {
+            handoverComposer.showStatus("활성 수신자를 불러오는 중...");
+        }
+        executor.execute(() -> {
+            try {
+                JSONArray members = apiClient.listChannelMembers(channelId);
+                handoverSelectionCache.saveMembers(
+                        cacheServerUrl,
+                        cacheUserId,
+                        channelId,
+                        members
+                );
+                mainHandler.post(() -> handoverComposer.setMembers(members));
+            } catch (Exception exc) {
+                mainHandler.post(() -> handoverComposer.showStatus(
+                        "수신자 조회 실패: " + UserErrorMessage.from(exc)
+                ));
+            }
+        });
+    }
+
+    @Override
+    public void onQueue(HandoverDraft draft) {
+        if (!requireSecureStorage()) {
+            return;
+        }
+        if (!draft.canQueue()) {
+            handoverComposer.showStatus(
+                    "채널, 수신자, 원천 ID, 제목과 내용을 모두 입력하세요. 로그인 상태도 확인하세요."
+            );
+            return;
+        }
+        try {
+            outbox.enqueueHandover(draft);
+        } catch (Exception exc) {
+            handoverComposer.showStatus("보안 임시 저장 실패: " + UserErrorMessage.from(exc));
+            return;
+        }
+        handoverComposer.resetAfterQueued();
+        refreshOutboxStatus();
+        updateStatus("인수인계를 기기에 암호화해 저장했습니다. 서버 전송을 시도합니다.");
+        retryOutbox(false);
+    }
+
+    private boolean hasUsableSecureStorage() {
+        return secureStorageError == null
+                && sessionStore != null
+                && handoverSelectionCache != null
+                && outbox != null;
+    }
+
+    private boolean requireSecureStorage() {
+        if (hasUsableSecureStorage()) {
+            return true;
+        }
+        showSecureStorageError();
+        return false;
+    }
+
+    private void showSecureStorageError() {
+        String message = secureStorageError == null
+                ? "단말 보안 저장소를 열 수 없습니다. 관리자에게 단말 교체 점검을 요청하세요."
+                : secureStorageError;
+        updateStatus(message);
+        refreshOutboxStatus();
+        handoverComposer.showStatus(message);
+    }
+
+    private void restoreCachedHandoverOptions() {
+        if (!sessionStore.hasSession() || currentUserId == null) {
+            return;
+        }
+        JSONArray cached = handoverSelectionCache.channels(
+                serverUrlInput.getText().toString(),
+                currentUserId
+        );
+        if (cached.length() > 0) {
+            handoverComposer.setChannels(cached);
+            handoverComposer.showStatus(
+                    "마지막으로 확인한 채널을 표시했습니다. 단절 중에도 작성 후 기기에 저장할 수 있습니다."
+            );
+        }
+    }
+
+    private void clearHandoverSelectionCache() {
+        if (handoverSelectionCache == null || currentUserId == null) {
+            return;
+        }
+        handoverSelectionCache.clear(
+                serverUrlInput.getText().toString(),
+                currentUserId
+        );
     }
 }

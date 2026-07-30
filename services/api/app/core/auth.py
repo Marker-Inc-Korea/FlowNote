@@ -16,9 +16,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.core.scope import ensure_server_scope
 from app.db.models import AuthSession, TerminalDevice, UserAccount
 from app.db.session import get_db_session
-from app.core.scope import ensure_server_scope
 
 TOKEN_TYPE = "Bearer"
 ROLE_ADMIN = "admin"
@@ -118,6 +118,7 @@ class AuthenticatedUser:
     must_change_password: bool
     customer_scope: str
     site_scope: str
+    device_id: str | None
 
 
 @dataclass(frozen=True)
@@ -375,6 +376,7 @@ def get_authenticated_user(
         must_change_password=account.must_change_password,
         customer_scope=settings.effective_customer_scope,
         site_scope=settings.effective_site_scope,
+        device_id=auth_session.device_id,
     )
 
 

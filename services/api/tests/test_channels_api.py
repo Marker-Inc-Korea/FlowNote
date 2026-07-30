@@ -16,7 +16,9 @@ from app.db.models import (
     HandoverReceipt,
     NotificationChannel,
     NotificationChannelMember,
+    TerminalDevice,
     UserAccount,
+    WorkRecord,
 )
 from app.main import create_app
 
@@ -403,3 +405,126 @@ def test_handover_receipts_record_read_acknowledged_and_follow_up_required() -> 
             assert json.loads(ack_events[0].after_value)["delivery_run_id"] == (
                 "ANDROID-DELIVERY-test-run"
             )
+
+
+def test_android_handover_retry_creates_one_handover_message_and_receipt() -> None:
+    suffix = uuid4().hex[:8]
+    with create_test_client() as client:
+        admin = create_user(client, "admin", f"android-handover-admin-{suffix}")
+        author = create_user(client, "team-member", f"android-handover-author-{suffix}")
+        recipient = create_user(client, "team-member", f"android-handover-recipient-{suffix}")
+        admin_headers = auth_headers(client, admin)
+        channel = create_channel(client, admin_headers, suffix)
+        add_member(client, admin_headers, channel["channel_id"], author)
+        add_member(client, admin_headers, channel["channel_id"], recipient)
+
+        device_id = f"android-handover-device-{suffix}"
+        work_record_id = f"work-record-{suffix}"
+        with client.app.state.database.session() as session:
+            session.add(
+                TerminalDevice(
+                    device_id=device_id,
+                    device_name="Android handover test terminal",
+                    device_mode="viewer",
+                    status="ACTIVE",
+                    registered_by=admin.user_id,
+                )
+            )
+            session.add(
+                WorkRecord(
+                    work_record_id=work_record_id,
+                    title="인수인계 원천 작업내역",
+                    source_type="manual",
+                    status="ACTIVE",
+                    created_by=admin.user_id,
+                )
+            )
+            session.commit()
+
+        login = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": author.username,
+                "password": TEST_PASSWORD,
+                "deviceId": device_id,
+            },
+        )
+        assert login.status_code == 200, login.text
+        author_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        idempotency_key = f"android:{device_id}:handover:{suffix}"
+        payload = {
+            "channelId": channel["channel_id"],
+            "title": "주간조 인수인계",
+            "body": "다음 조에서 작업내역의 압력 수치를 다시 확인하세요.",
+            "sourceType": "WORK_RECORD",
+            "sourceId": work_record_id,
+            "recipientIds": [recipient.user_id],
+            "entrySource": "android_field_terminal",
+            "deviceId": device_id,
+            "idempotencyKey": idempotency_key,
+        }
+
+        first = client.post("/api/v1/handovers", headers=author_headers, json=payload)
+        retry = client.post("/api/v1/handovers", headers=author_headers, json=payload)
+        assert first.status_code == 201, first.text
+        assert retry.status_code == 201, retry.text
+        assert retry.json()["handover_id"] == first.json()["handover_id"]
+        assert retry.json()["idempotency_key"] == idempotency_key
+        assert retry.json()["entry_source"] == "android_field_terminal"
+        assert retry.json()["device_id"] == device_id
+
+        with client.app.state.database.session() as session:
+            recipient_membership = session.scalar(
+                select(NotificationChannelMember).where(
+                    NotificationChannelMember.channel_id == channel["channel_id"],
+                    NotificationChannelMember.user_id == recipient.user_id,
+                )
+            )
+            assert recipient_membership is not None
+            recipient_membership.status = "REMOVED"
+            session.commit()
+        replay_after_recipient_removal = client.post(
+            "/api/v1/handovers",
+            headers=author_headers,
+            json=payload,
+        )
+        assert replay_after_recipient_removal.status_code == 201
+        assert replay_after_recipient_removal.json()["handover_id"] == first.json()["handover_id"]
+
+        conflict = client.post(
+            "/api/v1/handovers",
+            headers=author_headers,
+            json={**payload, "body": "같은 키를 다른 본문에 재사용"},
+        )
+        assert conflict.status_code == 409, conflict.text
+        assert conflict.json()["detail"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+        missing_source = client.post(
+            "/api/v1/handovers",
+            headers=author_headers,
+            json={
+                **payload,
+                "sourceId": f"missing-{suffix}",
+                "idempotencyKey": f"{idempotency_key}:missing",
+            },
+        )
+        assert missing_source.status_code == 404, missing_source.text
+        assert missing_source.json()["detail"]["code"] == "SOURCE_NOT_VISIBLE"
+
+        handover_id = first.json()["handover_id"]
+        with client.app.state.database.session() as session:
+            handovers = session.scalars(
+                select(Handover).where(Handover.idempotency_key == idempotency_key)
+            ).all()
+            messages = session.scalars(
+                select(ChannelMessage).where(
+                    ChannelMessage.source_type == "HANDOVER",
+                    ChannelMessage.source_id == handover_id,
+                )
+            ).all()
+            receipts = session.scalars(
+                select(HandoverReceipt).where(HandoverReceipt.handover_id == handover_id)
+            ).all()
+            assert len(handovers) == 1
+            assert len(messages) == 1
+            assert len(receipts) == 1

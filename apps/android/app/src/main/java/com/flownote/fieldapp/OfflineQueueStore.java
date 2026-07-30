@@ -31,6 +31,7 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
         cryptoBox = new CryptoBox();
         attachmentStore = new EncryptedAttachmentStore(context, cryptoBox);
         migratePlaintextPayloads();
+        cleanupSyncedAttachments();
     }
 
     @Override
@@ -62,16 +63,21 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
     private void migratePlaintextPayloads() {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
-        try (Cursor cursor = db.query("outbox", new String[]{"local_id", "payload"},
+        try (Cursor cursor = db.query("outbox", new String[]{"local_id", "payload", "last_error"},
                 null, null, null, null, null)) {
             while (cursor.moveToNext()) {
                 String payload = cursor.getString(1);
-                if (cryptoBox.isEncrypted(payload)) {
-                    continue;
-                }
                 ContentValues values = new ContentValues();
-                values.put("payload", cryptoBox.encrypt(payload));
-                db.update("outbox", values, "local_id = ?", new String[]{cursor.getString(0)});
+                if (!cryptoBox.isEncrypted(payload)) {
+                    values.put("payload", cryptoBox.encrypt(payload));
+                }
+                String lastError = cursor.getString(2);
+                if (lastError != null && !cryptoBox.isEncrypted(lastError)) {
+                    values.put("last_error", cryptoBox.encrypt(lastError));
+                }
+                if (values.size() > 0) {
+                    db.update("outbox", values, "local_id = ?", new String[]{cursor.getString(0)});
+                }
             }
             db.setTransactionSuccessful();
         } finally {
@@ -99,6 +105,28 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
         values.put("created_at", now);
         values.put("updated_at", now);
         getWritableDatabase().insertWithOnConflict("outbox", null, values, SQLiteDatabase.CONFLICT_IGNORE);
+        return localId;
+    }
+
+    public String enqueueHandover(HandoverDraft draft) {
+        long now = System.currentTimeMillis();
+        String localId = FieldCommentDraft.nonEmpty(draft.localId, UUID.randomUUID().toString());
+        ContentValues values = new ContentValues();
+        values.put("local_id", localId);
+        values.put("kind", "handover");
+        values.put("payload", cryptoBox.encrypt(toPayload(draft).toString()));
+        values.put("status", "PENDING");
+        values.put("idempotency_key", draft.idempotencyKey);
+        values.put("attempt_count", 0);
+        values.put("last_attempt_at", 0);
+        values.put("created_at", now);
+        values.put("updated_at", now);
+        getWritableDatabase().insertWithOnConflict(
+                "outbox",
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_IGNORE
+        );
         return localId;
     }
 
@@ -189,35 +217,68 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
     ) {
         int success = 0;
         int failed = 0;
+        int partial = 0;
+        String lastErrorMessage = null;
         for (OutboxItem item : listPending(System.currentTimeMillis(), ignoreSchedule)) {
             markAttempt(item.localId, item.attemptCount + 1);
+            boolean partialSuccess = "field_comment".equals(item.kind)
+                    && item.serverId != null
+                    && item.attachmentUri != null;
             try {
-                String commentId = item.serverId;
-                if (commentId == null) {
-                    JSONObject response = apiClient.createFieldComment(item.toDraft());
-                    commentId = response.getString("comment_id");
-                    markServerId(item.localId, commentId);
-                }
-                if (item.attachmentUri != null) {
-                    if (item.attachmentUri.startsWith("encfile:")) {
-                        try (InputStream input = attachmentStore.open(item.attachmentUri)) {
-                            apiClient.uploadFieldCommentPhoto(commentId, input, createdBy);
-                        }
-                    } else {
-                        // Version 1 migration keeps the persisted content URI readable until
-                        // this entry is sent; every newly queued attachment is app-private ciphertext.
-                        apiClient.uploadFieldCommentPhoto(
-                                commentId, Uri.parse(item.attachmentUri), createdBy);
+                String serverId;
+                if ("field_comment".equals(item.kind)) {
+                    serverId = item.serverId;
+                    if (serverId == null) {
+                        JSONObject response = apiClient.createFieldComment(item.toFieldCommentDraft());
+                        serverId = response.getString("comment_id");
+                        markServerId(item.localId, serverId);
+                        partialSuccess = item.attachmentUri != null;
                     }
+                    if (item.attachmentUri != null) {
+                        String attachmentKey = "android-photo:" + item.localId;
+                        if (item.attachmentUri.startsWith("encfile:")) {
+                            try (InputStream input = attachmentStore.open(item.attachmentUri)) {
+                                apiClient.uploadFieldCommentPhoto(
+                                        serverId,
+                                        input,
+                                        createdBy,
+                                        attachmentKey
+                                );
+                            }
+                        } else {
+                            // Version 1 migration keeps the persisted content URI readable until
+                            // this entry is sent; new attachments use app-private ciphertext.
+                            apiClient.uploadFieldCommentPhoto(
+                                    serverId,
+                                    Uri.parse(item.attachmentUri),
+                                    createdBy,
+                                    attachmentKey
+                            );
+                        }
+                    }
+                } else if ("handover".equals(item.kind)) {
+                    JSONObject response = apiClient.createHandover(item.toHandoverDraft());
+                    serverId = response.getString("handover_id");
+                } else {
+                    throw new IOException("지원하지 않는 outbox 종류입니다.");
                 }
-                markSynced(item.localId, commentId);
+                markSynced(item.localId, serverId);
+                attachmentStore.delete(item.attachmentUri);
                 success++;
             } catch (IOException | JSONException exc) {
-                markFailed(item.localId, exc.getMessage());
+                lastErrorMessage = UserErrorMessage.from(exc);
+                markFailed(item.localId, lastErrorMessage);
                 failed++;
+                if (partialSuccess) {
+                    partial++;
+                }
+                if (exc instanceof IOException
+                        && FlowNoteApiClient.isAuthenticationRejected((IOException) exc)) {
+                    break;
+                }
             }
         }
-        return new SyncSummary(success, failed, pendingCount());
+        return new SyncSummary(success, partial, failed, pendingCount(), lastErrorMessage);
     }
 
     private JSONObject toPayload(FieldCommentDraft draft) {
@@ -233,6 +294,26 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
             payload.put("deviceId", draft.deviceId);
             payload.put("authorId", draft.authorId);
             payload.put("photoUri", draft.photoUri);
+            payload.put("idempotencyKey", draft.idempotencyKey);
+        } catch (JSONException exc) {
+            throw new IllegalStateException(exc);
+        }
+        return payload;
+    }
+
+    private JSONObject toPayload(HandoverDraft draft) {
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("localId", draft.localId);
+            payload.put("channelId", draft.channelId);
+            payload.put("title", draft.title);
+            payload.put("body", draft.body);
+            payload.put("sourceType", draft.sourceType);
+            payload.put("sourceId", draft.sourceId);
+            payload.put("sourceVersionId", draft.sourceVersionId);
+            payload.put("recipientIds", new org.json.JSONArray(draft.recipientIds));
+            payload.put("deviceId", draft.deviceId);
+            payload.put("authorId", draft.authorId);
             payload.put("idempotencyKey", draft.idempotencyKey);
         } catch (JSONException exc) {
             throw new IllegalStateException(exc);
@@ -278,12 +359,28 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
         getWritableDatabase().update("outbox", values, "local_id = ?", new String[]{localId});
     }
 
-    private void markFailed(String localId, String error) {
+    private void markFailed(String localId, String safeError) {
         ContentValues values = new ContentValues();
         values.put("status", "FAILED");
-        values.put("last_error", error);
+        values.put("last_error", cryptoBox.encrypt(safeError));
         values.put("updated_at", System.currentTimeMillis());
         getWritableDatabase().update("outbox", values, "local_id = ?", new String[]{localId});
+    }
+
+    private void cleanupSyncedAttachments() {
+        try (Cursor cursor = getReadableDatabase().query(
+                "outbox",
+                new String[]{"attachment_uri"},
+                "status = 'SYNCED' AND attachment_uri IS NOT NULL",
+                null,
+                null,
+                null,
+                null
+        )) {
+            while (cursor.moveToNext()) {
+                attachmentStore.delete(cursor.getString(0));
+            }
+        }
     }
 
     public static final class OutboxItem {
@@ -319,7 +416,7 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
             this.lastAttemptAt = lastAttemptAt;
         }
 
-        FieldCommentDraft toDraft() throws JSONException {
+        FieldCommentDraft toFieldCommentDraft() throws JSONException {
             JSONObject json = new JSONObject(payload);
             return new FieldCommentDraft(
                     json.optString("localId", localId),
@@ -335,17 +432,54 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
                     idempotencyKey
             );
         }
+
+        HandoverDraft toHandoverDraft() throws JSONException {
+            JSONObject json = new JSONObject(payload);
+            org.json.JSONArray recipients = json.optJSONArray("recipientIds");
+            List<String> recipientIds = new ArrayList<>();
+            if (recipients != null) {
+                for (int index = 0; index < recipients.length(); index++) {
+                    String recipientId = recipients.optString(index, null);
+                    if (recipientId != null) {
+                        recipientIds.add(recipientId);
+                    }
+                }
+            }
+            return new HandoverDraft(
+                    json.optString("localId", localId),
+                    json.optString("channelId", null),
+                    json.optString("title", ""),
+                    json.optString("body", ""),
+                    json.optString("sourceType", null),
+                    json.optString("sourceId", null),
+                    json.optString("sourceVersionId", null),
+                    recipientIds,
+                    json.optString("deviceId", null),
+                    json.optString("authorId", null),
+                    idempotencyKey
+            );
+        }
     }
 
     public static final class SyncSummary {
         public final int successCount;
+        public final int partialSuccessCount;
         public final int failedCount;
         public final int remainingCount;
+        public final String lastErrorMessage;
 
-        SyncSummary(int successCount, int failedCount, int remainingCount) {
+        SyncSummary(
+                int successCount,
+                int partialSuccessCount,
+                int failedCount,
+                int remainingCount,
+                String lastErrorMessage
+        ) {
             this.successCount = successCount;
+            this.partialSuccessCount = partialSuccessCount;
             this.failedCount = failedCount;
             this.remainingCount = remainingCount;
+            this.lastErrorMessage = lastErrorMessage;
         }
     }
 }

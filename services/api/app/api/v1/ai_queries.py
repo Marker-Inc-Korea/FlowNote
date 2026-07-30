@@ -433,6 +433,7 @@ def _post_call_evidence_is_current(
         must_change_password=account.must_change_password,
         customer_scope=current_user.customer_scope,
         site_scope=current_user.site_scope,
+        device_id=auth_session.device_id,
     )
     policy = AISourceAccessPolicy(session, refreshed_user)
     for snapshot in eligible:

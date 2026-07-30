@@ -232,6 +232,7 @@ def _ensure_idempotency_columns(database: Database) -> None:
         ("field_comment_attachments", "ix_field_comment_attachments_idempotency_key"),
         ("document_access_logs", "ix_document_access_logs_idempotency_key"),
         ("reports", "ix_reports_idempotency_key"),
+        ("handovers", "ix_handovers_idempotency_key"),
     )
     with database.engine.begin() as connection:
         for table_name, index_name in targets:
@@ -250,6 +251,22 @@ def _ensure_idempotency_columns(database: Database) -> None:
                     f"ON {table_name} (idempotency_key)"
                 )
             )
+
+
+def _ensure_handover_source_columns(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+    columns = {
+        "entry_source": "VARCHAR(30) NOT NULL DEFAULT 'field_user'",
+        "device_id": "VARCHAR(64)",
+    }
+    with database.engine.begin() as connection:
+        existing = {row[1] for row in connection.execute(text("PRAGMA table_info(handovers)"))}
+        if not existing:
+            return
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE handovers ADD COLUMN {name} {definition}"))
 
 
 def _ensure_field_comment_review_columns(database: Database) -> None:
@@ -745,6 +762,7 @@ def initialize_database(database: Database) -> None:
     _ensure_user_account_columns(database)
     _ensure_user_account_role_constraint(database)
     _ensure_idempotency_columns(database)
+    _ensure_handover_source_columns(database)
     _ensure_field_comment_review_columns(database)
     _ensure_report_source_trace_columns(database)
     _ensure_report_aggregate_columns(database)

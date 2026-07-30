@@ -8,6 +8,10 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.test.InstrumentationTestCase;
 import android.view.WindowManager;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.ImageView;
 
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -52,5 +56,54 @@ public final class SecureDocumentViewerInstrumentationTest extends Instrumentati
         } catch (IllegalStateException expected) {
             assertTrue(expected.getMessage().contains("로컬 보안 키"));
         }
+    }
+
+    public void testMainFieldControlsUseMinimumTouchTargetsAndLiveStatus() {
+        Intent intent = new Intent(getInstrumentation().getTargetContext(), MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Activity activity = getInstrumentation().startActivitySync(intent);
+        try {
+            UiAudit audit = new UiAudit();
+            inspect(activity.getWindow().getDecorView(), audit);
+            int minimumPixels = Math.round(
+                    56 * activity.getResources().getDisplayMetrics().density
+            );
+            assertTrue("화면에 주요 작업 버튼이 있어야 합니다.", audit.buttonCount >= 8);
+            assertTrue("56dp보다 작은 버튼이 있습니다.", audit.smallestButtonHeight >= minimumPixels);
+            assertTrue("전송·작업 상태 live region이 필요합니다.", audit.liveRegionCount >= 3);
+            assertTrue("선택 사진 미리보기 설명이 필요합니다.", audit.photoPreviewFound);
+        } finally {
+            activity.finish();
+        }
+    }
+
+    private static void inspect(View view, UiAudit audit) {
+        if (view instanceof Button) {
+            audit.buttonCount++;
+            audit.smallestButtonHeight = Math.min(
+                    audit.smallestButtonHeight,
+                    ((Button) view).getMinHeight()
+            );
+        }
+        if (view.getAccessibilityLiveRegion() == View.ACCESSIBILITY_LIVE_REGION_POLITE) {
+            audit.liveRegionCount++;
+        }
+        if (view instanceof ImageView
+                && "선택한 현장 사진 미리보기".contentEquals(view.getContentDescription())) {
+            audit.photoPreviewFound = true;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int index = 0; index < group.getChildCount(); index++) {
+                inspect(group.getChildAt(index), audit);
+            }
+        }
+    }
+
+    private static final class UiAudit {
+        int buttonCount;
+        int smallestButtonHeight = Integer.MAX_VALUE;
+        int liveRegionCount;
+        boolean photoPreviewFound;
     }
 }
