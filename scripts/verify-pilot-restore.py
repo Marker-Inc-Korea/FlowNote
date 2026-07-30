@@ -13,6 +13,22 @@ from pathlib import Path
 from typing import Any
 
 
+RESPONSIBILITY_TABLES = (
+    "server_identity",
+    "documents",
+    "document_versions",
+    "file_objects",
+    "reports",
+    "report_sources",
+    "document_mutation_receipts",
+    "report_mutation_receipts",
+    "server_notification_cursors",
+    "server_notification_messages",
+    "server_sync_queue",
+    "server_id_mappings",
+)
+
+
 def path_state(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {"exists": False, "bytes": 0, "modified_ns": None}
@@ -34,6 +50,158 @@ def sha256(path: Path) -> str:
 
 def quote_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
+
+
+def table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
+    return {
+        row[1]
+        for row in connection.execute(
+            f"PRAGMA table_info({quote_identifier(table)})"
+        )
+    }
+
+
+def canonical_value(value: Any) -> Any:
+    if isinstance(value, bytes):
+        return {"bytes_sha256": hashlib.sha256(value).hexdigest(), "bytes": len(value)}
+    return value
+
+
+def table_fingerprint(connection: sqlite3.Connection, table: str) -> str:
+    rows = [
+        json.dumps(
+            [canonical_value(value) for value in row],
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        for row in connection.execute(f"SELECT * FROM {quote_identifier(table)}")
+    ]
+    rows.sort()
+    return hashlib.sha256("\n".join(rows).encode("utf-8")).hexdigest()
+
+
+def responsibility_checks(
+    connection: sqlite3.Connection, table_names: list[str]
+) -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
+
+    def add_sql_check(name: str, required: dict[str, set[str]], sql: str) -> None:
+        applicable = all(
+            table in table_names
+            and columns.issubset(table_columns(connection, table))
+            for table, columns in required.items()
+        )
+        rows = [list(row) for row in connection.execute(sql)] if applicable else []
+        checks.append(
+            {
+                "name": name,
+                "applicable": applicable,
+                "violation_count": len(rows),
+                "examples": rows[:20],
+            }
+        )
+
+    add_sql_check(
+        "latest_version_pointer",
+        {
+            "documents": {"document_id", "latest_version_id"},
+            "document_versions": {"document_id", "version_id"},
+        },
+        """
+        SELECT document.document_id, document.latest_version_id
+        FROM documents AS document
+        LEFT JOIN document_versions AS version
+          ON version.version_id = document.latest_version_id
+         AND version.document_id = document.document_id
+        WHERE document.latest_version_id IS NOT NULL AND version.version_id IS NULL
+        """,
+    )
+    add_sql_check(
+        "published_version_pointer",
+        {
+            "documents": {"document_id", "published_version_id"},
+            "document_versions": {"document_id", "version_id"},
+        },
+        """
+        SELECT document.document_id, document.published_version_id
+        FROM documents AS document
+        LEFT JOIN document_versions AS version
+          ON version.version_id = document.published_version_id
+         AND version.document_id = document.document_id
+        WHERE document.published_version_id IS NOT NULL AND version.version_id IS NULL
+        """,
+    )
+    add_sql_check(
+        "report_source_hash",
+        {"report_sources": {"report_id", "trace_id", "source_hash_sha256"}},
+        """
+        SELECT report_id, trace_id, source_hash_sha256
+        FROM report_sources
+        WHERE source_hash_sha256 IS NULL
+           OR length(source_hash_sha256) <> 64
+           OR lower(source_hash_sha256) GLOB '*[^0-9a-f]*'
+        """,
+    )
+    add_sql_check(
+        "report_source_parent",
+        {
+            "reports": {"report_id"},
+            "report_sources": {"report_id", "trace_id"},
+        },
+        """
+        SELECT source.report_id, source.trace_id
+        FROM report_sources AS source
+        LEFT JOIN reports AS report ON report.report_id = source.report_id
+        WHERE report.report_id IS NULL
+        """,
+    )
+    for table, key in (
+        ("document_mutation_receipts", "mutation_key"),
+        ("report_mutation_receipts", "mutation_key"),
+        ("server_sync_queue", "idempotency_key"),
+    ):
+        add_sql_check(
+            f"{table}_{key}_unique",
+            {table: {key}},
+            f"""
+            SELECT {quote_identifier(key)}, COUNT(*)
+            FROM {quote_identifier(table)}
+            WHERE {quote_identifier(key)} IS NOT NULL
+            GROUP BY {quote_identifier(key)}
+            HAVING COUNT(*) > 1
+            """,
+        )
+    add_sql_check(
+        "processed_message_cursor",
+        {
+            "server_notification_cursors": {
+                "id",
+                "server_scope",
+                "user_id",
+                "last_success_cursor",
+            },
+            "server_notification_messages": {
+                "server_scope",
+                "user_id",
+                "message_id",
+                "cursor",
+            },
+        },
+        """
+        SELECT message.server_scope, message.user_id, message.message_id, message.cursor
+        FROM server_notification_messages AS message
+        LEFT JOIN server_notification_cursors AS cursor
+          ON cursor.server_scope = message.server_scope
+         AND cursor.user_id = message.user_id
+        WHERE cursor.id IS NULL OR message.cursor > cursor.last_success_cursor
+        """,
+    )
+    return {
+        "checks": checks,
+        "applicable_count": sum(check["applicable"] for check in checks),
+        "violation_count": sum(check["violation_count"] for check in checks),
+    }
 
 
 def database_evidence(database: Path) -> dict[str, Any]:
@@ -76,6 +244,12 @@ def database_evidence(database: Path) -> dict[str, Any]:
             ).fetchone()[0]
             for table in table_names
         }
+        fingerprints = {
+            table: table_fingerprint(connection, table)
+            for table in RESPONSIBILITY_TABLES
+            if table in table_names
+        }
+        responsibility = responsibility_checks(connection, table_names)
     finally:
         connection.close()
 
@@ -99,6 +273,8 @@ def database_evidence(database: Path) -> dict[str, Any]:
         "foreign_key_check": foreign_key_check,
         "foreign_key_check_error": foreign_key_check_error,
         "table_counts": counts,
+        "responsibility_table_fingerprints": fingerprints,
+        "responsibility_checks": responsibility,
         "quiescence": {
             "capture_stable": capture_stable,
             "checkpoint_clean": checkpoint_clean,
@@ -152,6 +328,118 @@ def file_evidence(root: Path) -> dict[str, Any]:
     }
 
 
+def referenced_file_checks(
+    database: Path,
+    file_set: dict[str, Any],
+    target: str,
+) -> dict[str, Any]:
+    files = {item["relative_path"]: item for item in file_set["files"]}
+    references: list[dict[str, Any]] = []
+    connection = sqlite3.connect(
+        f"file:{database.resolve().as_posix()}?mode=ro", uri=True
+    )
+    try:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        if target == "server" and "file_objects" in tables:
+            columns = table_columns(connection, "file_objects")
+            if {"storage_key", "size_bytes", "hash_sha256"}.issubset(columns):
+                references = [
+                    {
+                        "source": f"file_objects:{row[0]}",
+                        "relative_path": str(row[0]).replace("\\", "/").lstrip("/"),
+                        "expected_bytes": row[1],
+                        "expected_sha256": row[2],
+                    }
+                    for row in connection.execute(
+                        "SELECT storage_key, size_bytes, hash_sha256 FROM file_objects"
+                    )
+                ]
+        elif target == "wpf":
+            local_path_tables = (
+                ("documents", "document_id", "local_path", None, None),
+                ("document_versions", "id", "local_path", None, None),
+                (
+                    "field_comment_attachments",
+                    "attachment_id",
+                    "local_path",
+                    "size_bytes",
+                    "hash_sha256",
+                ),
+            )
+            for table, id_column, path_column, size_column, hash_column in local_path_tables:
+                if table not in tables:
+                    continue
+                columns = table_columns(connection, table)
+                required = {id_column, path_column}
+                if not required.issubset(columns):
+                    continue
+                selected = [id_column, path_column]
+                selected.extend(
+                    column
+                    for column in (size_column, hash_column)
+                    if column is not None
+                )
+                query = ", ".join(quote_identifier(column) for column in selected)
+                for row in connection.execute(
+                    f"SELECT {query} FROM {quote_identifier(table)} "
+                    f"WHERE {quote_identifier(path_column)} IS NOT NULL "
+                    f"AND trim({quote_identifier(path_column)}) <> ''"
+                ):
+                    raw_path = str(row[1]).replace("\\", "/")
+                    marker = "/Files/"
+                    relative_path = (
+                        raw_path.split(marker, 1)[1]
+                        if marker in raw_path
+                        else (
+                            raw_path[len("Files/") :]
+                            if raw_path.startswith("Files/")
+                            else raw_path.lstrip("./")
+                        )
+                    )
+                    references.append(
+                        {
+                            "source": f"{table}:{row[0]}",
+                            "relative_path": relative_path,
+                            "expected_bytes": row[2] if size_column else None,
+                            "expected_sha256": row[3] if hash_column else None,
+                        }
+                    )
+    finally:
+        connection.close()
+
+    missing: list[str] = []
+    size: list[str] = []
+    digest: list[str] = []
+    for reference in references:
+        actual = files.get(reference["relative_path"])
+        if actual is None:
+            missing.append(reference["source"])
+            continue
+        if (
+            reference["expected_bytes"] is not None
+            and reference["expected_bytes"] != actual["bytes"]
+        ):
+            size.append(reference["source"])
+        if (
+            reference["expected_sha256"]
+            and str(reference["expected_sha256"]).lower() != actual["sha256"].lower()
+        ):
+            digest.append(reference["source"])
+    return {
+        "applicable": bool(references),
+        "reference_count": len(references),
+        "missing_count": len(missing),
+        "size_mismatch_count": len(size),
+        "sha256_mismatch_count": len(digest),
+        "mismatches": {"missing": missing, "size": size, "sha256": digest},
+    }
+
+
 def validate_run_id(value: str) -> str:
     if not value.startswith("PILOT-") or any(
         character
@@ -174,8 +462,10 @@ def write_evidence(path: Path, payload: dict[str, Any]) -> None:
 
 
 def capture(args: argparse.Namespace) -> int:
+    database = database_evidence(args.database)
+    file_set = file_evidence(args.files)
     evidence = {
-        "schema_version": 2,
+        "schema_version": 3,
         "run_id": args.run_id,
         "target": args.target,
         "phase": args.phase,
@@ -183,8 +473,11 @@ def capture(args: argparse.Namespace) -> int:
         "backup_set_id": args.backup_set_id,
         "restore_approval_id": args.restore_approval_id,
         "captured_at_utc": datetime.now(timezone.utc).isoformat(),
-        "database": database_evidence(args.database),
-        "file_set": file_evidence(args.files),
+        "database": database,
+        "file_set": file_set,
+        "referenced_file_checks": referenced_file_checks(
+            args.database, file_set, args.target
+        ),
     }
     output = (
         args.evidence_root
@@ -202,6 +495,10 @@ def capture(args: argparse.Namespace) -> int:
         and evidence["database"]["quiescence"]["capture_stable"]
         and evidence["database"]["quiescence"]["checkpoint_clean"]
         and evidence["file_set"]["capture_stable"]
+        and evidence["database"]["responsibility_checks"]["violation_count"] == 0
+        and evidence["referenced_file_checks"]["missing_count"] == 0
+        and evidence["referenced_file_checks"]["size_mismatch_count"] == 0
+        and evidence["referenced_file_checks"]["sha256_mismatch_count"] == 0
     )
     print(f"증거 저장: {output}")
     print(f"DB quick_check: {evidence['database']['quick_check']}")
@@ -213,6 +510,14 @@ def capture(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
     print(f"파일: {evidence['file_set']['file_count']}건")
+    print(
+        "데이터 책임 교차 검사 위반: "
+        f"{evidence['database']['responsibility_checks']['violation_count']}건"
+    )
+    print(
+        "DB 참조 파일 불일치: "
+        f"{sum(evidence['referenced_file_checks'][field] for field in ('missing_count', 'size_mismatch_count', 'sha256_mismatch_count'))}건"
+    )
     print(
         "쓰기 정지 관찰: "
         f"{'정상' if evidence['database']['quiescence']['capture_stable'] and evidence['file_set']['capture_stable'] else '변경 감지'}"
@@ -272,6 +577,18 @@ def compare(args: argparse.Namespace) -> int:
         )
     if before_db["table_counts"] != after_db["table_counts"]:
         failures.append("SQLite 테이블별 원천 개수가 다릅니다.")
+    before_fingerprints = before_db.get("responsibility_table_fingerprints", {})
+    after_fingerprints = after_db.get("responsibility_table_fingerprints", {})
+    fingerprint_tables = sorted(set(before_fingerprints) | set(after_fingerprints))
+    fingerprint_mismatches = [
+        table
+        for table in fingerprint_tables
+        if before_fingerprints.get(table) != after_fingerprints.get(table)
+    ]
+    if fingerprint_mismatches:
+        failures.append(
+            "공개 version 포인터·보고서 source hash·cursor·receipt 책임 원천이 다릅니다."
+        )
     if after_db["quick_check"] != ["ok"]:
         failures.append(f"복구 DB quick_check 실패: {after_db['quick_check']!r}")
     if after_db.get("integrity_check") != ["ok"]:
@@ -286,6 +603,12 @@ def compare(args: argparse.Namespace) -> int:
         failures.append(
             f"복구 DB foreign key 검사 오류: {after_db['foreign_key_check_error']}"
         )
+    for phase, database in (("원천", before_db), ("복구", after_db)):
+        violation_count = database.get("responsibility_checks", {}).get(
+            "violation_count"
+        )
+        if violation_count != 0:
+            failures.append(f"{phase} 데이터 책임 교차 검사 위반 {violation_count!r}건")
     for phase, database, file_set in (
         ("원천", before_db, before["file_set"]),
         ("복구", after_db, after["file_set"]),
@@ -329,9 +652,23 @@ def compare(args: argparse.Namespace) -> int:
     ]
     if missing_paths or extra_paths or size_mismatches or hash_mismatches:
         failures.append("파일 상대경로·크기·SHA-256 목록이 다릅니다.")
+    reference_check_failures: dict[str, dict[str, int]] = {}
+    for phase, evidence in (("before", before), ("after", after)):
+        checks = evidence.get("referenced_file_checks", {})
+        counts = {
+            field: checks.get(field, 0)
+            for field in (
+                "missing_count",
+                "size_mismatch_count",
+                "sha256_mismatch_count",
+            )
+        }
+        reference_check_failures[phase] = counts
+        if any(count != 0 for count in counts.values()):
+            failures.append(f"{phase} DB 참조 파일 교차 검사가 실패했습니다.")
 
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
         "run_id": before.get("run_id"),
         "target": before.get("target"),
         "compared_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -381,6 +718,20 @@ def compare(args: argparse.Namespace) -> int:
         "table_counts_equal": not table_count_mismatches,
         "table_count_mismatch_count": len(table_count_mismatches),
         "table_count_mismatches": table_count_mismatches,
+        "responsibility_table_fingerprints_equal": not fingerprint_mismatches,
+        "responsibility_table_fingerprint_mismatch_count": len(
+            fingerprint_mismatches
+        ),
+        "responsibility_table_fingerprint_mismatches": fingerprint_mismatches,
+        "responsibility_check_violation_counts": {
+            "before": before_db.get("responsibility_checks", {}).get(
+                "violation_count"
+            ),
+            "after": after_db.get("responsibility_checks", {}).get(
+                "violation_count"
+            ),
+        },
+        "referenced_file_check_mismatch_counts": reference_check_failures,
         "file_manifest_equal": not (
             missing_paths or extra_paths or size_mismatches or hash_mismatches
         ),
@@ -422,6 +773,23 @@ def compare_set(args: argparse.Namespace) -> int:
         if (
             report.get("table_counts_equal") is not True
             or report.get("table_count_mismatch_count") != 0
+            or report.get("responsibility_table_fingerprints_equal") is not True
+            or report.get("responsibility_table_fingerprint_mismatch_count") != 0
+            or report.get("responsibility_check_violation_counts")
+            != {"before": 0, "after": 0}
+            or report.get("referenced_file_check_mismatch_counts")
+            != {
+                "before": {
+                    "missing_count": 0,
+                    "size_mismatch_count": 0,
+                    "sha256_mismatch_count": 0,
+                },
+                "after": {
+                    "missing_count": 0,
+                    "size_mismatch_count": 0,
+                    "sha256_mismatch_count": 0,
+                },
+            }
             or report.get("file_manifest_equal") is not True
             or report.get("file_mismatch_counts")
             != {"missing": 0, "extra": 0, "size": 0, "sha256": 0}

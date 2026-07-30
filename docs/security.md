@@ -408,5 +408,9 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 ## 복구 시 fail-closed 동기화
 
 - instance/epoch 변경, cursor 역행, 기존 binding과 다른 서버 URL은 정상 연결로 간주하지 않는다. WPF는 한글 차단 사유를 표시하고 관리자 승인 전 서버 mutation과 알림 polling을 중지한다.
+- 복구 장애 실기의 unauthenticated sync manifest에는 익명 pilot run ID, backup set ID, 복구 승인 ID, 담당자 역할 ID만 둔다. 고객명, 담당자 실명, 로컬·서버 경로, 토큰과 승인 문서 원문은 넣지 않는다. 장애 코드와 이 식별자 중 하나라도 잘못되거나 빠지면 서버는 `503`, WPF는 fail-closed로 처리한다.
+- `연결됨`은 HTTPS 응답과 서버 식별 확인일 뿐 `안전하게 수렴됨`을 뜻하지 않는다. WPF는 명시적 장애 run 승인 뒤 `POST_APPROVAL_RESTART_REQUIRED`, 정상 manifest read-back 뒤 `POST_APPROVAL_VERIFICATION_REQUIRED`를 표시한다. DB quick/integrity/FK, 공개 version 포인터, report source hash, cursor·message 처리, idempotency/mutation receipt, DB 참조 파일과 실제 파일의 경로·크기·SHA-256, 데이터 손실·중복 mutation·권한 우회 0건을 별도 증거로 확인한다.
+- 네 장애는 정상 복구 run과도, 서로 간에도 다른 `fault_run_id`와 reconciliation run ID를 사용한다. 각 장애의 화면, WPF 차단·재개 로그, 서버 감사는 해당 `fault-runs/<fault_run_id>/` 아래에 분리해 보존하고 승인 전·실패 증거를 덮어쓰지 않는다.
+- 서버 reconciliation 승인은 복구 연습 프로세스의 `FLOWNOTE_RESTORE_*` 환경값을 자동 변경하지 않는다. 승인 감사 저장 뒤 서버를 정상 종료하고 장애 표지를 제거한 다음 재시작하며, 정상 manifest read-back 전에는 WPF가 자동 전송이나 polling을 재개하지 않는다.
 - reconciliation 생성·조회·승인은 `admin` 또는 `system-admin` 권한과 유효한 세션이 필요하다. manifest에는 식별자·계약 범위·cursor 외의 데이터나 비밀값을 싣지 않는다.
 - `DIVERGED`는 자동 덮어쓰기하지 않고 충돌 원문, 양쪽 hash, 승인자와 사유를 남긴다. 처리 message_id, 실패 run, divergence row, 기존 큐를 삭제하여 복구하지 않는다.

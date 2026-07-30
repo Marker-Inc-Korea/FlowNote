@@ -75,7 +75,7 @@ WPF 메인 화면은 로그인 역할에 맞춘 첫 업무 3개를 기존 메뉴
 
 ### 서버 복구·초기화 뒤 재검증
 
-서버 초기화는 `server_identity` singleton row가 없을 때 `srv-` 접두의 난수 `server_instance_id`, `server_epoch = 1`, schema/API contract 1을 만든다. 운영자가 `POST /api/v1/sync/server-epoch/increment`를 호출할 때만 현재 코드가 epoch를 증가시킨다. `/api/v1/sync/manifest`와 `/api/v1/health/sync-manifest`는 이 값과 `channel_messages.id`의 high-water cursor를 제공한다. WPF는 정규화한 서버 URL별로 binding을 저장한다. 최초 binding은 `ACTIVE`지만, 다른 URL binding이 이미 있거나 저장한 instance/epoch가 달라지거나 high-water cursor가 로컬 cursor보다 낮으면 일반 전송과 polling을 즉시 멈추고 `RECONCILIATION_REQUIRED`로 전환한다. API contract 1이 서버 지원 범위에 없거나 manifest가 유효하지 않아도 자동 전송을 시작하지 않는다.
+서버 초기화는 `server_identity` singleton row가 없을 때 `srv-` 접두의 난수 `server_instance_id`, `server_epoch = 1`, schema/API contract 1을 만든다. 운영자가 `POST /api/v1/sync/server-epoch/increment`를 호출할 때만 현재 코드가 epoch를 증가시킨다. `/api/v1/sync/manifest`와 `/api/v1/health/sync-manifest`는 이 값과 `channel_messages.id`의 high-water cursor를 제공한다. 별도 PC 복구 장애 실기에서는 환경에 고정한 장애 코드, 독립 pilot run ID, backup set ID, 복구 승인 ID, 담당자 역할 ID와 `safe_convergence=false`도 제공한다. WPF는 정규화한 서버 URL별로 이 메타데이터와 binding을 저장한다. 최초 binding은 `ACTIVE`지만, 명시적 복구 장애가 있거나 다른 URL binding이 이미 있거나 저장한 instance/epoch가 달라지거나 high-water cursor가 로컬 cursor보다 낮으면 일반 전송과 polling을 즉시 멈추고 `RECONCILIATION_REQUIRED`로 전환한다. API contract 1이 서버 지원 범위에 없거나 manifest가 유효하지 않아도 자동 전송을 시작하지 않는다.
 
 관리자 재검증은 판정 전에 기존 cursor, `server_id_mappings`, 모든 상태의 큐를 삭제하거나 변경하지 않는다. WPF `작업내역 > 서버 재결합`은 `server_sync_queue` 전체와 기존 mapping에서 로컬 entity ID/version, idempotency key, 이전 서버 문서/버전 ID, 선택적 파일 hash를 모아 최대 10,000건의 run을 만든다. 서버는 `document`, `document_version`, `field_comment`, `field_comment_attachment`, `document_access_log`, `report`를 지원하며 각 항목을 다음 중 하나로 분류한다.
 
@@ -221,4 +221,4 @@ provider 경계는 정제 질의, 최소 발췌, candidate/source/version/trace 
 
 ## 서버 복구 경계 흐름
 
-WPF는 문서 전송과 채널 polling보다 먼저 sync manifest를 조회한다. 정규화 URL의 승인된 instance/epoch와 다르거나 서버 cursor가 역행하면 binding을 `RECONCILIATION_REQUIRED`로 바꾸고 두 흐름을 함께 중지한다. 관리자가 inventory 판정을 생성해 `REBOUND/REQUEUE/CONFLICT` 전 항목을 감사·승인하면 mapping을 갱신하고, 기존 처리 message_id는 유지한 채 cursor만 0으로 만들어 재추적한 다음 재전송을 재개한다.
+WPF는 문서 전송과 채널 polling보다 먼저 sync manifest를 조회한다. 명시적 복구 장애가 있거나 정규화 URL의 승인된 instance/epoch와 다르거나 서버 cursor가 역행하면 binding을 `RECONCILIATION_REQUIRED`로 바꾸고 두 흐름을 함께 중지한다. `이력 > 서버 재결합`은 서버 응답 확인과 안전 수렴 상태를 분리해 표시하고, 차단 원인, 보존 원천, 승인 전 금지 행동, 담당자, pilot run·backup set·복구 승인 ID, 다음 단계를 한 흐름에 둔다. 관리자가 inventory 판정을 생성해 `REBOUND/REQUEUE/CONFLICT` 전 항목을 감사·승인하면 mapping을 갱신하고 기존 처리 message_id를 유지한 채 cursor를 0으로 준비한다. 명시적 장애 표지가 있으면 binding은 `POST_APPROVAL_RESTART_REQUIRED`로 자동 전송·polling을 계속 막는다. 서버 정상 종료 → `FLOWNOTE_RESTORE_*` 표지 제거 → 서버 재시작 뒤 `업무 재개 확인`이 정상 manifest를 read-back해야 `POST_APPROVAL_VERIFICATION_REQUIRED`로 바꾸고 재추적·재전송·polling을 함께 시작한다. 연결 재개만으로 안전 수렴을 확정하지 않는다. DB·파일 책임 교차 검사, 비종결 큐, 중복 mutation, 권한 우회와 polling 추적 증거가 모두 통과한 뒤에만 실기 결과를 안전 수렴으로 승인한다.

@@ -61,12 +61,14 @@ public partial class MainWindow
                 notificationServerScope,
                 manifest,
                 savedState.LastSuccessCursor);
-            if (binding.ReconciliationRequired)
+            if (binding.TrafficBlocked)
             {
                 notificationPollingTimer.Stop();
-                workspace.StatusText =
-                    $"서버 복구 경계가 감지되어 알림 확인과 자동 전송을 중지했습니다. {binding.BlockReason} " +
-                    "로컬 기록과 동기화 큐는 보존됩니다. 이력 > 서버 재결합에서 관리자가 판정을 검토하고 승인하세요.";
+                workspace.StatusText = binding.ReconciliationRequired
+                    ? $"서버 복구 경계가 감지되어 알림 확인과 자동 전송을 중지했습니다. {binding.BlockReason} " +
+                      "로컬 기록과 동기화 큐는 보존됩니다. 이력 > 서버 재결합에서 관리자가 판정을 검토하고 승인하세요."
+                    : "재결합 승인은 적용됐지만 복구 장애 표지가 남아 있어 알림 확인과 자동 전송을 계속 중지합니다. " +
+                      "복구 연습 서버를 정상 종료하고 FLOWNOTE_RESTORE_* 표지를 제거한 뒤 다시 시작하세요.";
                 return;
             }
 
@@ -139,6 +141,38 @@ public partial class MainWindow
         }
     }
 
+    private async Task<string> ResumeServerTrafficAfterReconciliationAsync()
+    {
+        if (serverDocumentClient is null ||
+            notificationServerScope is null ||
+            notificationUserId is null)
+        {
+            throw new InvalidOperationException(
+                "서버 manifest와 알림 polling 대상을 확인할 수 없습니다.");
+        }
+        var savedState = services.ServerNotificationCursors.Get(
+            notificationServerScope,
+            notificationUserId);
+        var manifest = await serverDocumentClient.GetSyncManifestAsync();
+        var binding = services.ServerEpochGuard.Observe(
+            notificationServerScope,
+            manifest,
+            savedState.LastSuccessCursor);
+        if (binding.TrafficBlocked)
+        {
+            throw new InvalidOperationException(
+                binding.ReconciliationRequired
+                    ? binding.BlockReason ?? "서버 재결합 승인이 필요합니다."
+                    : "복구 장애 표지가 남아 있습니다. 서버를 정상 종료하고 " +
+                      "FLOWNOTE_RESTORE_* 표지를 제거한 뒤 다시 시작하세요.");
+        }
+        notificationPollFailures = 0;
+        notificationPollingTimer.Interval = TimeSpan.FromMilliseconds(100);
+        notificationPollingTimer.Start();
+        await PollServerNotificationsAsync();
+        return "정상 manifest를 확인해 자동 전송과 알림 polling을 재개했습니다.";
+    }
+
     private void NotificationCursorResetButton_Click(object sender, RoutedEventArgs e)
     {
         if (!IsNotificationCursorAdministrator(currentUser.Role) ||
@@ -150,11 +184,14 @@ public partial class MainWindow
             return;
         }
 
-        if (services.ServerEpochGuard.Get(notificationServerScope)
-                ?.ReconciliationRequired == true)
+        var binding = services.ServerEpochGuard.Get(notificationServerScope);
+        if (binding?.TrafficBlocked == true)
         {
-            workspace.StatusText =
-                "서버 복구 경계 검토가 끝나지 않아 알림 위치만 따로 초기화할 수 없습니다. 기존 위치와 큐는 보존됩니다. 서버 재결합을 먼저 승인하세요.";
+            workspace.StatusText = binding.ReconciliationRequired
+                ? "서버 복구 경계 검토가 끝나지 않아 알림 위치만 따로 초기화할 수 없습니다. " +
+                  "기존 위치와 큐는 보존됩니다. 서버 재결합을 먼저 승인하세요."
+                : "재결합 승인은 적용됐지만 복구 장애 표지가 남아 있어 알림 위치를 초기화할 수 없습니다. " +
+                  "복구 연습 서버에서 FLOWNOTE_RESTORE_* 표지를 제거하고 다시 시작하세요.";
             return;
         }
 

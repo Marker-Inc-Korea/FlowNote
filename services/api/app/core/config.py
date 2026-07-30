@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     ai_provider_response_max_bytes: int = Field(default=65536, ge=1024, le=1048576)
     ai_retention_scheduler_enabled: bool = True
     ai_retention_scheduler_interval_seconds: int = Field(default=3600, ge=60, le=86400)
+    restore_fault_code: str = ""
+    restore_block_reason: str = ""
+    restore_pilot_run_id: str = ""
+    restore_backup_set_id: str = ""
+    restore_approval_id: str = ""
+    restore_responsible_owner: str = ""
 
     @property
     def effective_customer_scope(self) -> str:

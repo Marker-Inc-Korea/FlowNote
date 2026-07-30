@@ -27,7 +27,7 @@ except ModuleNotFoundError:
 RUN_ID_PATTERN = re.compile(
     r"^PILOT-\d{8}-(?:\d{4}-[A-Z0-9_-]+|UX-BEFORE)-\d{3}$"
 )
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 RUN_PROFILES = ("full_pilot", "windows_server_rehearsal")
 RESPONSIBILITY_AREAS = (
     "server",
@@ -181,6 +181,7 @@ EVIDENCE_DIRECTORIES = (
     "windows-logs",
     "android-logs",
     "backup-restore",
+    "fault-runs",
     "scenario-results",
     "observations",
     "integrity",
@@ -446,10 +447,16 @@ def prepare(args: argparse.Namespace) -> int:
             "source_trace_evidence,notes\n"
         ),
         run_root / "scenario-results" / "restore-fault-injections.csv": (
-            "injection_id,target,automatic_send_blocked,polling_blocked,"
+            "injection_id,fault_run_id,target,responsible_owner,backup_set_id,"
+            "restore_approval_id,reconciliation_run_id,automatic_send_blocked,polling_blocked,"
             "reconciliation_required,admin_approved_rebind,normal_operation_resumed,"
-            "result,screen_evidence,wpf_log_evidence,server_audit_evidence\n"
-            + "".join(f"{case},,,,,,,NOT_RUN,,,\n" for case in RESTORE_FAULT_CASES)
+            "automatic_overwrite_count,data_loss_count,duplicate_mutation_count,"
+            "permission_bypass_count,result,screen_evidence,wpf_log_evidence,"
+            "server_audit_evidence\n"
+            + "".join(
+                f"{case},,,,,,,,,,,,,,,,NOT_RUN,,,\n"
+                for case in RESTORE_FAULT_CASES
+            )
         ),
         run_root / "observations" / "role-observations.csv": (
             "observation_id,role,scenario_id,device_id,location,network,gloves,"
@@ -1313,6 +1320,23 @@ def restore_comparison_failures(
             and report.get("result") == "PASS"
             and report.get("table_counts_equal") is True
             and report.get("table_count_mismatch_count") == 0
+            and report.get("responsibility_table_fingerprints_equal") is True
+            and report.get("responsibility_table_fingerprint_mismatch_count") == 0
+            and report.get("responsibility_check_violation_counts")
+            == {"before": 0, "after": 0}
+            and report.get("referenced_file_check_mismatch_counts")
+            == {
+                "before": {
+                    "missing_count": 0,
+                    "size_mismatch_count": 0,
+                    "sha256_mismatch_count": 0,
+                },
+                "after": {
+                    "missing_count": 0,
+                    "size_mismatch_count": 0,
+                    "sha256_mismatch_count": 0,
+                },
+            }
             and report.get("file_manifest_equal") is True
             and report.get("file_mismatch_counts")
             == {"missing": 0, "extra": 0, "size": 0, "sha256": 0}

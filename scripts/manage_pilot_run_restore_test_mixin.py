@@ -55,6 +55,20 @@ class ManagePilotRunRestoreTestMixin:
                     "restore_approval_id": "APPROVAL-001",
                     "table_counts_equal": True,
                     "table_count_mismatch_count": 0,
+                    "responsibility_table_fingerprints_equal": True,
+                    "responsibility_table_fingerprint_mismatch_count": 0,
+                    "responsibility_check_violation_counts": {
+                        "before": 0,
+                        "after": 0,
+                    },
+                    "referenced_file_check_mismatch_counts": {
+                        phase: {
+                            "missing_count": 0,
+                            "size_mismatch_count": 0,
+                            "sha256_mismatch_count": 0,
+                        }
+                        for phase in ("before", "after")
+                    },
                     "file_manifest_equal": True,
                     "file_mismatch_counts": {
                         "missing": 0,

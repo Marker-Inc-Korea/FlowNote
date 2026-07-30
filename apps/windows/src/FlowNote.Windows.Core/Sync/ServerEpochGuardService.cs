@@ -55,15 +55,34 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
         }
         else
         {
-            var reason = DetermineBlockReason(existing, manifest, clientCursor);
-            UpdateObservation(connection, transaction, scope, manifest, reason);
+            var sameApprovedFaultMarker =
+                existing.ConvergenceStatus == "POST_APPROVAL_RESTART_REQUIRED" &&
+                !string.IsNullOrWhiteSpace(manifest.RestoreFaultCode) &&
+                string.Equals(
+                    existing.RestorePilotRunId,
+                    manifest.RestorePilotRunId,
+                    StringComparison.Ordinal);
+            var markerClearedAfterApproval =
+                existing.ConvergenceStatus == "POST_APPROVAL_RESTART_REQUIRED" &&
+                string.IsNullOrWhiteSpace(manifest.RestoreFaultCode);
+            var reason = sameApprovedFaultMarker
+                ? null
+                : DetermineBlockReason(existing, manifest, clientCursor);
+            UpdateObservation(
+                connection,
+                transaction,
+                scope,
+                manifest,
+                reason,
+                markerClearedAfterApproval);
         }
         transaction.Commit();
         var binding = Get(scope) ?? throw new InvalidOperationException("서버 binding 저장에 실패했습니다.");
-        if (throwWhenBlocked && binding.ReconciliationRequired)
+        if (throwWhenBlocked && binding.TrafficBlocked)
         {
             throw new ServerReconciliationRequiredException(
-                binding.BlockReason ?? "서버 복구 경계가 감지되어 reconciliation이 필요합니다.");
+                binding.BlockReason ??
+                "재결합 승인은 적용됐지만 복구 장애 표지가 남아 있어 서버 재시작이 필요합니다.");
         }
         return binding;
     }
@@ -91,6 +110,18 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
         {
             throw new InvalidOperationException(
                 $"지원하지 않는 복구 장애 코드입니다: {manifest.RestoreFaultCode}");
+        }
+        if (!string.IsNullOrWhiteSpace(manifest.RestoreFaultCode) &&
+            new[]
+            {
+                manifest.RestorePilotRunId,
+                manifest.RestoreBackupSetId,
+                manifest.RestoreApprovalId,
+                manifest.RestoreResponsibleOwner
+            }.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new InvalidOperationException(
+                "복구 장애 manifest에 run ID, backup set ID, 복구 승인 ID 또는 담당자가 없습니다.");
         }
     }
 
@@ -155,9 +186,13 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
             INSERT INTO server_bindings (
                 server_scope, server_instance_id, server_epoch, schema_contract,
                 api_contract_min, api_contract_max, status,
-                observed_server_instance_id, observed_server_epoch, block_reason, updated_at)
+                observed_server_instance_id, observed_server_epoch, block_reason, updated_at,
+                restore_pilot_run_id, restore_backup_set_id, restore_approval_id,
+                restore_responsible_owner, restore_fault_code, convergence_status)
             VALUES ($scope, $instance, $epoch, $schema, $min, $max, $status,
-                    $observed_instance, $observed_epoch, $reason, $updated_at);
+                    $observed_instance, $observed_epoch, $reason, $updated_at,
+                    $restore_run, $backup_set, $restore_approval, $restore_owner, $restore_fault,
+                    $convergence);
             """;
         AddManifestParameters(command, scope, manifest, status, reason);
         command.ExecuteNonQuery();
@@ -168,7 +203,8 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
         SqliteTransaction transaction,
         string scope,
         ServerSyncManifest manifest,
-        string? reason)
+        string? reason,
+        bool markerClearedAfterApproval)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -181,10 +217,28 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
                 observed_server_instance_id = $observed_instance,
                 observed_server_epoch = $observed_epoch,
                 block_reason = COALESCE($reason, block_reason),
+                restore_pilot_run_id = COALESCE($restore_run, restore_pilot_run_id),
+                restore_backup_set_id = COALESCE($backup_set, restore_backup_set_id),
+                restore_approval_id = COALESCE($restore_approval, restore_approval_id),
+                restore_responsible_owner = COALESCE($restore_owner, restore_responsible_owner),
+                restore_fault_code = CASE
+                    WHEN $marker_cleared = 1 THEN NULL
+                    ELSE COALESCE($restore_fault, restore_fault_code)
+                END,
+                convergence_status = CASE
+                    WHEN $reason IS NOT NULL THEN 'APPROVAL_REQUIRED'
+                    WHEN $marker_cleared = 1 THEN 'POST_APPROVAL_VERIFICATION_REQUIRED'
+                    WHEN convergence_status = 'POST_APPROVAL_RESTART_REQUIRED'
+                        THEN convergence_status
+                    ELSE 'NORMAL_OPERATION'
+                END,
                 updated_at = $updated_at
             WHERE server_scope = $scope;
             """;
         AddManifestParameters(command, scope, manifest, ActiveStatus, reason);
+        command.Parameters.AddWithValue(
+            "$marker_cleared",
+            markerClearedAfterApproval ? 1 : 0);
         command.ExecuteNonQuery();
     }
 
@@ -206,6 +260,24 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
         command.Parameters.AddWithValue("$observed_epoch", manifest.ServerEpoch);
         command.Parameters.AddWithValue("$reason", (object?)reason ?? DBNull.Value);
         command.Parameters.AddWithValue("$updated_at", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue(
+            "$restore_run",
+            (object?)manifest.RestorePilotRunId ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$backup_set",
+            (object?)manifest.RestoreBackupSetId ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$restore_approval",
+            (object?)manifest.RestoreApprovalId ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$restore_owner",
+            (object?)manifest.RestoreResponsibleOwner ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$restore_fault",
+            (object?)manifest.RestoreFaultCode ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$convergence",
+            reason is null ? "NORMAL_OPERATION" : "APPROVAL_REQUIRED");
     }
 
     private static ServerBindingRecord? Get(
@@ -217,7 +289,9 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
         command.Transaction = transaction;
         command.CommandText = """
             SELECT server_instance_id, server_epoch, status,
-                   observed_server_instance_id, observed_server_epoch, block_reason
+                   observed_server_instance_id, observed_server_epoch, block_reason,
+                   restore_pilot_run_id, restore_backup_set_id, restore_approval_id,
+                   restore_responsible_owner, restore_fault_code, convergence_status
             FROM server_bindings WHERE server_scope = $scope;
             """;
         command.Parameters.AddWithValue("$scope", scope);
@@ -230,7 +304,13 @@ public sealed class ServerEpochGuardService(FlowNoteLocalDatabase database)
                 reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.IsDBNull(4) ? null : reader.GetInt32(4),
-                reader.IsDBNull(5) ? null : reader.GetString(5))
+                reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6),
+                reader.IsDBNull(7) ? null : reader.GetString(7),
+                reader.IsDBNull(8) ? null : reader.GetString(8),
+                reader.IsDBNull(9) ? null : reader.GetString(9),
+                reader.IsDBNull(10) ? null : reader.GetString(10),
+                reader.IsDBNull(11) ? "NORMAL_OPERATION" : reader.GetString(11))
             : null;
     }
 }

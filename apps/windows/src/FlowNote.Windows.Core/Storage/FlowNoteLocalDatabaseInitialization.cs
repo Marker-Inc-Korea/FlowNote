@@ -291,6 +291,12 @@ public sealed partial class FlowNoteLocalDatabase
                 updated_at TEXT NOT NULL,
                 approved_by TEXT NULL,
                 approved_at TEXT NULL,
+                restore_pilot_run_id TEXT NULL,
+                restore_backup_set_id TEXT NULL,
+                restore_approval_id TEXT NULL,
+                restore_responsible_owner TEXT NULL,
+                restore_fault_code TEXT NULL,
+                convergence_status TEXT NOT NULL DEFAULT 'NORMAL_OPERATION',
                 CHECK(server_epoch >= 1),
                 CHECK(status IN ('ACTIVE', 'RECONCILIATION_REQUIRED'))
             );
@@ -548,6 +554,16 @@ public sealed partial class FlowNoteLocalDatabase
         EnsureColumn(connection, "server_sync_queue", "payload_json", "TEXT NULL");
         EnsureColumn(connection, "server_sync_queue", "server_conflict_hash_sha256", "TEXT NULL");
         EnsureColumn(connection, "reconciliation_items", "resolution_status", "TEXT NULL");
+        EnsureColumn(connection, "server_bindings", "restore_pilot_run_id", "TEXT NULL");
+        EnsureColumn(connection, "server_bindings", "restore_backup_set_id", "TEXT NULL");
+        EnsureColumn(connection, "server_bindings", "restore_approval_id", "TEXT NULL");
+        EnsureColumn(connection, "server_bindings", "restore_responsible_owner", "TEXT NULL");
+        EnsureColumn(connection, "server_bindings", "restore_fault_code", "TEXT NULL");
+        EnsureColumn(
+            connection,
+            "server_bindings",
+            "convergence_status",
+            "TEXT NOT NULL DEFAULT 'NORMAL_OPERATION'");
         EnsureColumn(connection, "server_id_mappings", "server_comment_id", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_attachment_id", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_report_id", "TEXT NULL");

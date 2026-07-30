@@ -176,6 +176,20 @@ class WindowsServerRehearsalVerificationTests(
                     "restore_approval_id": "APPROVAL-001",
                     "table_counts_equal": True,
                     "table_count_mismatch_count": 0,
+                    "responsibility_table_fingerprints_equal": True,
+                    "responsibility_table_fingerprint_mismatch_count": 0,
+                    "responsibility_check_violation_counts": {
+                        "before": 0,
+                        "after": 0,
+                    },
+                    "referenced_file_check_mismatch_counts": {
+                        phase: {
+                            "missing_count": 0,
+                            "size_mismatch_count": 0,
+                            "sha256_mismatch_count": 0,
+                        }
+                        for phase in ("before", "after")
+                    },
                     "file_manifest_equal": True,
                     "file_mismatch_counts": {
                         "missing": 0,
@@ -497,7 +511,7 @@ class WindowsServerRehearsalVerificationTests(
         run_id = "PILOT-20260728-UX-BEFORE-001"
         self.assertEqual(run_id, manage_pilot_run.validate_run_id(run_id))
 
-    def test_prepare_creates_schema_nine_windows_server_templates(self) -> None:
+    def test_prepare_creates_schema_eleven_windows_server_templates(self) -> None:
         run_id = "PILOT-20260722-1310-LOCALCHECK-002"
         with contextlib.redirect_stdout(io.StringIO()):
             result = manage_pilot_run.prepare(
@@ -513,7 +527,7 @@ class WindowsServerRehearsalVerificationTests(
             (self.evidence_root / run_id / "pilot-run.json").read_text(encoding="utf-8")
         )
         self.assertEqual(0, result)
-        self.assertEqual(10, record["schema_version"])
+        self.assertEqual(11, record["schema_version"])
         self.assertEqual("windows_server_rehearsal", record["profile"])
         self.assertTrue(
             (
@@ -892,12 +906,21 @@ class WindowsServerRehearsalVerificationTests(
         path.parent.mkdir(parents=True)
         fieldnames = [
             "injection_id",
+            "fault_run_id",
             "target",
+            "responsible_owner",
+            "backup_set_id",
+            "restore_approval_id",
+            "reconciliation_run_id",
             "automatic_send_blocked",
             "polling_blocked",
             "reconciliation_required",
             "admin_approved_rebind",
             "normal_operation_resumed",
+            "automatic_overwrite_count",
+            "data_loss_count",
+            "duplicate_mutation_count",
+            "permission_bypass_count",
             "result",
             "screen_evidence",
             "wpf_log_evidence",
@@ -906,10 +929,16 @@ class WindowsServerRehearsalVerificationTests(
         with path.open("w", newline="", encoding="utf-8") as stream:
             writer = csv.DictWriter(stream, fieldnames=fieldnames)
             writer.writeheader()
-            for case in manage_pilot_run.RESTORE_FAULT_CASES:
-                screen = f"{case}-screen.png"
-                wpf_log = f"{case}-wpf.log"
-                server_audit = f"{case}-server-audit.json"
+            for index, case in enumerate(
+                manage_pilot_run.RESTORE_FAULT_CASES,
+                start=1,
+            ):
+                fault_run_id = f"PILOT-20260722-14{index:02d}-RESTOREFAULT-{index:03d}"
+                evidence_prefix = f"fault-runs/{fault_run_id}"
+                screen = f"{evidence_prefix}/{case}-screen.png"
+                wpf_log = f"{evidence_prefix}/{case}-wpf.log"
+                server_audit = f"{evidence_prefix}/{case}-server-audit.json"
+                (self.run_root / evidence_prefix).mkdir(parents=True)
                 (self.run_root / screen).write_bytes(b"screen")
                 (self.run_root / wpf_log).write_text(
                     "blocked\nresumed\n", encoding="utf-8"
@@ -920,12 +949,21 @@ class WindowsServerRehearsalVerificationTests(
                 writer.writerow(
                     {
                         "injection_id": case,
+                        "fault_run_id": fault_run_id,
                         "target": "both",
+                        "responsible_owner": "data-owner-01",
+                        "backup_set_id": "BACKUP-001",
+                        "restore_approval_id": "APPROVAL-001",
+                        "reconciliation_run_id": f"recon-{case}",
                         "automatic_send_blocked": "TRUE",
                         "polling_blocked": "TRUE",
                         "reconciliation_required": "TRUE",
                         "admin_approved_rebind": "TRUE",
                         "normal_operation_resumed": "TRUE",
+                        "automatic_overwrite_count": "0",
+                        "data_loss_count": "0",
+                        "duplicate_mutation_count": "0",
+                        "permission_bypass_count": "0",
                         "result": "PASS",
                         "screen_evidence": screen,
                         "wpf_log_evidence": wpf_log,
@@ -935,6 +973,22 @@ class WindowsServerRehearsalVerificationTests(
 
         self.assertEqual(
             [], manage_pilot_run.restore_fault_injection_failures(self.run_root)
+        )
+
+        with path.open(encoding="utf-8") as stream:
+            rows = list(csv.DictReader(stream))
+        rows[1]["fault_run_id"] = rows[0]["fault_run_id"]
+        with path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        self.assertTrue(
+            any(
+                "fault_run_id가 다른 장애와 중복" in failure
+                for failure in manage_pilot_run.restore_fault_injection_failures(
+                    self.run_root
+                )
+            )
         )
 
     def test_server_and_wpf_restore_comparisons_must_share_both_ids(self) -> None:

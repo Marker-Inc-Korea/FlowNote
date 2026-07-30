@@ -82,7 +82,7 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 
 | Method | Path | 설명 |
 | --- | --- | --- |
-| GET | `/api/v1/sync/manifest` | `server_instance_id`, `server_epoch`, `schema_contract`, `api_contract_min/max`, `server_cursor` 반환 |
+| GET | `/api/v1/sync/manifest` | `server_instance_id`, `server_epoch`, `schema_contract`, `api_contract_min/max`, `server_cursor` 반환. 복구 장애 실기 중에는 장애·run·백업·승인·담당자와 `safe_convergence=false`도 반환 |
 | POST | `/api/v1/sync/reconciliation-runs` | WPF 큐 inventory를 서버 원천과 대조하고 `REVIEW_REQUIRED` run 생성 |
 | GET | `/api/v1/sync/reconciliation-runs/{run_id}` | run과 항목별 판정·조치 조회 |
 | POST | `/api/v1/sync/reconciliation-runs/{run_id}/apply` | 모든 항목의 판정 조치와 관리자 사유를 확인하고 run을 `APPLIED`로 종결 |
@@ -520,6 +520,12 @@ WPF `RolePermissionPolicy`와의 대조:
 - `FLOWNOTE_CUSTOMER_SCOPE` (단일 서버 고객 경계. 생략 시 `FLOWNOTE_AI_CUSTOMER_SCOPE`)
 - `FLOWNOTE_SITE_SCOPE` (단일 서버 현장 경계. 생략 시 `FLOWNOTE_AI_SITE_SCOPE`)
 - `FLOWNOTE_FIELD_COMMENT_INDEPENDENT_REVIEW_REQUIRED` (기본 `true`; 위험 신호·상충 원천 maker-checker)
+- `FLOWNOTE_RESTORE_FAULT_CODE` (기본 빈 값; 복구 장애 실기 전용)
+- `FLOWNOTE_RESTORE_BLOCK_REASON` (기본 빈 값; 선택 차단 사유)
+- `FLOWNOTE_RESTORE_PILOT_RUN_ID`
+- `FLOWNOTE_RESTORE_BACKUP_SET_ID`
+- `FLOWNOTE_RESTORE_APPROVAL_ID`
+- `FLOWNOTE_RESTORE_RESPONSIBLE_OWNER`
 - `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED`
 - `FLOWNOTE_AI_READINESS_GATE_ENABLED` (기본 `true`)
 - `FLOWNOTE_AI_PROVIDER`
@@ -562,10 +568,12 @@ dataset 상태는 `DRAFT → IN_REVIEW → PENDING_FIRST_APPROVAL → PENDING_SE
 `GET /api/v1/ai-search/readiness`는 `latest_approved_dataset`, 그 version에 정확히 결합된 `latest_evaluation`, `human_sample_review`, `human_sample_review_ready`, `ai_provider_readiness_status`, `readiness_failures`, `external_ai_calls_blocked`, `non_ai_core_flows_blocked=false`를 반환한다. 승인 dataset 또는 해당 평가가 없으면 `PENDING`, 평가가 존재하지만 임계값·독립 표본·provider 심사를 충족하지 못하면 `FAIL`, 모든 결합 게이트 통과 시 `PASS`다. `FAIL/PENDING`은 외부 provider 호출만 차단하며 후보 재생성·품질 점검과 문서·FieldComment 등 비AI API는 차단하지 않는다.
 ## 서버 식별과 무손실 reconciliation
 
-- `GET /api/v1/health/sync-manifest`, `GET /api/v1/sync/manifest`: `server_instance_id`, `server_epoch`, `schema_contract`, `api_contract_min/max`, 현재 `server_cursor`를 반환한다. health 경로는 전송 차단 판단을 위해 인증 없이 읽을 수 있지만 비밀값이나 운영 데이터는 포함하지 않는다.
+- `GET /api/v1/health/sync-manifest`, `GET /api/v1/sync/manifest`: `server_instance_id`, `server_epoch`, `schema_contract`, `api_contract_min/max`, 현재 `server_cursor`를 반환한다. 복구 장애 실기 환경에서는 `restore_fault_code`, `restore_block_reason`, `restore_pilot_run_id`, `restore_backup_set_id`, `restore_approval_id`, `restore_responsible_owner`, `safe_convergence=false`를 추가한다. health 경로는 전송 차단 판단을 위해 인증 없이 읽을 수 있으므로 익명 실행·승인 식별자와 역할 ID만 사용하고 사람 이름, 고객명, 경로, 비밀값은 넣지 않는다.
 - `POST /api/v1/sync/server-epoch/increment`: `admin`/`system-admin`만 실행한다. DB 복구·부분 복원 직후 일반 클라이언트를 연결하기 전에 epoch를 1 증가시키며 감사 이력을 남긴다.
 - `POST /api/v1/sync/reconciliation-runs`: 관리자 인증과 WPF inventory를 받아 각 항목을 `CONFIRMED`, `ABSENT`, `DIVERGED`로 판정하고 `REBOUND`, `REQUEUE`, `CONFLICT`를 제안한다. 새 `run_id`를 매번 만들며 실패·불일치 항목도 삭제하지 않는다.
 - `GET /api/v1/sync/reconciliation-runs/{run_id}`: 저장된 run과 모든 판정·승인 결과를 조회한다.
 - `POST /api/v1/sync/reconciliation-runs/{run_id}/apply`: 모든 item에 대한 관리자 승인 조치와 사유가 있어야 종결한다. 동일 적용 요청은 멱등하게 기존 결과를 반환한다.
 
 동일 idempotency key와 payload/file hash의 서버 원천이 있으면 그 server ID/revision을 반환해 재결합한다. 같은 key의 서버 원천이 없으면 기존 key를 유지한 재전송 대상으로 판정하고, 같은 key의 hash가 다르면 자동 덮어쓰기 없이 divergence로 보존한다.
+
+복구 장애 manifest는 복구 연습 서버 프로세스를 시작하기 전에 `FLOWNOTE_RESTORE_FAULT_CODE`, `FLOWNOTE_RESTORE_PILOT_RUN_ID`, `FLOWNOTE_RESTORE_BACKUP_SET_ID`, `FLOWNOTE_RESTORE_APPROVAL_ID`, `FLOWNOTE_RESTORE_RESPONSIBLE_OWNER`를 모두 설정해야 활성화된다. 허용 장애 코드는 `partial_restore`, `old_database_new_files`, `missing_file`, `wrong_server_epoch`다. 하나라도 빠지거나 허용되지 않은 코드이면 manifest는 `503`으로 실패하며 WPF는 전송과 polling을 시작하지 않는다. `FLOWNOTE_RESTORE_BLOCK_REASON`은 선택 설명이다. 이 설정은 복구 데이터 자체를 변조하는 주입기가 아니라, 승인된 별도 PC 실기에서 이미 만든 장애 상태를 WPF 차단 화면·reconciliation run·감사에 묶는 fail-closed 표지다. reconciliation 승인만으로 프로세스 환경값을 자동 해제하지 않는다. 승인 감사 저장 뒤 복구 연습 서버를 정상 종료하고 `FLOWNOTE_RESTORE_*` 표지를 제거해 다시 시작해야 정상 manifest가 반환된다.
