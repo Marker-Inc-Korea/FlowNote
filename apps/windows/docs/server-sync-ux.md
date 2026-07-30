@@ -1,6 +1,6 @@
 # 서버 동기화 실패와 재시도 UX
 
-이 문서는 2026-07-28 현재 `ServerSyncService`, 실패 진단 코드와 WPF 이력 화면 기준이다. 아래 누적 건수는 당시 보존 DB의 검증 기록이며 고정 기대값이 아니다.
+이 문서는 2026-07-30 현재 `ServerSyncService`, 실패 진단 코드와 WPF 이력 화면 기준이다. 아래 누적 건수는 당시 보존 DB의 검증 기록이며 고정 기대값이 아니다.
 
 ## 화면 기준
 
@@ -30,7 +30,9 @@
 
 두 선택은 `resolution_action`, 사유, 해결자, 해결 시각과 `activity_history`에 남고 앱 재시작 뒤에도 표시된다. 사유 없이 버튼을 누를 수 없다. reconciliation의 DIVERGED는 양쪽 hash와 `resolution_status = APPROVED_CONFLICT`도 함께 보존한다.
 
-`서버 재결합` 탭은 서버 URL·instance·epoch 변경 또는 cursor 역행으로 자동 전송과 polling이 중지된 경우에 사용한다. `판정 실행`은 로컬 `server_sync_queue` 전체를 idempotency key와 선택적 파일 hash, 기존 mapping과 함께 서버에 보내 `CONFIRMED/REBOUND`, `ABSENT/REQUEUE`, `DIVERGED/CONFLICT` 판정을 저장한다. `승인 적용`은 관리자 사유가 필수이며 모든 항목의 서버 제안 조치를 그대로 확인한다. 적용되면 재결합은 mapping과 큐 상태를 한 transaction에서 갱신하고, binding을 새 instance/epoch로 활성화하며, 해당 scope의 cursor를 0부터 재추적한 뒤 `PENDING` 전송을 재개한다. 처리한 `message_id`, 기존 큐와 로컬 원천은 삭제하지 않는다.
+`서버 재결합` 탭은 서버 URL·instance·epoch 변경, cursor 역행 또는 명시적 복구 장애 manifest로 자동 전송과 polling이 중지된 경우에 사용한다. `판정 실행`은 로컬 `server_sync_queue` 전체를 idempotency key와 선택적 파일 hash, 기존 mapping과 함께 서버에 보내 `CONFIRMED/REBOUND`, `ABSENT/REQUEUE`, `DIVERGED/CONFLICT` 판정을 저장한다. `승인 적용`은 관리자 사유가 필수이며 모든 항목의 서버 제안 조치를 그대로 확인한다. 적용되면 mapping과 큐 상태, 승인 instance/epoch와 cursor 초기 위치를 한 transaction에서 갱신하지만 binding은 `POST_APPROVAL_RESTART_REQUIRED`로 남아 자동 전송과 polling을 계속 막는다. 처리한 `message_id`, 기존 큐와 로컬 원천은 삭제하지 않는다.
+
+복구 연습 서버는 승인 적용 뒤 정상 종료하고 `FLOWNOTE_RESTORE_*` 장애 표지를 제거해 다시 시작해야 한다. 같은 장애 표지가 남은 manifest를 읽으면 차단을 유지한다. 정상 manifest를 읽으면 binding은 `POST_APPROVAL_VERIFICATION_REQUIRED`로 바뀌고 업무와 cursor 재추적을 재개하지만, 이 상태만으로 안전 수렴을 확정하지 않는다. DB·파일·중복 mutation·권한 우회 증거가 모두 통과해야 파일럿 검증에서 정상 수렴으로 인정한다.
 
 재시도 루프는 선행 문서, 문서 버전, FieldComment, 보고서 근거가 아직 서버 ID로 연결되지 않은 항목을 `보류`로 집계한다. 보류 항목은 `FAILED` 상태와 한글 실패 사유를 유지하지만 실제 서버 호출을 하지 않고 `attempt_count`를 올리지 않는다. 같은 재시도 배치 안에서는 문서 등록 → 버전 → 공개 → 상태 → 태그 → FieldComment → 검토 → 첨부 → 접근 로그 → 보고서 순서로 처리한다. 앞 mutation 성공 뒤 read-back한 revision과 최신/공개 버전 ID를 같은 run의 뒤쪽 현재 형식 큐 기준값으로 넘긴다. 구 큐의 누락 기준값은 자동 보완하지 않는다.
 

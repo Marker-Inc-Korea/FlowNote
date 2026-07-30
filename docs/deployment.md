@@ -19,13 +19,13 @@ Client PCs
 
 Approved Android field devices
   -> Android installed app
-  -> published document metadata, FieldComment, photos, handover receipts, channel notifications
+  -> published document metadata/body, FieldComment, photos, handover creation/receipts, channel notifications
   -> API connection to Server PC through configured server URL
 ```
 
 WPF 앱은 문서·FieldComment·첨부·접근 로그·보고서 원천을 로컬 SQLite에 먼저 기록하고 서버 URL이 설정되어 있으면 서버 동기화를 시도한다. 이 도메인의 서버 호출 실패는 로컬 저장을 되돌리지 않고 동기화 큐와 이력으로 남긴다. 작업순서는 예외로 FastAPI snapshot을 권위 원천으로 직접 사용하고 로컬 큐에 넣지 않으며, 서버 미연결·조회 실패에서는 확정 변경을 차단한다.
 
-Android 앱은 현장 입력과 알림 확인을 서버 기준으로 처리한다. 네트워크가 불안정할 때 FieldComment와 사진 첨부만 Keystore AES-GCM 보호 outbox에 임시 저장하며, 채널 메시지·인수인계·문서 메타데이터는 outbox 대상이 아니다. 장기 원천 데이터는 서버 SQLite와 `storage/`에 남긴다. 개인 휴대폰은 제외하고 MDM 등록 승인 단말만 배포하며, 채널 알림은 로그인 동안 15초 foreground service가 사내 HTTPS polling으로 복구한다.
+Android 앱은 현장 입력과 알림 확인을 서버 기준으로 처리한다. 네트워크가 불안정할 때 FieldComment, 사진 첨부와 신규 인수인계를 Keystore AES-GCM 보호 outbox에 임시 저장하며, 채널 메시지와 문서 메타데이터는 outbox 대상이 아니다. 마지막으로 확인한 활성 채널·수신자 목록도 서버 URL+사용자 범위별 암호문으로 보존하고 실제 전송 시 서버가 멤버십과 원천을 다시 검사한다. 장기 원천 데이터는 서버 SQLite와 `storage/`에 남긴다. 개인 휴대폰은 제외하고 MDM 등록 승인 단말만 배포하며, 채널 알림은 로그인 동안 15초 foreground service가 사내 HTTPS polling으로 복구한다.
 
 ## 운영 설치 경로
 
@@ -877,7 +877,7 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 2026-07-30 현재 실행 결과는 FastAPI 160건·WPF Core 84건이며 모두 통과했다. Android는 이번 복구·재결합 변경 범위에 포함되지 않아 재실행하지 않았다. Windows 수집 목록과 TRX의 `total/passed=84/84`를 대조하고 같은 clean 소스 커밋에서 Windows x64 무생략 실행이 2회 연속 통과해야 유효 기준선으로 확정한다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 2026-07-30 현재 FastAPI 160건, WPF Core 84건과 Android 단위 테스트 24건이 통과했고 Android debug 빌드·lint도 통과했다. 다만 스크립트의 실제 고정값은 FastAPI 155건·WPF Core 84건·Android 24건이고 FastAPI 단계 안내만 160건을 요구해 서로 다르다. FastAPI 고정값과 안내를 현재 코드에 맞추고 Windows 수집 목록과 TRX의 `total/passed=84/84`를 대조한 뒤, 같은 clean 소스 커밋에서 Windows x64 무생략 실행이 2회 연속 통과해야 유효 기준선으로 확정한다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 

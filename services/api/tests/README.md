@@ -2,7 +2,7 @@
 
 이 디렉터리는 FlowNote FastAPI 서버 테스트를 보관한다.
 
-범위와 수집 기준선은 2026-07-28 현재 테스트 코드 기준이다.
+범위와 수집 기준선은 2026-07-30 현재 테스트 코드 기준이다.
 
 ## 현재 테스트 범위
 
@@ -49,6 +49,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-07-30 현재 FastAPI 테스트 코드는 중복 없는 node ID 154개를 수집해 모두 통과하며, 저장소 루트 `scripts/verify-preserved-tests.ps1`의 guard는 FastAPI 154개·WPF Core 84개·Android 20개로 현재 코드와 맞는다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1 -RunId <승인된-run-id>`로 수행하며 FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존해야 한다. Windows 수집 목록과 TRX의 `total/passed=84/84`를 확인하고 같은 clean 소스 커밋에서 무생략 실행 2회가 모두 통과하기 전에는 유효한 기준선으로 판정하지 않는다.
+2026-07-30 현재 FastAPI 테스트 코드는 중복 없는 node ID 160개를 수집해 모두 통과한다. 저장소 루트 `scripts/verify-preserved-tests.ps1`의 실제 고정값은 FastAPI 155개·WPF Core 84개·Android 24개이고 FastAPI 단계 안내만 160개를 요구하므로 현재 수집 단계는 통과할 수 없다. FastAPI 고정값과 안내를 현재 코드에 맞춘 뒤 전체 표준 검증을 Windows x64 기준 환경에서 옵션을 생략한 `.\scripts\verify-preserved-tests.ps1 -RunId <승인된-run-id>`로 수행한다. FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존하고, Windows 수집 목록과 TRX의 `total/passed=84/84`를 확인한 무생략 실행 2회가 같은 clean 소스 커밋에서 모두 통과하기 전에는 유효한 기준선으로 판정하지 않는다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
