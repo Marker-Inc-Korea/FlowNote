@@ -102,7 +102,17 @@ esac
             encoding="utf-8"
         )
         self.assertIn("result=PASS", summary)
+        self.assertIn("operational_scenarios=NOT_RUN", summary)
         self.assertIn("version_code=2", summary)
+        scenario_dir = (
+            self.root / "evidence" / self.run_id / "scenario-results"
+        )
+        delivery = (scenario_dir / "android-delivery.csv").read_text(encoding="utf-8")
+        ux = (scenario_dir / "android-field-ux.csv").read_text(encoding="utf-8")
+        self.assertIn("AND-HANDOVER-IDEMPOTENCY", delivery)
+        self.assertIn("AND-OUTBOX-DEVICE-INACTIVE", delivery)
+        self.assertIn("AND-UX-GLOVE-HANDOVER", ux)
+        self.assertIn("AND-UX-PHOTO-RESET", ux)
 
     def test_install_requires_explicit_approved_device_serial(self) -> None:
         environment = os.environ.copy()

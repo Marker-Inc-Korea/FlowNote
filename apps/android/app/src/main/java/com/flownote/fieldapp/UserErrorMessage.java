@@ -7,6 +7,23 @@ public final class UserErrorMessage {
     private UserErrorMessage() {
     }
 
+    static boolean isSecureStorageFailure(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && (
+                    message.contains("로컬 보안 키")
+                            || message.contains("단말 보안 키")
+                            || message.contains("로컬 데이터를 암호화")
+                            || message.contains("첨부를 암호화")
+            )) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     public static String from(Exception exception) {
         if (exception instanceof SocketTimeoutException) {
             return "서버 응답 시간이 초과되었습니다. 네트워크 상태를 확인한 뒤 다시 시도하세요.";

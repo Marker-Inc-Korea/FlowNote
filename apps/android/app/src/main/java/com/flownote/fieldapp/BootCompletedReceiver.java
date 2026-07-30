@@ -3,6 +3,7 @@ package com.flownote.fieldapp;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.util.Log;
 
 public final class BootCompletedReceiver extends BroadcastReceiver {
     @Override
@@ -10,7 +11,12 @@ public final class BootCompletedReceiver extends BroadcastReceiver {
         if (intent == null || !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
             return;
         }
-        if (!new SecureSessionStore(context).hasSession()) {
+        try {
+            if (!new SecureSessionStore(context).hasSession()) {
+                return;
+            }
+        } catch (RuntimeException exc) {
+            Log.e("FlowNoteDelivery", "boot secure storage unavailable", exc);
             return;
         }
         Intent service = new Intent(context, NotificationPollingService.class);

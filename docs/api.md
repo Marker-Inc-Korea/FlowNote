@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-07-28 현재 전역 FastAPI 앱에 등록된 132개 method/path 조합과 요청·응답 코드 기준이다. 문서 상태·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-07-30 현재 전역 FastAPI 앱에 등록된 132개 method/path 조합과 요청·응답 코드 기준이다. 문서 상태·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -258,7 +258,7 @@ FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revi
 | GET | `/api/v1/notification-channels/{channel_id}/messages` | 채널 메시지 조회 |
 | GET | `/api/v1/notifications` | 현재 사용자 기준 채널 알림 목록. `afterId`, `limit`, `unreadOnly` 지원 |
 | PATCH | `/api/v1/notifications/{message_id}/read` | 현재 사용자의 해당 채널 메시지 읽음 처리. Android는 선택 `deliveryRunId`, `displayedAt` 증거 포함 |
-| POST | `/api/v1/handovers` | 인수인계 등록, 수신자별 receipt 생성, 채널 메시지 생성 |
+| POST | `/api/v1/handovers` | 인수인계 등록, 수신자별 receipt 생성, 채널 메시지 생성. Android는 승인 단말과 필수 원천·멱등키 계약 적용 |
 | GET | `/api/v1/handovers` | 현재 사용자가 속한 채널의 인수인계 목록 |
 | GET | `/api/v1/handovers/{handover_id}` | 인수인계 상세와 수신자별 receipt 조회 |
 | PATCH | `/api/v1/handovers/{handover_id}/receipts/{receipt_id}` | 수신자별 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 상태와 선택 `deliveryRunId`, `displayedAt` 기록 |
@@ -268,6 +268,15 @@ FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revi
 채널 유형은 `LINE`, `EQUIPMENT`, `PROCESS`, `WORK_GROUP`, `HANDOVER`, `WORK_RECORD`, `CUSTOM`이다. 채널 메시지 유형은 `NOTICE`, `DOCUMENT_EVENT`, `FIELD_COMMENT_EVENT`, `WORK_SEQUENCE_EVENT`, `HANDOVER`, `SYSTEM`이다. 같은 채널의 같은 FieldComment를 원천으로 하는 `FIELD_COMMENT_EVENT` 재요청은 기존 메시지를 반환해 응답 유실 뒤 알림 중복을 막는다. 인수인계 상태는 `DRAFT`, `SENT`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`, `ARCHIVED`이고, 수신 상태는 `UNREAD`, `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`이다.
 
 채널 메시지와 인수인계는 `sourceType`, `sourceId`, `sourceVersionId`로 원천을 추적한다. 메시지 source는 `DOCUMENT`, `FIELD_COMMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `REPORT`, `HANDOVER`, `SYSTEM`을 허용한다. 인수인계 source는 `DOCUMENT`, `FIELD_COMMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `REPORT`, `CHANNEL_MESSAGE`를 허용한다.
+
+Android 현장 입력은 아래 추가 계약을 사용한다.
+
+- `entrySource = android_field_terminal`, 현재 로그인 세션과 같은 `deviceId`, 최대 160자의 `idempotencyKey`가 필수다.
+- Android 작성 화면은 `DOCUMENT`, `FIELD_COMMENT`, `WORK_SEQUENCE_ITEM`, `WORK_RECORD`만 제공하고 `sourceId`를 반드시 보낸다. 서버는 공개 문서와 현재 공개 버전, 보관되지 않은 FieldComment·작업내역, 존재하는 작업순서 항목인지 다시 검사한다.
+- 작성자는 현재 활성 채널 멤버여야 하며 `recipientIds`는 중복 없이 모두 같은 채널의 활성 멤버여야 한다. 다른 고객·현장 scope는 공통 인증 경계에서 먼저 거부한다.
+- 같은 `idempotencyKey`와 같은 채널·작성자·수신자 집합·원천·본문을 다시 보내면 최초 `handover_id`와 기존 receipt를 반환한다. 이 transaction에서 `handovers`, `channel_messages`, `handover_receipts`를 각각 한 번만 만든다.
+- 응답은 생성에 사용한 `idempotency_key`, `entry_source`, `device_id`를 인수인계 원문과 receipt 목록에 함께 반환한다.
+- 같은 키를 다른 요청에 재사용하면 409 `IDEMPOTENCY_KEY_REUSED`, 원천이 없거나 현장 역할에 공개되지 않으면 404 `SOURCE_NOT_VISIBLE`, 세션 단말과 요청 단말이 다르면 403 `DEVICE_NOT_APPROVED`다.
 
 알림 증분 조회 계약은 다음과 같다.
 

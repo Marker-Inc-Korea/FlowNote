@@ -238,6 +238,7 @@ class Handover(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     handover_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
     channel_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("notification_channels.channel_id"), nullable=False, index=True
     )
@@ -248,6 +249,10 @@ class Handover(TimestampMixin, Base):
     source_version_id: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="SENT")
     created_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
+    entry_source: Mapped[str] = mapped_column(String(30), nullable=False, default="field_user")
+    device_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("terminal_devices.device_id")
+    )
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

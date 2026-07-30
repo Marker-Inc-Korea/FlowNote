@@ -10,6 +10,7 @@ public final class ApiPaths {
     public static final String FIELD_COMMENTS = "/api/v1/field-comments";
     public static final String NOTIFICATIONS = "/api/v1/notifications";
     public static final String HANDOVERS = "/api/v1/handovers";
+    public static final String NOTIFICATION_CHANNELS = "/api/v1/notification-channels";
     public static final String LOGOUT = "/api/v1/auth/logout";
     public static final String REFRESH = "/api/v1/auth/refresh";
 
@@ -31,5 +32,9 @@ public final class ApiPaths {
 
     public static String handoverReceipt(String handoverId, String receiptId) {
         return HANDOVERS + "/" + handoverId + "/receipts/" + receiptId;
+    }
+
+    public static String channelMembers(String channelId) {
+        return NOTIFICATION_CHANNELS + "/" + channelId + "/members";
     }
 }

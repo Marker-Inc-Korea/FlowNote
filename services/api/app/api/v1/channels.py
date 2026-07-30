@@ -11,7 +11,17 @@ from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import CurrentUser, DOCUMENT_WRITE_ROLES, get_current_user
+from app.api.v1.handover_contracts import (
+    HandoverCreateRequest,
+    HandoverReceiptUpdateRequest,
+    HandoverResponse,
+)
+from app.api.v1.handover_support import (
+    ensure_android_handover_source,
+    handover_matches_request,
+    handover_response,
+)
+from app.core.auth import DOCUMENT_WRITE_ROLES, CurrentUser, get_current_user
 from app.db.models import (
     ActivityHistory,
     ChannelMessage,
@@ -137,62 +147,11 @@ class UserNotificationResponse(ChannelMessageResponse):
     read_at: datetime | None
 
 
-class HandoverCreateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    channel_id: str = Field(alias="channelId", min_length=1)
-    title: str = Field(min_length=1)
-    body: str = Field(min_length=1)
-    source_type: str | None = Field(default=None, alias="sourceType")
-    source_id: str | None = Field(default=None, alias="sourceId")
-    source_version_id: str | None = Field(default=None, alias="sourceVersionId")
-    recipient_ids: list[str] = Field(alias="recipientIds", min_length=1)
-
-
-class HandoverReceiptUpdateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    receipt_status: str = Field(alias="receiptStatus", min_length=1)
-    note: str | None = None
-    delivery_run_id: str | None = Field(default=None, alias="deliveryRunId", max_length=120)
-    displayed_at: datetime | None = Field(default=None, alias="displayedAt")
-
-
 class NotificationReadRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     delivery_run_id: str | None = Field(default=None, alias="deliveryRunId", max_length=120)
     displayed_at: datetime | None = Field(default=None, alias="displayedAt")
-
-
-class HandoverReceiptResponse(BaseModel):
-    receipt_id: str
-    handover_id: str
-    recipient_id: str
-    receipt_status: str
-    note: str | None
-    read_at: datetime | None
-    acknowledged_at: datetime | None
-    follow_up_required_at: datetime | None
-    updated_by: str | None
-    created_at: datetime
-    updated_at: datetime
-
-
-class HandoverResponse(BaseModel):
-    handover_id: str
-    channel_id: str
-    title: str
-    body: str
-    source_type: str | None
-    source_id: str | None
-    source_version_id: str | None
-    status: str
-    created_by: str | None
-    sent_at: datetime | None
-    created_at: datetime
-    updated_at: datetime
-    receipts: list[HandoverReceiptResponse]
 
 
 def _new_public_id(prefix: str) -> str:
@@ -204,6 +163,16 @@ def _clean_optional(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     return cleaned or None
+
+
+def _clean_idempotency_key(value: str | None) -> str | None:
+    cleaned = _clean_optional(value)
+    if cleaned is not None and len(cleaned) > 160:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="idempotencyKey is too long.",
+        )
+    return cleaned
 
 
 def _normalize_choice(value: str, allowed: set[str], field_name: str) -> str:
@@ -337,45 +306,6 @@ def _message_response(message: ChannelMessage) -> ChannelMessageResponse:
         body=message.body,
         created_by=message.created_by,
         created_at=message.created_at,
-    )
-
-
-def _receipt_response(receipt: HandoverReceipt) -> HandoverReceiptResponse:
-    return HandoverReceiptResponse(
-        receipt_id=receipt.receipt_id,
-        handover_id=receipt.handover_id,
-        recipient_id=receipt.recipient_id,
-        receipt_status=receipt.receipt_status,
-        note=receipt.note,
-        read_at=receipt.read_at,
-        acknowledged_at=receipt.acknowledged_at,
-        follow_up_required_at=receipt.follow_up_required_at,
-        updated_by=receipt.updated_by,
-        created_at=receipt.created_at,
-        updated_at=receipt.updated_at,
-    )
-
-
-def _handover_response(session: Session, handover: Handover) -> HandoverResponse:
-    receipts = session.scalars(
-        select(HandoverReceipt)
-        .where(HandoverReceipt.handover_id == handover.handover_id)
-        .order_by(HandoverReceipt.id)
-    ).all()
-    return HandoverResponse(
-        handover_id=handover.handover_id,
-        channel_id=handover.channel_id,
-        title=handover.title,
-        body=handover.body,
-        source_type=handover.source_type,
-        source_id=handover.source_id,
-        source_version_id=handover.source_version_id,
-        status=handover.status,
-        created_by=handover.created_by,
-        sent_at=handover.sent_at,
-        created_at=handover.created_at,
-        updated_at=handover.updated_at,
-        receipts=[_receipt_response(receipt) for receipt in receipts],
     )
 
 
@@ -775,37 +705,113 @@ def create_handover(
     session: Annotated[Session, Depends(get_db_session)],
 ) -> HandoverResponse:
     channel = _get_channel(session, request.channel_id)
-    if channel.status != "ACTIVE":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Notification channel is not active.")
     _ensure_channel_member(session, channel.channel_id, current_user)
     source_type = None
     if request.source_type is not None:
         source_type = _normalize_choice(request.source_type, HANDOVER_SOURCE_TYPES, "sourceType")
+    source_id = _clean_optional(request.source_id)
+    source_version_id = _clean_optional(request.source_version_id)
+    entry_source = request.entry_source.strip().lower()
+    if entry_source not in {"field_user", "android_field_terminal", "windows_client"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="entrySource has an unsupported value.",
+        )
+    device_id = _clean_optional(request.device_id)
+    idempotency_key = _clean_idempotency_key(request.idempotency_key)
+    if entry_source == "android_field_terminal":
+        if current_user.device_id is None or device_id != current_user.device_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "DEVICE_NOT_APPROVED",
+                    "message": "Android 인수인계 단말 ID가 현재 승인 세션과 다릅니다.",
+                },
+            )
+        if idempotency_key is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Android handover idempotencyKey is required.",
+            )
     recipient_ids = []
     for recipient_id in request.recipient_ids:
-        user_id = _validate_user_id(session, recipient_id, "recipientIds")
+        user_id = recipient_id.strip()
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="recipientIds must not contain empty values.",
+            )
         if user_id in recipient_ids:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="recipientIds must not contain duplicate values.",
             )
-        if _get_active_member(session, channel.channel_id, user_id) is None:
+        recipient_ids.append(user_id)
+
+    title = request.title.strip()
+    body = request.body.strip()
+    if idempotency_key is not None:
+        existing = session.scalar(
+            select(Handover).where(Handover.idempotency_key == idempotency_key)
+        )
+        if existing is not None:
+            if handover_matches_request(
+                session,
+                existing,
+                channel_id=channel.channel_id,
+                title=title,
+                body=body,
+                source_type=source_type,
+                source_id=source_id,
+                source_version_id=source_version_id,
+                recipient_ids=recipient_ids,
+                entry_source=entry_source,
+                device_id=device_id,
+                created_by=current_user.user_id,
+            ):
+                return handover_response(session, existing)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "IDEMPOTENCY_KEY_REUSED",
+                    "message": "같은 인수인계 멱등키가 다른 요청에 사용되었습니다.",
+                },
+            )
+
+    if channel.status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Notification channel is not active.",
+        )
+    if entry_source == "android_field_terminal":
+        ensure_android_handover_source(
+            session,
+            channel.channel_id,
+            source_type,
+            source_id,
+            source_version_id,
+        )
+    for recipient_id in recipient_ids:
+        _validate_user_id(session, recipient_id, "recipientIds")
+        if _get_active_member(session, channel.channel_id, recipient_id) is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="recipientIds must reference active channel members.",
             )
-        recipient_ids.append(user_id)
 
     handover = Handover(
         handover_id=_new_public_id("handover"),
+        idempotency_key=idempotency_key,
         channel_id=channel.channel_id,
-        title=request.title.strip(),
-        body=request.body.strip(),
+        title=title,
+        body=body,
         source_type=source_type,
-        source_id=_clean_optional(request.source_id),
-        source_version_id=_clean_optional(request.source_version_id),
+        source_id=source_id,
+        source_version_id=source_version_id,
         status="SENT",
         created_by=current_user.user_id,
+        entry_source=entry_source,
+        device_id=device_id,
         sent_at=datetime.now(timezone.utc),
     )
     session.add(handover)
@@ -841,11 +847,46 @@ def create_handover(
             target_id=handover.handover_id,
             target_title=handover.title,
             message=f"Handover created: {handover.title}.",
+            after_value=json.dumps(
+                {
+                    "entry_source": entry_source,
+                    "device_id": device_id,
+                    "idempotency_key": idempotency_key,
+                },
+                sort_keys=True,
+            ),
         )
     )
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        existing = (
+            session.scalar(select(Handover).where(Handover.idempotency_key == idempotency_key))
+            if idempotency_key is not None
+            else None
+        )
+        if existing is not None and handover_matches_request(
+            session,
+            existing,
+            channel_id=channel.channel_id,
+            title=title,
+            body=body,
+            source_type=source_type,
+            source_id=source_id,
+            source_version_id=source_version_id,
+            recipient_ids=recipient_ids,
+            entry_source=entry_source,
+            device_id=device_id,
+            created_by=current_user.user_id,
+        ):
+            return handover_response(session, existing)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Handover could not be saved because of a database constraint.",
+        ) from exc
     session.refresh(handover)
-    return _handover_response(session, handover)
+    return handover_response(session, handover)
 
 
 @router.get("/handovers", response_model=list[HandoverResponse])
@@ -865,7 +906,7 @@ def list_handovers(
         .limit(limit)
     )
     handovers = session.scalars(statement).all()
-    return [_handover_response(session, handover) for handover in handovers]
+    return [handover_response(session, handover) for handover in handovers]
 
 
 @router.get("/handovers/{handover_id}", response_model=HandoverResponse)
@@ -878,7 +919,7 @@ def get_handover(
     if handover is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Handover not found.")
     _ensure_channel_member(session, handover.channel_id, current_user)
-    return _handover_response(session, handover)
+    return handover_response(session, handover)
 
 
 @router.patch("/handovers/{handover_id}/receipts/{receipt_id}", response_model=HandoverResponse)
@@ -909,7 +950,7 @@ def update_handover_receipt(
     target_status = _normalize_choice(request.receipt_status, RECEIPT_STATUSES, "receiptStatus")
     target_note = _clean_optional(request.note)
     if receipt.receipt_status == target_status and receipt.note == target_note:
-        return _handover_response(session, handover)
+        return handover_response(session, handover)
     now = datetime.now(timezone.utc)
     receipt.receipt_status = target_status
     receipt.note = target_note
@@ -951,4 +992,4 @@ def update_handover_receipt(
     )
     session.commit()
     session.refresh(handover)
-    return _handover_response(session, handover)
+    return handover_response(session, handover)

@@ -2,7 +2,11 @@ package com.flownote.fieldapp;
 
 import org.junit.Test;
 
+import java.util.Arrays;
+import java.util.Collections;
+
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public final class ApiContractTest {
@@ -23,6 +27,11 @@ public final class ApiContractTest {
         assertEquals(
                 "/api/v1/handovers/handover_1/receipts/receipt_1",
                 ApiPaths.handoverReceipt("handover_1", "receipt_1")
+        );
+        assertEquals("/api/v1/notification-channels", ApiPaths.NOTIFICATION_CHANNELS);
+        assertEquals(
+                "/api/v1/notification-channels/channel_1/members",
+                ApiPaths.channelMembers("channel_1")
         );
     }
 
@@ -77,5 +86,68 @@ public final class ApiContractTest {
         assertTrue(draft.canSend());
         assertEquals("signal", draft.normalizedInputMode());
         assertEquals("android:tablet-line-a-01:local-1", draft.idempotencyKey);
+    }
+
+    @Test
+    public void handoverDraftRequiresChannelRecipientSourceAndIdentity() {
+        HandoverDraft draft = new HandoverDraft(
+                "local-handover-1",
+                "channel_1",
+                "야간조 확인",
+                "다음 조에서 압력 수치를 확인하세요.",
+                "work_record",
+                "work-record-1",
+                null,
+                Arrays.asList("user-b", "user-b", "user-c"),
+                "tablet-line-a-01",
+                "user-a",
+                null
+        );
+
+        assertTrue(draft.canQueue());
+        assertEquals("WORK_RECORD", draft.sourceType);
+        assertEquals(Arrays.asList("user-b", "user-c"), draft.recipientIds);
+        assertEquals(
+                "android:tablet-line-a-01:handover:local-handover-1",
+                draft.idempotencyKey
+        );
+    }
+
+    @Test
+    public void handoverDraftRejectsFreeMessageWithoutOperationalSource() {
+        HandoverDraft draft = new HandoverDraft(
+                "local-handover-2",
+                "channel_1",
+                "자유 메시지",
+                "원천 연결이 없습니다.",
+                "CHAT",
+                null,
+                null,
+                Collections.singletonList("user-b"),
+                "tablet-line-a-01",
+                "user-a",
+                null
+        );
+
+        assertFalse(draft.canQueue());
+    }
+
+    @Test
+    public void authenticationRejectionDistinguishesInactiveDeviceFromRoleDenial() {
+        assertTrue(FlowNoteApiClient.isAuthenticationRejected(
+                new java.io.IOException("HTTP 401: expired")
+        ));
+        assertTrue(FlowNoteApiClient.isAuthenticationRejected(
+                new java.io.IOException("HTTP 403: {\"code\":\"DEVICE_NOT_APPROVED\"}")
+        ));
+        assertFalse(FlowNoteApiClient.isAuthenticationRejected(
+                new java.io.IOException("HTTP 403: {\"code\":\"PERMISSION_DENIED\"}")
+        ));
+    }
+
+    @Test
+    public void legacyPhotoPreviewUsesBoundedPowerOfTwoSampling() {
+        assertEquals(4, PhotoPreviewLoader.sampleSize(2400, 1600, 320, 180));
+        assertEquals(1, PhotoPreviewLoader.sampleSize(300, 160, 320, 180));
     }
 }

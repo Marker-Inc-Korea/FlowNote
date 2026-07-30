@@ -41,12 +41,22 @@ public final class NotificationPollingService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        sessionStore = new SecureSessionStore(this);
-        outbox = new OfflineQueueStore(this);
         preferences = getSharedPreferences(SecureSessionStore.PREFERENCES_NAME, MODE_PRIVATE);
         runId = "ANDROID-DELIVERY-" + UUID.randomUUID();
         preferences.edit().putString("delivery_run_id", runId).commit();
         createChannels();
+        try {
+            sessionStore = new SecureSessionStore(this);
+            outbox = new OfflineQueueStore(this);
+        } catch (RuntimeException exc) {
+            Log.e(TAG, runId + " secure_storage_unavailable", exc);
+            startForeground(
+                    SERVICE_NOTIFICATION_ID,
+                    serviceNotification("보안 저장소 오류 · 관리자 점검 필요")
+            );
+            stopSelf();
+            return;
+        }
         startForeground(SERVICE_NOTIFICATION_ID, serviceNotification("알림 연결 준비 중"));
         executor.scheduleWithFixedDelay(this::pollOnce, 0, POLL_SECONDS, TimeUnit.SECONDS);
     }
@@ -59,7 +69,9 @@ public final class NotificationPollingService extends Service {
     @Override
     public void onDestroy() {
         executor.shutdownNow();
-        outbox.close();
+        if (outbox != null) {
+            outbox.close();
+        }
         super.onDestroy();
     }
 
@@ -80,7 +92,12 @@ public final class NotificationPollingService extends Service {
             pollWithCurrentSession(true);
         } catch (Exception exc) {
             Log.w(TAG, runId + " poll_failed at=" + Instant.now() + " " + exc.getMessage());
-            updateServiceNotification("연결 복구 대기 중");
+            if (UserErrorMessage.isSecureStorageFailure(exc)) {
+                updateServiceNotification("보안 저장소 오류 · 관리자 점검 필요");
+                stopSelf();
+            } else {
+                updateServiceNotification("연결 복구 대기 중");
+            }
         } finally {
             pollRunning = false;
         }
@@ -165,6 +182,7 @@ public final class NotificationPollingService extends Service {
                         : "알림 연결 정상 · 전송 대기 " + pendingOutbox + "건"
         );
         Log.i(TAG, runId + " outbox_ok success=" + outboxSummary.successCount
+                + " partial=" + outboxSummary.partialSuccessCount
                 + " failed=" + outboxSummary.failedCount
                 + " pending=" + pendingOutbox
                 + " at=" + Instant.now());
