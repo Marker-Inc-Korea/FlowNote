@@ -2,7 +2,7 @@
 
 ## 최신 유효 Windows x64 통합 기준선
 
-2026-07-30 현재 유효한 무생략 통합 기준선은 아직 없다. 아래 표는 기준선 확정 여부를 확인하는 단일 현황표다. `PASSED` 실행이 나온 뒤에도 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 재현 가능한 기준선으로 확정한다.
+2026-07-31 현재 유효한 무생략 통합 기준선은 아직 없다. 아래 표는 기준선 확정 여부를 확인하는 단일 현황표다. `PASSED` 실행이 나온 뒤에도 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 재현 가능한 기준선으로 확정한다.
 
 | 항목 | 최신 유효 기준선 | 재현 실행 |
 | --- | --- | --- |
@@ -10,7 +10,7 @@
 | `run_id` | 없음 | 없음 |
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
-| FastAPI | 현재 코드 160건, 스크립트 고정값 155건·단계 안내 160건으로 불일치 | 고정값과 안내 정렬 뒤 Windows 무생략 실행 대기 |
+| FastAPI | 현재 코드·스크립트 guard 160건, macOS 수집 총/고유/중복 160/160/0·JUnit 160/160 | Windows x64 수집·JUnit 무생략 실행 대기 |
 | WPF Core | 현재 macOS 실행 84/84, 스크립트 guard 84건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 목표 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
@@ -24,13 +24,25 @@
 
 변경된 실패 안내는 PowerShell SDK 보조 호스트로 macOS 환경 게이트를 의도적으로 실패시킨 `candidate1-macos-ux-failure-20260730-01`에서 확인했다. 콘솔·단계 로그·`verification-summary.json`은 현재 단계, 기대값, 실제값, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 모두 한 화면 구조로 남겼다. 현재 호스트는 macOS ARM64라 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
 
+## 2026-07-31 후보 1 FastAPI 160건 기준 정렬과 실패 안내
+
+FastAPI 155건 guard가 반영된 뒤 커밋 `d3b5a9b`에서 복구 장애 4개 매개변수 사례와 불완전 복구 문맥 1개가 추가되어 node ID가 5개 늘었다. 현재 macOS 보조 검증은 pytest node ID 총 160건·고유 160건·중복 0건과 JUnit total/passed 160/160, failure/error/skipped 0건을 확인했다. 스크립트의 FastAPI guard를 160으로 바꾸고 시작 요약과 단계별 기대 문구가 이 한 값을 사용하도록 정리했다.
+
+FastAPI 수집 단계는 원본 출력, node ID 목록, 중복 node ID 목록과 종료 코드를 보존한다. 실행 단계는 pytest 종료 코드와 JUnit total/passed/failure/error/skipped, 수집-JUnit 일치 여부를 요약에 남긴다. 의도적으로 수집 159건과 불일치 JUnit을 주입한 `scripts/test-verify-preserved-tests.ps1`은 한글 기대값·실제값, 보존 데이터와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 안내를 확인한다. 기존 RunId나 증거 폴더의 재사용·삭제, SQLite와 테스트 산출물의 초기화를 권하지 않는 것도 함께 검사한다. PowerShell SDK 보조 호스트로 실행한 구문 검사와 단위 검증도 모두 통과했다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-verify-preserved-tests.ps1
+```
+
+현재 호스트는 macOS ARM64이며 저장소의 Windows 가상환경 Python은 PE32+ x86-64 실행 파일이어서 Windows x64 수집과 무생략 표준 실행은 수행하지 못했다. Windows x64에서 새 `run_id`로 FastAPI 수집 160/160/0과 JUnit 160/160을 다시 확인하고, 나머지 필수 단계를 포함한 `partial_run=false`, `PASSED` 실행을 같은 clean 소스 커밋에서 2회 확보하기 전까지 통합 기준선은 `대기`다. 이번 검증에서 생성된 JUnit, 수집 목록, 로그와 기존 누적 데이터는 삭제하거나 초기화하지 않았다.
+
 ## 2026-07-30 작업 201 전체 Markdown 현재 코드 재대조
 
 Git이 추적하는 Markdown은 43개다. 작업 정책 원문 `AGENTS.md`와 현장 의견 원문은 제품 코드 설명과 분리하고, 가상환경·빌드 캐시·`data/local`·`_workspace`의 Markdown은 생성 또는 누적 검증 산출물이므로 수정하지 않았다. 나머지 제품·구현 문서를 현재 FastAPI, Windows WPF, Android와 운영·검증 스크립트에 대조했다. 날짜별 실행 수치와 결정 당시 설명은 역사적 증거로 보존하고, 과거 문서 안에서도 현재 코드 기준으로 따로 정리한 문장만 갱신했다.
 
 루트 `GET /`를 포함한 OpenAPI는 132개 method/path 조합이며 `services/api/README.md`의 132개 표와 누락·초과 없이 일치한다. SQLAlchemy ORM은 60개 테이블이고 `Settings`와 `.env.example`은 각각 45개 항목으로 일치한다. 현재 Android에는 인수인계 작성과 Keystore AES-GCM 보호 outbox 재전송이 구현되어 있지만 일부 상위 문서에는 확인만 가능하거나 작성 미구현으로 남아 있었다. 해당 설명을 현재 구현으로 바꾸고 FieldComment·사진으로 한정했던 Android outbox 범위에 신규 인수인계를 포함했다.
 
-FastAPI는 중복 없는 160개 node ID를 수집해 160건 모두 통과했고 Ruff도 통과했다. WPF Core 84건도 모두 통과했다. Android Studio JBR 21을 사용한 단위 테스트는 24/24, failure/error/skipped 0건이었고 debug 빌드와 lint도 통과했다. 표준 스크립트의 실제 고정값은 FastAPI 155건·WPF Core 84건·Android 24건인데 FastAPI 단계 안내만 160건으로 바뀌어 현재 코드와 서로 다르다. 이번 요청은 문서 갱신 범위이므로 스크립트 코드는 수정하지 않았고, 이 차이를 현재 기준 문서의 통합 기준선 차단 사유로 반영했다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하거나 초기화하지 않았다.
+FastAPI는 중복 없는 160개 node ID를 수집해 160건 모두 통과했고 Ruff도 통과했다. WPF Core 84건도 모두 통과했다. Android Studio JBR 21을 사용한 단위 테스트는 24/24, failure/error/skipped 0건이었고 debug 빌드와 lint도 통과했다. 이 2026-07-30 문서 작업 당시 표준 스크립트의 실제 고정값은 FastAPI 155건·WPF Core 84건·Android 24건이었고 FastAPI 단계 안내만 160건으로 바뀌어 코드와 서로 달랐다. 해당 작업은 문서 갱신 범위여서 스크립트 코드는 수정하지 않았고, 당시 차이를 통합 기준선 차단 사유로 반영했다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하거나 초기화하지 않았다.
 
 ## 2026-07-30 후보 7 AI 근거 준비도와 운영자 UX
 
@@ -384,8 +396,8 @@ JDK 21 등 다른 Java 버전에서 우연히 빌드되는 결과는 표준 기�
 1. Windows, PowerShell, .NET Desktop, Python, JDK, Android SDK와 Git 버전을 점검하고 `environment.json`을 쓴다.
 2. `.gitignore`가 알려진 테스트/빌드 산출물 경로를 제외하는지 점검한다.
 3. 실행 전 커밋 SHA를 기록하고 `git status --porcelain=v1 --untracked-files=all`이 비어 있는지 확인한다. `git ls-files`에서는 테스트 산출물, 빌드 결과, 개인 로컬 경로가 잡히지 않아야 한다.
-4. `services/api`에서 FastAPI pytest node ID 160개를 수집하고 중복 node ID가 0개인지 확인한다. 수집 목록은 `fastapi-collected-tests.txt`로 보존한다. 현재 스크립트의 실제 고정값은 155개이고 단계 안내는 160개이므로 고정값을 현재 수집 수와 맞추기 전에는 이 단계가 실패한다.
-5. FastAPI 고정값과 안내를 현재 코드에 맞춘 뒤 pytest를 실행하고 실행 ID별 JUnit을 보존한다. 수집 총수·고유 node ID 수·JUnit 실행 수가 모두 160인지 직접 대조한다.
+4. `services/api`에서 FastAPI pytest node ID 160개를 수집하고 고유 160개·중복 0개인지 확인한다. 원본 출력은 `fastapi-collection.log`, node ID는 `fastapi-collected-tests.txt`, 중복 목록은 `fastapi-duplicate-node-ids.txt`로 보존한다.
+5. pytest를 실행하고 실행 ID별 JUnit을 보존한다. 수집 총수·고유 node ID 수·JUnit total/passed가 모두 160이고 failure/error/skipped가 0인지 직접 대조한다.
 6. WPF Core 테스트를 warning-as-error로 실행하고 수집·고유 테스트와 TRX의 total/passed가 모두 84인지 확인한다.
 7. WPF 앱을 warning-as-error로 빌드해 compiler warning과 error가 모두 0인지 확인한다.
 8. WPF 공통 DB의 스모크 전 `quick_check`와 `foreign_key_check`를 별도 JSON 증거로 확인한다.
