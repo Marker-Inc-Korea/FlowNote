@@ -62,6 +62,60 @@ def test_manifest_is_stable_and_epoch_increment_is_explicit() -> None:
             session.rollback()
 
 
+@pytest.mark.parametrize(
+    "fault_code",
+    [
+        "partial_restore",
+        "old_database_new_files",
+        "missing_file",
+        "wrong_server_epoch",
+    ],
+)
+def test_restore_drill_manifest_exposes_complete_fail_closed_context(
+    fault_code: str,
+) -> None:
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        database_url=f"sqlite:///{TEST_DB_PATH.as_posix()}",
+        test_database_url=f"sqlite:///{TEST_DB_PATH.as_posix()}",
+        storage_root=str(API_ROOT / "storage" / "sync-reconciliation-tests"),
+        restore_fault_code=fault_code,
+        restore_block_reason="복구 실기 장애 주입",
+        restore_pilot_run_id=f"PILOT-20260730-1500-{fault_code.upper()}-001",
+        restore_backup_set_id="BACKUP-RESTORE-001",
+        restore_approval_id="RESTORE-APPROVAL-001",
+        restore_responsible_owner="data-owner-01",
+    )
+    with TestClient(create_app(settings)) as client:
+        response = client.get("/api/v1/health/sync-manifest")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["restore_fault_code"] == fault_code
+    assert body["restore_block_reason"] == "복구 실기 장애 주입"
+    assert body["restore_backup_set_id"] == "BACKUP-RESTORE-001"
+    assert body["restore_approval_id"] == "RESTORE-APPROVAL-001"
+    assert body["restore_responsible_owner"] == "data-owner-01"
+    assert body["safe_convergence"] is False
+
+
+def test_restore_drill_manifest_rejects_incomplete_context() -> None:
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        database_url=f"sqlite:///{TEST_DB_PATH.as_posix()}",
+        test_database_url=f"sqlite:///{TEST_DB_PATH.as_posix()}",
+        storage_root=str(API_ROOT / "storage" / "sync-reconciliation-tests"),
+        restore_fault_code="missing_file",
+    )
+    with TestClient(create_app(settings)) as client:
+        response = client.get("/api/v1/sync/manifest")
+
+    assert response.status_code == 503
+    assert "필수 식별자" in response.json()["detail"]
+
+
 def test_reconciliation_classifies_and_preserves_divergence_after_approval() -> None:
     suffix = uuid4().hex
     key = f"wpf:document:recon-{suffix}:v1"

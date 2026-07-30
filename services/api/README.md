@@ -194,6 +194,12 @@ Useful settings:
 - `FLOWNOTE_CUSTOMER_SCOPE`: single-customer server boundary; falls back to `FLOWNOTE_AI_CUSTOMER_SCOPE`
 - `FLOWNOTE_SITE_SCOPE`: single-site server boundary; falls back to `FLOWNOTE_AI_SITE_SCOPE`
 - `FLOWNOTE_FIELD_COMMENT_INDEPENDENT_REVIEW_REQUIRED`: default `true`
+- `FLOWNOTE_RESTORE_FAULT_CODE`: default empty; 복구 장애 실기 전용이며 `partial_restore`, `old_database_new_files`, `missing_file`, `wrong_server_epoch`만 허용
+- `FLOWNOTE_RESTORE_BLOCK_REASON`: default empty; 복구 장애 차단 사유
+- `FLOWNOTE_RESTORE_PILOT_RUN_ID`: default empty; 장애 실기 run ID
+- `FLOWNOTE_RESTORE_BACKUP_SET_ID`: default empty; 복구에 사용한 익명 backup set ID
+- `FLOWNOTE_RESTORE_APPROVAL_ID`: default empty; 복구 승인 ID
+- `FLOWNOTE_RESTORE_RESPONSIBLE_OWNER`: default empty; 담당자 역할 ID
 - `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED`: default `false`
 - `FLOWNOTE_AI_READINESS_GATE_ENABLED`: default `true`; 현재 고객·현장·DB scope의 근거/승인 질문/회귀 기준 미달 시 운영 provider 호출 차단
 - `FLOWNOTE_AI_PROVIDER`: default `UNCONFIGURED`
@@ -214,6 +220,8 @@ Useful settings:
 
 `FLOWNOTE_DATABASE_URL`은 FastAPI 서버 전용 DB를 가리켜야 하며 WPF의 `FLOWNOTE_LOCAL_DATA_DIR`/`FLOWNOTE_LOCAL_DATABASE_PATH`와 같은 SQLite 파일을 사용하지 않는다. 초기화는 기존 WPF `documents`/`document_versions` 열 구성을 감지하면 `Base.metadata.create_all()` 전에 `RuntimeError`로 중단해 서버 테이블을 추가하지 않는다.
 
+`FLOWNOTE_RESTORE_FAULT_CODE`를 설정하면 나머지 복구 식별자 네 개도 모두 있어야 한다. 하나라도 빠지거나 지원하지 않는 장애 코드이면 sync manifest가 `503`으로 실패한다. 이 값은 별도 PC 복구 실기에서 WPF 차단·재결합 증거를 묶는 표지이며 운영 원본 데이터에 장애를 만드는 기능이 아니다. 승인 뒤에는 서버를 정상 종료하고 `FLOWNOTE_RESTORE_*` 값을 제거해 다시 시작해야 정상 manifest가 반환된다. 익명 ID와 담당자 역할 ID만 사용하고 고객명, 담당자 실명, 경로와 비밀값은 기록하지 않는다.
+
 ## Verification
 
 ```powershell
@@ -221,7 +229,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-07-30, the current code and `scripts/verify-preserved-tests.ps1` guards are aligned at 154 FastAPI tests, 84 WPF Core tests, and 20 Android tests. The current macOS component run passed all 84 WPF Core tests. Future count changes must be justified by test changes and matched against FastAPI collection/unique node IDs, pytest JUnit, WPF collection/unique IDs and TRX, and Android JUnit. This is not an integrated baseline because the Windows x64 collection/TRX comparison, shared-DB smoke, and all checks have not run twice under one clean source commit.
+As of 2026-07-30, the current code and `scripts/verify-preserved-tests.ps1` guards are aligned at 160 FastAPI tests, 84 WPF Core tests, and 20 Android tests. The current macOS component run passed all 84 WPF Core tests. Future count changes must be justified by test changes and matched against FastAPI collection/unique node IDs, pytest JUnit, WPF collection/unique IDs and TRX, and Android JUnit. This is not an integrated baseline because the Windows x64 collection/TRX comparison, shared-DB smoke, and all checks have not run twice under one clean source commit.
 
 The ORM also includes `ai_sensitive_data_policies`; the active customer/site policy extends the provider-boundary deny terms and customer identifiers. There is no management API for that sensitive-data policy. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. Query and retention audit operations are restricted to the configured customer/site scope. The server lifespan runs expired-query retention on the configured interval, while `system-admin` can run scoped bulk retention, expire one query, or place and release a reasoned legal hold. An active hold blocks all three expiry paths. WPF mutations send a stable `operationKey` and the latest detail `stateTag`; duplicate/lost-response retries return the original result, while stale, already-expired, already-released, and concurrent operations return `409`. Legal-hold rows and linked audit history are never deleted by release or expiry.
 

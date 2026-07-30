@@ -23,4 +23,7 @@ def sync_manifest_health_check(request: Request) -> dict[str, object]:
     database = get_database(request)
     database.check_connection()
     with database.session() as session:
-        return {"status": "ok", **manifest_payload(session)}
+        return {
+            "status": "ok",
+            **manifest_payload(session, request.app.state.settings),
+        }

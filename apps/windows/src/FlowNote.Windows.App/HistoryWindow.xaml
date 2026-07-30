@@ -169,6 +169,16 @@
                                     BorderThickness="1"
                                     CornerRadius="4">
                                 <StackPanel>
+                                    <TextBlock Text="연결 상태" FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryTextBrush}" />
+                                    <TextBlock x:Name="RecoveryConnectionStatusTextBlock"
+                                               Margin="0,2,0,8" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <TextBlock Text="안전 수렴 상태" FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryTextBrush}" />
+                                    <TextBlock x:Name="RecoveryConvergenceStatusTextBlock"
+                                               Margin="0,2,0,8" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryTextBrush}" />
                                     <TextBlock Text="차단 원인" FontWeight="SemiBold"
                                                Foreground="{StaticResource PrimaryTextBrush}" />
                                     <TextBlock x:Name="RecoveryBlockCauseTextBlock"
@@ -183,6 +193,14 @@
                                                Foreground="{StaticResource PrimaryTextBrush}" />
                                     <TextBlock x:Name="RecoveryProhibitedActionsTextBlock"
                                                Margin="0,2,0,8" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <TextBlock Text="담당자와 증거 연결" FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryTextBrush}" />
+                                    <TextBlock x:Name="RecoveryOwnerTextBlock"
+                                               Margin="0,2,0,2" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <TextBlock x:Name="RecoveryEvidenceBindingTextBlock"
+                                               Margin="0,0,0,8" TextWrapping="Wrap"
                                                Foreground="{StaticResource SecondaryTextBrush}" />
                                     <TextBlock Text="다음 단계" FontWeight="SemiBold"
                                                Foreground="{StaticResource PrimaryTextBrush}" />
@@ -200,8 +218,10 @@
                                          ToolTip="관리자 승인 사유" />
                                 <Button Width="116" Height="32" Margin="0,0,8,0"
                                         Content="판정 실행" Click="CreateReconciliationButton_Click" />
-                                <Button Width="116" Height="32"
+                                <Button Width="116" Height="32" Margin="0,0,8,0"
                                         Content="승인 적용" Click="ApplyReconciliationButton_Click" />
+                                <Button Width="128" Height="32"
+                                        Content="업무 재개 확인" Click="ResumeOperationButton_Click" />
                             </StackPanel>
                         </Grid>
                     </Border>

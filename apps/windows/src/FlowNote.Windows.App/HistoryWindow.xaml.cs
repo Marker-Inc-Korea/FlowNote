@@ -13,13 +13,15 @@ public partial class HistoryWindow : Window
     private readonly ServerReconciliationService serverReconciliation;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly string? serverUserId;
+    private readonly Func<Task<string>>? resumeServerTraffic;
 
     public HistoryWindow(
         HistoryService history,
         ServerSyncService serverSync,
         ServerReconciliationService serverReconciliation,
         FlowNoteServerDocumentClient? serverDocumentClient,
-        string? serverUserId)
+        string? serverUserId,
+        Func<Task<string>>? resumeServerTraffic = null)
     {
         InitializeComponent();
         this.history = history;
@@ -27,6 +29,7 @@ public partial class HistoryWindow : Window
         this.serverReconciliation = serverReconciliation;
         this.serverDocumentClient = serverDocumentClient;
         this.serverUserId = serverUserId;
+        this.resumeServerTraffic = resumeServerTraffic;
         RefreshAll();
     }
 
@@ -53,9 +56,13 @@ public partial class HistoryWindow : Window
             : $"검토 대기 run: {reviewRun}. REBOUND·REQUEUE·CONFLICT 전 항목을 확인한 뒤 승인 사유를 입력하세요.";
         ReconciliationSummaryTextBlock.Text =
             $"{guidance.Status} {ReconciliationSummaryTextBlock.Text}";
+        RecoveryConnectionStatusTextBlock.Text = guidance.ConnectionStatus;
+        RecoveryConvergenceStatusTextBlock.Text = guidance.Status;
         RecoveryBlockCauseTextBlock.Text = guidance.BlockCause;
         RecoveryPreservedSourcesTextBlock.Text = guidance.PreservedSources;
         RecoveryProhibitedActionsTextBlock.Text = guidance.ProhibitedActions;
+        RecoveryOwnerTextBlock.Text = guidance.ResponsibleOwner;
+        RecoveryEvidenceBindingTextBlock.Text = guidance.EvidenceBinding;
         RecoveryNextStepTextBlock.Text = guidance.NextStep;
     }
 
@@ -97,14 +104,61 @@ public partial class HistoryWindow : Window
         try
         {
             var actor = string.IsNullOrWhiteSpace(serverUserId) ? "관리자" : serverUserId!;
+            var bindingBeforeApproval = serverReconciliation.GetBinding(
+                serverDocumentClient);
+            var hasExplicitFaultMarker = !string.IsNullOrWhiteSpace(
+                bindingBeforeApproval?.RestoreFaultCode);
             var run = await serverReconciliation.ApplyRunAsync(
                 serverDocumentClient, runId, actor, reason);
+            if (hasExplicitFaultMarker)
+            {
+                RefreshAll();
+                ReconciliationSummaryTextBlock.Text =
+                    $"{run.RunId} 승인 적용 완료. 복구 연습 서버를 정상 종료하고 " +
+                    "FLOWNOTE_RESTORE_* 장애 표지를 제거한 뒤 서버를 다시 시작하세요. " +
+                    "그 전에는 자동 전송과 polling을 재개하지 않습니다. 재시작 뒤 manifest가 " +
+                    "정상임을 확인하고 동기화 큐에서 일반 재시도를 실행하세요. 안전 수렴은 별도 " +
+                    "DB·파일·중복 mutation·권한 우회 증거 통과 뒤 확정합니다.";
+                return;
+            }
             var syncResult = await serverSync.RetryPendingAsync(serverDocumentClient, serverUserId);
+            var pollingResult = resumeServerTraffic is null
+                ? "알림 polling 재개는 주 화면에서 다시 확인하세요."
+                : await resumeServerTraffic();
             RefreshAll();
             ReconciliationSummaryTextBlock.Text =
-                $"{run.RunId} 승인 적용 완료. cursor를 0부터 재추적하며 신규 전송을 재개했습니다. {syncResult.Message}";
+                $"{run.RunId} 승인 적용 완료. cursor 재추적과 전송 재개 절차를 시작했습니다. " +
+                $"이 상태는 연결 재개이며 안전 수렴 확정이 아닙니다. DB·파일·중복 mutation·권한 우회 " +
+                $"검증 증거가 모두 통과해야 안전 수렴으로 판정합니다. {pollingResult} {syncResult.Message}";
         }
         catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            RefreshAll();
+            ReconciliationSummaryTextBlock.Text = exception.Message;
+        }
+    }
+
+    private async void ResumeOperationButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (serverDocumentClient is null || resumeServerTraffic is null)
+        {
+            ReconciliationSummaryTextBlock.Text =
+                "서버 연결과 주 화면의 polling 실행 상태를 확인할 수 없습니다.";
+            return;
+        }
+        try
+        {
+            var syncResult = await serverSync.RetryPendingAsync(
+                serverDocumentClient,
+                serverUserId);
+            var pollingResult = await resumeServerTraffic();
+            RefreshAll();
+            ReconciliationSummaryTextBlock.Text =
+                $"{pollingResult} {syncResult.Message} 연결과 업무 재개를 확인했지만 안전 수렴은 " +
+                "DB·파일·중복 mutation·권한 우회 증거가 모두 통과한 뒤 확정합니다.";
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or HttpRequestException)
         {
             RefreshAll();
             ReconciliationSummaryTextBlock.Text = exception.Message;

@@ -25,7 +25,7 @@
 | `notifications` | 문서/FieldComment/작업순서 알림 |
 | `server_notification_cursors` | WPF 서버 scope·사용자별 마지막 성공 알림 cursor, 서버 관측 cursor, 초기 따라잡기/역행 상태, 갱신·관리자 초기화 정보 |
 | `server_notification_messages` | WPF 서버 scope·사용자별 처리 완료 `message_id` 멱등 이력 |
-| `server_bindings` | 정규화 서버 URL별 승인 instance/epoch, 관측 instance/epoch, schema/API contract 범위와 `ACTIVE`/`RECONCILIATION_REQUIRED` 상태 |
+| `server_bindings` | 정규화 서버 URL별 승인·관측 instance/epoch, schema/API contract 범위, 복구 pilot run·backup set·승인·담당자·장애 코드와 `ACTIVE`/`RECONCILIATION_REQUIRED`·수렴 상태 |
 | `reconciliation_runs` | 서버 복구 경계 판정 run, 이전/현재 instance·epoch, trigger, 양쪽 cursor, 생성자·승인 사유와 상태 |
 | `reconciliation_items` | 로컬 큐 inventory별 `CONFIRMED`/`ABSENT`/`DIVERGED` 판정, 제안·적용 조치, 승인 종결 상태, 서버 ID/revision/hash와 해결 감사 |
 | `work_sequence_boards` | 작업순서 보드 |
@@ -440,5 +440,5 @@ WPF 사용자 관리는 서버 로그인 세션이 있으면 서버 계정 운�
 
 - 서버 `server_identity`는 단일 행이며 불변 `server_instance_id`, 단조 증가시키는 `server_epoch`, schema/API contract 범위를 가진다. DB 백업에는 instance ID가 포함되며 복구 직후 epoch 증가 절차로 복구 경계를 만든다.
 - 서버 `reconciliation_runs`와 `reconciliation_items`는 run, 원래 client item, 양쪽 hash, 이전·현재 server ID, 판정, 승인자·사유·종결 상태를 보존한다. 상태는 run `REVIEW_REQUIRED/APPLIED/FAILED`, item 판정 `CONFIRMED/ABSENT/DIVERGED`, 조치 `REBOUND/REQUEUE/CONFLICT`, 승인 종결 `REBOUND_CONFIRMED/REQUEUED_FOR_RETRY/APPROVED_CONFLICT`다. 실패 run과 divergence row는 삭제하지 않는다.
-- WPF `server_bindings`는 정규화 URL별 승인된 instance/epoch와 관측값을 함께 둔다. `RECONCILIATION_REQUIRED`에서는 자동 전송과 polling을 금지한다.
+- WPF `server_bindings`는 정규화 URL별 승인된 instance/epoch와 관측값, 복구 pilot run·backup set·승인·담당자·장애 코드, 수렴 상태를 함께 둔다. `RECONCILIATION_REQUIRED`와 `POST_APPROVAL_RESTART_REQUIRED`에서는 자동 전송과 polling을 금지한다. 정상 manifest를 다시 읽으면 장애 코드를 비우고 `POST_APPROVAL_VERIFICATION_REQUIRED`로 바꾸지만, 이 상태만으로 안전 수렴을 확정하지 않는다.
 - WPF `reconciliation_runs/items`는 서버 판정 원문과 로컬 적용 결과를 보존한다. 기존 `server_id_mappings`, `server_sync_queue`, `server_notification_cursors`, `server_notification_messages` 행은 삭제하지 않고 갱신 또는 종결 상태로 전환한다.

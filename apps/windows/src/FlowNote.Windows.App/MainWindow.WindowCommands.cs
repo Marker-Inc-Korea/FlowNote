@@ -61,7 +61,8 @@ public partial class MainWindow
             services.ServerSync,
             services.ServerReconciliation,
             serverDocumentClient,
-            currentUser.UserId)
+            currentUser.UserId,
+            ResumeServerTrafficAfterReconciliationAsync)
         {
             Owner = this
         };

@@ -27,6 +27,21 @@ public sealed record ServerSyncManifest
 
     [JsonPropertyName("restore_block_reason")]
     public string? RestoreBlockReason { get; init; }
+
+    [JsonPropertyName("restore_pilot_run_id")]
+    public string? RestorePilotRunId { get; init; }
+
+    [JsonPropertyName("restore_backup_set_id")]
+    public string? RestoreBackupSetId { get; init; }
+
+    [JsonPropertyName("restore_approval_id")]
+    public string? RestoreApprovalId { get; init; }
+
+    [JsonPropertyName("restore_responsible_owner")]
+    public string? RestoreResponsibleOwner { get; init; }
+
+    [JsonPropertyName("safe_convergence")]
+    public bool? SafeConvergence { get; init; }
 }
 
 public sealed record ReconciliationInventoryItemRequest
@@ -180,9 +195,18 @@ public sealed record ServerBindingRecord(
     string Status,
     string? ObservedServerInstanceId,
     int? ObservedServerEpoch,
-    string? BlockReason)
+    string? BlockReason,
+    string? RestorePilotRunId,
+    string? RestoreBackupSetId,
+    string? RestoreApprovalId,
+    string? RestoreResponsibleOwner,
+    string? RestoreFaultCode,
+    string ConvergenceStatus)
 {
     public bool ReconciliationRequired => Status == ServerEpochGuardService.ReconciliationRequiredStatus;
+    public bool TrafficBlocked =>
+        ReconciliationRequired ||
+        ConvergenceStatus == "POST_APPROVAL_RESTART_REQUIRED";
 }
 
 public sealed record LocalReconciliationItem(

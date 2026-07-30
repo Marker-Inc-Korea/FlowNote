@@ -182,7 +182,9 @@ public sealed class ServerReconciliationService(
         {
             return "EPOCH_CHANGED";
         }
-        var faultCode = ServerRecoveryGuidance.InferFaultCode(binding.BlockReason);
+        var faultCode = string.IsNullOrWhiteSpace(binding.RestoreFaultCode)
+            ? ServerRecoveryGuidance.InferFaultCode(binding.BlockReason)
+            : binding.RestoreFaultCode.Trim().ToLowerInvariant();
         if (faultCode is "partial_restore" or "old_database_new_files" or "missing_file" or "wrong_server_epoch")
         {
             return faultCode.ToUpperInvariant();
@@ -292,7 +294,8 @@ public sealed class ServerReconciliationService(
                 UPDATE server_bindings
                 SET server_instance_id = $instance, server_epoch = $epoch, status = 'ACTIVE',
                     observed_server_instance_id = $instance, observed_server_epoch = $epoch,
-                    block_reason = NULL, updated_at = $now, approved_by = $actor, approved_at = $now
+                    block_reason = NULL, updated_at = $now, approved_by = $actor, approved_at = $now,
+                    convergence_status = 'POST_APPROVAL_RESTART_REQUIRED'
                 WHERE server_scope = $scope;
                 """;
             binding.Parameters.AddWithValue("$instance", run.ServerInstanceId);

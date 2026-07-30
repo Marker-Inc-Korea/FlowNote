@@ -49,17 +49,24 @@ public sealed class ServerEpochGuardServiceTests
             Path.Combine(artifactDirectory, "flownote.local.sqlite"));
         database.Initialize();
         var service = new ServerEpochGuardService(database);
-        var manifest = Manifest("srv-restore", 2, 0) with
-        {
-            RestoreFaultCode = faultCode,
-            RestoreBlockReason = "자동 장애 주입 검증"
-        };
+        var manifest = FaultManifest(faultCode, "자동 장애 주입 검증");
 
         var binding = service.Observe(
             "https://factory-restore.example/", manifest, clientCursor: 0);
 
         Assert.True(binding.ReconciliationRequired);
         Assert.Contains("자동 장애 주입 검증", binding.BlockReason);
+        Assert.Equal("PILOT-20260730-FAULT-001", binding.RestorePilotRunId);
+        Assert.Equal("BACKUP-RESTORE-001", binding.RestoreBackupSetId);
+        Assert.Equal("RESTORE-APPROVAL-001", binding.RestoreApprovalId);
+        Assert.Equal("data-owner-01", binding.RestoreResponsibleOwner);
+        Assert.Equal(faultCode, binding.RestoreFaultCode);
+        Assert.Equal("APPROVAL_REQUIRED", binding.ConvergenceStatus);
+        var guidance = ServerRecoveryGuidance.FromBinding(binding);
+        Assert.Contains("안전 수렴", guidance.ConnectionStatus);
+        Assert.Equal("data-owner-01", guidance.ResponsibleOwner);
+        Assert.Contains("BACKUP-RESTORE-001", guidance.EvidenceBinding);
+        Assert.Contains("FLOWNOTE_RESTORE_*", guidance.NextStep);
         Assert.Throws<ServerReconciliationRequiredException>(() =>
             service.Observe(
                 "https://factory-restore.example/",
@@ -86,11 +93,7 @@ public sealed class ServerEpochGuardServiceTests
         database.Initialize();
         var guard = new ServerEpochGuardService(database);
         const string scope = "https://factory-fault-rejoin.example/";
-        var faultManifest = Manifest("srv-new", 2, 0) with
-        {
-            RestoreFaultCode = faultCode,
-            RestoreBlockReason = "복구 장애 주입"
-        };
+        var faultManifest = FaultManifest(faultCode, "복구 장애 주입");
         Assert.True(guard.Observe(scope, faultManifest, 0).ReconciliationRequired);
         SeedReconciliationState(database, scope);
 
@@ -107,18 +110,36 @@ public sealed class ServerEpochGuardServiceTests
 
         await service.ApplyRunAsync(
             client, run.RunId, "user-admin", $"{faultCode} 원천 대조 승인");
+        var awaitingRestart = guard.Get(scope);
+        Assert.NotNull(awaitingRestart);
+        Assert.False(awaitingRestart.ReconciliationRequired);
+        Assert.True(awaitingRestart.TrafficBlocked);
+        Assert.Equal(
+            "POST_APPROVAL_RESTART_REQUIRED",
+            awaitingRestart.ConvergenceStatus);
+        var markerStillPresent = guard.Observe(scope, faultManifest, clientCursor: 0);
+        Assert.False(markerStillPresent.ReconciliationRequired);
+        Assert.True(markerStillPresent.TrafficBlocked);
+
         var resumed = guard.Observe(
             scope,
             Manifest("srv-new", 2, 0),
             clientCursor: 0);
 
         Assert.False(resumed.ReconciliationRequired);
+        Assert.False(resumed.TrafficBlocked);
         using var connection = database.OpenConnection();
         Assert.Equal(
             "ACTIVE",
             ScalarText(
                 connection,
                 "SELECT status FROM server_bindings " +
+                "WHERE server_scope='https://factory-fault-rejoin.example/';"));
+        Assert.Equal(
+            "POST_APPROVAL_VERIFICATION_REQUIRED",
+            ScalarText(
+                connection,
+                "SELECT convergence_status FROM server_bindings " +
                 "WHERE server_scope='https://factory-fault-rejoin.example/';"));
         Assert.Equal(
             1L,
@@ -197,6 +218,18 @@ public sealed class ServerEpochGuardServiceTests
         ApiContractMax = 1,
         ServerCursor = cursor
     };
+
+    private static ServerSyncManifest FaultManifest(string faultCode, string reason) =>
+        Manifest("srv-new", 2, 0) with
+        {
+            RestoreFaultCode = faultCode,
+            RestoreBlockReason = reason,
+            RestorePilotRunId = "PILOT-20260730-FAULT-001",
+            RestoreBackupSetId = "BACKUP-RESTORE-001",
+            RestoreApprovalId = "RESTORE-APPROVAL-001",
+            RestoreResponsibleOwner = "data-owner-01",
+            SafeConvergence = false
+        };
 
     [Fact]
     public async Task AdministratorApplyRebindsWithoutDeletingQueueOrProcessedMessages()

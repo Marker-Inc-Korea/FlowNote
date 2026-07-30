@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthenticatedUser, require_roles
+from app.core.config import Settings, get_settings
 from app.db.models import (
     ActivityHistory,
     ChannelMessage,
@@ -84,10 +85,18 @@ def _identity(session: Session) -> ServerIdentity:
     return identity
 
 
-def manifest_payload(session: Session) -> dict[str, object]:
+RESTORE_FAULT_CODES = {
+    "partial_restore",
+    "old_database_new_files",
+    "missing_file",
+    "wrong_server_epoch",
+}
+
+
+def manifest_payload(session: Session, settings: Settings) -> dict[str, object]:
     identity = _identity(session)
     server_cursor = session.scalar(select(func.max(ChannelMessage.id))) or 0
-    return {
+    payload: dict[str, object] = {
         "server_instance_id": identity.server_instance_id,
         "server_epoch": identity.server_epoch,
         "schema_contract": identity.schema_contract,
@@ -95,6 +104,39 @@ def manifest_payload(session: Session) -> dict[str, object]:
         "api_contract_max": identity.api_contract_max,
         "server_cursor": server_cursor,
     }
+    fault_code = settings.restore_fault_code.strip().lower()
+    if not fault_code:
+        return payload
+    if fault_code not in RESTORE_FAULT_CODES:
+        raise HTTPException(
+            status_code=503,
+            detail="FLOWNOTE_RESTORE_FAULT_CODE가 지원하는 복구 장애 코드가 아닙니다.",
+        )
+    required = {
+        "restore_pilot_run_id": settings.restore_pilot_run_id,
+        "restore_backup_set_id": settings.restore_backup_set_id,
+        "restore_approval_id": settings.restore_approval_id,
+        "restore_responsible_owner": settings.restore_responsible_owner,
+    }
+    missing = [name for name, value in required.items() if not value.strip()]
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail="복구 장애 manifest 필수 식별자가 없습니다: " + ", ".join(missing),
+        )
+    payload.update(
+        {
+            "restore_fault_code": fault_code,
+            "restore_block_reason": settings.restore_block_reason.strip()
+            or "복구 장애 실기 run의 관리자 재결합 승인이 필요합니다.",
+            "restore_pilot_run_id": settings.restore_pilot_run_id.strip(),
+            "restore_backup_set_id": settings.restore_backup_set_id.strip(),
+            "restore_approval_id": settings.restore_approval_id.strip(),
+            "restore_responsible_owner": settings.restore_responsible_owner.strip(),
+            "safe_convergence": False,
+        }
+    )
+    return payload
 
 
 def _classify(
@@ -235,8 +277,11 @@ def _run_payload(session: Session, run: ReconciliationRun) -> dict[str, object]:
 
 
 @router.get("/manifest")
-def get_sync_manifest(session: Annotated[Session, Depends(get_db_session)]) -> dict[str, object]:
-    return manifest_payload(session)
+def get_sync_manifest(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, object]:
+    return manifest_payload(session, settings)
 
 
 @router.post("/reconciliation-runs", status_code=status.HTTP_201_CREATED)
@@ -365,9 +410,11 @@ def approve_reconciliation_run(
 @router.post("/server-epoch/increment")
 def increment_server_epoch(
     current_user: SyncAdministrator,
+    settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, object]:
     identity = _identity(session)
+    manifest_payload(session, settings)
     identity.server_epoch += 1
     session.add(
         ActivityHistory(
@@ -381,4 +428,4 @@ def increment_server_epoch(
         )
     )
     session.commit()
-    return manifest_payload(session)
+    return manifest_payload(session, settings)

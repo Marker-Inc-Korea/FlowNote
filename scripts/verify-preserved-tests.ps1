@@ -265,10 +265,10 @@ function Get-StepExpectedValue {
             return "검증 전 Git clean, 금지 추적·스테이징·개인 경로 0건"
         }
         "Collect FastAPI pytest tests" {
-            return "FastAPI node ID 총 154건, 고유 154건, 중복 0건"
+            return "FastAPI node ID 총 160건, 고유 160건, 중복 0건"
         }
         "Run FastAPI pytest" {
-            return "FastAPI JUnit total/passed 154/154, 실패·오류·건너뜀 0건"
+            return "FastAPI JUnit total/passed 160/160, 실패·오류·건너뜀 0건"
         }
         "Run WPF Core tests" {
             return "WPF Core 수집/고유 84/84, TRX total/passed 84/84, 실패·오류·건너뜀 0건"

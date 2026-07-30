@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -99,6 +100,11 @@ class PilotRestoreVerificationTests(unittest.TestCase):
         self.assertTrue(report["database_checks"]["before_checkpoint_clean"])
         self.assertTrue(report["database_checks"]["after_capture_stable"])
         self.assertTrue(report["file_capture_checks"]["after_capture_stable"])
+        self.assertTrue(report["responsibility_table_fingerprints_equal"])
+        self.assertEqual(
+            {"before": 0, "after": 0},
+            report["responsibility_check_violation_counts"],
+        )
 
     def test_same_machine_or_hash_mismatch_fails_closed(self) -> None:
         before_db, before_files = self.create_set("source")
@@ -123,6 +129,122 @@ class PilotRestoreVerificationTests(unittest.TestCase):
         self.assertEqual(1, report["file_mismatch_counts"]["size"])
         self.assertEqual(1, report["file_mismatch_counts"]["sha256"])
         self.assertTrue(any("별도 PC" in failure for failure in report["failures"]))
+
+    def test_same_row_count_with_changed_responsibility_data_fails(self) -> None:
+        before_db, before_files = self.create_set("source")
+        after_db, after_files = self.create_set("restore")
+        with sqlite3.connect(after_db) as connection:
+            connection.execute("UPDATE documents SET title = 'changed'")
+        before = self.capture(
+            "before", "SERVER-SOURCE-01", before_db, before_files
+        )
+        after = self.capture(
+            "after", "SERVER-RESTORE-02", after_db, after_files
+        )
+        output = (
+            self.root
+            / self.run_id
+            / "backup-restore"
+            / "server-responsibility-fail.json"
+        )
+
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            result = verify_pilot_restore.compare(
+                argparse.Namespace(before=before, after=after, output=output)
+            )
+
+        report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(1, result)
+        self.assertEqual(0, report["table_count_mismatch_count"])
+        self.assertEqual(1, report["responsibility_table_fingerprint_mismatch_count"])
+        self.assertEqual(["documents"], report["responsibility_table_fingerprint_mismatches"])
+
+    def test_database_reference_to_missing_file_fails_capture(self) -> None:
+        database, files = self.create_set("missing-reference")
+        payload = (files / "document.bin").read_bytes()
+        with sqlite3.connect(database) as connection:
+            connection.execute(
+                """
+                CREATE TABLE file_objects (
+                    storage_key TEXT NOT NULL,
+                    size_bytes INTEGER,
+                    hash_sha256 TEXT
+                )
+                """
+            )
+            connection.execute(
+                "INSERT INTO file_objects VALUES (?, ?, ?)",
+                (
+                    "document.bin",
+                    len(payload),
+                    hashlib.sha256(payload).hexdigest(),
+                ),
+            )
+        (files / "document.bin").unlink()
+        args = argparse.Namespace(
+            run_id=self.run_id,
+            target="server",
+            phase="after",
+            database=database,
+            files=files,
+            machine_id="SERVER-RESTORE-02",
+            backup_set_id="BACKUP-SET-007",
+            restore_approval_id="APPROVAL-007",
+            evidence_root=self.root,
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = verify_pilot_restore.capture(args)
+
+        evidence = json.loads(
+            (
+                self.root
+                / self.run_id
+                / "backup-restore"
+                / "server-after.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(1, result)
+        self.assertEqual(1, evidence["referenced_file_checks"]["missing_count"])
+
+    def test_wpf_files_relative_prefix_resolves_against_files_root(self) -> None:
+        database, files = self.create_set("wpf-files-reference")
+        with sqlite3.connect(database) as connection:
+            connection.execute("ALTER TABLE documents ADD COLUMN document_id TEXT")
+            connection.execute("ALTER TABLE documents ADD COLUMN local_path TEXT")
+            connection.execute(
+                "UPDATE documents SET document_id = 'doc-local', "
+                r"local_path = 'Files\document.bin'"
+            )
+        args = argparse.Namespace(
+            run_id=self.run_id,
+            target="wpf",
+            phase="after",
+            database=database,
+            files=files,
+            machine_id="WPF-RESTORE-02",
+            backup_set_id="BACKUP-SET-007",
+            restore_approval_id="APPROVAL-007",
+            evidence_root=self.root,
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = verify_pilot_restore.capture(args)
+
+        evidence = json.loads(
+            (
+                self.root
+                / self.run_id
+                / "backup-restore"
+                / "wpf-after.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(0, result)
+        self.assertEqual(1, evidence["referenced_file_checks"]["reference_count"])
+        self.assertEqual(0, evidence["referenced_file_checks"]["missing_count"])
 
     def test_server_and_wpf_must_share_backup_set_and_restore_approval(self) -> None:
         comparisons: dict[str, Path] = {}
