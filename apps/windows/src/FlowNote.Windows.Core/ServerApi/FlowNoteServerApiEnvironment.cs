@@ -25,7 +25,12 @@ public static class FlowNoteServerApiEnvironment
             return null;
         }
 
-        return new HttpClient
+        var handler = new HttpClientHandler
+        {
+            CheckCertificateRevocationList =
+                baseAddress.Scheme == Uri.UriSchemeHttps
+        };
+        return new HttpClient(handler)
         {
             BaseAddress = baseAddress,
             Timeout = timeout ?? TimeSpan.FromSeconds(10)

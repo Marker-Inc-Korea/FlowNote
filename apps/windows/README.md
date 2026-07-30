@@ -4,7 +4,7 @@
 
 현재 프로젝트는 WPF UI `net10.0-windows`, Core와 스모크 테스트 `net10.0`을 대상으로 한다. 현재 기능 목록은 `FlowNote.Windows.App`, `FlowNote.Windows.Core`, `FlowNote.Windows.SmokeTests` 코드에 실제 연결된 범위만 포함한다.
 
-이 문서는 2026-07-28 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
+이 문서는 2026-07-30 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
 
 ## 현재 구현
 
@@ -73,6 +73,46 @@ apps/windows/
   src/FlowNote.Windows.SyncConvergenceTests/  서버 권위 mutation과 재실행 멱등 수렴 검증
   src/FlowNote.Windows.SyncMigrationTool/  보존 FAILED 큐 진단·승인 전환 CLI
 ```
+
+## Windows 설치 matrix
+
+| 패키지/조건 | .NET Desktop Runtime 10 | WebView2 | 필수 수명주기 |
+| --- | --- | --- | --- |
+| framework-dependent MSI | 설치 조건과 미설치 차단 조건을 각각 실기 | 설치/미설치 각각 실기 | 신규 설치, 이전 승인본→후보 업그레이드, 제거, 재설치, 이전 승인본 rollback |
+| self-contained MSI | 설치/미설치와 무관하게 실행 확인 | 설치/미설치 각각 실기 | 신규 설치, 이전 승인본→후보 업그레이드, 제거, 재설치, 이전 승인본 rollback |
+
+두 MSI 모두 승인 SHA-256, Authenticode signer SHA-256, chain, RFC 3161 timestamp를 먼저 통과해야 한다. self-contained MSI도 WebView2 Evergreen Runtime을 포함하지 않는다. 운영 기본은 self-contained이고, 중앙 관리로 Desktop Runtime 설치와 업데이트를 보장하는 PC만 framework-dependent를 사용한다.
+
+전용 Windows snapshot에서는 다음 순서로 같은 `run_id`를 사용한다.
+
+```powershell
+.\scripts\package-wpf-msi.ps1
+.\scripts\verify-windows-server-packages.ps1 -RunId <run_id> <승인 패키지 인자>
+.\scripts\verify-wpf-msi-install.ps1 `
+  -RunId <run_id> `
+  -EvidenceRoot D:\FlowNotePilotEvidence `
+  -ArtifactRoot D:\FlowNoteApprovedPackages
+py -3 scripts\manage-pilot-run.py verify `
+  --run-id <run_id> `
+  --evidence-root D:\FlowNotePilotEvidence
+```
+
+`verify-wpf-msi-install.ps1 -RunId`는 실행 중인 WPF나 기존 FlowNote 설치를 발견하면 임의 제거하지 않고 중단한다. 깨끗한 snapshot과 보존 확인용 `C:\FlowNote\LocalData\flownote.local.sqlite`, `Files\`가 필요하다. 두 MSI의 10개 수명주기 단계마다 데이터 fingerprint가 같아야 하며 마지막에는 이전 승인 WPF가 설치된 rollback 상태가 남는다. 실패 로그와 로컬 시험 데이터는 삭제하지 않고 새 `run_id`에서 다시 수행한다.
+
+## 네트워크·시작 실패 운영
+
+| 실패 | 사용자에게 구분할 항목 | 담당자와 다음 조치 |
+| --- | --- | --- |
+| .NET Desktop Runtime 없음 | 누락 runtime, 기존 로컬 데이터 보존 | Windows 설치 담당자가 승인 runtime을 설치하거나 self-contained MSI로 전환 |
+| WebView2 없음 | PDF 뷰어 runtime, 원본·DB·열람 이력 보존 | Windows 설치 담당자가 승인 WebView2를 설치 |
+| 서명/hash 불일치 | 승인 패키지 부재, 서버/WPF 데이터 미변경 | 패키지 담당자와 보안 승인자가 승인 대장·전달 경로 대조, 설치 중단 |
+| 서버 주소·방화벽·timeout | 현재 HTTPS 경로, 로컬 DB·Files·큐 보존 | 서버·네트워크 담당자가 승인 URL, DNS, 포트, 서버 자동 시작 확인 |
+| 인증서·PC 시간·폐기 확인 | 신뢰 chain/SAN/시간/폐기 상태, HTTP·로컬 로그인 우회 없음 | 인증서 운영 담당자가 시간 원천, 갱신 인증서, CRL/OCSP 접근과 신뢰 배포 확인 |
+| 서버 자동 시작 실패 | 작업 스케줄러/SYSTEM/부팅 트리거, 서버 DB·storage 보존 | 서버 운영 담당자가 작업 최근 결과와 서버 로그를 확인하고 승인 작업을 재등록 |
+
+HTTPS 클라이언트는 인증서 폐기 목록 확인을 사용한다. 인증서 갱신·폐기나 서버 주소 변경 중에는 기존 세션으로 잘못 성공하거나 로컬 계정으로 자동 우회하면 안 된다. 동기화 큐와 알림 polling은 실패 상태에서 멈추고 로컬 원천·큐·cursor를 유지한다. 주소/instance/epoch 경계는 관리자 재결합 승인 뒤에만 재개하며 복구 후 중복 전송은 0건이어야 한다. 이 결과는 `windows-network-fail-closed.csv`의 세 행과 화면·WPF 로그·서버 감사 증거로 확인한다.
+
+서버 재부팅 후와 최종 승인 rollback 후에는 로그인, 문서 열람, FieldComment, 동기화, 알림, 감사 로그를 각각 확인해 12개 업무 행을 남긴다. 2026-07-30 현재 schema version 10 판정과 수명주기 실행 도구, WPF 인증서 폐기 확인 코드는 준비됐지만 실제 Windows PC, 승인 서명 패키지, 고객 유사망 인증서·방화벽·시간 주입 결과는 이 저장소에 없다. 따라서 `windows_server_rehearsal` 운영 판정은 아직 `대기`이며 현장 PASS로 추정하지 않는다.
 
 ## 로컬 데이터
 

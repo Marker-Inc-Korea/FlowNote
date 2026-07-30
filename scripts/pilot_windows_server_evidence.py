@@ -20,10 +20,16 @@ PACKAGE_ROLES = (
 )
 INSTALL_CASES = (
     "server_clean_install",
-    "wpf_clean_install",
-    "wpf_upgrade",
-    "wpf_remove",
-    "wpf_reinstall",
+    "framework_clean_install",
+    "framework_upgrade",
+    "framework_remove",
+    "framework_reinstall",
+    "framework_rollback",
+    "self_contained_clean_install",
+    "self_contained_upgrade",
+    "self_contained_remove",
+    "self_contained_reinstall",
+    "self_contained_rollback",
 )
 RUNTIME_CASES = (
     "framework_dotnet_desktop_present",
@@ -35,17 +41,22 @@ RUNTIME_CASES = (
     "self_contained_webview2_present",
     "self_contained_webview2_absent",
 )
-STARTUP_UX_ROLES = ("admin", "general_user")
-STARTUP_UX_SCENARIOS = (
-    "dotnet_desktop_absent",
-    "webview2_absent",
-    "invalid_server_address",
-    "certificate_validation_error",
+STARTUP_UX_CASES = (
+    ("admin", 1, "dotnet_desktop_absent"),
+    ("admin", 2, "invalid_package_signature"),
+    ("admin", 3, "certificate_validation_error"),
+    ("admin", 4, "server_autostart_failure"),
+    ("general_user", 1, "webview2_absent"),
+    ("general_user", 2, "invalid_server_address"),
+    ("general_user", 3, "firewall_port_block"),
+    ("general_user", 4, "time_sync_drift"),
 )
+STARTUP_UX_SCENARIOS = tuple(case[2] for case in STARTUP_UX_CASES)
 FAULT_CASES = (
     "server_task_scheduler",
     "server_reboot_autostart",
     "certificate_renewal",
+    "certificate_revocation",
     "certificate_validation_error",
     "firewall_port_block",
     "dns_change",
@@ -57,6 +68,11 @@ FAULT_CASES = (
     "interrupted_upgrade",
     "invalid_package_signature",
 )
+NETWORK_TRANSITION_CASES = (
+    "certificate_renewal",
+    "certificate_revocation",
+    "server_address_change",
+)
 RECOVERY_TARGETS = ("server_restore", "wpf_restore", "rollback")
 ROLLBACK_WORKFLOWS = (
     "login",
@@ -66,6 +82,7 @@ ROLLBACK_WORKFLOWS = (
     "notification",
     "audit_log",
 )
+WORKFLOW_CHECKPOINTS = ("server_reboot", "approved_package_rollback")
 PROMOTION_TARGETS = ("server", "wpf")
 SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 
@@ -107,28 +124,34 @@ def templates(run_id: str) -> dict[str, str]:
         for role in PACKAGE_ROLES
     )
     install_rows = "".join(
-        f"{run_id},{case},,,,,,NOT_RUN,\n" for case in INSTALL_CASES
+        ",".join((run_id, case, *("" for _ in range(8)), "NOT_RUN", "")) + "\n"
+        for case in INSTALL_CASES
     )
     runtime_rows = "".join(
         f"{run_id},{case},,,,,NOT_RUN,\n" for case in RUNTIME_CASES
     )
     startup_ux_rows = "".join(
         f"{run_id},{role},{attempt},{scenario},,,,,,,NOT_RUN,\n"
-        for role, attempt, scenario in (
-            ("admin", 1, "dotnet_desktop_absent"),
-            ("admin", 2, "certificate_validation_error"),
-            ("general_user", 1, "webview2_absent"),
-            ("general_user", 2, "invalid_server_address"),
-        )
+        for role, attempt, scenario in STARTUP_UX_CASES
     )
     fault_rows = "".join(
-        f"{run_id},{case},,,,,,,,NOT_RUN,\n" for case in FAULT_CASES
+        ",".join((run_id, case, *("" for _ in range(10)), "NOT_RUN", "")) + "\n"
+        for case in FAULT_CASES
+    )
+    network_transition_rows = "".join(
+        ",".join(
+            (run_id, case, *("" for _ in range(12)), "NOT_RUN", "", "", "", "")
+        )
+        + "\n"
+        for case in NETWORK_TRANSITION_CASES
     )
     recovery_rows = "".join(
         f"{run_id},{target},,,,,,NOT_RUN,\n" for target in RECOVERY_TARGETS
     )
     rollback_rows = "".join(
-        f"{run_id},{workflow},,,NOT_RUN,\n" for workflow in ROLLBACK_WORKFLOWS
+        f"{run_id},{checkpoint},{workflow},,,NOT_RUN,\n"
+        for checkpoint in WORKFLOW_CHECKPOINTS
+        for workflow in ROLLBACK_WORKFLOWS
     )
     promotion_rows = "".join(
         f"{run_id},{target},,,,,,,,,NOT_RUN,\n" for target in PROMOTION_TARGETS
@@ -142,8 +165,9 @@ def templates(run_id: str) -> dict[str, str]:
             + package_rows
         ),
         "install/windows-lifecycle.csv": (
-            "pilot_run_id,case_id,machine_id,package_version,exit_code,"
-            "data_preserved,observed_version,result,evidence\n"
+            "pilot_run_id,case_id,machine_id,dependency_mode,package_version,"
+            "exit_code,data_before_sha256,data_after_sha256,data_preserved,"
+            "observed_version,result,evidence\n"
             + install_rows
         ),
         "install/windows-runtime-matrix.csv": (
@@ -160,9 +184,18 @@ def templates(run_id: str) -> dict[str, str]:
         "scenario-results/windows-server-fault-injections.csv": (
             "pilot_run_id,case_id,machine_id,failure_detected,"
             "unauthorized_client_blocked,approved_client_reconnected,"
-            "normal_work_resumed,"
-            "resumed_at,change_approval_id,result,evidence\n"
+            "normal_work_resumed,local_source_preserved,sync_queue_preserved,"
+            "duplicate_send_count,resumed_at,change_approval_id,result,evidence\n"
             + fault_rows
+        ),
+        "scenario-results/windows-network-fail-closed.csv": (
+            "pilot_run_id,case_id,machine_id,existing_session_blocked,"
+            "local_login_fallback_blocked,sync_queue_paused,"
+            "notification_polling_paused,local_source_preserved,"
+            "sync_queue_preserved,cursor_preserved,recovery_approved,"
+            "normal_work_resumed,duplicate_send_count,checked_at,result,evidence,"
+            "screen_evidence,wpf_log_evidence,server_audit_evidence\n"
+            + network_transition_rows
         ),
         "scenario-results/recovery-objectives.csv": (
             "pilot_run_id,target,approved_rto_seconds,measured_rto_seconds,"
@@ -170,7 +203,8 @@ def templates(run_id: str) -> dict[str, str]:
             + recovery_rows
         ),
         "scenario-results/rollback-workflows.csv": (
-            "pilot_run_id,workflow_id,audit_event_id,checked_at,result,evidence\n"
+            "pilot_run_id,checkpoint_id,workflow_id,audit_event_id,checked_at,"
+            "result,evidence\n"
             + rollback_rows
         ),
         "approvals/package-promotion-and-rollback.csv": (
@@ -366,12 +400,25 @@ def _install_failures(
         rows, "case_id", INSTALL_CASES, "설치 수명주기"
     )
     failures.extend(row_failures)
+    package_rows, package_read_failures = _read_rows(
+        run_root, "packages/windows-server-packages.csv", "Windows/서버 패키지"
+    )
+    failures.extend(package_read_failures)
+    package_versions = {
+        (row.get("artifact_role") or "").strip(): (row.get("version") or "").strip()
+        for row in package_rows
+    }
     for case_id, row in required.items():
         label = f"설치 수명주기 {case_id}"
         failures.extend(
             _base_row_failures(run_root, run_id, row, label, evidence_failures)
         )
-        for field in ("machine_id", "package_version", "observed_version"):
+        for field in (
+            "machine_id",
+            "dependency_mode",
+            "package_version",
+            "observed_version",
+        ):
             if not _nonempty(row.get(field)):
                 failures.append(f"{label}의 {field} 값이 없습니다.")
         try:
@@ -382,9 +429,40 @@ def _install_failures(
             failures.append(f"{label}의 설치 종료 코드가 0이 아닙니다.")
         if _boolean(row.get("data_preserved")) is not True:
             failures.append(f"{label}의 data_preserved가 TRUE가 아닙니다.")
+        before_hash = (row.get("data_before_sha256") or "").strip()
+        after_hash = (row.get("data_after_sha256") or "").strip()
+        if not SHA256_PATTERN.fullmatch(before_hash):
+            failures.append(f"{label}의 data_before_sha256가 올바르지 않습니다.")
+        if not SHA256_PATTERN.fullmatch(after_hash):
+            failures.append(f"{label}의 data_after_sha256가 올바르지 않습니다.")
+        if before_hash.casefold() != after_hash.casefold():
+            failures.append(f"{label}에서 로컬 데이터 hash가 바뀌었습니다.")
         observed = (row.get("observed_version") or "").strip()
         package_version = (row.get("package_version") or "").strip()
-        if case_id == "wpf_remove":
+        if case_id == "server_clean_install":
+            expected_mode = "server"
+            expected_version = package_versions.get("server_candidate", "")
+        else:
+            expected_mode = (
+                "framework-dependent"
+                if case_id.startswith("framework_")
+                else "self-contained"
+            )
+            expected_version = package_versions.get(
+                "wpf_msi_previous"
+                if case_id.endswith("_rollback")
+                else (
+                    "wpf_framework_msi_candidate"
+                    if case_id.startswith("framework_")
+                    else "wpf_self_contained_msi_candidate"
+                ),
+                "",
+            )
+        if (row.get("dependency_mode") or "").strip() != expected_mode:
+            failures.append(f"{label}의 dependency_mode가 대상 패키지와 다릅니다.")
+        if not expected_version or package_version != expected_version:
+            failures.append(f"{label}의 package_version이 검증 패키지와 다릅니다.")
+        if case_id.endswith("_remove"):
             if observed != "NOT_INSTALLED":
                 failures.append(f"{label} 후 패키지가 제거되지 않았습니다.")
         elif observed != package_version:
@@ -447,10 +525,10 @@ def _startup_ux_failures(
     rows, failures = _read_rows(
         run_root, "install/windows-startup-ux.csv", "Windows 시작 실패 UX"
     )
-    required_keys = {
-        (role, str(attempt))
-        for role in STARTUP_UX_ROLES
-        for attempt in (1, 2)
+    required_keys = {(role, str(attempt)) for role, attempt, _ in STARTUP_UX_CASES}
+    expected_scenario = {
+        (role, str(attempt)): scenario
+        for role, attempt, scenario in STARTUP_UX_CASES
     }
     rows_by_key: dict[tuple[str, str], list[dict[str, str]]] = {
         key: [] for key in required_keys
@@ -475,8 +553,8 @@ def _startup_ux_failures(
             _base_row_failures(run_root, run_id, row, label, evidence_failures)
         )
         scenario = (row.get("scenario_id") or "").strip()
-        if scenario not in STARTUP_UX_SCENARIOS:
-            failures.append(f"{label}의 scenario_id가 승인 matrix에 없습니다.")
+        if scenario != expected_scenario[key]:
+            failures.append(f"{label}의 scenario_id가 승인 matrix와 다릅니다.")
         else:
             scenarios.add(scenario)
         for field in ("participant_id", "selected_action"):
@@ -494,9 +572,150 @@ def _startup_ux_failures(
     missing_scenarios = set(STARTUP_UX_SCENARIOS) - scenarios
     if missing_scenarios:
         failures.append(
-            "Windows 시작 실패 UX 4개 시나리오를 모두 확인하지 않았습니다: "
+            "Windows 시작 실패 UX 8개 시나리오를 모두 확인하지 않았습니다: "
             + ", ".join(sorted(missing_scenarios))
         )
+    return failures
+
+
+def _zero_count_failures(
+    rows: dict[str, dict[str, str]],
+    label: str,
+    field: str,
+) -> list[str]:
+    failures: list[str] = []
+    for case_id, row in rows.items():
+        try:
+            count = int((row.get(field) or "").strip())
+        except ValueError:
+            count = -1
+        if count != 0:
+            failures.append(f"{label} {case_id}의 {field}가 0이 아닙니다.")
+    return failures
+
+
+def _fault_failures(
+    run_root: Path,
+    run_id: str,
+    evidence_failures: Callable[[Path, Any, str], list[str]],
+) -> list[str]:
+    relative_path = "scenario-results/windows-server-fault-injections.csv"
+    failures = _simple_case_failures(
+        run_root,
+        run_id,
+        relative_path,
+        "Windows/서버 장애 주입",
+        "case_id",
+        FAULT_CASES,
+        ("machine_id", "resumed_at", "change_approval_id"),
+        (
+            "failure_detected",
+            "unauthorized_client_blocked",
+            "approved_client_reconnected",
+            "normal_work_resumed",
+            "local_source_preserved",
+            "sync_queue_preserved",
+        ),
+        evidence_failures,
+    )
+    rows, _ = _read_rows(run_root, relative_path, "Windows/서버 장애 주입")
+    required, _ = _required_rows(
+        rows, "case_id", FAULT_CASES, "Windows/서버 장애 주입"
+    )
+    failures.extend(
+        _zero_count_failures(
+            required, "Windows/서버 장애 주입", "duplicate_send_count"
+        )
+    )
+    return failures
+
+
+def _network_transition_failures(
+    run_root: Path,
+    run_id: str,
+    evidence_failures: Callable[[Path, Any, str], list[str]],
+) -> list[str]:
+    relative_path = "scenario-results/windows-network-fail-closed.csv"
+    label = "Windows 네트워크 fail-closed"
+    failures = _simple_case_failures(
+        run_root,
+        run_id,
+        relative_path,
+        label,
+        "case_id",
+        NETWORK_TRANSITION_CASES,
+        (
+            "machine_id",
+            "checked_at",
+            "screen_evidence",
+            "wpf_log_evidence",
+            "server_audit_evidence",
+        ),
+        (
+            "existing_session_blocked",
+            "local_login_fallback_blocked",
+            "sync_queue_paused",
+            "notification_polling_paused",
+            "local_source_preserved",
+            "sync_queue_preserved",
+            "cursor_preserved",
+            "recovery_approved",
+            "normal_work_resumed",
+        ),
+        evidence_failures,
+    )
+    rows, _ = _read_rows(run_root, relative_path, label)
+    required, _ = _required_rows(
+        rows, "case_id", NETWORK_TRANSITION_CASES, label
+    )
+    for case_id, row in required.items():
+        for field in (
+            "screen_evidence",
+            "wpf_log_evidence",
+            "server_audit_evidence",
+        ):
+            failures.extend(
+                evidence_failures(
+                    run_root,
+                    [(row.get(field) or "").strip()],
+                    f"{label} {case_id} {field}",
+                )
+            )
+    failures.extend(
+        _zero_count_failures(required, label, "duplicate_send_count")
+    )
+    return failures
+
+
+def _workflow_failures(
+    run_root: Path,
+    run_id: str,
+    evidence_failures: Callable[[Path, Any, str], list[str]],
+) -> list[str]:
+    relative_path = "scenario-results/rollback-workflows.csv"
+    label = "재부팅·rollback 후 핵심 업무"
+    rows, failures = _read_rows(run_root, relative_path, label)
+    for checkpoint in WORKFLOW_CHECKPOINTS:
+        for workflow in ROLLBACK_WORKFLOWS:
+            matching = [
+                row
+                for row in rows
+                if (row.get("checkpoint_id") or "").strip() == checkpoint
+                and (row.get("workflow_id") or "").strip() == workflow
+            ]
+            row_label = f"{label} {checkpoint}/{workflow}"
+            if len(matching) != 1:
+                failures.append(f"{row_label} 행은 정확히 1개여야 합니다.")
+                continue
+            row = matching[0]
+            failures.extend(
+                _base_row_failures(
+                    run_root, run_id, row, row_label, evidence_failures
+                )
+            )
+            for field in ("audit_event_id", "checked_at"):
+                if not _nonempty(row.get(field)):
+                    failures.append(f"{row_label}의 {field} 값이 없습니다.")
     return failures
 
 
@@ -708,38 +927,12 @@ def verification_failures(
     failures.extend(_install_failures(run_root, run_id, evidence_failures))
     failures.extend(_runtime_failures(run_root, run_id, evidence_failures))
     failures.extend(_startup_ux_failures(run_root, run_id, evidence_failures))
+    failures.extend(_fault_failures(run_root, run_id, evidence_failures))
     failures.extend(
-        _simple_case_failures(
-            run_root,
-            run_id,
-            "scenario-results/windows-server-fault-injections.csv",
-            "Windows/서버 장애 주입",
-            "case_id",
-            FAULT_CASES,
-            ("machine_id", "resumed_at", "change_approval_id"),
-            (
-                "failure_detected",
-                "unauthorized_client_blocked",
-                "approved_client_reconnected",
-                "normal_work_resumed",
-            ),
-            evidence_failures,
-        )
+        _network_transition_failures(run_root, run_id, evidence_failures)
     )
     failures.extend(_recovery_failures(run_root, run_id, authorization, evidence_failures))
-    failures.extend(
-        _simple_case_failures(
-            run_root,
-            run_id,
-            "scenario-results/rollback-workflows.csv",
-            "rollback 후 핵심 업무",
-            "workflow_id",
-            ROLLBACK_WORKFLOWS,
-            ("audit_event_id", "checked_at"),
-            (),
-            evidence_failures,
-        )
-    )
+    failures.extend(_workflow_failures(run_root, run_id, evidence_failures))
     failures.extend(
         _promotion_failures(run_root, run_id, authorization, evidence_failures)
     )

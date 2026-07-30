@@ -1,4 +1,7 @@
 param(
+    [ValidatePattern("^$|^PILOT-\d{8}-\d{4}-[A-Z0-9_-]+-\d{3}$")]
+    [string]$RunId = "",
+    [string]$EvidenceRoot = "D:\FlowNotePilotEvidence",
     [string]$ProductVersion = "0.1.0",
     [string]$Runtime = "win-x64",
     [string]$ArtifactRoot = "artifacts\wpf-msi",
@@ -14,6 +17,15 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $artifactRootPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ArtifactRoot))
+if (-not [string]::IsNullOrWhiteSpace($RunId)) {
+    & (Join-Path $PSScriptRoot "invoke-wpf-msi-lifecycle.ps1") `
+        -RunId $RunId `
+        -EvidenceRoot $EvidenceRoot `
+        -ArtifactRoot $artifactRootPath `
+        -InstallFolder $InstallFolder `
+        -LocalDataDir $LocalDataDir
+    return
+}
 $packageSuffix = if ($SelfContained.IsPresent) { "$ProductVersion-$Runtime-self-contained" } else { "$ProductVersion-$Runtime" }
 $msiPath = Join-Path $artifactRootPath "FlowNote.Windows.App-$packageSuffix.msi"
 $manifestPath = Join-Path $artifactRootPath "FlowNote.Windows.App-$packageSuffix.files.txt"

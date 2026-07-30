@@ -24,6 +24,14 @@
 
 변경된 실패 안내는 PowerShell SDK 보조 호스트로 macOS 환경 게이트를 의도적으로 실패시킨 `candidate1-macos-ux-failure-20260730-01`에서 확인했다. 콘솔·단계 로그·`verification-summary.json`은 현재 단계, 기대값, 실제값, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 모두 한 화면 구조로 남겼다. 현재 호스트는 macOS ARM64라 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
 
+## 2026-07-30 작업 102 Windows 설치·망 전환 판정 갱신
+
+파일럿 판정 schema version을 10으로 올리고 framework-dependent와 self-contained WPF MSI의 신규 설치, 업그레이드, 제거, 재설치, 이전 승인본 rollback을 각각 기록하도록 원시 판정표를 확장했다. 각 단계는 승인 패키지 버전, 종료 코드, 실제 설치 버전과 함께 WPF 로컬 데이터의 전후 SHA-256 fingerprint 일치를 확인한다. 인증서 갱신·폐기와 서버 주소 변경은 기존 세션과 로컬 로그인 우회를 차단하고 동기화 큐·알림 polling을 멈춘 상태에서 로컬 원천·큐·cursor가 보존되는지 별도 원시 판정표로 확인한다. 서버 재부팅과 승인 rollback 뒤에는 6개 핵심 업무를 각각 다시 수행해 총 12개 행을 남긴다.
+
+Python 스크립트 전체 단위 테스트 31건과 WPF Core 테스트 84건이 모두 통과했다. 변경된 Python 파일 4개의 문법 검사와 PowerShell 스크립트 3개의 공식 파서 검사도 오류 없이 끝났으며 `git diff --check`도 통과했다. PowerShell 파서 보조 프로젝트에서는 기존 `System.Security.Cryptography.Xml` 8.0.2 의존성에 대한 `NU1903` 경고가 표시됐지만 스크립트 구문 오류는 0건이었다.
+
+현재 호스트는 macOS ARM64이므로 승인 서명 패키지 설치, Windows 재부팅, 인증서·CRL/OCSP, 방화벽·시간 변경과 고객 유사망 복구 실기는 수행하지 않았다. 따라서 새 판정 도구가 준비됐다는 사실과 현장 PASS를 구분하며 Windows/서버 리허설과 운영 배포 판정은 계속 `대기`다. 기존 SQLite, 로그와 테스트 산출물은 삭제하거나 초기화하지 않았다.
+
 ## 2026-07-30 후보 3 역할별 핵심 업무 UX 코드 변경
 
 FieldComment 일괄 실행의 정상 응답을 받은 뒤에는 원래 전체 요청 재확인 상태를 해제하고, 성공 항목을 `재전송 안 함`으로 표시한다. stale revision, 권한 부족과 그 밖의 실패 항목만 구분해 WPF 목록에서 다시 선택하며, 다음 일괄 저장은 선택된 실패 항목의 최신 서버 revision과 새 mutation key로 구성한다. 실행 응답을 받지 못한 경우에만 기존 `일괄 결과 다시 확인`이 원래 mutation key를 재사용한다.

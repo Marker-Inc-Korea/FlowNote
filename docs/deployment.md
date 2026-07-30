@@ -1,6 +1,6 @@
 # FlowNote 배포
 
-이 문서는 2026-07-28 현재 저장소의 실행 코드와 배포 스크립트 기준이다. 서명, MDM, 현장 인증서처럼 실제 운영 환경에서만 확정 가능한 내용은 후속 점검 항목으로 구분한다.
+이 문서는 2026-07-30 현재 저장소의 실행 코드와 배포 스크립트 기준이다. 서명, MDM, 현장 인증서처럼 실제 운영 환경에서만 확정 가능한 내용은 후속 점검 항목으로 구분한다.
 
 ## 기준
 
@@ -133,8 +133,8 @@ Start-Transcript -Path (Join-Path $RunRoot "install\windows-server-rehearsal.txt
 | 판정 게이트 | 실행 명령·점검 | 필수 증거 상대경로 | PASS 기준 |
 | --- | --- | --- | --- |
 | `server_clean_install` | 이 문서의 서버 설치 1~8단계와 health/DB health 호출 | `install/server-clean-install-*`, `server-logs/server-health-*` | 깨끗한 승인 서버 1대에서 설치, 로그인 없는 실행, health와 DB health 모두 정상 |
-| `server_reboot_autostart` | `Restart-Computer` 후 `Get-ScheduledTask -TaskPath '\FlowNote\'`, `Get-ScheduledTaskInfo`와 health 재확인 | `install/server-reboot-*`, `server-logs/server-autostart-*` | 재부팅 후 사용자 로그인 없이 작업 실행, 최근 결과 정상, 핵심 API 재개 |
-| `wpf_clean_install`, `wpf_upgrade`, `wpf_remove_reinstall` | `msiexec /i <승인 MSI> /L*v <로그>`, 이전 승인 버전→후보 버전 업그레이드, `msiexec /x <ProductCode> /L*v <로그>`, 재설치 | `install/wpf-clean-*`, `install/wpf-upgrade-*`, `install/wpf-remove-reinstall-*` | 각 명령 종료 코드 0, 대상 버전 실행, 로컬 DB·`Files` 손실 0, 로그인·목록·열람 재개 |
+| `server_reboot_autostart` | `Restart-Computer` 후 `Get-ScheduledTask -TaskPath '\FlowNote\'`, `Get-ScheduledTaskInfo`와 health 재확인 | `install/server-reboot-*`, `server-logs/server-autostart-*`, `scenario-results/rollback-workflows.csv` | 재부팅 후 사용자 로그인 없이 작업 실행, 최근 결과 정상, 6개 핵심 업무 재개 |
+| 두 WPF MSI 수명주기 | `verify-wpf-msi-install.ps1 -RunId <run_id>`로 framework-dependent와 self-contained의 신규 설치·업그레이드·제거·재설치·이전 승인본 rollback 실행 | `install/windows-lifecycle.csv`, `install/msi-*-summary.txt`, `install/msi-*.log` | 10개 WPF 행의 종료 코드 0, 대상 버전 일치, 단계 전후 로컬 데이터 fingerprint 동일 |
 | `package_hash_and_signature` | `Get-FileHash <MSI/EXE> -Algorithm SHA256`, `signtool verify /pa /all /v <MSI/EXE>`, `dotnet --list-runtimes`, WebView2 버전/미설치 UX 확인 | `packages/windows-hash-*`, `packages/windows-signature-*`, `install/prerequisites-*` | 승인 hash 일치, EXE/MSI 서명·chain·timestamp 정상, 채택한 .NET 방식과 WebView2 조건 통과 |
 | `https_renewal` | 갱신 전/후 `Invoke-WebRequest https://<승인 DNS>/api/v1/health`, 인증서 chain·SAN·유효기간 확인, 구 인증서 rollback 후 재적용 | `network-and-certificate/certificate-renewal-*` | WPF/서버에서 검증 우회·HTTP 강등 없이 접속, 갱신 및 승인 rollback 모두 정상 |
 | `firewall_and_address_change` | 승인 변경서에 따라 방화벽/DNS 또는 서버 URL을 변경하고 승인·비승인 구간 접속, WPF 재연결을 각각 확인 | `network-and-certificate/firewall-*`, `network-and-certificate/address-change-*` | 승인 구간만 허용, 비승인 구간 거부, 주소 변경 후 cursor/로그 혼선 없이 핵심 업무 재개 |
@@ -147,18 +147,19 @@ Start-Transcript -Path (Join-Path $RunRoot "install\windows-server-rehearsal.txt
 
 디스크 부족 시험은 실제 운영 볼륨을 임의로 채우지 않는다. 격리된 시험 볼륨 또는 되돌릴 수 있는 승인 snapshot만 사용하고, 주입 전 중단 승인·백업·복귀 명령을 먼저 검토한다. 네트워크·방화벽·인증서 변경도 원복 명령과 접근 경로를 먼저 확보한다. 실패 시 transcript와 실패 상태를 먼저 보존하며 같은 파일명으로 재실행 결과를 덮어쓰지 않는다.
 
-schema version 9의 `windows_server_rehearsal`은 게이트의 `PASS`만 신뢰하지 않는다. 다음 원시 CSV의 모든 필수 행이 현재 `run_id`이고, 각 행이 실행 폴더 안의 실제 증거 파일을 가리켜야 한다.
+schema version 10의 `windows_server_rehearsal`은 게이트의 `PASS`만 신뢰하지 않는다. 다음 원시 CSV의 모든 필수 행이 현재 `run_id`이고, 각 행이 실행 폴더 안의 실제 증거 파일을 가리켜야 한다.
 
 | 원시 판정표 | 필수 범위 |
 | --- | --- |
 | `packages/windows-server-packages.csv` | 후보 서버 패키지, framework-dependent와 self-contained 후보 WPF MSI/EXE, 이전 승인 서버 패키지/WPF MSI의 hash·signer·chain·timestamp와 비밀/SQLite/고객 파일 혼입 0건 |
-| `install/windows-lifecycle.csv` | 서버 신규 설치, WPF 신규 설치·업그레이드·제거·재설치 |
+| `install/windows-lifecycle.csv` | 서버 신규 설치, 두 WPF MSI 각각의 신규 설치·업그레이드·제거·재설치·이전 승인본 rollback, 단계 전후 로컬 데이터 SHA-256 |
 | `install/windows-runtime-matrix.csv` | 두 WPF MSI 각각의 .NET Desktop Runtime 설치/미설치와 WebView2 설치/미설치 |
-| `install/windows-startup-ux.csv` | 관리자·일반 사용자 각 2회의 누락 항목·보존 데이터·담당자·다음 조치 식별 결과와 선택한 조치 |
-| `scenario-results/windows-server-fault-injections.csv` | 작업 스케줄러, 재부팅, 인증서 갱신·폐기·만료·미신뢰, 포트 차단, DNS/고정 주소 변경, 시간 오차, 재부팅 중 전송, 업그레이드 중단, 잘못된 패키지 서명 |
+| `install/windows-startup-ux.csv` | 관리자·일반 사용자 각 4회의 .NET, WebView2, 서명, 주소, 인증서, 방화벽, 시간, 서버 자동 시작 실패 안내 이해 결과 |
+| `scenario-results/windows-server-fault-injections.csv` | 작업 스케줄러, 재부팅, 인증서 갱신·폐기·검증 실패, 포트 차단, DNS/고정 주소 변경, 시간 오차, 재부팅 중 전송, 업그레이드 중단, 잘못된 패키지 서명과 장애 중 원천·큐 보존/중복 0건 |
+| `scenario-results/windows-network-fail-closed.csv` | 인증서 갱신·폐기와 서버 주소 변경 뒤 기존 세션·로컬 로그인 우회·동기화·polling 차단, 원천·큐·cursor 보존, 승인 복구와 중복 전송 0건 |
 | `scenario-results/recovery-objectives.csv` | 서버 복구, WPF 복구, rollback의 승인·실측 RTO/RPO와 업무 재개 시각 |
 | `approvals/package-promotion-and-rollback.csv` | 후보 승격 승인, 이전 승인 버전/hash/signer, 같은 시점 통합 백업 세트, rollback 결정권자와 비상 연락 흐름 |
-| `scenario-results/rollback-workflows.csv` | 로그인, 문서 열람, FieldComment, 동기화, 알림, 감사 로그 |
+| `scenario-results/rollback-workflows.csv` | 서버 재부팅 후와 승인 rollback 후 각각 로그인, 문서 열람, FieldComment, 동기화, 알림, 감사 로그 |
 
 모든 게이트 완료 후 운영·보안·현장 승인자가 `pilot-run.json`과 원시 증거를 대조해 서명한 다음 판정한다.
 
@@ -176,16 +177,33 @@ if ((Get-Content (Join-Path $RunRoot "pilot-verification.json") -Raw | ConvertFr
 | --- | --- | --- | --- | --- | --- |
 | 서버 전용 PC | 승인 Windows Server 또는 Windows Pro x64 | 미설치 | 서버 패키지 방식에 따른 승인 Python/runtime | 해당 없음 | 신규 설치, 작업 스케줄러, 무로그인 재부팅 자동 시작, HTTPS |
 | 서버+관리 WPF PC | 승인 Windows x64 | framework-dependent MSI | WPF 대상 major 설치 | Evergreen 설치 | 서버 재부팅과 WPF 재연결, PDF 열람 |
-| 관리/현장 WPF PC | 승인 Windows x64 | framework-dependent MSI | 설치/미설치 두 조건 | 설치/미설치 두 조건 | 신규 설치, 업그레이드, 제거, 재설치, 의존성 안내 |
-| 관리/현장 WPF PC | 승인 Windows x64 | self-contained MSI | 별도 Desktop Runtime 비필수 | 설치/미설치 두 조건 | 신규 설치, 업그레이드, 제거, 재설치, PDF 실패 안내/복구 |
+| 관리/현장 WPF PC | 승인 Windows x64 | framework-dependent MSI | 설치/미설치 두 조건 | 설치/미설치 두 조건 | 신규 설치, 업그레이드, 제거, 재설치, 이전 승인본 rollback, 의존성 안내 |
+| 관리/현장 WPF PC | 승인 Windows x64 | self-contained MSI | 별도 Desktop Runtime 비필수 | 설치/미설치 두 조건 | 신규 설치, 업그레이드, 제거, 재설치, 이전 승인본 rollback, PDF 실패 안내/복구 |
 
-`install/windows-runtime-matrix.csv`에는 `framework_dotnet_desktop_present`, `framework_dotnet_desktop_absent`, `self_contained_dotnet_desktop_present`, `self_contained_dotnet_desktop_absent`, `framework_webview2_present`, `framework_webview2_absent`, `self_contained_webview2_present`, `self_contained_webview2_absent`가 각각 정확히 한 행 있어야 한다. `install/windows-startup-ux.csv`에는 `admin`과 `general_user`의 1·2회차가 정확히 한 행씩 있어야 하며 네 시나리오를 중복 없이 모두 다룬다. 실제 지원 범위는 런타임 8행, UX 4행과 설치 수명주기 원시 결과가 모두 PASS인 조합으로 제한한다.
+`install/windows-runtime-matrix.csv`에는 `framework_dotnet_desktop_present`, `framework_dotnet_desktop_absent`, `self_contained_dotnet_desktop_present`, `self_contained_dotnet_desktop_absent`, `framework_webview2_present`, `framework_webview2_absent`, `self_contained_webview2_present`, `self_contained_webview2_absent`가 각각 정확히 한 행 있어야 한다. `install/windows-startup-ux.csv`에는 `admin`과 `general_user`의 1~4회차가 정확히 한 행씩 있어야 하며 8개 장애를 중복 없이 모두 다룬다. 실제 지원 범위는 런타임 8행, UX 8행, 두 MSI의 수명주기 10행과 네트워크 fail-closed 3행이 모두 PASS인 조합으로 제한한다.
 
 ### 패키지 검증과 승격
 
 서버 배포 묶음이 ZIP처럼 Authenticode를 직접 담을 수 없는 형식이면 패키지 SHA-256을 적은 별도 release manifest를 Authenticode로 서명한다. 이때 서버 패키지의 signer는 해당 detached manifest의 인증서 SHA-256 지문이다. manifest와 패키지는 한 승인 단위이며 하나만 교체할 수 없다.
 
 배포 준비 PC에서 후보와 이전 승인본을 모두 확보한 뒤 `scripts\verify-windows-server-packages.ps1`을 실행한다. 스크립트는 `signtool verify /pa /all /v`, signer 인증서 SHA-256, 승인 hash, timestamp, 포함 파일 목록을 대조하고 `packages/windows-server-packages.csv`와 artifact별 transcript를 같은 `run_id`에 남긴다. 기존 실행 결과가 있으면 덮어쓰지 않는다.
+
+패키지 검증이 PASS인 뒤 전용 Windows snapshot에서 다음 명령으로 두 MSI의 수명주기를 이어서 실행한다. `$ArtifactRoot`에는 `windows-server-packages.csv`에 기록된 세 WPF MSI 파일명이 각각 한 번만 존재해야 한다. 실행 PC에는 FlowNote가 설치돼 있지 않아야 하며 WPF를 종료하고 `C:\FlowNote\LocalData\flownote.local.sqlite`와 `Files\`를 미리 준비한다.
+
+```powershell
+.\scripts\verify-wpf-msi-install.ps1 `
+  -RunId $RunId `
+  -EvidenceRoot $EvidenceRoot `
+  -ArtifactRoot "D:\FlowNoteApprovedPackages" `
+  -InstallFolder "C:\Program Files\FlowNote\Client\FlowNote.Windows.App" `
+  -LocalDataDir "C:\FlowNote\LocalData"
+```
+
+스크립트는 framework-dependent와 self-contained 순서로 신규 설치, 제거, 이전 승인본에서 후보 업그레이드, 재설치, 후보 제거 후 이전 승인본 설치 방식의 승인 rollback을 수행한다. 기존 설치를 발견하면 자동 제거하지 않고 중단한다. 단계마다 `msiexec` 종료 코드, 설치 버전, 로컬 데이터 전체의 상대경로·크기·내용으로 계산한 단일 SHA-256 fingerprint를 기록하며 전후 값이 다르면 즉시 실패한다. MSI 로그의 사용자 프로필 경로, URL과 민감 속성은 증거 파일에 쓰기 전에 가리고, 패키지·데이터 절대경로는 판정 CSV에 넣지 않는다. 중단된 run의 로그와 `NOT_RUN`/`FAIL` 행은 수정해 통과시키지 말고 원인을 해결한 새 `run_id`에서 다시 시작한다.
+
+MSI 도구의 성공만으로 업무 재개를 판정하지 않는다. 서버 재부팅 후와 최종 승인 rollback 후에 로그인, 문서 열람, FieldComment, 동기화, 알림, 감사 로그를 각각 실행해 `scenario-results/rollback-workflows.csv`의 12개 행과 서로 다른 감사 event를 채운다.
+
+.NET Desktop Runtime과 WebView2 미설치 조건은 운영 PC에서 공유 runtime을 제거해 만들지 않는다. 서로 다른 승인 VM snapshot 또는 원복 가능한 시험 PC를 사용하고 `windows-runtime-matrix.csv`에 실제 감지 버전과 기대 동작을 기록한다. 인증서·방화벽·시간·서버 자동 시작 장애도 원복 명령과 별도 관리 접속 경로가 사전 승인된 고객 유사망에서만 주입한다.
 
 1. 운영·보안 책임자가 후보 서버 패키지와 WPF MSI/EXE의 hash·signer를 독립 경로로 대조한다.
 2. 비밀, SQLite/WAL/SHM, `storage`, `Files`, 고객 문서 혼입이 0건인지 확인한다.
@@ -535,7 +553,7 @@ $env:FLOWNOTE_API_BASE_URL = "https://<승인된 서버 DNS 이름>"
 
 6. WPF 앱을 실행해 `C:\FlowNote\LocalData\flownote.local.sqlite`와 `C:\FlowNote\LocalData\Files`가 생성되는지 확인한 뒤 서버 로그인, 문서 목록 조회, 문서 열람, FieldComment 등록을 확인한다.
 
-7. 설치 후 자동 점검 스크립트를 실행한다.
+7. 단일 설치 PC의 정적 설치 후 점검에서는 `-RunId` 없이 자동 점검 스크립트를 실행한다.
 
 ```powershell
 .\scripts\verify-wpf-msi-install.ps1 `
@@ -545,7 +563,7 @@ $env:FLOWNOTE_API_BASE_URL = "https://<승인된 서버 DNS 이름>"
   -LocalDataDir "C:\FlowNote\LocalData"
 ```
 
-self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 서명 인증서로 EXE와 MSI를 서명한 배포 PC에서는 `-CheckSignature`도 함께 사용한다.
+self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 서명 인증서로 EXE와 MSI를 서명한 배포 PC에서는 `-CheckSignature`도 함께 사용한다. 이 정적 점검은 위의 `-RunId` 수명주기 리허설을 대신하지 않는다.
 
 점검이 실패하면 출력된 `[다음 조치]`를 위에서부터 수행한다. framework-dependent MSI에서 .NET Windows Desktop Runtime 10이 없으면 승인된 runtime을 설치하거나 승인된 self-contained MSI로 다시 설치한다. WebView2가 없으면 승인된 사내 배포본을 설치한다. 설치 폴더가 없으면 패키지 hash와 signer, `msiexec` 설치 로그를 먼저 대조한다. 실패 로그와 화면은 같은 `run_id`의 Git 제외 증거 폴더에 보존하고, 원인 해결 전에는 다음 PC 배포를 진행하지 않는다.
 
@@ -833,9 +851,9 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 후속 배포 과제
 
-- 고객 유사 네트워크의 HTTPS, 방화벽, 서버 주소 변경과 시간 동기화 리허설
-- 현장별 .NET/WebView2 설치 조합에서 self-contained MSI 신규 설치·업그레이드·제거·rollback 실기 검증
-- 현장별 HTTPS·코드 서명 인증서 발급, 배포, 갱신, 폐기 운영 절차
+- 준비된 schema version 10 판정표로 고객 유사 네트워크의 HTTPS, 방화벽, 서버 주소 변경과 시간 동기화 실기 PASS 확보
+- 준비된 MSI 수명주기 도구로 현장별 .NET/WebView2 설치 조합의 두 MSI 신규 설치·업그레이드·제거·재설치·rollback 실기 PASS 확보
+- 현장별 HTTPS·코드 서명 인증서 발급, 배포, 갱신, 폐기와 CRL/OCSP 접근 운영 절차 승인
 - Android 운영 서명 APK/AAB, MDM/승인 배포, 단말 분실·교체와 outbox 보호 정책 확정
 - 서버 DB+`storage`, WPF DB+`Files`를 별도 PC에서 복구하고 전후 개수·hash를 비교하는 훈련
 - PostgreSQL 전환 조건
