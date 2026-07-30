@@ -142,6 +142,17 @@ function Get-SignerSha256 {
     ).ToLowerInvariant()
 }
 
+function Protect-EvidenceText {
+    param([string]$Path)
+
+    $content = Get-Content -LiteralPath $Path -Raw
+    $content = $content -replace '(?i)[a-z]:\\users\\[^\s"'';]+', '<사용자 경로>'
+    $content = $content -replace '(?i)https?://[^\s"'';]+', '<외부 주소>'
+    $content = $content -replace '(?im)^.*(?:password|token|secret|private[_-]?key).*$',
+        '[민감 속성 제거]'
+    Set-Content -LiteralPath $Path -Value $content -Encoding utf8
+}
+
 function Test-Artifact {
     param(
         [string]$Role,
@@ -198,6 +209,7 @@ function Test-Artifact {
     & $SignToolPath verify /pa /all /v $signatureArtifact *>&1 |
         Out-File -LiteralPath $transcript -Encoding utf8 -Append
     $signToolPassed = $LASTEXITCODE -eq 0
+    Protect-EvidenceText -Path $transcript
     $chainStatus = if ($signToolPassed) { "PASS" } else { "FAIL" }
     $result = if (
         $artifactHash -eq $ApprovedSha256.ToLowerInvariant() -and
@@ -319,5 +331,9 @@ $failed = @($results | Where-Object { $_.result -ne "PASS" })
 Write-Host "패키지 원시 증거: $output"
 Write-Host "패키지 불일치: $($failed.Count)건"
 if ($failed.Count -gt 0) {
+    Write-Host "[누락 항목] 승인 hash·signer·chain·timestamp가 모두 일치하는 서버/WPF 패키지"
+    Write-Host "[보존된 데이터] 서버 DB, storage, WPF 로컬 DB·Files와 동기화 큐는 변경하거나 삭제하지 않았습니다."
+    Write-Host "[담당자] 배포 패키지 담당자와 보안 승인자"
+    Write-Host "[다음 조치] 실패 artifact의 transcript를 같은 run_id에 보존하고 승인 대장의 hash·signer와 패키지 전달 경로를 대조하세요. 일치 전에는 설치하지 마세요."
     throw "Windows/서버 패키지 검증에 실패했습니다."
 }
