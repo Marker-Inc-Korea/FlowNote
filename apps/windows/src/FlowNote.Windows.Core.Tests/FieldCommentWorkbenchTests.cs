@@ -105,4 +105,22 @@ public sealed class FieldCommentWorkbenchTests
 
         FieldCommentBulkReviewResultValidator.ValidatePreview(response, requestItems);
     }
+
+    [Fact]
+    public void BulkFailureGuidanceUsesFourPartOrderAndDoesNotOfferOverwrite()
+    {
+        var stale = new ServerFieldCommentBulkReviewItemResponse
+        {
+            CommentId = "comment-stale",
+            Success = false,
+            FailureCode = "FIELD_COMMENT_STALE_REVIEW_REVISION"
+        };
+
+        Assert.Contains("무엇이 실패했는지:", stale.RecoveryGuidance);
+        Assert.Contains("무엇이 보존됐는지:", stale.RecoveryGuidance);
+        Assert.Contains("누가 처리해야 하는지:", stale.RecoveryGuidance);
+        Assert.Contains("사용자가 지금 할 수 있는 일:", stale.RecoveryGuidance);
+        Assert.Contains("원문을 비교", stale.RecoveryGuidance);
+        Assert.DoesNotContain("자동 덮어쓰기", stale.RecoveryGuidance);
+    }
 }

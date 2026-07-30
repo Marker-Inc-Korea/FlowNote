@@ -853,13 +853,38 @@ def test_bulk_review_200_preserves_partial_results_revisions_and_receipts() -> N
         replay = client.post("/api/v1/field-comments/bulk-review/execute", headers=headers, json=payload)
         assert replay.status_code == 200, replay.text
         assert replay.json()["success_count"] == 199
+
+        retry_failed_only = {
+            **payload,
+            "items": [
+                {
+                    "commentId": comments[73]["comment_id"],
+                    "baseReviewRevision": comments[73]["review_revision"],
+                    "mutationKey": f"bulk-failed-only-{uuid4().hex}",
+                }
+            ],
+        }
+        retry = client.post(
+            "/api/v1/field-comments/bulk-review/execute",
+            headers=headers,
+            json=retry_failed_only,
+        )
+        assert retry.status_code == 200, retry.text
+        assert retry.json()["requested_count"] == 1
+        assert retry.json()["success_count"] == 1
+        assert retry.json()["failure_count"] == 0
+        assert retry.json()["items"][0]["comment_id"] == comments[73]["comment_id"]
+
         with client.app.state.database.session() as session:
             receipt_count = session.scalar(
                 select(func.count()).select_from(FieldCommentReviewMutationReceipt).where(
-                    FieldCommentReviewMutationReceipt.mutation_key.in_([item["mutationKey"] for item in items])
+                    FieldCommentReviewMutationReceipt.mutation_key.in_(
+                        [item["mutationKey"] for item in items]
+                        + [retry_failed_only["items"][0]["mutationKey"]]
+                    )
                 )
             )
-            assert receipt_count == 199
+            assert receipt_count == 200
 
 
 def test_assignment_conflict_and_proxy_actor_audit_are_explicit() -> None:

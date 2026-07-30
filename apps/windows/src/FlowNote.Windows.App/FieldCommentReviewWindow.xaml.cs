@@ -207,7 +207,11 @@ public partial class FieldCommentReviewWindow : Window
 
         if (serverClient is null)
         {
-            StatusTextBlock.Text = "일괄 처리 결과를 항목별로 보존하려면 서버 연결이 필요합니다. 선택 항목과 원천 코멘트는 바뀌지 않았습니다. 다음: 서버 연결을 확인한 뒤 다시 실행하세요.";
+            StatusTextBlock.Text = WorkflowFailureGuidance.Format(
+                "서버 연결이 없어 일괄 처리를 시작하지 못했습니다.",
+                "선택 항목과 원천 코멘트",
+                "현재 사용자",
+                "서버 주소와 로그인을 확인한 뒤 다시 실행하세요.");
             return;
         }
 
@@ -265,8 +269,11 @@ public partial class FieldCommentReviewWindow : Window
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentOutOfRangeException or HttpRequestException or TaskCanceledException)
         {
-            StatusTextBlock.Text =
-                "일괄 처리 결과를 모두 확인하지 못했습니다. 이미 성공한 항목과 모든 원천 코멘트는 그대로 보존됩니다. 다음: '일괄 결과 다시 확인'을 눌러 같은 요청의 결과만 확인하세요.";
+            StatusTextBlock.Text = WorkflowFailureGuidance.FromServerException(
+                exception,
+                "일괄 처리 결과를 모두 확인하지 못했습니다.",
+                "이미 성공한 항목, 모든 원천 코멘트와 원래 요청 식별값",
+                "'일괄 결과 다시 확인'을 눌러 같은 요청 식별값의 결과만 확인하세요.");
         }
     }
 
@@ -283,7 +290,11 @@ public partial class FieldCommentReviewWindow : Window
         }
         catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException)
         {
-            StatusTextBlock.Text = "일괄 처리 결과를 다시 확인하지 못했습니다. 이미 성공한 항목과 요청 식별값은 보존됩니다. 다음: 서버 연결을 확인한 뒤 같은 버튼을 다시 누르세요.";
+            StatusTextBlock.Text = WorkflowFailureGuidance.FromServerException(
+                exception,
+                "일괄 처리 결과를 다시 확인하지 못했습니다.",
+                "이미 성공한 항목, 모든 원천 코멘트와 원래 요청 식별값",
+                "서버 연결을 확인한 뒤 같은 버튼을 다시 누르세요.");
         }
     }
 
@@ -298,6 +309,7 @@ public partial class FieldCommentReviewWindow : Window
         }
         var execution = await serverClient.ExecuteFieldCommentBulkReviewAsync(request);
         FieldCommentBulkReviewResultValidator.Validate(execution, request.Items);
+        var retryTargetIds = FieldCommentBulkReviewResultValidator.GetRetryTargetIds(execution);
         foreach (var result in execution.Items.Where(item => item.Success == true && item.FieldComment is not null))
         {
             var local = localByServerId[result.CommentId];
@@ -315,12 +327,32 @@ public partial class FieldCommentReviewWindow : Window
                 server.ConflictBasis,
                 actorName);
         }
+        lastBulkRequest = null;
+        lastBulkLocalByServerId = null;
+        RetryBulkResultButton.IsEnabled = false;
         ReviewChanged = execution.SuccessCount > 0 || ReviewChanged;
         await RefreshQualityIssuesAsync();
         RefreshComments(
             $"{actionLabel} {execution.RequestedCount}건 · 성공 {execution.SuccessCount}건 · 실패 {execution.FailureCount}건. " +
-            "성공 항목은 유지하고 항목별 변경 번호와 처리 결과를 보존했습니다. 다음: 실패 항목의 안내를 확인해 해당 항목만 다시 처리하세요.");
+            $"성공 항목은 유지하고 재전송하지 않습니다. 재시도 대상 {retryTargetIds.Count}건만 선택했습니다. " +
+            "다음: 항목별 안내를 확인한 뒤 선택된 실패 항목만 다시 처리하세요.");
+        SelectBulkRetryTargets(retryTargetIds, localByServerId);
         new FieldCommentBulkPreviewWindow(execution) { Owner = this }.ShowDialog();
+    }
+
+    private void SelectBulkRetryTargets(
+        IReadOnlyCollection<string> retryTargetIds,
+        IReadOnlyDictionary<string, FieldCommentReviewRecord> localByServerId)
+    {
+        var localIds = retryTargetIds
+            .Where(localByServerId.ContainsKey)
+            .Select(serverId => localByServerId[serverId].CommentId)
+            .ToHashSet(StringComparer.Ordinal);
+        FieldCommentGrid.SelectedItems.Clear();
+        foreach (var item in workspace.FieldComments.Where(item => localIds.Contains(item.CommentId)))
+        {
+            FieldCommentGrid.SelectedItems.Add(item);
+        }
     }
 
     private async void TraceabilityButton_Click(object sender, RoutedEventArgs e)
@@ -591,14 +623,11 @@ public partial class FieldCommentReviewWindow : Window
         string action,
         string retryAction)
     {
-        var nextAction = exception switch
-        {
-            FlowNoteServerAuthenticationException => "다시 로그인한 뒤 같은 작업을 실행하세요.",
-            FlowNoteServerAccessException => "현장 관리자에게 로그인 ID와 필요한 업무 권한을 전달하세요.",
-            HttpRequestException or TaskCanceledException => retryAction,
-            _ => retryAction
-        };
-        return $"{action} 원천 코멘트와 기존 검토 이력은 보존됩니다. 다음: {nextAction}";
+        return WorkflowFailureGuidance.FromServerException(
+            exception,
+            action,
+            "원천 코멘트, 기존 검토 이력과 이미 성공한 처리 결과",
+            retryAction);
     }
 
     private static string FormatChannelAccess(string value) => value switch

@@ -55,7 +55,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-30 현재 pytest node ID 154건을 중복 없이 수집해 모두 통과했고 WPF Core 테스트는 macOS에서 수집·고유·TRX 76/76이 일치했다. Android 테스트 코드는 `@Test` 20건이며 이번 셸에서는 Java runtime을 찾지 못해 다시 실행하지 못했다. 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 guard는 FastAPI 154건·WPF Core 76건·Android 20건으로 현재 코드와 맞는다. Windows에서 WPF Core 수집 목록과 TRX의 `total/passed=76/76`을 대조하고 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 run이 같은 clean 소스 커밋에서 2회 연속 `partial_run=false`, `verification-summary.json=PASSED`여야 통합 기준선으로 인정한다.
+- FastAPI 코드는 2026-07-30 현재 pytest node ID 154건을 중복 없이 수집해 모두 통과했고 WPF Core 테스트는 macOS 직접 실행에서 84/84가 통과했다. Android 테스트 코드는 `@Test` 20건이며 이번 셸에서는 Java runtime을 찾지 못해 다시 실행하지 못했다. 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 guard는 FastAPI 154건·WPF Core 84건·Android 20건으로 현재 코드와 맞는다. Windows에서 WPF Core 수집 목록과 TRX의 `total/passed=84/84`를 대조하고 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 run이 같은 clean 소스 커밋에서 2회 연속 `partial_run=false`, `verification-summary.json=PASSED`여야 통합 기준선으로 인정한다.
 
 ## 일일 기록
 

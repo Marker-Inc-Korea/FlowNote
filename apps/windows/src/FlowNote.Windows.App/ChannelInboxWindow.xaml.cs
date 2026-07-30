@@ -240,7 +240,11 @@ public partial class ChannelInboxWindow : Window
             return true;
         }
 
-        StatusTextBlock.Text = "서버에 연결되어 있지 않습니다. 로컬 데이터와 동기화 큐는 삭제되지 않습니다. 서버 주소와 로그인을 확인한 뒤 다시 시도하세요.";
+        StatusTextBlock.Text = WorkflowFailureGuidance.Format(
+            "서버 연결이 없어 채널 작업을 시작하지 못했습니다.",
+            "로컬 데이터와 동기화 큐",
+            "현재 사용자",
+            "서버 주소와 로그인을 확인한 뒤 다시 시도하세요.");
         ChannelGrid.ItemsSource = Array.Empty<ServerNotificationChannelResponse>();
         NotificationGrid.ItemsSource = Array.Empty<ServerUserNotificationResponse>();
         HandoverGrid.ItemsSource = Array.Empty<ServerHandoverResponse>();
@@ -249,16 +253,10 @@ public partial class ChannelInboxWindow : Window
 
     private static string BuildServerFailureMessage(Exception exception)
     {
-        return exception switch
-        {
-            FlowNoteServerAuthenticationException =>
-                "로그인이 만료되어 작업을 확인하지 못했습니다. 기존 원천과 수신 확인 기록은 삭제되지 않습니다. 다음: 다시 로그인한 뒤 같은 작업을 다시 실행하세요.",
-            FlowNoteServerAccessException =>
-                "현재 계정에는 이 작업 권한이 없습니다. 기존 원천과 수신 확인 기록은 삭제되지 않습니다. 다음: 현장 관리자에게 로그인 ID와 필요한 업무를 전달하세요.",
-            HttpRequestException or TaskCanceledException =>
-                "서버 연결이 끊겨 작업 결과를 확인하지 못했습니다. 기존 원천과 수신 확인 기록은 삭제되지 않습니다. 다음: 네트워크를 확인한 뒤 새로고침하세요.",
-            _ =>
-                "채널 작업을 완료하지 못했습니다. 기존 원천과 수신 확인 기록은 삭제되지 않습니다. 다음: 목록을 새로고침한 뒤 다시 시도하세요."
-        };
+        return WorkflowFailureGuidance.FromServerException(
+            exception,
+            "채널 작업 결과를 확인하지 못했습니다.",
+            "기존 원천, FieldComment와 수신 확인 기록",
+            "네트워크를 확인하고 목록을 새로고침한 뒤 다시 시도하세요.");
     }
 }

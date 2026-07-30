@@ -414,7 +414,11 @@ public partial class MainWindow
         }
 
         workspace.StatusText =
-            "코멘트 검토와 보고서 작성은 관리자/문서관리/부서관리 권한이 필요합니다. 현장 관리자에게 로그인 ID와 필요한 업무를 전달하세요.";
+            WorkflowFailureGuidance.Format(
+                "현재 계정 권한이 부족해 코멘트 검토와 보고서 작성을 열지 못했습니다.",
+                "원천 코멘트, 현재 문서와 기존 보고서",
+                "현장 관리자",
+                "로그인 ID와 필요한 검토·보고서 업무를 현장 관리자에게 전달하세요.");
         return false;
     }
 

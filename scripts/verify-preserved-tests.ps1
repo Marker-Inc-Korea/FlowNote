@@ -31,7 +31,7 @@ New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
 $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
 $expectedFastApiTestCount = 154
-$expectedWpfCoreTestCount = 76
+$expectedWpfCoreTestCount = 84
 $expectedAndroidUnitTestCount = 20
 $stepDisplayNames = @{
     "Check Windows baseline toolchain versions" = "Windows x64 표준 도구 확인"
@@ -70,7 +70,7 @@ if ($RunAndroidDeviceSmoke) {
 }
 $script:currentStepDisplayName = "검증 준비"
 $script:currentStepStatus = "RUNNING"
-$script:currentExpectedValue = "FastAPI 154건, WPF Core 76건, Android 20건과 모든 필수 단계 통과"
+$script:currentExpectedValue = "FastAPI 154건, WPF Core 84건, Android 20건과 모든 필수 단계 통과"
 $script:currentActualValue = "아직 실행하지 않음"
 $script:currentNextAction = "Windows x64 표준 도구 확인부터 순서대로 실행합니다."
 $script:currentPreservedData = "기존 공통 SQLite와 테스트 산출물은 삭제하거나 초기화하지 않습니다."
@@ -271,7 +271,7 @@ function Get-StepExpectedValue {
             return "FastAPI JUnit total/passed 154/154, 실패·오류·건너뜀 0건"
         }
         "Run WPF Core tests" {
-            return "WPF Core 수집/고유 76/76, TRX total/passed 76/76, 실패·오류·건너뜀 0건"
+            return "WPF Core 수집/고유 84/84, TRX total/passed 84/84, 실패·오류·건너뜀 0건"
         }
         "Build WPF app" {
             return "WPF 앱 빌드 PASSED, compiler warning 0건, error 0건"
