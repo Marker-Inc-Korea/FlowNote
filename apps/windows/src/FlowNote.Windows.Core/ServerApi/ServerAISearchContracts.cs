@@ -133,6 +133,59 @@ public sealed record ServerAISearchReadinessScopeResponse
     public string DatabaseScope { get; init; } = string.Empty;
 }
 
+public sealed record ServerAISearchReadinessEvaluationSummary
+{
+    [JsonPropertyName("run_id")] public string RunId { get; init; } = string.Empty;
+    [JsonPropertyName("run_label")] public string RunLabel { get; init; } = string.Empty;
+    [JsonPropertyName("created_at")] public DateTimeOffset CreatedAt { get; init; }
+    [JsonPropertyName("status")] public string Status { get; init; } = string.Empty;
+    [JsonPropertyName("candidate_identity_stable")] public bool CandidateIdentityStable { get; init; }
+    [JsonPropertyName("ranking_stable")] public bool RankingStable { get; init; }
+    [JsonPropertyName("case_count")] public int CaseCount { get; init; }
+    [JsonPropertyName("passed_count")] public int PassedCount { get; init; }
+    [JsonPropertyName("source_coverage_complete")] public bool SourceCoverageComplete { get; init; }
+    [JsonPropertyName("top_k_inclusion_rate")] public decimal TopKInclusionRate { get; init; }
+    [JsonPropertyName("excluded_source_violation")] public int ExcludedSourceViolation { get; init; }
+    [JsonPropertyName("permission_leak_violation")] public int PermissionLeakViolation { get; init; }
+    [JsonPropertyName("nonexistent_citation_violation")] public int NonexistentCitationViolation { get; init; }
+    [JsonPropertyName("citation_trace_success_rate")] public decimal CitationTraceSuccessRate { get; init; }
+    [JsonPropertyName("citation_semantic_match_rate")] public decimal CitationSemanticMatchRate { get; init; }
+    [JsonPropertyName("conflict_disclosure_rate")] public decimal ConflictDisclosureRate { get; init; }
+    [JsonPropertyName("dataset_version_id")] public string? DatasetVersionId { get; init; }
+    [JsonPropertyName("dataset_snapshot_hash")] public string? DatasetSnapshotHash { get; init; }
+}
+
+public sealed record ServerAIReadinessApprovalActorSeparation
+{
+    [JsonPropertyName("author_id")] public string? AuthorId { get; init; }
+    [JsonPropertyName("reviewer_id")] public string? ReviewerId { get; init; }
+    [JsonPropertyName("first_approved_by")] public string? FirstApprovedBy { get; init; }
+    [JsonPropertyName("second_approved_by")] public string? SecondApprovedBy { get; init; }
+    [JsonPropertyName("required_actor_count")] public int RequiredActorCount { get; init; }
+    [JsonPropertyName("distinct_actor_count")] public int DistinctActorCount { get; init; }
+    [JsonPropertyName("complete")] public bool Complete { get; init; }
+    [JsonPropertyName("missing_roles")] public IReadOnlyList<string> MissingRoles { get; init; } = [];
+}
+
+public sealed record ServerAIReadinessOperatorAction
+{
+    [JsonPropertyName("code")] public string Code { get; init; } = string.Empty;
+    [JsonPropertyName("title")] public string Title { get; init; } = string.Empty;
+    [JsonPropertyName("detail")] public string Detail { get; init; } = string.Empty;
+    [JsonPropertyName("owner")] public string Owner { get; init; } = string.Empty;
+    [JsonPropertyName("next_action")] public string NextAction { get; init; } = string.Empty;
+}
+
+public sealed record ServerAIExternalCallConfiguration
+{
+    [JsonPropertyName("feature_enabled")] public bool FeatureEnabled { get; init; }
+    [JsonPropertyName("readiness_gate_enabled")] public bool ReadinessGateEnabled { get; init; }
+    [JsonPropertyName("provider_adapter_mode")] public string ProviderAdapterMode { get; init; } = string.Empty;
+    [JsonPropertyName("provider_configured")] public bool ProviderConfigured { get; init; }
+    [JsonPropertyName("model_configured")] public bool ModelConfigured { get; init; }
+    [JsonPropertyName("network_test_scope_enabled")] public bool NetworkTestScopeEnabled { get; init; }
+}
+
 public sealed record ServerAISearchReadinessResponse
 {
     [JsonPropertyName("scope")]
@@ -165,6 +218,9 @@ public sealed record ServerAISearchReadinessResponse
     [JsonPropertyName("missing_category_scenarios")]
     public IReadOnlyList<Dictionary<string, string>> MissingCategoryScenarios { get; init; } = [];
 
+    [JsonPropertyName("category_scenario_gaps")]
+    public IReadOnlyList<ServerAIGroundTruthCoverage> CategoryScenarioGaps { get; init; } = [];
+
     [JsonPropertyName("provider_start_ready")]
     public bool ProviderStartReady { get; init; }
 
@@ -176,10 +232,43 @@ public sealed record ServerAISearchReadinessResponse
 
     [JsonPropertyName("latest_approved_dataset")]
     public ServerAIGroundTruthDatasetSummary? LatestApprovedDataset { get; init; }
+
+    [JsonPropertyName("latest_evaluation")]
+    public ServerAISearchReadinessEvaluationSummary? LatestEvaluation { get; init; }
+
+    [JsonPropertyName("human_sample_review")]
+    public ServerAIFieldReadinessReviewSummary HumanSampleReview { get; init; } = new();
+
+    [JsonPropertyName("human_sample_review_ready")]
+    public bool HumanSampleReviewReady { get; init; }
+
+    [JsonPropertyName("approval_actor_separation")]
+    public ServerAIReadinessApprovalActorSeparation ApprovalActorSeparation { get; init; } = new();
+
+    [JsonPropertyName("provider_review_ready")]
+    public bool ProviderReviewReady { get; init; }
+
+    [JsonPropertyName("operator_actions")]
+    public IReadOnlyList<ServerAIReadinessOperatorAction> OperatorActions { get; init; } = [];
+
+    [JsonPropertyName("external_call_block_reasons")]
+    public IReadOnlyList<string> ExternalCallBlockReasons { get; init; } = [];
+
+    [JsonPropertyName("external_call_configuration")]
+    public ServerAIExternalCallConfiguration ExternalCallConfiguration { get; init; } = new();
+
+    [JsonPropertyName("external_ai_calls_blocked")]
+    public bool ExternalAICallsBlocked { get; init; }
 }
 
 public sealed record ServerAISearchTrackReadinessResponse
 {
+    [JsonPropertyName("accepted_data_classification")]
+    public string? AcceptedDataClassification { get; init; }
+
+    [JsonPropertyName("accepted_data_classifications")]
+    public IReadOnlyList<string> AcceptedDataClassifications { get; init; } = [];
+
     [JsonPropertyName("ground_truth_count")]
     public int GroundTruthCount { get; init; }
 

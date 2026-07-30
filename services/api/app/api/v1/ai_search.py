@@ -47,6 +47,7 @@ from app.services.ai_readiness import (
     QUESTION_CATEGORIES,
     SCENARIO_TYPES,
     database_scope,
+    operator_readiness_actions,
     scope_readiness,
 )
 from app.services.ai_operations import audit_event
@@ -1888,7 +1889,7 @@ def get_scope_readiness(
     session: Annotated[Session, Depends(get_db_session)],
     line_scope: Annotated[str | None, Query(alias="lineScope")] = None,
 ) -> dict[str, object]:
-    return scope_readiness(
+    readiness = scope_readiness(
         session,
         customer_scope=settings.ai_customer_scope,
         site_scope=settings.ai_site_scope,
@@ -1897,6 +1898,29 @@ def get_scope_readiness(
         provider=settings.ai_provider,
         model_scope=settings.ai_model,
     )
+    operator_actions = operator_readiness_actions(
+        readiness,
+        external_call_enabled=settings.ai_external_call_enabled,
+        provider_adapter_mode=settings.ai_provider_adapter_mode,
+        provider=settings.ai_provider,
+        model_scope=settings.ai_model,
+        network_test_scope_enabled=settings.ai_network_test_scope_enabled,
+        environment=settings.environment,
+    )
+    readiness["operator_actions"] = operator_actions
+    readiness["external_call_block_reasons"] = [
+        action["code"] for action in operator_actions
+    ]
+    readiness["external_call_configuration"] = {
+        "feature_enabled": settings.ai_external_call_enabled,
+        "readiness_gate_enabled": settings.ai_readiness_gate_enabled,
+        "provider_adapter_mode": settings.ai_provider_adapter_mode.strip().upper(),
+        "provider_configured": settings.ai_provider.strip().upper() != "UNCONFIGURED",
+        "model_configured": settings.ai_model.strip().upper() != "UNCONFIGURED",
+        "network_test_scope_enabled": settings.ai_network_test_scope_enabled,
+    }
+    readiness["external_ai_calls_blocked"] = bool(operator_actions)
+    return readiness
 
 
 @router.post("/evaluations")

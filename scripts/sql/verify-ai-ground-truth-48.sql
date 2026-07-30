@@ -15,6 +15,15 @@ dataset AS (
   JOIN ai_search_ground_truth_provenance p USING (ground_truth_case_id)
   WHERE c.case_key LIKE 'smoke48-v1-%'
 ),
+all_smoke_dataset AS (
+  SELECT c.*, p.data_classification, p.readiness_track, p.approval_status,
+         p.first_approved_by, p.second_approved_by, p.source_snapshot_hash,
+         p.contains_sensitive_data
+  FROM ai_search_ground_truth_cases c
+  JOIN ai_search_ground_truth_provenance p USING (ground_truth_case_id)
+  WHERE p.readiness_track = 'SMOKE_REGRESSION'
+    AND p.approval_status = 'APPROVED'
+),
 coverage AS (
   SELECT category, scenario_type, count(*) AS actual
   FROM dataset GROUP BY category, scenario_type
@@ -55,6 +64,41 @@ reference_checks AS (
          END AS source_exists
   FROM all_references r
 ),
+all_smoke_references AS (
+  SELECT d.ground_truth_case_id, 'EXPECTED' AS disposition, e.value AS reference
+  FROM all_smoke_dataset d, json_each(d.expected_evidence_json) e
+  UNION ALL
+  SELECT d.ground_truth_case_id, 'EXCLUDED', e.value
+  FROM all_smoke_dataset d, json_each(d.excluded_evidence_json) e
+),
+all_smoke_reference_checks AS (
+  SELECT r.*,
+         json_extract(reference, '$.sourceType') AS source_type,
+         json_extract(reference, '$.sourceId') AS source_id,
+         json_extract(reference, '$.sourceVersionId') AS source_version_id,
+         json_extract(reference, '$.contentHash') AS content_hash,
+         CASE json_extract(reference, '$.sourceType')
+           WHEN 'PUBLISHED_DOCUMENT_VERSION' THEN EXISTS (
+             SELECT 1 FROM document_versions v
+             WHERE v.document_id = json_extract(reference, '$.sourceId')
+               AND v.version_id = json_extract(reference, '$.sourceVersionId')
+           )
+           WHEN 'FIELD_COMMENT' THEN EXISTS (
+             SELECT 1 FROM field_comments f
+             WHERE f.comment_id = json_extract(reference, '$.sourceId')
+           )
+           WHEN 'WORK_SEQUENCE_HISTORY' THEN EXISTS (
+             SELECT 1 FROM work_sequence_change_history h
+             WHERE h.change_id = json_extract(reference, '$.sourceId')
+           )
+           WHEN 'REPORT_SOURCE' THEN EXISTS (
+             SELECT 1 FROM report_sources rs
+             WHERE CAST(rs.id AS TEXT) = json_extract(reference, '$.sourceId')
+           )
+           ELSE 0
+         END AS source_exists
+  FROM all_smoke_references r
+),
 matrix_comments AS (
   SELECT * FROM field_comments
   WHERE comment_id LIKE 'comment-smoke48-v1-%'
@@ -77,6 +121,33 @@ SELECT
   (SELECT count(*) FROM dataset WHERE data_classification NOT IN ('SYNTHETIC', 'TEST')
      OR readiness_track <> 'SMOKE_REGRESSION' OR contains_sensitive_data <> 0) AS provenance_violation_count,
   (SELECT count(*) FROM dataset WHERE length(source_snapshot_hash) <> 64) AS snapshot_hash_violation_count,
+  (SELECT count(*) FROM (
+     SELECT customer_scope, site_scope, database_scope, coalesce(line_scope, '') AS line_scope,
+            case_key, count(*) AS actual
+     FROM all_smoke_dataset
+     GROUP BY customer_scope, site_scope, database_scope, coalesce(line_scope, ''), case_key
+     HAVING actual <> 1
+   )) AS smoke_duplicate_case_key_count,
+  (SELECT count(*) FROM all_smoke_dataset
+   WHERE first_approved_by = second_approved_by OR second_approved_by IS NULL)
+     AS smoke_approval_violation_count,
+  (SELECT count(*) FROM all_smoke_dataset
+   WHERE data_classification NOT IN ('SYNTHETIC', 'TEST') OR contains_sensitive_data <> 0)
+     AS smoke_provenance_violation_count,
+  (SELECT count(*) FROM all_smoke_dataset WHERE length(source_snapshot_hash) <> 64)
+     AS smoke_snapshot_hash_violation_count,
+  (SELECT count(*) FROM all_smoke_reference_checks WHERE source_exists = 0)
+     AS smoke_orphan_reference_count,
+  (SELECT count(*) FROM all_smoke_reference_checks WHERE length(content_hash) <> 64)
+     AS smoke_reference_hash_violation_count,
+  (SELECT count(*) FROM (
+     SELECT f.idempotency_key, count(DISTINCT f.comment_id) AS actual
+     FROM all_smoke_reference_checks r
+     JOIN field_comments f ON r.source_type = 'FIELD_COMMENT' AND f.comment_id = r.source_id
+     WHERE f.idempotency_key IS NOT NULL
+     GROUP BY f.idempotency_key
+     HAVING actual <> 1
+   )) AS smoke_field_comment_idempotency_duplicate_count,
   (SELECT count(*) FROM reference_checks WHERE source_exists = 0) AS orphan_reference_count,
   (SELECT count(*) FROM reference_checks WHERE length(content_hash) <> 64) AS reference_hash_violation_count,
   (SELECT count(*) FROM reference_checks WHERE trim(coalesce(rationale, '')) = '') AS missing_rationale_count,

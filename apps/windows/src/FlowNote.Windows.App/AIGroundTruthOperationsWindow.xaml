@@ -23,6 +23,89 @@
         </Border>
 
         <TabControl Grid.Row="1" Margin="0,10,0,0">
+            <TabItem Header="운영 준비도">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Border Padding="12" Background="{StaticResource PanelMutedBrush}"
+                            BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="4">
+                        <StackPanel>
+                            <TextBlock Text="실제 현장 자료와 합성 회귀 자료 경계" FontSize="16" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="ReadinessBoundaryTextBlock" Margin="0,6,0,0"
+                                       Text="준비도 정보를 불러오는 중입니다." TextWrapping="Wrap"/>
+                            <TextBlock Margin="0,5,0,0" Foreground="{StaticResource SecondaryTextBrush}"
+                                       Text="SMOKE_REGRESSION은 회귀 안정성만 확인하며 FIELD_READINESS 사례 수와 provider 착수 판정에 합산하지 않습니다."
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+                    <Grid Grid.Row="1" Margin="0,8,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Padding="10" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1">
+                            <StackPanel>
+                                <TextBlock Text="승인과 평가" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="ReadinessApprovalTextBlock" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="ReadinessEvaluationTextBlock" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="2" Padding="10" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1">
+                            <StackPanel>
+                                <TextBlock Text="24칸 검토와 외부 호출" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="ReadinessReviewTextBlock" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="ReadinessExternalTextBlock" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="5*"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="8*"/>
+                        </Grid.ColumnDefinitions>
+                        <GroupBox Header="부족한 범주·유형">
+                            <DataGrid x:Name="ReadinessGapGrid" Margin="6" AutoGenerateColumns="False"
+                                      IsReadOnly="True" CanUserAddRows="False">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="범주" Binding="{Binding CategoryLabel}" Width="*"/>
+                                    <DataGridTextColumn Header="유형" Binding="{Binding ScenarioLabel}" Width="85"/>
+                                    <DataGridTextColumn Header="현재" Binding="{Binding Count}" Width="55"/>
+                                    <DataGridTextColumn Header="필수" Binding="{Binding Required}" Width="55"/>
+                                    <DataGridTextColumn Header="부족" Binding="{Binding Missing}" Width="55"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </GroupBox>
+                        <GroupBox Grid.Column="2" Header="비활성 이유·담당자·다음 조치">
+                            <DataGrid x:Name="ReadinessActionGrid" Margin="6" AutoGenerateColumns="False"
+                                      IsReadOnly="True" CanUserAddRows="False" RowHeight="Auto">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="항목" Binding="{Binding Title}" Width="160"/>
+                                    <DataGridTextColumn Header="현재 상태" Binding="{Binding Detail}" Width="2*">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="담당자" Binding="{Binding Owner}" Width="150">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="다음 조치" Binding="{Binding NextAction}" Width="3*">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </GroupBox>
+                    </Grid>
+                </Grid>
+            </TabItem>
             <TabItem Header="dataset 버전">
                 <Grid Margin="8">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="470"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>

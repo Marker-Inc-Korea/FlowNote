@@ -24,6 +24,16 @@
 
 변경된 실패 안내는 PowerShell SDK 보조 호스트로 macOS 환경 게이트를 의도적으로 실패시킨 `candidate1-macos-ux-failure-20260730-01`에서 확인했다. 콘솔·단계 로그·`verification-summary.json`은 현재 단계, 기대값, 실제값, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 모두 한 화면 구조로 남겼다. 현재 호스트는 macOS ARM64라 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
 
+## 2026-07-30 후보 7 AI 근거 준비도와 운영자 UX
+
+`smoke48-v1`을 기존 누적 시험 DB에서 다시 seed한 결과 `created=0`, 총 48건으로 수렴했다. 범주별 6건, `NORMAL`/`EXCLUSION`/`CONFLICT` 각 16건, 24칸별 2건, 기대 원천 네 유형 각 12건, FieldComment 상태 `ANALYZED 8`·`REVIEWED 8`·`SELECTED 16`·`EXCLUDED 16`, 설비·품목·공정·오류유형 태그 축을 확인했다. 기본 matrix의 권한 거부 2건, 삭제·비공개 원천 4건, 상충 16건을 측정했고 새 AI 장애나 UX 수정에서 재현된 근거 검색 실패가 없어 새 회귀 사례는 추가하지 않았다.
+
+최종 두 평가 run은 `aiseval_07133fe31a0241cba73c1ca2bb22c9a1`, `aiseval_9f72427ac10e45a8b9119a3770011477`이다. 48/48이 통과했고 candidate ID/content hash/rank가 안정됐다. top-k 포함·인용 trace·의미 일치·상충 표시는 모두 `1.0`, 권한 누출·허위 인용·제외 원천 노출은 모두 0건이었다. 기본 matrix와 누적된 추가 승인 `SMOKE_REGRESSION` 전체의 case key 중복, 승인/provenance 위반, orphan, reference/snapshot hash 형식 위반과 참조 FieldComment 멱등키 중복도 모두 0건이다. 증적은 Git 제외 경로 `data/local/ai-smoke-regression/smoke48-v1-evidence-aiseval_9f72427ac10e45a8b9119a3770011477.json`에 보존했다.
+
+이 시험 DB의 readiness 응답은 `FIELD_READINESS` 3건, `SMOKE_REGRESSION` 누적 139건과 `provider_start_ready=false`, 외부 질의 `AI_EXTERNAL_CALL_DISABLED`를 반환했다. 3건은 누적 개발 시험 자료이며 고객 승인 운영 dataset 48건을 뜻하지 않는다. 승인된 고객 DB, dataset ID, scope와 검증 계정이 제공되지 않아 `verify-ai-field-readiness.py`는 실행하지 않았다. 실제 원문 반입·익명화·승인이나 provider 네트워크 연결도 수행하지 않았다.
+
+WPF `AI 정답셋`에는 실제/합성 자료 경계, 원천·범주/유형 결손, 네 승인 역할, 최신 평가 run, 24칸 검토 상태, 외부 호출 비활성 이유·담당자·다음 조치를 한글로 표시하는 `운영 준비도` 탭을 추가했다. FastAPI 전체 회귀 160/160, WPF Core 84/84가 통과했고 WPF 앱 교차 빌드는 경고 0개·오류 0개였다. Ruff와 `git diff --check`도 통과했다. Windows x64 실제 창 조작과 무생략 통합 스모크는 이번 범위에서 실행하지 않았으므로 최상위 통합 기준선은 계속 `대기`다.
+
 ## 2026-07-30 작업 102 Windows 설치·망 전환 판정 갱신
 
 파일럿 판정 schema version을 10으로 올리고 framework-dependent와 self-contained WPF MSI의 신규 설치, 업그레이드, 제거, 재설치, 이전 승인본 rollback을 각각 기록하도록 원시 판정표를 확장했다. 각 단계는 승인 패키지 버전, 종료 코드, 실제 설치 버전과 함께 WPF 로컬 데이터의 전후 SHA-256 fingerprint 일치를 확인한다. 인증서 갱신·폐기와 서버 주소 변경은 기존 세션과 로컬 로그인 우회를 차단하고 동기화 큐·알림 polling을 멈춘 상태에서 로컬 원천·큐·cursor가 보존되는지 별도 원시 판정표로 확인한다. 서버 재부팅과 승인 rollback 뒤에는 6개 핵심 업무를 각각 다시 수행해 총 12개 행을 남긴다.

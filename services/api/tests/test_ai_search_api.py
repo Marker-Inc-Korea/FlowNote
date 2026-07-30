@@ -897,9 +897,40 @@ def test_scope_readiness_counts_approved_ground_truth_and_category_gaps() -> Non
         initial_smoke_ground_truth_count = initial_body["smoke_regression_readiness"]["ground_truth_count"]
         assert initial_body["ground_truth_gap"] == max(48 - initial_ground_truth_count, 0)
         assert initial_body["ground_truth_per_category_scenario_minimum"] == 2
+        assert initial_body["field_readiness"]["accepted_data_classification"] == "ANONYMOUS_FIELD"
+        assert initial_body["smoke_regression_readiness"]["accepted_data_classifications"] == [
+            "SYNTHETIC", "TEST"
+        ]
         assert initial_body["human_sample_review_ready"] is initial_body["human_sample_review"]["complete"]
+        assert initial_body["human_sample_review"]["sample_case_count"] <= 24
+        assert initial_body["approval_actor_separation"]["required_actor_count"] == 4
+        assert initial_body["approval_actor_separation"]["distinct_actor_count"] <= 4
+        assert initial_body["approval_actor_separation"]["complete"] is (
+            initial_body["approval_actor_separation"]["distinct_actor_count"] == 4
+            and not initial_body["approval_actor_separation"]["missing_roles"]
+        )
         assert initial_body["provider_review_ready"] is False
         assert initial_body["provider_start_ready"] is False
+        assert initial_body["external_ai_calls_blocked"] is True
+        assert initial_body["external_call_configuration"] == {
+            "feature_enabled": False,
+            "readiness_gate_enabled": True,
+            "provider_adapter_mode": "DISABLED",
+            "provider_configured": False,
+            "model_configured": False,
+            "network_test_scope_enabled": False,
+        }
+        action_codes = {item["code"] for item in initial_body["operator_actions"]}
+        assert set(initial_body["readiness_failures"]) <= action_codes
+        assert {
+            "EXTERNAL_CALL_FEATURE_DISABLED",
+            "PROVIDER_ADAPTER_DISABLED",
+            "PROVIDER_OR_MODEL_UNCONFIGURED",
+        } <= action_codes
+        assert all(
+            item["title"] and item["detail"] and item["owner"] and item["next_action"]
+            for item in initial_body["operator_actions"]
+        )
         assert initial_body["scope"]["customer_scope"] == "DEFAULT"
         assert initial_body["scope"]["site_scope"] == "DEFAULT"
         assert initial_body["scope"]["database_scope"].startswith("sqlite:")

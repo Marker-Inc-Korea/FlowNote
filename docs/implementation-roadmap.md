@@ -1,6 +1,6 @@
 # FlowNote 구현 로드맵
 
-이 문서는 2026-07-28 현재 코드에서 완료된 범위와, 아직 구현되지 않은 예외 작업을 분리한다. “완료된 기반”은 코드가 존재하는 항목이며 운영 실기 통과를 뜻하지 않는다.
+이 문서는 2026-07-30 현재 코드에서 완료된 범위와, 아직 구현되지 않은 예외 작업을 분리한다. “완료된 기반”은 코드가 존재하는 항목이며 운영 실기 통과를 뜻하지 않는다.
 
 ## 완료된 기반
 
@@ -35,6 +35,7 @@
 - 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth 첫 승인·독립 2차 승인, 원천 snapshot/provenance 고정, 후보의 `readiness_track` 판정과 실제 현장/스모크 준비도 분리, 48건 비민감 스모크 시드·검증 도구
 - 불변 ground-truth dataset version의 작성·구성·검토·독립 2단계 승인·대체·폐기, 승인 version 결합 평가 run과 scope 격리, 실제 익명 현장 24칸 독립 표본 검토와 제3 합의 서버 API·DB 기록
 - WPF AI 근거 후보 운영 점검, `AI 정답셋`, 사례·원천 구성, 실제 익명 현장 24칸 독립 표본 검토·불일치 제3 합의 화면과 서버 API 클라이언트
+- WPF `AI 정답셋` 운영 준비도 탭. 실제 `ANONYMOUS_FIELD`/합성 `SMOKE_REGRESSION` 수 분리, 원천·24칸 결손, 네 승인 역할, 최신 평가 run, 독립 검토와 외부 호출 비활성 사유·담당자·다음 조치 표시
 - FastAPI `system-admin` 전용 외부 AI 전송 승인·프롬프트·운영 정책·감사·보존 API와 WPF `AI 운영` 화면. 고객·현장 scope별 질의 상세, 단일 만료와 legal hold 설정·해제, 이중 확인·멱등 재시도·서버 read-back 포함
 - FastAPI 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인 API
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면과 서버 API 클라이언트
@@ -48,7 +49,7 @@
 ## 설계 완료, 부분 구현
 
 - 외부 AI 1단계의 범위, 데이터 모델, API, 보안·보존 계약을 정리하고 질의 생성·조회 라우터, ORM 테이블, 기능 플래그·전송 승인, 원천 권한·민감정보 필터, 최소 payload provider adapter와 인용·규칙 기반 의미 검증을 구현했다. fake/recording adapter, timeout/429/5xx 재시도, 응답 JSON·크기·중복·prompt injection 방어, 호출 후 승인·원천·권한 재검증도 포함한다. 전송 승인·프롬프트 수명주기·전역/현장 kill switch와 한도·보존 정책·정제 감사, 자동 만료 보존 스케줄러, 일괄·단일 즉시 실행, 활성 legal hold 우선순위 및 WPF 일괄 운영 UI도 구현했다. 허용 범위는 근거 검색과 요약이며, provider별 운영 연동은 아직 구현하지 않았다.
-- 현재 동작하는 AI 기능은 `ai_search_candidates` 재생성·목록·품질 API, scope별 ground-truth 사례·원천 구성과 2인 승인, 실제 현장/스모크 준비도 분리, 불변 dataset version의 작성·검토·독립 승인과 결합 회귀 평가, 24칸 독립 표본 검토·불일치 제3 합의 서버 API와 결과 누적, WPF 근거 후보 점검·`AI 정답셋`·24칸 독립 검토 화면, 외부 질의의 비활성 기본값·승인·목적·원천 권한·민감정보·최소 payload·근거 snapshot·응답 검증·감사 게이트, `system-admin` 전용 운영 제어면이다. WPF 표본 화면은 승인된 `FIELD_READINESS` dataset과 통과한 평가 run을 함께 선택해야 열리며, 첫 판정 은닉과 불일치 case만 다루는 제3 합의를 서버 상태에 맞춰 제공한다. 후보 재생성은 문서의 활성 `smoke-regression` custom 태그를 기준으로 문서·연결 FieldComment·작업순서 이력·보고서 source의 `readiness_track`을 전파하고 준비도 API는 `field_readiness`와 `smoke_regression_readiness`를 별도 반환한다. generic 네트워크 adapter는 명시적 test scope에서만 동작하며 운영 호출로 간주하지 않는다. 합성/시험 48건과 `PILOT` 사례는 고객 승인 `ANONYMOUS_FIELD` 준비도나 운영 provider 승인을 뜻하지 않는다.
+- 현재 동작하는 AI 기능은 `ai_search_candidates` 재생성·목록·품질 API, scope별 ground-truth 사례·원천 구성과 2인 승인, 실제 현장/스모크 준비도 분리, 불변 dataset version의 작성·검토·독립 승인과 결합 회귀 평가, 24칸 독립 표본 검토·불일치 제3 합의 서버 API와 결과 누적, WPF 근거 후보 점검·`AI 정답셋`·24칸 독립 검토·운영 준비도 화면, 외부 질의의 비활성 기본값·승인·목적·원천 권한·민감정보·최소 payload·근거 snapshot·응답 검증·감사 게이트, `system-admin` 전용 운영 제어면이다. WPF 표본 화면은 승인된 `FIELD_READINESS` dataset과 통과한 평가 run을 함께 선택해야 열리며, 첫 판정 은닉과 불일치 case만 다루는 제3 합의를 서버 상태에 맞춰 제공한다. 운영 준비도 화면은 실제 현장 사례·원천·범주/유형 결손, 네 승인 역할, 최신 평가와 표본 검토 상태, 외부 호출 차단 사유를 서버 판정 그대로 보여준다. 후보 재생성은 문서의 활성 `smoke-regression` custom 태그를 기준으로 문서·연결 FieldComment·작업순서 이력·보고서 source의 `readiness_track`을 전파하고 준비도 API는 `field_readiness`와 `smoke_regression_readiness`를 별도 반환한다. generic 네트워크 adapter는 명시적 test scope에서만 동작하며 운영 호출로 간주하지 않는다. 합성/시험 48건과 `PILOT` 사례는 고객 승인 `ANONYMOUS_FIELD` 준비도나 운영 provider 승인을 뜻하지 않는다.
 
 ## 개발 우선순위 원칙
 
@@ -76,7 +77,7 @@
 8. 구현된 사용자/역할 UI와 서버 계정 보호 규칙의 현장 운영 검증 및 오류 UX 보강
 9. 문서 버전/상태/공개 상태의 서버-WPF 동기화 정책 고도화
 10. FieldComment 관리자 검토/분석/선정 운영 화면 보강
-11. 고객 승인을 받은 익명 현장 원천으로 독립 2인 승인 ground-truth 48건을 구성하고 동일 snapshot 2회 전체 회귀와 24칸 독립 표본 검토·필요 시 제3 합의, provider 심사를 실제 현장 준비도 기준으로 통과시킨다. 합성/시험 스모크와 `PILOT`은 별도 회귀·파일럿 기록으로만 유지한다.
+11. 고객 승인을 받은 익명 현장 원천으로 독립 2인 승인 ground-truth 48건을 구성하고 동일 snapshot 2회 전체 회귀와 24칸 독립 표본 검토·필요 시 제3 합의, provider 심사를 실제 현장 준비도 기준으로 통과시킨다. 원문은 저장소 밖 승인 환경에서 익명화하고 정보보호·현장 데이터 책임자가 provenance, 현재 공개 상태와 승인 취소·권한 변경 뒤 차단을 검토한다. 합성/시험 스모크와 `PILOT`은 별도 회귀·파일럿 기록으로만 유지한다.
 12. 현장 익명 샘플 기준에 맞춘 미리보기 예외 케이스 보강
 
 ## 후속 단계

@@ -167,11 +167,68 @@ def main() -> int:
                 "WHERE r.report_id LIKE 'report-smoke48-v1-%' GROUP BY rs.source_type ORDER BY rs.source_type"
             )
         }
+        category_distribution = {
+            row["category"]: row["count"] for row in connection.execute(
+                "SELECT category, count(*) AS count FROM ai_search_ground_truth_cases "
+                "WHERE case_key LIKE 'smoke48-v1-%' GROUP BY category ORDER BY category"
+            )
+        }
+        scenario_type_distribution = {
+            row["scenario_type"]: row["count"] for row in connection.execute(
+                "SELECT scenario_type, count(*) AS count FROM ai_search_ground_truth_cases "
+                "WHERE case_key LIKE 'smoke48-v1-%' GROUP BY scenario_type ORDER BY scenario_type"
+            )
+        }
+        matrix_cell_distribution = {
+            f"{row['category']}/{row['scenario_type']}": row["count"]
+            for row in connection.execute(
+                "SELECT category, scenario_type, count(*) AS count "
+                "FROM ai_search_ground_truth_cases WHERE case_key LIKE 'smoke48-v1-%' "
+                "GROUP BY category, scenario_type ORDER BY category, scenario_type"
+            )
+        }
+        expected_source_type_distribution = {
+            row["source_type"]: row["count"] for row in connection.execute(
+                "SELECT json_extract(reference.value, '$.sourceType') AS source_type, count(*) AS count "
+                "FROM ai_search_ground_truth_cases c, json_each(c.expected_evidence_json) reference "
+                "WHERE c.case_key LIKE 'smoke48-v1-%' GROUP BY source_type ORDER BY source_type"
+            )
+        }
+        failure_type_measurement = {
+            "PERMISSION_DENIED": connection.execute(
+                "SELECT count(*) FROM ai_search_ground_truth_cases c, "
+                "json_each(c.excluded_evidence_json) reference "
+                "WHERE c.case_key LIKE 'smoke48-v1-%' "
+                "AND json_extract(reference.value, '$.exclusionReason') = 'CHANNEL_ACCESS_DENIED'"
+            ).fetchone()[0],
+            "DELETED_OR_PRIVATE_SOURCE": connection.execute(
+                "SELECT count(*) FROM ai_search_ground_truth_cases c, "
+                "json_each(c.excluded_evidence_json) reference "
+                "WHERE c.case_key LIKE 'smoke48-v1-%' "
+                "AND json_extract(reference.value, '$.exclusionReason') = 'document_version_not_published'"
+            ).fetchone()[0],
+            "UNRESOLVED_CONFLICT": connection.execute(
+                "SELECT count(*) FROM ai_search_ground_truth_cases "
+                "WHERE case_key LIKE 'smoke48-v1-%' AND scenario_type = 'CONFLICT'"
+            ).fetchone()[0],
+            "NETWORK_RESPONSE_LOSS": 0,
+            "STALE_REVISION": 0,
+            "HANDOVER_PARTIAL_SUCCESS": 0,
+        }
         matrix_contracts = [dict(row) for row in connection.execute(
             "SELECT c.case_key, c.category, c.scenario_type, c.expected_outcome, "
             "c.expected_evidence_json AS expected_evidence, c.excluded_evidence_json AS expected_excluded "
             "FROM ai_search_ground_truth_cases c WHERE c.case_key LIKE 'smoke48-v1-%' ORDER BY c.case_key"
         )]
+    result.update({
+        "categoryDistribution": category_distribution,
+        "scenarioTypeDistribution": scenario_type_distribution,
+        "matrixCellDistribution": matrix_cell_distribution,
+        "fieldCommentStatusDistribution": status_distribution,
+        "expectedSourceTypeDistribution": expected_source_type_distribution,
+        "tagAxisDistribution": tag_axis_distribution,
+        "baselineFailureTypeMeasurement": failure_type_measurement,
+    })
     actual_by_case = {item["case_key"]: item for item in second["cases"]}
     evidence = {
         **result,
@@ -179,7 +236,12 @@ def main() -> int:
         "databaseFingerprint": readiness["scope"]["database_scope"],
         "statusDistribution": status_distribution,
         "sourceTypeDistribution": source_type_distribution,
+        "expectedSourceTypeDistribution": expected_source_type_distribution,
         "tagAxisDistribution": tag_axis_distribution,
+        "categoryDistribution": category_distribution,
+        "scenarioTypeDistribution": scenario_type_distribution,
+        "matrixCellDistribution": matrix_cell_distribution,
+        "baselineFailureTypeMeasurement": failure_type_measurement,
         "matrix": [
             {
                 "caseKey": item["case_key"],

@@ -1,6 +1,6 @@
 # AI 준비 ground-truth와 48건 회귀 기준
 
-이 문서는 2026-07-28 현재 `ai_search` API, WPF `AI 정답셋`, 시드·검증 스크립트 구현 기준이다. 실제 현장 데이터셋·승인자·provider 심사가 아직 없는 부분은 운영 착수 조건으로 구분한다.
+이 문서는 2026-07-30 현재 `ai_search` API, WPF `AI 정답셋`, 시드·검증 스크립트 구현 기준이다. 실제 현장 데이터셋·승인자·provider 심사가 아직 없는 부분은 운영 착수 조건으로 구분한다.
 
 외부 provider를 운영 연결하기 전에 근거 검색 품질을 같은 snapshot에서 반복 평가한다. 기준 매트릭스는 안전, 품질, 설비 이상, 작업 보류, 재작업, 인수인계, 최신 공개 문서, 상충 기록의 8범주와 `NORMAL`, `EXCLUSION`, `CONFLICT` 3유형을 조합하고 각 칸에 2건씩 둬 총 48건이다.
 
@@ -28,6 +28,8 @@ dataset 운영은 사례 승인과 별도 권한 경계를 사용한다. 위 보
 
 `AI 정답셋`에서 승인된 `FIELD_READINESS` dataset과 그 dataset을 통과한 평가 run을 각각 선택하면 `24칸 독립 검토`를 열 수 있다. 창은 서버가 dataset snapshot hash로 고정한 표본 계획, 24개 case와 sample hash를 먼저 읽는다. case를 선택하면 기대·실제·제외 원천의 source/version/trace/content hash와 ranking hash를 함께 표시한다. 첫 검토 뒤 두 번째 검토자에게는 같은 case와 근거만 보이고 첫 판단과 decision hash는 보이지 않는다. 두 판정이 모두 제출된 뒤에만 비교 내용을 표시하며 불일치가 있으면 앞선 두 사람이 아닌 사용자에게 불일치 case만 제3 합의 대상으로 연다.
 
+같은 창의 `운영 준비도` 탭은 고객 승인 `ANONYMOUS_FIELD` 사례와 합성·시험 `SMOKE_REGRESSION` 수를 분리해 표시한다. 실제 원천 유형별 현재/필수 수, 부족한 범주·유형, dataset 작성자·검토자·두 승인자의 분리, 최신 승인 snapshot 결합 평가, 24칸 독립 검토 상태를 함께 보여준다. 외부 호출이 비활성인 경우에는 준비도 미달, 기능 플래그, provider 어댑터, provider/model 설정을 한글 사유로 구분하고 담당자와 다음 조치를 표시한다.
+
 ## 비민감 48건 시드와 검증
 
 다음 명령은 이름에 `test`가 포함된 DB만 허용한다. 기존 DB와 실행 이력은 지우지 않고 `smoke48-v1` 고정 case key로 수렴한다. 별도 업무 폴더나 고객 식별자를 만들지 않는다.
@@ -54,7 +56,7 @@ services/api/.venv/bin/python scripts/verify-ai-ground-truth-48.py
 
 시드는 공개 문서 근거와 민감정보 형태, 고객 식별자 형태, 로컬 경로, 권한 밖 채널, 삭제/비공개 문서, `EXCLUDED`/`ARCHIVED` FieldComment 부정 근거를 함께 만든다. 모든 값은 합성 시험값이며 `TEST`/`SMOKE_REGRESSION` provenance를 가진다. 문서에는 `equipment`, `item`, `process`, `error_type` 네 축의 도메인 태그를 연결하며 고객 문서 트리나 BOM 구조를 만들거나 강제하지 않는다.
 
-`scripts/sql/verify-ai-ground-truth-48.sql`은 48건 수, 24칸×2건, case key 중복, 승인자 중복, provenance·snapshot hash, reference hash·근거, 원천 orphan에 더해 다음을 검사한다.
+`scripts/sql/verify-ai-ground-truth-48.sql`은 기본 48건 수, 24칸×2건, case key 중복, 승인자 중복, provenance·snapshot hash, reference hash·근거, 원천 orphan에 더해 다음을 검사한다. 같은 DB의 추가 승인 `SMOKE_REGRESSION`도 별도로 모아 case key·승인·provenance·snapshot/reference hash 형식·orphan·참조 FieldComment 멱등키 중복을 0건 기준으로 확인한다.
 
 - 48개 matrix FieldComment와 네 상태 분포, 담당자·기한·전이 사유
 - 감사 before/after source hash 동일성과 고정 idempotency key 중복 0건
@@ -66,6 +68,14 @@ services/api/.venv/bin/python scripts/verify-ai-ground-truth-48.py
 Python 검증기는 같은 48건을 두 번 평가하고 candidate ID/content hash/rank 변화가 없는지 확인한다. 두 실행 모두 top-k 포함, 인용 trace, 의미 일치, 상충 표시가 100%이고 권한 누출, 존재하지 않는 인용, 제외 원천 노출이 0건이어야 통과한다. 실행별 JSON은 Git 제외 경로 `data/local/ai-smoke-regression/`에 새 파일로 누적하며 category, scenario type, 기대 reference의 source/version/trace/hash, 실제 후보와 판정을 모두 남긴다. readiness API의 `field_readiness.ground_truth_count`와 `smoke_regression_readiness.ground_truth_count`를 별도로 기록하고 `provider_start_ready=false`, 외부 질의의 `AI_EXTERNAL_CALL_DISABLED`를 함께 확인한다.
 
 지표 산출 기준은 `scripts/sql/verify-ai-ground-truth-48.sql`과 `GET /api/v1/ai-search/readiness`이다. SQL의 모든 `*_violation`/`*_gap_count`가 0이고 API 평가 지표가 `1.0/0건` 기준을 만족해야 `SMOKE_REGRESSION`만 통과한다. `ground_truth_count`, `ground_truth_gap`, `provider_start_ready`는 오직 `FIELD_READINESS` 계열로 산출되므로 합성 48건을 더하는 SQL이나 API 경로는 허용하지 않는다.
+
+### 회귀 실패 유형 추가 기준
+
+`verify-ai-ground-truth-48.py`는 8범주별 6건, 유형별 16건, 24칸별 2건, FieldComment 상태, 네 기대 원천 유형, 태그 축을 결과와 증거 JSON에 명시한다. 함께 출력하는 실패 유형 측정은 기본 48건 안의 권한 거부, 삭제·비공개 원천, 상충 미해결만 센다. 네트워크 응답 유실, stale revision과 인수인계 부분 성공은 질문·근거 품질 사례가 아니라 각 mutation/동기화 계약의 기존 회귀 테스트로 유지한다.
+
+2026-07-30 재실행에서는 기본 48건의 빈 범주·유형, 중복 case key, orphan, hash 불일치, idempotency 중복이 모두 0이었다. 기대 원천은 네 유형 각 12건, FieldComment 상태는 `8/8/16/16`, 태그 축은 설비·품목·공정·오류유형으로 확인됐다. 권한 거부 2건, 삭제·비공개 원천 4건, 상충 16건이 기본 matrix에 있었고, 이번 실행에서 새 AI 장애나 UX 수정으로 생긴 새로운 근거 검색 실패는 확인되지 않아 회귀 사례를 추가하지 않았다.
+
+새 사례는 재현 가능한 실제 장애와 수정 검증이 있을 때만 별도 `SMOKE_REGRESSION` provenance로 등록한다. 사례에는 장애·수정 근거, 안정 case key, 고정 source/version/trace/hash, 기대 포함·제외 판정과 서로 다른 두 승인자를 둔다. 어떤 경우에도 `FIELD_READINESS`, `ground_truth_count` 또는 `provider_start_ready`에 합산하지 않는다.
 
 오늘 사진/인수인계 문서와 기존 과거 문서 버전 증가는 Windows 통합 스모크의 기존 폴더 규칙을 그대로 따른다. 이 AI 시드는 그 문서 구조에 새 스모크 전용 업무 폴더를 만들지 않으며, 부족한 현장 자료를 합성 데이터로 실제 현장 준비도에 올리지 않는다.
 
