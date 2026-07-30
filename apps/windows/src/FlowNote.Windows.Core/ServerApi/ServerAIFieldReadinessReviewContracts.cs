@@ -60,6 +60,8 @@ public sealed record ServerAIFieldReadinessReview
 public sealed record ServerAIFieldReadinessReviewSummary
 {
     [JsonPropertyName("status")] public string Status { get; init; } = "NOT_STARTED";
+    [JsonPropertyName("evaluation_run_id")] public string? EvaluationRunId { get; init; }
+    [JsonPropertyName("dataset_snapshot_hash")] public string? DatasetSnapshotHash { get; init; }
     [JsonPropertyName("independent_reviewer_count")] public int IndependentReviewerCount { get; init; }
     [JsonPropertyName("independent_review_ids")] public IReadOnlyList<string> IndependentReviewIds { get; init; } = [];
     [JsonPropertyName("independent_reviewer_ids")] public IReadOnlyList<string> IndependentReviewerIds { get; init; } = [];

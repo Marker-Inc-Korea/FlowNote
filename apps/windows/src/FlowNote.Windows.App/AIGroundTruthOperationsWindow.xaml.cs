@@ -41,8 +41,11 @@ public partial class AIGroundTruthOperationsWindow : Window
             workspace.Runs.Clear();
             foreach (var item in runs) workspace.Runs.Add(RunRow.From(item));
             var readiness = await client.GetAISearchReadinessAsync();
-            ReadinessTextBlock.Text = $"AI provider 준비도: {FormatStatus(readiness.AIProviderReadinessStatus)} · 외부 호출 {(readiness.ProviderStartReady ? "허용" : "차단")}";
-            ReadinessTextBlock.Foreground = readiness.ProviderStartReady
+            ApplyReadiness(readiness);
+            ReadinessTextBlock.Text =
+                $"AI provider 준비도: {FormatStatus(readiness.AIProviderReadinessStatus)}" +
+                $" · 실제 외부 호출 {(readiness.ExternalAICallsBlocked ? "비활성" : "활성")}";
+            ReadinessTextBlock.Foreground = readiness.ProviderStartReady && !readiness.ExternalAICallsBlocked
                 ? System.Windows.Media.Brushes.ForestGreen : System.Windows.Media.Brushes.DarkOrange;
             StatusTextBlock.Text = "서버에 보존된 dataset version과 평가 run을 조회했습니다.";
             if (workspace.Datasets.Count > 0) DatasetGrid.SelectedIndex = 0;
@@ -50,6 +53,56 @@ public partial class AIGroundTruthOperationsWindow : Window
         }
         catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
         { StatusTextBlock.Text = $"ground-truth 운영 정보 조회 실패: {ex.Message}"; }
+    }
+
+    private void ApplyReadiness(ServerAISearchReadinessResponse readiness)
+    {
+        var sourceSummary = string.Join(", ", readiness.SourceMinimums.Select(item =>
+            $"{SourceTypeLabel(item.Key)} {Count(readiness.SourceCounts, item.Key)}/{item.Value}건"));
+        ReadinessBoundaryTextBlock.Text =
+            $"고객 승인 ANONYMOUS_FIELD {readiness.FieldReadiness.GroundTruthCount}/{readiness.GroundTruthMinimum}건" +
+            $" · 부족 {readiness.FieldReadiness.GroundTruthGap}건\n" +
+            $"합성·시험 SMOKE_REGRESSION {readiness.SmokeRegressionReadiness.GroundTruthCount}건(착수 판정 제외)" +
+            $" · 실제 원천 {sourceSummary}";
+
+        var approval = readiness.ApprovalActorSeparation;
+        ReadinessApprovalTextBlock.Text = readiness.LatestApprovedDataset is null
+            ? "승인자 분리: 승인된 FIELD_READINESS dataset 없음"
+            : $"승인자 분리: {approval.DistinctActorCount}/{approval.RequiredActorCount}명 " +
+              $"{(approval.Complete ? "완료" : "미완료")}\n" +
+              $"작성 {approval.AuthorId ?? "-"} / 검토 {approval.ReviewerId ?? "-"} / " +
+              $"1차 승인 {approval.FirstApprovedBy ?? "-"} / 2차 승인 {approval.SecondApprovedBy ?? "-"}";
+
+        var evaluation = readiness.LatestEvaluation;
+        ReadinessEvaluationTextBlock.Text = evaluation is null
+            ? "최근 평가 run: 승인된 실제 현장 snapshot에 결합된 평가 없음"
+            : $"최근 평가 run: {evaluation.RunId} · {FormatStatus(evaluation.Status)}" +
+              $" · {evaluation.PassedCount}/{evaluation.CaseCount}건\n" +
+              $"후보 ID {(evaluation.CandidateIdentityStable ? "안정" : "변경")} / " +
+              $"순위 {(evaluation.RankingStable ? "안정" : "변경")} / " +
+              $"top-k {evaluation.TopKInclusionRate:P0} / 인용 trace {evaluation.CitationTraceSuccessRate:P0} / " +
+              $"의미 {evaluation.CitationSemanticMatchRate:P0} / 상충 {evaluation.ConflictDisclosureRate:P0}" +
+              $" · {evaluation.CreatedAt.LocalDateTime:G}";
+
+        var review = readiness.HumanSampleReview;
+        ReadinessReviewTextBlock.Text =
+            $"24칸 검토: {ReviewStatusLabel(review.Status)} · 표본 {review.SampleCaseCount}/24칸" +
+            $" · 독립 검토자 {review.IndependentReviewerCount}/2명" +
+            $" · 불일치 {review.DisagreementCaseKeys.Count}건" +
+            (review.ConsensusReviewerId is null ? "" : $" · 제3 합의 {review.ConsensusReviewerId}");
+
+        var config = readiness.ExternalCallConfiguration;
+        ReadinessExternalTextBlock.Text =
+            $"provider_start_ready={(readiness.ProviderStartReady ? "true" : "false")} · " +
+            $"실제 외부 호출 {(readiness.ExternalAICallsBlocked ? "비활성" : "활성")}\n" +
+            $"기능 플래그 {(config.FeatureEnabled ? "켜짐" : "꺼짐")} / 준비도 게이트 {(config.ReadinessGateEnabled ? "켜짐" : "꺼짐")} / " +
+            $"어댑터 {config.ProviderAdapterMode} / provider {(config.ProviderConfigured ? "설정됨" : "미설정")} / " +
+            $"model {(config.ModelConfigured ? "설정됨" : "미설정")}";
+
+        ReadinessGapGrid.ItemsSource = readiness.CategoryScenarioGaps
+            .Select(CoverageRow.From)
+            .ToList();
+        ReadinessActionGrid.ItemsSource = readiness.OperatorActions;
     }
 
     private async void DatasetGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -213,8 +266,40 @@ public partial class AIGroundTruthOperationsWindow : Window
         "PENDING_SECOND_APPROVAL" => "2차 승인대기", "APPROVED" => "승인", "SUPERSEDED" => "대체됨",
         "RETIRED" => "폐기", "PASSED" or "PASS" => "통과", "FAILED" or "FAIL" => "실패", "PENDING" => "대기", _ => value
     };
-    private static string CategoryLabel(string value) => value.Replace('_', ' ');
+    private static string CategoryLabel(string value) => value switch
+    {
+        "SAFETY" => "안전",
+        "QUALITY" => "품질",
+        "EQUIPMENT_ANOMALY" => "설비 이상",
+        "WORK_HOLD" => "작업 보류",
+        "REWORK" => "재작업",
+        "HANDOVER" => "인수인계",
+        "LATEST_PUBLISHED_DOCUMENT" => "최신 공개 문서",
+        "CONFLICTING_RECORDS" => "상충 기록",
+        _ => value.Replace('_', ' '),
+    };
     private static string ScenarioLabel(string value) => value switch { "NORMAL" => "일반", "EXCLUSION" => "제외", "CONFLICT" => "상충", _ => value };
+    private static string ReviewStatusLabel(string value) => value switch
+    {
+        "NOT_STARTED" => "시작 전",
+        "PENDING_SECOND_REVIEW" => "두 번째 독립 검토 대기",
+        "PENDING_CONSENSUS" => "제3 합의 대기",
+        "COMPLETED" => "완료",
+        "INVALID_EVALUATION_PAIR" => "동일 snapshot 2회 평가 불일치",
+        "INVALID_SAMPLE_MISMATCH" => "표본 불일치",
+        "INVALID_CONSENSUS_SCOPE" => "합의 범위 불일치",
+        _ => value,
+    };
+    private static string SourceTypeLabel(string value) => value switch
+    {
+        "PUBLISHED_DOCUMENT_VERSION" => "공개 문서",
+        "FIELD_COMMENT" => "현장 코멘트",
+        "WORK_SEQUENCE_HISTORY" => "작업순서 이력",
+        "REPORT_SOURCE" => "보고서 근거",
+        _ => value,
+    };
+    private static int Count(IReadOnlyDictionary<string, int> values, string key) =>
+        values.TryGetValue(key, out var value) ? value : 0;
     private static string EvidenceText(IEnumerable<Dictionary<string, object>> values) => string.Join("\n", values.Select(value =>
         string.Join(" / ", new[] { Value(value, "source_type"), Value(value, "source_id"), Value(value, "source_version_id"), Value(value, "content_hash") }.Where(text => !string.IsNullOrWhiteSpace(text)))));
     private static string Value(Dictionary<string, object> value, string key) => value.TryGetValue(key, out var item)

@@ -8,7 +8,7 @@ namespace FlowNote.Windows.Core.Tests;
 public sealed class ServerAIFieldReadinessReviewClientTests
 {
     [Fact]
-    public async Task FixedPlanRequestCarriesDatasetAndRunAndReadsTraceContract()
+    public async Task ReadinessAndFixedPlanResponsesKeepOperatorAndTraceContracts()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, """
             {
@@ -36,6 +36,39 @@ public sealed class ServerAIFieldReadinessReviewClientTests
             handler.RequestUri?.PathAndQuery);
         Assert.Equal("sample-a", result.SampleHash);
         Assert.Equal("comment-a", result.Cases[0].ExpectedEvidence[0]["source_id"].ToString());
+
+        var readinessHandler = new RecordingHandler(HttpStatusCode.OK, """
+            {
+              "scope":{"customer_scope":"DEFAULT","site_scope":"DEFAULT","database_scope":"sqlite:sample"},
+              "source_counts":{},"source_minimums":{},"source_gaps":{},
+              "ground_truth_count":3,"ground_truth_minimum":48,"ground_truth_gap":45,
+              "field_readiness":{"accepted_data_classification":"ANONYMOUS_FIELD","ground_truth_count":3,"ground_truth_gap":45,"ground_truth_ready":false},
+              "smoke_regression_readiness":{"accepted_data_classifications":["SYNTHETIC","TEST"],"ground_truth_count":48,"ground_truth_gap":0,"ground_truth_ready":true},
+              "category_scenario_gaps":[{"category":"SAFETY","scenario_type":"EXCLUSION","count":0,"required":2,"missing":2}],
+              "provider_start_ready":false,
+              "human_sample_review":{"status":"NOT_STARTED","independent_reviewer_count":0,"sample_case_count":0,
+                "independent_review_ids":[],"independent_reviewer_ids":[],"disagreement_case_keys":[],"complete":false},
+              "approval_actor_separation":{"required_actor_count":4,"distinct_actor_count":0,"complete":false,"missing_roles":["author_id"]},
+              "operator_actions":[{"code":"GROUND_TRUTH_COVERAGE_INCOMPLETE","title":"실제 현장 사례 부족",
+                "detail":"현재 3/48건","owner":"현장 데이터 책임자","next_action":"승인 사례만 추가하세요."}],
+              "external_call_configuration":{"feature_enabled":false,"readiness_gate_enabled":true,
+                "provider_adapter_mode":"DISABLED","provider_configured":false,"model_configured":false,
+                "network_test_scope_enabled":false},
+              "external_ai_calls_blocked":true
+            }
+            """);
+        using var readinessHttp = new HttpClient(readinessHandler)
+        {
+            BaseAddress = new Uri("https://server.example/")
+        };
+        var readiness = await new FlowNoteServerDocumentClient(readinessHttp)
+            .GetAISearchReadinessAsync();
+
+        Assert.Equal("ANONYMOUS_FIELD", readiness.FieldReadiness.AcceptedDataClassification);
+        Assert.Equal(2, readiness.CategoryScenarioGaps[0].Missing);
+        Assert.Equal("현장 데이터 책임자", readiness.OperatorActions[0].Owner);
+        Assert.Equal("DISABLED", readiness.ExternalCallConfiguration.ProviderAdapterMode);
+        Assert.True(readiness.ExternalAICallsBlocked);
     }
 
     [Fact]
