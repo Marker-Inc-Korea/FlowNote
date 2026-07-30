@@ -30,7 +30,7 @@ if ((Test-Path $runArtifactDir -PathType Container) -and
 New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
 $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
-$expectedFastApiTestCount = 155
+$expectedFastApiTestCount = 160
 $expectedWpfCoreTestCount = 84
 $expectedAndroidUnitTestCount = 24
 $stepDisplayNames = @{
@@ -70,7 +70,7 @@ if ($RunAndroidDeviceSmoke) {
 }
 $script:currentStepDisplayName = "검증 준비"
 $script:currentStepStatus = "RUNNING"
-$script:currentExpectedValue = "FastAPI 155건, WPF Core 84건, Android 24건과 모든 필수 단계 통과"
+$script:currentExpectedValue = "FastAPI ${expectedFastApiTestCount}건, WPF Core ${expectedWpfCoreTestCount}건, Android ${expectedAndroidUnitTestCount}건과 모든 필수 단계 통과"
 $script:currentActualValue = "아직 실행하지 않음"
 $script:currentNextAction = "Windows x64 표준 도구 확인부터 순서대로 실행합니다."
 $script:currentPreservedData = "기존 공통 SQLite와 테스트 산출물은 삭제하거나 초기화하지 않습니다."
@@ -79,8 +79,12 @@ $script:isPartialRun = $SkipFastApiPytest -or $SkipWpfBuild -or $SkipWpfSmoke -o
 $script:sourceCommit = $null
 $script:fastApiEvidence = [ordered]@{
     expected = $expectedFastApiTestCount
+    collection_exit_code = $null
     collected = $null
     unique_node_ids = $null
+    duplicate_node_ids = $null
+    pytest_exit_code = $null
+    junit_total = $null
     passed = $null
     failures = $null
     errors = $null
@@ -265,10 +269,10 @@ function Get-StepExpectedValue {
             return "검증 전 Git clean, 금지 추적·스테이징·개인 경로 0건"
         }
         "Collect FastAPI pytest tests" {
-            return "FastAPI node ID 총 160건, 고유 160건, 중복 0건"
+            return "FastAPI node ID 총 ${expectedFastApiTestCount}건, 고유 ${expectedFastApiTestCount}건, 중복 0건"
         }
         "Run FastAPI pytest" {
-            return "FastAPI JUnit total/passed 160/160, 실패·오류·건너뜀 0건"
+            return "FastAPI JUnit total/passed $expectedFastApiTestCount/$expectedFastApiTestCount, 실패·오류·건너뜀 0건"
         }
         "Run WPF Core tests" {
             return "WPF Core 수집/고유 84/84, TRX total/passed 84/84, 실패·오류·건너뜀 0건"
@@ -306,15 +310,21 @@ function Get-StepActualValue {
         [string]$Failure = ""
     )
 
+    $failureSuffix = if ([string]::IsNullOrWhiteSpace($Failure)) {
+        ""
+    } else {
+        "; 중단 원인=$Failure"
+    }
+
     switch ($Name) {
         "Check Windows baseline toolchain versions" {
             return "운영체제=$([Environment]::OSVersion.VersionString), 플랫폼=$([Environment]::OSVersion.Platform), PowerShell=$($PSVersionTable.PSVersion); 검사 결과=$Failure"
         }
         "Collect FastAPI pytest tests" {
-            return "수집=$($script:fastApiEvidence.collected), 고유=$($script:fastApiEvidence.unique_node_ids)"
+            return "기대 총/고유/중복=$expectedFastApiTestCount/$expectedFastApiTestCount/0, 실제 총/고유/중복=$($script:fastApiEvidence.collected)/$($script:fastApiEvidence.unique_node_ids)/$($script:fastApiEvidence.duplicate_node_ids), exit_code=$($script:fastApiEvidence.collection_exit_code)$failureSuffix"
         }
         "Run FastAPI pytest" {
-            return "passed=$($script:fastApiEvidence.passed), failures=$($script:fastApiEvidence.failures), errors=$($script:fastApiEvidence.errors), skipped=$($script:fastApiEvidence.skipped)"
+            return "기대 JUnit total/passed/failures/errors/skipped=$expectedFastApiTestCount/$expectedFastApiTestCount/0/0/0, 실제=$($script:fastApiEvidence.junit_total)/$($script:fastApiEvidence.passed)/$($script:fastApiEvidence.failures)/$($script:fastApiEvidence.errors)/$($script:fastApiEvidence.skipped), pytest exit_code=$($script:fastApiEvidence.pytest_exit_code), 수집-JUnit 일치=$($script:fastApiEvidence.collection_matches_junit)$failureSuffix"
         }
         "Run WPF Core tests" {
             return "수집=$($script:wpfEvidence.core_tests.collected), 고유=$($script:wpfEvidence.core_tests.unique_node_ids), total=$($script:wpfEvidence.core_tests.total), passed=$($script:wpfEvidence.core_tests.passed), failed=$($script:wpfEvidence.core_tests.failed), errors=$($script:wpfEvidence.core_tests.errors), skipped=$($script:wpfEvidence.core_tests.skipped), 수집-TRX 일치=$($script:wpfEvidence.core_tests.collection_matches_trx)"
@@ -354,16 +364,16 @@ function Get-StepNextAction {
 
     switch -Wildcard ($Name) {
         "Check Windows baseline toolchain versions" {
-            return "표시된 실제 환경을 Windows x64 표준 도구 기대값에 맞춘 뒤, 보존 증거를 유지하고 새 RunId로 다시 실행하세요."
+            return "누락됐거나 버전이 다른 도구를 Windows x64 표준 기대값에 맞추세요. 기존 RunId와 증거 폴더를 재사용하거나 삭제하지 말고, .\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>로 다시 실행하세요."
         }
         "Check *git*" {
-            return "Git 상태와 금지 산출물 목록을 확인해 소스만 clean 상태로 만든 뒤, 로컬 증거는 보존하고 새 RunId로 다시 실행하세요."
+            return "Git 상태와 금지 산출물 목록을 확인해 소스만 clean 상태로 만드세요. 기존 RunId와 로컬 증거는 재사용하거나 삭제하지 말고, .\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>로 다시 실행하세요."
         }
         "Collect FastAPI pytest tests" {
-            return "보존된 node ID 목록에서 추가·삭제·중복 이력을 대조한 뒤 기대값 또는 테스트 구성을 바로잡고 새 RunId로 다시 실행하세요."
+            return "보존된 수집 원본·node ID·중복 목록에서 추가·삭제·중복 이력을 대조해 기대값 또는 테스트 구성을 바로잡으세요. 기존 RunId와 증거 폴더를 재사용하거나 삭제하지 말고, .\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>로 다시 실행하세요."
         }
         "Run FastAPI pytest" {
-            return "FastAPI JUnit과 단계 로그에서 실패·오류·건너뜀 또는 수집 불일치를 확인한 뒤 새 RunId로 다시 실행하세요."
+            return "보존된 FastAPI JUnit과 단계 로그에서 실패·오류·건너뜀 또는 수집 불일치를 확인해 원인을 바로잡으세요. 기존 RunId와 증거 폴더를 재사용하거나 삭제하지 말고, .\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>로 다시 실행하세요."
         }
         "Run WPF Core tests" {
             return "WPF TRX의 total/passed와 테스트 추가·삭제 이력을 대조한 뒤 guard 또는 테스트를 바로잡고 새 RunId로 다시 실행하세요."
@@ -390,6 +400,12 @@ function Get-StepPreservedData {
     param([string]$Name)
 
     switch -Wildcard ($Name) {
+        "Collect FastAPI pytest tests" {
+            return "FastAPI 수집 원본·node ID·중복 목록과 이전 단계 증거를 같은 실행 ID 폴더에 보존했으며, 기존 공통 SQLite와 테스트 산출물을 삭제하거나 초기화하지 않았습니다."
+        }
+        "Run FastAPI pytest" {
+            return "FastAPI JUnit·단계 로그·수집 증거와 이전 단계 증거를 같은 실행 ID 폴더에 보존했으며, 기존 공통 SQLite와 테스트 산출물을 삭제하거나 초기화하지 않았습니다."
+        }
         "Run WPF Core tests" {
             return "WPF Core 수집 목록·원본 수집 로그·생성된 TRX와 이전 단계 증거, 기존 공통 SQLite를 삭제하거나 초기화하지 않았습니다."
         }
@@ -520,6 +536,46 @@ function Get-JUnitCounts {
         Failures = [int](($leafSuites | Measure-Object -Property failures -Sum).Sum)
         Errors = [int](($leafSuites | Measure-Object -Property errors -Sum).Sum)
         Skipped = [int](($leafSuites | Measure-Object -Property skipped -Sum).Sum)
+    }
+}
+
+function Assert-FastApiCollectionCounts {
+    param(
+        [int]$Expected,
+        [int]$Collected,
+        [int]$Unique,
+        [int]$Duplicates,
+        [int]$ExitCode
+    )
+
+    if ($ExitCode -ne 0 -or
+        $Collected -ne $Expected -or
+        $Unique -ne $Expected -or
+        $Duplicates -ne 0) {
+        throw "FastAPI 수집 불일치: exit_code=$ExitCode, 기대 총/고유/중복=$Expected/$Expected/0, 실제 총/고유/중복=$Collected/$Unique/$Duplicates."
+    }
+}
+
+function Assert-FastApiJUnitCounts {
+    param(
+        [int]$Expected,
+        [int]$Total,
+        [int]$Passed,
+        [int]$Failures,
+        [int]$Errors,
+        [int]$Skipped,
+        [int]$ExitCode,
+        [bool]$CollectionMatchesJunit
+    )
+
+    if ($ExitCode -ne 0 -or
+        -not $CollectionMatchesJunit -or
+        $Total -ne $Expected -or
+        $Passed -ne $Expected -or
+        $Failures -ne 0 -or
+        $Errors -ne 0 -or
+        $Skipped -ne 0) {
+        throw "FastAPI JUnit 불일치: pytest_exit_code=$ExitCode, 수집-JUnit 일치=$CollectionMatchesJunit, 기대 total/passed/failures/errors/skipped=$Expected/$Expected/0/0/0, 실제=$Total/$Passed/$Failures/$Errors/$Skipped."
     }
 }
 
@@ -849,19 +905,34 @@ if (-not $SkipFastApiPytest) {
 
         Push-Location $apiDir
         try {
-            $collected = @(& $python -m pytest --collect-only -q)
-            $nodeIds = @($collected | Where-Object { $_ -match "::" } | ForEach-Object { $_.Trim() })
+            $collectionOutput = @(& $python -m pytest --collect-only -q 2>&1)
+            $collectionExitCode = $LASTEXITCODE
+            $collectionOutput | Set-Content -Encoding UTF8 (Join-Path $runArtifactDir "fastapi-collection.log")
+            $collectionOutput | ForEach-Object { Write-Host $_ }
+            $nodeIds = @($collectionOutput | Where-Object { $_ -match "::" } | ForEach-Object { $_.ToString().Trim() })
             $nodeIds | Set-Content -Encoding UTF8 (Join-Path $runArtifactDir "fastapi-collected-tests.txt")
             $testCount = $nodeIds.Count
             $uniqueTestCount = @($nodeIds | Sort-Object -Unique).Count
+            $duplicateNodeIds = @(
+                $nodeIds |
+                    Group-Object |
+                    Where-Object { $_.Count -gt 1 } |
+                    ForEach-Object { $_.Name }
+            )
+            Set-Content `
+                -Encoding UTF8 `
+                -Path (Join-Path $runArtifactDir "fastapi-duplicate-node-ids.txt") `
+                -Value ($duplicateNodeIds -join [Environment]::NewLine)
+            $script:fastApiEvidence.collection_exit_code = $collectionExitCode
             $script:fastApiEvidence.collected = $testCount
             $script:fastApiEvidence.unique_node_ids = $uniqueTestCount
-            if ($testCount -ne $expectedFastApiTestCount) {
-                throw "Expected $expectedFastApiTestCount FastAPI pytest tests, collected $testCount."
-            }
-            if ($uniqueTestCount -ne $testCount) {
-                throw "FastAPI collection contains duplicate node IDs: total=$testCount, unique=$uniqueTestCount."
-            }
+            $script:fastApiEvidence.duplicate_node_ids = $duplicateNodeIds.Count
+            Assert-FastApiCollectionCounts `
+                -Expected $expectedFastApiTestCount `
+                -Collected $testCount `
+                -Unique $uniqueTestCount `
+                -Duplicates $duplicateNodeIds.Count `
+                -ExitCode $collectionExitCode
             Write-Host "Collected FastAPI pytest tests: $testCount (unique node IDs: $uniqueTestCount)"
         }
         finally {
@@ -877,10 +948,12 @@ if (-not $SkipFastApiPytest) {
             $junitPath = Join-Path $runArtifactDir "fastapi-pytest.xml"
             & $python -m pytest --junitxml $junitPath
             $pytestExitCode = $LASTEXITCODE
+            $script:fastApiEvidence.pytest_exit_code = $pytestExitCode
             if (-not (Test-Path $junitPath -PathType Leaf)) {
                 throw "FastAPI JUnit이 생성되지 않음: exit_code=$pytestExitCode, path=$junitPath."
             }
             $junitCounts = Get-JUnitCounts $junitPath
+            $script:fastApiEvidence.junit_total = $junitCounts.Tests
             $script:fastApiEvidence.passed = $junitCounts.Tests - $junitCounts.Failures - $junitCounts.Errors - $junitCounts.Skipped
             $script:fastApiEvidence.failures = $junitCounts.Failures
             $script:fastApiEvidence.errors = $junitCounts.Errors
@@ -889,14 +962,15 @@ if (-not $SkipFastApiPytest) {
                 $null -ne $script:fastApiEvidence.collected -and
                 $junitCounts.Tests -eq $script:fastApiEvidence.collected
             )
-            if ($pytestExitCode -ne 0 -or
-                -not $script:fastApiEvidence.collection_matches_junit -or
-                $junitCounts.Tests -ne $expectedFastApiTestCount -or
-                $junitCounts.Failures -ne 0 -or
-                $junitCounts.Errors -ne 0 -or
-                $junitCounts.Skipped -ne 0) {
-                throw "FastAPI JUnit 불일치: exit_code=$pytestExitCode, 기대=$expectedFastApiTestCount, tests=$($junitCounts.Tests), passed=$($script:fastApiEvidence.passed), failures=$($junitCounts.Failures), errors=$($junitCounts.Errors), skipped=$($junitCounts.Skipped)."
-            }
+            Assert-FastApiJUnitCounts `
+                -Expected $expectedFastApiTestCount `
+                -Total $junitCounts.Tests `
+                -Passed $script:fastApiEvidence.passed `
+                -Failures $junitCounts.Failures `
+                -Errors $junitCounts.Errors `
+                -Skipped $junitCounts.Skipped `
+                -ExitCode $pytestExitCode `
+                -CollectionMatchesJunit $script:fastApiEvidence.collection_matches_junit
             Write-Host "FastAPI collection/JUnit match: collected=$($script:fastApiEvidence.collected), unique=$($script:fastApiEvidence.unique_node_ids), tests=$($junitCounts.Tests)"
             Write-Host "FastAPI JUnit: passed=$($script:fastApiEvidence.passed), failures=0, errors=0, skipped=0"
         }
