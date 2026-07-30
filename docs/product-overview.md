@@ -1,6 +1,6 @@
 # FlowNote 제품 개요
 
-현재 구현 설명은 2026-07-28 코드 기준이며 장기 제품 방향이나 아직 구현하지 않은 기능은 배포 방향·제외 범위에서 명시적으로 구분한다.
+현재 구현 설명은 2026-07-30 코드 기준이며 장기 제품 방향이나 아직 구현하지 않은 기능은 배포 방향·제외 범위에서 명시적으로 구분한다.
 
 ## 목적
 
@@ -26,7 +26,7 @@ FlowNote는 생산공장 현장의 문서와 현장 경험을 함께 남기는 �
 - 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도. 보고서 revision·내용/source 집합 hash·mutation receipt와 원천 재검증 포함
 - FastAPI 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인
+- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부·인수인계 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 작성·확인
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
 - FastAPI 서버 계정 수명주기 API와 Windows WPF 서버 계정 운영 화면: 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기
 - 임시 비밀번호 로그인 후 WPF 비밀번호 변경 강제, 변경 완료 시 기존 세션 폐기와 새 비밀번호 재로그인
@@ -65,7 +65,7 @@ Android 현장 단말 앱과 Windows 채널/인수인계 전용 화면은 현재
 
 ## 배포 방향
 
-초기 운영은 서버 PC 1대에 FastAPI 서버, SQLite DB, 로컬 `storage/` 폴더를 두고, 관리자/현장 PC에는 Windows WPF 클라이언트를 설치하는 방식이다. Android 앱은 승인된 현장용 단말을 대상으로 추가하며, 개인 휴대폰 기본 배포는 초기 기준이 아니다. 현재 저장소에는 WPF MSI 패키징, FastAPI 작업 스케줄러 등록/관리, 파일럿 복구 전후 증거 비교 스크립트가 있다. Android에는 Keystore 보호 FieldComment/사진 outbox와 15초 foreground 알림 복구가 구현되어 있다. 채널 알림의 초기 전달 방식은 외부 인터넷에 의존하지 않는 사내망 HTTPS polling으로 확정되어 있다. Android 운영 APK 서명 계약은 구현됐고 실제 조직 키, MDM, 사내 Wi-Fi/인증서와 실단말 결과는 현장 승인 게이트로 남는다. 클라우드, 외부 접근, PostgreSQL, NAS, MES/ERP 어댑터는 현장 요구가 확인된 뒤 확장한다.
+초기 운영은 서버 PC 1대에 FastAPI 서버, SQLite DB, 로컬 `storage/` 폴더를 두고, 관리자/현장 PC에는 Windows WPF 클라이언트를 설치하는 방식이다. Android 앱은 승인된 현장용 단말을 대상으로 추가하며, 개인 휴대폰 기본 배포는 초기 기준이 아니다. 현재 저장소에는 WPF MSI 패키징, FastAPI 작업 스케줄러 등록/관리, 파일럿 복구 전후 증거 비교 스크립트가 있다. Android에는 Keystore 보호 FieldComment/사진/인수인계 outbox와 15초 foreground 알림 복구가 구현되어 있다. 채널 알림의 초기 전달 방식은 외부 인터넷에 의존하지 않는 사내망 HTTPS polling으로 확정되어 있다. Android 운영 APK 서명 계약은 구현됐고 실제 조직 키, MDM, 사내 Wi-Fi/인증서와 실단말 결과는 현장 승인 게이트로 남는다. 클라우드, 외부 접근, PostgreSQL, NAS, MES/ERP 어댑터는 현장 요구가 확인된 뒤 확장한다.
 
 운영 배포 완료 판정은 코드와 자동 테스트만으로 내리지 않는다. 깨끗한 Windows 서버/클라이언트, 승인 Android 단말과 고객 유사 네트워크에서 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 설치, 인증서, 단말 교체, 백업 복구, 역할별 업무, 중단/rollback 기준을 단일 `run_id`로 통과해야 한다.
 

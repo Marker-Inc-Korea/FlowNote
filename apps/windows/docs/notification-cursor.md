@@ -1,6 +1,6 @@
 # WPF 사용자별 알림 cursor 보존 정책
 
-이 문서는 2026-07-28 현재 `ServerNotificationCursorService`, `ServerEpochGuardService`, `ServerReconciliationService` 구현 기준이다.
+이 문서는 2026-07-30 현재 `ServerNotificationCursorService`, `ServerEpochGuardService`, `ServerReconciliationService` 구현 기준이다.
 
 WPF의 서버 채널 알림 polling 위치는 공통 로컬 SQLite의 `server_notification_cursors`에 저장한다. 키는 정규화한 서버 scope와 서버 로그인 `user_id`의 조합이다. 서버 scope는 URL의 scheme, IDN host, 명시 포트와 base path를 포함하며 query, fragment, 사용자 정보는 제외한다.
 
@@ -20,7 +20,7 @@ WPF의 서버 채널 알림 polling 위치는 공통 로컬 SQLite의 `server_no
 - 로컬 DB 복구: 복구 DB에 해당 row가 있으면 그대로 재개한다. row가 없으면 cursor 0에서 시작하고 화면에 `이전 알림을 재확인 중입니다. 중복 알림을 새로 만들지 않습니다.`와 진행 위치를 한글로 표시한다.
 - 서버 DB 복구 또는 초기화: polling 전에 sync manifest의 instance/epoch와 `server_cursor`를 확인한다. 저장한 instance/epoch가 다르거나 manifest cursor가 로컬 마지막 성공 cursor보다 낮으면 binding을 `RECONCILIATION_REQUIRED`로 바꾸고 polling과 자동 전송을 함께 중지한다. cursor를 자동으로 0으로 되돌리지 않는다.
 - 일반 cursor 초기화: 복구 경계가 아닌 경우 서버 상태를 확인한 `admin` 또는 `system-admin`만 주 창의 `알림 위치 초기화`에서 현재 서버 scope와 현재 사용자의 cursor를 0으로 초기화할 수 있다. 복구 경계가 감지된 동안에는 이 단독 초기화를 차단하고 `이력 > 서버 재결합` 승인을 요구한다.
-- 재결합 적용: 관리자가 전체 큐 판정과 사유를 승인하면 현재 서버 scope의 모든 사용자 cursor를 한 로컬 transaction에서 0으로 바꾸고 `initial_sync_completed = 0`, 상태 `ACTIVE`로 재추적한다. 기존 처리 `message_id`는 삭제하지 않으며 binding의 승인 instance/epoch도 관측값으로 갱신한다.
+- 재결합 적용: 관리자가 전체 큐 판정과 사유를 승인하면 현재 서버 scope의 모든 사용자 cursor를 한 로컬 transaction에서 0으로 바꾸고 `initial_sync_completed = 0`으로 둔다. 기존 처리 `message_id`는 삭제하지 않으며 binding의 승인 instance/epoch도 관측값으로 갱신한다. 다만 binding은 `POST_APPROVAL_RESTART_REQUIRED`가 되어 자동 전송과 polling을 계속 막는다. 복구 연습 서버를 정상 종료하고 `FLOWNOTE_RESTORE_*` 표지를 제거해 다시 시작한 뒤 정상 manifest를 읽으면 `POST_APPROVAL_VERIFICATION_REQUIRED`로 전환되어 cursor 재추적과 업무를 재개한다. 이 상태는 안전 수렴 증거 검증까지 끝났다는 뜻이 아니다.
 
 첫 동기화가 100건 page를 넘으면 100ms 간격으로 다음 page를 이어 받고 `진행 위치: 현재/서버`를 표시한다. 따라잡기가 끝나면 기본 15초 polling으로 돌아간다. 연결 실패는 기존 정책대로 최대 120초까지 backoff한다.
 

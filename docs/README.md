@@ -23,7 +23,7 @@
 ## 현재 코드 기준
 
 - Windows WPF 앱은 로컬 SQLite를 기본 저장소로 사용한다.
-- Android 현장 단말 앱은 Java/Android 네이티브 View 기반 최소 앱으로 구현되어 있다. 승인 단말 `deviceId` 로그인, 공개 문서 목록·상세, PDF/이미지/TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 확인을 제공한다.
+- Android 현장 단말 앱은 Java/Android 네이티브 View 기반 최소 앱으로 구현되어 있다. 승인 단말 `deviceId` 로그인, 공개 문서 목록·상세, PDF/이미지/TXT 앱 내부 보안 열람, FieldComment, 사진 첨부·인수인계 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 작성·확인을 제공한다.
 - Windows에는 `admin`, `system-admin`용 승인 단말 관리 화면이 구현되어 있다. FastAPI 단말 API를 통해 목록·상세·마지막 접속 조회, 등록, 정보/상태 변경, 교체를 수행한다.
 - Windows 사용자 관리는 로그인 저장소에 따라 분리된다. 서버 로그인한 `admin`, `system-admin`은 서버 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기를 수행하고, 로컬 로그인은 로컬 SQLite 계정 화면만 사용한다. 임시 비밀번호 계정은 메인 화면 전에 비밀번호 변경을 강제하고 변경 후 재로그인을 요구한다.
 - Windows에는 채널함, 채널 관리, 인수인계 확인 현황 화면이 구현되어 있고 FastAPI 채널/인수인계 API를 직접 호출한다. 서버 미연결 시 로컬 데이터와 동기화 큐를 삭제하지 않고 서버 설정 확인 문구를 표시한다.
@@ -55,7 +55,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- FastAPI 코드는 2026-07-30 현재 pytest node ID 160건을 중복 없이 수집해 모두 통과했고 WPF Core 테스트는 macOS 직접 실행에서 84/84가 통과했다. Android 테스트 코드는 `@Test` 20건이며 이번 셸에서는 Java runtime을 찾지 못해 다시 실행하지 못했다. 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 guard는 FastAPI 160건·WPF Core 84건·Android 20건으로 현재 코드와 맞는다. Windows에서 WPF Core 수집 목록과 TRX의 `total/passed=84/84`를 대조하고 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 run이 같은 clean 소스 커밋에서 2회 연속 `partial_run=false`, `verification-summary.json=PASSED`여야 통합 기준선으로 인정한다.
+- FastAPI 코드는 2026-07-30 현재 pytest node ID 160건을 중복 없이 수집해 모두 통과했고 WPF Core 테스트는 macOS 직접 실행에서 84/84가 통과했다. Android 테스트 코드는 `@Test` 24건이다. 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 실제 고정값은 FastAPI 155건·WPF Core 84건·Android 24건이지만 FastAPI 단계 안내는 160건을 요구한다. 현재 코드와 스크립트가 어긋나므로 FastAPI 고정값과 안내를 맞춘 뒤, Windows에서 WPF Core 수집 목록과 TRX의 `total/passed=84/84`를 대조하고 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 run이 같은 clean 소스 커밋에서 2회 연속 `partial_run=false`, `verification-summary.json=PASSED`여야 통합 기준선으로 인정한다.
 
 ## 일일 기록
 

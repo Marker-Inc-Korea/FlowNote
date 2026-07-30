@@ -1,6 +1,6 @@
 # FlowNote 보안
 
-이 문서는 2026-07-28 현재 코드에 적용된 통제와 운영 전 후속 통제를 구분한다.
+이 문서는 2026-07-30 현재 코드에 적용된 통제와 운영 전 후속 통제를 구분한다.
 
 ## 현재 구현
 
@@ -25,7 +25,7 @@
 - Android 승인 단말 `deviceId` 로그인 검증과 `auth_sessions.device_id` 기록
 - FastAPI 관리자 승인 단말 등록·상태·교체 API와 WPF 승인 단말 운영 화면
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면의 서버 인증/멤버십 기반 조회와 상태 변경
-- Android 현장 단말 앱의 Keystore 보호 Bearer token, AES-GCM outbox 본문·첨부, 승인 단말 전용 1회성 보안 본문 열람, foreground 알림 복구, 알림 읽음/인수인계 확인, 서버 오류 원문 비노출
+- Android 현장 단말 앱의 Keystore 보호 Bearer token, AES-GCM FieldComment·사진·인수인계 outbox 본문·첨부, 승인 단말 전용 1회성 보안 본문 열람, foreground 알림 복구, 인수인계 작성·확인, 서버 오류 원문 비노출
 - 외부 AI 질의의 보고서 작성 role(`admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`) 제한, 기본 비활성 플래그, 허용 목적, 고객·현장·provider·model 전송 승인, 승인된 프롬프트와 근거 원천 상태 검사
 - 외부 AI 질의·근거 snapshot·인용·호출 시도 감사 row, 기본 응답 본문 미저장과 응답 hash 저장
 - `system-admin` 전용 외부 AI 전송 승인·불변 프롬프트 수명주기·전역/현장 kill switch와 한도·보존 정책 API 및 WPF 운영 화면
@@ -300,7 +300,7 @@ Android 본문 열람은 WPF controlled copy와 별도 계약이다. 앱은 승�
 - Windows와 Android 채널 알림은 업무 채널, 서버 사용자, role, 클라이언트/단말 승인 상태를 기준으로 표시한다. 개인 메신저 대화 수집, 개인 휴대폰 기본 배포, GPS/근태 추적은 포함하지 않는다.
 - 채널·인수인계 알림은 외부 인터넷에 의존하지 않는 사내망 HTTPS polling이다. Android는 로그인 동안 15초 `specialUse` foreground service를 사용하고 서버 주소+사용자 scope별 cursor를 항목 표시 직후 보존한다. WPF는 credential을 제외해 정규화한 서버 scope와 사용자 ID별 cursor·처리 `message_id`를 로컬 SQLite에 격리한다.
 - WPF의 인증서 갱신·폐기와 서버 주소 변경 리허설은 기존 세션 요청 차단, 로컬 로그인 자동 우회 차단, 동기화 큐와 알림 polling 중지, 로컬 원천·큐·cursor 보존을 각각 확인한다. 인증서 신뢰 또는 서버 재결합을 승인하기 전에는 전송을 재개하지 않으며 복구 후 중복 전송은 0건이어야 한다. 결과는 같은 `run_id`의 `scenario-results/windows-network-fail-closed.csv`와 화면·WPF 로그·서버 감사 증거에 연결한다.
-- Android access/refresh token과 outbox JSON은 Android Keystore 비반출 AES-256 GCM 키로 암호화한다. 새 outbox 사진은 선택 즉시 앱 전용 내부 저장소의 AES-GCM 파일로 복사한다. backup은 금지하고 DB 상태·cursor 같은 비본문 메타데이터만 평문으로 둔다. 암호문 손상·키 무효화로 복호화할 수 없으면 재전송 작업을 crash로 끝내지 않고, 재설치·초기화를 금지하고 관리자에게 단말 교체 점검을 요청하는 한글 안내를 표시한다.
+- Android access/refresh token과 FieldComment·사진·인수인계 outbox JSON은 Android Keystore 비반출 AES-256 GCM 키로 암호화한다. 새 outbox 사진은 선택 즉시 앱 전용 내부 저장소의 AES-GCM 파일로 복사하고 마지막으로 확인한 활성 채널·수신자 목록도 서버 URL+사용자 범위별 암호문으로 보존한다. backup은 금지하고 DB 상태·cursor 같은 비본문 메타데이터만 평문으로 둔다. 암호문 손상·키 무효화로 복호화할 수 없으면 재전송 작업을 crash로 끝내지 않고, 재설치·초기화를 금지하고 관리자에게 단말 교체 점검을 요청하는 한글 안내를 표시한다.
 - 정상 연결 표시 목표는 30초, 5분 이상 단절 복구 목표는 연결 회복 후 30초+page 전송 시간이다. `message_id` 고정 시스템 알림으로 crash 경계 시각 중복을 최대 1건으로 제한하고 서버 읽음/receipt 중복 row는 0건을 요구한다.
 - 재부팅은 저장 세션이 있으면 서비스를 재개하고 access 401은 refresh를 한 번 회전한다. refresh 거부는 token 폐기와 서비스 중단이다. Android 강제 중지는 OS가 자동 복구를 차단하므로 MDM kiosk 재실행 또는 사용자 재실행을 운영 통제로 둔다.
 - 제한 주기 WorkManager는 Doze 지연 때문에 목표 전달 수단으로 사용하지 않는다. 사내 relay push는 MDM 허용, 상호 인증, 감사, 배터리 실기 검증 후의 선택지이며 FCM 같은 외부 클라우드 의존은 기본 범위에 없다. relay를 추가해도 cursor polling은 missed notification 복구 원천이다.

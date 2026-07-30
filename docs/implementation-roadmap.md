@@ -39,7 +39,7 @@
 - FastAPI `system-admin` 전용 외부 AI 전송 승인·프롬프트·운영 정책·감사·보존 API와 WPF `AI 운영` 화면. 고객·현장 scope별 질의 상세, 단일 만료와 legal hold 설정·해제, 이중 확인·멱등 재시도·서버 read-back 포함
 - FastAPI 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인 API
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면과 서버 API 클라이언트
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 채널 알림, 인수인계 확인
+- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부·인수인계 outbox, 신호등식 기록, 채널 알림, 인수인계 작성·확인
 - Android 전용 단기 1회 grant/stream, 현재 공개 버전·사용자·세션·승인 단말 바인딩, 파일 무결성 재검사와 접근 감사
 - Android 내부 난수 캐시, 수신 크기·SHA-256 검증, `FLAG_SECURE`, 외부 열기·공유 미제공, 종료·백그라운드 전환·오류·로그아웃·다음 시작 시 캐시 정리
 - Windows 창 활성 중 polling과 Android 로그인 세션 foreground service polling, cursor 기반 증분 조회·연결 실패 backoff·재부팅 복구
@@ -67,7 +67,7 @@
 
 ## 다음 우선순위
 
-1. 현재 코드와 표준 스크립트 guard는 FastAPI 160건·WPF Core 84건·Android 20건으로 맞는다. Windows 수집 목록과 TRX `total/passed=84/84`를 대조하고 Windows x64 표준 환경에서 누적 공통 DB 스모크 전후 무결성, Android 단위 테스트·debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, `PASSED` 실행 ID를 같은 clean 소스 커밋에서 2회 연속 남겨야 한다. 현재 최신 유효 기준선과 재현 실행은 모두 `대기`다.
+1. 현재 코드는 FastAPI 160건·WPF Core 84건·Android 24건이다. 표준 스크립트의 실제 고정값은 FastAPI 155건·WPF Core 84건·Android 24건이고 FastAPI 단계 안내만 160건을 요구하므로, 먼저 고정값과 안내를 현재 코드에 맞춘다. 이후 Windows 수집 목록과 TRX `total/passed=84/84`를 대조하고 Windows x64 표준 환경에서 누적 공통 DB 스모크 전후 무결성, Android 단위 테스트·debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, `PASSED` 실행 ID를 같은 clean 소스 커밋에서 2회 연속 남겨야 한다. 현재 최신 유효 기준선과 재현 실행은 모두 `대기`다.
 2. [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다. `PILOT-20260728-1501-FULLPILOT-001`은 이 승인과 장비가 없는 상태를 검증해 460개 미충족 조건으로 `FAIL`했으므로, 현재 상태는 구현 완료가 아니라 파일럿 착수 `대기`다. RPO/RTO, 비상 연락, 이전 승인 패키지와 운영·보안·현장 승인자를 먼저 확정한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
 4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다. APK 설치·rollback은 승인 ADB serial, 동일 signer와 더 낮은 이전 versionCode를 확인하고, AAB는 관리형 스토어가 전달한 서명 APK를 별도로 검증한다. `full_pilot`의 전달·무결성·보안·단말 수명주기·패키지 승인 원시 CSV와 같은 `run_id`의 실제 증거가 모두 PASS일 때만 완료한다.

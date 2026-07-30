@@ -34,7 +34,7 @@
 
 Windows/서버 고객 유사망 리허설은 `windows_server_rehearsal` 프로필로 실행한다. Android·AI 실기 게이트는 이 실행의 완료 조건이 아니지만, 두 영역을 포함한 8개 책임 영역은 이번 리허설에서 무엇을 시험하고 무엇을 하지 않는지 담당자와 독립 승인자가 미리 승인해야 한다. 담당자와 승인자의 대소문자·앞뒤 공백을 제외한 식별자가 같으면 자기 승인으로 판정해 시작하지 않는다.
 
-실제 사람 이름, 연락처, 장비명, 고객명, IP와 공유 경로는 Git 문서에 적지 않는다. 접근 통제되고 Git에서 제외된 `<증거 저장소>/<run_id>/pilot-run.json`과 `approvals/` 원시에 실제 값을 기록한다. 저장소 문서에는 익명 역할/장비 식별자와 증거 상대경로만 남긴다. 2026-07-28 현재 실제 책임자·시험 장비·운영 인증서·이전 승인 서버/WPF 버전과 hash/signer·RTO/RPO·rollback 결정권자·비상 연락 흐름은 제공되지 않았다. 임의 값으로 채우지 않으며 해당 값과 서명 원시 증거가 들어오기 전 상태는 `LOCALCHECK FAIL / 리허설 착수 금지`다.
+실제 사람 이름, 연락처, 장비명, 고객명, IP와 공유 경로는 Git 문서에 적지 않는다. 접근 통제되고 Git에서 제외된 `<증거 저장소>/<run_id>/pilot-run.json`과 `approvals/` 원시에 실제 값을 기록한다. 저장소 문서에는 익명 역할/장비 식별자와 증거 상대경로만 남긴다. 2026-07-30 현재 실제 책임자·시험 장비·운영 인증서·이전 승인 서버/WPF 버전과 hash/signer·RTO/RPO·rollback 결정권자·비상 연락 흐름은 제공되지 않았다. 임의 값으로 채우지 않으며 해당 값과 서명 원시 증거가 들어오기 전 상태는 `LOCALCHECK FAIL / 리허설 착수 금지`다.
 
 schema version 11의 각 `responsibilities.<area>`에는 `owner`, `approver`, `test_scope`, `stop_criteria`, `evidence_repository`, `approval_evidence`를 모두 기록한다. 통합 `authorization`에는 다음 값을 기록한다.
 
