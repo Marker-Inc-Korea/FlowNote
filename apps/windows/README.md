@@ -4,7 +4,7 @@
 
 현재 프로젝트는 WPF UI `net10.0-windows`, Core와 스모크 테스트 `net10.0`을 대상으로 한다. 현재 기능 목록은 `FlowNote.Windows.App`, `FlowNote.Windows.Core`, `FlowNote.Windows.SmokeTests` 코드에 실제 연결된 범위만 포함한다.
 
-이 문서는 2026-07-30 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
+이 문서는 2026-07-31 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
 
 ## 현재 구현
 
@@ -114,7 +114,7 @@ py -3 scripts\manage-pilot-run.py verify `
 
 HTTPS 클라이언트는 인증서 폐기 목록 확인을 사용한다. 인증서 갱신·폐기나 서버 주소 변경 중에는 기존 세션으로 잘못 성공하거나 로컬 계정으로 자동 우회하면 안 된다. 동기화 큐와 알림 polling은 실패 상태에서 멈추고 로컬 원천·큐·cursor를 유지한다. 주소/instance/epoch 경계는 관리자 재결합 승인 뒤에만 재개하며 복구 후 중복 전송은 0건이어야 한다. 이 결과는 `windows-network-fail-closed.csv`의 세 행과 화면·WPF 로그·서버 감사 증거로 확인한다.
 
-서버 재부팅 후와 최종 승인 rollback 후에는 로그인, 문서 열람, FieldComment, 동기화, 알림, 감사 로그를 각각 확인해 12개 업무 행을 남긴다. 2026-07-30 현재 schema version 10 판정과 수명주기 실행 도구, WPF 인증서 폐기 확인 코드는 준비됐지만 실제 Windows PC, 승인 서명 패키지, 고객 유사망 인증서·방화벽·시간 주입 결과는 이 저장소에 없다. 따라서 `windows_server_rehearsal` 운영 판정은 아직 `대기`이며 현장 PASS로 추정하지 않는다.
+서버 재부팅 후와 최종 승인 rollback 후에는 로그인, 문서 열람, FieldComment, 동기화, 알림, 감사 로그를 각각 확인해 12개 업무 행을 남긴다. 2026-07-31 현재 schema version 11 판정과 수명주기 실행 도구, WPF 인증서 폐기 확인 코드는 준비됐지만 실제 Windows PC, 승인 서명 패키지, 고객 유사망 인증서·방화벽·시간 주입 결과는 이 저장소에 없다. 따라서 `windows_server_rehearsal` 운영 판정은 아직 `대기`이며 현장 PASS로 추정하지 않는다.
 
 ## 로컬 데이터
 
@@ -166,7 +166,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-현재 코드는 FastAPI 160건·WPF Core 84건·Android 24건이다. 표준 스크립트의 실제 고정값은 FastAPI 155건·WPF Core 84건·Android 24건이며 FastAPI 단계 안내만 160건으로 표시되어 있어 현재 상태로는 수집 단계에서 중단된다. 이번 macOS 직접 실행에서 WPF Core 84/84가 통과했다. FastAPI 고정값과 안내를 현재 코드에 맞춘 뒤 Windows 수집 목록과 원시 TRX의 `total/passed=84/84`, 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
+2026-07-31 현재 코드와 표준 스크립트 guard는 FastAPI 160건·WPF Core 84건·Android 24건으로 일치한다. macOS 보조 검증에서는 FastAPI node ID 총 160건·고유 160건·중복 0건과 JUnit 160/160, WPF Core 84/84를 확인했다. Windows 수집 목록과 원시 TRX의 `total/passed=84/84`, 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

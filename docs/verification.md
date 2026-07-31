@@ -24,6 +24,12 @@
 
 변경된 실패 안내는 PowerShell SDK 보조 호스트로 macOS 환경 게이트를 의도적으로 실패시킨 `candidate1-macos-ux-failure-20260730-01`에서 확인했다. 콘솔·단계 로그·`verification-summary.json`은 현재 단계, 기대값, 실제값, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 모두 한 화면 구조로 남겼다. 현재 호스트는 macOS ARM64라 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
 
+## 2026-07-31 작업 102 Windows 문서 현재 기준 재대조
+
+작업을 시작할 때 Git 작업 트리는 깨끗했고 `main`과 `origin/main`도 같은 커밋을 가리켰다. 현재 코드를 다시 확인한 결과, Windows 문서에 파일럿 판정 schema version 10과 FastAPI guard 155건이 현재 값처럼 남아 있었다. `scripts/manage-pilot-run.py`의 schema version 11과 `scripts/verify-preserved-tests.ps1`의 FastAPI 160건을 기준으로 해당 설명을 바로잡았다. 날짜별 실행 기록에 적힌 당시 수치와 판정은 변경하지 않았다.
+
+루트 `GET /`를 포함한 OpenAPI 132개 method/path 조합, SQLAlchemy ORM 60개 테이블, `Settings` 45개 항목도 현재 코드에서 다시 산출해 기준 문서와 일치하는지 확인했다. 표준 스크립트 guard는 FastAPI 160건·WPF Core 84건·Android 24건으로 코드와 맞는다. 이번 작업은 문서만 수정했으며 사용자 화면 문구와 프로그램 동작은 바꾸지 않았다.
+
 ## 2026-07-31 후보 1 FastAPI 160건 기준 정렬과 실패 안내
 
 FastAPI 155건 guard가 반영된 뒤 커밋 `d3b5a9b`에서 복구 장애 4개 매개변수 사례와 불완전 복구 문맥 1개가 추가되어 node ID가 5개 늘었다. 현재 macOS 보조 검증은 pytest node ID 총 160건·고유 160건·중복 0건과 JUnit total/passed 160/160, failure/error/skipped 0건을 확인했다. 스크립트의 FastAPI guard를 160으로 바꾸고 시작 요약과 단계별 기대 문구가 이 한 값을 사용하도록 정리했다.
