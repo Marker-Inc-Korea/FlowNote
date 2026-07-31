@@ -2,7 +2,7 @@
 
 이 디렉터리는 FlowNote FastAPI 서버 테스트를 보관한다.
 
-범위와 수집 기준선은 2026-07-30 현재 테스트 코드 기준이다.
+범위와 수집 기준선은 2026-07-31 현재 테스트 코드 기준이다.
 
 ## 현재 테스트 범위
 
@@ -49,6 +49,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-07-31 현재 FastAPI 테스트 코드와 저장소 루트 `scripts/verify-preserved-tests.ps1`의 guard는 160개로 일치한다. 155개 이후 복구 장애 4개 매개변수 사례와 불완전 복구 문맥 1개가 추가됐다. macOS 보조 검증은 node ID 총 160개·고유 160개·중복 0개와 JUnit 160/160을 확인했다. 스크립트는 수집 원본, 중복 목록, 종료 코드와 JUnit을 같은 `run_id`에 보존하며, 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 명령을 안내한다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략해 수행한다. FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존하고, Windows FastAPI 수집/JUnit과 WPF Core TRX의 `total/passed=84/84`를 확인한 무생략 실행 2회가 같은 clean 소스 커밋에서 모두 통과하기 전에는 유효한 기준선으로 판정하지 않는다.
+2026-07-31 현재 FastAPI 테스트 코드와 저장소 루트 `scripts/verify-preserved-tests.ps1`의 guard는 164개로 일치한다. 새 4건은 민감정보 정책 수명주기, 승인 철회 직후 차단, provider 응답 중 사용자 role 변경, provider 응답 중 정책 철회를 검증한다. 스크립트는 수집 원본, 중복 목록, 종료 코드와 JUnit을 같은 `run_id`에 보존하며, 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 명령을 안내한다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략해 수행한다. FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존하고, 무생략 실행 2회가 같은 clean 소스 커밋에서 모두 통과하기 전에는 유효한 기준선으로 판정하지 않는다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.

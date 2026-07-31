@@ -1,6 +1,6 @@
 # AI 준비 ground-truth와 48건 회귀 기준
 
-이 문서는 2026-07-30 현재 `ai_search` API, WPF `AI 정답셋`, 시드·검증 스크립트 구현 기준이다. 실제 현장 데이터셋·승인자·provider 심사가 아직 없는 부분은 운영 착수 조건으로 구분한다.
+이 문서는 2026-07-31 현재 `ai_search` API, WPF `AI 정답셋`, 시드·검증 스크립트 구현 기준이다. 실제 현장 데이터셋·승인자·provider 심사가 아직 없는 부분은 운영 착수 조건으로 구분한다.
 
 외부 provider를 운영 연결하기 전에 근거 검색 품질을 같은 snapshot에서 반복 평가한다. 기준 매트릭스는 안전, 품질, 설비 이상, 작업 보류, 재작업, 인수인계, 최신 공개 문서, 상충 기록의 8범주와 `NORMAL`, `EXCLUSION`, `CONFLICT` 3유형을 조합하고 각 칸에 2건씩 둬 총 48건이다.
 
@@ -73,7 +73,9 @@ Python 검증기는 같은 48건을 두 번 평가하고 candidate ID/content ha
 
 `verify-ai-ground-truth-48.py`는 8범주별 6건, 유형별 16건, 24칸별 2건, FieldComment 상태, 네 기대 원천 유형, 태그 축을 결과와 증거 JSON에 명시한다. 함께 출력하는 실패 유형 측정은 기본 48건 안의 권한 거부, 삭제·비공개 원천, 상충 미해결만 센다. 네트워크 응답 유실, stale revision과 인수인계 부분 성공은 질문·근거 품질 사례가 아니라 각 mutation/동기화 계약의 기존 회귀 테스트로 유지한다.
 
-2026-07-30 재실행에서는 기본 48건의 빈 범주·유형, 중복 case key, orphan, hash 불일치, idempotency 중복이 모두 0이었다. 기대 원천은 네 유형 각 12건, FieldComment 상태는 `8/8/16/16`, 태그 축은 설비·품목·공정·오류유형으로 확인됐다. 권한 거부 2건, 삭제·비공개 원천 4건, 상충 16건이 기본 matrix에 있었고, 이번 실행에서 새 AI 장애나 UX 수정으로 생긴 새로운 근거 검색 실패는 확인되지 않아 회귀 사례를 추가하지 않았다.
+2026-07-30 재실행에서는 기본 48건의 빈 범주·유형, 중복 case key, orphan, hash 불일치, idempotency 중복이 모두 0이었다. 기대 원천은 네 유형 각 12건, FieldComment 상태는 `8/8/16/16`, 태그 축은 설비·품목·공정·오류유형으로 확인됐다. 권한 거부 2건, 삭제·비공개 원천 4건, 상충 16건이 기본 matrix에 있었다.
+
+2026-07-31 민감정보 정책 운영 보강에서는 API 회귀로 재현한 정책 version/stateTag 경합, 활성 정책 승인 철회 직후 호출, 민감정보 탐지, provider 응답 중 사용자 role 변경, prompt injection 차단을 `sensitive-policy-regression-v1`의 별도 5건으로 추가했다. 각 사례는 기존 합성 원천의 고정 source/version/trace/content hash와 `user-ai-gt-first`, `user-ai-gt-second`의 분리 승인을 사용한다. 모두 `TEST / SMOKE_REGRESSION`이며 기본 `smoke48-v1` 48건 매트릭스를 변경하지 않는다. SQL의 추가 smoke 무결성 검사에는 포함하지만 `FIELD_READINESS`, 최상위 `ground_truth_count`, `ground_truth_gap`, `provider_start_ready`에는 합산하지 않는다.
 
 새 사례는 재현 가능한 실제 장애와 수정 검증이 있을 때만 별도 `SMOKE_REGRESSION` provenance로 등록한다. 사례에는 장애·수정 근거, 안정 case key, 고정 source/version/trace/hash, 기대 포함·제외 판정과 서로 다른 두 승인자를 둔다. 어떤 경우에도 `FIELD_READINESS`, `ground_truth_count` 또는 `provider_start_ready`에 합산하지 않는다.
 

@@ -29,6 +29,39 @@ public sealed class FlowNoteServerAIOperationsClient(HttpClient httpClient)
     public Task<ServerAIPolicyResponse> SavePolicyAsync(ServerAIPolicyUpdateRequest value, CancellationToken ct = default) =>
         SendAsync<ServerAIPolicyResponse>(HttpMethod.Put, "api/v1/ai-operations/policies", value, ct);
 
+    public Task<List<ServerAISensitivePolicyResponse>> ListSensitivePoliciesAsync(CancellationToken ct = default) =>
+        GetAsync<List<ServerAISensitivePolicyResponse>>("api/v1/ai-operations/sensitive-data-policies", ct);
+
+    public Task<ServerAISensitivePolicyRuntimeStatus> GetSensitivePolicyRuntimeStatusAsync(CancellationToken ct = default) =>
+        GetAsync<ServerAISensitivePolicyRuntimeStatus>("api/v1/ai-operations/sensitive-data-policies/current", ct);
+
+    public Task<ServerAISensitivePolicyResponse> GetSensitivePolicyAsync(string id, CancellationToken ct = default) =>
+        GetAsync<ServerAISensitivePolicyResponse>(
+            $"api/v1/ai-operations/sensitive-data-policies/{Uri.EscapeDataString(id)}", ct);
+
+    public async Task<ServerAISensitivePolicyResponse> CreateSensitivePolicyAndReadBackAsync(
+        ServerAISensitivePolicyCreateRequest value, CancellationToken ct = default)
+    {
+        var result = await AIOperationMutationPolicy.RunWithResponseLossRetryAsync(
+            () => SendAsync<ServerAISensitivePolicyResponse>(
+                HttpMethod.Post, "api/v1/ai-operations/sensitive-data-policies", value, ct), ct);
+        return await GetSensitivePolicyAsync(result.PolicyId, ct);
+    }
+
+    public async Task<ServerAISensitivePolicyResponse> ChangeSensitivePolicyAndReadBackAsync(
+        string id, string action, ServerAISensitivePolicyActionRequest value,
+        CancellationToken ct = default)
+    {
+        await AIOperationMutationPolicy.RunWithResponseLossRetryAsync(
+            () => SendAsync<ServerAISensitivePolicyResponse>(
+                HttpMethod.Post,
+                $"api/v1/ai-operations/sensitive-data-policies/{Uri.EscapeDataString(id)}/{action}",
+                value,
+                ct),
+            ct);
+        return await GetSensitivePolicyAsync(id, ct);
+    }
+
     public Task<List<ServerAIQueryAuditResponse>> ListQueryAuditAsync(CancellationToken ct = default) =>
         GetAsync<List<ServerAIQueryAuditResponse>>("api/v1/ai-operations/audit/queries?limit=500", ct);
 

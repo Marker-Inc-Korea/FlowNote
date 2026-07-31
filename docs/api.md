@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-07-30 현재 전역 FastAPI 앱에 등록된 132개 method/path 조합과 요청·응답 코드 기준이다. 문서 상태·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-07-31 현재 전역 FastAPI 앱에 등록된 142개 method/path 조합과 요청·응답 코드 기준이다. 문서 상태·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -431,6 +431,16 @@ ground-truth 평가 run은 비교 가능한 변경 이력을 위해 선택적 `e
 | `POST` | `/api/v1/ai-operations/prompts/{prompt_version_id}/retire` | 프롬프트 폐기 |
 | `GET` | `/api/v1/ai-operations/policies` | 전역/현재 현장 운영 정책 조회 |
 | `PUT` | `/api/v1/ai-operations/policies` | kill switch, 요청·동시성·timeout·비용·보존·내보내기 정책 저장 |
+| `GET` | `/api/v1/ai-operations/sensitive-data-policies` | 현재 고객·현장의 정책 버전 목록. 원문·고객/현장 식별값 없이 상태·hash·항목 수·역할 분리·다음 행동만 반환 |
+| `GET` | `/api/v1/ai-operations/sensitive-data-policies/current` | 현재 적용 버전과 `외부 호출 비활성`/`준비도 미달`/`정책 차단`/`kill switch` 구분, 담당자·다음 행동 조회. 조회 자체의 외부 전송은 항상 false |
+| `GET` | `/api/v1/ai-operations/sensitive-data-policies/{policy_id}` | 정책 원문 없는 단일 버전 read-back과 최신 `stateTag` 조회 |
+| `POST` | `/api/v1/ai-operations/sensitive-data-policies` | 현재 고객·현장 scope에 불변 `DRAFT` 정책 버전 작성 |
+| `POST` | `/api/v1/ai-operations/sensitive-data-policies/{policy_id}/review` | 작성자와 다른 `system-admin`의 검토 |
+| `POST` | `/api/v1/ai-operations/sensitive-data-policies/{policy_id}/approve` | 작성자·검토자와 다른 `system-admin`의 승인 |
+| `POST` | `/api/v1/ai-operations/sensitive-data-policies/{policy_id}/activate` | 활성 정책이 없을 때 승인 버전 활성화 |
+| `POST` | `/api/v1/ai-operations/sensitive-data-policies/{policy_id}/replace` | 현재 활성 정책 ID를 고정해 새 승인 버전으로 원자적 대체 |
+| `POST` | `/api/v1/ai-operations/sensitive-data-policies/{policy_id}/withdraw-approval` | 승인 또는 활성 정책의 승인 철회와 신규 호출 차단 |
+| `POST` | `/api/v1/ai-operations/sensitive-data-policies/{policy_id}/retire` | 정책 폐기. 활성 정책 폐기 시 신규 호출 차단 |
 | `GET` | `/api/v1/ai-operations/audit/queries` | 질의 결과와 근거·인용·호출 감사 검색 |
 | `GET` | `/api/v1/ai-operations/audit/events` | 승인·프롬프트·정책 운영 변경 감사 검색 |
 | `GET` | `/api/v1/ai-operations/audit/export` | 현장 정책이 허용한 원문 없는 CSV 내보내기 |
@@ -440,6 +450,10 @@ ground-truth 평가 run은 비교 가능한 변경 이력을 위해 선택적 `e
 | `POST` | `/api/v1/ai-operations/queries/{query_id}/expire` | 현재 고객·현장 scope의 단일 질의 즉시 만료 |
 | `POST` | `/api/v1/ai-operations/queries/{query_id}/legal-holds` | 근거 번호와 사유가 있는 법무·감사 보존 설정 |
 | `POST` | `/api/v1/ai-operations/legal-holds/{hold_id}/release` | 보존 명령 해제 이력 기록 |
+
+민감정보 정책 작성은 `operationKey`를 필수로 받고, 상태 변경은 `operationKey`, 상세 조회에서 받은 `expectedStateTag`, 작업별 `confirmAction`, 사유를 필수로 받는다. 대체는 `replacesPolicyId`도 요구한다. 같은 멱등 키의 동일 재시도는 새 row나 감사를 만들지 않고 현재 정책을 반환하며, 다른 payload의 키 재사용·stale 상태·활성 정책 경합은 `409`다. WPF는 고위험 상태 변경을 두 번 확인하고 같은 operation key로 응답 유실을 한 번 재시도한 뒤 단일 상세 API를 다시 읽는다.
+
+정책 생성 요청의 `forbiddenTerms[]`와 `customerIdentifiers[]`는 DB의 불변 정책 원문에만 저장한다. 목록·상세·현재 상태·감사 이벤트·CSV에는 원문, 고객/현장 식별값, provider endpoint와 자격정보를 반환하지 않는다. 정책 감사에는 version, content hash, 항목 수, 상태, 사유 hash만 기록한다. 질의 감사의 `externalTransferOccurred`는 근거 snapshot의 `sent_externally`를 기준으로 하며 차단 사유와 별개로 표시한다.
 
 정책의 `maxRequestsPerDay`, `maxConcurrency`, `dailyCostBudgetMicros`가 `0`이면 호출 허용이 아니라 해당 자원을 사용 불가로 해석한다. 비밀은 `FLOWNOTE_AI_{PROVIDER}_API_KEY` 환경 변수 또는 배포 비밀 저장소가 공급하며 정책 응답은 `providerCredentialConfigured` boolean만 반환한다.
 

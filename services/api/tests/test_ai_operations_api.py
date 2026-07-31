@@ -49,6 +49,232 @@ def system_admin(client: TestClient) -> dict[str, str]:
     return login(client, username)
 
 
+def another_system_admin(client: TestClient, label: str) -> dict[str, str]:
+    suffix = uuid4().hex
+    username = f"ai-{label}-{suffix}"
+    with client.app.state.database.session() as session:
+        session.add(UserAccount(
+            user_id=f"user-{label}-{suffix}", username=username, login_id=username,
+            display_name=f"AI {label}", role="system-admin",
+            password_hash=hash_password("test-password"), is_active=True, status="ACTIVE",
+        ))
+        session.commit()
+    return login(client, username)
+
+
+def sensitive_policy_action(
+    client: TestClient,
+    auth: dict[str, str],
+    policy: dict[str, object],
+    action: str,
+    confirmation: str,
+    *,
+    operation_key: str | None = None,
+    replaces_policy_id: str | None = None,
+) -> object:
+    return client.post(
+        f"/api/v1/ai-operations/sensitive-data-policies/{policy['policyId']}/{action}",
+        headers=auth,
+        json={
+            "reason": f"{action} 회귀 검증",
+            "operationKey": operation_key or f"test:{action}:{uuid4().hex}",
+            "expectedStateTag": policy["stateTag"],
+            "confirmAction": confirmation,
+            "replacesPolicyId": replaces_policy_id,
+        },
+    )
+
+
+def test_sensitive_policy_lifecycle_is_separated_redacted_idempotent_and_concurrent() -> None:
+    with create_client() as client:
+        ordinary = login(client, "admin", "1234")
+        assert client.get(
+            "/api/v1/ai-operations/sensitive-data-policies", headers=ordinary
+        ).status_code == 403
+        creator = system_admin(client)
+        reviewer = another_system_admin(client, "reviewer")
+        approver = another_system_admin(client, "approver")
+        settings = client.app.state.settings
+        forbidden = f"현장금칙어-{uuid4().hex}"
+        identifier = f"고객식별자-{uuid4().hex}"
+        reason_secret = f"사유비밀-{uuid4().hex}"
+        operation_key = f"test:create:{uuid4().hex}"
+        created_response = client.post(
+            "/api/v1/ai-operations/sensitive-data-policies",
+            headers=creator,
+            json={
+                "version": "policy-v1",
+                "forbiddenTerms": [forbidden],
+                "customerIdentifiers": [identifier],
+                "reason": reason_secret,
+                "operationKey": operation_key,
+            },
+        )
+        assert created_response.status_code == 201, created_response.text
+        created = created_response.json()
+        assert created["status"] == "DRAFT"
+        assert created["rawPolicyExposed"] is False
+        assert created["forbiddenTermCount"] == 1
+        assert created["customerIdentifierCount"] == 1
+        for secret in (
+            forbidden,
+            identifier,
+            reason_secret,
+            settings.ai_customer_scope,
+            settings.ai_site_scope,
+        ):
+            assert secret not in created_response.text
+
+        replay = client.post(
+            "/api/v1/ai-operations/sensitive-data-policies",
+            headers=creator,
+            json={
+                "version": "policy-v1",
+                "forbiddenTerms": [forbidden],
+                "customerIdentifiers": [identifier],
+                "reason": reason_secret,
+                "operationKey": operation_key,
+            },
+        )
+        assert replay.status_code == 201
+        assert replay.json()["policyId"] == created["policyId"]
+        assert replay.json()["idempotentReplay"] is True
+        conflicting_key = client.post(
+            "/api/v1/ai-operations/sensitive-data-policies",
+            headers=creator,
+            json={
+                "version": "policy-v2",
+                "forbiddenTerms": ["다른 값"],
+                "customerIdentifiers": [],
+                "reason": "다른 요청",
+                "operationKey": operation_key,
+            },
+        )
+        assert conflicting_key.status_code == 409
+
+        self_review = sensitive_policy_action(
+            client, creator, created, "review", "REVIEW"
+        )
+        assert self_review.status_code == 409
+        reviewed_response = sensitive_policy_action(
+            client, reviewer, created, "review", "REVIEW"
+        )
+        assert reviewed_response.status_code == 200, reviewed_response.text
+        reviewed = reviewed_response.json()
+        stale = sensitive_policy_action(
+            client, approver, created, "approve", "APPROVE"
+        )
+        assert stale.status_code == 409
+        self_approve = sensitive_policy_action(
+            client, reviewer, reviewed, "approve", "APPROVE"
+        )
+        assert self_approve.status_code == 409
+        approved_response = sensitive_policy_action(
+            client, approver, reviewed, "approve", "APPROVE"
+        )
+        assert approved_response.status_code == 200, approved_response.text
+        approved = approved_response.json()
+        bad_confirmation = sensitive_policy_action(
+            client, creator, approved, "activate", "RETIRE"
+        )
+        assert bad_confirmation.status_code == 422
+        activation_key = f"test:activate:{uuid4().hex}"
+        active_response = sensitive_policy_action(
+            client,
+            creator,
+            approved,
+            "activate",
+            "ACTIVATE",
+            operation_key=activation_key,
+        )
+        assert active_response.status_code == 200, active_response.text
+        active = active_response.json()
+        assert active["status"] == "ACTIVE" and active["isActive"] is True
+        activation_replay = sensitive_policy_action(
+            client,
+            creator,
+            approved,
+            "activate",
+            "ACTIVATE",
+            operation_key=activation_key,
+        )
+        assert activation_replay.status_code == 200
+        assert activation_replay.json()["idempotentReplay"] is True
+
+        detail = client.get(
+            f"/api/v1/ai-operations/sensitive-data-policies/{active['policyId']}",
+            headers=creator,
+        )
+        listed = client.get(
+            "/api/v1/ai-operations/sensitive-data-policies", headers=creator
+        )
+        events = client.get(
+            "/api/v1/ai-operations/audit/events", headers=creator,
+            params={"targetId": active["policyId"]},
+        )
+        for response in (detail, listed, events):
+            assert response.status_code == 200
+            for secret in (
+                forbidden,
+                identifier,
+                reason_secret,
+                settings.ai_customer_scope,
+                settings.ai_site_scope,
+            ):
+                assert secret not in response.text
+        assert all(
+            event["detail"]["rawPolicyExposed"] is False
+            for event in events.json()
+        )
+
+        replacement_created = client.post(
+            "/api/v1/ai-operations/sensitive-data-policies",
+            headers=creator,
+            json={
+                "version": "policy-v2",
+                "forbiddenTerms": ["교체 금칙어"],
+                "customerIdentifiers": [],
+                "reason": "현재 정책 대체 회귀",
+                "operationKey": f"test:create-replacement:{uuid4().hex}",
+            },
+        ).json()
+        replacement_reviewed = sensitive_policy_action(
+            client, reviewer, replacement_created, "review", "REVIEW"
+        ).json()
+        replacement_approved = sensitive_policy_action(
+            client, approver, replacement_reviewed, "approve", "APPROVE"
+        ).json()
+        replacement_response = sensitive_policy_action(
+            client,
+            creator,
+            replacement_approved,
+            "replace",
+            "REPLACE",
+            replaces_policy_id=active["policyId"],
+        )
+        assert replacement_response.status_code == 200, replacement_response.text
+        replacement = replacement_response.json()
+        assert replacement["status"] == "ACTIVE"
+        replaced_read_back = client.get(
+            f"/api/v1/ai-operations/sensitive-data-policies/{active['policyId']}",
+            headers=creator,
+        ).json()
+        assert replaced_read_back["status"] == "SUPERSEDED"
+        assert replaced_read_back["replacedByPolicyId"] == replacement["policyId"]
+
+        withdrawn_response = sensitive_policy_action(
+            client, creator, replacement, "withdraw-approval", "WITHDRAW_APPROVAL"
+        )
+        assert withdrawn_response.status_code == 200, withdrawn_response.text
+        assert withdrawn_response.json()["status"] == "APPROVAL_WITHDRAWN"
+        current = client.get(
+            "/api/v1/ai-operations/sensitive-data-policies/current", headers=creator
+        )
+        assert current.status_code == 200
+        assert current.json()["activePolicy"] is None
+        assert current.json()["externalTransferOccurred"] is False
+
+
 def test_role_matrix_approval_prompt_policy_and_kill_switch_are_audited() -> None:
     with create_client() as client:
         ordinary = login(client, "admin", "1234")

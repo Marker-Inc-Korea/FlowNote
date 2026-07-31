@@ -209,4 +209,25 @@ SELECT
           FROM document_tags dt JOIN tag_definitions td USING (tag_id)
           WHERE dt.document_id = d.document_id
             AND td.tag_type IN ('equipment', 'item', 'process', 'error_type')) < 2)
-     AS domain_tag_axis_violation;
+     AS domain_tag_axis_violation,
+  abs((SELECT count(*) FROM ai_search_ground_truth_cases
+       WHERE case_key LIKE 'sensitive-policy-regression-v1-%') - 5)
+     AS policy_regression_case_count_gap,
+  (SELECT count(*)
+   FROM ai_search_ground_truth_cases c
+   JOIN ai_search_ground_truth_provenance p USING (ground_truth_case_id)
+   WHERE c.case_key LIKE 'sensitive-policy-regression-v1-%'
+     AND (p.readiness_track <> 'SMOKE_REGRESSION'
+          OR p.data_classification <> 'TEST'
+          OR p.contains_sensitive_data <> 0))
+     AS policy_regression_track_violation,
+  (SELECT count(*)
+   FROM ai_search_ground_truth_cases c,
+        json_each(c.excluded_evidence_json) reference
+   WHERE c.case_key LIKE 'sensitive-policy-regression-v1-%'
+     AND (trim(coalesce(json_extract(reference.value, '$.sourceId'), '')) = ''
+          OR trim(coalesce(json_extract(reference.value, '$.sourceVersionId'), '')) = ''
+          OR trim(coalesce(json_extract(reference.value, '$.traceId'), '')) = ''
+          OR trim(coalesce(json_extract(reference.value, '$.traceVersionId'), '')) = ''
+          OR length(json_extract(reference.value, '$.contentHash')) <> 64))
+     AS policy_regression_frozen_reference_violation;

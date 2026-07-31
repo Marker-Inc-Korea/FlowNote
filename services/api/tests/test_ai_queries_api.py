@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.core.config import Settings
 from app.db.models import (
     AICallAttempt,
+    AIOperationalPolicy,
     AIPromptVersion,
     AIQuery,
     AIQueryEvidenceCandidate,
@@ -628,3 +629,203 @@ def test_prompt_injection_query_is_blocked_before_provider_boundary() -> None:
         assert response.status_code == 422
         assert response.json()["error"]["code"] == "CONTENT_RESTRICTED"
         assert provider.calls == 0
+
+
+def test_sensitive_policy_withdrawal_blocks_immediately_and_kill_switch_has_priority() -> None:
+    with create_client(enabled=True) as client:
+        auth = headers(client)
+        seed_policy(client)
+        settings = client.app.state.settings
+        suffix = uuid4().hex
+        with client.app.state.database.session() as session:
+            session.add(AISensitiveDataPolicy(
+                policy_id=f"aisdp-{suffix}",
+                customer_scope=settings.ai_customer_scope,
+                site_scope=settings.ai_site_scope,
+                version=f"withdrawn-{suffix[:8]}",
+                forbidden_terms_json=json.dumps(["정책 금칙어"]),
+                customer_identifiers_json=json.dumps(["POLICY-CUSTOMER-ID"]),
+                content_hash=hashlib.sha256(b"withdrawn-policy").hexdigest(),
+                status="APPROVAL_WITHDRAWN",
+                is_active=False,
+                created_by="user-admin",
+                reviewed_by="user-admin",
+                approved_by="user-admin",
+                approval_withdrawn_by="user-admin",
+                approval_withdrawn_at=datetime.now(timezone.utc),
+            ))
+            session.commit()
+        provider = FakeProviderAdapter(["SUCCESS"])
+        client.app.state.ai_provider = provider
+
+        withdrawn = client.post("/api/v1/ai/queries", headers=auth, json={
+            "purpose": "EVIDENCE_SUMMARY",
+            "query": "승인 철회 직후 호출 여부를 확인해 주세요",
+        })
+        assert withdrawn.status_code == 409
+        assert withdrawn.json()["error"]["code"] == "AI_SENSITIVE_POLICY_NOT_ACTIVE"
+        assert provider.calls == 0
+
+        with client.app.state.database.session() as session:
+            session.add(AIOperationalPolicy(
+                policy_id=f"aiop-{suffix}",
+                customer_scope=settings.ai_customer_scope,
+                site_scope=settings.ai_site_scope,
+                kill_switch_enabled=True,
+                max_requests_per_day=100,
+                max_concurrency=2,
+                timeout_seconds=10,
+                daily_cost_budget_micros=1000000,
+                reason="kill switch 우선순위 회귀",
+                updated_by="user-admin",
+            ))
+            session.commit()
+        killed = client.post("/api/v1/ai/queries", headers=auth, json={
+            "purpose": "EVIDENCE_SUMMARY",
+            "query": "kill switch와 정책 차단 우선순위를 확인해 주세요",
+        })
+        assert killed.status_code == 503
+        assert killed.json()["error"]["code"] == "AI_SITE_KILL_SWITCH"
+        assert provider.calls == 0
+
+
+def test_role_change_during_provider_call_discards_response_after_read_back() -> None:
+    with create_client(enabled=True) as client:
+        admin_auth = headers(client)
+        seed_policy(client)
+        seeded = seed_ai_search_sources(client)
+        candidate_ids = rebuild_and_candidates(client, admin_auth, seeded)
+        suffix = uuid4().hex
+        user_id = f"user-ai-role-change-{suffix}"
+        username = f"ai-role-change-{suffix}"
+        with client.app.state.database.session() as session:
+            session.add(UserAccount(
+                user_id=user_id,
+                username=username,
+                login_id=username,
+                display_name="AI 권한 변경 회귀 사용자",
+                role="document-admin",
+                password_hash=hash_password_for_dev("test-password"),
+                is_active=True,
+                status="ACTIVE",
+            ))
+            session.commit()
+        login = client.post("/api/v1/auth/login", json={
+            "username": username,
+            "password": "test-password",
+        })
+        assert login.status_code == 200
+        user_auth = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        calls = 0
+
+        def change_role(payload: dict[str, object]) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            with client.app.state.database.session() as other_session:
+                account = other_session.scalar(select(UserAccount).where(
+                    UserAccount.user_id == user_id
+                ))
+                account.role = "viewer"
+                other_session.commit()
+            candidate_id = payload["sources"][0]["candidateId"]
+            return {
+                "response": "권한 변경 뒤 폐기되어야 할 응답",
+                "claims": [{
+                    "claimKey": "role-change",
+                    "text": "폐기 대상",
+                    "candidateIds": [candidate_id],
+                }],
+            }
+
+        client.app.state.ai_provider = change_role
+        eligible_candidate_id = (
+            candidate_ids.get(seeded["analyzed_comment_id"])
+            or candidate_ids.get(seeded["selected_comment_id"])
+        )
+        assert eligible_candidate_id is not None
+        response = client.post("/api/v1/ai/queries", headers=user_auth, json={
+            "purpose": "EVIDENCE_SUMMARY",
+            "query": "권한 변경 회귀 근거를 요약해 주세요",
+            "candidateIds": [eligible_candidate_id],
+        })
+        assert response.status_code == 200, response.text
+        assert calls == 1
+        assert response.json()["status"] == "INSUFFICIENT_EVIDENCE"
+        assert response.json()["summary"] is None
+        assert response.json()["reason"].startswith("응답 생성 중 근거 상태 또는 열람 권한")
+        assert "폐기되어야" not in response.text
+
+
+def test_sensitive_policy_withdrawal_during_provider_call_discards_response() -> None:
+    with create_client(enabled=True) as client:
+        auth = headers(client)
+        seed_policy(client)
+        seeded = seed_ai_search_sources(client)
+        candidate_ids = rebuild_and_candidates(client, auth, seeded)
+        settings = client.app.state.settings
+        suffix = uuid4().hex
+        policy_id = f"aisdp-call-{suffix}"
+        with client.app.state.database.session() as session:
+            session.add(AISensitiveDataPolicy(
+                policy_id=policy_id,
+                customer_scope=settings.ai_customer_scope,
+                site_scope=settings.ai_site_scope,
+                version=f"active-{suffix[:8]}",
+                forbidden_terms_json=json.dumps(["정책 금칙어"]),
+                customer_identifiers_json=json.dumps(["POLICY-CUSTOMER-ID"]),
+                content_hash=hashlib.sha256(b"active-policy").hexdigest(),
+                status="ACTIVE",
+                is_active=True,
+                created_by="user-admin",
+                reviewed_by="user-admin",
+                approved_by="user-admin",
+                activated_by="user-admin",
+                activated_at=datetime.now(timezone.utc),
+            ))
+            session.commit()
+        calls = 0
+
+        def withdraw_policy(payload: dict[str, object]) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            with client.app.state.database.session() as other_session:
+                policy = other_session.scalar(select(AISensitiveDataPolicy).where(
+                    AISensitiveDataPolicy.policy_id == policy_id
+                ))
+                policy.status = "APPROVAL_WITHDRAWN"
+                policy.is_active = False
+                policy.approval_withdrawn_by = "user-admin"
+                policy.approval_withdrawn_at = datetime.now(timezone.utc)
+                other_session.commit()
+            candidate_id = payload["sources"][0]["candidateId"]
+            return {
+                "response": "정책 철회 뒤 폐기되어야 할 응답",
+                "claims": [{
+                    "claimKey": "policy-withdrawal",
+                    "text": "폐기 대상",
+                    "candidateIds": [candidate_id],
+                }],
+            }
+
+        client.app.state.ai_provider = withdraw_policy
+        eligible_candidate_id = (
+            candidate_ids.get(seeded["analyzed_comment_id"])
+            or candidate_ids.get(seeded["selected_comment_id"])
+        )
+        assert eligible_candidate_id is not None
+        response = client.post("/api/v1/ai/queries", headers=auth, json={
+            "purpose": "EVIDENCE_SUMMARY",
+            "query": "정책 철회 중 응답 폐기를 검증해 주세요",
+            "candidateIds": [eligible_candidate_id],
+        })
+        assert response.status_code == 200, response.text
+        assert calls == 1
+        assert response.json()["status"] == "INSUFFICIENT_EVIDENCE"
+        assert response.json()["summary"] is None
+        assert response.json()["reason"].startswith("응답 생성 중 민감정보 정책")
+        assert "폐기되어야" not in response.text
+        with client.app.state.database.session() as session:
+            query = session.scalar(select(AIQuery).where(
+                AIQuery.query_id == response.json()["queryId"]
+            ))
+            assert query.block_code == "AI_SENSITIVE_POLICY_CHANGED_AFTER_CALL"

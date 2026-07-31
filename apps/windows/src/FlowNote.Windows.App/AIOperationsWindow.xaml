@@ -52,6 +52,88 @@
                     </DataGrid>
                 </Grid>
             </TabItem>
+            <TabItem Header="민감정보 정책">
+                <Grid Margin="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="230"/>
+                    </Grid.RowDefinitions>
+                    <Border Padding="12" Margin="0,0,0,10"
+                            Background="{StaticResource PanelBackgroundBrush}"
+                            BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock x:Name="SensitiveRuntimeTitleTextBlock"
+                                       Text="현재 고객·현장의 AI 전송 상태를 확인하는 중입니다."
+                                       FontWeight="SemiBold" FontSize="15"/>
+                            <TextBlock x:Name="SensitiveRuntimeReasonTextBlock" Margin="0,5,0,0"
+                                       TextWrapping="Wrap"/>
+                            <TextBlock x:Name="SensitiveRuntimeActionTextBlock" Margin="0,4,0,0"
+                                       TextWrapping="Wrap" Foreground="{StaticResource SecondaryTextBrush}"/>
+                        </StackPanel>
+                    </Border>
+                    <DataGrid x:Name="SensitivePolicyGrid" Grid.Row="1" AutoGenerateColumns="False"
+                              IsReadOnly="True" SelectionChanged="SensitivePolicyGrid_SelectionChanged">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="적용 범위" Binding="{Binding ScopeDisplay}" Width="125"/>
+                            <DataGridTextColumn Header="버전" Binding="{Binding Version}" Width="100"/>
+                            <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="125"/>
+                            <DataGridCheckBoxColumn Header="현재 적용" Binding="{Binding IsActive}" Width="75"/>
+                            <DataGridTextColumn Header="금칙어 수" Binding="{Binding ForbiddenTermCount}" Width="75"/>
+                            <DataGridTextColumn Header="식별자 수" Binding="{Binding CustomerIdentifierCount}" Width="75"/>
+                            <DataGridTextColumn Header="작성자" Binding="{Binding CreatedBy}" Width="105"/>
+                            <DataGridTextColumn Header="검토자" Binding="{Binding ReviewedBy}" Width="105"/>
+                            <DataGridTextColumn Header="승인자" Binding="{Binding ApprovedBy}" Width="105"/>
+                            <DataGridTextColumn Header="다음 행동" Binding="{Binding NextAction}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <Grid Grid.Row="2" Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="430"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="새 정책 버전 작성" FontWeight="SemiBold"/>
+                            <TextBox x:Name="SensitiveVersionTextBox" Margin="0,6,0,5"
+                                     ToolTip="정책 버전"/>
+                            <TextBox x:Name="SensitiveForbiddenTermsTextBox" Height="52"
+                                     AcceptsReturn="True" TextWrapping="Wrap"
+                                     ToolTip="금칙어. 줄바꿈 또는 쉼표로 구분"/>
+                            <TextBox x:Name="SensitiveIdentifiersTextBox" Height="52" Margin="0,5,0,5"
+                                     AcceptsReturn="True" TextWrapping="Wrap"
+                                     ToolTip="고객 식별자. 줄바꿈 또는 쉼표로 구분"/>
+                            <TextBox x:Name="SensitiveReasonTextBox"
+                                     ToolTip="작성 또는 상태 변경 사유"/>
+                            <Button Width="130" Height="32" Margin="0,7,0,0"
+                                    HorizontalAlignment="Left" Content="새 버전 등록"
+                                    Click="CreateSensitivePolicy_Click"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="선택 정책 상태 변경" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="SensitiveSelectionTextBlock" Margin="0,6,0,8"
+                                       Text="정책을 선택하세요." TextWrapping="Wrap"/>
+                            <TextBlock Text="정책 원문과 고객 식별자는 등록 뒤 API·목록·감사 내보내기에서 다시 표시하지 않습니다."
+                                       TextWrapping="Wrap" Foreground="{StaticResource SecondaryTextBrush}"/>
+                            <WrapPanel Margin="0,12,0,0">
+                                <Button Width="82" Content="검토" Tag="review|REVIEW"
+                                        Click="SensitivePolicyAction_Click"/>
+                                <Button Width="82" Margin="6,0" Content="승인" Tag="approve|APPROVE"
+                                        Click="SensitivePolicyAction_Click"/>
+                                <Button Width="82" Content="활성화" Tag="activate|ACTIVATE"
+                                        Click="SensitivePolicyAction_Click"/>
+                                <Button Width="105" Margin="6,0" Content="현재 정책 대체"
+                                        Tag="replace|REPLACE" Click="SensitivePolicyAction_Click"/>
+                                <Button Width="95" Content="승인 철회"
+                                        Tag="withdraw-approval|WITHDRAW_APPROVAL"
+                                        Click="SensitivePolicyAction_Click"/>
+                                <Button Width="82" Margin="6,0" Content="폐기"
+                                        Tag="retire|RETIRE" Click="SensitivePolicyAction_Click"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </TabItem>
             <TabItem Header="전송 승인">
                 <Grid Margin="12">
                     <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="210"/></Grid.RowDefinitions>
@@ -119,6 +201,8 @@
                                 <DataGridTextColumn Header="고객" Binding="{Binding CustomerScope}" Width="95"/>
                                 <DataGridTextColumn Header="현장" Binding="{Binding SiteScope}" Width="95"/>
                                 <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="95"/>
+                                <DataGridCheckBoxColumn Header="외부 전송" Binding="{Binding ExternalTransferOccurred}" Width="75"/>
+                                <DataGridTextColumn Header="구분" Binding="{Binding BlockCategory}" Width="115"/>
                                 <DataGridCheckBoxColumn Header="만료" Binding="{Binding QueryPayloadExpired}" Width="55"/>
                                 <DataGridTextColumn Header="시각" Binding="{Binding CreatedAt}" Width="*"/>
                             </DataGrid.Columns>
@@ -127,6 +211,7 @@
                             <StackPanel>
                                 <TextBlock Text="질의 보존 상세" FontSize="16" FontWeight="SemiBold"/>
                                 <TextBlock x:Name="QueryScopeTextBlock" Margin="0,6,0,0" Text="왼쪽에서 질의를 선택하세요." TextWrapping="Wrap"/>
+                                <TextBlock x:Name="QueryTransferTextBlock" Margin="0,4,0,0" TextWrapping="Wrap" FontWeight="SemiBold"/>
                                 <TextBlock x:Name="QueryRetentionTextBlock" Margin="0,4,0,10" TextWrapping="Wrap" Foreground="{StaticResource SecondaryTextBrush}"/>
                                 <UniformGrid Columns="2" Margin="0,0,0,8">
                                     <TextBlock Text="조작 사유" VerticalAlignment="Center"/>

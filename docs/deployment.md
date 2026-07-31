@@ -627,6 +627,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - `C:\FlowNote\Server\.env`에 운영 DB 경로, storage 경로, 토큰 비밀값이 들어 있고 기본 개발 비밀값이 남아 있지 않은지 확인한다.
 - `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`인지 확인한다. 현재 코드는 운영 provider 연동 완료 상태가 아니다.
 - `system-admin`으로 WPF `AI 운영` 화면에 접속해 전역/현장 kill switch가 의도한 상태인지 확인한다. 외부 호출을 준비하지 않은 설치는 기능 플래그뿐 아니라 kill switch도 켠 상태를 유지한다.
+- 민감정보 정책 탭에서 현재 고객·현장 범위의 정책 상태, content hash, 항목 수와 담당자·다음 행동을 확인한다. 정책 원문이나 실제 scope 식별값이 목록·상세·감사에 노출되지 않는지 확인하고, 승인 철회·폐기 뒤에는 새 승인 버전이 활성화될 때까지 외부 호출이 차단되는지 검증한다.
 - 실제 익명 현장 dataset 48건, 동일 snapshot 평가 2회, 24칸 독립 표본 검토와 필요 시 제3 합의가 없으면 provider 증거 대장의 모든 미확정 값을 `PENDING`으로 유지한다.
 - provider 착수 심사 시에는 비공개 운영대장의 증거 위치, 승인 만료·철회 책임자, 비용·장애 모니터링 책임자와 경보 기준이 실제 값으로 정해졌는지 확인한다. 하나라도 미확정이면 외부 호출을 활성화하지 않는다.
 - 전송 승인과 활성 프롬프트가 시험 범위·만료일·목적·원천 유형에 맞는지 확인하고, 감사 CSV 내보내기는 현장 정책상 필요한 경우에만 허용한다.
@@ -797,7 +798,7 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 | 비상 연락 흐름 ID·운영/보안/현장 escalation | 미확정 | `<run_id>/approvals/rehearsal-authorization-*` | 착수 금지 |
 | 복구 PC·복구 경로·복구 승인자 | 미확정 | `<run_id>/backup-restore/*` | 대기 |
 
-2026-07-30 현재 이 저장소에는 실제 승인자, 서로 다른 익명 Windows 장비에서 수집한 server/WPF before·after, 운영 인증서, 승인 장비, 이전 승인 패키지, RTO/RPO 또는 비상 연락 흐름의 승인 원시 증거가 제공되지 않았다. 따라서 이 문서와 자동 테스트 통과는 별도 PC 실기 PASS가 아니다. 기존 `PILOT-20260728-1501-FULLPILOT-001`의 `pilot-verification.json`은 미충족 조건 460건과 `FAIL`을 기록했으며, 설치·복구·rollback을 시작해 실패한 실행이 아니라 사전 승인 부재로 착수가 차단된 실행이다. 실패 run과 원시 증거는 그대로 보존한다.
+2026-07-31 현재 이 저장소에는 실제 승인자, 서로 다른 익명 Windows 장비에서 수집한 server/WPF before·after, 운영 인증서, 승인 장비, 이전 승인 패키지, RTO/RPO 또는 비상 연락 흐름의 승인 원시 증거가 제공되지 않았다. 따라서 이 문서와 자동 테스트 통과는 별도 PC 실기 PASS가 아니다. 기존 `PILOT-20260728-1501-FULLPILOT-001`의 `pilot-verification.json`은 미충족 조건 460건과 `FAIL`을 기록했으며, 설치·복구·rollback을 시작해 실패한 실행이 아니라 사전 승인 부재로 착수가 차단된 실행이다. 실패 run과 원시 증거는 그대로 보존한다.
 
 제품 공통 설치·시작·런타임·서명 정책은 위와 같이 확정했지만 현장 실행값과 PASS를 추정하지 않는다. 현장 값이 확정되면 예시 명령과 실제 값이 충돌하지 않는지 검토하고 이 표, 설치 전후 점검표, 파일럿 manifest를 함께 갱신한다. 같은 승인 소스·패키지·장비를 한 `run_id`에 묶고 운영·보안·현장 3자 서명까지 받은 뒤에만 배포 승인으로 전환한다. 현장별 선호는 공통 기본값으로 올리지 않고 설정·교육 기록으로 분리한다.
 
@@ -883,7 +884,7 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 2026-07-31 현재 코드와 스크립트 guard는 FastAPI 160건, WPF Core 84건, Android 28건으로 일치한다. macOS 보조 검증에서는 FastAPI node ID 총 160건·고유 160건·중복 0건과 JUnit 160/160, Android 28/28을 확인했다. 스크립트는 수집 원본·중복 목록·JUnit과 종료 코드를 보존하고, 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터·새 `RunId` 실행 명령을 안내한다. Windows 수집 목록과 WPF Core TRX의 `total/passed=84/84`를 대조한 뒤 같은 clean 소스 커밋에서 Windows x64 무생략 실행이 2회 연속 통과해야 유효 기준선으로 확정한다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 2026-07-31 현재 코드와 스크립트 guard는 FastAPI 164건, WPF Core 87건, Android 28건으로 일치한다. 스크립트는 수집 원본·중복 목록·JUnit과 종료 코드를 보존하고, 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터·새 `RunId` 실행 명령을 안내한다. Windows 수집 목록과 WPF Core TRX를 대조한 뒤 같은 clean 소스 커밋에서 Windows x64 무생략 실행이 2회 연속 통과해야 유효 기준선으로 확정한다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 

@@ -4,7 +4,7 @@
 
 Windows WPF 앱은 문서, FieldComment, 첨부, 접근 로그, 보고서 같은 로컬 원천을 SQLite에 먼저 남기고 서버가 설정되어 있으면 동기화를 시도한다. 작업순서는 예외로 FastAPI snapshot을 권위 원천으로 직접 사용하며, 이 문서의 로컬 작업순서 테이블은 기존 기록·오프라인 읽기 캐시·초안으로만 보존한다.
 
-테이블과 동기화 설명은 2026-07-30 현재 `FlowNoteLocalDatabase`와 연결 서비스 코드 기준이다.
+테이블과 동기화 설명은 2026-07-31 현재 `FlowNoteLocalDatabase`와 연결 서비스 코드 기준이다.
 
 ## 경로
 
@@ -23,6 +23,7 @@ Windows WPF 앱은 문서, FieldComment, 첨부, 접근 로그, 보고서 같은
 - `document_versions`: 파일 버전, 변경 사유, 공개 여부, 서버 버전 ID
 - `field_comments`: FieldComment 원천 기록, 서버 코멘트 ID, 마지막 검토 revision
 - `field_comment_attachments`: FieldComment 첨부와 서버 첨부 ID
+- `field_comment_saved_views`: FieldComment 목록의 저장된 필터 이름·JSON·갱신 시각
 - `document_view_logs`: 열람/닫힘/차단 로그와 서버 로그 ID
 - `activity_history`: 전체 활동 이력
 - `file_watch_candidates`: 파일 감시 후보
@@ -52,13 +53,13 @@ Windows WPF 앱은 문서, FieldComment, 첨부, 접근 로그, 보고서 같은
 
 ## 동기화 원칙
 
-로컬 저장이 우선이다. 서버 URL이 없거나 서버 호출이 실패해도 로컬 문서, 문서 버전/공개/상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서는 유지된다. 동기화 성공 시 원천 테이블의 서버 ID와 `synced_at`, `server_id_mappings`를 갱신한다.
+로컬 저장이 우선이다. 서버 URL이 없거나 서버 호출이 실패해도 로컬 문서, 문서 버전/공개/상태/태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서는 유지된다. 동기화 성공 시 원천 테이블의 서버 ID와 `synced_at`, `server_id_mappings`를 갱신한다.
 
-재시도 큐는 같은 문서 또는 보고서 근거 단위로 묶은 뒤 문서 등록, 문서 버전, 공개, 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 순서로 처리한다. 선행 문서, 문서 버전, FieldComment, 보고서 근거 서버 ID가 없으면 해당 항목은 `FAILED` 상태와 한글 보류 사유를 유지하되 실제 서버 호출과 `attempt_count` 증가는 하지 않는다.
+재시도 큐는 같은 문서 또는 보고서 근거 단위로 묶은 뒤 문서 등록, 문서 버전, 공개, 상태, 태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 순서로 처리한다. 선행 문서, 문서 버전, FieldComment, 보고서 근거 서버 ID가 없으면 해당 항목은 `FAILED` 상태와 한글 보류 사유를 유지하되 실제 서버 호출과 `attempt_count` 증가는 하지 않는다.
 
 구 FieldNote 큐는 동기화 실패 기록이 남아 있어도 일반 재시도에서 FieldComment API로 자동 변환하지 않는다. 테스트/스모크 이력 보존 규칙에 따라 기존 SQLite row와 큐 기록은 삭제하지 않고, 이력 창의 분류와 조치 문구로 별도 정리 대상으로 표시한다. 별도 전환 CLI는 dry-run 결과와 plan hash를 확인한 뒤 운영자가 승인한 row만 결정적인 새 FieldComment/첨부 ID와 현재 action의 신규 큐로 복제하며, 구 원천과 기존 FAILED 큐는 그대로 보존한다.
 
-기존 공통 SQLite에는 초기 로컬 큐 형식의 `create` action이 남아 있을 수 있다. 현재 서버 동기화 코드는 `register_document`, `register_document_version`, `publish_document_version`, `update_document_status`, `register_field_comment`, `update_field_comment_review`, `register_field_comment_attachment`, `register_access_log_*`, `register_report`만 서버 전송 action으로 처리한다. 따라서 `document/create`, `document_version/create`, `document_view_log/create`, `field_comment/create`, `field_comment_attachment/create`는 일반 재시도에서 새 동기화 계약으로 재해석하지 않는다. 재시도 시 행과 원본 데이터를 삭제하지 않고 `FAILED`와 구 형식 보류 사유를 기록하며, 실제 서버 호출과 `attempt_count` 증가는 하지 않는다. 별도 전환 CLI는 `document`, `document_version`, `field_comment`, `field_comment_attachment`의 구 `create`를 현재 등록 action으로 분류하고, `document_view_log/create`는 종료 시각과 종료 사유에 따라 열람 시작·종료·자동 종료·다운로드 차단 action으로 해석해 관리자 확인 대상으로 둔다.
+기존 공통 SQLite에는 초기 로컬 큐 형식의 `create` action이 남아 있을 수 있다. 현재 서버 동기화 코드는 `register_document`, `register_document_version`, `publish_document_version`, `update_document_status`, `replace_document_tags`, `register_field_comment`, `update_field_comment_review`, `register_field_comment_attachment`, `register_access_log_*`, `register_report`만 서버 전송 action으로 처리한다. 따라서 `document/create`, `document_version/create`, `document_view_log/create`, `field_comment/create`, `field_comment_attachment/create`는 일반 재시도에서 새 동기화 계약으로 재해석하지 않는다. 재시도 시 행과 원본 데이터를 삭제하지 않고 `FAILED`와 구 형식 보류 사유를 기록하며, 실제 서버 호출과 `attempt_count` 증가는 하지 않는다. 별도 전환 CLI는 `document`, `document_version`, `field_comment`, `field_comment_attachment`의 구 `create`를 현재 등록 action으로 분류하고, `document_view_log/create`는 종료 시각과 종료 사유에 따라 열람 시작·종료·자동 종료·다운로드 차단 action으로 해석해 관리자 확인 대상으로 둔다.
 
 전환 CLI의 dry-run은 DB를 read-only로 열어 감사 테이블이나 큐를 만들지 않는다. 승인 실행만 `server_sync_migration_audit`를 만들고 원천 큐 ID, 대상 idempotency key, 승인자, plan hash, 원천 JSON snapshot을 기록한다. 원천 큐와 로컬 파일은 수정·삭제하지 않으며, 같은 원천 큐 또는 대상 idempotency key의 반복 승인은 신규 원천·큐·감사를 중복 생성하지 않는다. 실행 명령과 전후 SQL 검증은 [보존 동기화 실패 무손실 전환](./legacy-sync-migration.md)을 따른다.
 
