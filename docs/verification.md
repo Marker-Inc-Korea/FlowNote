@@ -14,7 +14,7 @@
 | WPF Core | 현재 macOS 실행 84/84, 스크립트 guard 84건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 목표 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
-| Android | 현재 단위 테스트 24/24, debug build·lint PASS, 스크립트 고정값 24건 | Windows 무생략 실행 대기 |
+| Android | 현재 단위 테스트 28/28, debug build·lint PASS, 스크립트 고정값 28건 | Windows 무생략 실행 대기 |
 | SQLite | 목표 전후 `quick_check=ok`, FK 위반 0 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
@@ -1187,3 +1187,29 @@ SELECT COUNT(*) FROM documents d LEFT JOIN server_id_mappings m ON m.entity_type
 역할 지표는 `role-metrics.csv`에서 관리자 5종과 반장·조장·작업자 각 4종 필수 시나리오의 분모를 확인하고 성공률·중앙값·최대·재시도·도움 요청·치명적 blocker를 재계산해 `pilot-run.json`과 대조한다. 현장 관찰은 네 역할, 장갑 착용, 네트워크 단절을 포함해야 하며 조치 가능 관찰은 소유자·P0~P3·제품/설정/배치·교육 분류·검증 기준·기한·증거가 있는 개발 항목과 1:1이어야 한다.
 
 로컬 도구 회귀는 `python3 -m unittest scripts/test_verify_pilot_restore.py scripts/test_manage_pilot_run.py -v`의 11건이 통과했다. 이 결과는 도구의 정상/차단 판정을 검증한 것이며 별도 Windows PC, 승인 현장 참여자와 3자 서명이 필요한 실제 PILOT PASS를 대신하지 않는다. 실제 전체 실행은 여전히 `대기`다.
+
+## 2026-07-31 Android 운영·수명주기·현장 입력 사전 점검
+
+Android 알림 polling에서 access 401을 받은 즉시 공통 인증 실패 콜백이 access/refresh token을 모두 지워 실제 refresh 회전이 불가능한 경로를 수정했다. 첫 401은 refresh를 한 번 시도하고, 회전 뒤 재거부 또는 비활성 단말 403에서 세션을 폐기하며, 단순 연결 실패는 세션과 cursor를 유지한다. 이 분기 4건을 단위 테스트에 추가했다.
+
+`full_pilot` 원시 증거에는 다음 Android 행을 추가하고 최종 판정에서 실제 파일을 다시 읽도록 했다.
+
+- FieldComment·사진·인수인계 각각의 실패→앱 재시작→로그인→재전송
+- 대기 outbox가 있는 rollback 차단, 인수인계 멱등 재전송, 비활성 단말과 Keystore 실패
+- FieldComment·사진·인수인계 각각의 장갑·한 손·거치 조건 9건
+- 사진 선택·미리보기·암호화 저장 뒤 선택 상태 초기화 1건
+
+운영 검증기는 APK뿐 아니라 AAB도 signer SHA-256, applicationId, versionCode, non-debuggable, backup 비활성, cleartext 차단을 확인한다. AAB base manifest에는 `bundletool` 또는 `BUNDLETOOL_JAR`가 필요하며, APK manifest는 `apkanalyzer`가 없는 SDK에서도 `aapt xmltree`로 검사한다.
+
+실행 결과:
+
+| 검증 | 결과 |
+| --- | --- |
+| `./gradlew testDebugUnitTest assembleDebug lintDebug --warning-mode=fail --rerun-tasks` | PASS, 단위 테스트 28건, 실패·오류 0, build 성공, lint 오류 0·경고 18 |
+| `python3 -m unittest discover -s scripts -p 'test_*.py' -v` | PASS, 릴리스·파일럿·복구 도구 39건 |
+| debug APK 운영 검증 부정 시험 | `release APK is debuggable`로 차단 |
+| 서명 환경변수 없는 `./gradlew assembleRelease` | 운영 서명값 4개 누락으로 차단 |
+| ADB 연결 | 0대 |
+| 운영 서명 후보 APK, 이전 승인 APK, MDM 승인 증거 | 제공되지 않음 |
+
+debug APK 부정 시험의 최신 보존 경로는 `data/local/pilot-evidence/ANDROID-RELEASE-PRECHECK-20260731-004/`이다. 현재 결과는 자동 사전 점검만 통과한 상태다. 승인 ADB serial과 운영 서명 후보/이전 승인 APK가 없으므로 설치·업그레이드·rollback, 실제 대기 outbox rollback 차단, Doze·재부팅·강제 중지/kiosk 복구, 사내 HTTPS 단절·복구, 발급·비활성화·분실·교체, 장갑·한 손·거치 관찰은 실행하지 않았다. 따라서 같은 `run_id`의 Android 전달·무결성·보안·수명주기·운영 패키지 승인·Field UX 원시 행은 아직 `PASS`가 아니며 운영 완료 판정은 `대기`다.

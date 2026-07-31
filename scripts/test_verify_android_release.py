@@ -111,8 +111,17 @@ esac
         ux = (scenario_dir / "android-field-ux.csv").read_text(encoding="utf-8")
         self.assertIn("AND-HANDOVER-IDEMPOTENCY", delivery)
         self.assertIn("AND-OUTBOX-DEVICE-INACTIVE", delivery)
+        self.assertIn("AND-FIELD-COMMENT-RESTART-LOGIN-RETRY", delivery)
+        self.assertIn("AND-PHOTO-RESTART-LOGIN-RETRY", delivery)
+        self.assertIn("AND-HANDOVER-RESTART-LOGIN-RETRY", delivery)
+        self.assertIn("AND-ROLLBACK-PENDING-OUTBOX", delivery)
+        self.assertIn("AND-UX-GLOVE-FIELD-COMMENT", ux)
+        self.assertIn("AND-UX-GLOVE-PHOTO", ux)
         self.assertIn("AND-UX-GLOVE-HANDOVER", ux)
+        self.assertIn("AND-UX-ONEHAND-FIELD-COMMENT", ux)
+        self.assertIn("AND-UX-MOUNTED-PHOTO", ux)
         self.assertIn("AND-UX-PHOTO-RESET", ux)
+        self.assertEqual(10, ux.count(",NOT_RUN"))
 
     def test_install_requires_explicit_approved_device_serial(self) -> None:
         environment = os.environ.copy()
@@ -133,6 +142,98 @@ esac
 
         self.assertNotEqual(0, completed.returncode)
         self.assertIn("--device-serial is required", completed.stderr)
+
+    def test_apk_manifest_falls_back_to_aapt_xmltree(self) -> None:
+        (self.bin / "apkanalyzer").unlink()
+        self._stub(
+            "aapt",
+            """
+case "$*" in
+  *"dump badging"*)
+    printf "%s\\n" "package: name='com.flownote.fieldapp' versionCode='2' versionName='0.2.0'"
+    ;;
+  *"dump xmltree"*)
+    printf '%s\\n' \
+      'A: android:allowBackup(0x01010280)=(type 0x12)0x0' \
+      'A: android:usesCleartextTraffic(0x010104ec)=(type 0x12)0x0'
+    ;;
+esac
+""".strip(),
+        )
+        environment = os.environ.copy()
+        environment["PATH"] = f"{self.bin}:{environment['PATH']}"
+
+        completed = subprocess.run(
+            [str(SCRIPT), self.run_id, str(self.artifact), str(self.root / "evidence")],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+
+        self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_aab_verification_requires_and_records_base_manifest_contract(self) -> None:
+        artifact = self.root / "candidate.aab"
+        artifact.write_bytes(b"preserved fake signed AAB fixture\n")
+        self._stub("jarsigner", "printf '%s\\n' 'jar verified.'")
+        self._stub(
+            "keytool",
+            "printf '%s\\n' 'SHA256: 11:22:33'",
+        )
+        self._stub(
+            "bundletool",
+            """
+printf '%s\n' '<manifest package="com.flownote.fieldapp" android:versionCode="3" android:versionName="0.3.0"><application android:debuggable="false" android:allowBackup="false" android:usesCleartextTraffic="false" /></manifest>'
+""".strip(),
+        )
+        environment = os.environ.copy()
+        environment["PATH"] = f"{self.bin}:{environment['PATH']}"
+
+        completed = subprocess.run(
+            [str(SCRIPT), self.run_id, str(artifact), str(self.root / "evidence")],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        summary = (
+            self.root
+            / "evidence"
+            / self.run_id
+            / "packages"
+            / "android-release-verification.txt"
+        ).read_text(encoding="utf-8")
+        self.assertIn("artifact_type=AAB", summary)
+        self.assertIn("version_code=3", summary)
+        self.assertIn("signer_sha256=11:22:33", summary)
+
+    def test_aab_verification_rejects_cleartext_enabled_manifest(self) -> None:
+        artifact = self.root / "candidate.aab"
+        artifact.write_bytes(b"preserved fake signed AAB fixture\n")
+        self._stub("jarsigner", "printf '%s\\n' 'jar verified.'")
+        self._stub("keytool", "printf '%s\\n' 'SHA256: 11:22:33'")
+        self._stub(
+            "bundletool",
+            """
+printf '%s\n' '<manifest package="com.flownote.fieldapp" android:versionCode="3"><application android:allowBackup="false" android:usesCleartextTraffic="true" /></manifest>'
+""".strip(),
+        )
+        environment = os.environ.copy()
+        environment["PATH"] = f"{self.bin}:{environment['PATH']}"
+
+        completed = subprocess.run(
+            [str(SCRIPT), self.run_id, str(artifact), str(self.root / "evidence")],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+
+        self.assertNotEqual(0, completed.returncode)
+        self.assertIn("does not disable cleartext", completed.stderr)
 
     def test_rollback_is_blocked_until_real_device_outbox_is_empty(self) -> None:
         previous, environment = self._configure_device_stubs()

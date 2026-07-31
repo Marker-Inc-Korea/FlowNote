@@ -228,7 +228,7 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
 ```
 
-전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 2026-07-31 현재 코드와 스크립트 guard는 FastAPI 160건·WPF Core 84건·Android 24건으로 일치한다. FastAPI 155건 기준 이후 복구 장애 4개 매개변수 사례와 불완전 복구 문맥 1개가 추가되어 node ID가 5개 늘었다. 현재 macOS 보조 검증은 FastAPI 수집 총 160건·고유 160건·중복 0건과 JUnit 160/160을 확인했다. Windows x64 수집 목록과 WPF Core TRX `total/passed=84/84`, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 실행을 같은 clean 소스 커밋에서 2회 통과해야 유효한 통합 기준선으로 판정한다. 수집/JUnit 또는 도구 검사가 실패하면 현재 단계·기대값·실제값·보존 증거와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 재실행 방법을 함께 안내한다.
+전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 2026-07-31 현재 코드와 스크립트 guard는 FastAPI 160건·WPF Core 84건·Android 28건으로 일치한다. FastAPI 155건 기준 이후 복구 장애 4개 매개변수 사례와 불완전 복구 문맥 1개가 추가되어 node ID가 5개 늘었다. 현재 macOS 보조 검증은 FastAPI 수집 총 160건·고유 160건·중복 0건과 JUnit 160/160, Android 28/28을 확인했다. Windows x64 수집 목록과 WPF Core TRX `total/passed=84/84`, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 실행을 같은 clean 소스 커밋에서 2회 통과해야 유효한 통합 기준선으로 판정한다. 수집/JUnit 또는 도구 검사가 실패하면 현재 단계·기대값·실제값·보존 증거와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 재실행 방법을 함께 안내한다.
 
 | Windows x64 통합 기준선 | 첫 실행 | 재현 실행 |
 | --- | --- | --- |

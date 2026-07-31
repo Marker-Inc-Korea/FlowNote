@@ -156,6 +156,22 @@ ANDROID_DELIVERY_CASES = (
     ("AND-NOTIFY-FORCESTOP", "force_stop_kiosk_restart"),
 )
 ANDROID_DELIVERY_SCENARIOS = tuple(condition for _, condition in ANDROID_DELIVERY_CASES)
+ANDROID_OUTBOX_RECOVERY_CASES = (
+    (
+        "AND-FIELD-COMMENT-RESTART-LOGIN-RETRY",
+        "field_comment_failure_restart_login_retry",
+    ),
+    ("AND-PHOTO-RESTART-LOGIN-RETRY", "photo_failure_restart_login_retry"),
+    ("AND-HANDOVER-RESTART-LOGIN-RETRY", "handover_failure_restart_login_retry"),
+    ("AND-HANDOVER-OFFLINE", "offline_handover_reboot_retry"),
+    ("AND-HANDOVER-IDEMPOTENCY", "response_loss_same_key_retry"),
+    (
+        "AND-OUTBOX-DEVICE-INACTIVE",
+        "inactive_device_blocks_tokens_and_outbox",
+    ),
+    ("AND-OUTBOX-KEYSTORE", "keystore_failure_preservation_guidance"),
+    ("AND-ROLLBACK-PENDING-OUTBOX", "pending_outbox_blocks_rollback"),
+)
 ANDROID_SECURITY_CHECKS = (
     "keystore_token_ciphertext",
     "outbox_ciphertext",
@@ -171,6 +187,18 @@ ANDROID_DEVICE_LIFECYCLE_CASES = (
     "device_deactivate",
     "device_lost",
     "device_replacement",
+)
+ANDROID_FIELD_UX_CASES = (
+    ("AND-UX-GLOVE-FIELD-COMMENT", "gloves", "field_comment"),
+    ("AND-UX-GLOVE-PHOTO", "gloves", "photo"),
+    ("AND-UX-GLOVE-HANDOVER", "gloves", "handover"),
+    ("AND-UX-ONEHAND-FIELD-COMMENT", "one_hand", "field_comment"),
+    ("AND-UX-ONEHAND-PHOTO", "one_hand", "photo"),
+    ("AND-UX-ONEHAND-HANDOVER", "one_hand", "handover"),
+    ("AND-UX-MOUNTED-FIELD-COMMENT", "mounted_device", "field_comment"),
+    ("AND-UX-MOUNTED-PHOTO", "mounted_device", "photo"),
+    ("AND-UX-MOUNTED-HANDOVER", "mounted_device", "handover"),
+    ("AND-UX-PHOTO-RESET", "photo_select_preview_save_reset", "photo"),
 )
 EVIDENCE_DIRECTORIES = (
     "approvals",
@@ -371,7 +399,10 @@ def prepare(args: argparse.Namespace) -> int:
     android_delivery_rows = "".join(
         ",".join([scenario_id, condition, *("" for _ in range(9)), "NOT_RUN", ""])
         + "\n"
-        for scenario_id, condition in ANDROID_DELIVERY_CASES
+        for scenario_id, condition in (
+            *ANDROID_DELIVERY_CASES,
+            *ANDROID_OUTBOX_RECOVERY_CASES,
+        )
     )
     templates = {
         run_root / "approvals" / "responsibility-assignments.csv": (
@@ -429,6 +460,15 @@ def prepare(args: argparse.Namespace) -> int:
             "signer_sha256,mdm_package_id,rollout_ring,approval_id,result,evidence\n"
             "release_candidate,,,,,,,,,NOT_RUN,\n"
             "previous_approved_rollback,,,,,,,,,NOT_RUN,\n"
+        ),
+        run_root / "scenario-results" / "android-field-ux.csv": (
+            "scenario_id,condition,input_kind,participant_code,attempt,success,"
+            "elapsed_seconds,help_requests,critical_blockers,source_id,"
+            "handover_id,evidence,result\n"
+            + "".join(
+                f"{scenario_id},{condition},{input_kind},,,,,,,,,,NOT_RUN\n"
+                for scenario_id, condition, input_kind in ANDROID_FIELD_UX_CASES
+            )
         ),
         run_root / "scenario-results" / "role-metrics.csv": (
             "role,participant_id,scenario_id,required,success,elapsed_seconds,"
@@ -541,6 +581,16 @@ def android_delivery_csv_failures(
         ANDROID_DELIVERY_SCENARIOS,
         "Android 전달 원시 결과",
         exactly_one=False,
+    )
+    failures.extend(
+        required_android_csv_failures(
+            run_root,
+            relative_path,
+            "condition",
+            tuple(condition for _, condition in ANDROID_OUTBOX_RECOVERY_CASES),
+            "Android outbox 복구 원시 결과",
+            ("delivery_run_id", "message_id"),
+        )
     )
     if not path.is_file():
         return failures
@@ -723,6 +773,65 @@ def csv_bool(value: Any) -> bool | None:
     if normalized in ("false", "0", "no", "n"):
         return False
     return None
+
+
+def android_field_ux_csv_failures(run_root: Path) -> list[str]:
+    rows, failures = read_csv_rows(
+        run_root, "scenario-results/android-field-ux.csv", "Android 현장 입력 UX"
+    )
+    grouped = {
+        scenario_id: [
+            row
+            for row in rows
+            if (row.get("scenario_id") or "").strip() == scenario_id
+        ]
+        for scenario_id, _, _ in ANDROID_FIELD_UX_CASES
+    }
+    for scenario_id, condition, input_kind in ANDROID_FIELD_UX_CASES:
+        matching = grouped[scenario_id]
+        if len(matching) != 1:
+            failures.append(
+                f"Android 현장 입력 UX {scenario_id} 행은 정확히 1개여야 합니다."
+            )
+            continue
+        row = matching[0]
+        label = f"Android 현장 입력 UX {scenario_id}"
+        if (row.get("condition") or "").strip() != condition:
+            failures.append(f"{label}의 condition이 승인 조건과 다릅니다.")
+        if (row.get("input_kind") or "").strip() != input_kind:
+            failures.append(f"{label}의 input_kind가 승인 입력 종류와 다릅니다.")
+        if (row.get("result") or "").strip() != "PASS":
+            failures.append(f"{label}의 원시 판정이 PASS가 아닙니다.")
+        if csv_bool(row.get("success")) is not True:
+            failures.append(f"{label}의 실제 작성·저장 성공이 확인되지 않았습니다.")
+        participant = (row.get("participant_code") or "").strip()
+        if (
+            not participant
+            or "@" in participant
+            or any(character.isspace() for character in participant)
+        ):
+            failures.append(f"{label}의 익명 participant_code가 올바르지 않습니다.")
+        try:
+            attempt = int((row.get("attempt") or "").strip())
+            elapsed = float((row.get("elapsed_seconds") or "").strip())
+            help_requests = int((row.get("help_requests") or "").strip())
+            blockers = int((row.get("critical_blockers") or "").strip())
+            if attempt <= 0 or elapsed <= 0 or help_requests < 0 or blockers != 0:
+                raise ValueError
+        except ValueError:
+            failures.append(
+                f"{label}의 시도·시간·도움 요청 값이 올바르지 않거나 치명적 blocker가 남았습니다."
+            )
+        if not nonempty(row.get("source_id")):
+            failures.append(f"{label}의 서버 원천 source_id가 없습니다.")
+        if input_kind == "handover" and not nonempty(row.get("handover_id")):
+            failures.append(f"{label}의 handover_id가 없습니다.")
+        failures.extend(
+            evidence_failures(
+                run_root, [(row.get("evidence") or "").strip()], label
+            )
+        )
+    return failures
 
 
 def restore_fault_injection_failures(run_root: Path) -> list[str]:
@@ -1836,6 +1945,7 @@ def verify(args: argparse.Namespace) -> int:
                 ),
             )
         )
+        failures.extend(android_field_ux_csv_failures(run_root))
 
     ux_items = record.get("ux_development_items", {})
     actionable = ux_items.get("actionable_findings")

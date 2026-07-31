@@ -32,7 +32,7 @@ $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
 $expectedFastApiTestCount = 160
 $expectedWpfCoreTestCount = 84
-$expectedAndroidUnitTestCount = 24
+$expectedAndroidUnitTestCount = 28
 $stepDisplayNames = @{
     "Check Windows baseline toolchain versions" = "Windows x64 표준 도구 확인"
     "Check .gitignore coverage for known test/build artifact paths" = "테스트·빌드 산출물 Git 제외 규칙 확인"
@@ -290,7 +290,7 @@ function Get-StepExpectedValue {
             return "스모크 후 공통 SQLite quick_check=ok, FK 위반 0건"
         }
         "Run Android unit tests and debug build" {
-            return "Android JUnit total/passed 24/24, 실패·오류·건너뜀 0건, debug build PASSED"
+            return "Android JUnit total/passed 28/28, 실패·오류·건너뜀 0건, debug build PASSED"
         }
         "Run approved Android physical-device instrumentation smoke" {
             return "승인 Android 실단말 1대에서 계측 스모크 통과"
