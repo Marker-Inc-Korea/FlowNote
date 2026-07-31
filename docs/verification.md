@@ -32,6 +32,8 @@ OpenAPI는 루트 `GET /`를 포함해 132개 method/path 조합이며 `services
 
 과거 실행 기록의 당시 수치와 판정은 수정하지 않았다. Windows x64 무생략 통합 실행 2회, 누적 공통 SQLite 스모크, 승인 Android 실단말 검증도 새로 수행하지 않았으므로 최신 유효 통합 기준선은 계속 `대기`다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하거나 초기화하지 않았다.
 
+이 기록이 반영된 커밋 `9d0f261`을 기준으로 후속 재확인도 진행했다. 추적되는 코드 변경은 없었고 `main`과 `origin/main`은 일치했다. OpenAPI, ORM, 설정, 표준 검증 스크립트 고정값과 Markdown 상대 링크를 다시 산출했으며, 위 수치 및 판정과 다른 항목은 없었다.
+
 ## 2026-07-31 작업 102 Windows 문서 현재 기준 재대조
 
 작업을 시작할 때 Git 작업 트리는 깨끗했고 `main`과 `origin/main`도 같은 커밋을 가리켰다. 현재 코드를 다시 확인한 결과, Windows 문서에 파일럿 판정 schema version 10과 FastAPI guard 155건이 현재 값처럼 남아 있었다. `scripts/manage-pilot-run.py`의 schema version 11과 `scripts/verify-preserved-tests.ps1`의 FastAPI 160건을 기준으로 해당 설명을 바로잡았다. 날짜별 실행 기록에 적힌 당시 수치와 판정은 변경하지 않았다.
