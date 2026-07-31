@@ -24,6 +24,14 @@
 
 변경된 실패 안내는 PowerShell SDK 보조 호스트로 macOS 환경 게이트를 의도적으로 실패시킨 `candidate1-macos-ux-failure-20260730-01`에서 확인했다. 콘솔·단계 로그·`verification-summary.json`은 현재 단계, 기대값, 실제값, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 모두 한 화면 구조로 남겼다. 현재 호스트는 macOS ARM64라 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
 
+## 2026-07-31 작업 102 저장소 현재 상태 재확인
+
+작업 시작 시 Git 작업 트리는 깨끗했고 `main`, `origin/main`은 모두 커밋 `2fca485`를 가리켰다. 이 커밋 이후 코드 변경은 없었다. 현재 구현을 기준으로 제품·개발 문서를 다시 살펴본 결과, 추가로 바로잡아야 할 기능 설명이나 사용자 노출 문구는 발견되지 않았다. 이번에는 확인한 범위와 결과만 이 문서에 남겼다.
+
+OpenAPI는 루트 `GET /`를 포함해 132개 method/path 조합이며 `services/api/README.md`의 목록과 누락·초과 없이 일치했다. SQLAlchemy ORM은 60개 테이블, `Settings`와 `.env.example`은 각각 45개 항목이다. 파일럿 판정 schema version은 11이고 표준 검증 스크립트의 guard는 FastAPI 160건·WPF Core 84건·Android 24건으로 현재 기준 문서와 같았다. Git이 추적하는 Markdown 43개의 상대 링크도 끊어진 항목이 없었다.
+
+과거 실행 기록의 당시 수치와 판정은 수정하지 않았다. Windows x64 무생략 통합 실행 2회, 누적 공통 SQLite 스모크, 승인 Android 실단말 검증도 새로 수행하지 않았으므로 최신 유효 통합 기준선은 계속 `대기`다. 기존 SQLite, 로그, 캐시와 테스트 산출물은 삭제하거나 초기화하지 않았다.
+
 ## 2026-07-31 작업 102 Windows 문서 현재 기준 재대조
 
 작업을 시작할 때 Git 작업 트리는 깨끗했고 `main`과 `origin/main`도 같은 커밋을 가리켰다. 현재 코드를 다시 확인한 결과, Windows 문서에 파일럿 판정 schema version 10과 FastAPI guard 155건이 현재 값처럼 남아 있었다. `scripts/manage-pilot-run.py`의 schema version 11과 `scripts/verify-preserved-tests.ps1`의 FastAPI 160건을 기준으로 해당 설명을 바로잡았다. 날짜별 실행 기록에 적힌 당시 수치와 판정은 변경하지 않았다.
