@@ -164,11 +164,13 @@
                             <Border Grid.Row="1"
                                     Margin="0,10,0,0"
                                     Padding="10"
+                                    MaxHeight="360"
                                     Background="{StaticResource WindowBackgroundBrush}"
                                     BorderBrush="{StaticResource PanelBorderBrush}"
                                     BorderThickness="1"
                                     CornerRadius="4">
-                                <StackPanel>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel>
                                     <TextBlock Text="연결 상태" FontWeight="SemiBold"
                                                Foreground="{StaticResource PrimaryTextBrush}" />
                                     <TextBlock x:Name="RecoveryConnectionStatusTextBlock"
@@ -205,9 +207,22 @@
                                     <TextBlock Text="다음 단계" FontWeight="SemiBold"
                                                Foreground="{StaticResource PrimaryTextBrush}" />
                                     <TextBlock x:Name="RecoveryNextStepTextBlock"
+                                               Margin="0,2,0,8" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <TextBlock Text="판정과 승인 조치의 데이터 영향"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryTextBrush}" />
+                                    <TextBlock x:Name="RecoveryDecisionGuideTextBlock"
+                                               Margin="0,2,0,8" TextWrapping="Wrap"
+                                               Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <TextBlock Text="승인 뒤 재시작·업무 재개 조건"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryTextBrush}" />
+                                    <TextBlock x:Name="RecoveryRestartConditionsTextBlock"
                                                Margin="0,2,0,0" TextWrapping="Wrap"
                                                Foreground="{StaticResource SecondaryTextBrush}" />
-                                </StackPanel>
+                                    </StackPanel>
+                                </ScrollViewer>
                             </Border>
                             <StackPanel Grid.Row="2"
                                         Margin="0,8,0,0"
@@ -233,9 +248,12 @@
                                   BorderThickness="0" RowHeight="46" ColumnHeaderHeight="34">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="run ID" Binding="{Binding RunId}" Width="180" />
-                                <DataGridTextColumn Header="판정" Binding="{Binding VerdictText}" Width="90" />
-                                <DataGridTextColumn Header="승인 조치" Binding="{Binding ActionText}" Width="100" />
+                                <DataGridTextColumn Header="서버 판정" Binding="{Binding VerdictText}" Width="220" />
+                                <DataGridTextColumn Header="승인할 조치" Binding="{Binding ActionText}" Width="250" />
                                 <DataGridTextColumn Header="대상" Binding="{Binding TargetText}" Width="220" />
+                                <DataGridTextColumn Header="적용 시 데이터 영향" Binding="{Binding DataEffect}" Width="360" />
+                                <DataGridTextColumn Header="로컬 SHA-256" Binding="{Binding LocalHashSha256}" Width="220" />
+                                <DataGridTextColumn Header="서버 SHA-256" Binding="{Binding ServerHashSha256}" Width="220" />
                                 <DataGridTextColumn Header="서버 문서 ID" Binding="{Binding ServerDocumentId}" Width="180" />
                                 <DataGridTextColumn Header="서버 버전 ID" Binding="{Binding ServerVersionId}" Width="180" />
                                 <DataGridTextColumn Header="상세" Binding="{Binding Details}" Width="*" />

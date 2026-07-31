@@ -27,6 +27,12 @@ class ManagePilotRunRestoreTestMixin:
                         "target": "server",
                         "phase": phase,
                         "machine_id": machine_id,
+                        "host_identity": {
+                            "source": "unit-test-host",
+                            "sha256": (
+                                "a" * 64 if phase == "before" else "b" * 64
+                            ),
+                        },
                         "backup_set_id": "BACKUP-001",
                         "restore_approval_id": "APPROVAL-001",
                     }
@@ -51,6 +57,14 @@ class ManagePilotRunRestoreTestMixin:
                     ),
                     "source_machine_id": "SOURCE-01",
                     "restore_machine_id": "RESTORE-02",
+                    "source_host_identity": {
+                        "source": "unit-test-host",
+                        "sha256": "a" * 64,
+                    },
+                    "restore_host_identity": {
+                        "source": "unit-test-host",
+                        "sha256": "b" * 64,
+                    },
                     "backup_set_id": "BACKUP-001",
                     "restore_approval_id": "APPROVAL-001",
                     "table_counts_equal": True,

@@ -220,6 +220,7 @@ public sealed record LocalReconciliationItem(
     string? ServerDocumentId,
     string? ServerVersionId,
     int? ServerRevision,
+    string? LocalHashSha256,
     string? ServerHashSha256,
     string? Details,
     string? ResolutionAction,

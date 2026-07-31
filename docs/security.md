@@ -418,3 +418,5 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 - 서버 reconciliation 승인은 복구 연습 프로세스의 `FLOWNOTE_RESTORE_*` 환경값을 자동 변경하지 않는다. 승인 감사 저장 뒤 서버를 정상 종료하고 장애 표지를 제거한 다음 재시작하며, 정상 manifest read-back 전에는 WPF가 자동 전송이나 polling을 재개하지 않는다.
 - reconciliation 생성·조회·승인은 `admin` 또는 `system-admin` 권한과 유효한 세션이 필요하다. manifest에는 식별자·계약 범위·cursor 외의 데이터나 비밀값을 싣지 않는다.
 - `DIVERGED`는 자동 덮어쓰기하지 않고 충돌 원문, 양쪽 hash, 승인자와 사유를 남긴다. 처리 message_id, 실패 run, divergence row, 기존 큐를 삭제하여 복구하지 않는다.
+- 관리자 승인창은 `CONFIRMED/ABSENT/DIVERGED` 원판정과 `REBOUND/REQUEUE/CONFLICT` 조치를 한글 설명과 함께 그대로 표시한다. 승인 직전에는 run별 조합·건수, 매핑·큐 변경, 보존되는 로컬 원천과 충돌 증거, 서버 정상 종료·장애 표지 제거·재시작·정상 manifest 확인 조건을 다시 확인한다. 단순한 “확인” 버튼이나 연결 성공만으로 승인 또는 안전 수렴을 대체하지 않는다.
+- 익명 `machine_id` 문자열이 서로 다르다는 사실만으로 실제 별도 PC를 증명하지 않는다. 복구 수집기는 OS 장비 식별값을 로컬에서 읽어 원문을 저장하지 않고 SHA-256만 남기며, 전후 hash가 같으면 fail-closed한다. 장비 배치 기록과 각 장비에서 직접 수집한 원본 manifest·화면·로그·감사의 시각과 hash도 함께 대조한다. 단일 장비의 폴더 복사나 임의 ID 변경은 파일럿 PASS 증거로 사용할 수 없다.

@@ -196,6 +196,10 @@ Python 문법 검사와 Ruff, `scripts/test_manage_pilot_run.py` 16건, `git dif
 
 WPF는 명시적 복구 장애 신호를 처음 관찰한 manifest부터 `RECONCILIATION_REQUIRED`로 차단한다. 재결합 탭은 연결 상태와 안전 수렴 상태를 구분하고 차단 원인, 보존된 원천, 승인 전 금지 행동, 담당자·증거 연결과 다음 단계를 표시한다. 관리자 승인 뒤에도 `POST_APPROVAL_RESTART_REQUIRED`로 자동 전송과 polling을 막으며, 서버에서 `FLOWNOTE_RESTORE_*` 표지를 제거하고 다시 시작한 뒤 정상 manifest를 읽어야 `POST_APPROVAL_VERIFICATION_REQUIRED`로 업무를 재개한다. 이 상태는 안전 수렴 확정이 아니며 DB·파일·중복 mutation·권한 우회 증거가 모두 통과해야 한다. 실제 별도 Windows PC, 서버 쓰기 중지 운영 절차, 네 장애의 화면·로그·감사와 승인 후 정상 업무 재개 증거는 이 환경에서 만들 수 없으므로 파일럿 실기 게이트는 `대기`다.
 
+관리자 UX 자동 검증은 여섯 원문 코드가 모두 표시되는지, `REBOUND`가 매핑·큐 완료 상태를 바꾸되 원천과 감사를 보존하는지, `REQUEUE`가 정상 manifest 확인 전 전송되지 않는지, `CONFLICT`가 자동 전송을 종결하고 양쪽 원천을 보존하는지 확인한다. 승인 확인 요약에는 run별 `판정 → 조치` 건수와 서버 재시작·정상 manifest 조건이 포함되어야 한다. 실제 UX PASS에는 이 자동 검증 외에도 관리자 역할 참여자가 화면에서 원인, 보존 범위, 승인할 조치, 재시작 조건을 설명한 관찰 원시 증거가 필요하다.
+
+2026-07-31 macOS 보조 검증에서는 지정 Python unittest 31건과 WPF Core 86건이 통과했고 WPF 앱은 `EnableWindowsTargeting=true` 교차 빌드에서 경고·오류 0건이었다. 복구 수집기는 입력한 `machine_id` 외에 OS 장비 식별값의 익명 SHA-256을 자동 기록하며 전후 hash가 같으면 비교를 실패시키도록 보강했다. 이 결과는 코드 회귀 검증일 뿐 별도 Windows PC 복구 실기가 아니다. server/WPF 정상 복구 comparison, 네 `fault_run_id`의 화면·로그·감사, 승인 후 문서·FieldComment·인수인계·보고서 근거·알림 업무 재개 원시 증거가 없으므로 완료 조건은 충족되지 않았다.
+
 기대값은 테스트 파일 수나 과거 로그만 보고 바꾸지 않는다. 테스트 추가·삭제 근거를 먼저 확인하고 Windows x64 표준 환경에서 FastAPI `pytest --collect-only -q`의 전체 node ID와 중복 제거 수, pytest JUnit 실행 수, WPF Core TRX의 total/passed, Android JUnit의 total/passed를 각각 확인한다. 그 수가 모두 일치할 때 `scripts/verify-preserved-tests.ps1`의 세 기대값을 갱신한다. 변경을 반영한 같은 소스 커밋과 clean worktree에서 새 `RunId` 두 개로 옵션 없는 표준 실행을 연속 수행하고, 각 `verification-summary.json`을 원시 node ID 목록·JUnit·TRX·단계 로그와 다시 대조한다. 실행 전후 Git 상태와 금지 추적·스테이징 수도 두 run 모두 0이어야 한다.
 
 실패하면 스크립트의 콘솔과 `verification-summary.json`에서 한글 `실패 단계`, `기대값`, `실제값`, `중단 원인`, `다음 조치`, `보존된 증거 경로`를 먼저 확인한다. 기존 실행 폴더를 재사용하거나 SQLite·로그를 초기화하지 말고 원인을 수정한 뒤 새 `RunId`로 다시 실행한다. 현재 작업 환경은 macOS ARM64이므로 Windows x64 무생략 2회 실행과 같은 환경에서의 경고 재확인은 수행할 수 없다.

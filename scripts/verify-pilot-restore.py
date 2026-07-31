@@ -6,7 +6,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import platform
+import re
 import sqlite3
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +30,54 @@ RESPONSIBILITY_TABLES = (
     "server_sync_queue",
     "server_id_mappings",
 )
+
+
+def local_host_identity() -> dict[str, str]:
+    system = platform.system()
+    source: str
+    raw_identity: str
+    if system == "Windows":
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Cryptography",
+            0,
+            winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
+        ) as key:
+            raw_identity = str(winreg.QueryValueEx(key, "MachineGuid")[0]).strip()
+        source = "windows-machine-guid"
+    elif system == "Darwin":
+        result = subprocess.run(
+            ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', result.stdout)
+        if match is None:
+            raise ValueError("macOS 장비 식별값을 확인할 수 없습니다.")
+        raw_identity = match.group(1).strip()
+        source = "macos-io-platform-uuid"
+    else:
+        machine_id_path = next(
+            (
+                path
+                for path in (Path("/etc/machine-id"), Path("/var/lib/dbus/machine-id"))
+                if path.is_file()
+            ),
+            None,
+        )
+        if machine_id_path is None:
+            raise ValueError("이 운영체제의 장비 식별값을 확인할 수 없습니다.")
+        raw_identity = machine_id_path.read_text(encoding="utf-8").strip()
+        source = "linux-machine-id"
+    if not raw_identity:
+        raise ValueError("운영체제 장비 식별값이 비어 있습니다.")
+    return {
+        "source": source,
+        "sha256": hashlib.sha256(raw_identity.encode("utf-8")).hexdigest(),
+    }
 
 
 def path_state(path: Path) -> dict[str, Any]:
@@ -464,12 +515,14 @@ def write_evidence(path: Path, payload: dict[str, Any]) -> None:
 def capture(args: argparse.Namespace) -> int:
     database = database_evidence(args.database)
     file_set = file_evidence(args.files)
+    host_identity = getattr(args, "host_identity", None) or local_host_identity()
     evidence = {
-        "schema_version": 3,
+        "schema_version": 4,
         "run_id": args.run_id,
         "target": args.target,
         "phase": args.phase,
         "machine_id": args.machine_id,
+        "host_identity": host_identity,
         "backup_set_id": args.backup_set_id,
         "restore_approval_id": args.restore_approval_id,
         "captured_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -548,6 +601,21 @@ def compare(args: argparse.Namespace) -> int:
         == after["machine_id"].strip().casefold()
     ):
         failures.append("복구 대상은 원본과 다른 별도 PC여야 합니다.")
+    before_host_identity = before.get("host_identity", {})
+    after_host_identity = after.get("host_identity", {})
+    before_host_sha256 = before_host_identity.get("sha256")
+    after_host_sha256 = after_host_identity.get("sha256")
+    if (
+        not before_host_identity.get("source")
+        or not after_host_identity.get("source")
+        or not before_host_sha256
+        or not after_host_sha256
+    ):
+        failures.append("복구 전후 OS 장비 식별값의 익명 hash가 모두 필요합니다.")
+    elif before_host_sha256 == after_host_sha256:
+        failures.append(
+            "복구 전후 OS 장비 식별 hash가 같습니다. machine_id 문자열만 바꾼 로컬 복사는 별도 PC 증거가 아닙니다."
+        )
     for field, label in (
         ("backup_set_id", "백업 세트"),
         ("restore_approval_id", "복구 승인"),
@@ -668,7 +736,7 @@ def compare(args: argparse.Namespace) -> int:
             failures.append(f"{phase} DB 참조 파일 교차 검사가 실패했습니다.")
 
     report = {
-        "schema_version": 3,
+        "schema_version": 4,
         "run_id": before.get("run_id"),
         "target": before.get("target"),
         "compared_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -680,6 +748,8 @@ def compare(args: argparse.Namespace) -> int:
         "after_manifest_sha256": sha256(args.after),
         "source_machine_id": before.get("machine_id"),
         "restore_machine_id": after.get("machine_id"),
+        "source_host_identity": before_host_identity,
+        "restore_host_identity": after_host_identity,
         "backup_set_id": before.get("backup_set_id"),
         "restore_approval_id": before.get("restore_approval_id"),
         "database_checks": {
@@ -793,6 +863,10 @@ def compare_set(args: argparse.Namespace) -> int:
             or report.get("file_manifest_equal") is not True
             or report.get("file_mismatch_counts")
             != {"missing": 0, "extra": 0, "size": 0, "sha256": 0}
+            or not report.get("source_host_identity", {}).get("sha256")
+            or not report.get("restore_host_identity", {}).get("sha256")
+            or report.get("source_host_identity", {}).get("sha256")
+            == report.get("restore_host_identity", {}).get("sha256")
             or any(
                 database_checks.get(field) is not True
                 for field in (

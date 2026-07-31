@@ -148,6 +148,12 @@ class WindowsServerRehearsalVerificationTests(
                         "target": target,
                         "phase": phase,
                         "machine_id": machine_id,
+                        "host_identity": {
+                            "source": "unit-test-host",
+                            "sha256": (
+                                "a" * 64 if phase == "before" else "b" * 64
+                            ),
+                        },
                         "backup_set_id": "BACKUP-001",
                         "restore_approval_id": "APPROVAL-001",
                     }
@@ -172,6 +178,14 @@ class WindowsServerRehearsalVerificationTests(
                     ),
                     "source_machine_id": "SOURCE-01",
                     "restore_machine_id": "RESTORE-02",
+                    "source_host_identity": {
+                        "source": "unit-test-host",
+                        "sha256": "a" * 64,
+                    },
+                    "restore_host_identity": {
+                        "source": "unit-test-host",
+                        "sha256": "b" * 64,
+                    },
                     "backup_set_id": "BACKUP-001",
                     "restore_approval_id": "APPROVAL-001",
                     "table_counts_equal": True,
@@ -1015,6 +1029,15 @@ class WindowsServerRehearsalVerificationTests(
         wpf_path = self.run_root / wpf
         report = json.loads(wpf_path.read_text(encoding="utf-8"))
         report["restore_approval_id"] = "APPROVAL-OTHER"
+        wpf_path.write_text(json.dumps(report), encoding="utf-8")
+        self.assertTrue(
+            manage_pilot_run.restore_set_binding_failures(
+                self.run_root, [server], [wpf]
+            )
+        )
+
+        report["restore_approval_id"] = "APPROVAL-001"
+        report["restore_host_identity"] = report["source_host_identity"]
         wpf_path.write_text(json.dumps(report), encoding="utf-8")
         self.assertTrue(
             manage_pilot_run.restore_set_binding_failures(

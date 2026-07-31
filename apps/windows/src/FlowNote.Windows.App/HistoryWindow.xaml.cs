@@ -64,6 +64,8 @@ public partial class HistoryWindow : Window
         RecoveryOwnerTextBlock.Text = guidance.ResponsibleOwner;
         RecoveryEvidenceBindingTextBlock.Text = guidance.EvidenceBinding;
         RecoveryNextStepTextBlock.Text = guidance.NextStep;
+        RecoveryDecisionGuideTextBlock.Text = ReconciliationDecisionGuidance.FullGuide;
+        RecoveryRestartConditionsTextBlock.Text = ServerRecoveryGuidance.RestartConditions;
     }
 
     private async void CreateReconciliationButton_Click(object sender, RoutedEventArgs e)
@@ -99,6 +101,19 @@ public partial class HistoryWindow : Window
         if (string.IsNullOrWhiteSpace(reason))
         {
             ReconciliationSummaryTextBlock.Text = "관리자 승인 사유를 입력하세요.";
+            return;
+        }
+        var approvalItems = serverReconciliation.ListItems(runId);
+        var approvalConfirmed = MessageBox.Show(
+            ReconciliationDecisionGuidance.BuildApprovalSummary(runId, approvalItems) +
+            $"\n\n승인 사유: {reason}\n\n위 데이터 영향과 재시작 조건을 확인했습니까?",
+            "서버 재결합 승인 확인",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning) == MessageBoxResult.Yes;
+        if (!approvalConfirmed)
+        {
+            ReconciliationSummaryTextBlock.Text =
+                "재결합 승인을 취소했습니다. 원천, 큐, 매핑과 차단 상태는 그대로 보존됩니다.";
             return;
         }
         try
@@ -396,27 +411,21 @@ public partial class HistoryWindow : Window
         string VerdictText,
         string ActionText,
         string TargetText,
+        string DataEffect,
+        string LocalHashSha256,
+        string ServerHashSha256,
         string ServerDocumentId,
         string ServerVersionId,
         string Details)
     {
         public static ReconciliationRow FromRecord(LocalReconciliationItem item) => new(
             item.RunId,
-            item.Verdict switch
-            {
-                "CONFIRMED" => "확인",
-                "ABSENT" => "없음",
-                "DIVERGED" => "불일치",
-                _ => item.Verdict
-            },
-            item.ProposedAction switch
-            {
-                "REBOUND" => "재결합",
-                "REQUEUE" => "재전송",
-                "CONFLICT" => "충돌 보존",
-                _ => item.ProposedAction
-            },
+            ReconciliationDecisionGuidance.VerdictText(item.Verdict),
+            ReconciliationDecisionGuidance.ActionText(item.ProposedAction),
             $"{item.EntityType} / {item.LocalId} / v{item.LocalVersionNo}",
+            ReconciliationDecisionGuidance.DataEffect(item.ProposedAction),
+            item.LocalHashSha256 ?? "-",
+            item.ServerHashSha256 ?? "-",
             item.ServerDocumentId ?? "-",
             item.ServerVersionId ?? "-",
             item.Details ?? "-");

@@ -9,6 +9,56 @@ namespace FlowNote.Windows.Core.Tests;
 
 public sealed class ServerEpochGuardServiceTests
 {
+    [Fact]
+    public void ReconciliationDecisionGuideExplainsEveryVerdictActionAndRestartGate()
+    {
+        foreach (var token in new[]
+                 {
+                     "CONFIRMED",
+                     "ABSENT",
+                     "DIVERGED",
+                     "REBOUND",
+                     "REQUEUE",
+                     "CONFLICT"
+                 })
+        {
+            Assert.Contains(token, ReconciliationDecisionGuidance.FullGuide);
+        }
+
+        Assert.Contains(
+            "자동 전송을 종결",
+            ReconciliationDecisionGuidance.DataEffect("CONFLICT"));
+        Assert.Contains(
+            "정상 manifest 확인 전",
+            ReconciliationDecisionGuidance.DataEffect("REQUEUE"));
+        Assert.Contains("서버 정상 종료", ServerRecoveryGuidance.RestartConditions);
+        Assert.Contains("서버 재시작", ServerRecoveryGuidance.RestartConditions);
+        Assert.Contains("정상 manifest 확인", ServerRecoveryGuidance.RestartConditions);
+        Assert.Contains("polling", ServerRecoveryGuidance.RestartConditions);
+    }
+
+    [Fact]
+    public void ApprovalSummaryShowsCountsDataEffectsAndPostApprovalBlock()
+    {
+        var items = new[]
+        {
+            LocalItem("item-confirmed", "CONFIRMED", "REBOUND"),
+            LocalItem("item-absent", "ABSENT", "REQUEUE"),
+            LocalItem("item-diverged", "DIVERGED", "CONFLICT")
+        };
+
+        var summary = ReconciliationDecisionGuidance.BuildApprovalSummary(
+            "reconcile-restore-001",
+            items);
+
+        Assert.Contains("CONFIRMED → REBOUND 1건", summary);
+        Assert.Contains("ABSENT → REQUEUE 1건", summary);
+        Assert.Contains("DIVERGED → CONFLICT 1건", summary);
+        Assert.Contains("한 transaction", summary);
+        Assert.Contains("서버 재시작", summary);
+        Assert.Contains("자동 전송과 알림 polling이 차단", summary);
+    }
+
     [Theory]
     [InlineData("partial_restore", "부분 복구")]
     [InlineData("old_database_new_files", "이전 시점 DB")]
@@ -107,6 +157,13 @@ public sealed class ServerEpochGuardServiceTests
         var run = await service.CreateRunAsync(client, "user-admin");
         Assert.Equal(faultCode.ToUpperInvariant(), run.TriggerReason);
         Assert.True(guard.Get(scope)?.ReconciliationRequired);
+        var storedItem = Assert.Single(service.ListItems(run.RunId));
+        Assert.Equal(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            storedItem.LocalHashSha256);
+        Assert.Equal(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            storedItem.ServerHashSha256);
 
         await service.ApplyRunAsync(
             client, run.RunId, "user-admin", $"{faultCode} 원천 대조 승인");
@@ -230,6 +287,27 @@ public sealed class ServerEpochGuardServiceTests
             RestoreResponsibleOwner = "data-owner-01",
             SafeConvergence = false
         };
+
+    private static LocalReconciliationItem LocalItem(
+        string itemId,
+        string verdict,
+        string action) =>
+        new(
+            itemId,
+            "reconcile-restore-001",
+            "document",
+            $"local-{itemId}",
+            1,
+            verdict,
+            action,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "복구 판정",
+            null,
+            null);
 
     [Fact]
     public async Task AdministratorApplyRebindsWithoutDeletingQueueOrProcessedMessages()
