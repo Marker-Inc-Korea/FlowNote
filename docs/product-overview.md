@@ -1,6 +1,6 @@
 # FlowNote 제품 개요
 
-현재 구현 설명은 2026-07-30 코드 기준이며 장기 제품 방향이나 아직 구현하지 않은 기능은 배포 방향·제외 범위에서 명시적으로 구분한다.
+현재 구현 설명은 2026-07-31 코드 기준이며 장기 제품 방향이나 아직 구현하지 않은 기능은 배포 방향·제외 범위에서 명시적으로 구분한다.
 
 ## 목적
 
@@ -45,7 +45,7 @@ FlowNote는 생산공장 현장의 문서와 현장 경험을 함께 남기는 �
 
 FieldComment 검토·첨부와 보고서 aggregate의 도메인별 수렴 계약도 구현되었다. 개별 검토는 `review_revision`과 mutation receipt로 직렬화하고 WPF가 성공 revision을 로컬에 반영한다. 첨부는 부모 comment ID와 파일 SHA-256을 검증한다. 보고서는 고정 source version·trace ID·원천 hash를 재검증하고 `report_revision`, 내용/source 집합 hash, mutation receipt, 선택적 생성 문서/버전을 같은 서버 transaction에 저장한다. WPF는 응답 source 집합을 다시 hash해 일치할 때 revision/hash를 로컬 문서에 보존한다. 서버 instance/epoch/API contract manifest와 관리자 승인형 reconciliation도 구현되어 URL·instance·epoch 변경 또는 서버 cursor 역행 시 자동 전송과 polling을 함께 차단한다. 관리자는 큐 inventory의 `CONFIRMED`/`ABSENT`/`DIVERGED` 판정과 `REBOUND`/`REQUEUE`/`CONFLICT` 조치를 검토·승인한 뒤 mapping·큐·binding을 적용하고 cursor를 0부터 재추적한다. 공통 mutation receipt와 versioned migration은 후속 목표이며, 실제 WPF 2대 장애 주입 검증을 통과하기 전에는 전체 도메인 동시 쓰기를 운영 승인하지 않는다.
 
-Android 현장 단말 앱과 Windows 채널/인수인계 전용 화면은 현재 최소 구현이 들어와 있다. 공통 채널과 인수인계 서버 모델/API는 FastAPI에 구현되어 있으며, Windows WPF는 관리자/현장 PC의 문서 운영, 파일 감시, 파일 미리보기, 보고서 정리, 로컬 동기화 보강, 채널 감독, 인수인계 관리, 서버 계정과 승인 단말 운영을 담당한다. Android는 승인된 현장 태블릿 또는 러기드 단말에서 공개 문서 목록·상세와 PDF·이미지·UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 기록, 신호등식 상태 기록, 인수인계 확인, 채널 알림 확인을 담당한다. 문서 본문은 현재 공개 버전만 사용자·세션·승인 단말에 묶인 단기 1회 grant로 받고, 앱 내부 난수 캐시에서 무결성을 확인한 뒤 표시한다. 외부 열기·공유는 제공하지 않으며 종료·백그라운드 전환·오류·로그아웃·다음 시작에 임시 파일을 정리한다. WPF는 창 활성 중, Android는 로그인 세션의 foreground service에서 기본 15초 간격으로 알림을 polling한다. Android는 단절·재부팅 뒤 서버 주소+사용자 scope별 마지막 cursor부터 복구하고, WPF는 서버 scope·사용자별 cursor와 처리한 `message_id`를 로컬 SQLite에 보존해 앱 재시작 후 이어간다. WPF 서버 계정 화면에서는 계정 수명주기와 활성 세션을 관리하고, 승인 단말 화면에서는 서버 단말의 목록·상세·마지막 접속 조회와 등록, 정보/상태 변경, 교체를 수행한다. Android 보안 뷰어의 승인 실단말 검증, 운영 배포 서명, MDM/인증서 적용, 현장별 단말 등록·비활성화 절차, foreground service의 Doze·강제 중지/MDM 복구 실기와 채널 운영 UX 고도화는 후속 범위다.
+Android 현장 단말 앱과 Windows 채널/인수인계 전용 화면은 현재 최소 구현이 들어와 있다. 공통 채널과 인수인계 서버 모델/API는 FastAPI에 구현되어 있으며, Windows WPF는 관리자/현장 PC의 문서 운영, 파일 감시, 파일 미리보기, 보고서 정리, 로컬 동기화 보강, 채널 감독, 인수인계 관리, 서버 계정과 승인 단말 운영을 담당한다. Android는 승인된 현장 태블릿 또는 러기드 단말에서 공개 문서 목록·상세와 PDF·이미지·UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 기록, 신호등식 상태 기록, 인수인계 확인, 채널 알림 확인을 담당한다. 문서 본문은 현재 공개 버전만 사용자·세션·승인 단말에 묶인 단기 1회 grant로 받고, 앱 내부 난수 캐시에서 무결성을 확인한 뒤 표시한다. 외부 열기·공유는 제공하지 않으며 종료·백그라운드 전환·오류·로그아웃·다음 시작에 임시 파일을 정리한다. WPF는 창 활성 중, Android는 로그인 세션의 foreground service에서 기본 15초 간격으로 알림을 polling한다. Android는 단절·재부팅 뒤 서버 주소+사용자 scope별 마지막 cursor부터 복구하고, access 401에는 저장된 refresh token 회전을 한 번 먼저 시도한 뒤 재거부 또는 비활성 단말 403에서만 세션을 폐기한다. WPF는 서버 scope·사용자별 cursor와 처리한 `message_id`를 로컬 SQLite에 보존해 앱 재시작 후 이어간다. WPF 서버 계정 화면에서는 계정 수명주기와 활성 세션을 관리하고, 승인 단말 화면에서는 서버 단말의 목록·상세·마지막 접속 조회와 등록, 정보/상태 변경, 교체를 수행한다. Android 보안 뷰어의 승인 실단말 검증, 운영 배포 서명, MDM/인증서 적용, 현장별 단말 등록·비활성화 절차, foreground service의 Doze·강제 중지/MDM 복구 실기와 채널 운영 UX 고도화는 후속 범위다.
 
 ## 제품 원칙
 

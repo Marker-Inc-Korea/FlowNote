@@ -2,7 +2,7 @@
 
 `apps/android/`는 FlowNote Android 현장 단말 클라이언트이다. 승인된 현장 태블릿 또는 러기드 단말에서 공개 문서 목록·상세와 PDF/이미지/TXT 앱 내부 보안 열람, FieldComment, 사진 기록, 신호등식 기록, 채널 알림 확인, 인수인계 작성·확인을 수행한다.
 
-기능 목록은 2026-07-30 현재 `app/src/main` 코드 기준이며 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
+기능 목록은 2026-07-31 현재 `app/src/main` 코드 기준이며 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
 
 ## 기술 기준
 
@@ -31,6 +31,8 @@
 주요 버튼은 한 줄 안에서 같은 너비를 사용하고 최소 높이를 56dp로 둔다. 전송 상태와 일반 작업 상태는 접근성 live region으로 갱신한다. 이 값은 코드에 반영된 화면 기준이며 장갑 착용, 한 손 조작, 실제 거치 위치에서의 터치 성공률은 승인 실단말 관찰로 확정한다.
 
 알림은 운영 로그인 동안 `specialUse` foreground service가 사내 HTTPS API를 기본 15초 간격으로 조회한다. 서버 주소와 사용자 조합을 hash한 scope별 cursor를 항목 표시 뒤 동기 저장하므로 앱 화면이 닫히거나 네트워크가 끊겨도 마지막 성공 위치에서 복구한다. 재부팅 시 유효한 로컬 세션이 있으면 `BOOT_COMPLETED` receiver가 서비스를 다시 시작하고, access 만료 시 refresh token을 한 번 회전한다. refresh가 거부되거나 단말이 비활성화되면 token을 폐기하고 서비스를 중단한다. 채널 메시지는 outbox에 넣지 않지만 신규 인수인계는 FieldComment·사진과 같은 암호화 outbox에 보존한다.
+
+polling의 첫 401은 저장된 refresh token을 지우지 않고 회전을 먼저 시도한다. 회전 뒤에도 401이 반복되거나 단말 비활성화 403을 받았을 때만 세션을 폐기한다. 단순 HTTPS 단절·시간 초과는 세션과 cursor를 유지하고 다음 polling을 기다린다.
 
 FieldComment, 사진과 신규 인수인계는 전송 전에 앱 전용 암호화 outbox에 먼저 저장한다. 앱 화면과 foreground service가 15초 주기로 전송 가능 항목을 재시도하므로 앱 재시작·재부팅·네트워크 재연결 뒤에도 같은 idempotency key로 이어서 보낸다. 마지막으로 서버가 확인한 활성 채널·수신자 목록은 서버 URL+사용자 범위별 Keystore 암호문으로 보관해 재부팅 직후 네트워크가 끊겨도 인수인계를 작성할 수 있게 한다. 서버는 실제 전송 시 멤버십과 원천을 다시 검사하며 로그아웃·단말 거부 때 선택 캐시는 지우고 업무 outbox는 유지한다. FieldComment 사진은 `android-photo:{localId}`, 인수인계는 `android:{deviceId}:handover:{localId}`를 사용한다. 서버가 FieldComment만 저장하고 사진 응답이 실패한 경우에는 서버 `comment_id`를 유지하고 부분 성공·사진 재전송 대기로 표시한다. 서버 저장이 끝난 암호화 사진 파일은 정리한다.
 
@@ -84,9 +86,11 @@ export FLOWNOTE_ANDROID_KEY_PASSWORD='보안 입력 경로에서 주입'
 
 조직 소유 서명키는 최소 2인 승인으로 오프라인/HSM 또는 승인된 비밀 저장소에 보관한다. 같은 applicationId의 무중단 업그레이드는 같은 키가 필요하다. 키 유출은 기존 키로 서명한 빌드 중단, MDM 차단, 새 applicationId 또는 승인된 키 회전 기능을 통한 재배포가 필요한 보안 사고다. 키 분실은 기존 앱을 새 키로 업그레이드할 수 없으므로 단말별 outbox 처리 후 제거·재등록 절차를 따른다.
 
-`scripts/verify-android-release.sh <run_id> <signed.apk|signed.aab> data/local/pilot-evidence`는 APK/AAB hash와 서명을 확인한다. APK는 applicationId, versionCode/versionName, non-debuggable, backup 비활성, cleartext 차단도 정적으로 확인한다. 설치 또는 rollback은 오배포를 막기 위해 `--device-serial <승인 adb serial>`을 반드시 함께 지정한다. `--rollback <previous.apk>`는 후보 APK를 먼저 설치하고, 후보 앱이 실제 단말에서 보고한 outbox 대기 0건을 원시 로그로 보존한 뒤에만 동일 signer와 더 낮은 versionCode인 이전 승인 APK를 설치한다. 대기 항목이 있거나 단말 보고를 읽을 수 없으면 rollback을 중단한다. AAB는 직접 설치·rollback할 수 없으므로 관리형 스토어가 실제 단말에 전달한 서명 APK를 별도로 검증해야 한다. 기존 원시 파일이 없으면 알림 복구 8건과 인수인계/outbox 4건을 담은 `android-delivery.csv`, 장갑·한 손·거치·사진 초기화 4건을 담은 `android-field-ux.csv`를 만든다. 이 스크립트의 `result=PASS`는 패키지 정적 검사와 요청한 설치 단계만 뜻하며 수동 운영 시나리오는 별도 PASS가 필요하다. 실제 키와 운영 패키지는 Git 제외다.
+`scripts/verify-android-release.sh <run_id> <signed.apk|signed.aab> data/local/pilot-evidence`는 APK/AAB hash, signer SHA-256, applicationId, versionCode, non-debuggable, backup 비활성, cleartext 차단을 확인한다. AAB base manifest 검사는 PATH의 `bundletool` 또는 `BUNDLETOOL_JAR`가 필요하다. 설치 또는 rollback은 오배포를 막기 위해 `--device-serial <승인 adb serial>`을 반드시 함께 지정한다. `--rollback <previous.apk>`는 후보 APK를 먼저 설치하고, 후보 앱이 실제 단말에서 보고한 outbox 대기 0건을 원시 로그로 보존한 뒤에만 동일 signer와 더 낮은 versionCode인 이전 승인 APK를 설치한다. 대기 항목이 있거나 단말 보고를 읽을 수 없으면 rollback을 중단한다. AAB는 직접 설치·rollback할 수 없으므로 관리형 스토어가 실제 단말에 전달한 서명 APK를 별도로 검증해야 한다.
 
-`manage-pilot-run.py prepare --profile full_pilot`은 같은 실행 폴더에 `android-delivery.csv`, 누락·receipt 중복·crash 경계 중복 집계용 `android-delivery-integrity.csv`, `android-security.csv`, `android-device-lifecycle.csv`, `android-release-approval.csv`를 만든다. 요약 JSON만 PASS로 바꾸는 것으로는 통과하지 않으며, 각 원시 행이 `PASS`이고 행별 증거가 같은 `run_id` 폴더 안에 실제로 있어야 한다. MDM 제품명, 자산 ID, kiosk 재실행 제한 시간, rollout ring, 승인 번호와 이전 승인 package hash는 현장 승인값이므로 Git 문서에 가정값을 넣지 않고 접근 통제된 실행 증거에 기록한다.
+기존 원시 파일이 없으면 알림 복구 8건과 FieldComment·사진·인수인계의 실패→재시작→로그인→재전송, 멱등성, 비활성 단말, Keystore 실패, 대기 outbox rollback 차단을 합친 16건을 `android-delivery.csv`에 만든다. `android-field-ux.csv`에는 FieldComment·사진·인수인계 각각의 장갑·한 손·거치 조건 9건과 사진 선택·미리보기·저장 후 초기화 1건을 만든다. `full_pilot`은 이 10개 UX 행의 실제 성공, 서버 원천 ID, 치명적 blocker 0건과 같은 실행 폴더의 증거 파일을 모두 요구한다. 이 스크립트의 `result=PASS`는 패키지 정적 검사와 요청한 설치 단계만 뜻하며 수동 운영 시나리오는 별도 PASS가 필요하다. 실제 키와 운영 패키지는 Git 제외다.
+
+`manage-pilot-run.py prepare --profile full_pilot`은 같은 실행 폴더에 `android-delivery.csv`, 누락·receipt 중복·crash 경계 중복 집계용 `android-delivery-integrity.csv`, `android-security.csv`, `android-device-lifecycle.csv`, `android-release-approval.csv`, `android-field-ux.csv`를 만든다. 요약 JSON만 PASS로 바꾸는 것으로는 통과하지 않으며, 각 원시 행이 `PASS`이고 행별 증거가 같은 `run_id` 폴더 안에 실제로 있어야 한다. MDM 제품명, 자산 ID, kiosk 재실행 제한 시간, rollout ring, 승인 번호와 이전 승인 package hash는 현장 승인값이므로 Git 문서에 가정값을 넣지 않고 접근 통제된 실행 증거에 기록한다.
 
 ## 제외 범위
 
@@ -106,10 +110,10 @@ cd apps/android
 ./gradlew lintDebug --warning-mode=fail
 ```
 
-JDK와 Android SDK가 필요하다. macOS 기본 SDK 경로 `$HOME/Library/Android/sdk`가 있으면 `gradlew`가 `ANDROID_HOME`을 자동 지정한다. 운영 배포 전에는 현장 서버 HTTPS, 사내 인증서, MDM 등록·정책 보고서와 단말별 `deviceId` 발급 절차를 확정해야 한다.
+JDK와 Android SDK가 필요하다. macOS 기본 SDK 경로 `$HOME/Library/Android/sdk`가 있으면 `gradlew`가 `ANDROID_HOME`을 자동 지정한다. `JAVA_HOME`이 없고 기본 위치에 Android Studio가 있으면 내장 JDK도 자동으로 사용한다. 운영 배포 전에는 현장 서버 HTTPS, 사내 인증서, MDM 등록·정책 보고서와 단말별 `deviceId` 발급 절차를 확정해야 한다.
 
 Windows 배포 준비 PC의 통합 기준선은 x64 JDK 17, Android Platform 35와 Build Tools 35.0.0을 사용한다. `scripts/verify-preserved-tests.ps1`은 단위 테스트와 debug build를 실행하고 JUnit XML과 단계 로그를 같은 실행 ID에 복사한 뒤 failure/error가 0인지 확인한다. 승인 실단말이 정확히 1대 연결된 경우에만 `-RunAndroidDeviceSmoke`를 추가한다. 이 자동 단계만으로 카메라 선택, 네트워크 단절 뒤 outbox 재시도, 사내 HTTPS 인증서 신뢰, foreground service/Doze/재부팅을 완료 판정하지 않으며 같은 실행 ID의 수동 실기 로그를 함께 남긴다.
 
 2026-07-22 macOS 보조 run `p0-baseline-144-macos-precheck-20260722-002`은 FastAPI 144건만 통과했고 JDK/Android SDK 부재로 Android `testDebugUnitTest`와 `assembleDebug`는 `NOT_RUN`이다. 이 결과는 Android 기준선이 아니며 Windows x64 표준 환경의 같은 `run_id` 통합 실행에서 Android JUnit과 debug build가 통과해야 한다.
 
-현재 단위 테스트 24건은 API 경로·로그인/FieldComment 계약, 인수인계 필수 원천·수신자·멱등키, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구, outbox 재시도 정책과 대기 상태 안내를 검증한다. outbox 일부 실패는 완료·부분 성공·실패·대기 건수와 재전송 안내를 표시하고, Keystore/암호문 오류는 초기화하지 말고 관리자에게 단말 교체 점검을 요청하도록 안내한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리, 서로 다른 AES 키의 복호화 실패, 주요 버튼 56dp와 상태 live region을 확인한다. 사진 선택·축소 미리보기·저장 후 초기화와 장갑·한 손 조건의 실제 성공률은 자동 테스트만으로 완료 판정하지 않는다. 실제 단말의 카메라·파일 선택기, 장갑·한 손 조작, 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절을 같은 수동 검증에서 확인한다.
+현재 단위 테스트 28건은 API 경로·로그인/FieldComment 계약, 인수인계 필수 원천·수신자·멱등키, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구, outbox 재시도 정책과 대기 상태 안내, 알림 401 refresh·재거부·비활성 단말·연결 단절 분기를 검증한다. outbox 일부 실패는 완료·부분 성공·실패·대기 건수와 재전송 안내를 표시하고, Keystore/암호문 오류는 초기화하지 말고 관리자에게 단말 교체 점검을 요청하도록 안내한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리, 서로 다른 AES 키의 복호화 실패, 주요 버튼 56dp와 상태 live region을 확인한다. 사진 선택·축소 미리보기·저장 후 초기화와 장갑·한 손 조건의 실제 성공률은 자동 테스트만으로 완료 판정하지 않는다. 실제 단말의 카메라·파일 선택기, 장갑·한 손 조작, 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절을 같은 수동 검증에서 확인한다.

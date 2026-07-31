@@ -78,22 +78,71 @@ candidate_version_name=""
 if [[ "$artifact_type" == "APK" ]]; then
   require_command apksigner
   require_command aapt
-  require_command apkanalyzer
   apksigner verify --verbose --print-certs "$artifact" > "$packages_dir/android-signature.txt"
   aapt dump badging "$artifact" > "$packages_dir/android-package-badging.txt"
-  apkanalyzer manifest print "$artifact" > "$packages_dir/android-manifest.xml"
+  if command -v apkanalyzer >/dev/null; then
+    apkanalyzer manifest print "$artifact" > "$packages_dir/android-manifest.xml"
+    manifest_format="xml"
+  else
+    aapt dump xmltree "$artifact" AndroidManifest.xml \
+      > "$packages_dir/android-manifest.xml"
+    manifest_format="aapt_xmltree"
+  fi
   candidate_signer="$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/ { print $2; exit }' "$packages_dir/android-signature.txt")"
   candidate_version_code="$(sed -n "s/^package:.*versionCode='\([^']*\)'.*/\1/p" "$packages_dir/android-package-badging.txt" | head -n 1)"
   candidate_version_name="$(sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" "$packages_dir/android-package-badging.txt" | head -n 1)"
   grep -q "name='com.flownote.fieldapp'" "$packages_dir/android-package-badging.txt" || fail "unexpected Android applicationId"
   ! grep -q '^application-debuggable' "$packages_dir/android-package-badging.txt" || fail "release APK is debuggable"
-  grep -Eq 'android:allowBackup="false"|android:allowBackup="0"' "$packages_dir/android-manifest.xml" || fail "release APK does not disable Android backup"
-  grep -Eq 'android:usesCleartextTraffic="false"|android:usesCleartextTraffic="0"' "$packages_dir/android-manifest.xml" || fail "release APK does not disable cleartext traffic"
+  if [[ "$manifest_format" == "xml" ]]; then
+    grep -Eq 'android:allowBackup="false"|android:allowBackup="0"' "$packages_dir/android-manifest.xml" || fail "release APK does not disable Android backup"
+    grep -Eq 'android:usesCleartextTraffic="false"|android:usesCleartextTraffic="0"' "$packages_dir/android-manifest.xml" || fail "release APK does not disable cleartext traffic"
+  else
+    grep -Eq 'android:allowBackup.*0x0$' "$packages_dir/android-manifest.xml" \
+      || fail "release APK does not disable Android backup"
+    grep -Eq 'android:usesCleartextTraffic.*0x0$' "$packages_dir/android-manifest.xml" \
+      || fail "release APK does not disable cleartext traffic"
+    ! grep -Eq 'android:debuggable.*0xffffffff$' "$packages_dir/android-manifest.xml" \
+      || fail "release APK is debuggable"
+  fi
   [[ -n "$candidate_signer" && -n "$candidate_version_code" ]] || fail "APK signer or versionCode could not be read"
 else
   require_command jarsigner
+  require_command keytool
   jarsigner -verify -verbose -certs "$artifact" > "$packages_dir/android-aab-signature.txt"
   grep -q 'jar verified.' "$packages_dir/android-aab-signature.txt" || fail "AAB JAR signature verification failed"
+  keytool -printcert -jarfile "$artifact" > "$packages_dir/android-aab-certificate.txt"
+  candidate_signer="$(
+    sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' \
+      "$packages_dir/android-aab-certificate.txt" | head -n 1
+  )"
+  if command -v bundletool >/dev/null; then
+    bundletool dump manifest --bundle="$artifact" --module=base \
+      > "$packages_dir/android-manifest.xml"
+  elif [[ -n "${BUNDLETOOL_JAR:-}" && -f "${BUNDLETOOL_JAR}" ]]; then
+    require_command java
+    java -jar "$BUNDLETOOL_JAR" dump manifest --bundle="$artifact" --module=base \
+      > "$packages_dir/android-manifest.xml"
+  else
+    fail "bundletool or BUNDLETOOL_JAR is required to inspect an AAB base manifest"
+  fi
+  candidate_version_code="$(
+    sed -n 's/.*android:versionCode="\([^"]*\)".*/\1/p' \
+      "$packages_dir/android-manifest.xml" | head -n 1
+  )"
+  candidate_version_name="$(
+    sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' \
+      "$packages_dir/android-manifest.xml" | head -n 1
+  )"
+  grep -Eq '<manifest[^>]*package="com\.flownote\.fieldapp"' \
+    "$packages_dir/android-manifest.xml" || fail "unexpected Android applicationId"
+  ! grep -Eq 'android:debuggable="(true|1)"' \
+    "$packages_dir/android-manifest.xml" || fail "release AAB is debuggable"
+  grep -Eq 'android:allowBackup="(false|0)"' \
+    "$packages_dir/android-manifest.xml" || fail "release AAB does not disable Android backup"
+  grep -Eq 'android:usesCleartextTraffic="(false|0)"' \
+    "$packages_dir/android-manifest.xml" || fail "release AAB does not disable cleartext traffic"
+  [[ -n "$candidate_signer" && "$candidate_version_code" =~ ^[0-9]+$ ]] \
+    || fail "AAB signer or numeric versionCode could not be read"
 fi
 
 if [[ -n "$device_serial" ]]; then
@@ -171,21 +220,31 @@ if [[ ! -e "$scenario_template" ]]; then
     echo 'AND-NOTIFY-ACCESS-EXPIRY,access_token_expiry,,,,,,,,,,NOT_RUN,'
     echo 'AND-NOTIFY-REFRESH-REJECTED,refresh_rejected,,,,,,,,,,NOT_RUN,'
     echo 'AND-NOTIFY-FORCESTOP,force_stop_kiosk_restart,,,,,,,,,,NOT_RUN,'
+    echo 'AND-FIELD-COMMENT-RESTART-LOGIN-RETRY,field_comment_failure_restart_login_retry,,,,,,,,,,NOT_RUN,'
+    echo 'AND-PHOTO-RESTART-LOGIN-RETRY,photo_failure_restart_login_retry,,,,,,,,,,NOT_RUN,'
+    echo 'AND-HANDOVER-RESTART-LOGIN-RETRY,handover_failure_restart_login_retry,,,,,,,,,,NOT_RUN,'
     echo 'AND-HANDOVER-OFFLINE,offline_handover_reboot_retry,,,,,,,,,,NOT_RUN,'
     echo 'AND-HANDOVER-IDEMPOTENCY,response_loss_same_key_retry,,,,,,,,,,NOT_RUN,'
     echo 'AND-OUTBOX-DEVICE-INACTIVE,inactive_device_blocks_tokens_and_outbox,,,,,,,,,,NOT_RUN,'
     echo 'AND-OUTBOX-KEYSTORE,keystore_failure_preservation_guidance,,,,,,,,,,NOT_RUN,'
+    echo 'AND-ROLLBACK-PENDING-OUTBOX,pending_outbox_blocks_rollback,,,,,,,,,,NOT_RUN,'
   } > "$scenario_template"
 fi
 
 ux_template="$scenario_dir/android-field-ux.csv"
 if [[ ! -e "$ux_template" ]]; then
   {
-    echo 'scenario_id,condition,participant_code,attempt,success,elapsed_seconds,help_requests,critical_blockers,source_id,handover_id,evidence,result'
-    echo 'AND-UX-GLOVE-HANDOVER,gloves,,,,,,,,,,NOT_RUN'
-    echo 'AND-UX-ONEHAND-HANDOVER,one_hand,,,,,,,,,,NOT_RUN'
-    echo 'AND-UX-MOUNTED-HANDOVER,mounted_device,,,,,,,,,,NOT_RUN'
-    echo 'AND-UX-PHOTO-RESET,photo_select_preview_save_reset,,,,,,,,,,NOT_RUN'
+    echo 'scenario_id,condition,input_kind,participant_code,attempt,success,elapsed_seconds,help_requests,critical_blockers,source_id,handover_id,evidence,result'
+    echo 'AND-UX-GLOVE-FIELD-COMMENT,gloves,field_comment,,,,,,,,,,NOT_RUN'
+    echo 'AND-UX-GLOVE-PHOTO,gloves,photo,,,,,,,,,,NOT_RUN'
+    echo 'AND-UX-GLOVE-HANDOVER,gloves,handover,,,,,,,,,,NOT_RUN'
+    echo 'AND-UX-ONEHAND-FIELD-COMMENT,one_hand,field_comment,,,,,,,,,,NOT_RUN'
+    echo 'AND-UX-ONEHAND-PHOTO,one_hand,photo,,,,,,,,,,NOT_RUN'
+    echo 'AND-UX-ONEHAND-HANDOVER,one_hand,handover,,,,,,,,,,NOT_RUN'
+    echo 'AND-UX-MOUNTED-FIELD-COMMENT,mounted_device,field_comment,,,,,,,,,,NOT_RUN'
+    echo 'AND-UX-MOUNTED-PHOTO,mounted_device,photo,,,,,,,,,,NOT_RUN'
+    echo 'AND-UX-MOUNTED-HANDOVER,mounted_device,handover,,,,,,,,,,NOT_RUN'
+    echo 'AND-UX-PHOTO-RESET,photo_select_preview_save_reset,photo,,,,,,,,,,NOT_RUN'
   } > "$ux_template"
 fi
 
@@ -198,6 +257,7 @@ fi
   echo "artifact_type=$artifact_type"
   echo "version_name=$candidate_version_name"
   echo "version_code=$candidate_version_code"
+  echo "signer_sha256=$candidate_signer"
   echo "device_serial=$device_serial"
   echo "install_verified=$candidate_install_verified"
   [[ -z "$rollback_apk" ]] || echo "rollback_verified=true"

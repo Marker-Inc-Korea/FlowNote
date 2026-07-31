@@ -819,7 +819,7 @@ class WindowsServerRehearsalVerificationTests(
         failures = manage_pilot_run.android_delivery_csv_failures(run_root)
         self.assertTrue(any("PASS가 아닙니다" in failure for failure in failures))
 
-    def test_android_delivery_raw_results_require_all_eight_timed_passes(self) -> None:
+    def test_android_delivery_raw_results_require_timed_and_outbox_passes(self) -> None:
         path = self.run_root / "scenario-results" / "android-delivery.csv"
         path.parent.mkdir(parents=True)
         fieldnames = [
@@ -851,6 +851,17 @@ class WindowsServerRehearsalVerificationTests(
                         "page_seconds": page_seconds,
                         "elapsed_seconds": "1",
                         "allowed_seconds": allowed,
+                        "result": "PASS",
+                        "evidence": "proof.txt",
+                    }
+                )
+            for scenario_id, condition in manage_pilot_run.ANDROID_OUTBOX_RECOVERY_CASES:
+                writer.writerow(
+                    {
+                        "scenario_id": scenario_id,
+                        "condition": condition,
+                        "delivery_run_id": "ANDROID-DELIVERY-outbox",
+                        "message_id": f"source-{scenario_id}",
                         "result": "PASS",
                         "evidence": "proof.txt",
                     }

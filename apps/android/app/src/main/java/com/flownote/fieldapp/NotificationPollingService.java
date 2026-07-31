@@ -113,10 +113,6 @@ public final class NotificationPollingService extends Service {
 
         FlowNoteApiClient client = new FlowNoteApiClient(serverUrl, getContentResolver());
         client.setAccessToken(sessionStore.accessToken());
-        client.setAuthenticationFailureListener(() -> {
-            sessionStore.clear();
-            stopSelf();
-        });
         boolean caughtUp = preferences.getBoolean(caughtUpKey, false);
         NotificationCursorTracker tracker = new NotificationCursorTracker(cursor, caughtUp);
         int pageNumber = 0;
@@ -130,9 +126,17 @@ public final class NotificationPollingService extends Service {
             try {
                 items = client.pollNotifications(tracker.cursor(), PAGE_LIMIT);
             } catch (IOException exc) {
-                if (allowRefresh && isUnauthorized(exc)) {
+                NotificationSessionRecoveryPolicy.Action recovery =
+                        NotificationSessionRecoveryPolicy.decide(exc, allowRefresh);
+                if (recovery == NotificationSessionRecoveryPolicy.Action.REFRESH) {
                     refreshSession(client);
                     pollWithCurrentSession(false);
+                    return;
+                }
+                if (recovery == NotificationSessionRecoveryPolicy.Action.CLEAR_SESSION) {
+                    sessionStore.clear();
+                    Log.w(TAG, runId + " session_rejected at=" + Instant.now());
+                    stopSelf();
                     return;
                 }
                 throw exc;
@@ -255,10 +259,6 @@ public final class NotificationPollingService extends Service {
                 SERVICE_CHANNEL_ID, "백그라운드 전달 상태", NotificationManager.IMPORTANCE_LOW));
         manager.createNotificationChannel(new NotificationChannel(
                 MESSAGE_CHANNEL_ID, "현장 업무 알림", NotificationManager.IMPORTANCE_HIGH));
-    }
-
-    private static boolean isUnauthorized(IOException exc) {
-        return exc.getMessage() != null && exc.getMessage().startsWith("HTTP 401");
     }
 
     private static String sha256(String value) {
