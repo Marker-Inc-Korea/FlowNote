@@ -1,6 +1,6 @@
 # FlowNote MVP 범위
 
-이 문서는 2026-07-30 현재 코드 기준이다. 구현되지 않은 기능은 “현재 제외 범위”, “후속 계층 착수 기준”, “후속 MVP 후보”에만 둔다.
+이 문서는 2026-07-31 현재 코드 기준이다. 구현되지 않은 기능은 “현재 제외 범위”, “후속 계층 착수 기준”, “후속 MVP 후보”에만 둔다.
 
 ## 현재 MVP 구현
 
@@ -24,13 +24,13 @@
 - AI 자동 조언 전 단계의 `ai_search_candidates` 근거 후보 재생성, 목록, 품질 점검 API와 WPF 운영 점검 화면
 - 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth 첫 승인과 서로 다른 사용자의 2차 승인, WPF 사례·원천 구성, 고정 원천 snapshot/provenance, 실제 현장/스모크 준비도 분리, 불변 dataset version의 작성·검토·독립 2단계 승인, dataset 결합 회귀 평가 API와 48건 비민감 스모크 검증 도구
 - FastAPI `/api/v1/ai/queries` 질의 생성·조회와 기본 비활성, role, 목적, 외부 전송 승인, 프롬프트, 원천 권한·민감정보·최소 payload provider adapter, 근거 snapshot·인용·규칙 기반 의미 일치·호출 후 재검증과 감사 모델. 네트워크 adapter는 명시적 test scope 전용
-- FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 불변 프롬프트 수명주기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 일괄·단일 즉시 실행과 legal hold 설정·해제. 활성 hold는 주기·일괄·단일 만료에서 제외되며 WPF 고위험 조작은 이중 확인, 최신 상태 태그, 멱등 키와 서버 read-back을 사용한다.
+- FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 불변 프롬프트 수명주기, 고객·현장별 민감정보 정책 작성·분리 검토·승인·활성·대체·철회·폐기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 일괄·단일 즉시 실행과 legal hold 설정·해제. 민감정보 정책과 hold 관련 고위험 조작은 이중 확인, 최신 상태 태그, 멱등 키와 서버 read-back을 사용하며 활성 hold는 주기·일괄·단일 만료에서 제외된다.
 - FastAPI 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
 - Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 업무 채널·수신자·원천을 고르는 인수인계 작성과 확인
 - Android 보안 본문 열람용 승인 단말·사용자·세션·현재 공개 버전 바인딩 1회 grant, 크기·SHA-256 검증, 내부 캐시 자동 정리와 화면 캡처 차단
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
-- WPF 로컬 저장 후 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장 큐와 서버 ID 매핑
+- WPF 로컬 저장 후 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장 큐와 서버 ID 매핑
 - 같은 소스와 버전에서 framework-dependent와 self-contained WPF MSI를 함께 만드는 패키징 스크립트, .NET Desktop Runtime 설치 차단 안내와 FastAPI 작업 스케줄러 등록·검증/관리 스크립트
 
 Android 보안 뷰어의 승인 실단말 검증, 운영 배포용 서명/MDM/인증서, 현장별 단말 등록·비활성화 운영 절차, foreground service의 Doze·강제 중지/MDM 복구 실기와 장갑·한 손·거치 조건의 UX 실측은 아직 완료 범위가 아니다. 초기 알림 전달은 WPF 창 활성 polling과 Android 로그인 세션 foreground service의 사내망 HTTPS polling으로 구현되어 있다.
@@ -83,7 +83,7 @@ provider별 운영 client를 통한 실제 외부 AI 검색/작업 조언과 MES
 
 AI 계층의 첫 착수 범위는 “근거가 있는 검색과 요약”까지로 제한한다. 자동 의사결정, 작업 지시 자동 변경, 현장 조치 승인 자동화는 별도 보안/책임 기준이 정해지기 전까지 포함하지 않는다.
 
-현재 구현 착수 범위는 `ai_search_candidates` read model의 재생성·목록·품질 API, WPF 운영 점검 화면, `/api/v1/ai/queries` 생성·조회와 원천 권한·민감정보·최소 payload·응답 검증 게이트다. 검색 후보는 `PUBLISHED` 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source로 제한하고 원문 ID와 version ID를 유지한다. 질의 시점과 응답 직후에는 원천 상태, 작성자 role, 연결 채널 멤버십, 승인 source type과 현장별 금칙 정책을 다시 검사한다. provider별 운영 연동은 아직 없다. FieldComment 관리자 검토 상태가 `ANALYZED`, `REVIEWED`, `SELECTED`로 충분히 쌓이기 전에는 답변 자동화보다 관리자 검토/분석/선정 운영 흐름을 먼저 보강한다.
+현재 구현 착수 범위는 `ai_search_candidates` read model의 재생성·목록·품질 API, WPF 운영 점검 화면, `/api/v1/ai/queries` 생성·조회와 원천 권한·민감정보·최소 payload·응답 검증 게이트다. 검색 후보는 `PUBLISHED` 문서 버전, FieldComment, 작업순서 변경 이력, 보고서 source로 제한하고 원문 ID와 version ID를 유지한다. 질의 시점과 응답 직후에는 원천 상태, 작성자 role, 연결 채널 멤버십, 승인 source type과 활성 민감정보 정책의 ID·content hash·revision snapshot을 다시 검사한다. 정책 원문은 불변 버전으로 관리하며 작성자·검토자·승인자를 분리한다. provider별 운영 연동은 아직 없다. FieldComment 관리자 검토 상태가 `ANALYZED`, `REVIEWED`, `SELECTED`로 충분히 쌓이기 전에는 답변 자동화보다 관리자 검토/분석/선정 운영 흐름을 먼저 보강한다.
 
 ### MES/ERP 어댑터
 

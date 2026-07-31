@@ -2,7 +2,7 @@
 
 이 폴더는 Windows WPF 클라이언트의 현재 구현 메모를 둔다.
 
-문서 내용은 2026-07-30 현재 `FlowNote.Windows.App`, `FlowNote.Windows.Core`, 스모크·Core·동기화 수렴 테스트 코드 기준이다.
+문서 내용은 2026-07-31 현재 `FlowNote.Windows.App`, `FlowNote.Windows.Core`, 스모크·Core·동기화 수렴 테스트 코드 기준이다.
 
 ## 문서
 

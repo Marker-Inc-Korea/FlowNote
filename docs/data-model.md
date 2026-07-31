@@ -1,6 +1,6 @@
 # FlowNote 데이터 모델
 
-이 문서는 2026-07-30 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며, 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
+이 문서는 2026-07-31 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며, 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
 
 ## WPF 로컬 SQLite
 
@@ -17,6 +17,7 @@
 | `document_versions` | 문서 버전, 파일 경로, 변경 사유, 공개 여부, 서버 버전 ID |
 | `field_comments` | 현장 코멘트 원천 기록과 서버 코멘트 ID |
 | `field_comment_attachments` | FieldComment 첨부 파일 로컬 경로와 서버 첨부 ID |
+| `field_comment_saved_views` | WPF FieldComment 목록의 저장된 필터 이름·JSON·갱신 시각 |
 | `document_view_logs` | 문서 열람 시작/종료, 자동 닫힘, 다운로드 차단 로그 |
 | `activity_history` | 폴더, 문서, 사용자, 파일 감시, 동기화, 작업순서 이력 |
 | `file_watch_candidates` | 관리자 파일 감시 후보 |
@@ -70,7 +71,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-07-30 현재 ORM은 문서·FieldComment 검토·보고서·작업순서 mutation receipt, 서버 복구 reconciliation과 AI 질의 legal hold 모델을 포함한 60개 서버 테이블을 생성 기준으로 사용한다.
+2026-07-31 현재 ORM은 문서·FieldComment 검토·보고서·작업순서 mutation receipt, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 61개 서버 테이블을 생성 기준으로 사용한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -112,7 +113,8 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `ai_provider_onboarding_reviews` | provider/model별 계약·데이터 처리·전송·TLS·장애·비용·kill switch 체크리스트와 기술/보안/법무/고객 착수 결정 |
 | `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations` | 외부 AI 질의 상태와 질의 시점 근거 snapshot, 검증된 주장별 인용 연결 |
 | `ai_prompt_versions`, `ai_call_attempts`, `ai_transfer_approvals` | 승인 프롬프트 버전, 정제된 호출 시도 감사, 고객·현장별 외부 전송 승인 |
-| `ai_sensitive_data_policies` | 고객·현장별 활성 금칙어와 고객 식별자 정책 버전 |
+| `ai_sensitive_data_policies` | 고객·현장별 금칙어·고객 식별자 정책의 불변 원문과 검토·승인·활성 수명주기 |
+| `ai_sensitive_data_policy_operations` | 민감정보 정책 작성·상태 변경의 멱등 키와 정제 결과 상태 태그 |
 | `ai_operational_policies` | 전역·현장별 kill switch, 요청·동시성·timeout·비용 한도, 보존과 감사 내보내기 정책 |
 | `ai_operation_audit_events` | 승인·프롬프트·운영 정책 변경과 호출 전 차단의 정제 감사 이벤트 |
 | `ai_retention_audits` | 만료 질의 payload 비식별화와 응답 원문 삭제 결과, 보존 hash 감사 |
@@ -205,6 +207,8 @@ AI 자동 조언과 자동 의사결정은 아직 범위에 넣지 않는다. �
 
 `ai_provider_onboarding_reviews`는 고객·현장·provider·model·review version을 유일하게 묶는다. 체크리스트 JSON은 계약 조건, provider 보존 기간, 학습 사용 여부, 전송/처리 지역, TLS, timeout, 429, 5xx, 비용 한도, kill switch, 법무 승인, 고객 승인을 각각 `PENDING`/`PASS`/`FAIL`과 근거 참조로 보존한다. 기술·보안·법무·고객 상태는 `PENDING`/`APPROVED`/`REJECTED`, 검토자와 시각을 별도로 기록한다. 새 심사는 기존 row를 덮어쓰지 않고 새 version을 만들며 체크리스트 전건 `PASS`와 네 영역 `APPROVED`가 함께 있어야 착수 승인이다.
 
+`ai_sensitive_data_policies`는 `DRAFT → REVIEWED → APPROVED → ACTIVE`로 전이한다. 작성자와 검토자는 달라야 하고 승인자는 두 사람 모두와 달라야 한다. 활성 정책을 새 승인 버전으로 대체하면 이전 정책은 `SUPERSEDED`, 승인 철회는 `APPROVAL_WITHDRAWN`, 폐기는 `RETIRED`가 되며 원문을 수정해 되살리지 않고 새 버전을 만든다. 활성 정책은 고객·현장당 하나이며 provider 경계는 정책 ID·content hash·`state_revision` snapshot을 호출 직전과 응답 직후 다시 비교한다. 철회·폐기 또는 snapshot 변경은 신규 호출을 차단하거나 이미 생성된 응답을 폐기한다.
+
 품질 점검은 후보 수와 제외 사유를 함께 산출한다. `REPORT_SOURCE`의 `DOCUMENT` 원천은 `documents.status != DELETED`와 `documents.deleted_at IS NULL`을 모두 만족해야 하며, 버전 ID가 있으면 그 버전이 같은 문서에 속하는지도 확인한다. 조건을 만족하지 않으면 `report_source_missing_origin`으로 집계한다. FieldComment 검토 품질은 전체 상태별 개수, `ANALYZED`/`REVIEWED`/`SELECTED` 합계, AI 착수 최소 기준 100건 대비 부족분을 표시한다. FieldComment가 대부분 `NEW`라면 검색 후보에는 들어갈 수 있어도 요약 신뢰도와 AI 착수 기준은 부족한 것으로 본다.
 
 MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_records.external_system`, `external_ref_id` 같은 외부 연동 필드를 사용하지 않는다. `mes_integration` 입력으로 들어온 FieldComment도 어댑터 정책이 정해지기 전에는 후보에서 제외한다.
@@ -222,7 +226,8 @@ MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_record
 | `ai_prompt_versions` | `prompt_version_id`, `name`, `version`, `template_hash`, `template_text`, `allowed_purpose`, `created_by`, `approved_by`, `approved_at`, `retired_at` | 재현 가능한 불변 프롬프트 버전. 승인 후 내용을 덮어쓰지 않고 새 버전을 만든다. |
 | `ai_call_attempts` | `attempt_id`, `query_id`, `provider`, `model`, `provider_request_id`, `status`, `started_at`, `finished_at`, `http_status`, `error_code`, `sanitized_error_message`, `input_units`, `output_units` | 최초 호출과 timeout/429/5xx 재시도를 요청 ID에 연결하는 호출 및 오류 로그. 일반 로그에는 원문 프롬프트, 근거 본문, 응답, 자격증명이나 provider raw body를 넣지 않고 정제한 메타데이터를 남긴다. 1년 보존은 후속 운영 정책이다. |
 | `ai_transfer_approvals` | `approval_id`, `customer_scope`, `site_scope`, `provider`, `model_scope`, `allowed_source_types`, `data_handling_policy_version`, `approved_by`, `approved_at`, `expires_at`, `revoked_at`, `reason` | 고객·현장별 외부 전송 승인. 만료·철회 시 새 호출을 즉시 차단하며 `admin` 또는 `system-admin`의 승인 주체와 근거를 보존한다. |
-| `ai_sensitive_data_policies` | `policy_id`, `customer_scope`, `site_scope`, `version`, `forbidden_terms_json`, `customer_identifiers_json`, `is_active`, `created_by`, `created_at` | 고객·현장별 사용자 정의 금칙어와 고객 식별자 정책. 최신 활성 정책 하나를 query snapshot 필터에 적용하며 원문 검출값은 감사 로그에 남기지 않는다. |
+| `ai_sensitive_data_policies` | `policy_id`, `customer_scope`, `site_scope`, `version`, `forbidden_terms_json`, `customer_identifiers_json`, `content_hash`, `status`, `is_active`, `state_revision`, 작성/검토/승인/활성/철회/폐기 사용자·시각, `replaced_by_policy_id`, `created_at`, `updated_at` | 고객·현장별 사용자 정의 금칙어와 고객 식별자 정책. 원문은 생성 뒤 불변이며 API에는 content hash와 항목 수만 반환한다. |
+| `ai_sensitive_data_policy_operations` | `operation_id`, `operation_key`, `policy_id`, `action`, `request_hash`, `result_state_tag`, `created_by`, `created_at` | 작성·검토·승인·활성화·대체·승인 철회·폐기의 멱등 receipt. 같은 key와 같은 요청은 기존 정책을 read-back하고 다른 요청의 key 재사용은 충돌 처리한다. |
 
 `response_storage_mode`는 `DO_NOT_STORE`, `STORE_90_DAYS`만 허용한다. 기본값은 `DO_NOT_STORE`이며 이때 응답 본문은 요청 세션에 반환한 뒤 저장하지 않는다. `STORE_90_DAYS`는 본문과 별도 `response_retention_until`을 저장한다. 서버 lifespan 스케줄러와 `system-admin` 일괄/단일 즉시 실행 API는 만료된 질의 문구를 `[EXPIRED]`로 비식별화하고 저장 응답 원문을 삭제하되 query/response hash, 근거·인용·호출 메타데이터와 `ai_retention_audits`를 보존한다. 단일 만료가 만든 retention audit에는 같은 `operation_key`를 유일하게 연결한다. 같은 `query_id`의 `ai_query_legal_holds.status = ACTIVE`이면 정기·수동 일괄·단일의 세 만료 경로가 모두 건너뛴다. hold 해제는 `RELEASED` 상태와 해제자·시각·사유를 누적하고 row를 삭제하지 않는다. 질의 상세 `stateTag`는 원문 만료 여부, 응답 보존 여부, 두 보존 시각과 활성 hold ID를 결합한 낙관적 동시성 표식이며 DB 원문을 노출하지 않는다.
 

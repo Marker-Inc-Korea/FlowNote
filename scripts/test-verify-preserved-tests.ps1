@@ -78,16 +78,16 @@ foreach ($functionAst in $functionAsts) {
     Invoke-Expression $functionAst.Extent.Text
 }
 
-$expectedFastApiTestCount = 160
+$expectedFastApiTestCount = 164
 $script:fastApiEvidence = [ordered]@{
-    expected = 160
+    expected = 164
     collection_exit_code = 0
-    collected = 159
-    unique_node_ids = 159
+    collected = 163
+    unique_node_ids = 163
     duplicate_node_ids = 0
     pytest_exit_code = 1
-    junit_total = 159
-    passed = 158
+    junit_total = 163
+    passed = 162
     failures = 1
     errors = 0
     skipped = 0
@@ -95,33 +95,33 @@ $script:fastApiEvidence = [ordered]@{
 }
 
 $collectionExpected = Get-StepExpectedValue "Collect FastAPI pytest tests"
-Assert-Contains $collectionExpected "총 160건, 고유 160건, 중복 0건" "수집 기대값"
+Assert-Contains $collectionExpected "총 164건, 고유 164건, 중복 0건" "수집 기대값"
 
 $collectionFunctionText = @($functionAsts | Where-Object {
     $_.Name -eq "Assert-FastApiCollectionCounts"
 })[0].Extent.Text
 $collectionMismatch = Invoke-IsolatedExpectedFailure `
     -FunctionText $collectionFunctionText `
-    -Invocation "Assert-FastApiCollectionCounts -Expected 160 -Collected 159 -Unique 159 -Duplicates 0 -ExitCode 0" `
+    -Invocation "Assert-FastApiCollectionCounts -Expected 164 -Collected 163 -Unique 163 -Duplicates 0 -ExitCode 0" `
     -Label "의도적 수집 불일치"
 Assert-Contains $collectionMismatch "FastAPI 수집 불일치" "의도적 수집 불일치"
-Assert-Contains $collectionMismatch "기대 총/고유/중복=160/160/0" "수집 기대 수치"
-Assert-Contains $collectionMismatch "실제 총/고유/중복=159/159/0" "수집 실제 수치"
+Assert-Contains $collectionMismatch "기대 총/고유/중복=164/164/0" "수집 기대 수치"
+Assert-Contains $collectionMismatch "실제 총/고유/중복=163/163/0" "수집 실제 수치"
 
 $collectionActual = Get-StepActualValue "Collect FastAPI pytest tests" $collectionMismatch
-Assert-Contains $collectionActual "기대 총/고유/중복=160/160/0" "수집 실패 실제값"
-Assert-Contains $collectionActual "실제 총/고유/중복=159/159/0" "수집 실패 실제값"
+Assert-Contains $collectionActual "기대 총/고유/중복=164/164/0" "수집 실패 실제값"
+Assert-Contains $collectionActual "실제 총/고유/중복=163/163/0" "수집 실패 실제값"
 
 $junitFunctionText = @($functionAsts | Where-Object {
     $_.Name -eq "Assert-FastApiJUnitCounts"
 })[0].Extent.Text
 $junitMismatch = Invoke-IsolatedExpectedFailure `
     -FunctionText $junitFunctionText `
-    -Invocation "Assert-FastApiJUnitCounts -Expected 160 -Total 159 -Passed 158 -Failures 1 -Errors 0 -Skipped 0 -ExitCode 1 -CollectionMatchesJunit `$false" `
+    -Invocation "Assert-FastApiJUnitCounts -Expected 164 -Total 163 -Passed 162 -Failures 1 -Errors 0 -Skipped 0 -ExitCode 1 -CollectionMatchesJunit `$false" `
     -Label "의도적 JUnit 불일치"
 Assert-Contains $junitMismatch "FastAPI JUnit 불일치" "의도적 JUnit 불일치"
-Assert-Contains $junitMismatch "기대 total/passed/failures/errors/skipped=160/160/0/0/0" "JUnit 기대 수치"
-Assert-Contains $junitMismatch "실제=159/158/1/0/0" "JUnit 실제 수치"
+Assert-Contains $junitMismatch "기대 total/passed/failures/errors/skipped=164/164/0/0/0" "JUnit 기대 수치"
+Assert-Contains $junitMismatch "실제=163/162/1/0/0" "JUnit 실제 수치"
 
 foreach ($stepName in @(
     "Check Windows baseline toolchain versions",
@@ -151,7 +151,7 @@ $source = Get-Content -Raw $resolvedScriptPath
 if ($source -match 'FastAPI 155건' -or $source -match '\$expectedFastApiTestCount\s*=\s*155') {
     throw "현재 FastAPI 기대값에 역사값 155가 남아 있음."
 }
-Assert-Contains $source '$expectedFastApiTestCount = 160' "FastAPI 단일 기준값"
+Assert-Contains $source '$expectedFastApiTestCount = 164' "FastAPI 단일 기준값"
 Assert-Contains `
     $source `
     '$script:currentExpectedValue = "FastAPI ${expectedFastApiTestCount}건' `

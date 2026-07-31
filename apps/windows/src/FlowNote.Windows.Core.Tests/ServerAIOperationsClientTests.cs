@@ -51,6 +51,32 @@ public sealed class ServerAIOperationsClientTests
         Assert.Contains("새로고침", error.Message);
     }
 
+    [Fact]
+    public async Task SensitivePolicyLostResponseRetriesStableKeyThenReadsBackRedactedDetail()
+    {
+        var handler = new SensitivePolicyLostResponseHandler();
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://server.example/") };
+        var client = new FlowNoteServerAIOperationsClient(http);
+        var request = new ServerAISensitivePolicyCreateRequest
+        {
+            Version = "policy-v1",
+            ForbiddenTerms = ["secret-term"],
+            CustomerIdentifiers = ["customer-secret"],
+            Reason = "정책 작성",
+            OperationKey = "wpf:ai:sensitive:create:stable-key"
+        };
+
+        var result = await client.CreateSensitivePolicyAndReadBackAsync(request);
+
+        Assert.Equal(2, handler.PostBodies.Count);
+        Assert.All(handler.PostBodies, body =>
+            Assert.Contains("wpf:ai:sensitive:create:stable-key", body, StringComparison.Ordinal));
+        Assert.Equal("DRAFT", result.Status);
+        Assert.False(result.RawPolicyExposed);
+        Assert.DoesNotContain("secret-term", handler.ReadBackBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("customer-secret", handler.ReadBackBody, StringComparison.Ordinal);
+    }
+
     private sealed class LostResponseThenReadBackHandler : HttpMessageHandler
     {
         public List<string> PostBodies { get; } = [];
@@ -99,6 +125,36 @@ public sealed class ServerAIOperationsClientTests
             return Task.FromResult(Json(HttpStatusCode.Conflict,
                 "{\"detail\":{\"code\":\"AI_QUERY_STALE_STATE\",\"message\":\"stale\"}}"));
         }
+    }
+
+    private sealed class SensitivePolicyLostResponseHandler : HttpMessageHandler
+    {
+        public List<string> PostBodies { get; } = [];
+        public string ReadBackBody => PolicyJson;
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                PostBodies.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
+                if (PostBodies.Count == 1) throw new HttpRequestException("응답 유실");
+                return Json(HttpStatusCode.Created, PolicyJson);
+            }
+            return Json(HttpStatusCode.OK, PolicyJson);
+        }
+
+        private const string PolicyJson = """
+            {
+              "policyId":"policy-a","scopeType":"CURRENT_CUSTOMER_SITE",
+              "scopeDisplay":"현재 고객·현장","version":"policy-v1","status":"DRAFT",
+              "isActive":false,"contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "forbiddenTermCount":1,"customerIdentifierCount":1,
+              "createdBy":"creator-a","stateTag":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "responsibleOwner":"검토 담당자","nextAction":"다른 관리자가 검토",
+              "rawPolicyExposed":false
+            }
+            """;
     }
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) => new(status)

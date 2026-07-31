@@ -39,9 +39,14 @@ from app.services.ai_provider_gate import (
     AISourceAccessPolicy,
     ProviderBoundaryPayload,
     ProviderEvidence,
+    SensitiveContentFilter,
+    active_sensitive_policy,
     approval_block_code,
-    load_sensitive_filter,
     minimal_excerpt,
+    sensitive_policy_block_code,
+    sensitive_policy_filter,
+    sensitive_policy_snapshot,
+    sensitive_policy_snapshot_is_current,
     sha256_text,
 )
 from app.services.ai_provider_adapters import (
@@ -219,6 +224,7 @@ def _snapshot(
     candidate_ids: list[str] | None,
     approval: AITransferApproval,
     settings: Settings,
+    content_filter: SensitiveContentFilter,
 ) -> tuple[list[AIQueryEvidenceCandidate], list[ProviderEvidence]]:
     statement = select(AISearchCandidate)
     if candidate_ids is not None:
@@ -229,7 +235,6 @@ def _snapshot(
     except (TypeError, ValueError):
         approved_types = set()
     access_policy = AISourceAccessPolicy(session, current_user)
-    content_filter = load_sensitive_filter(session, settings)
     snapshots: list[AIQueryEvidenceCandidate] = []
     evidence: list[ProviderEvidence] = []
     for rank, candidate in enumerate(candidates, 1):
@@ -510,7 +515,18 @@ def create_ai_query(
         allowed_purposes = set()
     if payload.purpose not in allowed_purposes:
         return _block(session, query, settings, "APPROVAL_SCOPE_MISMATCH", "요청 목적이 전송 승인 범위에 포함되지 않습니다.", 403)
-    query_filter = load_sensitive_filter(session, settings)
+    active_sensitive = active_sensitive_policy(session, settings)
+    if sensitive_policy_block_code(session, settings):
+        return _block(
+            session,
+            query,
+            settings,
+            "AI_SENSITIVE_POLICY_NOT_ACTIVE",
+            "민감정보 정책 승인이 철회되었거나 현재 적용 정책이 없습니다.",
+            409,
+        )
+    sensitive_snapshot = sensitive_policy_snapshot(active_sensitive)
+    query_filter = sensitive_policy_filter(active_sensitive)
     filtered_query = query_filter.filter(payload.query)
     if not filtered_query.allowed or filtered_query.text is None:
         query.query_text = "[REDACTED]"
@@ -538,11 +554,13 @@ def create_ai_query(
          "siteScope": approval.site_scope, "provider": approval.provider,
          "modelScope": approval.model_scope, "purposes": sorted(allowed_purposes),
          "sourceTypes": sorted(json.loads(approval.allowed_source_types)),
-         "expiresAt": utc_iso(approval.expires_at)},
+         "expiresAt": utc_iso(approval.expires_at),
+         "sensitivePolicyId": sensitive_snapshot.policy_id if sensitive_snapshot else None,
+         "sensitivePolicyHash": sensitive_snapshot.content_hash if sensitive_snapshot else None},
         ensure_ascii=False, sort_keys=True,
     )
     snapshots, provider_evidence = _snapshot(
-        session, query, current_user, payload.candidate_ids, approval, settings
+        session, query, current_user, payload.candidate_ids, approval, settings, query_filter
     )
     eligible = [row for row in snapshots if row.selected_for_prompt]
     if not provider_evidence:
@@ -566,6 +584,16 @@ def create_ai_query(
     if final_operations_block:
         code, message, status_code = final_operations_block
         return _block(session, query, settings, code, message, status_code)
+    session.expire_all()
+    if not sensitive_policy_snapshot_is_current(session, settings, sensitive_snapshot):
+        return _block(
+            session,
+            query,
+            settings,
+            "AI_SENSITIVE_POLICY_CHANGED",
+            "민감정보 정책이 변경되어 외부 전송 전에 요청을 차단했습니다.",
+            409,
+        )
     provider_payload = ProviderBoundaryPayload(
         purpose=payload.purpose,
         query=filtered_query.text,
@@ -618,6 +646,12 @@ def create_ai_query(
             session, query, attempt, settings,
             code=f"{code}_AFTER_CALL",
             reason="응답 생성 중 운영 통제 상태가 변경되어 결과를 폐기했습니다.",
+        )
+    if not sensitive_policy_snapshot_is_current(session, settings, sensitive_snapshot):
+        return _hold_response(
+            session, query, attempt, settings,
+            code="AI_SENSITIVE_POLICY_CHANGED_AFTER_CALL",
+            reason="응답 생성 중 민감정보 정책이 변경되어 결과를 폐기했습니다.",
         )
     if not _post_call_evidence_is_current(session, current_user, eligible):
         return _hold_response(

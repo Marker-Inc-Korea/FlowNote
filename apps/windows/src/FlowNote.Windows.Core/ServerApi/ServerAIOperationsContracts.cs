@@ -82,6 +82,59 @@ public sealed class ServerAIPolicyUpdateRequest
     [JsonPropertyName("reason")] public string Reason { get; set; } = string.Empty;
 }
 
+public sealed class ServerAISensitivePolicyResponse
+{
+    [JsonPropertyName("policyId")] public string PolicyId { get; set; } = string.Empty;
+    [JsonPropertyName("scopeType")] public string ScopeType { get; set; } = string.Empty;
+    [JsonPropertyName("scopeDisplay")] public string ScopeDisplay { get; set; } = string.Empty;
+    [JsonPropertyName("version")] public string Version { get; set; } = string.Empty;
+    [JsonPropertyName("status")] public string Status { get; set; } = string.Empty;
+    [JsonPropertyName("isActive")] public bool IsActive { get; set; }
+    [JsonPropertyName("contentHash")] public string ContentHash { get; set; } = string.Empty;
+    [JsonPropertyName("forbiddenTermCount")] public int ForbiddenTermCount { get; set; }
+    [JsonPropertyName("customerIdentifierCount")] public int CustomerIdentifierCount { get; set; }
+    [JsonPropertyName("createdBy")] public string CreatedBy { get; set; } = string.Empty;
+    [JsonPropertyName("reviewedBy")] public string? ReviewedBy { get; set; }
+    [JsonPropertyName("approvedBy")] public string? ApprovedBy { get; set; }
+    [JsonPropertyName("activatedBy")] public string? ActivatedBy { get; set; }
+    [JsonPropertyName("stateTag")] public string StateTag { get; set; } = string.Empty;
+    [JsonPropertyName("responsibleOwner")] public string ResponsibleOwner { get; set; } = string.Empty;
+    [JsonPropertyName("nextAction")] public string NextAction { get; set; } = string.Empty;
+    [JsonPropertyName("rawPolicyExposed")] public bool RawPolicyExposed { get; set; }
+}
+
+public sealed class ServerAISensitivePolicyCreateRequest
+{
+    [JsonPropertyName("version")] public string Version { get; set; } = string.Empty;
+    [JsonPropertyName("forbiddenTerms")] public List<string> ForbiddenTerms { get; set; } = [];
+    [JsonPropertyName("customerIdentifiers")] public List<string> CustomerIdentifiers { get; set; } = [];
+    [JsonPropertyName("reason")] public string Reason { get; set; } = string.Empty;
+    [JsonPropertyName("operationKey")] public string OperationKey { get; set; } = string.Empty;
+}
+
+public sealed class ServerAISensitivePolicyActionRequest
+{
+    [JsonPropertyName("reason")] public string Reason { get; set; } = string.Empty;
+    [JsonPropertyName("operationKey")] public string OperationKey { get; set; } = string.Empty;
+    [JsonPropertyName("expectedStateTag")] public string ExpectedStateTag { get; set; } = string.Empty;
+    [JsonPropertyName("confirmAction")] public string ConfirmAction { get; set; } = string.Empty;
+    [JsonPropertyName("replacesPolicyId")] public string? ReplacesPolicyId { get; set; }
+}
+
+public sealed class ServerAISensitivePolicyRuntimeStatus
+{
+    [JsonPropertyName("scopeDisplay")] public string ScopeDisplay { get; set; } = string.Empty;
+    [JsonPropertyName("activePolicy")] public ServerAISensitivePolicyResponse? ActivePolicy { get; set; }
+    [JsonPropertyName("latestPolicy")] public ServerAISensitivePolicyResponse? LatestPolicy { get; set; }
+    [JsonPropertyName("blockCategory")] public string BlockCategory { get; set; } = string.Empty;
+    [JsonPropertyName("reasonCode")] public string? ReasonCode { get; set; }
+    [JsonPropertyName("reason")] public string Reason { get; set; } = string.Empty;
+    [JsonPropertyName("responsibleOwner")] public string ResponsibleOwner { get; set; } = string.Empty;
+    [JsonPropertyName("nextAction")] public string NextAction { get; set; } = string.Empty;
+    [JsonPropertyName("externalTransferOccurred")] public bool ExternalTransferOccurred { get; set; }
+    [JsonPropertyName("providerStartReady")] public bool ProviderStartReady { get; set; }
+}
+
 public sealed class ServerAIQueryAuditResponse
 {
     [JsonPropertyName("queryId")] public string QueryId { get; set; } = string.Empty;
@@ -97,6 +150,11 @@ public sealed class ServerAIQueryAuditResponse
     [JsonPropertyName("createdAt")] public DateTimeOffset CreatedAt { get; set; }
     [JsonPropertyName("customerScope")] public string CustomerScope { get; set; } = string.Empty;
     [JsonPropertyName("siteScope")] public string SiteScope { get; set; } = string.Empty;
+    [JsonPropertyName("blockCategory")] public string BlockCategory { get; set; } = string.Empty;
+    [JsonPropertyName("externalTransferOccurred")] public bool ExternalTransferOccurred { get; set; }
+    [JsonPropertyName("operatorReason")] public string OperatorReason { get; set; } = string.Empty;
+    [JsonPropertyName("responsibleOwner")] public string ResponsibleOwner { get; set; } = string.Empty;
+    [JsonPropertyName("nextAction")] public string NextAction { get; set; } = string.Empty;
 }
 
 public sealed class ServerAIRetentionResult

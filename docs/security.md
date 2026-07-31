@@ -1,6 +1,6 @@
 # FlowNote 보안
 
-이 문서는 2026-07-30 현재 코드에 적용된 통제와 운영 전 후속 통제를 구분한다.
+이 문서는 2026-07-31 현재 코드에 적용된 통제와 운영 전 후속 통제를 구분한다.
 
 ## 현재 구현
 
@@ -28,7 +28,7 @@
 - Android 현장 단말 앱의 Keystore 보호 Bearer token, AES-GCM FieldComment·사진·인수인계 outbox 본문·첨부, 승인 단말 전용 1회성 보안 본문 열람, foreground 알림 복구, 인수인계 작성·확인, 서버 오류 원문 비노출
 - 외부 AI 질의의 보고서 작성 role(`admin`, `system-admin`, `document-admin`, `manager`, `assistant-manager`, `department-manager`) 제한, 기본 비활성 플래그, 허용 목적, 고객·현장·provider·model 전송 승인, 승인된 프롬프트와 근거 원천 상태 검사
 - 외부 AI 질의·근거 snapshot·인용·호출 시도 감사 row, 기본 응답 본문 미저장과 응답 hash 저장
-- `system-admin` 전용 외부 AI 전송 승인·불변 프롬프트 수명주기·전역/현장 kill switch와 한도·보존 정책 API 및 WPF 운영 화면
+- `system-admin` 전용 외부 AI 전송 승인·불변 프롬프트 수명주기·고객/현장별 민감정보 정책 수명주기·전역/현장 kill switch와 한도·보존 정책 API 및 WPF 운영 화면
 - 질의·응답·비밀 원문을 제외한 AI 운영 감사 조회/정책 허용 CSV와, 만료 질의 payload 비식별화·응답 원문 삭제의 자동·즉시 보존 처리 감사
 
 Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현이 들어와 있다. Android 문서 기능은 공개 목록·상세 조회와 PDF/이미지/UTF-8 TXT 앱 내부 보안 열람을 제공한다. 공통 채널 API는 서버 로그인, role, 채널 멤버십으로 접근을 제한하며, Android 로그인·모든 access 요청·refresh와 본문 열람은 세션의 `terminal_devices.device_id`와 `status = ACTIVE`를 요구한다. 승인 단말 등록, 비활성화, 폐기, 교체는 `admin`, `system-admin` 전용 API와 WPF 운영 화면에서 수행하고 `activity_history`에 변경 주체와 사유를 남긴다. Android 화면은 예외 메시지와 서버 오류 본문을 그대로 노출하지 않고 현장 사용자를 위한 한글 안내로 변환한다. Android는 개인 휴대폰 기본 배포가 아니라 승인된 현장 태블릿 또는 러기드 단말을 기준으로 한다. MDM 제품·운영 인증서·실단말 정책 보고서는 현장별 승인 범위다.
@@ -312,6 +312,8 @@ Android 본문 열람은 WPF controlled copy와 별도 계약이다. 앱은 승�
 
 WPF `AI 정답셋`의 `운영 준비도` 탭은 외부 호출 차단 사유를 숨기지 않는다. 고객 승인 `ANONYMOUS_FIELD` 사례와 합성 `SMOKE_REGRESSION`을 분리하고, 부족한 원천·24칸 범주/유형, 네 dataset 역할 분리, 최신 평가 run, 독립 표본 검토, provider 심사, 기능 플래그와 어댑터 상태를 함께 표시한다. 각 미충족 항목에는 현장 데이터·평가·정보보호·법무·고객·시스템 운영 중 담당 역할과 다음 조치를 붙인다. 화면에 자격증명, endpoint, 고객 원문이나 로컬 경로는 표시하지 않는다.
 
+WPF `AI 운영 > 민감정보 정책`은 현재 고객·현장이라는 적용 범위만 표시하고 실제 scope 식별값은 표시하지 않는다. 정책은 작성자·검토자·승인자가 서로 다른 `system-admin`이어야 활성화할 수 있다. 상태 변경은 이중 확인, 최신 `stateTag`, 안정 operation key와 완료 뒤 read-back을 사용한다. 정책 원문·고객 식별자는 작성 요청에만 포함되며 목록·상세·감사·CSV에는 content hash와 항목 수로 대체한다. provider endpoint와 자격정보는 이 화면이나 응답에 포함하지 않는다.
+
 - 고객의 서면 외부 전송 허용 범위, 허용 현장과 원천 유형, 승인 만료일
 - provider와 model, 전송·처리 지역, 암호화, 보존 기간, 재위탁자, 입력/출력의 학습 사용 금지와 삭제 조건
 - 승인된 프롬프트 버전, 응답 저장 방식, 사고 대응 연락처와 승인 철회 절차
@@ -323,9 +325,11 @@ FlowNote의 `PUBLISHED`는 현장 사용자에게 공개되었다는 뜻이지 �
 
 provider 경계는 필터를 통과한 질의와 제한 길이의 최소 발췌, candidate/source/version/trace ID, content hash, rank, prompt version, 고정 출력 형식만 받는다. 전체 파일·사진·첨부, 사용자명, 로컬 경로, 내부 URL과 제외 원천은 전달하지 않는다. 사용자 질의의 주민등록번호·전화번호·이메일은 대체 표식으로 마스킹한다. 원천의 주민등록번호·전화번호·이메일, 계정·비밀번호·API key·token·로컬 경로·고객 식별자, prompt injection 지시와 `ai_sensitive_data_policies`의 현장별 금칙어는 검색 후보 생성 단계에서 원천 전체를 제외한다. 차단 원문은 후보, 일반 로그와 근거 snapshot에 남기지 않는다.
 
+활성 민감정보 정책은 정책 ID·content hash·revision으로 snapshot한다. kill switch는 민감정보 정책보다 먼저 평가한다. 이어서 정책 승인 철회·폐기와 snapshot 변경을 provider 직전에 다시 확인해 호출을 막는다. provider 실행 중 정책이 바뀌면 응답을 저장·노출하지 않고 폐기한다. 정책이 한 번도 운영된 적 없는 기존 scope는 기본 정적 필터를 유지하지만, 활성 정책의 승인 철회나 폐기 뒤에는 새 승인 버전이 활성화될 때까지 `AI_SENSITIVE_POLICY_NOT_ACTIVE`로 차단한다.
+
 provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마다 중복 없는 기존 candidate ID가 필요하다. 서버는 숫자, 핵심 토큰 겹침, 부정 극성을 규칙으로 대조하고 summary도 인용된 근거 전체와 다시 확인한다. 모델 자기평가만으로 의미 일치를 승인하지 않는다. 낮은 확신은 `humanReviewRequired` 정상 보류, 명백한 모순·인용 오류·prompt injection은 본문 전체 폐기다. provider 응답 뒤에는 승인, kill switch/한도, 원천 상태·hash, 사용자 열람 권한을 재조회하며 바뀐 결과는 저장하거나 노출하지 않는다.
 
-질의와 저장이 승인된 응답 본문은 제한 데이터로 취급한다. 생성·조회 API는 보고서 작성 role만 사용하며, 조회 API는 질의·응답 본문·citation 목록을 반환하지 않고 질의 상태·응답 hash·적격/제외 근거 snapshot만 반환한다. `system-admin` 질의 감사와 보존 상세도 서버 설정의 현재 고객·현장 scope로 고정한다. WPF 메뉴는 서버 role이 `system-admin`일 때만 보이고 서버 API도 같은 권한을 재검사한다. 단일 만료·hold 설정·hold 해제 API는 다른 scope의 query/hold ID 존재 여부를 드러내지 않고 `404`로 처리한다. 일반 서버/프록시 로그에는 질의, 프롬프트, 근거 본문, 응답, 자격증명, 검출한 금칙 원문이나 provider raw 오류를 남기지 않는다.
+질의와 저장이 승인된 응답 본문은 제한 데이터로 취급한다. 생성·조회 API는 보고서 작성 role만 사용하며, 조회 API는 질의·응답 본문·citation 목록을 반환하지 않고 질의 상태·응답 hash·적격/제외 근거 snapshot만 반환한다. `system-admin` 질의 감사와 보존 상세도 서버 설정의 현재 고객·현장 scope로 고정한다. WPF 질의 목록은 `externalTransferOccurred`를 차단 코드와 별도로 표시하고, `외부 호출 비활성`, `준비도 미달`, `정책 차단`, `kill switch`마다 담당자와 다음 행동을 보여준다. WPF 메뉴는 서버 role이 `system-admin`일 때만 보이고 서버 API도 같은 권한을 재검사한다. 단일 만료·hold 설정·hold 해제 API는 다른 scope의 query/hold ID 존재 여부를 드러내지 않고 `404`로 처리한다. 일반 서버/프록시 로그에는 질의, 프롬프트, 근거 본문, 응답, 자격증명, 검출한 금칙 원문이나 provider raw 오류를 남기지 않는다.
 
 질의 원문과 저장 승인 응답은 기본 90일이며 `DO_NOT_STORE`는 응답 hash만 남긴다. 서버 lifespan의 만료 스케줄러는 기본 1시간 간격으로 질의 payload를 `[EXPIRED]`로 비식별화하고 응답 원문을 삭제한다. `system-admin`은 만료분 전체 처리를 즉시 실행하거나 현재 scope의 단일 질의를 즉시 만료할 수 있다. 두 경로 모두 query/response hash, 근거·인용·호출 메타데이터와 외래키를 보존하고 처리 건마다 `ai_retention_audits`에 삭제·비식별화 동작을 남긴다.
 

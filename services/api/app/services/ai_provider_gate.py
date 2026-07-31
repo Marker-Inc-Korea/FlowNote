@@ -82,6 +82,13 @@ class ContentFilterResult:
 
 
 @dataclass(frozen=True)
+class SensitivePolicySnapshot:
+    policy_id: str
+    content_hash: str
+    state_revision: int
+
+
+@dataclass(frozen=True)
 class SourcePolicyResult:
     allowed: bool
     reason_code: str | None
@@ -360,20 +367,70 @@ class AISourceAccessPolicy:
         return membership is not None
 
 
-def load_sensitive_filter(session: Session, settings: Settings) -> SensitiveContentFilter:
-    policy = session.scalar(
+def active_sensitive_policy(
+    session: Session, settings: Settings
+) -> AISensitiveDataPolicy | None:
+    return session.scalar(
         select(AISensitiveDataPolicy)
         .where(
             AISensitiveDataPolicy.customer_scope == settings.ai_customer_scope,
             AISensitiveDataPolicy.site_scope == settings.ai_site_scope,
+            AISensitiveDataPolicy.status == "ACTIVE",
             AISensitiveDataPolicy.is_active.is_(True),
         )
         .order_by(AISensitiveDataPolicy.created_at.desc(), AISensitiveDataPolicy.id.desc())
     )
+
+
+def sensitive_policy_filter(
+    policy: AISensitiveDataPolicy | None,
+) -> SensitiveContentFilter:
     return SensitiveContentFilter(
         _json_string_set(policy.forbidden_terms_json) if policy else set(),
         _json_string_set(policy.customer_identifiers_json) if policy else set(),
     )
+
+
+def load_sensitive_filter(session: Session, settings: Settings) -> SensitiveContentFilter:
+    return sensitive_policy_filter(active_sensitive_policy(session, settings))
+
+
+def sensitive_policy_snapshot(
+    policy: AISensitiveDataPolicy | None,
+) -> SensitivePolicySnapshot | None:
+    if policy is None:
+        return None
+    return SensitivePolicySnapshot(
+        policy_id=policy.policy_id,
+        content_hash=policy.content_hash,
+        state_revision=policy.state_revision,
+    )
+
+
+def sensitive_policy_block_code(session: Session, settings: Settings) -> str | None:
+    if active_sensitive_policy(session, settings) is not None:
+        return None
+    inactive_terminal = session.scalar(
+        select(AISensitiveDataPolicy)
+        .where(
+            AISensitiveDataPolicy.customer_scope == settings.ai_customer_scope,
+            AISensitiveDataPolicy.site_scope == settings.ai_site_scope,
+            AISensitiveDataPolicy.status.in_({"APPROVAL_WITHDRAWN", "RETIRED"}),
+        )
+        .order_by(AISensitiveDataPolicy.created_at.desc(), AISensitiveDataPolicy.id.desc())
+    )
+    if inactive_terminal is not None:
+        return "AI_SENSITIVE_POLICY_NOT_ACTIVE"
+    return None
+
+
+def sensitive_policy_snapshot_is_current(
+    session: Session,
+    settings: Settings,
+    expected: SensitivePolicySnapshot | None,
+) -> bool:
+    current = sensitive_policy_snapshot(active_sensitive_policy(session, settings))
+    return current == expected and sensitive_policy_block_code(session, settings) is None
 
 
 def approval_block_code(

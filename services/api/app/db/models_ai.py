@@ -650,10 +650,17 @@ class AIQueryLegalHold(Base):
 
 
 class AISensitiveDataPolicy(Base):
-    """Site-scoped deny terms and customer identifiers for the provider boundary."""
+    """Versioned site policy whose raw terms never leave the operations API."""
 
     __tablename__ = "ai_sensitive_data_policies"
     __table_args__ = (
+        CheckConstraint(
+            (
+                "status IN ('DRAFT', 'REVIEWED', 'APPROVED', 'ACTIVE', "
+                "'SUPERSEDED', 'APPROVAL_WITHDRAWN', 'RETIRED')"
+            ),
+            name="ck_ai_sensitive_data_policy_status",
+        ),
         UniqueConstraint(
             "customer_scope",
             "site_scope",
@@ -675,7 +682,57 @@ class AISensitiveDataPolicy(Base):
     version: Mapped[str] = mapped_column(String(80), nullable=False)
     forbidden_terms_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     customer_identifiers_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="ACTIVE")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    state_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": state_revision}
+    created_by: Mapped[str] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id"), nullable=False
+    )
+    reviewed_by: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id")
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id")
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    activated_by: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id")
+    )
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    replaced_by_policy_id: Mapped[str | None] = mapped_column(String(64))
+    approval_withdrawn_by: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id")
+    )
+    approval_withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retired_by: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("user_accounts.user_id")
+    )
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class AISensitiveDataPolicyOperation(Base):
+    """Idempotency receipt for a sanitized sensitive-policy mutation."""
+
+    __tablename__ = "ai_sensitive_data_policy_operations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    operation_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    operation_key: Mapped[str] = mapped_column(String(160), unique=True, nullable=False, index=True)
+    policy_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_sensitive_data_policies.policy_id"), nullable=False, index=True
+    )
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_state_tag: Mapped[str] = mapped_column(String(64), nullable=False)
     created_by: Mapped[str] = mapped_column(
         String(64), ForeignKey("user_accounts.user_id"), nullable=False
     )
@@ -693,3 +750,23 @@ def prevent_approved_prompt_content_update(_mapper: object, _connection: object,
     immutable_fields = ("name", "version", "template_hash", "template_text", "allowed_purpose")
     if any(state.attrs[field].history.has_changes() for field in immutable_fields):
         raise ValueError("Approved AI prompt versions are immutable; create a new version.")
+
+
+@event.listens_for(AISensitiveDataPolicy, "before_update")
+def prevent_sensitive_policy_content_update(
+    _mapper: object, _connection: object, target: AISensitiveDataPolicy
+) -> None:
+    """Policy source lists and their hash are immutable after creation."""
+    state = inspect(target)
+    immutable_fields = (
+        "customer_scope",
+        "site_scope",
+        "version",
+        "forbidden_terms_json",
+        "customer_identifiers_json",
+        "content_hash",
+        "created_by",
+        "created_at",
+    )
+    if any(state.attrs[field].history.has_changes() for field in immutable_fields):
+        raise ValueError("AI sensitive-data policy content is immutable; create a new version.")

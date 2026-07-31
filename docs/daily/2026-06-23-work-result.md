@@ -11,10 +11,10 @@
 
 ## 현재 코드 반영 상태
 
-- 서버 API는 `/api/v1` 경로 아래 인증·서버 계정, 승인 단말, 문서와 controlled copy, FieldComment, 태그, 작업순서, 채널/인수인계, 보고서, AI 근거 후보·회귀 평가와 외부 AI 질의 안전장치, sync manifest와 관리자 승인형 reconciliation을 구현한다.
+- 서버 API는 `/api/v1` 경로 아래 인증·서버 계정, 승인 단말, 문서와 controlled copy, FieldComment, 태그, 작업순서, 채널/인수인계, 보고서, AI 근거 후보·회귀 평가, 외부 AI 질의 안전장치와 민감정보 정책 수명주기, sync manifest와 관리자 승인형 reconciliation을 구현한다.
 - Windows 앱은 공통 로컬 SQLite `data/local/flownote.local.sqlite`를 사용하며, 환경 변수로 위치를 바꿀 수 있다.
 - 현장 기록 명칭은 코드, DB, API, 문서에서 `FieldComment` / `field_comments` / `field-comments`를 사용한다.
-- 2026-07-28 재대조 기준으로 서버 계정 수명주기, WPF 사용자별 알림 cursor 보존, 보존 FAILED 큐 승인 전환, 서버 instance/epoch 복구 경계와 재결합도 현재 구현 범위다.
+- 2026-07-31 재대조 기준으로 서버 계정 수명주기, WPF 사용자별 알림 cursor 보존, 보존 FAILED 큐 승인 전환, 서버 instance/epoch 복구 경계와 재결합도 현재 구현 범위다.
 
 ## 남은 후속 범위
 
@@ -23,4 +23,4 @@
 - 외부 접근이나 클라우드 운영
 - Android 운영 배포 서명·MDM·인증서와 추가 클라이언트 플랫폼
 
-현재 서버에는 외부 AI 호출 없이 DB 원천에서 재생성하는 `ai_search_candidates` 근거 후보 재생성·목록·품질 점검, 독립 2인 승인 사례와 불변 dataset version 기반 오프라인 회귀 평가, 실제 익명 현장 24칸 독립 표본 검토·제3 합의, `/api/v1/ai/queries` 기본 비활성 안전장치·응답 검증·감사, `/api/v1/ai-operations` 운영 제어와 자동 만료 보존이 구현되어 있다. WPF에는 근거 후보 운영 점검, `AI 정답셋`, 실제 익명 현장 24칸 독립 표본 검토·불일치 제3 합의와 `system-admin` 전용 `AI 운영` 화면이 있다. generic 네트워크 adapter는 명시적 test scope에만 있고 provider별 운영 client는 없다. FieldComment 검토, 보고서 저장, 작업순서 변경은 각각 서버 revision과 도메인별 mutation receipt로 수렴하며 FieldComment 원천 불변·단계형 검토·담당자·기한·일괄 처리·감사·품질 작업함까지 구현되어 있다.
+현재 서버에는 외부 AI 호출 없이 DB 원천에서 재생성하는 `ai_search_candidates` 근거 후보 재생성·목록·품질 점검, 독립 2인 승인 사례와 불변 dataset version 기반 오프라인 회귀 평가, 실제 익명 현장 24칸 독립 표본 검토·제3 합의, `/api/v1/ai/queries` 기본 비활성 안전장치·응답 검증·감사, `/api/v1/ai-operations` 운영 제어와 자동 만료 보존이 구현되어 있다. 고객·현장별 민감정보 정책은 불변 버전으로 작성하고 작성자·검토자·승인자를 분리해 활성·대체·승인 철회·폐기까지 관리한다. WPF에는 근거 후보 운영 점검, `AI 정답셋`, 실제 익명 현장 24칸 독립 표본 검토·불일치 제3 합의와 `system-admin` 전용 `AI 운영` 화면이 있다. generic 네트워크 adapter는 명시적 test scope에만 있고 provider별 운영 client는 없다. FieldComment 검토, 보고서 저장, 작업순서 변경은 각각 서버 revision과 도메인별 mutation receipt로 수렴하며 FieldComment 원천 불변·단계형 검토·담당자·기한·일괄 처리·감사·품질 작업함까지 구현되어 있다.

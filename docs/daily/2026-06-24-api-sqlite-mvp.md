@@ -4,7 +4,7 @@
 
 ## 현재 서버 기준
 
-- FastAPI 앱은 `/api/v1` 아래에 인증·서버 계정, 승인 단말, 문서와 controlled copy, FieldComment, 태그, 접근 로그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가와 외부 AI 질의 안전장치, sync manifest·reconciliation 라우터를 제공한다.
+- FastAPI 앱은 `/api/v1` 아래에 인증·서버 계정, 승인 단말, 문서와 controlled copy, FieldComment, 태그, 접근 로그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가, 외부 AI 질의 안전장치와 민감정보 정책 수명주기, sync manifest·reconciliation 라우터를 제공한다.
 - 기본 DB URL은 `sqlite:///./data/flownote.sqlite3`이다.
 - 테스트 DB 기본값은 `sqlite:///./data/flownote.test.sqlite3`이다.
 - 파일 저장소 기본값은 `./storage`이다.
@@ -25,7 +25,7 @@
 - 채널/인수인계: `notification_channels`, `notification_channel_members`, `channel_messages`, `handovers`, `handover_receipts`
 - 보고서: `reports`, `report_sources`, `report_mutation_receipts`
 - AI 검색 후보·평가: `ai_search_candidates`, `ai_search_ground_truth_cases`, `ai_search_ground_truth_provenance`, `ai_ground_truth_dataset_versions`, `ai_ground_truth_dataset_cases`, `ai_search_evaluation_runs`, `ai_search_evaluation_cases`, `ai_evaluation_dataset_bindings`, `ai_field_readiness_sample_reviews`
-- 외부 AI 안전장치·운영·감사: `ai_prompt_versions`, `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations`, `ai_query_legal_holds`, `ai_call_attempts`, `ai_transfer_approvals`, `ai_sensitive_data_policies`, `ai_operational_policies`, `ai_provider_onboarding_reviews`, `ai_operation_audit_events`, `ai_retention_audits`
+- 외부 AI 안전장치·운영·감사: `ai_prompt_versions`, `ai_queries`, `ai_query_evidence_candidates`, `ai_query_citations`, `ai_query_legal_holds`, `ai_call_attempts`, `ai_transfer_approvals`, `ai_sensitive_data_policies`, `ai_sensitive_data_policy_operations`, `ai_operational_policies`, `ai_provider_onboarding_reviews`, `ai_operation_audit_events`, `ai_retention_audits`
 - 제한 다운로드: `controlled_copy_grants`
 - Android 앱 내부 열람: `android_document_view_grants`
 - 마이그레이션 기록: `schema_migrations`
@@ -45,5 +45,5 @@
 - ground-truth 사례는 서로 다른 두 사용자의 승인을 거쳐 활성화하고, 승인 사례 집합은 불변 dataset version으로 묶어 평가 run에 고정한다.
 - 실제 익명 현장 dataset은 같은 snapshot의 품질 통과 평가 2회 뒤 24칸 독립 표본 판정과 불일치 제3 합의를 서버에 불변 기록한다.
 - FieldComment 원천 핵심 필드는 생성 뒤 불변이며 검토 변경은 담당자·기한·전이 사유와 원천 hash를 포함한 감사 snapshot으로 분리한다.
-- 외부 AI provider 직전 경계는 활성 고객·현장 민감정보 정책, 원천 권한, 최소 발췌·최대 원천 수와 인용 ID를 검사한다. generic 네트워크 adapter는 명시적 test scope에만 있고 provider별 운영 client는 없다.
+- 외부 AI provider 직전 경계는 활성 고객·현장 민감정보 정책, 원천 권한, 최소 발췌·최대 원천 수와 인용 ID를 검사한다. 민감정보 정책은 불변 버전과 분리 검토·승인, 멱등 상태 변경 이력을 보존하며 provider 호출 직전과 응답 직후에 같은 정책 snapshot인지 다시 확인한다. generic 네트워크 adapter는 명시적 test scope에만 있고 provider별 운영 client는 없다.
 - 서버 lifespan 스케줄러와 `system-admin` 일괄·단일 즉시 실행 API는 만료된 질의 payload를 비식별화하고 저장 응답 원문을 삭제하면서 hash와 감사 메타데이터를 보존한다. 활성 legal hold가 있는 질의는 해제 전까지 세 만료 경로에서 제외된다.

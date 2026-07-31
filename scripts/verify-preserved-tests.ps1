@@ -30,8 +30,8 @@ if ((Test-Path $runArtifactDir -PathType Container) -and
 New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
 $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
-$expectedFastApiTestCount = 160
-$expectedWpfCoreTestCount = 84
+$expectedFastApiTestCount = 164
+$expectedWpfCoreTestCount = 87
 $expectedAndroidUnitTestCount = 28
 $stepDisplayNames = @{
     "Check Windows baseline toolchain versions" = "Windows x64 표준 도구 확인"

@@ -11,6 +11,7 @@ public partial class AIOperationsWindow : Window
 {
     private readonly FlowNoteServerAIOperationsClient? client;
     private ServerAIQueryDetailResponse? selectedQueryDetail;
+    private ServerAISensitivePolicyRuntimeStatus? sensitiveRuntimeStatus;
     private bool mutationInProgress;
 
     public AIOperationsWindow(FlowNoteServerAIOperationsClient? client)
@@ -27,6 +28,7 @@ public partial class AIOperationsWindow : Window
         {
             var policies = await client.ListPoliciesAsync();
             PolicyGrid.ItemsSource = policies;
+            await RefreshSensitivePoliciesAsync();
             ApprovalGrid.ItemsSource = await client.ListApprovalsAsync();
             PromptGrid.ItemsSource = await client.ListPromptsAsync();
             AuditGrid.ItemsSource = await client.ListQueryAuditAsync();
@@ -36,6 +38,149 @@ public partial class AIOperationsWindow : Window
     }
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
+
+    private async Task RefreshSensitivePoliciesAsync()
+    {
+        if (client is null) return;
+        SensitivePolicyGrid.ItemsSource = await client.ListSensitivePoliciesAsync();
+        sensitiveRuntimeStatus = await client.GetSensitivePolicyRuntimeStatusAsync();
+        SensitiveRuntimeTitleTextBlock.Text = sensitiveRuntimeStatus.BlockCategory switch
+        {
+            "EXTERNAL_CALL_DISABLED" => "외부 호출 비활성",
+            "READINESS_NOT_MET" => "준비도 미달",
+            "POLICY_BLOCK" => "정책 차단",
+            "KILL_SWITCH" => "kill switch",
+            _ => "민감정보 정책 적용 상태"
+        };
+        SensitiveRuntimeReasonTextBlock.Text =
+            $"{sensitiveRuntimeStatus.ScopeDisplay} · {sensitiveRuntimeStatus.Reason}";
+        SensitiveRuntimeActionTextBlock.Text =
+            $"담당: {sensitiveRuntimeStatus.ResponsibleOwner} · 다음 행동: {sensitiveRuntimeStatus.NextAction} · " +
+            "이 상태 조회로 외부 전송은 발생하지 않았습니다.";
+    }
+
+    private void SensitivePolicyGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SensitivePolicyGrid.SelectedItem is not ServerAISensitivePolicyResponse policy)
+        {
+            SensitiveSelectionTextBlock.Text = "정책을 선택하세요.";
+            return;
+        }
+        SensitiveSelectionTextBlock.Text =
+            $"{policy.ScopeDisplay} / {policy.Version} / {policy.Status}\n" +
+            $"작성 {policy.CreatedBy} · 검토 {policy.ReviewedBy ?? "미완료"} · 승인 {policy.ApprovedBy ?? "미완료"}\n" +
+            $"담당 {policy.ResponsibleOwner} · {policy.NextAction}";
+    }
+
+    private async void CreateSensitivePolicy_Click(object sender, RoutedEventArgs e)
+    {
+        if (client is null) return;
+        var forbiddenTerms = SplitSensitiveValues(SensitiveForbiddenTermsTextBox.Text);
+        var identifiers = SplitSensitiveValues(SensitiveIdentifiersTextBox.Text);
+        var version = SensitiveVersionTextBox.Text.Trim();
+        var reason = SensitiveReasonTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(version) || string.IsNullOrWhiteSpace(reason) ||
+            (forbiddenTerms.Count == 0 && identifiers.Count == 0))
+        {
+            StatusTextBlock.Text = "버전, 변경 사유와 하나 이상의 금칙어 또는 고객 식별자를 입력하세요.";
+            return;
+        }
+        try
+        {
+            var result = await client.CreateSensitivePolicyAndReadBackAsync(
+                new ServerAISensitivePolicyCreateRequest
+                {
+                    Version = version,
+                    ForbiddenTerms = forbiddenTerms,
+                    CustomerIdentifiers = identifiers,
+                    Reason = reason,
+                    OperationKey = AIOperationMutationPolicy.NewOperationKey("sensitive-create", version)
+                });
+            SensitiveForbiddenTermsTextBox.Clear();
+            SensitiveIdentifiersTextBox.Clear();
+            await RefreshSensitivePoliciesAsync();
+            StatusTextBlock.Text =
+                $"민감정보 정책 {result.Version} 초안을 등록하고 원문 입력란을 비웠습니다. 다른 검토자가 이어서 처리해야 합니다.";
+        }
+        catch (Exception ex) { StatusTextBlock.Text = ex.Message; }
+    }
+
+    private async void SensitivePolicyAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (client is null ||
+            SensitivePolicyGrid.SelectedItem is not ServerAISensitivePolicyResponse selected ||
+            sender is not Button { Tag: string tag })
+        {
+            StatusTextBlock.Text = "상태를 변경할 민감정보 정책을 선택하세요.";
+            return;
+        }
+        var parts = tag.Split('|');
+        if (parts.Length != 2) return;
+        var action = parts[0];
+        var confirmation = parts[1];
+        var reason = SensitiveReasonTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            StatusTextBlock.Text = "감사에 남길 정책 상태 변경 사유를 입력하세요.";
+            return;
+        }
+        string? replacesPolicyId = null;
+        if (action == "replace")
+        {
+            replacesPolicyId = sensitiveRuntimeStatus?.ActivePolicy?.PolicyId;
+            if (string.IsNullOrWhiteSpace(replacesPolicyId) || replacesPolicyId == selected.PolicyId)
+            {
+                StatusTextBlock.Text = "현재 활성 정책과 다른 승인 완료 버전을 선택해야 대체할 수 있습니다.";
+                return;
+            }
+        }
+        if (!ConfirmSensitivePolicyTwice(selected, action)) return;
+        try
+        {
+            var result = await client.ChangeSensitivePolicyAndReadBackAsync(
+                selected.PolicyId,
+                action,
+                new ServerAISensitivePolicyActionRequest
+                {
+                    Reason = reason,
+                    ExpectedStateTag = selected.StateTag,
+                    OperationKey = AIOperationMutationPolicy.NewOperationKey(
+                        $"sensitive-{action}", selected.PolicyId),
+                    ConfirmAction = confirmation,
+                    ReplacesPolicyId = replacesPolicyId
+                });
+            await RefreshSensitivePoliciesAsync();
+            StatusTextBlock.Text =
+                $"정책 {result.Version} 상태를 {result.Status}(으)로 변경한 뒤 서버 상세를 다시 읽었습니다.";
+        }
+        catch (Exception ex) { StatusTextBlock.Text = ex.Message; }
+    }
+
+    private bool ConfirmSensitivePolicyTwice(
+        ServerAISensitivePolicyResponse policy, string action)
+    {
+        var consequence = action switch
+        {
+            "activate" => "이 버전이 provider 직전 필터에 즉시 적용됩니다.",
+            "replace" => "현재 활성 정책은 대체 상태가 되고 선택 버전이 즉시 적용됩니다.",
+            "withdraw-approval" => "현재 적용 정책이면 신규 provider 호출이 즉시 차단됩니다.",
+            "retire" => "현재 적용 정책이면 신규 provider 호출이 즉시 차단됩니다.",
+            _ => "작성자·검토자·승인자 분리와 현재 상태를 서버에서 다시 검사합니다."
+        };
+        if (MessageBox.Show(
+                this,
+                $"정책 {policy.Version}에 {action} 작업을 수행합니까?\n\n{consequence}",
+                "AI 민감정보 정책 변경 확인",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return false;
+        return MessageBox.Show(
+            this,
+            "마지막 확인입니다. 최신 stateTag와 멱등 키를 사용해 실행하고 완료 뒤 서버 상태를 다시 읽습니다.",
+            "정책 변경 최종 확인",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning) == MessageBoxResult.Yes;
+    }
 
     private void PolicyGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -130,6 +275,8 @@ public partial class AIOperationsWindow : Window
     private async void AuditGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (AuditGrid.SelectedItem is not ServerAIQueryAuditResponse selected) return;
+        QueryTransferTextBlock.Text =
+            $"{selected.OperatorReason}\n담당: {selected.ResponsibleOwner} · 다음 행동: {selected.NextAction}";
         await LoadQueryDetailAsync(selected.QueryId);
     }
 
@@ -254,6 +401,10 @@ public partial class AIOperationsWindow : Window
     }
 
     private static List<string> Split(string value) => value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+    private static List<string> SplitSensitiveValues(string value) =>
+        value.Split([',', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     private static bool TryInt(TextBox box, out int value) => int.TryParse(box.Text, out value) && value >= 0;
     private static string SelectedTag(ComboBox box) => (box.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? string.Empty;
     private static void SelectTag(ComboBox box, string value) { foreach (var item in box.Items.OfType<ComboBoxItem>()) if (string.Equals(item.Tag?.ToString(), value, StringComparison.Ordinal)) { box.SelectedItem = item; break; } }

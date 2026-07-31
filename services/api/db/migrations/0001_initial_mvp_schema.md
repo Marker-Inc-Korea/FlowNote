@@ -1,6 +1,6 @@
 # 0001 Initial FlowNote API Schema
 
-FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기준은 2026-07-30 현재 `services/api/app/db/models.py`와 역할별 `models_*.py`다. 앱 시작 시 `services/api/app/db/init_db.py`가 기존 WPF 로컬 스키마가 아닌지 먼저 확인한 뒤 `Base.metadata.create_all()`로 서버 테이블을 보장한다.
+FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기준은 2026-07-31 현재 `services/api/app/db/models.py`와 역할별 `models_*.py`다. 앱 시작 시 `services/api/app/db/init_db.py`가 기존 WPF 로컬 스키마가 아닌지 먼저 확인한 뒤 `Base.metadata.create_all()`로 서버 테이블을 보장한다.
 
 ## Version
 
@@ -57,6 +57,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `ai_call_attempts` | Sanitized provider/model attempt status and error audit |
 | `ai_transfer_approvals` | Customer/site/provider/model scoped external transfer approvals |
 | `ai_sensitive_data_policies` | Versioned customer/site deny terms and customer identifiers applied before provider payload creation |
+| `ai_sensitive_data_policy_operations` | Idempotency receipts and result state tags for sensitive-policy lifecycle mutations |
 | `ai_operational_policies` | Global/site kill switches, request/concurrency/timeout/cost limits, retention, and audit-export policy |
 | `ai_provider_onboarding_reviews` | Versioned provider contract/security/legal/customer checklist and start decision |
 | `ai_operation_audit_events` | Sanitized approval, prompt, and operational-policy change audit events |
@@ -75,7 +76,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 - Document publish/status/tag writes, FieldComment review writes, and report saves use domain revisions plus immutable mutation receipts; each receipt commits with its aggregate mutation.
 - Sync manifest identifies the server installation and explicit recovery epoch. Reconciliation records classify WPF queue inventory without rewriting domain source rows and require administrator approval for every proposed action.
 - External AI calls are disabled by default. A generic HTTPS JSON adapter exists only for explicit `test` scope; no provider-specific production client or production activation is configured.
-- The active `ai_sensitive_data_policies` row for a customer/site scope adds deny terms and customer identifiers to the provider-boundary content filter.
+- `ai_sensitive_data_policies` keeps immutable customer/site policy versions and separated review, approval, activation, replacement, withdrawal, and retirement history. Only the active version contributes deny terms and customer identifiers to the provider-boundary content filter.
 - External AI operational policy, approval, prompt lifecycle, audit, and retention APIs are restricted to `system-admin`; provider credentials remain outside these tables.
 - Active `ai_query_legal_holds` rows prevent scheduled, bulk manual, and single-query expiry until a `system-admin` records a release.
 - Current server role values are `admin`, `manager`, `viewer`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`, `line-foreman`, `team-lead`, `team-member`.

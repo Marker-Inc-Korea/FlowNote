@@ -49,6 +49,42 @@ PROVIDER_CHECKLIST_KEYS = {
 }
 
 
+def _query_guidance(block_code: str | None, externally_sent: bool) -> dict[str, object]:
+    if block_code == "AI_EXTERNAL_CALL_DISABLED":
+        category, owner = "EXTERNAL_CALL_DISABLED", "AI 시스템 운영자"
+        action = "운영 승인과 준비도를 확인한 뒤 외부 호출 기능 플래그를 검토하세요."
+    elif block_code in {"AI_GLOBAL_KILL_SWITCH", "AI_SITE_KILL_SWITCH"}:
+        category, owner = "KILL_SWITCH", "AI 시스템 운영자"
+        action = "중지 사유를 확인하고 kill switch 유지 또는 해제를 결정하세요."
+    elif block_code == "AI_READINESS_NOT_MET":
+        category, owner = "READINESS_NOT_MET", "현장 데이터·평가 담당자"
+        action = "ANONYMOUS_FIELD 자료와 독립 평가·승인을 보강하세요."
+    elif block_code in {
+        "CONTENT_RESTRICTED", "AI_SENSITIVE_POLICY_NOT_ACTIVE",
+        "AI_SENSITIVE_POLICY_CHANGED", "AI_SENSITIVE_POLICY_CHANGED_AFTER_CALL",
+    }:
+        category, owner = "POLICY_BLOCK", "정보보호 승인 담당자"
+        action = "민감정보 원문을 복사하지 말고 정책 상태 또는 입력 범위를 확인하세요."
+    elif block_code in {"APPROVAL_REVOKED", "APPROVAL_SCOPE_MISMATCH"}:
+        category, owner = "APPROVAL_BLOCK", "외부 전송 승인 담당자"
+        action = "현재 고객·현장·목적 범위의 전송 승인과 철회 상태를 확인하세요."
+    else:
+        category, owner = "RESULT_REVIEW", "AI 운영 감사 담당자"
+        action = "근거·인용·응답 보존 상태를 확인하세요."
+    transfer_text = (
+        "외부 전송 발생: provider 경계 호출이 시작되었습니다."
+        if externally_sent else
+        "외부 전송 없음: provider 경계 호출 전에 차단되었거나 근거가 선택되지 않았습니다."
+    )
+    return {
+        "blockCategory": category,
+        "externalTransferOccurred": externally_sent,
+        "operatorReason": transfer_text,
+        "responsibleOwner": owner,
+        "nextAction": action,
+    }
+
+
 def _clean_list(values: list[str], allowed: set[str], name: str) -> list[str]:
     cleaned = sorted({value.strip().upper() for value in values if value.strip()})
     if not cleaned or any(value not in allowed for value in cleaned):
@@ -511,6 +547,7 @@ def query_audit(_: SystemAdmin, settings: Cfg, session: Db, status: str | None =
         attempts = session.scalars(select(AICallAttempt).where(
             AICallAttempt.query_id == row.query_id
         ).order_by(AICallAttempt.id)).all()
+        externally_sent = any(item.sent_externally for item in evidence)
         try:
             approval_id = json.loads(row.approval_snapshot_json or "{}").get("approvalId")
         except (TypeError, ValueError):
@@ -539,6 +576,7 @@ def query_audit(_: SystemAdmin, settings: Cfg, session: Db, status: str | None =
                             "sourceType": item.source_type, "sourceId": item.source_id,
                             "sourceVersionId": item.source_version_id,
                             "contentHash": item.content_hash} for item in citations],
+            **_query_guidance(row.block_code, externally_sent),
         })
     return result
 
@@ -555,7 +593,6 @@ def event_audit(_: SystemAdmin, settings: Cfg, session: Db, event_type: str | No
     if target_id:
         statement = statement.where(AIOperationAuditEvent.target_id == target_id)
     return [{"eventId": row.event_id, "eventType": row.event_type, "actorId": row.actor_id,
-             "customerScope": row.customer_scope, "siteScope": row.site_scope,
              "targetType": row.target_type, "targetId": row.target_id,
              "reasonCode": row.reason_code, "detail": json.loads(row.detail_json),
              "occurredAt": row.occurred_at}

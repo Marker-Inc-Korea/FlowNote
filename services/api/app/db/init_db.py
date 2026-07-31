@@ -694,6 +694,23 @@ def _ensure_ai_operations_columns(database: Database) -> None:
             "operation_key": "VARCHAR(160)",
             "release_operation_key": "VARCHAR(160)",
         },
+        "ai_sensitive_data_policies": {
+            "content_hash": "VARCHAR(64) NOT NULL DEFAULT ''",
+            "status": "VARCHAR(30) NOT NULL DEFAULT 'ACTIVE'",
+            "state_revision": "INTEGER NOT NULL DEFAULT 1",
+            "reviewed_by": "VARCHAR(64)",
+            "reviewed_at": "DATETIME",
+            "approved_by": "VARCHAR(64)",
+            "approved_at": "DATETIME",
+            "activated_by": "VARCHAR(64)",
+            "activated_at": "DATETIME",
+            "replaced_by_policy_id": "VARCHAR(64)",
+            "approval_withdrawn_by": "VARCHAR(64)",
+            "approval_withdrawn_at": "DATETIME",
+            "retired_by": "VARCHAR(64)",
+            "retired_at": "DATETIME",
+            "updated_at": "DATETIME",
+        },
     }
     with database.engine.begin() as connection:
         for table_name, columns in additions.items():
@@ -726,6 +743,10 @@ def _ensure_ai_operations_columns(database: Database) -> None:
         connection.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_ai_query_legal_holds_active_query "
             "ON ai_query_legal_holds (query_id) WHERE status = 'ACTIVE'"
+        ))
+        connection.execute(text(
+            "UPDATE ai_sensitive_data_policies SET updated_at = created_at "
+            "WHERE updated_at IS NULL"
         ))
 
 

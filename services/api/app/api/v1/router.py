@@ -4,6 +4,7 @@ from app.api.v1.ai_field_readiness_reviews import router as ai_field_readiness_r
 from app.api.v1.ai_search import router as ai_search_router
 from app.api.v1.ai_queries import router as ai_queries_router
 from app.api.v1.ai_operations import router as ai_operations_router
+from app.api.v1.ai_sensitive_data_policies import router as ai_sensitive_data_policies_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.android_document_views import router as android_document_views_router
 from app.api.v1.channels import router as channels_router
@@ -39,4 +40,5 @@ api_v1_router.include_router(ai_search_router)
 api_v1_router.include_router(ai_field_readiness_reviews_router)
 api_v1_router.include_router(ai_queries_router)
 api_v1_router.include_router(ai_operations_router)
+api_v1_router.include_router(ai_sensitive_data_policies_router)
 api_v1_router.include_router(channels_router)
