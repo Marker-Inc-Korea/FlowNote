@@ -146,7 +146,7 @@ flowchart LR
 | FastAPI 업무 API와 SQLite 모델 | 구현됨 |
 | Windows WPF 문서·검토·운영 화면 | 구현됨 |
 | Android 현장 단말 최소 업무 흐름 | 구현됨 |
-| 개별 내부 기술 검증 | 단계적으로 진행 중. WPF·Android 검증은 통과했고 FastAPI 회귀 4건은 분석이 필요함. 결과는 [검증 기록](./docs/verification.md)에 보존 |
+| 개별 내부 기술 검증 | 단계적으로 진행 중. WPF·Android 검증은 통과했고 FastAPI 전체 회귀 3건은 공용 SQLite 잠금으로 미통과함. 결과는 [검증 기록](./docs/verification.md)에 보존 |
 | 현장 사용성 검증 | 피드백을 조금씩 수집하며 진행 중 |
 | Windows 서버·WPF·Android 단일 실행 통합 기준선 | 대기 |
 | 운영 코드 서명, MDM, 인증서와 현장별 설치 확정 | 대기 |
@@ -163,7 +163,7 @@ flowchart LR
 | --- | --- |
 | FastAPI OpenAPI | 루트 `GET /` 포함 142개 method/path |
 | SQLAlchemy ORM | 61개 테이블 |
-| FastAPI 테스트 | 164개 수집, 160개 통과·4개 실패 |
+| FastAPI 테스트 | 164개 수집, 161개 통과·3개 실패. 실패 3개는 개별 재실행 통과 |
 | Python 정적 검사 | Ruff 통과 |
 | WPF Core 테스트 | 87개 통과 |
 | WPF 앱 빌드 | 경고 0개, 오류 0개 |

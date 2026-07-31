@@ -275,7 +275,7 @@ function Get-StepExpectedValue {
             return "FastAPI JUnit total/passed $expectedFastApiTestCount/$expectedFastApiTestCount, 실패·오류·건너뜀 0건"
         }
         "Run WPF Core tests" {
-            return "WPF Core 수집/고유 84/84, TRX total/passed 84/84, 실패·오류·건너뜀 0건"
+            return "WPF Core 수집/고유 87/87, TRX total/passed 87/87, 실패·오류·건너뜀 0건"
         }
         "Build WPF app" {
             return "WPF 앱 빌드 PASSED, compiler warning 0건, error 0건"

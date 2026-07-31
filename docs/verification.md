@@ -10,7 +10,7 @@
 | `run_id` | 없음 | 없음 |
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
-| FastAPI | 현재 코드·스크립트 guard 164건, macOS 수집 164건·전체 회귀 160 통과/4 실패 | Windows x64 수집·JUnit 무생략 실행 대기 |
+| FastAPI | 현재 코드·스크립트 guard 164건, macOS 수집 164건·전체 회귀 161 통과/3 실패·실패 항목 개별 재실행 3/3 통과 | Windows x64 수집·JUnit 무생략 실행 대기 |
 | WPF Core | 현재 macOS 실행 87/87, 스크립트 guard 87건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 현재 macOS 교차 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
@@ -30,9 +30,9 @@ Git이 추적하는 Markdown 43개를 확인했다. 작업 정책 원문 `AGENTS
 
 현재 OpenAPI는 루트 `GET /`를 포함해 142개 method/path 조합이고 SQLAlchemy ORM은 61개 테이블이다. `Settings`와 `.env.example`은 각각 45개 항목이며 FastAPI 테스트는 중복 없이 164건 수집됐다. `services/api/README.md`의 API 표는 민감정보 정책 상태 전이 6개를 실제 경로별로 펼친 뒤 OpenAPI와 누락·초과 0건으로 일치했고, 데이터 모델 문서 3개도 ORM 테이블 누락이 없다. 현재 코드와 표준 스크립트 guard는 FastAPI 164건·WPF Core 87건·Android 28건으로 일치한다.
 
-macOS 보조 검증에서 WPF Core는 87/87이 통과했다. Android는 단위 테스트와 `assembleDebug`, `lintDebug`가 성공했다. FastAPI 전체 회귀는 164건 중 160건이 통과하고 4건이 실패했다. `test_two_independent_sample_reviews_require_third_person_consensus`와 `test_fake_adapter_reproduces_retry_timeout_and_invalid_citation`은 SQLite `database is locked`로 실패했다. `test_retention_redacts_payload_preserves_hash_references_and_records_history`는 수동 보존 실행 전에 대상이 처리되어 기대값 1 대신 0을 받았고, `test_legal_hold_blocks_retention_and_release_allows_immediate_expiry`는 이미 만료된 질의에 hold를 설정해 기대한 201 대신 409를 받았다. 이 결과를 통합 기준선 통과로 기록하지 않으며 기존 DB·로그·테스트 산출물은 삭제하거나 초기화하지 않았다.
+macOS 보조 검증에서 WPF Core는 87/87이 통과했다. Android는 단위 테스트와 `assembleDebug`, `lintDebug`가 성공했다. FastAPI 전체 회귀를 백그라운드 보존 작업이 꺼진 환경에서 다시 실행한 결과 164건 중 161건이 통과하고 3건이 SQLite `database is locked`로 실패했다. 실패한 항목은 독립 표본 제3 합의, 48건 기준 자료 수명주기, 질의 정책 snapshot 재검사였다. 같은 3건을 데이터 삭제 없이 순서대로 재실행하면 3/3이 통과했다. 개별 통과를 전체 회귀 통과로 바꾸어 기록하지 않으며 기존 DB·로그·테스트 산출물은 삭제하거나 초기화하지 않았다.
 
-Python Ruff 검사는 통과했고 WPF 앱 교차 빌드는 경고·오류 없이 끝났다. 민감정보 정책 수명주기와 철회·kill switch 우선순위 테스트는 개별 실행에서도 통과했다. 호출 중 역할·정책 변경 테스트는 전체 회귀에서는 통과했지만 개별 재실행에서는 SQLite 잠금으로 실패해, 해당 실행만으로 기능 통과를 추가 확정하지 않았다.
+Python Ruff 검사와 AI 기준 자료 검증은 통과했고 WPF 앱 교차 빌드는 경고·오류 없이 끝났다. 민감정보 정책 수명주기와 철회·kill switch 우선순위 테스트도 개별 실행에서 통과했다. PowerShell 실행 환경이 없어 표준 검증 스크립트의 단위 검증은 이번 호스트에서 실행하지 않았다.
 
 ## 2026-07-31 작업 102 저장소 현재 상태 재확인
 
