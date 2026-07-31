@@ -83,7 +83,8 @@ public sealed class ServerReconciliationService(
             ? """
               SELECT item_id, run_id, entity_type, local_id, local_version_no,
                      verdict, proposed_action, server_document_id, server_version_id,
-                     server_revision, server_hash_sha256, details, resolution_action
+                     server_revision, local_hash_sha256, server_hash_sha256,
+                     details, resolution_action
                      ,resolution_status
               FROM reconciliation_items
               ORDER BY id DESC LIMIT 1000;
@@ -91,7 +92,8 @@ public sealed class ServerReconciliationService(
             : """
               SELECT item_id, run_id, entity_type, local_id, local_version_no,
                      verdict, proposed_action, server_document_id, server_version_id,
-                     server_revision, server_hash_sha256, details, resolution_action
+                     server_revision, local_hash_sha256, server_hash_sha256,
+                     details, resolution_action
                      ,resolution_status
               FROM reconciliation_items
               WHERE run_id = $run_id ORDER BY id;
@@ -113,7 +115,8 @@ public sealed class ServerReconciliationService(
                 reader.IsDBNull(10) ? null : reader.GetString(10),
                 reader.IsDBNull(11) ? null : reader.GetString(11),
                 reader.IsDBNull(12) ? null : reader.GetString(12),
-                reader.IsDBNull(13) ? null : reader.GetString(13)));
+                reader.IsDBNull(13) ? null : reader.GetString(13),
+                reader.IsDBNull(14) ? null : reader.GetString(14)));
         }
         return items;
     }

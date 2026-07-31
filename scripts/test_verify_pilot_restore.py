@@ -65,6 +65,10 @@ class PilotRestoreVerificationTests(unittest.TestCase):
             database=database,
             files=files,
             machine_id=machine_id,
+            host_identity={
+                "source": "unit-test-host",
+                "sha256": hashlib.sha256(machine_id.encode("utf-8")).hexdigest(),
+            },
             backup_set_id="BACKUP-SET-007",
             restore_approval_id="APPROVAL-007",
             evidence_root=self.root,
@@ -101,6 +105,10 @@ class PilotRestoreVerificationTests(unittest.TestCase):
         self.assertTrue(report["database_checks"]["after_capture_stable"])
         self.assertTrue(report["file_capture_checks"]["after_capture_stable"])
         self.assertTrue(report["responsibility_table_fingerprints_equal"])
+        self.assertNotEqual(
+            report["source_host_identity"]["sha256"],
+            report["restore_host_identity"]["sha256"],
+        )
         self.assertEqual(
             {"before": 0, "after": 0},
             report["responsibility_check_violation_counts"],
@@ -129,6 +137,39 @@ class PilotRestoreVerificationTests(unittest.TestCase):
         self.assertEqual(1, report["file_mismatch_counts"]["size"])
         self.assertEqual(1, report["file_mismatch_counts"]["sha256"])
         self.assertTrue(any("별도 PC" in failure for failure in report["failures"]))
+        self.assertTrue(
+            any("장비 식별 hash" in failure for failure in report["failures"])
+        )
+
+    def test_different_machine_labels_with_same_host_identity_fail_closed(self) -> None:
+        before_db, before_files = self.create_set("source")
+        after_db, after_files = self.create_set("restore")
+        before = self.capture("before", "SOURCE-LABEL", before_db, before_files)
+        after = self.capture("after", "RESTORE-LABEL", after_db, after_files)
+        before_manifest = json.loads(before.read_text(encoding="utf-8"))
+        after_manifest = json.loads(after.read_text(encoding="utf-8"))
+        after_manifest["host_identity"] = before_manifest["host_identity"]
+        after.write_text(json.dumps(after_manifest), encoding="utf-8")
+        output = (
+            self.root
+            / self.run_id
+            / "backup-restore"
+            / "server-same-host-fail.json"
+        )
+
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            result = verify_pilot_restore.compare(
+                argparse.Namespace(before=before, after=after, output=output)
+            )
+
+        report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(1, result)
+        self.assertTrue(
+            any("machine_id 문자열만 바꾼" in failure for failure in report["failures"])
+        )
 
     def test_same_row_count_with_changed_responsibility_data_fails(self) -> None:
         before_db, before_files = self.create_set("source")

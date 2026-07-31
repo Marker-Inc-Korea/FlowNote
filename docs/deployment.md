@@ -844,7 +844,13 @@ WPF 비교는 수집 중 DB·파일 불변, checkpoint WAL 부재, 테이블별 
 
 정상 복구를 먼저 하나의 파일럿 `run_id`로 완료한다. 부분 복원, 오래된 DB와 새 파일, 누락 파일, 잘못된 서버 epoch는 정상 run과도, 서로 간에도 다른 `fault_run_id`와 reconciliation run ID로 각각 주입한다. 승인 전에는 WPF binding이 `RECONCILIATION_REQUIRED`이고 자동 전송·알림 polling이 모두 중지되어야 한다. `이력 > 서버 재결합`에는 연결 상태와 안전 수렴 상태를 구분해 차단 원인, 보존된 원천, 승인 전 금지 행동, 담당자, pilot run·backup set·복구 승인 ID, 다음 단계가 표시되어야 한다. 관리자가 서버 판정과 모든 `REBOUND/REQUEUE/CONFLICT`를 승인하면 `POST_APPROVAL_RESTART_REQUIRED`로 장애 표지 제거와 서버 재시작 전까지 차단을 유지한다. `업무 재개 확인`이 정상 manifest를 read-back하면 `POST_APPROVAL_VERIFICATION_REQUIRED`로 cursor 0 재추적, 전송과 polling을 함께 재개하되 곧바로 안전 수렴으로 표시하지 않는다.
 
+관리자 화면은 영문 판정 코드를 숨기지 않고 한글 의미와 데이터 영향을 함께 표시한다. `CONFIRMED`는 같은 idempotency 원천이 서버에 있음을, `ABSENT`는 서버 원천이 없음을, `DIVERGED`는 hash 또는 revision이 다름을 뜻한다. 승인 조치 `REBOUND`는 서버 ID 매핑과 큐 완료 상태를 갱신하고, `REQUEUE`는 서버 매핑을 해제해 로컬 원천을 재전송 대기로 돌리며, `CONFLICT`는 자동 전송을 종결하고 양쪽 hash와 승인 사유를 보존한다. 각 행에는 로컬·서버 SHA-256과 서버 문서·버전 ID도 함께 표시한다. `승인 적용`은 run별 조합과 건수, 원천 보존 범위, 승인 후 재시작 조건을 다시 보여 주고 관리자가 명시적으로 확인한 경우에만 실행한다.
+
+`capture`는 운영자가 입력한 익명 `machine_id`와 별도로 Windows `MachineGuid`, macOS `IOPlatformUUID`, Linux `machine-id` 중 해당 OS 값을 로컬에서 읽고 원문을 저장하지 않은 채 SHA-256만 manifest에 남긴다. 전후 hash가 같거나 어느 한쪽에 자동 수집 hash가 없으면 비교는 실패한다. 장비 배치 기록과 원시 화면·로그·감사 대조는 여전히 필요하며, 이 hash만으로 장비 소유권이나 승인 상태를 대신하지 않는다.
+
 `restore-fault-injections.csv`의 각 행은 `fault_run_id`, `responsible_owner`, 공통 `backup_set_id`·`restore_approval_id`, 고유 `reconciliation_run_id`, target `both`, 차단·승인·업무 재개 TRUE, 승인 전 자동 덮어쓰기·데이터 손실·중복 mutation·권한 우회 0건을 가져야 한다. 화면, WPF 로그, 서버 감사는 `fault-runs/<fault_run_id>/` 아래의 서로 다른 파일이어야 한다. 장애 사이에 증거 경로를 재사용하거나 기존 실패 상태와 승인 전 증거를 덮어쓰지 않는다.
+
+2026-07-31 코드 재검증에서는 네 장애의 최초 manifest 차단, 승인 후 `POST_APPROVAL_RESTART_REQUIRED` 유지, 같은 장애 표지가 남은 manifest의 차단 유지, 표지 제거 뒤 정상 manifest read-back 전환을 자동 테스트로 확인했다. WPF 관리자 화면에는 여섯 판정·조치의 데이터 영향과 승인 확인창을 추가했다. 그러나 현재 macOS 단일 장비에서는 서로 다른 실제 Windows PC의 server/WPF before·after manifest, 네 장애의 실사용 화면·WPF 로그·서버 감사를 만들 수 없다. 수동으로 다른 `machine_id`를 입력한 로컬 복사본은 별도 PC 증거로 인정하지 않으며 실제 장비 실기 전까지 이 게이트는 `대기`다.
 
 ## 장애 시 보존 파일
 

@@ -10,6 +10,12 @@ public sealed record ServerRecoveryGuidance(
     string EvidenceBinding,
     string NextStep)
 {
+    public const string RestartConditions =
+        "승인 적용만으로 업무를 재개하지 않습니다. 복구 서버 정상 종료 → " +
+        "FLOWNOTE_RESTORE_* 장애 표지 제거 → 서버 재시작 → 승인한 instance·epoch의 " +
+        "정상 manifest 확인 → 자동 전송·알림 polling 재개 순서가 모두 필요합니다. " +
+        "DB·파일·중복 mutation·권한 우회 증거 통과 전에는 안전 수렴 완료로 보지 않습니다.";
+
     private const string Preserved =
         "로컬 문서·FieldComment·보고서 원천과 Files, 동기화 큐, 서버 ID 매핑, " +
         "알림 cursor, 처리한 message_id, 실패·재결합 이력을 그대로 보존합니다.";

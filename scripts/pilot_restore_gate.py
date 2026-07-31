@@ -181,6 +181,14 @@ def restore_set_binding_failures(
                         "sha256_mismatch_count": 0,
                     },
                 }
+                and _nonempty(
+                    report.get("source_host_identity", {}).get("sha256")
+                )
+                and _nonempty(
+                    report.get("restore_host_identity", {}).get("sha256")
+                )
+                and report.get("source_host_identity", {}).get("sha256")
+                != report.get("restore_host_identity", {}).get("sha256")
             ):
                 loaded.append(report)
         return loaded
@@ -199,7 +207,8 @@ def restore_set_binding_failures(
                 return []
     return [
         "server와 wpf 복구 comparison의 backup_set_id와 "
-        "restore_approval_id가 같은 통합 복구 세트가 아닙니다."
+        "restore_approval_id가 같은 통합 복구 세트가 아니거나 "
+        "전후 OS 장비 식별 hash가 별도 PC 조건을 충족하지 않습니다."
     ]
 
 

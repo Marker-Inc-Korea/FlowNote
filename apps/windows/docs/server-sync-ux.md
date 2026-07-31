@@ -32,7 +32,11 @@
 
 `서버 재결합` 탭은 서버 URL·instance·epoch 변경, cursor 역행 또는 명시적 복구 장애 manifest로 자동 전송과 polling이 중지된 경우에 사용한다. `판정 실행`은 로컬 `server_sync_queue` 전체를 idempotency key와 선택적 파일 hash, 기존 mapping과 함께 서버에 보내 `CONFIRMED/REBOUND`, `ABSENT/REQUEUE`, `DIVERGED/CONFLICT` 판정을 저장한다. `승인 적용`은 관리자 사유가 필수이며 모든 항목의 서버 제안 조치를 그대로 확인한다. 적용되면 mapping과 큐 상태, 승인 instance/epoch와 cursor 초기 위치를 한 transaction에서 갱신하지만 binding은 `POST_APPROVAL_RESTART_REQUIRED`로 남아 자동 전송과 polling을 계속 막는다. 처리한 `message_id`, 기존 큐와 로컬 원천은 삭제하지 않는다.
 
+화면은 판정과 조치를 축약한 한글만 보여 주지 않는다. `CONFIRMED · 서버 동일 원천 확인`, `ABSENT · 서버 원천 없음`, `DIVERGED · 양쪽 원천 불일치`처럼 원문 코드를 함께 표시한다. `REBOUND`는 서버 매핑 재연결과 큐 완료, `REQUEUE`는 로컬 원천의 재전송 대기, `CONFLICT`는 자동 전송 종결과 양쪽 원천 보존이라는 데이터 영향을 각 행에서 확인할 수 있어야 한다. 로컬·서버 SHA-256과 서버 문서·버전 ID도 같은 행에 표시해 `DIVERGED` 승인 전에 비교할 수 있게 한다. 승인 버튼을 누르면 현재 run의 `판정 → 조치` 조합과 건수, 원천 보존 범위, 승인 후에도 유지되는 차단과 재시작 조건을 다시 보여 준다. 관리자가 취소하면 원천, 큐, 매핑과 차단 상태를 바꾸지 않는다.
+
 복구 연습 서버는 승인 적용 뒤 정상 종료하고 `FLOWNOTE_RESTORE_*` 장애 표지를 제거해 다시 시작해야 한다. 같은 장애 표지가 남은 manifest를 읽으면 차단을 유지한다. 정상 manifest를 읽으면 binding은 `POST_APPROVAL_VERIFICATION_REQUIRED`로 바뀌고 업무와 cursor 재추적을 재개하지만, 이 상태만으로 안전 수렴을 확정하지 않는다. DB·파일·중복 mutation·권한 우회 증거가 모두 통과해야 파일럿 검증에서 정상 수렴으로 인정한다.
+
+`업무 재개 확인`은 서버 재시작을 대신하는 버튼이 아니다. 서버가 실제로 다시 시작된 뒤 정상 manifest를 read-back하는 동작이며, 그 전에는 `POST_APPROVAL_RESTART_REQUIRED`와 차단 안내가 유지된다. 연결 재개 뒤에도 화면은 “안전 수렴 확정”으로 표시하지 않고 별도 DB·파일·중복 mutation·권한 우회 증거가 필요하다고 안내한다.
 
 재시도 루프는 선행 문서, 문서 버전, FieldComment, 보고서 근거가 아직 서버 ID로 연결되지 않은 항목을 `보류`로 집계한다. 보류 항목은 `FAILED` 상태와 한글 실패 사유를 유지하지만 실제 서버 호출을 하지 않고 `attempt_count`를 올리지 않는다. 같은 재시도 배치 안에서는 문서 등록 → 버전 → 공개 → 상태 → 태그 → FieldComment → 검토 → 첨부 → 접근 로그 → 보고서 순서로 처리한다. 앞 mutation 성공 뒤 read-back한 revision과 최신/공개 버전 ID를 같은 run의 뒤쪽 현재 형식 큐 기준값으로 넘긴다. 구 큐의 누락 기준값은 자동 보완하지 않는다.
 
