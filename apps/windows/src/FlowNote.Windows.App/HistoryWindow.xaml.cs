@@ -30,6 +30,9 @@ public partial class HistoryWindow : Window
         this.serverDocumentClient = serverDocumentClient;
         this.serverUserId = serverUserId;
         this.resumeServerTraffic = resumeServerTraffic;
+        ReconciliationReasonTextBox.TextChanged += (_, _) => UpdateApprovalButtonState();
+        ReconciliationRiskAcknowledgementCheckBox.Checked += (_, _) => UpdateApprovalButtonState();
+        ReconciliationRiskAcknowledgementCheckBox.Unchecked += (_, _) => UpdateApprovalButtonState();
         RefreshAll();
     }
 
@@ -47,6 +50,9 @@ public partial class HistoryWindow : Window
             .ToList();
         ReconciliationGrid.ItemsSource = items;
         var reviewRun = serverReconciliation.GetLatestReviewRunId();
+        var reviewItems = reviewRun is null
+            ? []
+            : serverReconciliation.ListItems(reviewRun);
         var binding = serverDocumentClient is null
             ? null
             : serverReconciliation.GetBinding(serverDocumentClient);
@@ -64,8 +70,23 @@ public partial class HistoryWindow : Window
         RecoveryOwnerTextBlock.Text = guidance.ResponsibleOwner;
         RecoveryEvidenceBindingTextBlock.Text = guidance.EvidenceBinding;
         RecoveryNextStepTextBlock.Text = guidance.NextStep;
-        RecoveryDecisionGuideTextBlock.Text = ReconciliationDecisionGuidance.FullGuide;
+        ReconciliationImpactSummaryTextBlock.Text = reviewRun is null
+            ? "승인 대기 run이 없습니다. 판정 실행 뒤 현재 run의 영향 건수를 확인하세요."
+            : ReconciliationDecisionGuidance.BuildImpactSummary(reviewItems);
+        RecoveryVerdictGuideTextBlock.Text = ReconciliationDecisionGuidance.VerdictGuide;
+        RecoveryActionGuideTextBlock.Text = ReconciliationDecisionGuidance.ActionGuide;
         RecoveryRestartConditionsTextBlock.Text = ServerRecoveryGuidance.RestartConditions;
+        ReconciliationRiskAcknowledgementCheckBox.IsChecked = false;
+        UpdateApprovalButtonState();
+    }
+
+    private void UpdateApprovalButtonState()
+    {
+        ApplyReconciliationButton.IsEnabled =
+            serverDocumentClient is not null &&
+            serverReconciliation.GetLatestReviewRunId() is not null &&
+            !string.IsNullOrWhiteSpace(ReconciliationReasonTextBox.Text) &&
+            ReconciliationRiskAcknowledgementCheckBox.IsChecked == true;
     }
 
     private async void CreateReconciliationButton_Click(object sender, RoutedEventArgs e)
@@ -101,6 +122,12 @@ public partial class HistoryWindow : Window
         if (string.IsNullOrWhiteSpace(reason))
         {
             ReconciliationSummaryTextBlock.Text = "관리자 승인 사유를 입력하세요.";
+            return;
+        }
+        if (ReconciliationRiskAcknowledgementCheckBox.IsChecked != true)
+        {
+            ReconciliationSummaryTextBlock.Text =
+                "영향 건수, 원천 보존 범위, 되돌릴 수 없는 승인 기록과 재시작 절차를 다시 읽고 확인하세요.";
             return;
         }
         var approvalItems = serverReconciliation.ListItems(runId);

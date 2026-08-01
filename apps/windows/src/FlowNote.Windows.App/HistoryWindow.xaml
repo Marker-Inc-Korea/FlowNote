@@ -2,10 +2,10 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="이력"
-        Width="1060"
-        Height="680"
-        MinWidth="860"
-        MinHeight="580"
+        Width="1180"
+        Height="760"
+        MinWidth="980"
+        MinHeight="640"
         Background="{StaticResource WindowBackgroundBrush}">
     <Grid Margin="14">
         <Grid.RowDefinitions>
@@ -151,94 +151,192 @@
                     <Border Background="{StaticResource PanelBackgroundBrush}"
                             BorderBrush="{StaticResource PanelBorderBrush}"
                             BorderThickness="1" CornerRadius="4" Padding="12">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <TextBlock x:Name="ReconciliationSummaryTextBlock"
-                                       Foreground="{StaticResource SecondaryTextBrush}"
-                                       VerticalAlignment="Center"
-                                       TextWrapping="Wrap" />
-                            <Border Grid.Row="1"
-                                    Margin="0,10,0,0"
-                                    Padding="10"
-                                    MaxHeight="360"
-                                    Background="{StaticResource WindowBackgroundBrush}"
-                                    BorderBrush="{StaticResource PanelBorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="4">
-                                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                    <StackPanel>
-                                    <TextBlock Text="연결 상태" FontWeight="SemiBold"
-                                               Foreground="{StaticResource PrimaryTextBrush}" />
-                                    <TextBlock x:Name="RecoveryConnectionStatusTextBlock"
-                                               Margin="0,2,0,8" TextWrapping="Wrap"
-                                               Foreground="{StaticResource SecondaryTextBrush}" />
-                                    <TextBlock Text="안전 수렴 상태" FontWeight="SemiBold"
-                                               Foreground="{StaticResource PrimaryTextBrush}" />
-                                    <TextBlock x:Name="RecoveryConvergenceStatusTextBlock"
-                                               Margin="0,2,0,8" TextWrapping="Wrap"
-                                               Foreground="{StaticResource SecondaryTextBrush}" />
-                                    <TextBlock Text="차단 원인" FontWeight="SemiBold"
-                                               Foreground="{StaticResource PrimaryTextBrush}" />
-                                    <TextBlock x:Name="RecoveryBlockCauseTextBlock"
-                                               Margin="0,2,0,8" TextWrapping="Wrap"
-                                               Foreground="{StaticResource SecondaryTextBrush}" />
-                                    <TextBlock Text="보존된 원천" FontWeight="SemiBold"
-                                               Foreground="{StaticResource PrimaryTextBrush}" />
-                                    <TextBlock x:Name="RecoveryPreservedSourcesTextBlock"
-                                               Margin="0,2,0,8" TextWrapping="Wrap"
-                                               Foreground="{StaticResource SecondaryTextBrush}" />
-                                    <TextBlock Text="승인 전 금지 행동" FontWeight="SemiBold"
-                                               Foreground="{StaticResource PrimaryTextBrush}" />
-                                    <TextBlock x:Name="RecoveryProhibitedActionsTextBlock"
-                                               Margin="0,2,0,8" TextWrapping="Wrap"
-                                               Foreground="{StaticResource SecondaryTextBrush}" />
-                                    <TextBlock Text="담당자와 증거 연결" FontWeight="SemiBold"
-                                               Foreground="{StaticResource PrimaryTextBrush}" />
-                                    <TextBlock x:Name="RecoveryOwnerTextBlock"
-                                               Margin="0,2,0,2" TextWrapping="Wrap"
-                                               Foreground="{StaticResource SecondaryTextBrush}" />
-                                    <TextBlock x:Name="RecoveryEvidenceBindingTextBlock"
-                                               Margin="0,0,0,8" TextWrapping="Wrap"
-                                               Foreground="{StaticResource SecondaryTextBrush}" />
-                                    <TextBlock Text="다음 단계" FontWeight="SemiBold"
-                                               Foreground="{StaticResource PrimaryTextBrush}" />
-                                    <TextBlock x:Name="RecoveryNextStepTextBlock"
-                                               Margin="0,2,0,8" TextWrapping="Wrap"
-                                               Foreground="{StaticResource SecondaryTextBrush}" />
-                                    <TextBlock Text="판정과 승인 조치의 데이터 영향"
-                                               FontWeight="SemiBold"
-                                               Foreground="{StaticResource PrimaryTextBrush}" />
-                                    <TextBlock x:Name="RecoveryDecisionGuideTextBlock"
-                                               Margin="0,2,0,8" TextWrapping="Wrap"
-                                               Foreground="{StaticResource SecondaryTextBrush}" />
-                                    <TextBlock Text="승인 뒤 재시작·업무 재개 조건"
-                                               FontWeight="SemiBold"
-                                               Foreground="{StaticResource PrimaryTextBrush}" />
-                                    <TextBlock x:Name="RecoveryRestartConditionsTextBlock"
-                                               Margin="0,2,0,0" TextWrapping="Wrap"
-                                               Foreground="{StaticResource SecondaryTextBrush}" />
-                                    </StackPanel>
-                                </ScrollViewer>
-                            </Border>
-                            <StackPanel Grid.Row="2"
-                                        Margin="0,8,0,0"
-                                        Orientation="Horizontal"
-                                        HorizontalAlignment="Right">
-                                <TextBox x:Name="ReconciliationReasonTextBox" Width="250" Height="32"
-                                         Margin="0,0,8,0" VerticalContentAlignment="Center"
-                                         ToolTip="관리자 승인 사유" />
-                                <Button Width="116" Height="32" Margin="0,0,8,0"
-                                        Content="판정 실행" Click="CreateReconciliationButton_Click" />
-                                <Button Width="116" Height="32" Margin="0,0,8,0"
-                                        Content="승인 적용" Click="ApplyReconciliationButton_Click" />
-                                <Button Width="128" Height="32"
-                                        Content="업무 재개 확인" Click="ResumeOperationButton_Click" />
+                        <ScrollViewer MaxHeight="480" VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock x:Name="ReconciliationSummaryTextBlock"
+                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                           VerticalAlignment="Center"
+                                           TextWrapping="Wrap" />
+
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="10" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Padding="10"
+                                            Background="{StaticResource AccentSoftBrush}"
+                                            BorderBrush="{StaticResource AccentBrush}"
+                                            BorderThickness="1" CornerRadius="4">
+                                        <StackPanel>
+                                            <TextBlock Text="먼저 확인 · 변경·보존·충돌 영향"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource PrimaryTextBrush}" />
+                                            <TextBlock x:Name="ReconciliationImpactSummaryTextBlock"
+                                                       Margin="0,4,0,0" TextWrapping="Wrap"
+                                                       Foreground="{StaticResource PrimaryTextBrush}" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="2" Padding="10"
+                                            Background="#FFF7ED" BorderBrush="#C2410C"
+                                            BorderThickness="1" CornerRadius="4">
+                                        <StackPanel>
+                                            <TextBlock Text="승인 후 필수 · 서버 재시작 절차"
+                                                       FontWeight="SemiBold" Foreground="#9A3412" />
+                                            <TextBlock x:Name="RecoveryRestartConditionsTextBlock"
+                                                       Margin="0,4,0,0" TextWrapping="Wrap"
+                                                       Foreground="#7C2D12" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="10" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Padding="10" Background="{StaticResource PanelMutedBrush}"
+                                            BorderBrush="{StaticResource PanelBorderBrush}"
+                                            BorderThickness="1" CornerRadius="4">
+                                        <StackPanel>
+                                            <TextBlock Text="1. 서버 원판정 · 관측 결과(아직 변경 없음)"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource PrimaryTextBrush}" />
+                                            <TextBlock x:Name="RecoveryVerdictGuideTextBlock"
+                                                       Margin="0,4,0,0" TextWrapping="Wrap"
+                                                       Foreground="{StaticResource SecondaryTextBrush}" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="2" Padding="10"
+                                            Background="{StaticResource PanelMutedBrush}"
+                                            BorderBrush="{StaticResource PanelBorderBrush}"
+                                            BorderThickness="1" CornerRadius="4">
+                                        <StackPanel>
+                                            <TextBlock Text="2. 적용 조치 · 승인 뒤 로컬 상태 변경"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource PrimaryTextBrush}" />
+                                            <TextBlock x:Name="RecoveryActionGuideTextBlock"
+                                                       Margin="0,4,0,0" TextWrapping="Wrap"
+                                                       Foreground="{StaticResource SecondaryTextBrush}" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                                <Expander Margin="0,10,0,0" Header="연결·차단·증거 상세 보기">
+                                    <Border Margin="0,6,0,0" Padding="10"
+                                            Background="{StaticResource WindowBackgroundBrush}"
+                                            BorderBrush="{StaticResource PanelBorderBrush}"
+                                            BorderThickness="1" CornerRadius="4">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="14" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="연결 상태" FontWeight="SemiBold" />
+                                                <TextBlock x:Name="RecoveryConnectionStatusTextBlock"
+                                                           Margin="0,2,0,8" TextWrapping="Wrap"
+                                                           Foreground="{StaticResource SecondaryTextBrush}" />
+                                                <TextBlock Text="안전 수렴 상태" FontWeight="SemiBold" />
+                                                <TextBlock x:Name="RecoveryConvergenceStatusTextBlock"
+                                                           Margin="0,2,0,8" TextWrapping="Wrap"
+                                                           Foreground="{StaticResource SecondaryTextBrush}" />
+                                                <TextBlock Text="차단 원인" FontWeight="SemiBold" />
+                                                <TextBlock x:Name="RecoveryBlockCauseTextBlock"
+                                                           Margin="0,2,0,8" TextWrapping="Wrap"
+                                                           Foreground="{StaticResource SecondaryTextBrush}" />
+                                                <TextBlock Text="다음 단계" FontWeight="SemiBold" />
+                                                <TextBlock x:Name="RecoveryNextStepTextBlock"
+                                                           Margin="0,2,0,0" TextWrapping="Wrap"
+                                                           Foreground="{StaticResource SecondaryTextBrush}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="보존된 원천" FontWeight="SemiBold" />
+                                                <TextBlock x:Name="RecoveryPreservedSourcesTextBlock"
+                                                           Margin="0,2,0,8" TextWrapping="Wrap"
+                                                           Foreground="{StaticResource SecondaryTextBrush}" />
+                                                <TextBlock Text="승인 전 금지 행동" FontWeight="SemiBold" />
+                                                <TextBlock x:Name="RecoveryProhibitedActionsTextBlock"
+                                                           Margin="0,2,0,8" TextWrapping="Wrap"
+                                                           Foreground="{StaticResource SecondaryTextBrush}" />
+                                                <TextBlock Text="담당자와 증거 연결" FontWeight="SemiBold" />
+                                                <TextBlock x:Name="RecoveryOwnerTextBlock"
+                                                           Margin="0,2,0,2" TextWrapping="Wrap"
+                                                           Foreground="{StaticResource SecondaryTextBrush}" />
+                                                <TextBlock x:Name="RecoveryEvidenceBindingTextBlock"
+                                                           TextWrapping="Wrap"
+                                                           Foreground="{StaticResource SecondaryTextBrush}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Expander>
+
+                                <Border Margin="0,10,0,0" Padding="10"
+                                        Background="{StaticResource PanelMutedBrush}"
+                                        BorderBrush="{StaticResource PanelBorderBrush}"
+                                        BorderThickness="1" CornerRadius="4">
+                                    <Grid>
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Text="일반 운영 동작 · 재결합 위험 승인과 분리되어 있습니다."
+                                                   Foreground="{StaticResource SecondaryTextBrush}" />
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <Button Width="116" Height="32" Margin="0,0,8,0"
+                                                    Content="판정 실행"
+                                                    Click="CreateReconciliationButton_Click" />
+                                            <Button Width="128" Height="32"
+                                                    Content="업무 재개 확인"
+                                                    Click="ResumeOperationButton_Click" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <Border Margin="0,10,0,0" Padding="10"
+                                        Background="#FFF7ED" BorderBrush="#C2410C"
+                                        BorderThickness="2" CornerRadius="4">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="위험 조치 · 재결합 승인 적용"
+                                                   FontWeight="SemiBold" Foreground="#9A3412" />
+                                        <TextBlock Grid.Row="1" Margin="0,4,0,8" TextWrapping="Wrap"
+                                                   Foreground="#7C2D12"
+                                                   Text="승인 적용과 감사 이력은 이 화면에서 되돌릴 수 없습니다. 원천은 보존되지만 매핑·큐 상태를 다시 바꾸려면 별도 운영 절차와 새 run이 필요합니다." />
+                                        <Grid Grid.Row="2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="260" />
+                                                <ColumnDefinition Width="10" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="10" />
+                                                <ColumnDefinition Width="170" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="관리자 승인 사유(필수)" Foreground="#7C2D12" />
+                                                <TextBox x:Name="ReconciliationReasonTextBox"
+                                                         Height="32" Margin="0,4,0,0"
+                                                         VerticalContentAlignment="Center"
+                                                         ToolTip="관리자 승인 사유" />
+                                            </StackPanel>
+                                            <CheckBox x:Name="ReconciliationRiskAcknowledgementCheckBox"
+                                                      Grid.Column="2" VerticalAlignment="Center">
+                                                <TextBlock TextWrapping="Wrap" Foreground="#7C2D12"
+                                                           Text="위 영향 건수, 원천 보존 범위, 되돌릴 수 없는 승인·감사 기록과 서버 재시작 절차를 다시 읽었습니다." />
+                                            </CheckBox>
+                                            <Button x:Name="ApplyReconciliationButton" Grid.Column="4"
+                                                    Height="36" VerticalAlignment="Center"
+                                                    Content="위험 조치: 승인 적용"
+                                                    Background="#C2410C" Foreground="White"
+                                                    BorderBrush="#9A3412" IsEnabled="False"
+                                                    Click="ApplyReconciliationButton_Click" />
+                                        </Grid>
+                                    </Grid>
+                                </Border>
                             </StackPanel>
-                        </Grid>
+                        </ScrollViewer>
                     </Border>
                     <Border Grid.Row="2" Background="{StaticResource PanelBackgroundBrush}"
                             BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="4">
@@ -248,8 +346,8 @@
                                   BorderThickness="0" RowHeight="46" ColumnHeaderHeight="34">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="run ID" Binding="{Binding RunId}" Width="180" />
-                                <DataGridTextColumn Header="서버 판정" Binding="{Binding VerdictText}" Width="220" />
-                                <DataGridTextColumn Header="승인할 조치" Binding="{Binding ActionText}" Width="250" />
+                                <DataGridTextColumn Header="1. 서버 원판정(변경 없음)" Binding="{Binding VerdictText}" Width="250" />
+                                <DataGridTextColumn Header="2. 적용 조치(승인 시)" Binding="{Binding ActionText}" Width="250" />
                                 <DataGridTextColumn Header="대상" Binding="{Binding TargetText}" Width="220" />
                                 <DataGridTextColumn Header="적용 시 데이터 영향" Binding="{Binding DataEffect}" Width="360" />
                                 <DataGridTextColumn Header="로컬 SHA-256" Binding="{Binding LocalHashSha256}" Width="220" />
