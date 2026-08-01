@@ -4,7 +4,7 @@
 
 현재 프로젝트는 WPF UI `net10.0-windows`, Core와 스모크 테스트 `net10.0`을 대상으로 한다. 현재 기능 목록은 `FlowNote.Windows.App`, `FlowNote.Windows.Core`, `FlowNote.Windows.SmokeTests` 코드에 실제 연결된 범위만 포함한다.
 
-이 문서는 2026-07-31 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
+이 문서는 2026-08-01 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
 
 ## 현재 구현
 
@@ -12,7 +12,7 @@
 - 로컬 SQLite 초기화와 기본 계정/그룹/폴더 시드
 - 사용자 관리: 서버 로그인 시 서버 계정 생성, 이름/역할/상태 변경, 임시 비밀번호 재설정, 활성 세션 조회/폐기. 서버 미연결 로컬 로그인 시 로컬 계정 관리
 - 승인 단말 관리: 서버 단말 목록·상세·마지막 접속 조회, 등록, 정보/상태 변경, 교체
-- 시작 실패 안내: WebView2 Runtime 누락과 서버 주소·인증서·연결 오류를 `누락 항목`, `보존된 데이터`, `담당자`, `다음 조치`로 나누어 표시하고 로컬 계정으로 자동 전환하지 않음
+- 시작 실패 안내: 로컬 저장소, WebView2 Runtime, 서버 주소·인증서·연결 오류를 `실패 내용`, `누락 항목`, `보존된 로컬 상태`, `처리 담당자`, `가능한 다음 행동`으로 나누어 표시한다. 읽기 전용 스크롤 안내, 키보드 접근 키와 크기 조절 창을 제공하며 로컬 계정으로 자동 전환하지 않는다.
 - 폴더 트리와 문서 목록. 기본 폴더는 `문서`, `인수인계`, `작업순서`, `사진`이다.
 - 새 폴더 생성
 - 샘플 문서 등록, 파일 업로드, Drag & Drop 등록
@@ -112,9 +112,11 @@ py -3 scripts\manage-pilot-run.py verify `
 | 인증서·PC 시간·폐기 확인 | 신뢰 chain/SAN/시간/폐기 상태, HTTP·로컬 로그인 우회 없음 | 인증서 운영 담당자가 시간 원천, 갱신 인증서, CRL/OCSP 접근과 신뢰 배포 확인 |
 | 서버 자동 시작 실패 | 작업 스케줄러/SYSTEM/부팅 트리거, 서버 DB·storage 보존 | 서버 운영 담당자가 작업 최근 결과와 서버 로그를 확인하고 승인 작업을 재등록 |
 
+로그인·시작 실패 화면은 실패 내용을 작은 상태 문구로 줄이지 않는다. 로컬 문서·FieldComment·보고서 원천과 `Files`, 동기화 큐, 알림 cursor·처리한 `message_id`의 보존 상태, 처리 담당자와 가능한 다음 행동을 한 화면에서 구분한다. 안내문은 읽기 전용 스크롤 영역에서 전체 선택·복사할 수 있고, `Alt+R`로 다시 시도하고 `Alt+X`로 종료할 수 있다. 창은 크기 조절이 가능하며 버튼은 줄바꿈 배치되어 긴 오류와 200% 이상 표시 배율에서도 고정 폭 영역에 잘리거나 서로 겹치지 않도록 했다. 로컬 DB 시작 실패 때도 DB 교체·초기화·재설치를 먼저 제안하지 않고 DB와 `Files`의 동시 보존과 관리자 승인을 먼저 안내한다.
+
 HTTPS 클라이언트는 인증서 폐기 목록 확인을 사용한다. 인증서 갱신·폐기나 서버 주소 변경 중에는 기존 세션으로 잘못 성공하거나 로컬 계정으로 자동 우회하면 안 된다. 동기화 큐와 알림 polling은 실패 상태에서 멈추고 로컬 원천·큐·cursor를 유지한다. 주소/instance/epoch 경계는 관리자 재결합 승인 뒤에만 재개하며 복구 후 중복 전송은 0건이어야 한다. 이 결과는 `windows-network-fail-closed.csv`의 세 행과 화면·WPF 로그·서버 감사 증거로 확인한다.
 
-서버 재부팅 후와 최종 승인 rollback 후에는 로그인, 문서 열람, FieldComment, 동기화, 알림, 감사 로그를 각각 확인해 12개 업무 행을 남긴다. 2026-07-31 현재 schema version 11 판정과 수명주기 실행 도구, WPF 인증서 폐기 확인 코드는 준비됐지만 실제 Windows PC, 승인 서명 패키지, 고객 유사망 인증서·방화벽·시간 주입 결과는 이 저장소에 없다. 따라서 `windows_server_rehearsal` 운영 판정은 아직 `대기`이며 현장 PASS로 추정하지 않는다.
+서버 재부팅 후와 최종 승인 rollback 후에는 로그인, 문서 열람, FieldComment, 동기화, 알림, 감사 로그를 각각 확인해 12개 업무 행을 남긴다. schema version 13의 시작 실패 UX 표는 처음 화면을 본 참여자 여부, 실패·보존 원천/큐/cursor·담당자·다음 행동 식별, 키보드 전용 완료, 긴 문구 전체 접근, 200% 이상 배율과 버튼 겹침 0건을 별도로 요구한다. 2026-08-01 현재 Core 테스트와 Windows 타기팅 빌드에서 복구 문구와 로컬 로그인 우회 차단은 통과했지만, 실제 Windows PC의 두 MSI 수명주기, 승인 서명 패키지, 시험 사용자 접근성 관찰, 고객 유사망 인증서·CRL/OCSP·방화벽·주소·시간 주입 결과는 이 저장소에 없다. 따라서 `windows_server_rehearsal` 운영 판정은 여전히 `대기`이며 framework-dependent 또는 self-contained 어느 쪽도 현장 PASS로 추정하지 않는다.
 
 ## 로컬 데이터
 
@@ -166,7 +168,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-2026-07-31 현재 코드와 표준 스크립트 guard는 FastAPI 164건·WPF Core 87건·Android 28건으로 일치한다. Windows에서 수집 목록·JUnit·원시 TRX를 현재 코드와 대조한 뒤, 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
+2026-08-01 현재 코드와 표준 스크립트 guard는 FastAPI 164건·WPF Core 89건·Android 28건으로 일치한다. Windows에서 수집 목록·JUnit·원시 TRX를 현재 코드와 대조한 뒤, 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

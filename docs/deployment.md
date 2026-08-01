@@ -160,14 +160,14 @@ Start-Transcript -Path (Join-Path $RunRoot "install\windows-server-rehearsal.txt
 
 디스크 부족 시험은 실제 운영 볼륨을 임의로 채우지 않는다. 격리된 시험 볼륨 또는 되돌릴 수 있는 승인 snapshot만 사용하고, 주입 전 중단 승인·백업·복귀 명령을 먼저 검토한다. 네트워크·방화벽·인증서 변경도 원복 명령과 접근 경로를 먼저 확보한다. 실패 시 transcript와 실패 상태를 먼저 보존하며 같은 파일명으로 재실행 결과를 덮어쓰지 않는다.
 
-schema version 12의 `windows_server_rehearsal`은 게이트의 `PASS`만 신뢰하지 않는다. 다음 원시 CSV의 모든 필수 행이 현재 `run_id`이고 각 행이 실행 폴더 안의 실제 증거 파일을 가리켜야 한다.
+schema version 13의 `windows_server_rehearsal`은 게이트의 `PASS`만 신뢰하지 않는다. 다음 원시 CSV의 모든 필수 행이 현재 `run_id`이고 각 행이 실행 폴더 안의 실제 증거 파일을 가리켜야 한다.
 
 | 원시 판정표 | 필수 범위 |
 | --- | --- |
 | `packages/windows-server-packages.csv` | 후보 서버 패키지, framework-dependent와 self-contained 후보 WPF MSI/EXE, 이전 승인 서버 패키지/WPF MSI의 hash·signer·chain·timestamp와 비밀/SQLite/고객 파일 혼입 0건 |
 | `install/windows-lifecycle.csv` | 서버 신규 설치, 두 WPF MSI 각각의 신규 설치·업그레이드·제거·재설치·이전 승인본 rollback, 단계 전후 로컬 데이터 SHA-256 |
 | `install/windows-runtime-matrix.csv` | 두 WPF MSI 각각의 .NET Desktop Runtime 설치/미설치와 WebView2 설치/미설치 |
-| `install/windows-startup-ux.csv` | 관리자·일반 사용자 각 4회의 .NET, WebView2, 서명, 주소, 인증서, 방화벽, 시간, 서버 자동 시작 실패 안내 이해 결과 |
+| `install/windows-startup-ux.csv` | 관리자·일반 사용자 각 4회의 .NET, WebView2, 서명, 주소, 인증서, 방화벽, 시간, 서버 자동 시작 실패 안내 이해 결과와 첫 노출, 실패·원천/큐/cursor·담당자·다음 행동 식별, 키보드 전용 완료, 긴 문구 전체 접근, 200% 이상 배율, 버튼 겹침 수 |
 | `scenario-results/windows-server-fault-injections.csv` | 작업 스케줄러, 재부팅, 인증서 갱신·폐기·검증 실패, 포트 차단, DNS/고정 주소 변경, 시간 오차, 재부팅 중 전송, 업그레이드 중단, 잘못된 패키지 서명과 장애 중 원천·큐 보존/중복 0건 |
 | `scenario-results/windows-network-fail-closed.csv` | 인증서 갱신·폐기와 서버 주소 변경 뒤 기존 세션·로컬 로그인 우회·동기화·polling 차단, 원천·큐·cursor 보존, 승인 복구와 중복 전송 0건 |
 | `scenario-results/recovery-objectives.csv` | 서버 복구, WPF 복구, rollback의 승인·실측 RTO/RPO와 업무 재개 시각 |
@@ -216,7 +216,7 @@ if ((Get-Content (Join-Path $RunRoot "pilot-verification.json") -Raw | ConvertFr
 
 MSI 도구의 성공만으로 업무 재개를 판정하지 않는다. 서버 재부팅 후와 최종 승인 rollback 후에 로그인, 문서 열람, FieldComment, 동기화, 알림, 감사 로그를 각각 실행해 `scenario-results/rollback-workflows.csv`의 12개 행과 서로 다른 감사 event를 채운다.
 
-.NET Desktop Runtime과 WebView2 미설치 조건은 운영 PC에서 공유 runtime을 제거해 만들지 않는다. 서로 다른 승인 VM snapshot 또는 원복 가능한 시험 PC를 사용하고 `windows-runtime-matrix.csv`에 실제 감지 버전과 기대 동작을 기록한다. 인증서·방화벽·시간·서버 자동 시작 장애도 원복 명령과 별도 관리 접속 경로가 사전 승인된 고객 유사망에서만 주입한다.
+.NET Desktop Runtime과 WebView2 미설치 조건은 운영 PC에서 공유 runtime을 제거해 만들지 않는다. 서로 다른 승인 VM snapshot 또는 원복 가능한 시험 PC를 사용하고 `windows-runtime-matrix.csv`에 실제 감지 버전과 기대 동작을 기록한다. 인증서·방화벽·시간·서버 자동 시작 장애도 원복 명령과 별도 관리 접속 경로가 사전 승인된 고객 유사망에서만 주입한다. 시작 실패 UX는 해당 화면을 처음 본 익명 참여자가 마우스 없이 담당자와 다음 행동을 선택하게 하고, 200% 이상 표시 배율에서 안내문 끝까지 스크롤·복사 가능한지와 버튼 겹침이 0건인지 확인한다. 한 조건이라도 실패하면 화면 캡처와 선택 결과를 같은 `run_id`에 보존하고 새 실행에서 다시 검증한다.
 
 1. 운영·보안 책임자가 후보 서버 패키지와 WPF MSI/EXE의 hash·signer를 독립 경로로 대조한다.
 2. 비밀, SQLite/WAL/SHM, `storage`, `Files`, 고객 문서 혼입이 0건인지 확인한다.
@@ -692,7 +692,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 ### 클라이언트
 
 - WPF 로그인 화면에서 서버 계정으로 로그인한다.
-- 로그인 화면의 서버 대상이 승인된 HTTPS 운영 주소와 같은지 확인한다. 인증서 오류는 PC 날짜·시간, 인증서 SAN의 운영 서버 이름, 사내 인증서 신뢰 배포와 갱신 상태를 순서대로 확인한다. 주소 변경 또는 연결 실패는 `FLOWNOTE_API_BASE_URL`, DNS, 방화벽, 서버 health를 확인하고 설정 변경 뒤 WPF를 다시 실행한다.
+- 로그인 화면의 서버 대상이 승인된 HTTPS 운영 주소와 같은지 확인한다. 인증서 오류는 PC 날짜·시간, 인증서 SAN의 운영 서버 이름, 인증서 폐기 상태, CRL/OCSP 접근, 사내 인증서 신뢰 배포와 갱신 상태를 순서대로 확인한다. 주소 변경 또는 연결 실패는 `FLOWNOTE_API_BASE_URL`, DNS, 방화벽, 서버 health를 확인하고 설정 변경 뒤 WPF를 다시 실행한다. 이 과정에서 로컬 계정 로그인이나 HTTP로 우회하지 않고, 로컬 원천·`Files`·동기화 큐·알림 cursor를 초기화하거나 새 서버 데이터로 자동 덮어쓰지 않는다.
 - 서버 계정 로그인 실패가 명확한 401 또는 403이면 로컬 계정으로 자동 전환되지 않는지 확인한다.
 - 서버 URL이 설정된 상태의 인증서 오류·주소 오류·연결 거부·시간 초과에서도 로컬 계정으로 자동 전환되지 않고, 로컬 데이터와 동기화 대기 기록 보존 및 다음 조치가 한글로 표시되는지 확인한다.
 - 같은 로그인 ID가 로컬 SQLite에도 있을 때 서버 로그인 성공 후 화면 버튼 권한이 서버 응답 role 기준으로 계산되는지 확인한다.
@@ -811,7 +811,7 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 | 비상 연락 흐름 ID·운영/보안/현장 escalation | 미확정 | `<run_id>/approvals/rehearsal-authorization-*` | 착수 금지 |
 | 복구 PC·복구 경로·복구 승인자 | 미확정 | `<run_id>/backup-restore/*` | 대기 |
 
-2026-08-01 현재 이 저장소에는 실제 승인자, 서로 다른 익명 Windows 장비에서 수집한 server/WPF before·after, 운영 인증서, 승인 장비, 이전 승인 패키지, RPO/RTO 또는 비상 연락 흐름의 승인 원시 증거가 제공되지 않았다. 따라서 이 문서와 자동 테스트 통과는 별도 PC 실기 PASS가 아니다. 기존 `PILOT-20260728-1501-FULLPILOT-001`의 `pilot-verification.json`은 미충족 조건 460건과 `FAIL`을 기록했으며 설치·복구·rollback을 시작해 실패한 실행이 아니라 사전 승인 부재로 착수가 차단된 실행이다. 해당 판정표와 원시 증거는 그대로 보존했고 파생 `pilot-readiness.json`, `.csv`, `.html`에서 460건 전부를 역할·게이트·선행조건별로 묶어 담당 역할과 다음 행동을 표시했다. 실제 승인값이 제공되면 실패 run을 재사용하지 않고 새 schema version 12 `run_id`로 `prepare`와 `authorize`를 수행한다.
+2026-08-01 현재 이 저장소에는 실제 승인자, 서로 다른 익명 Windows 장비에서 수집한 server/WPF before·after, 운영 인증서, 승인 장비, 이전 승인 패키지, RPO/RTO 또는 비상 연락 흐름의 승인 원시 증거가 제공되지 않았다. 따라서 이 문서와 자동 테스트 통과는 별도 PC 실기 PASS가 아니다. 기존 `PILOT-20260728-1501-FULLPILOT-001`의 `pilot-verification.json`은 schema version 12 기준 미충족 조건 460건과 `FAIL`을 기록했으며 설치·복구·rollback을 시작해 실패한 실행이 아니라 사전 승인 부재로 착수가 차단된 실행이다. 해당 판정표와 원시 증거는 그대로 보존했고 파생 `pilot-readiness.json`, `.csv`, `.html`에서 460건 전부를 역할·게이트·선행조건별로 묶어 담당 역할과 다음 행동을 표시했다. 실제 승인값이 제공되면 실패 run을 재사용하지 않고 새 schema version 13 `run_id`로 `prepare`와 `authorize`를 수행한다.
 
 제품 공통 설치·시작·런타임·서명 정책은 위와 같이 확정했지만 현장 실행값과 PASS를 추정하지 않는다. 현장 값이 확정되면 예시 명령과 실제 값이 충돌하지 않는지 검토하고 이 표, 설치 전후 점검표, 파일럿 manifest를 함께 갱신한다. 같은 승인 소스·패키지·장비를 한 `run_id`에 묶고 운영·보안·현장 3자 서명까지 받은 뒤에만 배포 승인으로 전환한다. 현장별 선호는 공통 기본값으로 올리지 않고 설정·교육 기록으로 분리한다.
 
@@ -886,7 +886,7 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 후속 배포 과제
 
-- 준비된 schema version 12 판정표로 고객 유사 네트워크의 HTTPS, 방화벽, 서버 주소 변경과 시간 동기화 실기 PASS 확보
+- 준비된 schema version 13 판정표로 고객 유사 네트워크의 HTTPS, 방화벽, 서버 주소 변경과 시간 동기화 실기 PASS 확보
 - 준비된 MSI 수명주기 도구로 현장별 .NET/WebView2 설치 조합의 두 MSI 신규 설치·업그레이드·제거·재설치·rollback 실기 PASS 확보
 - 현장별 HTTPS·코드 서명 인증서 발급, 배포, 갱신, 폐기와 CRL/OCSP 접근 운영 절차 승인
 - Android 운영 서명 APK/AAB, MDM/승인 배포, 단말 분실·교체와 outbox 보호 정책 확정
@@ -897,7 +897,7 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 2026-07-31 현재 코드와 스크립트 guard는 FastAPI 164건, WPF Core 87건, Android 28건으로 일치한다. 스크립트는 수집 원본·중복 목록·JUnit과 종료 코드를 보존하고, 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터·새 `RunId` 실행 명령을 안내한다. Windows 수집 목록과 WPF Core TRX를 대조한 뒤 같은 clean 소스 커밋에서 Windows x64 무생략 실행이 2회 연속 통과해야 유효 기준선으로 확정한다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 2026-08-01 현재 코드와 스크립트 guard는 FastAPI 164건, WPF Core 89건, Android 28건으로 일치한다. 스크립트는 수집 원본·중복 목록·JUnit과 종료 코드를 보존하고, 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터·새 `RunId` 실행 명령을 안내한다. Windows 수집 목록과 WPF Core TRX를 대조한 뒤 같은 clean 소스 커밋에서 Windows x64 무생략 실행이 2회 연속 통과해야 유효 기준선으로 확정한다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 
