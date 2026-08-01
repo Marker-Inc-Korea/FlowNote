@@ -14,9 +14,10 @@ from app.services.ai_provider_adapters import configured_provider_adapter
 
 async def _retention_loop(app: FastAPI) -> None:
     while True:
+        # 시작 직후 스키마 초기화나 첫 업무 요청과 보존 쓰기가 경쟁하지 않게 한다.
+        await asyncio.sleep(app.state.settings.ai_retention_scheduler_interval_seconds)
         with app.state.database.session() as session:
             run_retention(session)
-        await asyncio.sleep(app.state.settings.ai_retention_scheduler_interval_seconds)
 
 
 @asynccontextmanager

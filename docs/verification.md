@@ -2,7 +2,7 @@
 
 ## 최신 유효 Windows x64 통합 기준선
 
-2026-07-31 현재 유효한 무생략 통합 기준선은 아직 없다. 아래 표는 기준선 확정 여부를 확인하는 단일 현황표다. `PASSED` 실행이 나온 뒤에도 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 재현 가능한 기준선으로 확정한다.
+2026-08-01 현재 유효한 무생략 통합 기준선은 아직 없다. 아래 표는 기준선 확정 여부를 확인하는 단일 현황표다. `PASSED` 실행이 나온 뒤에도 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 재현 가능한 기준선으로 확정한다.
 
 | 항목 | 최신 유효 기준선 | 재현 실행 |
 | --- | --- | --- |
@@ -10,19 +10,33 @@
 | `run_id` | 없음 | 없음 |
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
-| FastAPI | 현재 코드·스크립트 guard 164건, macOS 수집 164건·전체 회귀 161 통과/3 실패·실패 항목 개별 재실행 3/3 통과 | Windows x64 수집·JUnit 무생략 실행 대기 |
+| FastAPI | 현재 코드·스크립트 guard 164건, 수정 후 macOS 누적 DB 전체 회귀 164/164 두 번 연속 통과 | Windows x64 수집·JUnit 무생략 실행 대기 |
 | WPF Core | 현재 macOS 실행 87/87, 스크립트 guard 87건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 현재 macOS 교차 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 현재 단위 테스트 28/28, debug build·lint PASS, 스크립트 고정값 28건 | Windows 무생략 실행 대기 |
-| SQLite | 목표 전후 `quick_check=ok`, FK 위반 0 | 동일 |
+| SQLite | FastAPI 누적 시험 DB `journal_mode=wal`, `quick_check=ok`, FK 위반 0. Windows 공통 DB 전후 검증 대기 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
 보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했고 현재 guard도 87건이다. Windows x64의 새 수집 목록과 TRX가 87/87인지 별도로 확인해야 한다.
 
-표준 스크립트는 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed를 서로 대조한다. 현재 기대값은 87건이며 수집·고유·TRX total/passed 중 하나라도 87과 다르거나 실패·오류·건너뜀이 있으면 중단한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 화면과 요약에 실패 단계, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 함께 남긴다.
+표준 스크립트는 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed를 서로 대조한다. 현재 기대값은 87건이며 수집·고유·TRX total/passed 중 하나라도 87과 다르거나 실패·오류·건너뜀이 있으면 중단한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 화면과 요약에 실패 단계, 기대값과 실제값, 보존된 데이터와 증거 경로, 담당자, 새 RunId 재실행 명령을 이 순서로 남긴다.
 
 변경된 실패 안내는 PowerShell SDK 보조 호스트로 macOS 환경 게이트를 의도적으로 실패시킨 `candidate1-macos-ux-failure-20260730-01`에서 확인했다. 콘솔·단계 로그·`verification-summary.json`은 현재 단계, 기대값, 실제값, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 모두 한 화면 구조로 남겼다. 현재 호스트는 macOS ARM64라 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
+
+## 2026-08-01 후보 1 SQLite 잠금 수정과 실패 안내 보강
+
+작업 시작 시 `main`과 `origin/main`은 커밋 `ee505bb`에서 일치했고 작업 트리는 깨끗했다. 누적 FastAPI 시험 DB는 약 276MiB였으며 `quick_check=ok`, FK 위반 0건이었다. 외부 점유 프로세스 없이 백그라운드 보존 스케줄러를 끈 기존 조건으로 전체 회귀를 재현했을 때 간헐 실패 표시가 다시 나타났고, 해당 항목을 같은 DB에서 단독 실행하면 통과했다. 기존 기록의 실패 3건도 단독 재실행에서는 모두 통과했다. 영구 데이터 오류가 아니라 같은 누적 파일을 사용하는 연결 사이의 쓰기 경합으로 판단했다.
+
+잠금 조건은 파일 기반 SQLite가 `DELETE` journal을 사용하고 연결별 명시적 대기 정책이 없던 상태에서, 요청별 session과 병렬 API 회귀가 같은 DB에 쓰고 앱 시작 직후 보존 작업도 쓰기를 시도할 수 있던 구조였다. SQLite 연결에 `journal_mode=WAL`, `busy_timeout=30000`, `synchronous=NORMAL`, `foreign_keys=ON`을 일관되게 적용했다. 요청 session은 예외와 정상 종료 모두에서 남은 transaction을 rollback하고 명시적으로 닫는다. 백그라운드 보존 작업은 앱 시작 직후 실행하지 않고 설정된 첫 주기를 기다린 뒤 실행해 스키마 초기화·첫 업무 요청과의 쓰기 경쟁을 없앴다. 기존 SQLite와 테스트 산출물은 삭제하거나 초기화하지 않았다.
+
+수정 후 기존 잠금 실패 3건과 병렬 쓰기 3건을 포함한 집중 회귀는 7/7 통과했다. 같은 누적 DB 전체 회귀는 `candidate1-lock-after-full-20260801-01`과 `candidate1-lock-after-full-20260801-02`에서 각각 164/164, failure/error/skipped 0건으로 두 번 연속 통과했고 잠금 실패는 0건이었다. 두 JUnit과 원문 로그는 `data/local/`에 보존했다. WPF Core는 수집 87건과 TRX total/passed 87/87, Android debug JUnit은 28/28이었고 debug build와 lint도 통과했다. FastAPI 누적 DB는 수정 후 `journal_mode=wal`, `quick_check=ok`, FK 위반 0건이다.
+
+`scripts/verify-preserved-tests.ps1`의 단계·JUnit·실패 안내 helper는 1,000줄 파일 제한을 지키기 위해 `scripts/verify-preserved-tests-support.ps1`로 분리했다. 실패 화면과 `verification-summary.json`의 `failure_context`는 `실패 단계 → 기대값/실제값 → 보존된 데이터·증거 경로 → 담당자 → 새 RunId 재실행` 순서로 표시한다. FastAPI 실패 안내는 SQLite를 삭제하거나 초기화하지 말고 실행 중인 API·검증·보존 작업을 확인한 뒤 새 RunId로 재실행하도록 명시한다. PowerShell 단위 검증 `candidate1-lock-ux-unit-20260801-01`이 구문과 안내 문구를 통과했고, 의도적 환경 실패 `candidate1-lock-ux-failure-20260801-01`의 콘솔·단계 로그·요약 JSON에서 실제 표시 순서를 확인했다.
+
+커밋 전 재검증에서는 Ruff와 DB 집중 회귀 3/3, PowerShell 구문·안내 단위 검증을 통과했다. 같은 누적 FastAPI 시험 DB를 유지한 전체 회귀 `task102-doc-commit-fastapi-20260801-01`도 164/164, failure/error/skipped 0건으로 통과했다. JUnit과 PowerShell 원문 로그는 `data/local/`에 보존했으며, 실행 후 DB는 `journal_mode=wal`, `quick_check=ok`, FK 위반 0건이었다.
+
+위 두 FastAPI 실행은 macOS ARM64 보조 회귀이며 `verification-summary.json`이 있는 Windows x64 무생략 통합 실행이 아니다. Windows x64에서 이번 변경이 포함된 동일 clean 소스 커밋을 준비한 뒤 `integrated-smoke-20260801-01`, `integrated-smoke-20260801-02`처럼 서로 다른 새 RunId로 옵션 없는 표준 스크립트를 연속 실행해야 한다. 두 요약이 모두 `partial_run=false`, `status=PASSED`이고 FastAPI 164/164/164, WPF Core 87/87, Android 28/28, 공통 SQLite 전후 `quick_check=ok`·FK 위반 0건, 오늘 사진·인수인계 등록, 기존 과거 문서 version 증가, Git 전후 clean을 만족하기 전까지 최신 유효 Windows x64 통합 기준선은 계속 `대기`다.
 
 ## 2026-07-31 작업 201 전체 Markdown 현재 코드 재대조
 

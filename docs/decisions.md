@@ -343,6 +343,13 @@
 - 이미 교차 생성된 서버 전용 grant 테이블은 DB 삭제나 초기화로 처리하지 않는다. 원본 SQLite backup, 전체 DDL·FK·row 수, 보호 대상 row hash를 먼저 보존하고 grant row를 별도 무참조 보존 테이블과 migration 감사에 복사한 뒤 충돌하는 활성 테이블만 제거한다.
 - 표준 WPF 스모크는 실행 전후 `quick_check`와 `foreign_key_check`를 별도 증거로 남기며, 오류 또는 위반이 있으면 기능 스모크 결과와 무관하게 실패한다.
 
+## 2026-08-01. FastAPI SQLite 쓰기 경합은 연결 정책과 작업 시작 시점으로 줄인다
+
+- FastAPI의 파일 기반 SQLite 연결은 `journal_mode=WAL`, `busy_timeout=30000`, `synchronous=NORMAL`, `foreign_keys=ON`을 공통 적용한다. 병렬 요청이 같은 누적 DB를 사용할 때 짧은 쓰기 경합을 기다리고, 읽기와 쓰기가 불필요하게 서로 막지 않도록 한다.
+- 요청 session은 정상·예외 종료와 관계없이 남은 transaction을 rollback하고 명시적으로 닫는다. 요청 경계를 넘은 transaction이나 연결이 다음 쓰기를 막지 않게 하기 위한 규칙이다.
+- 자동 만료 보존 작업은 서버 시작 직후 실행하지 않고 설정된 첫 주기가 지난 뒤 시작한다. 스키마 초기화와 첫 업무 요청이 동시에 쓰기를 시작하는 상황을 피하되, 즉시 만료가 필요하면 기존 `system-admin` API와 WPF 기능을 사용한다.
+- SQLite 잠금 실패를 조사할 때 누적 DB를 삭제하거나 초기화하지 않는다. 실행 중인 API·검증·보존 작업과 보존된 JUnit·단계 로그를 확인한 뒤 새 RunId로 재실행한다.
+
 ## 2026-07-16. Android 비밀과 outbox는 Keystore 앱 수준 암호화를 기본 통제로 사용
 
 - access/refresh token, outbox JSON과 새 사진 첨부는 Android Keystore 비반출 AES-256 GCM 키로 보호한다. OS sandbox·backup 차단을 함께 사용하며 MDM 전체 디스크 암호화만을 유일한 보호 수단으로 의존하지 않는다.

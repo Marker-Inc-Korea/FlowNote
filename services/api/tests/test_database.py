@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 import pytest
-from sqlalchemy import func, inspect, select
+from sqlalchemy import func, inspect, select, text
 
 from app.core.config import Settings
 from app.db.init_db import DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME, initialize_database
@@ -87,6 +87,11 @@ def test_app_startup_creates_mvp_schema(tmp_path: Path) -> None:
 
         table_names = set(inspect(client.app.state.database.engine).get_table_names())
         assert expected_tables <= table_names
+
+        with client.app.state.database.engine.connect() as connection:
+            assert connection.scalar(text("PRAGMA journal_mode")) == "wal"
+            assert connection.scalar(text("PRAGMA busy_timeout")) == 30_000
+            assert connection.scalar(text("PRAGMA foreign_keys")) == 1
 
         with client.app.state.database.session() as session:
             migration = session.scalar(
