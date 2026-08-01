@@ -30,7 +30,7 @@
                 </Grid.RowDefinitions>
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Left">
-                        <TextBlock Text="FieldComment 정제와 실제 현장 AI 준비 작업"
+                        <TextBlock Text="FieldComment 정제와 실제 현장 AI 준비 현황"
                                    FontSize="16"
                                    FontWeight="SemiBold" />
                         <TextBlock x:Name="AIReadinessBoundaryTextBlock"
@@ -94,7 +94,7 @@
                                    Text="서버 조회 전"
                                    TextWrapping="Wrap" />
                     </GroupBox>
-                    <GroupBox Grid.Column="2" Header="부족한 실제 현장 범주·유형">
+                    <GroupBox Grid.Column="2" Header="실제 현장 자료가 부족한 범주·유형">
                         <DataGrid ItemsSource="{Binding ReadinessGaps}"
                                   AutoGenerateColumns="False"
                                   IsReadOnly="True"
