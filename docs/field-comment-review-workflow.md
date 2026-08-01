@@ -1,6 +1,6 @@
 # FieldComment 검토·분석·선정 운영
 
-이 문서는 2026-07-31 현재 FastAPI FieldComment 검토 API·데이터 모델과 WPF 관리자 검토 화면을 기준으로, FieldComment 원천 기록을 관리자 해석과 섞지 않고 보고서 근거로 정제하는 운영 계약을 정리한다.
+이 문서는 2026-08-01 현재 FastAPI FieldComment 검토 API·데이터 모델과 WPF 관리자 검토 화면을 기준으로, FieldComment 원천 기록을 관리자 해석과 섞지 않고 보고서 근거로 정제하는 운영 계약을 정리한다.
 
 ## 원천과 해석의 분리
 
@@ -44,6 +44,8 @@
 
 ## 관리자 작업함
 
+- WPF FieldComment 검토 화면 상단은 서버 권위 `review-dashboard`와 AI 준비도 응답을 함께 읽어 미검토, 상충, 빨간 신호·상충 기반 안전/품질 위험, 활성 보고서 미연결, 담당자 없음 수를 표시한다. 각 수치는 바로 해당 작업함을 열며 검토 상태 분포와 담당자·다음 조치를 같은 화면에서 확인한다. 서버에 연결할 수 없으면 로컬 수치나 합성 수치로 대신 채우지 않고 `실제 서버 집계 없음`으로 표시한다.
+- 같은 화면의 실제 현장 준비도는 고객 승인 `ANONYMOUS_FIELD / FIELD_READINESS` 48건과 부족한 8범주×3유형 칸만 기준으로 삼는다. `SYNTHETIC`·`TEST / SMOKE_REGRESSION`은 별도 회귀 수치로 표시하지만 실제 현장 준비도, 부족 건수 또는 provider 착수 판정에 더하지 않는다.
 - 목록은 상태, 담당자, 문서, 작성자, 라인, 설비, 공정, 오류 유형, 기간, 오래된 NEW, 첨부 유무, 보고서 연결 여부와 `CONFLICT`, `UNREVIEWED`, `OVERDUE`, `UNASSIGNED`, `MISSING_EVIDENCE`, `DUPLICATE_SUSPECTED`, `REPORT_UNLINKED` 작업함 플래그로 필터링한다. 서버 목록은 `priorityMin/priorityMax`도 지원한다.
 - `priorityOrder=true`일 때 상충, 기한 초과, 담당자 없음, 근거 누락, 중복 의심, 미검토, 보고서 미연결 순으로 가중치를 합산한다. WPF의 `우선순위/작업함` 보기와 SQLite에 보존되는 `저장된 보기`가 같은 필터를 재사용한다.
 - 선택 상세는 원천 hash, 첨부 수, 관찰 문서 버전, 연결 채널 권한을 서버에서 읽어 표시한다. 다중 선택은 사전검증 표를 확인한 뒤 실행하며 부분 성공 표를 닫아도 서버 receipt와 revision은 보존된다.

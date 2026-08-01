@@ -67,6 +67,7 @@ public partial class FieldCommentReviewWindow : Window
         {
             new StatusOption("ALL", "전체"),
             new StatusOption("CONFLICT", "상충/검토 필요"),
+            new StatusOption("HIGH_RISK", "안전·품질 위험"),
             new StatusOption("UNREVIEWED", "미검토"),
             new StatusOption("OVERDUE", "기한 초과"),
             new StatusOption("UNASSIGNED", "담당자 없음"),
@@ -87,7 +88,7 @@ public partial class FieldCommentReviewWindow : Window
             combo.SelectedValue = "ALL";
         }
         ReloadSavedViews();
-        await RefreshQualityIssuesAsync();
+        await Task.WhenAll(RefreshQualityIssuesAsync(), RefreshReviewDashboardAsync());
         RefreshComments("FieldComment 검토 목록을 조회했습니다.");
     }
 
@@ -126,7 +127,7 @@ public partial class FieldCommentReviewWindow : Window
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
-        await RefreshQualityIssuesAsync();
+        await Task.WhenAll(RefreshQualityIssuesAsync(), RefreshReviewDashboardAsync());
         RefreshComments("필터를 적용했습니다.");
     }
 
@@ -170,6 +171,7 @@ public partial class FieldCommentReviewWindow : Window
                 serverUserId,
                 changedAt);
             ReviewChanged = true;
+            await RefreshReviewDashboardAsync();
             RefreshComments(syncResult.Success
                 ? $"검토 내용을 서버에 저장했습니다: {FormatStatus(status)}. 원천 코멘트와 검토 이력은 함께 보존됩니다. 다음: 보고서에 쓸 항목은 '보고서선정' 상태인지 확인하세요."
                 : $"검토 내용은 이 PC에 저장했고 서버 반영은 대기 중입니다: {FormatStatus(status)}. 원천 코멘트와 동기화 기록은 보존됩니다. 다음: 이력의 동기화 큐에서 실패·충돌 사유를 확인한 뒤 다시 시도하세요.",
@@ -331,7 +333,7 @@ public partial class FieldCommentReviewWindow : Window
         lastBulkLocalByServerId = null;
         RetryBulkResultButton.IsEnabled = false;
         ReviewChanged = execution.SuccessCount > 0 || ReviewChanged;
-        await RefreshQualityIssuesAsync();
+        await Task.WhenAll(RefreshQualityIssuesAsync(), RefreshReviewDashboardAsync());
         RefreshComments(
             $"{actionLabel} {execution.RequestedCount}건 · 성공 {execution.SuccessCount}건 · 실패 {execution.FailureCount}건. " +
             $"성공 항목은 유지하고 재전송하지 않습니다. 재시도 대상 {retryTargetIds.Count}건만 선택했습니다. " +
@@ -444,6 +446,115 @@ public partial class FieldCommentReviewWindow : Window
         }
     }
 
+    private async Task RefreshReviewDashboardAsync()
+    {
+        if (serverClient is null)
+        {
+            ResetReviewDashboard("서버 연결이 없어 실제 현장 준비도를 계산하지 않습니다.");
+            return;
+        }
+
+        try
+        {
+            var dashboardTask = serverClient.GetFieldCommentReviewDashboardAsync();
+            var readinessTask = serverClient.GetAISearchReadinessAsync();
+            await Task.WhenAll(dashboardTask, readinessTask);
+            var dashboard = await dashboardTask;
+            var readiness = await readinessTask;
+
+            UnreviewedCountTextBlock.Text = $"{dashboard.UnreviewedCount}건";
+            ConflictCountTextBlock.Text = $"{dashboard.ConflictCount}건";
+            SafetyQualityRiskCountTextBlock.Text = $"{dashboard.SafetyQualityRiskCount}건";
+            ReportUnlinkedCountTextBlock.Text = $"{dashboard.ReportUnlinkedCount}건";
+            UnassignedCountTextBlock.Text = $"{dashboard.UnassignedCount}건";
+            ReviewStatusSummaryTextBlock.Text = string.Join(" · ", FieldCommentService.ReviewStatuses
+                .Where(status => Count(dashboard.CountsByStatus, status) > 0)
+                .Select(status => $"{FormatStatus(status)} {Count(dashboard.CountsByStatus, status)}건"));
+            if (string.IsNullOrWhiteSpace(ReviewStatusSummaryTextBlock.Text))
+            {
+                ReviewStatusSummaryTextBlock.Text = "서버에 FieldComment가 없습니다.";
+            }
+
+            AIReadinessBoundaryTextBlock.Text =
+                $"고객 승인 ANONYMOUS_FIELD {readiness.FieldReadiness.GroundTruthCount}/{readiness.GroundTruthMinimum}건" +
+                $" · 부족 {readiness.FieldReadiness.GroundTruthGap}건 · " +
+                $"합성·시험 SMOKE_REGRESSION {readiness.SmokeRegressionReadiness.GroundTruthCount}건(실제 준비도 제외)";
+
+            workspace.ReadinessGaps.Clear();
+            foreach (var gap in readiness.CategoryScenarioGaps)
+            {
+                workspace.ReadinessGaps.Add(new ReviewGapRow(
+                    FormatCategory(gap.Category),
+                    FormatScenario(gap.ScenarioType),
+                    $"{gap.Count}/{gap.Required}",
+                    gap.Missing));
+            }
+
+            workspace.ReviewActions.Clear();
+            foreach (var action in dashboard.Actions)
+            {
+                workspace.ReviewActions.Add(new ReviewActionRow(
+                    action.Code,
+                    $"{action.Title} {action.Count}건",
+                    action.Owner,
+                    action.NextAction,
+                    action.WorkbenchFilter));
+            }
+            foreach (var action in readiness.OperatorActions.Where(item => readiness.ReadinessFailures.Contains(item.Code)))
+            {
+                workspace.ReviewActions.Add(new ReviewActionRow(
+                    action.Code,
+                    action.Title,
+                    action.Owner,
+                    action.NextAction,
+                    null));
+            }
+            ReviewActionGrid.SelectedItem = workspace.ReviewActions.FirstOrDefault();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            ResetReviewDashboard(
+                $"서버 준비도 조회 실패로 숫자를 표시하지 않습니다. {SummarizeException(exception)}");
+        }
+    }
+
+    private void ResetReviewDashboard(string message)
+    {
+        UnreviewedCountTextBlock.Text = "-";
+        ConflictCountTextBlock.Text = "-";
+        SafetyQualityRiskCountTextBlock.Text = "-";
+        ReportUnlinkedCountTextBlock.Text = "-";
+        UnassignedCountTextBlock.Text = "-";
+        ReviewStatusSummaryTextBlock.Text = "실제 서버 집계 없음";
+        AIReadinessBoundaryTextBlock.Text = message;
+        workspace.ReadinessGaps.Clear();
+        workspace.ReviewActions.Clear();
+    }
+
+    private void DashboardFilterButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.Tag is string workbenchFilter)
+        {
+            OpenWorkbenchFilter(workbenchFilter);
+        }
+    }
+
+    private void OpenSelectedActionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (ReviewActionGrid.SelectedItem is not ReviewActionRow action || string.IsNullOrWhiteSpace(action.WorkbenchFilter))
+        {
+            StatusTextBlock.Text = "선택한 준비도 조치는 별도 운영 절차가 필요합니다. 담당자와 다음 조치 내용을 확인하세요.";
+            return;
+        }
+        OpenWorkbenchFilter(action.WorkbenchFilter);
+    }
+
+    private void OpenWorkbenchFilter(string workbenchFilter)
+    {
+        WorkbenchFilterComboBox.SelectedValue = workbenchFilter;
+        RefreshComments($"{FormatWorkbench(workbenchFilter)} 작업함을 열었습니다.");
+    }
+
     private async void ShowQualityIssuesButton_Click(object sender, RoutedEventArgs e)
     {
         await RefreshQualityIssuesAsync();
@@ -468,6 +579,12 @@ public partial class FieldCommentReviewWindow : Window
                 .ToHashSet(StringComparer.Ordinal);
         foreach (var comment in fieldComments.ListForReview(filter))
         {
+            if (workbench == "HIGH_RISK" &&
+                !comment.ConflictFlag &&
+                !string.Equals(comment.SignalLevel, "red", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
             if (qualityCommentIds is not null)
             {
                 var serverCommentId = fieldComments.GetServerCommentId(comment.CommentId);
@@ -526,7 +643,8 @@ public partial class FieldCommentReviewWindow : Window
             QualityIssueType: IsQualityIssueType(workbench) ? workbench : null,
             PriorityOrder: true,
             CreatedFrom: CreatedFromDatePicker.SelectedDate,
-            CreatedTo: CreatedToDatePicker.SelectedDate);
+            CreatedTo: CreatedToDatePicker.SelectedDate,
+            Limit: workbench == "HIGH_RISK" ? 500 : 300);
     }
 
     private void ApplyFilter(FieldCommentReviewFilter filter)
@@ -654,6 +772,43 @@ public partial class FieldCommentReviewWindow : Window
         };
     }
 
+    private static string FormatCategory(string category) => category switch
+    {
+        "SAFETY" => "안전",
+        "QUALITY" => "품질",
+        "EQUIPMENT_ANOMALY" => "설비 이상",
+        "WORK_HOLD" => "작업 보류",
+        "REWORK" => "재작업",
+        "HANDOVER" => "인수인계",
+        "LATEST_PUBLISHED_DOCUMENT" => "최신 공개 문서",
+        "CONFLICTING_RECORDS" => "상충 기록",
+        _ => category
+    };
+
+    private static string FormatScenario(string scenario) => scenario switch
+    {
+        "NORMAL" => "일반",
+        "EXCLUSION" => "제외",
+        "CONFLICT" => "상충",
+        _ => scenario
+    };
+
+    private static string FormatWorkbench(string workbench) => workbench switch
+    {
+        "UNREVIEWED" => "미검토",
+        "CONFLICT" => "상충",
+        "HIGH_RISK" => "안전·품질 위험",
+        "REPORT_UNLINKED" => "보고서 미연결",
+        "UNASSIGNED" => "담당자 없음",
+        _ => workbench
+    };
+
+    private static int Count(IReadOnlyDictionary<string, int> counts, string key) =>
+        counts.TryGetValue(key, out var count) ? count : 0;
+
+    private static string SummarizeException(Exception exception) =>
+        string.IsNullOrWhiteSpace(exception.Message) ? exception.GetType().Name : exception.Message;
+
     private static bool? ChoiceToBool(string? value) => value switch
     {
         "YES" => true,
@@ -676,5 +831,22 @@ public partial class FieldCommentReviewWindow : Window
         public ObservableCollection<FieldCommentReviewRecord> FieldComments { get; } = [];
 
         public ObservableCollection<FieldCommentAttachmentRecord> Attachments { get; } = [];
+
+        public ObservableCollection<ReviewGapRow> ReadinessGaps { get; } = [];
+
+        public ObservableCollection<ReviewActionRow> ReviewActions { get; } = [];
     }
+
+    private sealed record ReviewGapRow(
+        string CategoryLabel,
+        string ScenarioLabel,
+        string CoverageText,
+        int Missing);
+
+    private sealed record ReviewActionRow(
+        string Code,
+        string TitleWithCount,
+        string Owner,
+        string NextAction,
+        string? WorkbenchFilter);
 }

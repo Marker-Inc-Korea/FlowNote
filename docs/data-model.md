@@ -1,6 +1,6 @@
 # FlowNote 데이터 모델
 
-이 문서는 2026-07-31 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며, 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
+이 문서는 2026-08-01 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
 
 ## WPF 로컬 SQLite
 
@@ -71,7 +71,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-07-31 현재 ORM은 문서·FieldComment 검토·보고서·작업순서 mutation receipt, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 61개 서버 테이블을 생성 기준으로 사용한다.
+2026-08-01 현재 ORM은 문서·FieldComment 검토·보고서·작업순서 mutation receipt, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 61개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드는 새 테이블이나 저장 snapshot을 만들지 않고 `field_comments`와 `report_sources`의 현재 상태를 요청 시점에 집계한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 

@@ -6,7 +6,7 @@ FlowNote는 공장 내부 서버에서 문서 버전, 현장 공개본, 작업�
 
 `FastAPI` · `Windows WPF` · `Android` · `SQLite` · `On-premises`
 
-> **현재 상태:** 실제 운영 흐름을 구현하고 검증하는 연구 프로토타입이다. 아래 기능 설명은 2026-07-31 저장소 코드 기준이다. 운영 배포가 확정된 완제품은 아니다.
+> **현재 상태:** 실제 운영 흐름을 구현하고 검증하는 연구 프로토타입이다. 아래 기능 설명은 2026-08-01 저장소 코드 기준이다. 운영 배포가 확정된 완제품은 아니다.
 
 2026-07-28 `PILOT-20260728-1501-FULLPILOT-001`로 `full_pilot` 증거 구조를 새로 준비해 검증했다. 사전 승인, 고객 유사 장비, Windows·Android 실기, 별도 PC 복구, 역할별 현장 관찰, rollback과 운영·보안·현장 최종 승인이 제공되지 않아 `pilot-verification.json`은 미충족 조건 460건과 `FAIL`을 기록했다. 제품 실패를 관찰한 실행이 아니므로 화면이나 업무 흐름을 임의로 바꾸지 않았고 승인과 원시 증거가 준비될 때까지 운영 배포 판정은 `대기`다.
 
@@ -95,6 +95,7 @@ flowchart LR
 - 신호등식 상태와 짧은 메모
 - 담당자·기한·검토 단계·감사 이력
 - 위험 신호·상충 기록의 분석자와 결정자 분리
+- 미검토·상충·안전/품질 위험·보고서 미연결·담당자 없음의 서버 권위 집계와 담당자·다음 조치 표시
 - 다중 항목 검토 전 미리보기와 부분 성공 처리. 결과를 받은 뒤에는 성공 항목을 재전송하지 않고 실패 항목만 다시 선택한다.
 - 현장 원문에서 보고서 초안·정제 문서까지 추적하고 조회 시 원천 권한 재검사
 - 라인·설비·공정·오류 유형 등 태그 기반 연결
@@ -146,7 +147,7 @@ flowchart LR
 | FastAPI 업무 API와 SQLite 모델 | 구현됨 |
 | Windows WPF 문서·검토·운영 화면 | 구현됨 |
 | Android 현장 단말 최소 업무 흐름 | 구현됨 |
-| 개별 내부 기술 검증 | 단계적으로 진행 중. WPF·Android 검증은 통과했고 FastAPI 전체 회귀 3건은 공용 SQLite 잠금으로 미통과함. 결과는 [검증 기록](./docs/verification.md)에 보존 |
+| 개별 내부 기술 검증 | 단계적으로 진행 중. 현재 FastAPI 166건과 WPF Core 91건은 통과했고 Android 최신 단위 검증은 28건이다. 결과는 [검증 기록](./docs/verification.md)에 보존 |
 | 현장 사용성 검증 | 피드백을 조금씩 수집하며 진행 중 |
 | Windows 서버·WPF·Android 단일 실행 통합 기준선 | 대기 |
 | 운영 코드 서명, MDM, 인증서와 현장별 설치 확정 | 대기 |
@@ -157,15 +158,15 @@ flowchart LR
 
 ## 내부 기술 검증 스냅샷
 
-2026-07-31 현재 서버·Windows 컴포넌트와 Android 단위 테스트의 최신 확인 결과는 아래와 같다.
+2026-08-01 현재 서버·Windows 컴포넌트와 Android 단위 테스트의 최신 확인 결과는 아래와 같다.
 
 | 검증 대상 | 결과 |
 | --- | --- |
-| FastAPI OpenAPI | 루트 `GET /` 포함 142개 method/path |
+| FastAPI OpenAPI | 루트 `GET /` 포함 143개 method/path |
 | SQLAlchemy ORM | 61개 테이블 |
-| FastAPI 테스트 | 164개 수집, 161개 통과·3개 실패. 실패 3개는 개별 재실행 통과 |
+| FastAPI 테스트 | 166개 통과 |
 | Python 정적 검사 | Ruff 통과 |
-| WPF Core 테스트 | 87개 통과 |
+| WPF Core 테스트 | 91개 통과 |
 | WPF 앱 빌드 | 경고 0개, 오류 0개 |
 | Android 단위 테스트 | 28개 통과 |
 | Android debug 빌드·lint | `assembleDebug`, `lintDebug` 통과 |
@@ -229,7 +230,7 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
 ```
 
-전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 2026-08-01 현재 코드와 스크립트 guard는 FastAPI 164건·WPF Core 89건·Android 28건으로 일치한다. 이번 로그인 복구 안내 변경에는 WPF Core 회귀 2건이 포함됐다. Windows x64 수집 목록과 WPF Core TRX, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 실행을 같은 clean 소스 커밋에서 2회 통과해야 유효한 통합 기준선으로 판정한다. 수집/JUnit 또는 도구 검사가 실패하면 현재 단계·기대값·실제값·보존 증거와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 재실행 방법을 함께 안내한다.
+전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 2026-08-01 현재 코드와 스크립트 guard는 FastAPI 166건·WPF Core 91건·Android 28건으로 일치한다. Windows x64 수집 목록과 WPF Core TRX, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 실행을 같은 clean 소스 커밋에서 2회 통과해야 유효한 통합 기준선으로 판정한다. 수집/JUnit 또는 도구 검사가 실패하면 현재 단계·기대값·실제값·보존 증거와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 재실행 방법을 함께 안내한다.
 
 | Windows x64 통합 기준선 | 첫 실행 | 재현 실행 |
 | --- | --- | --- |

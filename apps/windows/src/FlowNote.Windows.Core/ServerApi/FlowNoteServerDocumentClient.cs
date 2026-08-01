@@ -390,6 +390,15 @@ public sealed class FlowNoteServerDocumentClient
             cancellationToken);
     }
 
+    public async Task<ServerFieldCommentReviewDashboardResponse> GetFieldCommentReviewDashboardAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            "api/v1/field-comments/review-dashboard",
+            cancellationToken);
+        return await ReadJsonResponse<ServerFieldCommentReviewDashboardResponse>(response, cancellationToken);
+    }
+
     public async Task<ServerFieldCommentResponse> GetFieldCommentAsync(
         string commentId,
         CancellationToken cancellationToken = default)
