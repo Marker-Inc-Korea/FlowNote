@@ -28,5 +28,8 @@ public final class OutboxRetryPolicyTest {
     public void syncedAndExhaustedItemsDoNotRetryAutomatically() {
         assertFalse(OutboxRetryPolicy.shouldRetry("SYNCED", 0, 1000L, 0L));
         assertFalse(OutboxRetryPolicy.shouldRetry("FAILED", 12, 1000L, 0L));
+        assertTrue(OutboxRetryPolicy.canRetryManually("FAILED"));
+        assertFalse(OutboxRetryPolicy.canRetryManually("PENDING"));
+        assertFalse(OutboxRetryPolicy.canRetryManually("SYNCED"));
     }
 }
