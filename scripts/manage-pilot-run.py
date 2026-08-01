@@ -15,10 +15,12 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from scripts import pilot_readiness
     from scripts import pilot_role_ux
     from scripts import pilot_restore_gate
     from scripts import pilot_windows_server_evidence as windows_server_evidence
 except ModuleNotFoundError:
+    import pilot_readiness
     import pilot_role_ux
     import pilot_restore_gate
     import pilot_windows_server_evidence as windows_server_evidence
@@ -27,7 +29,7 @@ except ModuleNotFoundError:
 RUN_ID_PATTERN = re.compile(
     r"^PILOT-\d{8}-(?:\d{4}-[A-Z0-9_-]+|UX-BEFORE)-\d{3}$"
 )
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 RUN_PROFILES = ("full_pilot", "windows_server_rehearsal")
 RESPONSIBILITY_AREAS = (
     "server",
@@ -247,6 +249,8 @@ def empty_record(run_id: str, profile: str) -> dict[str, Any]:
                 "test_scope": "",
                 "stop_criteria": "",
                 "evidence_repository": "",
+                "approved_at": "",
+                "approval_reference": "",
                 "approval_evidence": [],
             }
             for area in RESPONSIBILITY_AREAS
@@ -269,6 +273,20 @@ def empty_record(run_id: str, profile: str) -> dict[str, Any]:
                 "android": "",
             },
             "evidence": [],
+            "approvals": {
+                area: {
+                    "decision": "PENDING",
+                    "signer": "",
+                    "signed_at": "",
+                    "approval_reference": "",
+                    "evidence": [],
+                }
+                for area in REQUIRED_APPROVALS
+            },
+        },
+        "authorization_contract": {
+            "run_id": run_id,
+            "status_source": "approvals/pilot-authorization-events.jsonl",
         },
         "gates": {
             gate: {"result": "PENDING", "evidence": []} for gate in REQUIRED_GATES
@@ -366,6 +384,11 @@ def empty_record(run_id: str, profile: str) -> dict[str, Any]:
         },
     }
     record["authorization"].update(windows_server_evidence.authorization_defaults())
+    record["authorization"]["previous_approved_packages"]["android"] = {
+        "version": "",
+        "sha256": "",
+        "signer_sha256": "",
+    }
     return record
 
 
@@ -381,10 +404,18 @@ def prepare(args: argparse.Namespace) -> int:
     if record_path.exists() and not args.allow_existing:
         raise ValueError(f"기존 실행을 덮어쓰지 않습니다: {record_path}")
     run_root.mkdir(parents=True, exist_ok=True)
-    for directory in EVIDENCE_DIRECTORIES:
-        (run_root / directory).mkdir(exist_ok=True)
     if not record_path.exists():
         write_json(record_path, empty_record(args.run_id, args.profile))
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    full_pilot_unlocked = (
+        args.profile == "full_pilot"
+        and not pilot_readiness.execution_access_failures(run_root, record)
+    )
+    if args.profile != "full_pilot" or full_pilot_unlocked:
+        for directory in EVIDENCE_DIRECTORIES:
+            (run_root / directory).mkdir(exist_ok=True)
+    else:
+        (run_root / "approvals").mkdir(exist_ok=True)
     manifest = run_root / "manifest.md"
     if not manifest.exists():
         manifest.write_text(
@@ -407,8 +438,8 @@ def prepare(args: argparse.Namespace) -> int:
     templates = {
         run_root / "approvals" / "responsibility-assignments.csv": (
             "area,owner,approver,test_scope,stop_criteria,evidence_repository,"
-            "approved_at,approval_evidence\n"
-            + "".join(f"{area},,,,,,,\n" for area in RESPONSIBILITY_AREAS)
+            "approved_at,approval_reference,approval_evidence\n"
+            + "".join(f"{area},,,,,,,,\n" for area in RESPONSIBILITY_AREAS)
         ),
         run_root / "approvals" / "rehearsal-authorization.md": (
             f"# {args.run_id} 리허설 사전 승인\n\n"
@@ -425,8 +456,12 @@ def prepare(args: argparse.Namespace) -> int:
             "- rollback 승인 RTO/RPO(초):\n"
             "- rollback 의사결정권자 역할 ID:\n"
             "- 비상 연락 흐름 ID:\n"
-            "- 운영 승인자/서명:\n- 보안 승인자/서명:\n"
-            "- 현장 승인자/서명:\n"
+            "- 운영 승인자/시각/근거 참조:\n- 보안 승인자/시각/근거 참조:\n"
+            "- 현장 승인자/시각/근거 참조:\n"
+        ),
+        run_root / "approvals" / "pilot-approval-signatures.csv": (
+            "area,decision,signer,signed_at,approval_reference,evidence\n"
+            + "".join(f"{area},PENDING,,,,\n" for area in REQUIRED_APPROVALS)
         ),
         run_root / "approvals" / "ux-before-baseline-review.csv": (
             "area,decision,signer,signed_at,evidence\n"
@@ -511,14 +546,37 @@ def prepare(args: argparse.Namespace) -> int:
             "comparison_id,evidence\n"
         ),
     }
+    preauthorization_paths = {
+        run_root / "approvals" / "responsibility-assignments.csv",
+        run_root / "approvals" / "rehearsal-authorization.md",
+        run_root / "approvals" / "pilot-approval-signatures.csv",
+    }
     for path, header in templates.items():
+        if args.profile == "full_pilot" and not full_pilot_unlocked and path not in preauthorization_paths:
+            continue
         if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(header, encoding="utf-8")
     if args.profile == "windows_server_rehearsal":
         windows_server_evidence.write_templates(run_root, args.run_id)
+    contract_failures = (
+        pilot_readiness.contract_failures(
+            run_root, record, RESPONSIBILITY_AREAS, REQUIRED_APPROVALS
+        )
+        if args.profile == "full_pilot"
+        else []
+    )
+    readiness = pilot_readiness.build_readiness(run_root, record, contract_failures)
+    _, _, readiness_html = pilot_readiness.write_readiness(run_root, readiness)
     print(f"파일럿 실행 폴더 준비: {run_root}")
     print(f"기계 판정표: {record_path}")
-    print("초기 판정: PENDING")
+    print(f"준비 화면: {readiness_html}")
+    print(
+        "운영 입력: "
+        + ("승인 계약 확정 — 입력 가능" if full_pilot_unlocked else "승인 전 — 잠김")
+        if args.profile == "full_pilot"
+        else "초기 판정: PENDING"
+    )
     return 0
 
 
@@ -1509,6 +1567,8 @@ def verify(args: argparse.Namespace) -> int:
     if profile not in RUN_PROFILES:
         failures.append("지원하는 파일럿 profile이 아닙니다.")
         profile = "full_pilot"
+    if profile == "full_pilot":
+        failures.extend(pilot_readiness.execution_access_failures(run_root, record))
 
     environment = record.get("environment", {})
     if environment.get("customer_like_network") is not True:
@@ -2069,7 +2129,18 @@ def verify(args: argparse.Namespace) -> int:
         },
     }
     output = run_root / "pilot-verification.json"
+    if output.is_file():
+        history = run_root / "verification-history"
+        history.mkdir(exist_ok=True)
+        preserved = history / (
+            "pilot-verification-"
+            + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            + ".json"
+        )
+        preserved.write_bytes(output.read_bytes())
     write_json(output, report)
+    readiness = pilot_readiness.build_readiness(run_root, record, failures)
+    _, _, readiness_html = pilot_readiness.write_readiness(run_root, readiness)
     print(f"파일럿 판정: {report['result']}")
     print(
         "UX BEFORE 기준: "
@@ -2077,9 +2148,97 @@ def verify(args: argparse.Namespace) -> int:
         f"({report['ux_before_baseline']['failure_count']}건 미충족)"
     )
     print(f"판정 증거: {output}")
+    print(f"준비 화면: {readiness_html}")
     for failure in failures:
         print(f"FAIL: {failure}", file=sys.stderr)
     return 0 if not failures else 1
+
+
+def _load_run(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
+    run_root = args.evidence_root / args.run_id
+    record_path = run_root / "pilot-run.json"
+    if not record_path.is_file():
+        raise ValueError(f"파일럿 판정표가 없습니다: {record_path}")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    if record.get("run_id") != args.run_id:
+        raise ValueError("pilot-run.json의 run_id가 실행 폴더와 다릅니다.")
+    return run_root, record
+
+
+def authorize_command(args: argparse.Namespace) -> int:
+    run_root, record = _load_run(args)
+    failures = pilot_readiness.contract_failures(
+        run_root, record, RESPONSIBILITY_AREAS, REQUIRED_APPROVALS
+    )
+    readiness = pilot_readiness.build_readiness(run_root, record, failures)
+    _, _, readiness_html = pilot_readiness.write_readiness(run_root, readiness)
+    if failures:
+        print(f"착수 승인 차단: {len(failures)}건 미충족", file=sys.stderr)
+        print(f"준비 화면: {readiness_html}")
+        return 1
+    event = pilot_readiness.authorize(run_root, record)
+    prepare(
+        argparse.Namespace(
+            run_id=args.run_id,
+            evidence_root=args.evidence_root,
+            profile="full_pilot",
+            allow_existing=True,
+        )
+    )
+    print(
+        "착수 승인 계약 확정: "
+        f"run_id={args.run_id}, contract_sha256={event['contract_sha256']}"
+    )
+    return 0
+
+
+def lifecycle_command(args: argparse.Namespace) -> int:
+    run_root, record = _load_run(args)
+    event_name = {
+        "revoke": "REVOKED",
+        "stop": "STOPPED",
+        "resume": "RESUMED",
+    }[args.command]
+    event = pilot_readiness.transition(
+        run_root,
+        record,
+        event_name,
+        args.actor_role_id,
+        args.reason,
+        criterion=getattr(args, "criterion", ""),
+        approval_reference=getattr(args, "approval_reference", ""),
+    )
+    access_failures = pilot_readiness.execution_access_failures(run_root, record)
+    readiness = pilot_readiness.build_readiness(run_root, record, access_failures)
+    _, _, readiness_html = pilot_readiness.write_readiness(run_root, readiness)
+    print(
+        f"파일럿 승인 상태 변경: {event['event']} "
+        f"(sequence={event['sequence']}, 원시 증거 보존)"
+    )
+    print(f"준비 화면: {readiness_html}")
+    return 0
+
+
+def readiness_command(args: argparse.Namespace) -> int:
+    run_root, record = _load_run(args)
+    verification_path = run_root / "pilot-verification.json"
+    if verification_path.is_file():
+        verification = json.loads(verification_path.read_text(encoding="utf-8"))
+        failures = list(verification.get("failures") or [])
+    else:
+        failures = pilot_readiness.contract_failures(
+            run_root, record, RESPONSIBILITY_AREAS, REQUIRED_APPROVALS
+        )
+    report = pilot_readiness.build_readiness(run_root, record, failures)
+    json_path, csv_path, html_path = pilot_readiness.write_readiness(run_root, report)
+    print(
+        f"파일럿 준비 화면 생성: {report['missing_count']}건 미충족, "
+        f"승인 상태={report['authorization_status']}"
+    )
+    print(f"JSON: {json_path}")
+    print(f"CSV: {csv_path}")
+    print(f"화면: {html_path}")
+    return 0
 
 
 def parser() -> argparse.ArgumentParser:
@@ -2095,6 +2254,35 @@ def parser() -> argparse.ArgumentParser:
     prepare_parser.add_argument("--profile", choices=RUN_PROFILES, default="full_pilot")
     prepare_parser.add_argument("--allow-existing", action="store_true")
     prepare_parser.set_defaults(handler=prepare)
+    authorize_parser = commands.add_parser(
+        "authorize",
+        help="승인 계약을 검증·고정하고 full_pilot 운영 입력을 엽니다.",
+    )
+    authorize_parser.add_argument("--run-id", required=True, type=validate_run_id)
+    authorize_parser.add_argument("--evidence-root", required=True, type=Path)
+    authorize_parser.set_defaults(handler=authorize_command)
+    readiness_parser = commands.add_parser(
+        "readiness",
+        help="미충족 항목을 역할·게이트·선행조건별 준비 화면으로 만듭니다.",
+    )
+    readiness_parser.add_argument("--run-id", required=True, type=validate_run_id)
+    readiness_parser.add_argument("--evidence-root", required=True, type=Path)
+    readiness_parser.set_defaults(handler=readiness_command)
+    for command, help_text in (
+        ("revoke", "착수 승인을 철회하고 운영 입력을 다시 잠급니다."),
+        ("stop", "승인된 중단 기준 발생을 기록하고 운영 입력을 잠급니다."),
+        ("resume", "rollback 결정권자의 재개 승인을 기록합니다."),
+    ):
+        lifecycle_parser = commands.add_parser(command, help=help_text)
+        lifecycle_parser.add_argument("--run-id", required=True, type=validate_run_id)
+        lifecycle_parser.add_argument("--evidence-root", required=True, type=Path)
+        lifecycle_parser.add_argument("--actor-role-id", required=True)
+        lifecycle_parser.add_argument("--reason", required=True)
+        if command == "stop":
+            lifecycle_parser.add_argument("--criterion", required=True)
+        if command == "resume":
+            lifecycle_parser.add_argument("--approval-reference", required=True)
+        lifecycle_parser.set_defaults(handler=lifecycle_command)
     verify_parser = commands.add_parser(
         "verify", help="필수 게이트와 현장 증거를 엄격히 판정합니다."
     )

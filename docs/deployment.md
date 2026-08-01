@@ -121,7 +121,20 @@ WPF MSI는 Windows 배포 준비 PC와 최소 1대 이상의 설치 대상 Windo
 
 ### 우선순위 5 단일 run 실행·증거 기준
 
-Windows/서버 고객 유사망 리허설은 [파일럿 리허설 문서의 사전 승인 계약](./pilot-rehearsal.md#우선순위-5-사전-승인-계약)을 먼저 완료하고, `windows_server_rehearsal` 프로필의 하나의 `run_id`로만 수행한다. 실제 현장 값은 Git 문서가 아니라 접근 통제된 `pilot-run.json`에 기록한다. 아래 변수는 예시이며 승인된 현장 값으로 바꾼 뒤 transcript 첫 부분에 변수명과 익명 식별자만 남긴다.
+전체 현장 파일럿은 [파일럿 리허설 문서의 사전 승인 계약](./pilot-rehearsal.md#우선순위-5-사전-승인-계약)을 먼저 완료하고 `full_pilot` 프로필의 하나의 `run_id`로만 수행한다. `prepare` 직후에는 승인 자료만 입력할 수 있고 설치·복구·Android 운영 자료는 잠겨 있다. 8개 책임 영역과 운영·보안·현장 독립 승인, 시험 scope, 서로 다른 중단 기준 5개 이상, rollback 권한, 증거 저장소와 보존 기한, RPO/RTO, 비상 연락 흐름, 이전 승인 서버/WPF/Android 패키지를 원시표와 `pilot-run.json`에 기록한 뒤 `authorize`를 통과해야 실기 템플릿이 생성된다.
+
+```powershell
+$RunId = "PILOT-YYYYMMDD-HHMM-FULLPILOT-001"
+$EvidenceRoot = "D:\FlowNotePilotEvidence"
+py -3 scripts\manage-pilot-run.py prepare --run-id $RunId --evidence-root $EvidenceRoot --profile full_pilot
+py -3 scripts\manage-pilot-run.py readiness --run-id $RunId --evidence-root $EvidenceRoot
+# 승인 원시표와 pilot-run.json을 접근 통제 환경에서 작성한 뒤 실행
+py -3 scripts\manage-pilot-run.py authorize --run-id $RunId --evidence-root $EvidenceRoot
+```
+
+`pilot-readiness.html`은 미충족 항목을 역할·게이트·선행조건으로 묶고 각 행에 담당자와 다음 행동을 표시한다. 승인 전, 승인 철회 뒤, 중단 중에는 운영 입력을 잠김으로 표시한다. `approvals/pilot-authorization-events.jsonl`은 `AUTHORIZED`, `REVOKED`, `STOPPED`, `RESUMED`를 추가 기록하며 기존 원시 증거를 삭제하거나 덮어쓰지 않는다. 철회된 실행은 새 `run_id`로 다시 시작하고 중단 뒤 재개는 사전 지정한 rollback 결정권자 역할과 재개 승인 근거 참조가 있어야 한다.
+
+Windows/서버만의 고객 유사망 리허설은 `windows_server_rehearsal` 프로필의 별도 `run_id`로 수행한다. 실제 현장 값은 Git 문서가 아니라 접근 통제된 `pilot-run.json`에 기록한다. 아래 변수는 예시이며 승인된 현장 값으로 바꾼 뒤 transcript 첫 부분에 변수명과 익명 식별자만 남긴다.
 
 ```powershell
 $RunId = "PILOT-YYYYMMDD-HHMM-SITE-001"
@@ -147,7 +160,7 @@ Start-Transcript -Path (Join-Path $RunRoot "install\windows-server-rehearsal.txt
 
 디스크 부족 시험은 실제 운영 볼륨을 임의로 채우지 않는다. 격리된 시험 볼륨 또는 되돌릴 수 있는 승인 snapshot만 사용하고, 주입 전 중단 승인·백업·복귀 명령을 먼저 검토한다. 네트워크·방화벽·인증서 변경도 원복 명령과 접근 경로를 먼저 확보한다. 실패 시 transcript와 실패 상태를 먼저 보존하며 같은 파일명으로 재실행 결과를 덮어쓰지 않는다.
 
-schema version 11의 `windows_server_rehearsal`은 게이트의 `PASS`만 신뢰하지 않는다. 다음 원시 CSV의 모든 필수 행이 현재 `run_id`이고, 각 행이 실행 폴더 안의 실제 증거 파일을 가리켜야 한다.
+schema version 12의 `windows_server_rehearsal`은 게이트의 `PASS`만 신뢰하지 않는다. 다음 원시 CSV의 모든 필수 행이 현재 `run_id`이고 각 행이 실행 폴더 안의 실제 증거 파일을 가리켜야 한다.
 
 | 원시 판정표 | 필수 범위 |
 | --- | --- |
@@ -798,7 +811,7 @@ WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
 | 비상 연락 흐름 ID·운영/보안/현장 escalation | 미확정 | `<run_id>/approvals/rehearsal-authorization-*` | 착수 금지 |
 | 복구 PC·복구 경로·복구 승인자 | 미확정 | `<run_id>/backup-restore/*` | 대기 |
 
-2026-07-31 현재 이 저장소에는 실제 승인자, 서로 다른 익명 Windows 장비에서 수집한 server/WPF before·after, 운영 인증서, 승인 장비, 이전 승인 패키지, RTO/RPO 또는 비상 연락 흐름의 승인 원시 증거가 제공되지 않았다. 따라서 이 문서와 자동 테스트 통과는 별도 PC 실기 PASS가 아니다. 기존 `PILOT-20260728-1501-FULLPILOT-001`의 `pilot-verification.json`은 미충족 조건 460건과 `FAIL`을 기록했으며, 설치·복구·rollback을 시작해 실패한 실행이 아니라 사전 승인 부재로 착수가 차단된 실행이다. 실패 run과 원시 증거는 그대로 보존한다.
+2026-08-01 현재 이 저장소에는 실제 승인자, 서로 다른 익명 Windows 장비에서 수집한 server/WPF before·after, 운영 인증서, 승인 장비, 이전 승인 패키지, RPO/RTO 또는 비상 연락 흐름의 승인 원시 증거가 제공되지 않았다. 따라서 이 문서와 자동 테스트 통과는 별도 PC 실기 PASS가 아니다. 기존 `PILOT-20260728-1501-FULLPILOT-001`의 `pilot-verification.json`은 미충족 조건 460건과 `FAIL`을 기록했으며 설치·복구·rollback을 시작해 실패한 실행이 아니라 사전 승인 부재로 착수가 차단된 실행이다. 해당 판정표와 원시 증거는 그대로 보존했고 파생 `pilot-readiness.json`, `.csv`, `.html`에서 460건 전부를 역할·게이트·선행조건별로 묶어 담당 역할과 다음 행동을 표시했다. 실제 승인값이 제공되면 실패 run을 재사용하지 않고 새 schema version 12 `run_id`로 `prepare`와 `authorize`를 수행한다.
 
 제품 공통 설치·시작·런타임·서명 정책은 위와 같이 확정했지만 현장 실행값과 PASS를 추정하지 않는다. 현장 값이 확정되면 예시 명령과 실제 값이 충돌하지 않는지 검토하고 이 표, 설치 전후 점검표, 파일럿 manifest를 함께 갱신한다. 같은 승인 소스·패키지·장비를 한 `run_id`에 묶고 운영·보안·현장 3자 서명까지 받은 뒤에만 배포 승인으로 전환한다. 현장별 선호는 공통 기본값으로 올리지 않고 설정·교육 기록으로 분리한다.
 
@@ -873,7 +886,7 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 후속 배포 과제
 
-- 준비된 schema version 11 판정표로 고객 유사 네트워크의 HTTPS, 방화벽, 서버 주소 변경과 시간 동기화 실기 PASS 확보
+- 준비된 schema version 12 판정표로 고객 유사 네트워크의 HTTPS, 방화벽, 서버 주소 변경과 시간 동기화 실기 PASS 확보
 - 준비된 MSI 수명주기 도구로 현장별 .NET/WebView2 설치 조합의 두 MSI 신규 설치·업그레이드·제거·재설치·rollback 실기 PASS 확보
 - 현장별 HTTPS·코드 서명 인증서 발급, 배포, 갱신, 폐기와 CRL/OCSP 접근 운영 절차 승인
 - Android 운영 서명 APK/AAB, MDM/승인 배포, 단말 분실·교체와 outbox 보호 정책 확정

@@ -525,7 +525,7 @@ class WindowsServerRehearsalVerificationTests(
         run_id = "PILOT-20260728-UX-BEFORE-001"
         self.assertEqual(run_id, manage_pilot_run.validate_run_id(run_id))
 
-    def test_prepare_creates_schema_eleven_windows_server_templates(self) -> None:
+    def test_prepare_creates_schema_twelve_windows_server_templates(self) -> None:
         run_id = "PILOT-20260722-1310-LOCALCHECK-002"
         with contextlib.redirect_stdout(io.StringIO()):
             result = manage_pilot_run.prepare(
@@ -541,7 +541,7 @@ class WindowsServerRehearsalVerificationTests(
             (self.evidence_root / run_id / "pilot-run.json").read_text(encoding="utf-8")
         )
         self.assertEqual(0, result)
-        self.assertEqual(11, record["schema_version"])
+        self.assertEqual(12, record["schema_version"])
         self.assertEqual("windows_server_rehearsal", record["profile"])
         self.assertTrue(
             (
@@ -761,7 +761,7 @@ class WindowsServerRehearsalVerificationTests(
             any("run_id가 현재 실행과 다릅니다" in item for item in report["failures"])
         )
 
-    def test_full_pilot_prepare_creates_android_raw_evidence_templates(self) -> None:
+    def test_full_pilot_prepare_locks_operational_templates_until_authorized(self) -> None:
         run_id = "PILOT-20260722-1320-LOCALCHECK-003"
         with contextlib.redirect_stdout(io.StringIO()):
             manage_pilot_run.prepare(
@@ -774,64 +774,21 @@ class WindowsServerRehearsalVerificationTests(
             )
         run_root = self.evidence_root / run_id
 
-        self.assertTrue((run_root / "integrity" / "android-security.csv").is_file())
         self.assertTrue(
-            (run_root / "scenario-results" / "android-delivery-integrity.csv").is_file()
+            (run_root / "approvals" / "responsibility-assignments.csv").is_file()
         )
         self.assertTrue(
-            (run_root / "scenario-results" / "android-device-lifecycle.csv").is_file()
+            (run_root / "approvals" / "pilot-approval-signatures.csv").is_file()
         )
-        self.assertTrue(
-            (run_root / "packages" / "android-release-approval.csv").is_file()
+        self.assertFalse((run_root / "integrity" / "android-security.csv").exists())
+        self.assertFalse(
+            (run_root / "scenario-results" / "android-delivery-integrity.csv").exists()
         )
-        self.assertTrue(
-            (run_root / "scenario-results" / "restore-fault-injections.csv").is_file()
+        readiness = json.loads(
+            (run_root / "pilot-readiness.json").read_text(encoding="utf-8")
         )
-        with (
-            run_root / "scenario-results" / "role-ux-comparison.csv"
-        ).open(newline="", encoding="utf-8") as stream:
-            self.assertEqual(
-                [
-                    "pilot_run_id",
-                    "comparison_id",
-                    "development_cycle_id",
-                    "attempt_no",
-                    "role",
-                    "participant_id",
-                    "scenario_id",
-                    "condition_id",
-                    "measurement_status",
-                    "started_at_utc",
-                    "completed_at_utc",
-                    "network",
-                    "gloves",
-                    "one_hand",
-                    "terminal_position",
-                    "ui_phase",
-                    "ui_build",
-                    "success",
-                    "elapsed_seconds",
-                    "click_count",
-                    "screen_transitions",
-                    "retry_count",
-                    "help_request_count",
-                    "expected_result",
-                    "actual_result",
-                    "source_preservation_understood",
-                    "next_action_understood",
-                    "source_loss_count",
-                    "receipt_loss_count",
-                    "duplicate_creation_count",
-                    "critical_blocker",
-                    "source_ids",
-                    "screen_capture_evidence",
-                    "source_trace_evidence",
-                    "notes",
-                ],
-                next(csv.reader(stream)),
-            )
-        failures = manage_pilot_run.android_delivery_csv_failures(run_root)
-        self.assertTrue(any("PASS가 아닙니다" in failure for failure in failures))
+        self.assertTrue(readiness["execution_inputs_locked"])
+        self.assertGreater(readiness["missing_count"], 0)
 
     def test_android_delivery_raw_results_require_timed_and_outbox_passes(self) -> None:
         path = self.run_root / "scenario-results" / "android-delivery.csv"
