@@ -16,6 +16,10 @@ public final class OutboxRetryPolicy {
         return nowMillis - lastAttemptMillis >= delayMillis(attemptCount);
     }
 
+    public static boolean canRetryManually(String status) {
+        return "FAILED".equals(status);
+    }
+
     public static long delayMillis(int attemptCount) {
         if (attemptCount <= 0) {
             return 0L;

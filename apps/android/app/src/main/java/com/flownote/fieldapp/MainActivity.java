@@ -67,7 +67,8 @@ public final class MainActivity extends Activity implements HandoverComposerView
     private EditText commentInput;
     private RadioGroup signalGroup;
     private TextView statusText;
-    private TextView outboxStatusText;
+    private OutboxStatusView outboxStatusView;
+    private Button retryFailedButton;
     private TextView photoStatusText;
     private ImageView photoPreview;
     private LinearLayout contentArea;
@@ -150,11 +151,8 @@ public final class MainActivity extends Activity implements HandoverComposerView
         title.setPadding(0, 0, 0, 14);
         root.addView(title);
 
-        outboxStatusText = text("", 16, "#1F2A30");
-        outboxStatusText.setBackgroundColor(Color.parseColor("#E7F1EB"));
-        outboxStatusText.setPadding(dp(14), dp(14), dp(14), dp(14));
-        outboxStatusText.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        root.addView(outboxStatusText);
+        outboxStatusView = new OutboxStatusView(this);
+        root.addView(outboxStatusView);
 
         statusText = text("", 14, "#3D4852");
         statusText.setPadding(0, dp(12), 0, dp(12));
@@ -173,8 +171,10 @@ public final class MainActivity extends Activity implements HandoverComposerView
         LinearLayout loginRow = row();
         addRowButton(loginRow, "로그인", view -> login());
         addRowButton(loginRow, "로그아웃", view -> logout());
-        addRowButton(loginRow, "재전송", view -> retryOutbox(true));
         root.addView(loginRow);
+        retryFailedButton = button("실패 항목 다시 보내기", view -> retryOutbox(true));
+        retryFailedButton.setEnabled(false);
+        root.addView(retryFailedButton);
 
         LinearLayout navRow = row();
         addRowButton(navRow, "공개 문서", view -> loadPublishedDocuments());
@@ -726,11 +726,13 @@ public final class MainActivity extends Activity implements HandoverComposerView
             return;
         }
         OutboxQueueStatus before = outbox.queueStatus(System.currentTimeMillis());
-        if (before.pendingCount == 0) {
+        if (manual && before.failedCount == 0) {
             refreshOutboxStatus();
-            if (manual) {
-                updateStatus("전송 대기 기록이 없습니다.");
-            }
+            updateStatus("다시 보낼 실패 항목이 없습니다. 전송 대기 항목은 자동으로 전송합니다.");
+            return;
+        }
+        if (!manual && before.pendingCount == 0) {
+            refreshOutboxStatus();
             return;
         }
         if (!sessionStore.hasSession()) {
@@ -739,15 +741,14 @@ public final class MainActivity extends Activity implements HandoverComposerView
             return;
         }
         retryInProgress = true;
+        retryFailedButton.setEnabled(false);
         rebuildApiClient();
-        updateStatus((manual ? "수동" : "자동") + " 재전송 중...");
+        updateStatus(manual ? "실패 항목만 다시 보내는 중..." : "대기 항목 자동 전송 중...");
         executor.execute(() -> {
             try {
-                OfflineQueueStore.SyncSummary summary = outbox.retryPending(
-                        apiClient,
-                        currentUserId,
-                        manual
-                );
+                OfflineQueueStore.SyncSummary summary = manual
+                        ? outbox.retryFailed(apiClient, currentUserId)
+                        : outbox.retryPending(apiClient, currentUserId);
                 if (summary.failedCount > 0) {
                     String partial = summary.partialSuccessCount > 0
                             ? ", 본문 저장 후 사진 재전송 대기 " + summary.partialSuccessCount + "건"
@@ -761,7 +762,8 @@ public final class MainActivity extends Activity implements HandoverComposerView
                     );
                 } else {
                     postStatus(
-                            "재전송 완료: 성공 " + summary.successCount +
+                            (manual ? "실패 항목 다시 보내기 완료: 성공 " : "자동 전송 완료: 성공 ")
+                                    + summary.successCount +
                                     "건, 대기 " + summary.remainingCount + "건"
                     );
                 }
@@ -776,18 +778,22 @@ public final class MainActivity extends Activity implements HandoverComposerView
 
     private void refreshOutboxStatus() {
         if (!hasUsableSecureStorage()) {
-            outboxStatusText.setText(
+            outboxStatusView.showStorageError(
                     "보안 저장소 오류 · 입력을 저장하거나 전송하지 않습니다. 재설치·초기화하지 말고 관리자에게 단말 교체 점검을 요청하세요."
             );
+            retryFailedButton.setEnabled(false);
             return;
         }
         OutboxQueueStatus queueStatus = outbox.queueStatus(System.currentTimeMillis());
-        outboxStatusText.setText(OutboxStatusMessage.format(
+        outboxStatusView.show(queueStatus, OutboxStatusMessage.format(
                 queueStatus,
                 System.currentTimeMillis(),
                 sessionStore.hasSession(),
                 deviceIdInput.getText().toString()
         ));
+        retryFailedButton.setEnabled(
+                !retryInProgress && sessionStore.hasSession() && queueStatus.failedCount > 0
+        );
     }
 
     private void logOutboxAudit(Intent intent) {
@@ -806,6 +812,7 @@ public final class MainActivity extends Activity implements HandoverComposerView
                 OUTBOX_LOG_TAG,
                 "audit_nonce=" + nonce
                         + " pending=" + queueStatus.pendingCount
+                        + " failed=" + queueStatus.failedCount
                         + " blocked=" + queueStatus.blockedCount
         );
     }

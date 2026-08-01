@@ -13,29 +13,39 @@ public final class OutboxStatusMessage {
             String deviceId
     ) {
         if (status.pendingCount == 0) {
-            return "전송 대기 0건 · 모든 현장 기록을 서버에 저장했습니다.";
+            return "전송 완료 · 대기 0건 · 모든 현장 기록을 서버에 저장했습니다.";
         }
 
-        String preservation = "전송 대기 " + status.pendingCount
-                + "건 · 이 단말에 암호화해 저장했습니다.";
-        if (!hasSession) {
-            return preservation + " 다시 로그인하면 자동으로 전송합니다. 문제가 계속되면 관리자에게 "
-                    + deviceReference(deviceId) + "와 대기 건수를 알려주세요.";
+        String preservation = "이 단말에 암호화해 보존 중입니다.";
+        if (status.failedCount > 0) {
+            String failure = "전송 실패 · 실패 " + status.failedCount
+                    + "건 / 전체 대기 " + status.pendingCount + "건 · " + preservation;
+            if (!hasSession) {
+                return failure + " 다시 로그인한 뒤 실패 항목만 보낼 수 있습니다. 관리자에게 "
+                        + deviceReference(deviceId) + "와 실패 건수를 알려주세요.";
+            }
+            if (status.blockedCount > 0) {
+                return failure + " 자동 재시도 한도를 넘긴 기록 " + status.blockedCount
+                        + "건이 있습니다. ‘실패 항목 다시 보내기’를 누른 뒤에도 실패하면 관리자에게 "
+                        + deviceReference(deviceId) + "와 실패 건수를 알려주세요.";
+            }
+            return failure + " 자동 재시도 예정이며 ‘실패 항목 다시 보내기’로 즉시 시도할 수 있습니다.";
         }
-        if (status.blockedCount > 0) {
-            return preservation + " 자동 재시도 한도를 넘긴 기록 " + status.blockedCount
-                    + "건이 있습니다. 재전송을 누른 뒤에도 실패하면 관리자에게 "
+
+        String waiting = "전송 대기 · 서버 미저장 " + status.pendingCount + "건 · " + preservation;
+        if (!hasSession) {
+            return waiting + " 다시 로그인하면 자동으로 전송합니다. 문제가 계속되면 관리자에게 "
                     + deviceReference(deviceId) + "와 대기 건수를 알려주세요.";
         }
         if (status.readyCount > 0 || status.nextRetryAtMillis <= nowMillis) {
-            return preservation + " 네트워크 연결을 확인해 지금 자동 재시도합니다.";
+            return waiting + " 네트워크 연결을 확인해 지금 자동 전송합니다.";
         }
 
         long remainingSeconds = Math.max(
                 1L,
                 (status.nextRetryAtMillis - nowMillis + 999L) / 1000L
         );
-        return preservation + " 다음 자동 재시도: " + duration(remainingSeconds) + " 후.";
+        return waiting + " 다음 자동 전송: " + duration(remainingSeconds) + " 후.";
     }
 
     private static String deviceReference(String deviceId) {

@@ -134,12 +134,15 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
         return listPending(nowMillis, false);
     }
 
-    private List<OutboxItem> listPending(long nowMillis, boolean ignoreSchedule) {
+    private List<OutboxItem> listPending(long nowMillis, boolean failedOnly) {
         List<OutboxItem> items = new ArrayList<>();
+        String selection = failedOnly
+                ? "status = 'FAILED'"
+                : "status IN ('PENDING', 'FAILED')";
         try (Cursor cursor = getReadableDatabase().query(
                 "outbox",
                 null,
-                "status IN ('PENDING', 'FAILED')",
+                selection,
                 null,
                 null,
                 null,
@@ -147,7 +150,8 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
         )) {
             while (cursor.moveToNext()) {
                 OutboxItem item = readItem(cursor);
-                if (ignoreSchedule || OutboxRetryPolicy.shouldRetry(
+                if ((failedOnly && OutboxRetryPolicy.canRetryManually(item.status))
+                        || OutboxRetryPolicy.shouldRetry(
                         item.status,
                         item.attemptCount,
                         nowMillis,
@@ -171,6 +175,7 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
 
     public OutboxQueueStatus queueStatus(long nowMillis) {
         int pending = 0;
+        int failed = 0;
         int ready = 0;
         int blocked = 0;
         long nextRetryAt = Long.MAX_VALUE;
@@ -186,6 +191,9 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
             while (cursor.moveToNext()) {
                 pending++;
                 String status = cursor.getString(0);
+                if ("FAILED".equals(status)) {
+                    failed++;
+                }
                 int attemptCount = cursor.getInt(1);
                 long lastAttemptAt = cursor.getLong(2);
                 if (attemptCount >= OutboxRetryPolicy.MAX_AUTOMATIC_ATTEMPTS) {
@@ -203,23 +211,27 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
                 }
             }
         }
-        return new OutboxQueueStatus(pending, ready, blocked, nextRetryAt);
+        return new OutboxQueueStatus(pending, failed, ready, blocked, nextRetryAt);
     }
 
     public SyncSummary retryPending(FlowNoteApiClient apiClient, String createdBy) {
-        return retryPending(apiClient, createdBy, false);
+        return syncItems(apiClient, createdBy, listPending(System.currentTimeMillis(), false));
     }
 
-    public SyncSummary retryPending(
+    public SyncSummary retryFailed(FlowNoteApiClient apiClient, String createdBy) {
+        return syncItems(apiClient, createdBy, listPending(System.currentTimeMillis(), true));
+    }
+
+    private SyncSummary syncItems(
             FlowNoteApiClient apiClient,
             String createdBy,
-            boolean ignoreSchedule
+            List<OutboxItem> items
     ) {
         int success = 0;
         int failed = 0;
         int partial = 0;
         String lastErrorMessage = null;
-        for (OutboxItem item : listPending(System.currentTimeMillis(), ignoreSchedule)) {
+        for (OutboxItem item : items) {
             markAttempt(item.localId, item.attemptCount + 1);
             boolean partialSuccess = "field_comment".equals(item.kind)
                     && item.serverId != null
