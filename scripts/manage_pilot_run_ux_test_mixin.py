@@ -481,3 +481,96 @@ class ManagePilotRunUxTestMixin:
         )
         self.assertTrue(any("치명적 blocker는 0" in item for item in failures))
         self.assertTrue(any("조건·시도 번호가 다릅니다" in item for item in failures))
+
+    def test_p0_p1_revalidation_requires_one_primary_metric_improvement(self) -> None:
+        observations = [
+            {
+                "observation_id": "OBS-P1-NO-IMPROVEMENT",
+                "role": "team_lead",
+                "scenario_id": "TEAM-LEAD-DOCUMENT",
+            }
+        ]
+        items = [
+            {
+                "item_id": "UX-P1-NO-IMPROVEMENT",
+                "observation_id": "OBS-P1-NO-IMPROVEMENT",
+                "decision": "ACCEPTED",
+                "priority": "P1",
+                "status": "VERIFIED",
+                "development_cycle_id": "CYCLE-20260801-01",
+                "comparison_id": "COMPARE-NO-IMPROVEMENT",
+            }
+        ]
+        rows = []
+        for phase, build in (
+            ("BEFORE", "wpf-before"),
+            ("AFTER", "wpf-after"),
+        ):
+            for attempt_no in (1, 2):
+                rows.append(
+                    {
+                        "pilot_run_id": self.run_id,
+                        "comparison_id": "COMPARE-NO-IMPROVEMENT",
+                        "development_cycle_id": "CYCLE-20260801-01",
+                        "attempt_no": attempt_no,
+                        "role": "team_lead",
+                        "participant_id": "PARTICIPANT-TEAM-LEAD-01",
+                        "scenario_id": "TEAM-LEAD-DOCUMENT",
+                        "condition_id": f"CONDITION-{attempt_no}",
+                        "measurement_status": "MEASURED",
+                        "started_at_utc": (
+                            f"2026-08-01T01:0{attempt_no}:00+00:00"
+                        ),
+                        "completed_at_utc": (
+                            f"2026-08-01T01:0{attempt_no}:20+00:00"
+                        ),
+                        "network": "CONNECTED",
+                        "gloves": "OFF",
+                        "one_hand": "FALSE",
+                        "terminal_position": "FIXED-STAND",
+                        "ui_phase": phase,
+                        "ui_build": build,
+                        "success": "TRUE",
+                        "elapsed_seconds": 20,
+                        "click_count": 5,
+                        "screen_transitions": 4,
+                        "retry_count": 0,
+                        "help_request_count": 1,
+                        "expected_result": "WORKFLOW_COMPLETED",
+                        "actual_result": "WORKFLOW_COMPLETED",
+                        "source_preservation_understood": "TRUE",
+                        "next_action_understood": "TRUE",
+                        "source_loss_count": 0,
+                        "receipt_loss_count": 0,
+                        "duplicate_creation_count": 0,
+                        "critical_blocker": "FALSE",
+                        "source_ids": "SOURCE-001",
+                        "screen_capture_evidence": "proof.txt",
+                        "source_trace_evidence": "proof.txt",
+                        "notes": "same approved scenario",
+                    }
+                )
+        self.write_csv(
+            "scenario-results/role-ux-comparison.csv", list(rows[0]), rows
+        )
+
+        failures = manage_pilot_run.ux_revalidation_csv_failures(
+            self.run_root, observations, items
+        )
+        self.assertTrue(
+            any("하나 이상 개선되어야 합니다" in item for item in failures)
+        )
+
+        for row in rows:
+            if row["ui_phase"] == "AFTER":
+                row["help_request_count"] = 0
+        self.write_csv(
+            "scenario-results/role-ux-comparison.csv", list(rows[0]), rows
+        )
+
+        self.assertEqual(
+            [],
+            manage_pilot_run.ux_revalidation_csv_failures(
+                self.run_root, observations, items
+            ),
+        )

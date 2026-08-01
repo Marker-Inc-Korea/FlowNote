@@ -294,7 +294,7 @@ py -3 scripts\manage-pilot-run.py resume --run-id $RunId --evidence-root $Eviden
 
 ### Windows UX 변경 전후 비교
 
-`scenario-results/role-ux-comparison.csv`에는 같은 익명 참여자, 같은 승인 테스트 문서와 서버 상태, 같은 역할, 같은 `scenario_id`를 `BEFORE`와 `AFTER`로 기록한다. 수용한 P0/P1 개발 항목은 `development-items.csv`의 `development_cycle_id`, `comparison_id`로 이 비교와 연결한다. 준비 도구가 만드는 열의 의미는 다음과 같다.
+키보드 초점, 고대비·색각, 글꼴 확대, 터치 목표와 장갑·한 손·거치 조건은 [역할별 업무 UX와 접근성 공통 기준](./ux-accessibility.md)을 따른다. `scenario-results/role-ux-comparison.csv`에는 같은 익명 참여자, 같은 승인 테스트 문서와 서버 상태, 같은 역할, 같은 `scenario_id`를 `BEFORE`와 `AFTER`로 기록한다. 수용한 P0/P1 개발 항목은 `development-items.csv`의 `development_cycle_id`, `comparison_id`로 이 비교와 연결한다. 준비 도구가 만드는 열의 의미는 다음과 같다.
 
 - `development_cycle_id`: 관찰을 수정하고 재검증한 같은 개발 주기 식별자
 - `pilot_run_id`: 원시 행과 화면·원천 증거가 속한 실행 ID. 실행 폴더 이름과 정확히 같아야 한다.
@@ -325,7 +325,7 @@ py -3 scripts\manage-pilot-run.py resume --run-id $RunId --evidence-root $Eviden
 
 관리자는 세 업무 시나리오를, 반장·조장·작업자는 문서/FieldComment·인수인계/후속 FieldComment와 권한 부족 검토/보고서 시나리오를 BEFORE에서 각각 최소 2회 수행한다. 전체 BEFORE에는 연결/단절, 장갑 착용/미착용, 한 손/양손 조건과 실제 거치 위치가 모두 있어야 한다. 역할·시나리오·참여자·조건·시도 번호의 조합은 중복될 수 없고, 같은 `condition_id`를 연결·장갑·손·거치 조건이 다른 행에 재사용하지 않는다. 완료 시간처럼 반드시 측정해야 하는 값을 비워 두거나 `0`, `N/A`, 성공으로 대체하지 않는다.
 
-수용한 P0/P1은 같은 역할·익명 참여자·시나리오·개발 주기와 같은 `condition_id`/시도 번호로 묶고 `BEFORE`와 `AFTER`를 각각 하나의 UI build에서 측정하며 두 단계의 build는 달라야 한다. `AFTER`는 모든 시도가 성공하고 원천 보존 여부와 다음 행동을 설명해야 하며 원천/처리 결과 유실·중복 생성·치명적 blocker가 모두 0이어야 한다. 중앙 완료 시간·중앙 화면 이동 수·중앙 재시도 수·중앙 도움 요청 수 중 하나라도 `BEFORE`보다 나빠지면 통과로 판정하지 않는다. 개발 항목 `status`는 재검증을 마친 `VERIFIED` 또는 `CLOSED`여야 한다. WPF 빌드와 자동 테스트 통과는 이 현장 비교를 대신하지 않는다. 변경 전 화면이나 실측값을 확보하지 못한 run은 `미측정`으로 유지하고 임의 수치를 채우지 않는다.
+수용한 P0/P1은 같은 역할·익명 참여자·시나리오·개발 주기와 같은 `condition_id`/시도 번호로 묶고 `BEFORE`와 `AFTER`를 각각 하나의 UI build에서 측정하며 두 단계의 build는 달라야 한다. `AFTER`는 모든 시도가 성공하고 원천 보존 여부와 다음 행동을 설명해야 하며 원천/처리 결과 유실·중복 생성·치명적 blocker가 모두 0이어야 한다. 중앙 완료 시간·중앙 화면 이동 수·중앙 도움 요청 수 중 하나 이상은 `BEFORE`보다 개선되어야 하고 세 지표와 중앙 재시도 수는 모두 악화되지 않아야 한다. 개발 항목 `status`는 재검증을 마친 `VERIFIED` 또는 `CLOSED`여야 한다. WPF 빌드와 자동 테스트 통과는 이 현장 비교를 대신하지 않는다. 변경 전 화면이나 실측값을 확보하지 못한 run은 `미측정`으로 유지하고 임의 수치를 채우지 않는다.
 
 ### UX BEFORE 단계 판정
 
@@ -371,7 +371,7 @@ py -3 scripts\manage-pilot-run.py verify --run-id PILOT-20260728-UX-BEFORE-001 -
 
 운영·보안·현장 서명 후에는 다음 명령을 실행한다. 도구는 필수 책임 영역, 고객 유사 장비 수, 모든 필수 게이트, 증거 파일 존재, 역할별 승인 성공률/중앙 시간, 0건 지표, 서버/WPF/Android rollback과 정상 업무 재개, 남은 항목의 책임자·기한·중단 영향, 3자 최종 승인을 같은 `run_id` 안에서 확인한다. 종료 코드 0과 `pilot-verification.json`의 `PASS`가 함께 있어야 하며, 이 결과는 서명 내용과 원천 증거의 사람 교차 검토를 대체하지 않는다.
 
-schema version 13의 `full_pilot` 판정은 유효한 `AUTHORIZED` 또는 `RESUMED` 이벤트와 최초 승인 계약 SHA-256 일치를 먼저 요구한다. 이어서 역할별 95% 이상 성공률, 시나리오별 2회 이상 반복, 현재 run 통합 승인 전에 확정된 시간 한도 승인 ID/시각, 최대 시간·재시도·도움 요청·화면 이동 수, 원천/처리 결과 유실·중복 생성·권한 우회·평문 token/outbox·외부 공유·잔존 secure cache 0건, Android 알림 누락·서버 receipt 중복 0건, crash 경계 표시 중복 최대 1건, 분실·비활성 단말 재접속 차단과 교체 이력 보존도 별도로 강제한다. 서버/WPF comparison은 서로 다른 익명 장비 ID와 OS 장비 식별 hash, 동일 백업 세트·복구 승인 ID, DB `quick_check`·`integrity_check`·FK, 테이블별 row 수와 책임 원천 fingerprint, DB 참조 파일의 상대경로·크기·SHA-256 불일치 0건이어야 한다. 부분 복원·오래된 DB와 새 파일·누락 파일·잘못된 epoch 장애 주입은 정상 복구와 서로 다른 `fault_run_id`를 사용하고 자동 전송과 polling을 모두 차단한다. 관리자 승인 뒤에도 장애 표지 제거와 서버 재시작, 정상 manifest 확인 전까지 차단을 유지해야 한다. Keystore token, outbox, 암호화 사진, 잘못된 키 복호화 실패, 종료 후 cache 정리, `FLAG_SECURE`, 공유 경로 부재와 backup 차단은 각각 확인해야 한다. 모든 UX 관찰은 수용/불수용/검토와 근거가 기록된 개발 항목 하나로 변환하고 P0~P3 합계와 `common_product`·`configuration_or_training`·`site_layout` 분류 합계가 변환 건수와 일치해야 한다. 수용한 P0/P1은 같은 개발 주기의 수정 전후를 동일 역할·참여자·시나리오·조건으로 각각 2회 이상 측정하고 `AFTER` 전건 성공, 원천 보존/다음 행동 이해, 유실·중복·치명적 blocker 0건, 중앙 완료 시간·화면 이동·재시도·도움 요청 비악화를 증명해야 한다. 게이트·역할·Android 전달/보안/단말 수명주기·UX 변환·rollback·최종 승인의 증거 목록에는 같은 실행 폴더 안에 실제 존재하는 상대경로만 넣는다.
+schema version 13의 `full_pilot` 판정은 유효한 `AUTHORIZED` 또는 `RESUMED` 이벤트와 최초 승인 계약 SHA-256 일치를 먼저 요구한다. 이어서 역할별 95% 이상 성공률, 시나리오별 2회 이상 반복, 현재 run 통합 승인 전에 확정된 시간 한도 승인 ID/시각, 최대 시간·재시도·도움 요청·화면 이동 수, 원천/처리 결과 유실·중복 생성·권한 우회·평문 token/outbox·외부 공유·잔존 secure cache 0건, Android 알림 누락·서버 receipt 중복 0건, crash 경계 표시 중복 최대 1건, 분실·비활성 단말 재접속 차단과 교체 이력 보존도 별도로 강제한다. 서버/WPF comparison은 서로 다른 익명 장비 ID와 OS 장비 식별 hash, 동일 백업 세트·복구 승인 ID, DB `quick_check`·`integrity_check`·FK, 테이블별 row 수와 책임 원천 fingerprint, DB 참조 파일의 상대경로·크기·SHA-256 불일치 0건이어야 한다. 부분 복원·오래된 DB와 새 파일·누락 파일·잘못된 epoch 장애 주입은 정상 복구와 서로 다른 `fault_run_id`를 사용하고 자동 전송과 polling을 모두 차단한다. 관리자 승인 뒤에도 장애 표지 제거와 서버 재시작, 정상 manifest 확인 전까지 차단을 유지해야 한다. Keystore token, outbox, 암호화 사진, 잘못된 키 복호화 실패, 종료 후 cache 정리, `FLAG_SECURE`, 공유 경로 부재와 backup 차단은 각각 확인해야 한다. 모든 UX 관찰은 수용/불수용/검토와 근거가 기록된 개발 항목 하나로 변환하고 P0~P3 합계와 `common_product`·`configuration_or_training`·`site_layout` 분류 합계가 변환 건수와 일치해야 한다. 수용한 P0/P1은 같은 개발 주기의 수정 전후를 동일 역할·참여자·시나리오·조건으로 각각 2회 이상 측정하고 `AFTER` 전건 성공, 원천 보존/다음 행동 이해, 유실·중복·치명적 blocker 0건을 증명해야 한다. 중앙 완료 시간·화면 이동·도움 요청 중 하나 이상은 개선되고 이 세 지표와 중앙 재시도 수는 모두 악화되지 않아야 한다. 게이트·역할·Android 전달/보안/단말 수명주기·UX 변환·rollback·최종 승인의 증거 목록에는 같은 실행 폴더 안에 실제 존재하는 상대경로만 넣는다.
 
 `windows_server_rehearsal` 판정은 Android·역할별 UX 실기를 제외하고 서버/WPF/HTTPS·망·시간·권한·장기 단절·디스크 부족·별도 PC 복구·rollback 게이트와 해당 0건 지표를 강제한다. 패키지 7개 원시 행의 hash/signer 불일치와 혼입이 0건이고, 14개 장애 주입과 3개 네트워크 fail-closed 전환이 모두 복구되어야 한다. 두 MSI의 10개 수명주기 행에서 로컬 데이터 fingerprint가 유지되고, 서버 복구·WPF 복구·rollback의 실측 RTO/RPO가 승인값 이내이며, 서버 재부팅과 rollback 뒤 6개 핵심 업무씩 12개 행이 같은 `run_id`에서 PASS여야 한다.
 

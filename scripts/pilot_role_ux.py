@@ -588,4 +588,21 @@ def revalidation_failures(
                 failures.append(
                     f"UX 비교 {comparison_id}의 AFTER {label}이 BEFORE보다 나빠졌습니다."
                 )
+        improvement_fields = (
+            "elapsed_seconds",
+            "screen_transitions",
+            "help_request_count",
+        )
+        if all(
+            numeric["BEFORE"][field] and numeric["AFTER"][field]
+            for field in improvement_fields
+        ) and not any(
+            statistics.median(numeric["AFTER"][field])
+            < statistics.median(numeric["BEFORE"][field])
+            for field in improvement_fields
+        ):
+            failures.append(
+                f"UX 비교 {comparison_id}의 AFTER는 중앙 완료 시간·화면 이동 수·"
+                "도움 요청 수 중 하나 이상 개선되어야 합니다."
+            )
     return failures
