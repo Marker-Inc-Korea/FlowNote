@@ -337,11 +337,18 @@ class WindowsServerRehearsalVerificationTests(
                 "attempt_no": str(attempt),
                 "scenario_id": scenario,
                 "participant_id": f"{role}-{attempt}",
+                "failure_detail_identified": "TRUE",
                 "missing_item_identified": "TRUE",
                 "preserved_data_identified": "TRUE",
+                "source_queue_cursor_identified": "TRUE",
                 "owner_identified": "TRUE",
                 "next_action_selected": "TRUE",
                 "selected_action": "승인된 안내에 따라 복구",
+                "first_exposure": "TRUE",
+                "keyboard_only_completed": "TRUE",
+                "long_error_fully_available": "TRUE",
+                "high_scale_percent": "200",
+                "button_overlap_count": "0",
                 "result": "PASS",
                 "evidence": "proof.txt",
             }
@@ -525,7 +532,7 @@ class WindowsServerRehearsalVerificationTests(
         run_id = "PILOT-20260728-UX-BEFORE-001"
         self.assertEqual(run_id, manage_pilot_run.validate_run_id(run_id))
 
-    def test_prepare_creates_schema_twelve_windows_server_templates(self) -> None:
+    def test_prepare_creates_schema_thirteen_windows_server_templates(self) -> None:
         run_id = "PILOT-20260722-1310-LOCALCHECK-002"
         with contextlib.redirect_stdout(io.StringIO()):
             result = manage_pilot_run.prepare(
@@ -541,7 +548,7 @@ class WindowsServerRehearsalVerificationTests(
             (self.evidence_root / run_id / "pilot-run.json").read_text(encoding="utf-8")
         )
         self.assertEqual(0, result)
-        self.assertEqual(12, record["schema_version"])
+        self.assertEqual(13, record["schema_version"])
         self.assertEqual("windows_server_rehearsal", record["profile"])
         self.assertTrue(
             (
@@ -551,6 +558,14 @@ class WindowsServerRehearsalVerificationTests(
                 / "responsibility-assignments.csv"
             ).is_file()
         )
+
+        startup_path = (
+            self.evidence_root / run_id / "install" / "windows-startup-ux.csv"
+        )
+        with startup_path.open(newline="", encoding="utf-8") as stream:
+            startup_rows = list(csv.reader(stream))
+        self.assertEqual(19, len(startup_rows[0]))
+        self.assertTrue(all(len(row) == len(startup_rows[0]) for row in startup_rows))
         self.assertTrue(
             (
                 self.evidence_root
@@ -631,6 +646,28 @@ class WindowsServerRehearsalVerificationTests(
                 for item in report["failures"]
             )
         )
+
+    def test_startup_ux_requires_keyboard_long_text_and_high_scale_checks(self) -> None:
+        record = self.complete_record()
+        path = self.run_root / "install" / "windows-startup-ux.csv"
+        with path.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.DictReader(stream))
+        rows[0]["keyboard_only_completed"] = "FALSE"
+        rows[0]["long_error_fully_available"] = "FALSE"
+        rows[0]["high_scale_percent"] = "150"
+        rows[0]["button_overlap_count"] = "1"
+        self.write_csv("install/windows-startup-ux.csv", list(rows[0]), rows)
+
+        result, report = self.verify(record)
+
+        self.assertEqual(1, result)
+        for expected in (
+            "keyboard_only_completed가 TRUE가 아닙니다",
+            "long_error_fully_available가 TRUE가 아닙니다",
+            "high_scale_percent가 200 이상이 아닙니다",
+            "button_overlap_count가 0이 아닙니다",
+        ):
+            self.assertTrue(any(expected in item for item in report["failures"]))
 
     def test_msi_lifecycle_rejects_changed_local_data_hash(self) -> None:
         record = self.complete_record()

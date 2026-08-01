@@ -7,18 +7,22 @@ namespace FlowNote.Windows.App;
 
 public partial class LoginWindow : Window
 {
-    private readonly FlowNoteLocalServices services;
+    private FlowNoteLocalServices? services;
 
     public LoginWindow()
     {
         InitializeComponent();
-        services = new FlowNoteLocalServices(FlowNoteLocalDatabase.DefaultDatabasePath);
         ServerTargetTextBlock.Text = BuildServerTargetMessage();
+        TryInitializeLocalServices();
     }
 
     private async void SignInButton_Click(object sender, RoutedEventArgs e)
     {
-        ErrorTextBlock.Text = string.Empty;
+        HideRecoveryGuidance();
+        if (services is null && !TryInitializeLocalServices())
+        {
+            return;
+        }
 
         var loginId = LoginIdTextBox.Text.Trim();
         var password = PasswordBox.Password;
@@ -27,17 +31,16 @@ public partial class LoginWindow : Window
         using var httpClient = FlowNoteServerApiEnvironment.CreateHttpClientFromEnvironment(TimeSpan.FromSeconds(5));
         if (!string.IsNullOrWhiteSpace(configuredServer) && httpClient is null)
         {
-            ErrorTextBlock.Text =
-                ServerConnectionGuidance.InvalidServerAddressMessage;
+            ShowRecoveryGuidance(ServerConnectionGuidance.InvalidServerAddressMessage);
             return;
         }
 
-        var auth = new ServerAwareAuthService(services.Auth, httpClient);
+        var auth = new ServerAwareAuthService(services!.Auth, httpClient);
         var result = await auth.LoginAsync(loginId, password);
 
         if (!result.Success)
         {
-            ErrorTextBlock.Text = result.FailureReason;
+            ShowRecoveryGuidance(result.FailureReason);
             return;
         }
 
@@ -52,7 +55,8 @@ public partial class LoginWindow : Window
             if (passwordChangeWindow.ShowDialog() == true)
             {
                 PasswordBox.Clear();
-                ErrorTextBlock.Text = "비밀번호를 변경했습니다. 새 비밀번호로 다시 로그인하세요.";
+                ShowRecoveryGuidance(
+                    "비밀번호를 변경했습니다. 새 비밀번호로 다시 로그인하세요.");
             }
             return;
         }
@@ -60,6 +64,50 @@ public partial class LoginWindow : Window
         var mainWindow = new MainWindow(services, result);
         mainWindow.Show();
         Close();
+    }
+
+    private void RetryButton_Click(object sender, RoutedEventArgs e)
+    {
+        SignInButton_Click(sender, e);
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
+    private bool TryInitializeLocalServices()
+    {
+        try
+        {
+            services = new FlowNoteLocalServices(FlowNoteLocalDatabase.DefaultDatabasePath);
+            SignInButton.IsEnabled = true;
+            return true;
+        }
+        catch
+        {
+            services = null;
+            SignInButton.IsEnabled = false;
+            ShowRecoveryGuidance(ServerConnectionGuidance.LocalStartupFailureMessage);
+            return false;
+        }
+    }
+
+    private void ShowRecoveryGuidance(string? guidance)
+    {
+        RecoveryGuidanceTextBox.Text = string.IsNullOrWhiteSpace(guidance)
+            ? ServerConnectionGuidance.UnknownLoginFailureMessage
+            : guidance;
+        RecoveryPanel.Visibility = Visibility.Visible;
+        RecoveryGuidanceTextBox.Focus();
+        RecoveryGuidanceTextBox.CaretIndex = 0;
+        RecoveryGuidanceTextBox.ScrollToHome();
+    }
+
+    private void HideRecoveryGuidance()
+    {
+        RecoveryGuidanceTextBox.Clear();
+        RecoveryPanel.Visibility = Visibility.Collapsed;
     }
 
     private static string BuildServerTargetMessage()

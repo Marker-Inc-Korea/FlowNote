@@ -229,7 +229,7 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
 ```
 
-전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 2026-07-31 현재 코드와 스크립트 guard는 FastAPI 164건·WPF Core 87건·Android 28건으로 일치한다. 이번 민감정보 정책 변경에는 FastAPI 회귀 4건과 WPF Core 회귀 1건이 포함됐다. Windows x64 수집 목록과 WPF Core TRX, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 실행을 같은 clean 소스 커밋에서 2회 통과해야 유효한 통합 기준선으로 판정한다. 수집/JUnit 또는 도구 검사가 실패하면 현재 단계·기대값·실제값·보존 증거와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 재실행 방법을 함께 안내한다.
+전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 2026-08-01 현재 코드와 스크립트 guard는 FastAPI 164건·WPF Core 89건·Android 28건으로 일치한다. 이번 로그인 복구 안내 변경에는 WPF Core 회귀 2건이 포함됐다. Windows x64 수집 목록과 WPF Core TRX, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 실행을 같은 clean 소스 커밋에서 2회 통과해야 유효한 통합 기준선으로 판정한다. 수집/JUnit 또는 도구 검사가 실패하면 현재 단계·기대값·실제값·보존 증거와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 재실행 방법을 함께 안내한다.
 
 | Windows x64 통합 기준선 | 첫 실행 | 재현 실행 |
 | --- | --- | --- |

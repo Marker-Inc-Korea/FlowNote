@@ -131,7 +131,18 @@ def templates(run_id: str) -> dict[str, str]:
         f"{run_id},{case},,,,,NOT_RUN,\n" for case in RUNTIME_CASES
     )
     startup_ux_rows = "".join(
-        f"{run_id},{role},{attempt},{scenario},,,,,,,NOT_RUN,\n"
+        ",".join(
+            (
+                run_id,
+                role,
+                str(attempt),
+                scenario,
+                *("" for _ in range(13)),
+                "NOT_RUN",
+                "",
+            )
+        )
+        + "\n"
         for role, attempt, scenario in STARTUP_UX_CASES
     )
     fault_rows = "".join(
@@ -177,8 +188,11 @@ def templates(run_id: str) -> dict[str, str]:
         ),
         "install/windows-startup-ux.csv": (
             "pilot_run_id,role,attempt_no,scenario_id,participant_id,"
-            "missing_item_identified,preserved_data_identified,owner_identified,"
-            "next_action_selected,selected_action,result,evidence\n"
+            "failure_detail_identified,missing_item_identified,"
+            "preserved_data_identified,source_queue_cursor_identified,"
+            "owner_identified,next_action_selected,selected_action,first_exposure,"
+            "keyboard_only_completed,long_error_fully_available,high_scale_percent,"
+            "button_overlap_count,result,evidence\n"
             + startup_ux_rows
         ),
         "scenario-results/windows-server-fault-injections.csv": (
@@ -561,13 +575,26 @@ def _startup_ux_failures(
             if not _nonempty(row.get(field)):
                 failures.append(f"{label}의 {field} 값이 없습니다.")
         for field in (
+            "failure_detail_identified",
             "missing_item_identified",
             "preserved_data_identified",
+            "source_queue_cursor_identified",
             "owner_identified",
             "next_action_selected",
+            "first_exposure",
+            "keyboard_only_completed",
+            "long_error_fully_available",
         ):
             if _boolean(row.get(field)) is not True:
                 failures.append(f"{label}의 {field}가 TRUE가 아닙니다.")
+        scale_percent = _number(row.get("high_scale_percent"))
+        if scale_percent is None or scale_percent < 200:
+            failures.append(
+                f"{label}의 high_scale_percent가 200 이상이 아닙니다."
+            )
+        overlap_count = _number(row.get("button_overlap_count"))
+        if overlap_count != 0:
+            failures.append(f"{label}의 button_overlap_count가 0이 아닙니다.")
 
     missing_scenarios = set(STARTUP_UX_SCENARIOS) - scenarios
     if missing_scenarios:

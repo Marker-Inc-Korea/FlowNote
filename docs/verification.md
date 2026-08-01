@@ -11,14 +11,14 @@
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
 | FastAPI | 현재 코드·스크립트 guard 164건, 수정 후 macOS 누적 DB 전체 회귀 164/164 두 번 연속 통과 | Windows x64 수집·JUnit 무생략 실행 대기 |
-| WPF Core | 현재 macOS 실행 87/87, 스크립트 guard 87건 | Windows 수집·TRX 무생략 실행 대기 |
+| WPF Core | 현재 macOS 실행 89/89, 스크립트 guard 89건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 현재 macOS 교차 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 현재 단위 테스트 28/28, debug build·lint PASS, 스크립트 고정값 28건 | Windows 무생략 실행 대기 |
 | SQLite | FastAPI 누적 시험 DB `journal_mode=wal`, `quick_check=ok`, FK 위반 0. Windows 공통 DB 전후 검증 대기 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
-보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했고 현재 guard도 87건이다. Windows x64의 새 수집 목록과 TRX가 87/87인지 별도로 확인해야 한다.
+보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했다. 로그인 복구 안내 회귀 2건을 더한 2026-08-01 직접 실행은 89/89가 통과했고 현재 guard도 89건이다. Windows x64의 새 수집 목록과 TRX가 89/89인지 별도로 확인해야 한다.
 
 ## 2026-08-01 작업 102 파일럿 승인 수명주기와 준비 화면
 
@@ -28,7 +28,7 @@
 
 `python3 -m unittest scripts/test_pilot_readiness.py scripts/test_manage_pilot_run.py scripts/test_manage_pilot_run_android.py`를 실행해 29/29가 통과했다. 승인 전 템플릿 잠금, 계약 고정과 템플릿 개방, 철회 뒤 재잠금과 원시 보존, 승인된 중단 기준, rollback 결정권자의 재개 승인, schema version 12와 기존 파일럿 판정을 함께 확인했다. 실행 중 생성된 시험 폴더는 `data/local/pilot-tool-tests/`에 누적 보존했고 삭제하거나 초기화하지 않았다. 이 결과는 고객 유사망, 승인 장비와 실제 승인자가 참여한 현장 파일럿 PASS가 아니다.
 
-표준 스크립트는 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed를 서로 대조한다. 현재 기대값은 87건이며 수집·고유·TRX total/passed 중 하나라도 87과 다르거나 실패·오류·건너뜀이 있으면 중단한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 화면과 요약에 실패 단계, 기대값과 실제값, 보존된 데이터와 증거 경로, 담당자, 새 RunId 재실행 명령을 이 순서로 남긴다.
+표준 스크립트는 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed를 서로 대조한다. 현재 기대값은 89건이며 수집·고유·TRX total/passed 중 하나라도 89와 다르거나 실패·오류·건너뜀이 있으면 중단한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 화면과 요약에 실패 단계, 기대값과 실제값, 보존된 데이터와 증거 경로, 담당자, 새 RunId 재실행 명령을 이 순서로 남긴다.
 
 변경된 실패 안내는 PowerShell SDK 보조 호스트로 macOS 환경 게이트를 의도적으로 실패시킨 `candidate1-macos-ux-failure-20260730-01`에서 확인했다. 콘솔·단계 로그·`verification-summary.json`은 현재 단계, 기대값, 실제값, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 모두 한 화면 구조로 남겼다. 현재 호스트는 macOS ARM64라 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
 
@@ -44,13 +44,13 @@
 
 커밋 전 재검증에서는 Ruff와 DB 집중 회귀 3/3, PowerShell 구문·안내 단위 검증을 통과했다. 같은 누적 FastAPI 시험 DB를 유지한 전체 회귀 `task102-doc-commit-fastapi-20260801-01`도 164/164, failure/error/skipped 0건으로 통과했다. JUnit과 PowerShell 원문 로그는 `data/local/`에 보존했으며, 실행 후 DB는 `journal_mode=wal`, `quick_check=ok`, FK 위반 0건이었다.
 
-위 두 FastAPI 실행은 macOS ARM64 보조 회귀이며 `verification-summary.json`이 있는 Windows x64 무생략 통합 실행이 아니다. Windows x64에서 이번 변경이 포함된 동일 clean 소스 커밋을 준비한 뒤 `integrated-smoke-20260801-01`, `integrated-smoke-20260801-02`처럼 서로 다른 새 RunId로 옵션 없는 표준 스크립트를 연속 실행해야 한다. 두 요약이 모두 `partial_run=false`, `status=PASSED`이고 FastAPI 164/164/164, WPF Core 87/87, Android 28/28, 공통 SQLite 전후 `quick_check=ok`·FK 위반 0건, 오늘 사진·인수인계 등록, 기존 과거 문서 version 증가, Git 전후 clean을 만족하기 전까지 최신 유효 Windows x64 통합 기준선은 계속 `대기`다.
+위 두 FastAPI 실행은 macOS ARM64 보조 회귀이며 `verification-summary.json`이 있는 Windows x64 무생략 통합 실행이 아니다. Windows x64에서 이번 변경이 포함된 동일 clean 소스 커밋을 준비한 뒤 `integrated-smoke-20260801-01`, `integrated-smoke-20260801-02`처럼 서로 다른 새 RunId로 옵션 없는 표준 스크립트를 연속 실행해야 한다. 두 요약이 모두 `partial_run=false`, `status=PASSED`이고 FastAPI 164/164/164, WPF Core 89/89, Android 28/28, 공통 SQLite 전후 `quick_check=ok`·FK 위반 0건, 오늘 사진·인수인계 등록, 기존 과거 문서 version 증가, Git 전후 clean을 만족하기 전까지 최신 유효 Windows x64 통합 기준선은 계속 `대기`다.
 
 ## 2026-07-31 작업 201 전체 Markdown 현재 코드 재대조
 
 Git이 추적하는 Markdown 43개를 확인했다. 작업 정책 원문 `AGENTS.md`와 현장 의견 원문 1개는 제품 코드 설명과 분리하고, 나머지 제품·구현 문서 41개를 FastAPI, Windows WPF, Android와 운영·검증 스크립트에 대조했다. 가상환경·빌드 캐시·`data/local`·`tmp`·`_workspace`의 Markdown은 외부 의존성 또는 누적 검증 산출물이므로 수정하지 않았다. 날짜별 실행 기록은 당시 수치와 실패 결과를 보존하고, 현재 코드 기준이라고 적힌 문장만 갱신했다.
 
-현재 OpenAPI는 루트 `GET /`를 포함해 142개 method/path 조합이고 SQLAlchemy ORM은 61개 테이블이다. `Settings`와 `.env.example`은 각각 45개 항목이며 FastAPI 테스트는 중복 없이 164건 수집됐다. `services/api/README.md`의 API 표는 민감정보 정책 상태 전이 6개를 실제 경로별로 펼친 뒤 OpenAPI와 누락·초과 0건으로 일치했고, 데이터 모델 문서 3개도 ORM 테이블 누락이 없다. 현재 코드와 표준 스크립트 guard는 FastAPI 164건·WPF Core 87건·Android 28건으로 일치한다.
+현재 OpenAPI는 루트 `GET /`를 포함해 142개 method/path 조합이고 SQLAlchemy ORM은 61개 테이블이다. `Settings`와 `.env.example`은 각각 45개 항목이며 FastAPI 테스트는 중복 없이 164건 수집됐다. `services/api/README.md`의 API 표는 민감정보 정책 상태 전이 6개를 실제 경로별로 펼친 뒤 OpenAPI와 누락·초과 0건으로 일치했고, 데이터 모델 문서 3개도 ORM 테이블 누락이 없다. 현재 코드와 표준 스크립트 guard는 FastAPI 164건·WPF Core 89건·Android 28건으로 일치한다.
 
 macOS 보조 검증에서 WPF Core는 87/87이 통과했다. Android는 단위 테스트와 `assembleDebug`, `lintDebug`가 성공했다. FastAPI 전체 회귀를 백그라운드 보존 작업이 꺼진 환경에서 다시 실행한 결과 164건 중 161건이 통과하고 3건이 SQLite `database is locked`로 실패했다. 실패한 항목은 독립 표본 제3 합의, 48건 기준 자료 수명주기, 질의 정책 snapshot 재검사였다. 같은 3건을 데이터 삭제 없이 순서대로 재실행하면 3/3이 통과했다. 개별 통과를 전체 회귀 통과로 바꾸어 기록하지 않으며 기존 DB·로그·테스트 산출물은 삭제하거나 초기화하지 않았다.
 
