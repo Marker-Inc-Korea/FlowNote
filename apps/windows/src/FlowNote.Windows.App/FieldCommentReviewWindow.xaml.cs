@@ -450,7 +450,7 @@ public partial class FieldCommentReviewWindow : Window
     {
         if (serverClient is null)
         {
-            ResetReviewDashboard("서버 연결이 없어 실제 현장 준비도를 계산하지 않습니다.");
+            ResetReviewDashboard("서버에 연결되지 않아 실제 현장 준비도를 표시하지 않습니다.");
             return;
         }
 
@@ -514,7 +514,7 @@ public partial class FieldCommentReviewWindow : Window
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
             ResetReviewDashboard(
-                $"서버 준비도 조회 실패로 숫자를 표시하지 않습니다. {SummarizeException(exception)}");
+                $"서버에서 준비도를 불러오지 못해 숫자를 표시하지 않습니다. {SummarizeException(exception)}");
         }
     }
 
@@ -543,7 +543,7 @@ public partial class FieldCommentReviewWindow : Window
     {
         if (ReviewActionGrid.SelectedItem is not ReviewActionRow action || string.IsNullOrWhiteSpace(action.WorkbenchFilter))
         {
-            StatusTextBlock.Text = "선택한 준비도 조치는 별도 운영 절차가 필요합니다. 담당자와 다음 조치 내용을 확인하세요.";
+            StatusTextBlock.Text = "선택한 준비도 항목은 별도 운영 절차로 처리해야 합니다. 담당자와 다음 조치를 확인하세요.";
             return;
         }
         OpenWorkbenchFilter(action.WorkbenchFilter);
