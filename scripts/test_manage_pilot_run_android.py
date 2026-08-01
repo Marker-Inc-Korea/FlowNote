@@ -5,6 +5,7 @@ import contextlib
 import csv
 import importlib.util
 import io
+import json
 import unittest
 import uuid
 from pathlib import Path
@@ -37,6 +38,19 @@ class AndroidFieldUxEvidenceTests(unittest.TestCase):
                 )
             )
         self.run_root = self.evidence_root / self.run_id
+        record = json.loads(
+            (self.run_root / "pilot-run.json").read_text(encoding="utf-8")
+        )
+        manage_pilot_run.pilot_readiness.authorize(self.run_root, record)
+        with contextlib.redirect_stdout(io.StringIO()):
+            manage_pilot_run.prepare(
+                argparse.Namespace(
+                    run_id=self.run_id,
+                    evidence_root=self.evidence_root,
+                    profile="full_pilot",
+                    allow_existing=True,
+                )
+            )
         (self.run_root / "proof.txt").write_text(
             "preserved Android field UX evidence\n", encoding="utf-8"
         )

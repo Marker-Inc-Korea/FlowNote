@@ -20,6 +20,14 @@
 
 보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했고 현재 guard도 87건이다. Windows x64의 새 수집 목록과 TRX가 87/87인지 별도로 확인해야 한다.
 
+## 2026-08-01 작업 102 파일럿 승인 수명주기와 준비 화면
+
+현재 작업 트리의 파일럿 운영 코드를 기준으로 배포와 리허설 문서를 갱신했다. `full_pilot`의 `prepare`는 승인 전 입력 범위를 `pilot-run.json`, `manifest.md`, 승인 원시표 3종과 준비도 보고서 3종으로 제한한다. 8개 책임 영역과 운영·보안·현장 독립 승인, 승인 장비, 이전 승인 패키지, RPO/RTO 등 계약 항목을 `authorize`가 모두 대조해야 설치·복구·Android 운영 템플릿이 열린다.
+
+승인 상태는 `AUTHORIZED`, `REVOKED`, `STOPPED`, `RESUMED` 이벤트로 이어서 기록하며 기존 원시 증거를 삭제하거나 덮어쓰지 않는다. 최초 승인 계약의 SHA-256과 현재 계약이 다르거나 승인 상태가 철회·중단이면 운영 입력과 완료 판정을 차단한다. 미충족 항목은 `pilot-readiness.json`, `.csv`, `.html`에 역할·게이트·선행조건별로 묶고 담당자와 다음 행동을 함께 표시한다. 기존 `pilot-verification.json`을 다시 만들기 전에도 `readiness` 명령으로 현재 판정 내용을 재분류할 수 있다.
+
+`python3 -m unittest scripts/test_pilot_readiness.py scripts/test_manage_pilot_run.py scripts/test_manage_pilot_run_android.py`를 실행해 29/29가 통과했다. 승인 전 템플릿 잠금, 계약 고정과 템플릿 개방, 철회 뒤 재잠금과 원시 보존, 승인된 중단 기준, rollback 결정권자의 재개 승인, schema version 12와 기존 파일럿 판정을 함께 확인했다. 실행 중 생성된 시험 폴더는 `data/local/pilot-tool-tests/`에 누적 보존했고 삭제하거나 초기화하지 않았다. 이 결과는 고객 유사망, 승인 장비와 실제 승인자가 참여한 현장 파일럿 PASS가 아니다.
+
 표준 스크립트는 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed를 서로 대조한다. 현재 기대값은 87건이며 수집·고유·TRX total/passed 중 하나라도 87과 다르거나 실패·오류·건너뜀이 있으면 중단한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 화면과 요약에 실패 단계, 기대값과 실제값, 보존된 데이터와 증거 경로, 담당자, 새 RunId 재실행 명령을 이 순서로 남긴다.
 
 변경된 실패 안내는 PowerShell SDK 보조 호스트로 macOS 환경 게이트를 의도적으로 실패시킨 `candidate1-macos-ux-failure-20260730-01`에서 확인했다. 콘솔·단계 로그·`verification-summary.json`은 현재 단계, 기대값, 실제값, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 모두 한 화면 구조로 남겼다. 현재 호스트는 macOS ARM64라 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
