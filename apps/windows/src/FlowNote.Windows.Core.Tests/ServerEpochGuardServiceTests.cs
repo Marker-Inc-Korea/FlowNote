@@ -24,6 +24,12 @@ public sealed class ServerEpochGuardServiceTests
         {
             Assert.Contains(token, ReconciliationDecisionGuidance.FullGuide);
         }
+        Assert.Contains("CONFIRMED", ReconciliationDecisionGuidance.VerdictGuide);
+        Assert.Contains("DIVERGED", ReconciliationDecisionGuidance.VerdictGuide);
+        Assert.DoesNotContain("REBOUND", ReconciliationDecisionGuidance.VerdictGuide);
+        Assert.Contains("REBOUND", ReconciliationDecisionGuidance.ActionGuide);
+        Assert.Contains("CONFLICT", ReconciliationDecisionGuidance.ActionGuide);
+        Assert.DoesNotContain("CONFIRMED", ReconciliationDecisionGuidance.ActionGuide);
 
         Assert.Contains(
             "자동 전송을 종결",
@@ -54,9 +60,33 @@ public sealed class ServerEpochGuardServiceTests
         Assert.Contains("CONFIRMED → REBOUND 1건", summary);
         Assert.Contains("ABSENT → REQUEUE 1건", summary);
         Assert.Contains("DIVERGED → CONFLICT 1건", summary);
+        Assert.Contains("상태·매핑 변경 대상 3건", summary);
+        Assert.Contains("원천 보존 3건", summary);
+        Assert.Contains("충돌 격리 1건", summary);
         Assert.Contains("한 transaction", summary);
+        Assert.Contains("이 화면에서 되돌릴 수 없습니다", summary);
         Assert.Contains("서버 재시작", summary);
         Assert.Contains("자동 전송과 알림 polling이 차단", summary);
+    }
+
+    [Fact]
+    public void ImpactSummarySeparatesChangedPreservedAndConflictCounts()
+    {
+        var items = new[]
+        {
+            LocalItem("item-rebound-1", "CONFIRMED", "REBOUND"),
+            LocalItem("item-rebound-2", "CONFIRMED", "REBOUND"),
+            LocalItem("item-requeue", "ABSENT", "REQUEUE"),
+            LocalItem("item-conflict", "DIVERGED", "CONFLICT")
+        };
+
+        var summary = ReconciliationDecisionGuidance.BuildImpactSummary(items);
+
+        Assert.Contains("상태·매핑 변경 대상 4건", summary);
+        Assert.Contains("원천 보존 4건", summary);
+        Assert.Contains("충돌 격리 1건", summary);
+        Assert.Contains("REBOUND 2건 / REQUEUE 1건 / CONFLICT 1건", summary);
+        Assert.Contains("삭제하지 않습니다", summary);
     }
 
     [Theory]
