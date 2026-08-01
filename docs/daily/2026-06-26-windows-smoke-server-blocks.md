@@ -15,7 +15,7 @@
 - 서버 API는 인증, 승인 단말, 문서와 controlled copy, FieldComment 원천·검토·감사·품질, 접근 로그, 작업순서, 채널/인수인계, 보고서, AI 검색 근거 후보·회귀 평가와 외부 AI 질의 안전장치, sync manifest·관리자 승인형 reconciliation을 제공한다.
 - Windows 앱은 로컬 SQLite를 우선 사용하며 서버 동기화 큐와 서버 ID 매핑 테이블을 가진다.
 - 서버 연계 테스트에서 생성된 로그, DB, 입력 파일, 출력 파일은 보존한다.
-- 2026-07-30 당시 FastAPI 160건과 WPF Core 84건은 macOS에서 통과했고 Android 단위 테스트는 24건이었다. 당시 표준 통합 스크립트의 실제 고정값은 FastAPI 155건·WPF Core 84건·Android 24건이었지만 FastAPI 단계 안내는 160건을 요구해 수집 단계를 통과할 수 없었다. 이 불일치는 이후 수정됐다. 2026-07-31 현재 코드와 스크립트 guard는 FastAPI 164건·WPF Core 87건·Android 28건으로 일치하지만, 과거 `baseline-131`과 `p0-baseline-144-macos-precheck-20260722-002`는 당시 일부 환경만 실행한 보조 기록이므로 현재 통합 기준선이 아니다. 앱 빌드·공통 DB 스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 같은 실행 ID로 묶은 Windows x64 무생략 `PASSED` run을 새로 확보해야 한다.
+- 2026-07-30 당시 FastAPI 160건과 WPF Core 84건은 macOS에서 통과했고 Android 단위 테스트는 24건이었다. 당시 표준 통합 스크립트의 실제 고정값은 FastAPI 155건·WPF Core 84건·Android 24건이었지만 FastAPI 단계 안내는 160건을 요구해 수집 단계를 통과할 수 없었다. 이 불일치는 이후 수정됐다. 2026-08-01 현재 코드와 스크립트 guard는 FastAPI 166건·WPF Core 91건·Android 28건으로 일치하지만 과거 `baseline-131`과 `p0-baseline-144-macos-precheck-20260722-002`는 당시 일부 환경만 실행한 보조 기록이므로 현재 통합 기준선이 아니다. 앱 빌드·공통 DB 스모크, Android 단위 테스트·debug build와 Git 산출물 사후 점검을 같은 실행 ID로 묶은 Windows x64 무생략 `PASSED` run을 새로 확보해야 한다.
 
 ## 주의
 

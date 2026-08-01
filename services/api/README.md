@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-07-31 현재 OpenAPI에 등록된 142개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-08-01 현재 OpenAPI에 등록된 143개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -67,6 +67,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/field-comments/{comment_id}/traceability` | FieldComment, audit, report-source, and generated-document traceability |
 | GET | `/api/v1/field-comments/quality-workbench` | Stale, weak-evidence, and missing-source review workbench |
 | GET | `/api/v1/field-comments/quality-metrics` | Status, signal, actor, line, error, and report-link quality metrics |
+| GET | `/api/v1/field-comments/review-dashboard` | Server-authoritative review counts, owners, next actions, and WPF workbench filters |
 | POST | `/api/v1/field-comments/{comment_id}/attachments` | Attachment create; optional multipart `idempotencyKey` returns the existing attachment on retry |
 | GET | `/api/v1/field-comments/{comment_id}/attachments` | Attachment list |
 | GET | `/api/v1/documents/{document_id}/field-comments` | FieldComments by document |
@@ -131,7 +132,8 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/ai-operations/prompts/{prompt_version_id}/retire` | Retire a prompt version |
 | GET | `/api/v1/ai-operations/policies` | Read global/site kill switch, limits, retention, and export policy |
 | PUT | `/api/v1/ai-operations/policies` | Update global/site kill switch, limits, retention, and export policy |
-| GET/POST | `/api/v1/ai-operations/sensitive-data-policies` | List redacted sensitive-policy versions or create an immutable draft |
+| GET | `/api/v1/ai-operations/sensitive-data-policies` | List redacted sensitive-policy versions |
+| POST | `/api/v1/ai-operations/sensitive-data-policies` | Create an immutable sensitive-policy draft |
 | GET | `/api/v1/ai-operations/sensitive-data-policies/current` | Read current policy and sanitized runtime block category/owner/next action |
 | GET | `/api/v1/ai-operations/sensitive-data-policies/{policy_id}` | Read one redacted policy version and its latest state tag |
 | POST | `/api/v1/ai-operations/sensitive-data-policies/{policy_id}/review` | Record review by a different system administrator |
@@ -238,7 +240,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-07-31, the current code and `scripts/verify-preserved-tests.ps1` guards agree on 164 FastAPI tests, 87 WPF Core tests, and 28 Android tests. The four added FastAPI cases cover sensitive-policy lifecycle/idempotency, approval withdrawal and kill-switch priority, permission changes, and provider-call policy races. The WPF Core collection includes the sensitive-policy response-loss retry and redacted read-back case. The script preserves the raw collection, duplicate list, exit codes, and JUnit totals, and reports the current step, expected and actual values, preserved evidence, and a new `RunId` command when collection, JUnit, or toolchain checks fail. This is not an integrated baseline because the Windows x64 collection/TRX comparison, shared-DB smoke, Android build, and all checks have not run twice under one clean source commit.
+As of 2026-08-01, the current code and `scripts/verify-preserved-tests.ps1` guards agree on 166 FastAPI tests, 91 WPF Core tests, and 28 Android tests. The FastAPI collection includes the FieldComment review-dashboard aggregation and analysis-role boundary cases. The WPF Core collection includes the matching server-client contract checks. The script preserves the raw collection, duplicate list, exit codes, and JUnit totals, and reports the current step, expected and actual values, preserved evidence, and a new `RunId` command when collection, JUnit, or toolchain checks fail. This is not an integrated baseline because the Windows x64 collection/TRX comparison, shared-DB smoke, Android build, and all checks have not run twice under one clean source commit.
 
 The `system-admin` sensitive-data-policy API manages immutable customer/site versions through draft, independently reviewed, independently approved, active, superseded, approval-withdrawn, and retired states. List/detail/audit responses expose only sanitized metadata, content hashes, and item counts; raw terms, customer identifiers, endpoint values, and credentials are not returned. Mutations use stable operation keys, state tags, explicit confirmation values, and read-back. The provider boundary rechecks the active policy snapshot immediately before the call and after the response. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. Query and retention audit operations are restricted to the configured customer/site scope. The server lifespan runs expired-query retention on the configured interval, while `system-admin` can run scoped bulk retention, expire one query, or place and release a reasoned legal hold. An active hold blocks all three expiry paths. WPF mutations send a stable `operationKey` and the latest detail `stateTag`; duplicate/lost-response retries return the original result, while stale, already-expired, already-released, and concurrent operations return `409`. Legal-hold rows and linked audit history are never deleted by release or expiry.
 

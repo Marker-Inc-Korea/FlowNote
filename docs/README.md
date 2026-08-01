@@ -38,7 +38,7 @@
 - 문서 등록은 즉시 공개가 아니다. 등록된 문서는 `WORKING` 상태와 최신 버전으로 저장되고, 공개 버전은 별도 publish 절차로 지정한다.
 - WPF 다운로드 허용 role의 파일 저장은 로컬 원본 복사가 아니라 서버의 세션 바인딩 1회성 controlled copy와 저장 후 SHA-256 검증을 사용한다.
 - FieldComment는 문서 버전이 아니라 현장 원천 기록이다.
-- FieldComment 원천 핵심 필드는 생성 후 수정·삭제하지 않고, 관리자 해석은 담당자·기한·정리·분석·상태·전이 사유와 원천 hash 감사로 분리한다. `red` 신호 또는 상충 원천의 결정은 분석자와 다른 사용자가 맡는다. WPF에는 상세 필터와 저장된 보기, 다중 선택 검토 preview·품질 작업함·서버 역추적 화면이 있다. FastAPI에는 요청당 최대 200건을 입력 순서대로 사전검증하고 항목별 revision·mutation receipt로 부분 성공 처리하는 일괄 검토, 원자형 호환 일괄 경로, 감사·품질 API, 보고서 source와 생성 최종 문서·버전을 잇는 통합 역추적 API가 구현되어 있다.
+- FieldComment 원천 핵심 필드는 생성 후 수정·삭제하지 않고 관리자 해석은 담당자·기한·정리·분석·상태·전이 사유와 원천 hash 감사로 분리한다. `red` 신호 또는 상충 원천의 결정은 분석자와 다른 사용자가 맡는다. WPF에는 상세 필터와 저장된 보기, 다중 선택 검토 preview·품질 작업함·서버 역추적 화면이 있다. 검토 화면 상단은 서버 권위 현황과 실제 현장 AI 준비도를 함께 읽되 합성·시험 수치를 실제 현장 준비도에 더하지 않는다. FastAPI에는 요청당 최대 200건을 입력 순서대로 사전검증하고 항목별 revision·mutation receipt로 부분 성공 처리하는 일괄 검토, 원자형 호환 일괄 경로, 감사·품질·검토 대시보드 API, 보고서 source와 생성 최종 문서·버전을 잇는 통합 역추적 API가 구현되어 있다.
 - 보고서 초안과 최종 저장은 서로 다른 source type 2종 이상을 요구한다. WPF 화면은 `SELECTED` FieldComment, 현재 공개 문서, 작업순서 이력을 후보로 제공한다. Core의 저장 전 검증은 작업순서 항목과 이력을 모두 받아 서버의 현재 항목·최신 변경 기록 또는 선택한 변경 기록과 대조한다. 최초 원천 검증에서 서버에 연결할 수 없거나 선택 뒤 기록이 달라졌으면 로컬 보고서와 전송 대기 기록을 만들지 않는다. 검증을 통과하면 서버가 source별 version, 독립 trace ID와 저장 시점 SHA-256을 고정하고 최종 문서 저장 직전에 원천을 다시 확인한다.
 - WPF 서버 동기화 큐는 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장을 대상으로 한다. FieldComment의 분석·검토 완료·보고서 선정은 각 상태 전이를 별도 큐 기록으로 보존한다. 보고서는 여러 문서의 근거를 묶더라도 나머지 전송 대기 항목을 먼저 처리한 뒤 시도한다. 공개·상태·태그는 안정된 mutation key와 서버 receipt를 사용하고 2xx 응답 뒤 서버 문서 상태를 다시 읽어야 `SYNCED`로 종결한다. 작업내역 화면에서는 큐 깊이·최장 대기·최근 처리량·실패 분포와 row별 운영 상태를 확인한다. 서버본 유지로 종결한 `DISCARDED`도 전체 보존 건수에는 포함하되 재시도 대상 큐 깊이에서는 제외한다.
 - WPF 메인 화면은 관리자·반장·조장·작업자의 첫 업무 3개를 로그인 직후 보여준다. 빠른 업무는 기존 권한 검사와 창을 그대로 사용한다. 문서 검색과 상태 필터는 폴더 이동 뒤에도 유지되며, 권한이 없는 기능에는 필요한 역할과 문의 방법을 표시한다. 동기화 미완료 상태는 대기·실패/충돌·보류 건수, 로컬 원천 보존 여부와 다음 확인 위치를 함께 안내한다.
@@ -57,7 +57,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- 2026-08-01 현재 코드와 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 guard는 FastAPI 164건·WPF Core 89건·Android 28건으로 일치한다. Windows에서 FastAPI 수집/JUnit과 WPF Core 수집 목록·TRX를 다시 대조하고, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 run이 같은 clean 소스 커밋에서 2회 연속 `partial_run=false`, `verification-summary.json=PASSED`여야 통합 기준선으로 인정한다.
+- 2026-08-01 현재 코드와 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 guard는 FastAPI 166건·WPF Core 91건·Android 28건으로 일치한다. Windows에서 FastAPI 수집/JUnit과 WPF Core 수집 목록·TRX를 다시 대조하고 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 run이 같은 clean 소스 커밋에서 2회 연속 `partial_run=false`, `verification-summary.json=PASSED`여야 통합 기준선으로 인정한다.
 
 ## 일일 기록
 

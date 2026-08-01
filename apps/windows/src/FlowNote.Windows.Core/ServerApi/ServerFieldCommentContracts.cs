@@ -426,6 +426,54 @@ public sealed record ServerFieldCommentQualityItemResponse
     public string Detail { get; init; } = string.Empty;
 }
 
+public sealed record ServerFieldCommentReviewActionResponse
+{
+    [JsonPropertyName("code")]
+    public string Code { get; init; } = string.Empty;
+
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = string.Empty;
+
+    [JsonPropertyName("count")]
+    public int Count { get; init; }
+
+    [JsonPropertyName("owner")]
+    public string Owner { get; init; } = string.Empty;
+
+    [JsonPropertyName("next_action")]
+    public string NextAction { get; init; } = string.Empty;
+
+    [JsonPropertyName("workbench_filter")]
+    public string WorkbenchFilter { get; init; } = string.Empty;
+}
+
+public sealed record ServerFieldCommentReviewDashboardResponse
+{
+    [JsonPropertyName("total_count")]
+    public int TotalCount { get; init; }
+
+    [JsonPropertyName("counts_by_status")]
+    public IReadOnlyDictionary<string, int> CountsByStatus { get; init; } = new Dictionary<string, int>();
+
+    [JsonPropertyName("unreviewed_count")]
+    public int UnreviewedCount { get; init; }
+
+    [JsonPropertyName("conflict_count")]
+    public int ConflictCount { get; init; }
+
+    [JsonPropertyName("safety_quality_risk_count")]
+    public int SafetyQualityRiskCount { get; init; }
+
+    [JsonPropertyName("report_unlinked_count")]
+    public int ReportUnlinkedCount { get; init; }
+
+    [JsonPropertyName("unassigned_count")]
+    public int UnassignedCount { get; init; }
+
+    [JsonPropertyName("actions")]
+    public IReadOnlyList<ServerFieldCommentReviewActionResponse> Actions { get; init; } = [];
+}
+
 public sealed record ServerFieldCommentAttachmentFileResponse
 {
     [JsonPropertyName("storage_type")]
