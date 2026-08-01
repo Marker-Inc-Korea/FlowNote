@@ -44,6 +44,7 @@ function Invoke-IsolatedExpectedFailure {
 }
 
 $resolvedScriptPath = (Resolve-Path $ScriptPath).Path
+$supportScriptPath = (Resolve-Path (Join-Path (Split-Path $resolvedScriptPath) "verify-preserved-tests-support.ps1")).Path
 $tokens = $null
 $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile(
@@ -57,8 +58,22 @@ if ($parseErrors.Count -ne 0) {
     }) -join [Environment]::NewLine
     throw "PowerShell 구문 오류 $($parseErrors.Count)건:`n$details"
 }
+$supportTokens = $null
+$supportParseErrors = $null
+$supportAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    $supportScriptPath,
+    [ref]$supportTokens,
+    [ref]$supportParseErrors
+)
+if ($supportParseErrors.Count -ne 0) {
+    $details = @($supportParseErrors | ForEach-Object {
+        "$($_.Extent.StartLineNumber):$($_.Extent.StartColumnNumber) $($_.ErrorId) $($_.Message)"
+    }) -join [Environment]::NewLine
+    throw "PowerShell support 구문 오류 $($supportParseErrors.Count)건:`n$details"
+}
 
 $requiredFunctionNames = @(
+    "Get-StepOwner",
     "Get-StepExpectedValue",
     "Get-StepActualValue",
     "Get-StepNextAction",
@@ -66,11 +81,13 @@ $requiredFunctionNames = @(
     "Assert-FastApiCollectionCounts",
     "Assert-FastApiJUnitCounts"
 )
-$functionAsts = @($ast.FindAll({
-    param($node)
-    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-        $requiredFunctionNames -contains $node.Name
-}, $true))
+$functionAsts = @(@($ast, $supportAst) | ForEach-Object {
+    $_.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+            $requiredFunctionNames -contains $node.Name
+    }, $true)
+})
 if ($functionAsts.Count -ne $requiredFunctionNames.Count) {
     throw "검증 대상 함수 수 불일치: 기대=$($requiredFunctionNames.Count), 실제=$($functionAsts.Count)"
 }
@@ -133,6 +150,10 @@ foreach ($stepName in @(
     Assert-Contains $nextAction "재사용하거나 삭제하지 말고" "$stepName 증거 보존"
 }
 
+if ((Get-StepOwner "Run FastAPI pytest") -ne "FastAPI·SQLite 담당자") {
+    throw "FastAPI 잠금 실패 담당자 안내 불일치."
+}
+
 $toolFailure = "필수 명령을 찾을 수 없음: dotnet"
 $toolExpected = Get-StepExpectedValue "Check Windows baseline toolchain versions"
 $toolActual = Get-StepActualValue "Check Windows baseline toolchain versions" $toolFailure
@@ -147,7 +168,7 @@ foreach ($stepName in @("Collect FastAPI pytest tests", "Run FastAPI pytest")) {
     Assert-Contains $preservedData "삭제하거나 초기화하지 않았습니다" "$stepName 보존 데이터"
 }
 
-$source = Get-Content -Raw $resolvedScriptPath
+$source = (Get-Content -Raw $resolvedScriptPath) + (Get-Content -Raw $supportScriptPath)
 if ($source -match 'FastAPI 155건' -or $source -match '\$expectedFastApiTestCount\s*=\s*155') {
     throw "현재 FastAPI 기대값에 역사값 155가 남아 있음."
 }
@@ -156,6 +177,9 @@ Assert-Contains `
     $source `
     '$script:currentExpectedValue = "FastAPI ${expectedFastApiTestCount}건' `
     "시작 화면 FastAPI 기대값"
+Assert-Contains $source '"담당자" = $failureOwner' "실패 요약 담당자"
+Assert-Contains $source '"새 RunId 재실행" = $failureRerunCommand' "실패 요약 새 RunId"
+Assert-Contains $source "누적 DB를 삭제하거나 초기화하지 말고" "SQLite 삭제 방지 안내"
 
 Write-Host "PowerShell 구문 검사 통과: parse_errors=0"
 Write-Host "의도적 수집 불일치 확인: $collectionMismatch"

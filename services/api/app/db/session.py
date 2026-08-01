@@ -8,6 +8,10 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 
+SQLITE_BUSY_TIMEOUT_SECONDS = 30.0
+SQLITE_BUSY_TIMEOUT_MILLISECONDS = int(SQLITE_BUSY_TIMEOUT_SECONDS * 1000)
+
+
 def _sqlite_path_from_url(database_url: str) -> Path | None:
     url = make_url(database_url)
     if url.drivername.split("+", 1)[0] != "sqlite":
@@ -26,7 +30,14 @@ def ensure_database_parent(database_url: str) -> None:
 class Database:
     def __init__(self, database_url: str, *, echo: bool = False) -> None:
         ensure_database_parent(database_url)
-        connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+        connect_args = (
+            {
+                "check_same_thread": False,
+                "timeout": SQLITE_BUSY_TIMEOUT_SECONDS,
+            }
+            if database_url.startswith("sqlite")
+            else {}
+        )
         self.database_url = database_url
         self.engine = create_engine(database_url, echo=echo, future=True, connect_args=connect_args)
         if database_url.startswith("sqlite"):
@@ -44,6 +55,9 @@ class Database:
         @event.listens_for(engine, "connect")
         def set_sqlite_pragma(dbapi_connection: SQLiteConnection, _connection_record: object) -> None:
             cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MILLISECONDS}")
+            cursor.execute("PRAGMA synchronous=NORMAL")
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
 
@@ -64,5 +78,13 @@ def get_database(request: Request) -> Database:
 
 def get_db_session(request: Request) -> Generator[Session, None, None]:
     database = get_database(request)
-    with database.session() as session:
+    session = database.session()
+    try:
         yield session
+    except BaseException:
+        session.rollback()
+        raise
+    finally:
+        if session.in_transaction():
+            session.rollback()
+        session.close()
