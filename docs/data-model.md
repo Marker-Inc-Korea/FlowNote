@@ -18,7 +18,7 @@
 | `field_comments` | 현장 코멘트 원천 기록과 서버 코멘트 ID |
 | `field_comment_attachments` | FieldComment 첨부 파일 로컬 경로와 서버 첨부 ID |
 | `field_comment_saved_views` | WPF FieldComment 목록의 저장된 필터 이름·JSON·갱신 시각 |
-| `document_view_logs` | 문서 열람 시작/종료, 자동 닫힘, 다운로드 차단 로그 |
+| `document_view_logs` | 문서 열람 시작/종료, 미리보기 실패, 다운로드 차단과 구 자동 닫힘 호환 로그 |
 | `activity_history` | 폴더, 문서, 사용자, 파일 감시, 동기화, 작업순서 이력 |
 | `file_watch_candidates` | 관리자 파일 감시 후보 |
 | `tag_definitions` | 태그 사전 |

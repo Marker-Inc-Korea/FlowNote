@@ -1,6 +1,6 @@
 # FlowNote 구현 로드맵
 
-이 문서는 2026-08-01 현재 코드에서 완료된 범위와, 아직 구현되지 않은 예외 작업을 분리한다. “완료된 기반”은 코드가 존재하는 항목이며 운영 실기 통과를 뜻하지 않는다.
+이 문서는 2026-08-03 현재 코드에서 완료된 범위와, 아직 구현되지 않은 예외 작업을 분리한다. “완료된 기반”은 코드가 존재하는 항목이며 운영 실기 통과를 뜻하지 않는다.
 
 ## 완료된 기반
 
@@ -8,12 +8,13 @@
 - WPF 로컬 SQLite 초기화와 기본 시드
 - 로그인, 사용자 관리, role 정책
 - 문서 폴더/문서/버전/태그
-- 문서 미리보기와 접근 로그
+- TXT/PDF/XLSX/이미지 미리보기, 구조화된 실패 안내와 열람 시작·종료·미리보기 실패·다운로드 차단 감사
 - FieldComment 원천 불변과 첨부, 단계형 상태 전이, 담당자·기한, WPF 다중 선택 개별 동기화, FastAPI 최대 200건 일괄 검토, 원천 hash 감사·품질 작업함·보고서와 최종 문서 통합 역추적, 개별 검토 revision·mutation receipt와 첨부 부모/파일 hash 검증
 - 보고서 source 고정 version/hash·저장 직전 재검증, report revision·내용/source 집합 hash·mutation receipt와 WPF read-back 보존
+- 문서 권위 변경, FieldComment 검토, 보고서 상태 전이와 작업순서 변경의 공통 mutation receipt·감사 event envelope, 권한을 재검사하는 통합 변경 이력 API와 WPF 조치 화면
 - 알림과 활동 이력
 - 작업순서 보드/항목/관리자·TV 화면의 서버 권위 운영. `board_revision`, mutation key·intent hash receipt, stale revision 조건부 갱신, 응답 유실 동일 key 1회 재시도와 오프라인 확정 변경 차단 포함
-- 보고서 초안 저장과 서버 보고서 저장 시도
+- 보고서 초안 저장, 검토중·확정·보관 상태 전이와 확정 문서 생성
 - 관리자 파일 감시 후보
 - FastAPI SQLite 서버와 `/api/v1` API
 - 서버 인증 세션과 refresh/logout
@@ -39,7 +40,7 @@
 - FastAPI `system-admin` 전용 외부 AI 전송 승인·프롬프트·민감정보 정책·운영 정책·감사·보존 API와 WPF `AI 운영` 화면. 민감정보 정책의 작성·분리 검토·승인·활성·대체·철회·폐기, 고객·현장 scope별 질의 상세, 단일 만료와 legal hold 설정·해제, 이중 확인·멱등 재시도·서버 read-back 포함
 - FastAPI 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인 API
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면과 서버 API 클라이언트
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부·인수인계 outbox, 신호등식 기록, 채널 알림, 인수인계 작성·확인
+- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부·인수인계 outbox, 신호등식 기록, 채널 알림, 인수인계 작성·확인·보류와 같은 원천의 후속 FieldComment. 확인·보류·후속 FieldComment의 암호화 outbox와 알림 부분 성공 재시도 포함
 - Android 전용 단기 1회 grant/stream, 현재 공개 버전·사용자·세션·승인 단말 바인딩, 파일 무결성 재검사와 접근 감사
 - Android 내부 난수 캐시, 수신 크기·SHA-256 검증, `FLAG_SECURE`, 외부 열기·공유 미제공, 종료·백그라운드 전환·오류·로그아웃·다음 시작 시 캐시 정리
 - Windows 창 활성 중 polling과 Android 로그인 세션 foreground service polling, cursor 기반 증분 조회·연결 실패 backoff·재부팅 복구

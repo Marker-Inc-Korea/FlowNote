@@ -1,6 +1,6 @@
 # FlowNote MVP 범위
 
-이 문서는 2026-08-01 현재 코드 기준이다. 구현되지 않은 기능은 “현재 제외 범위”, “후속 계층 착수 기준”, “후속 MVP 후보”에만 둔다.
+이 문서는 2026-08-03 현재 코드 기준이다. 구현되지 않은 기능은 “현재 제외 범위”, “후속 계층 착수 기준”, “후속 MVP 후보”에만 둔다.
 
 ## 현재 MVP 구현
 
@@ -19,7 +19,7 @@
 - FastAPI 서버 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기 API와 WPF 운영 화면
 - 서버 임시 비밀번호 계정의 첫 로그인 비밀번호 변경 강제, 기존 세션 전체 폐기와 재로그인 흐름
 - 작업순서 보드, 항목, 순서 변경, 상태 변경, 이력, 알림 후보, 관리자·TV 화면. FastAPI `board_revision`·mutation receipt를 권위 원천으로 쓰고, WPF 로컬 row는 초안·읽기 캐시로만 보존하며 오프라인 확정 변경을 차단
-- 보고서 초안 생성 보조, 문서 저장, 서버 보고서 저장 시도, report revision·내용/source 집합 hash·mutation receipt와 source 재검증
+- 보고서 초안 생성 보조, 검토중·확정·보관 상태 전이, 확정 문서 저장, report revision·내용/source 집합 hash·mutation receipt와 source 재검증
 - 관리자 파일 감시 후보와 버전 확정
 - AI 자동 조언 전 단계의 `ai_search_candidates` 근거 후보 재생성, 목록, 품질 점검 API와 WPF 운영 점검 화면
 - 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth 첫 승인과 서로 다른 사용자의 2차 승인, WPF 사례·원천 구성, 고정 원천 snapshot/provenance, 실제 현장/스모크 준비도 분리, 불변 dataset version의 작성·검토·독립 2단계 승인, dataset 결합 회귀 평가 API와 48건 비민감 스모크 검증 도구
@@ -27,7 +27,7 @@
 - FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 불변 프롬프트 수명주기, 고객·현장별 민감정보 정책 작성·분리 검토·승인·활성·대체·철회·폐기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 일괄·단일 즉시 실행과 legal hold 설정·해제. 민감정보 정책과 hold 관련 고위험 조작은 이중 확인, 최신 상태 태그, 멱등 키와 서버 read-back을 사용하며 활성 hold는 주기·일괄·단일 만료에서 제외된다.
 - FastAPI 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 업무 채널·수신자·원천을 고르는 인수인계 작성과 확인
+- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 업무 채널·수신자·원천을 고르는 인수인계 작성, 받은 인수인계 확인·보류와 같은 원천의 후속 FieldComment
 - Android 보안 본문 열람용 승인 단말·사용자·세션·현재 공개 버전 바인딩 1회 grant, 크기·SHA-256 검증, 내부 캐시 자동 정리와 화면 캡처 차단
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
 - WPF 로컬 저장 후 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장 큐와 서버 ID 매핑
@@ -56,7 +56,7 @@ MVP의 성공 기준은 AI가 답변하는 것이 아니라 현장 문서와 현
 - CAD 원본 직접 뷰어와 HWP 고급 미리보기
 - Android Office/HWP/CAD 본문 렌더링
 
-Windows와 Android의 업무 채널 알림, 인수인계 작성·확인, FieldComment/작업순서 이벤트 알림은 제외 범위가 아니다. 현재 코드는 서버 API, 기본 클라이언트 화면, WPF 창 활성 15초 polling, Android 로그인 세션 foreground service 15초 polling·단절/재부팅 cursor 복구와 읽음/수신 확인까지 구현되어 있다. Android 신규 인수인계는 FieldComment·사진과 같은 암호화 outbox에서 안정된 멱등키로 재전송한다. Android는 사용자별 cursor를 보존하고 WPF는 서버 scope·사용자별 cursor와 처리한 `message_id`를 로컬 SQLite에 보존한다. Android 강제 중지 뒤 MDM kiosk 재실행과 현장별 단말 운영 정책은 후속 실기·고도화 대상이다.
+Windows와 Android의 업무 채널 알림, 인수인계 작성·확인·보류, FieldComment/작업순서 이벤트 알림은 제외 범위가 아니다. 현재 코드는 서버 API, 기본 클라이언트 화면, WPF 창 활성 15초 polling, Android 로그인 세션 foreground service 15초 polling·단절/재부팅 cursor 복구와 읽음/수신 확인까지 구현되어 있다. Android 신규 인수인계와 받은 인수인계의 확인·보류·후속 FieldComment는 암호화 outbox에서 안정된 멱등키로 재전송한다. 후속 FieldComment 저장 뒤 채널 알림만 실패하면 서버 comment ID를 보존하고 알림만 다시 보낸다. Android는 사용자별 cursor와 처리한 `message_id` 원장을 보존하고 WPF는 서버 scope·사용자별 cursor와 처리한 `message_id`를 로컬 SQLite에 보존한다. Android 강제 중지 뒤 MDM kiosk 재실행과 현장별 단말 운영 정책은 후속 실기·고도화 대상이다.
 
 ## 후속 계층 착수 기준
 
