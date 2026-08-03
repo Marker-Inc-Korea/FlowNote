@@ -221,10 +221,10 @@ grant 응답은 `grant_id`, 상대 `stream_url`, 문서/버전 ID, 만료 시각
 | POST | `/api/v1/field-comments/bulk-review/preview` | 최대 200건 항목별 허용 전이·실패 사유 사전검증(쓰기 없음) |
 | POST | `/api/v1/field-comments/bulk-review/execute` | 항목별 base revision·mutation receipt를 가진 부분 성공 일괄 실행 |
 | GET | `/api/v1/field-comments/{comment_id}/audit` | 원천 hash를 포함한 검토 변경 전·후 감사 snapshot |
-| GET | `/api/v1/field-comments/{comment_id}/traceability` | FieldComment, 감사, report source, 생성 최종 문서·버전 통합 역추적 |
+| GET | `/api/v1/field-comments/{comment_id}/traceability` | FieldComment 원천·첨부·관찰 문서·작업순서·감사·report source·생성 최종 문서 통합 역추적 |
 | GET | `/api/v1/field-comments/quality-workbench` | 오래된 NEW, 근거가 빈약한 SELECTED, 원천·trace/version 누락, source hash 불일치 작업함 |
 | GET | `/api/v1/field-comments/quality-metrics` | 상태·신호등·actor·라인·오류 유형 분포와 보고서 연결률 |
-| GET | `/api/v1/field-comments/review-dashboard` | 미검토·상충·안전/품질 위험·보고서 미연결·담당자 없음 수와 담당자·다음 조치 |
+| GET | `/api/v1/field-comments/review-dashboard` | 미검토·상충·안전/품질 위험·보고서 미연결·담당자 없음·기한 초과 수와 담당자·다음 조치 |
 | POST | `/api/v1/field-comments/{comment_id}/attachments` | 첨부 파일 등록. multipart `idempotencyKey`를 보내면 같은 키의 재시도는 기존 첨부를 반환 |
 | GET | `/api/v1/field-comments/{comment_id}/attachments` | 첨부 파일 목록 조회 |
 | GET | `/api/v1/documents/{document_id}/field-comments` | 특정 문서의 FieldComment 조회 |
@@ -235,9 +235,11 @@ FieldComment 원천 삭제 API는 제공하지 않는다. 서버 ORM도 `field_c
 
 첨부 등록의 선택적 `idempotencyKey`도 공백을 제거한 뒤 최대 160자로 제한하며 서버 `field_comment_attachments.idempotency_key`에 유일하게 저장한다. WPF는 multipart `parentCommentId`, `fileSha256`, `idempotencyKey`를 함께 보낸다. `parentCommentId`가 경로의 FieldComment와 다르면 409 `ATTACHMENT_PARENT_MISMATCH`, `fileSha256`이 64자 SHA-256 hex가 아니면 422, 저장 파일의 서버 계산 hash와 다르면 파일을 제거하고 409 `ATTACHMENT_FILE_HASH_MISMATCH`로 응답한다. 같은 키를 같은 FieldComment와 같은 파일 hash로 다시 보내면 새 파일·첨부 row를 만들지 않고 기존 첨부와 file object를 반환한다. 다른 FieldComment 또는 다른 파일 hash에 키를 재사용하면 409로 거부한다. WPF 재시도 큐는 문서 버전과 FieldComment 첨부 전송에도 큐의 안정된 idempotency key를 그대로 전달한다.
 
-`GET /api/v1/field-comments`는 관리자 검토 화면 기준으로 `status`, `documentId`, `documentText`, `author`, `assignedTo`, `tag`, `line`, `equipment`, `process`, `errorType`, `createdFrom`, `createdTo`, `oldNewDays`, `hasAttachments`, `reportLinked`, `unreviewed`, `overdue`, `unassigned`, `missingEvidence`, `duplicateSuspected`, `conflict`, `priorityMin`, `priorityMax`, `priorityOrder`, `limit` 필터를 지원한다. 응답의 `workbench_flags`, `workbench_priority`, `attachment_count`, `channel_access`는 처리 순서와 근거 접근 상태를 설명한다.
+`GET /api/v1/field-comments`는 관리자 검토 화면 기준으로 `status`, `documentId`, `documentVersionId`, `documentText`, `author`, `assignedTo`, `assignedRole`, `signalLevel`, `channel`, `tag`, `line`, `equipment`, `process`, `errorType`, `createdFrom`, `createdTo`, `reviewDueFrom`, `reviewDueTo`, `oldNewDays`, `hasAttachments`, `reportLinked`, `unreviewed`, `overdue`, `unassigned`, `missingEvidence`, `duplicateSuspected`, `conflict`, `priorityMin`, `priorityMax`, `priorityOrder`, `limit` 필터를 지원한다. 응답의 `assigned_role`, `workbench_flags`, `workbench_priority`, `attachment_count`, `channel_labels`, `channel_access`는 담당 역할, 처리 순서와 근거 접근 상태를 설명한다.
 
-`GET /api/v1/field-comments/review-dashboard`는 FieldComment 분석 권한이 있는 사용자에게만 서버 권위 집계를 반환한다. `safety_quality_risk_count`는 독립 결정자 정책과 같은 기준인 활성 `red` 신호 또는 상충 원천 수다. `report_unlinked_count`와 `unassigned_count`는 종결 전 활성 항목만 센다. 응답의 각 `actions` 행은 담당 역할, 다음 조치와 WPF 작업함 필터를 함께 제공한다. 이 응답에는 합성 dataset 수를 포함하지 않으며 실제 현장 AI 준비도는 별도 `/api/v1/ai-search/readiness`의 `field_readiness`와 결합해 표시한다.
+`GET /api/v1/field-comments/review-dashboard`는 FieldComment 분석 권한이 있는 사용자에게만 서버 권위 집계를 반환한다. `safety_quality_risk_count`는 독립 결정자 정책과 같은 기준인 활성 `red` 신호 또는 상충 원천 수다. `report_unlinked_count`, `unassigned_count`, `overdue_count`는 종결 전 활성 항목만 센다. 응답의 각 `actions` 행은 담당 역할, 다음 조치와 WPF 작업함 필터를 함께 제공한다. 이 응답에는 합성 dataset 수를 포함하지 않으며 실제 현장 AI 준비도는 별도 `/api/v1/ai-search/readiness`의 `field_readiness`와 결합해 표시한다.
+
+`GET /api/v1/field-comments/{comment_id}/traceability`는 현재 원천 hash와 검토 revision, 첨부 파일 hash, 관찰 문서와 고정 버전, 같은 문서에 연결된 작업순서 항목, 검토 감사, 보고서별 `source_version_id`·`source_revision`·`source_hash_sha256`·`trace_id`와 생성 문서를 한 응답으로 반환한다. 원천과 관리자 해석을 합치거나 첨부를 복제하지 않는다.
 
 상태 변경은 `transitionReason` 3자 이상이 필수다. 주 흐름은 `NEW → ASSIGNED → ANALYZED → REVIEWED → SELECTED`이며 `ASSIGNED`에는 `assignedTo`가 필요하다. `conflictFlag/conflictBasis`는 상충 표지와 판단 근거를 보존한다. 서버는 요청의 `reviewedBy`·`analyzedBy`를 신뢰하지 않고 인증 actor를 기록한다.
 

@@ -58,17 +58,17 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/tags` | Tag list |
 | POST | `/api/v1/tags` | Tag create |
 | POST | `/api/v1/field-comments` | FieldComment create |
-| GET | `/api/v1/field-comments` | FieldComment list |
+| GET | `/api/v1/field-comments` | FieldComment manager workbench list with assignee role, signal, channel, document version, due date, and operational filters |
 | GET | `/api/v1/field-comments/{comment_id}` | FieldComment detail |
 | PATCH | `/api/v1/field-comments/{comment_id}` | Review/analyze FieldComment |
 | POST | `/api/v1/field-comments/bulk-review` | Bulk assignment, due date, and review-state update |
 | POST | `/api/v1/field-comments/bulk-review/preview` | Read-only validation of per-item transitions and failure reasons for up to 200 comments |
 | POST | `/api/v1/field-comments/bulk-review/execute` | Partial-success bulk review with per-item base revision and mutation receipt |
 | GET | `/api/v1/field-comments/{comment_id}/audit` | Review audit snapshots with source hash |
-| GET | `/api/v1/field-comments/{comment_id}/traceability` | FieldComment, audit, report-source, and generated-document traceability |
+| GET | `/api/v1/field-comments/{comment_id}/traceability` | FieldComment source, attachments, observed document, work sequence, audit, report-source snapshot, and generated-document traceability |
 | GET | `/api/v1/field-comments/quality-workbench` | Stale, weak-evidence, and missing-source review workbench |
 | GET | `/api/v1/field-comments/quality-metrics` | Status, signal, actor, line, error, and report-link quality metrics |
-| GET | `/api/v1/field-comments/review-dashboard` | Server-authoritative review counts, owners, next actions, and WPF workbench filters |
+| GET | `/api/v1/field-comments/review-dashboard` | Server-authoritative review and overdue counts, owners, next actions, and WPF workbench filters |
 | POST | `/api/v1/field-comments/{comment_id}/attachments` | Attachment create; optional multipart `idempotencyKey` returns the existing attachment on retry |
 | GET | `/api/v1/field-comments/{comment_id}/attachments` | Attachment list |
 | GET | `/api/v1/documents/{document_id}/field-comments` | FieldComments by document |
@@ -243,7 +243,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-08-01, the current code and `scripts/verify-preserved-tests.ps1` guards agree on 166 FastAPI tests, 91 WPF Core tests, and 28 Android tests. The FastAPI collection includes the FieldComment review-dashboard aggregation and analysis-role boundary cases. The WPF Core collection includes the matching server-client contract checks. The script preserves the raw collection, duplicate list, exit codes, and JUnit totals, and reports the current step, expected and actual values, preserved evidence, and a new `RunId` command when collection, JUnit, or toolchain checks fail. This is not an integrated baseline because the Windows x64 collection/TRX comparison, shared-DB smoke, Android build, and all checks have not run twice under one clean source commit.
+As of 2026-08-03, the current collection contains 178 FastAPI tests and 93 WPF Core tests; the FieldComment manager-workbench change ran its 34 related FastAPI tests and all 93 WPF Core tests successfully. `scripts/verify-preserved-tests.ps1` still carries the earlier 170/92 fixed counts, so its baseline must be updated only with the next complete Windows x64 integrated run. The script preserves raw collection output, duplicate lists, exit codes, JUnit/TRX totals, current step, expected and actual values, evidence paths, and the new-RunId recovery command. This change did not claim a new integrated baseline because the Windows x64 collection/TRX comparison, shared-DB smoke, Android build, and two clean-source runs were not performed.
 
 The `system-admin` sensitive-data-policy API manages immutable customer/site versions through draft, independently reviewed, independently approved, active, superseded, approval-withdrawn, and retired states. List/detail/audit responses expose only sanitized metadata, content hashes, and item counts; raw terms, customer identifiers, endpoint values, and credentials are not returned. Mutations use stable operation keys, state tags, explicit confirmation values, and read-back. The provider boundary rechecks the active policy snapshot immediately before the call and after the response. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. Query and retention audit operations are restricted to the configured customer/site scope. The server lifespan runs expired-query retention on the configured interval, while `system-admin` can run scoped bulk retention, expire one query, or place and release a reasoned legal hold. An active hold blocks all three expiry paths. WPF mutations send a stable `operationKey` and the latest detail `stateTag`; duplicate/lost-response retries return the original result, while stale, already-expired, already-released, and concurrent operations return `409`. Legal-hold rows and linked audit history are never deleted by release or expiry.
 

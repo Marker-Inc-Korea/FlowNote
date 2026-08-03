@@ -44,6 +44,7 @@ from app.db.models import (
     WorkRecord,
     WorkRecordVersion,
     WorkSequenceChangeHistory,
+    WorkSequenceBoard,
     WorkSequenceItem,
 )
 from app.db.session import get_db_session
@@ -227,6 +228,7 @@ class FieldCommentResponse(BaseModel):
     reviewed_by: str | None
     analyzed_by: str | None
     assigned_to: str | None
+    assigned_role: str | None = None
     review_due_at: datetime | None
     last_transition_reason: str | None
     conflict_flag: bool
@@ -242,6 +244,7 @@ class FieldCommentResponse(BaseModel):
     workbench_priority: int = 0
     attachment_count: int = 0
     channel_access: str = "NOT_LINKED"
+    channel_labels: list[str] = Field(default_factory=list)
 
 
 class FieldCommentTraceDocumentResponse(BaseModel):
@@ -251,6 +254,7 @@ class FieldCommentTraceDocumentResponse(BaseModel):
     latest_version_id: str | None
     published_version_id: str | None
     generated_version_ids: list[str]
+    observed_version_id: str | None = None
 
 
 class FieldCommentTraceReportResponse(BaseModel):
@@ -260,12 +264,28 @@ class FieldCommentTraceReportResponse(BaseModel):
     status: str
     relation_type: str | None
     source_version_id: str | None
+    source_revision: int | None
+    source_hash_sha256: str
+    trace_id: str
     generated_document: FieldCommentTraceDocumentResponse | None
+
+
+class FieldCommentTraceWorkSequenceResponse(BaseModel):
+    board_id: str
+    board_title: str
+    item_id: str
+    item_title: str
+    status: str
+    assigned_to: str | None
+    document_id: str | None
 
 
 class FieldCommentTraceResponse(BaseModel):
     field_comment: FieldCommentResponse
+    source_document: FieldCommentTraceDocumentResponse | None
+    attachments: list[FieldCommentAttachmentResponse]
     audit: list[FieldCommentAuditResponse]
+    work_sequences: list[FieldCommentTraceWorkSequenceResponse]
     reports: list[FieldCommentTraceReportResponse]
 
 
@@ -365,6 +385,8 @@ def _field_comment_response(
     workbench_priority: int = 0,
     attachment_count: int = 0,
     channel_access: str = "NOT_LINKED",
+    assigned_role: str | None = None,
+    channel_labels: list[str] | None = None,
 ) -> FieldCommentResponse:
     return FieldCommentResponse(
         comment_id=note.comment_id,
@@ -391,6 +413,7 @@ def _field_comment_response(
         reviewed_by=note.reviewed_by,
         analyzed_by=note.analyzed_by,
         assigned_to=note.assigned_to,
+        assigned_role=assigned_role,
         review_due_at=note.review_due_at,
         last_transition_reason=note.last_transition_reason,
         conflict_flag=note.conflict_flag,
@@ -406,6 +429,7 @@ def _field_comment_response(
         workbench_priority=workbench_priority,
         attachment_count=attachment_count,
         channel_access=channel_access,
+        channel_labels=channel_labels or [],
     )
 
 
@@ -431,6 +455,25 @@ def _channel_access(session: Session, note: FieldComment, current_user: CurrentU
         NotificationChannelMember.status == "ACTIVE",
     ).limit(1))
     return "ALLOWED" if membership is not None else "DENIED"
+
+
+def _assigned_role(session: Session, note: FieldComment) -> str | None:
+    if note.assigned_to is None:
+        return None
+    return session.scalar(select(UserAccount.role).where(UserAccount.user_id == note.assigned_to))
+
+
+def _channel_labels(session: Session, note: FieldComment) -> list[str]:
+    rows = session.execute(
+        select(NotificationChannel.channel_id, NotificationChannel.name, NotificationChannel.channel_type)
+        .where(
+            NotificationChannel.status == "ACTIVE",
+            NotificationChannel.source_type == "FIELD_COMMENT",
+            NotificationChannel.source_id == note.comment_id,
+        )
+        .order_by(NotificationChannel.name, NotificationChannel.channel_id)
+    ).all()
+    return [f"{name} ({channel_type}, {channel_id})" for channel_id, name, channel_type in rows]
 
 
 def _workbench_flags(session: Session, note: FieldComment, now: datetime) -> list[str]:
@@ -1145,6 +1188,12 @@ def list_field_comments(
     document_text: Annotated[str | None, Query(alias="documentText")] = None,
     author_text: Annotated[str | None, Query(alias="author")] = None,
     assigned_to: Annotated[str | None, Query(alias="assignedTo")] = None,
+    assigned_role: Annotated[str | None, Query(alias="assignedRole")] = None,
+    signal_level: Annotated[str | None, Query(alias="signalLevel")] = None,
+    channel_text: Annotated[str | None, Query(alias="channel")] = None,
+    document_version_id: Annotated[str | None, Query(alias="documentVersionId")] = None,
+    review_due_from: Annotated[datetime | None, Query(alias="reviewDueFrom")] = None,
+    review_due_to: Annotated[datetime | None, Query(alias="reviewDueTo")] = None,
     tag_text: Annotated[str | None, Query(alias="tag")] = None,
     line_text: Annotated[str | None, Query(alias="line")] = None,
     equipment_text: Annotated[str | None, Query(alias="equipment")] = None,
@@ -1195,6 +1244,29 @@ def list_field_comments(
         )
     if assigned_to := _clean_optional(assigned_to):
         statement = statement.where(FieldComment.assigned_to == assigned_to)
+    if assigned_role := _clean_optional(assigned_role):
+        assigned_user_ids = select(UserAccount.user_id).where(UserAccount.role == assigned_role)
+        statement = statement.where(FieldComment.assigned_to.in_(assigned_user_ids))
+    if signal_level := _clean_optional(signal_level):
+        statement = statement.where(func.lower(FieldComment.signal_level) == signal_level.lower())
+    if document_version_id := _clean_optional(document_version_id):
+        statement = statement.where(FieldComment.document_version_id == document_version_id)
+    if review_due_from is not None:
+        statement = statement.where(FieldComment.review_due_at >= review_due_from)
+    if review_due_to is not None:
+        statement = statement.where(FieldComment.review_due_at <= review_due_to)
+    if channel_text := _clean_optional(channel_text):
+        channel_pattern = f"%{channel_text}%"
+        linked_comment_ids = select(NotificationChannel.source_id).where(
+            NotificationChannel.status == "ACTIVE",
+            NotificationChannel.source_type == "FIELD_COMMENT",
+            or_(
+                NotificationChannel.channel_id.ilike(channel_pattern),
+                NotificationChannel.name.ilike(channel_pattern),
+                NotificationChannel.channel_type.ilike(channel_pattern),
+            ),
+        )
+        statement = statement.where(FieldComment.comment_id.in_(linked_comment_ids))
     if tag_text := _clean_optional(tag_text):
         pattern = f"%{tag_text}%"
         tagged_document_ids = (
@@ -1285,6 +1357,8 @@ def list_field_comments(
             workbench_priority=_workbench_priority(flags),
             attachment_count=_attachment_count(session, note.comment_id),
             channel_access=_channel_access(session, note, current_user),
+            assigned_role=_assigned_role(session, note),
+            channel_labels=_channel_labels(session, note),
         ))
     if priority_order:
         rows.sort(
@@ -1757,7 +1831,7 @@ def _audit_responses(session: Session, comment_id: str) -> list[FieldCommentAudi
 @router.get("/{comment_id}/traceability", response_model=FieldCommentTraceResponse)
 def get_field_comment_traceability(
     comment_id: str,
-    _current_user: FieldCommentAnalyzeUser,
+    current_user: FieldCommentAnalyzeUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> FieldCommentTraceResponse:
     note = session.scalar(select(FieldComment).where(FieldComment.comment_id == comment_id))
@@ -1797,16 +1871,66 @@ def get_field_comment_traceability(
             status=report.status,
             relation_type=source.relation_type,
             source_version_id=source.source_version_id,
+            source_revision=source.source_revision,
+            source_hash_sha256=source.source_hash_sha256,
+            trace_id=source.trace_id,
             generated_document=document_response,
         ))
+    source_document = None
+    if note.document_id:
+        document = session.scalar(select(Document).where(Document.document_id == note.document_id))
+        if document is not None:
+            version_ids = list(session.scalars(
+                select(DocumentVersion.version_id)
+                .where(DocumentVersion.document_id == document.document_id)
+                .order_by(DocumentVersion.version_no)
+            ).all())
+            source_document = FieldCommentTraceDocumentResponse(
+                document_id=document.document_id,
+                title=document.title,
+                status=document.status,
+                latest_version_id=document.latest_version_id,
+                published_version_id=document.published_version_id,
+                generated_version_ids=version_ids,
+                observed_version_id=note.document_version_id,
+            )
+    attachment_rows = session.execute(
+        select(FieldCommentAttachment, FileObject)
+        .join(FileObject, FieldCommentAttachment.file_object_id == FileObject.id)
+        .where(FieldCommentAttachment.comment_id == comment_id)
+        .order_by(FieldCommentAttachment.created_at, FieldCommentAttachment.id)
+    ).all()
+    work_sequence_rows = []
+    if note.document_id:
+        work_sequence_rows = session.execute(
+            select(WorkSequenceItem, WorkSequenceBoard)
+            .join(WorkSequenceBoard, WorkSequenceBoard.board_id == WorkSequenceItem.board_id)
+            .where(WorkSequenceItem.document_id == note.document_id)
+            .order_by(WorkSequenceBoard.board_date, WorkSequenceItem.sort_order, WorkSequenceItem.item_id)
+        ).all()
     flags = _workbench_flags(session, note, datetime.now(timezone.utc))
     return FieldCommentTraceResponse(
         field_comment=_field_comment_response(
             note,
             workbench_flags=flags,
             workbench_priority=_workbench_priority(flags),
+            attachment_count=len(attachment_rows),
+            channel_access=_channel_access(session, note, current_user),
+            assigned_role=_assigned_role(session, note),
+            channel_labels=_channel_labels(session, note),
         ),
+        source_document=source_document,
+        attachments=[_attachment_response(attachment, file_object) for attachment, file_object in attachment_rows],
         audit=_audit_responses(session, comment_id),
+        work_sequences=[FieldCommentTraceWorkSequenceResponse(
+            board_id=board.board_id,
+            board_title=board.title,
+            item_id=item.item_id,
+            item_title=item.title,
+            status=item.status,
+            assigned_to=item.assigned_to,
+            document_id=item.document_id,
+        ) for item, board in work_sequence_rows],
         reports=reports,
     )
 
@@ -1835,6 +1959,8 @@ def get_field_comment(
         note,
         attachment_count=_attachment_count(session, note.comment_id),
         channel_access=_channel_access(session, note, current_user),
+        assigned_role=_assigned_role(session, note),
+        channel_labels=_channel_labels(session, note),
     )
 
 

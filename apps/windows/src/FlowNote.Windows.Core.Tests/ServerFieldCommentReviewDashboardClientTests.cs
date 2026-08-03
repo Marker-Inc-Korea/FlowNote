@@ -19,6 +19,7 @@ public sealed class ServerFieldCommentReviewDashboardClientTests
         Assert.Equal("/api/v1/field-comments/review-dashboard", handler.RequestUri?.AbsolutePath);
         Assert.Equal(7, result.UnreviewedCount);
         Assert.Equal(3, result.SafetyQualityRiskCount);
+        Assert.Equal(2, result.OverdueCount);
         Assert.Equal("독립 검토자", result.Actions[0].Owner);
         Assert.Equal("HIGH_RISK", result.Actions[0].WorkbenchFilter);
         Assert.NotEmpty(result.Actions[0].NextAction);
@@ -44,6 +45,7 @@ public sealed class ServerFieldCommentReviewDashboardClientTests
                       "safety_quality_risk_count":3,
                       "report_unlinked_count":4,
                       "unassigned_count":6,
+                      "overdue_count":2,
                       "actions":[{
                         "code":"SAFETY_QUALITY_RISK",
                         "title":"안전·품질 위험",

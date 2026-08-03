@@ -44,11 +44,11 @@
 
 ## 관리자 작업함
 
-- WPF FieldComment 검토 화면 상단은 서버 권위 `review-dashboard`와 AI 준비도 응답을 함께 읽어 미검토, 상충, 빨간 신호·상충 기반 안전/품질 위험, 활성 보고서 미연결, 담당자 없음 수를 표시한다. 각 수치는 바로 해당 작업함을 열며 검토 상태 분포와 담당자·다음 조치를 같은 화면에서 확인한다. 서버에 연결할 수 없으면 로컬 수치나 합성 수치로 대신 채우지 않고 `실제 서버 집계 없음`으로 표시한다.
-- 같은 화면의 실제 현장 준비도는 고객 승인 `ANONYMOUS_FIELD / FIELD_READINESS` 48건과 부족한 8범주×3유형 칸만 기준으로 삼는다. `SYNTHETIC`·`TEST / SMOKE_REGRESSION`은 별도 회귀 수치로 표시하지만 실제 현장 준비도, 부족 건수 또는 provider 착수 판정에 더하지 않는다.
-- 목록은 상태, 담당자, 문서, 작성자, 라인, 설비, 공정, 오류 유형, 기간, 오래된 NEW, 첨부 유무, 보고서 연결 여부와 `CONFLICT`, `UNREVIEWED`, `OVERDUE`, `UNASSIGNED`, `MISSING_EVIDENCE`, `DUPLICATE_SUSPECTED`, `REPORT_UNLINKED` 작업함 플래그로 필터링한다. 서버 목록은 `priorityMin/priorityMax`도 지원한다.
+- WPF FieldComment 검토 화면 상단은 서버 권위 `review-dashboard`와 AI 준비도 응답을 함께 읽어 미검토, 상충, 빨간 신호·상충 기반 안전/품질 위험, 활성 보고서 미연결, 담당자 없음, 기한 초과 수를 표시한다. 각 수치는 바로 해당 작업함을 열며 검토 상태 분포와 담당자·다음 조치를 같은 화면에서 확인한다. 서버에 연결할 수 없으면 로컬 수치나 합성 수치로 대신 채우지 않고 `실제 서버 집계 없음`으로 표시한다.
+- 같은 화면의 AI 준비도는 후속 참고 영역으로만 표시하며 FieldComment 작업함 조회·처리 가능 여부를 좌우하지 않는다. AI 준비도 조회가 실패해도 서버 FieldComment 집계와 작업함은 유지한다. 참고 수치는 고객 승인 `ANONYMOUS_FIELD / FIELD_READINESS` 48건과 부족한 8범주×3유형 칸만 기준으로 삼고 `SYNTHETIC`·`TEST / SMOKE_REGRESSION`은 실제 현장 준비도에 더하지 않는다.
+- 목록은 상태, 담당자, 담당 역할, 신호등, 채널, 문서·버전, 작성자, 태그, 라인, 설비, 공정, 오류 유형, 등록 기간, 검토 기한, 오래된 NEW, 첨부 유무, 보고서 연결 여부와 `CONFLICT`, `UNREVIEWED`, `OVERDUE`, `UNASSIGNED`, `MISSING_EVIDENCE`, `DUPLICATE_SUSPECTED`, `REPORT_UNLINKED` 작업함 플래그로 필터링한다. 서버 목록은 `priorityMin/priorityMax`도 지원한다.
 - `priorityOrder=true`일 때 상충, 기한 초과, 담당자 없음, 근거 누락, 중복 의심, 미검토, 보고서 미연결 순으로 가중치를 합산한다. WPF의 `우선순위/작업함` 보기와 SQLite에 보존되는 `저장된 보기`가 같은 필터를 재사용한다.
-- 선택 상세는 원천 hash, 첨부 수, 관찰 문서 버전, 연결 채널 권한을 서버에서 읽어 표시한다. 다중 선택은 사전검증 표를 확인한 뒤 실행하며 부분 성공 표를 닫아도 서버 receipt와 revision은 보존된다.
+- 선택 상세는 원천 hash, 검토 revision, 첨부 수, 관찰 문서 버전, 담당 역할, 연결 채널과 접근 권한을 서버에서 읽어 표시한다. 빨간 신호 또는 상충 기록은 분석자와 다른 결정 역할 사용자가 처리해야 한다는 안내를 상태 선택 영역에 계속 표시한다. 다중 선택은 사전검증 표를 확인한 뒤 실행하며 부분 성공 표를 닫아도 서버 receipt와 revision은 보존된다.
 - 품질 작업함은 `OLD_NEW`, `WEAK_SELECTED`, `MISSING_REPORT_SOURCE`, `INCOMPLETE_REPORT_TRACE`, `SOURCE_HASH_MISMATCH`, `SOURCE_REVISION_MISMATCH`를 제공한다.
 - 품질 지표는 상태·신호등·actor·라인·오류 유형 분포, 문서↔FieldComment와 FieldComment↔보고서 연결률, 2종 이상 source 보고서 비율, source type 수, orphan 비율, 라인·설비·품목·공정·오류 유형 태그 축 커버리지를 산출한다.
 
@@ -63,7 +63,7 @@
 - 보고서 aggregate는 `report_revision`, 정규화 내용의 `content_hash_sha256`, 정렬된 source tuple의 `source_set_hash_sha256`를 가진다. 승인 시 보고서, source, 생성 문서/버전, mutation receipt를 같은 DB transaction으로 확정한다.
 - 보고서 선정 뒤 원천 상태·version·hash가 바뀌면 기존 초안을 자동 갱신하거나 과거 snapshot으로 승인하지 않는다. 저장을 `REPORT_SOURCE_STALE_OR_ORPHAN` 409로 멈추고 원천을 재검토한 뒤 새 source-set hash로 새 보고서 mutation을 만든다. 이미 승인된 보고서는 원래 source snapshot을 보존하고 정정 보고서로 연결한다.
 - source에 연결된 활성 업무 채널이 있으면 `admin`, `system-admin` 외 사용자는 활성 채널 멤버여야 한다.
-- `GET /api/v1/field-comments/{comment_id}/traceability`와 WPF `서버 역추적`은 원천 hash, 상태 전이 감사, 보고서 source, 생성된 최종 문서와 모든 문서 버전 ID를 한 흐름으로 보여준다.
+- `GET /api/v1/field-comments/{comment_id}/traceability`와 WPF `원천 연결 확인`은 원천 본문·hash·검토 revision, 첨부와 파일 hash, 관찰 문서·버전, 관련 작업순서, 상태 전이 감사, 보고서의 고정 source version/revision/hash/trace ID, 생성된 최종 문서를 한 상세 흐름으로 보여준다.
 - WPF 보고서 저장 결과는 보고서 ID, 생성 문서 ID와 각 source의 type/id/version/trace ID/hash를 함께 표시한다. 이 화면에서 확인한 FieldComment ID를 관리자 검토 화면의 서버 역추적으로 조회하면 반대 방향 연결도 확인할 수 있다.
 
 ## 보고서 폐기와 source 보존

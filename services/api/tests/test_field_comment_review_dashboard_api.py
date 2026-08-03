@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -63,6 +64,12 @@ def test_review_dashboard_exposes_counts_owners_and_next_actions() -> None:
             },
         )
         assert created.status_code == 201, created.text
+        due = client.patch(
+            f"/api/v1/field-comments/{created.json()['comment_id']}",
+            headers=headers,
+            json={"reviewDueAt": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()},
+        )
+        assert due.status_code == 200, due.text
 
         response = client.get("/api/v1/field-comments/review-dashboard", headers=headers)
         assert response.status_code == 200, response.text
@@ -73,11 +80,13 @@ def test_review_dashboard_exposes_counts_owners_and_next_actions() -> None:
         assert dashboard["safety_quality_risk_count"] >= 1
         assert dashboard["report_unlinked_count"] >= 1
         assert dashboard["unassigned_count"] >= 1
+        assert dashboard["overdue_count"] >= 1
         assert dashboard["counts_by_status"]["NEW"] >= 1
         actions = {item["code"]: item for item in dashboard["actions"]}
         assert actions["SAFETY_QUALITY_RISK"]["owner"]
         assert actions["SAFETY_QUALITY_RISK"]["next_action"]
         assert actions["SAFETY_QUALITY_RISK"]["workbench_filter"] == "HIGH_RISK"
+        assert actions["OVERDUE"]["workbench_filter"] == "OVERDUE"
 
 
 def test_review_dashboard_rejects_viewer_without_analysis_role() -> None:

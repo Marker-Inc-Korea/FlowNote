@@ -6,6 +6,10 @@ public sealed record FieldCommentReviewFilter(
     string? AuthorText = null,
     string? TagText = null,
     string? AssignedTo = null,
+    string? AssignedRole = null,
+    string? SignalLevel = null,
+    string? ChannelText = null,
+    string? DocumentVersionText = null,
     string? LineText = null,
     string? EquipmentText = null,
     string? ProcessText = null,
@@ -23,4 +27,6 @@ public sealed record FieldCommentReviewFilter(
     bool PriorityOrder = true,
     DateTime? CreatedFrom = null,
     DateTime? CreatedTo = null,
+    DateTime? ReviewDueFrom = null,
+    DateTime? ReviewDueTo = null,
     int Limit = 300);

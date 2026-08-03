@@ -39,6 +39,7 @@ class FieldCommentReviewDashboardResponse(BaseModel):
     safety_quality_risk_count: int
     report_unlinked_count: int
     unassigned_count: int
+    overdue_count: int
     actions: list[FieldCommentReviewActionResponse]
 
 
@@ -102,6 +103,12 @@ def field_comment_review_dashboard(
         FieldComment.comment_id.not_in(linked_comment_ids),
     )
     unassigned_count = _count(session, active, FieldComment.assigned_to.is_(None))
+    overdue_count = _count(
+        session,
+        active,
+        FieldComment.review_due_at.is_not(None),
+        FieldComment.review_due_at < func.now(),
+    )
 
     candidates = [
         _action(
@@ -144,6 +151,14 @@ def field_comment_review_dashboard(
             "담당자와 검토 기한을 지정하고 기존 미처리 기간을 감사 이력에 남기세요.",
             "UNASSIGNED",
         ),
+        _action(
+            "OVERDUE",
+            "기한 초과",
+            overdue_count,
+            "지정 담당자와 담당 역할 책임자",
+            "기한을 넘긴 원천의 진행 상태를 확인하고 새 기한 또는 처리 결과를 기록하세요.",
+            "OVERDUE",
+        ),
     ]
     return FieldCommentReviewDashboardResponse(
         total_count=len(notes),
@@ -153,5 +168,6 @@ def field_comment_review_dashboard(
         safety_quality_risk_count=safety_quality_risk_count,
         report_unlinked_count=report_unlinked_count,
         unassigned_count=unassigned_count,
+        overdue_count=overdue_count,
         actions=[item for item in candidates if item.count > 0],
     )

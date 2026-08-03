@@ -21,12 +21,18 @@ public sealed class FieldCommentWorkbenchTests
         var expected = new FieldCommentReviewFilter(
             Status: "NEEDS_REVIEW",
             AssignedTo: "user-admin",
+            AssignedRole: "admin",
+            SignalLevel: "red",
+            ChannelText: "품질 위험",
+            DocumentVersionText: "3",
             LineText: "line-a",
             EquipmentText: "press-01",
             ProcessText: "forming",
             ErrorTypeText: "alignment",
             Overdue: true,
             Conflict: true,
+            ReviewDueFrom: new DateTime(2026, 8, 1),
+            ReviewDueTo: new DateTime(2026, 8, 31),
             PriorityOrder: true,
             Limit: 200);
 
