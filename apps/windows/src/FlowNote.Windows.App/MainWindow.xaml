@@ -119,7 +119,11 @@
 
                     <MenuItem Header="현장 운영  ▾"
                               Style="{StaticResource HeaderTopMenuItemStyle}">
-                        <MenuItem Header="이력"
+                        <MenuItem x:Name="ChangeHistoryButton"
+                                  Header="변경 이력"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="ChangeHistoryButton_Click" />
+                        <MenuItem Header="로컬 이력"
                                   Style="{StaticResource HeaderSubmenuItemStyle}"
                                   Click="HistoryButton_Click" />
                         <MenuItem x:Name="WorkSequenceAdminButton"

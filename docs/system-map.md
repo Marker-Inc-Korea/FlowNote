@@ -60,6 +60,8 @@ WPF 메인 화면은 로그인 역할에 맞춘 첫 업무 3개를 기존 메뉴
 
 operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 승인 저장과 작업순서 변경은 도메인 receipt를 유지하면서 공통 `SyncMutationReceipt`와 `AuditEventEnvelope`를 연결한다. 성공 시 업무 변경·도메인 receipt·공통 두 행을 한 transaction에 저장한다. 문서 상태, FieldComment 검토, 보고서 승인, 작업순서 항목 상태의 거부·충돌은 업무 변경을 rollback한 뒤 공통 결과만 확정해 같은 요청의 재시도가 같은 HTTP 결과로 수렴하도록 한다. 기존 `activity_history`는 백필하지 않으며 `/api/v1/audit-events`에서 누락 필드를 명시한 이전 형식으로 함께 조회한다.
 
+WPF `변경 이력`은 `/api/v1/change-history` read model을 사용해 문서, FieldComment, 보고서, 작업순서와 공통 동기화 mutation을 한 목록에 표시한다. `audit_event_envelopes`가 권위 원천이며 read model은 저장하지 않는다. 첫 페이지의 event ID 상한을 커서에 고정하고 조치 필요·문제 유형 우선순위·시간 순으로 읽어 pagination 중 신규 event가 섞이지 않게 한다. 충돌, 실패, 미연결 mutation, 필수 감사 필드 누락과 권한 거부 뒤 revision 변경을 먼저 표시하고 영향, 현재 상태, 담당자, 다음 행동을 함께 계산한다. 문서 충돌은 로컬 이력의 충돌 조치, FieldComment는 검토, 보고서는 보고서, 작업순서는 작업판 화면으로 연결하며 원본 event envelope는 같은 창에서 다시 조회한다. 목록 합계와 상세는 동일한 역할·채널 멤버십 정책을 사용하고 권한 밖 대상은 `404`와 목록 제외로 존재를 숨긴다.
+
 재시도기는 같은 aggregate를 직렬화하고 다음 순서로 처리한다.
 
 ```text

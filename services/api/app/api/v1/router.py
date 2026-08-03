@@ -9,6 +9,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.audit_events import router as audit_events_router
 from app.api.v1.android_document_views import router as android_document_views_router
 from app.api.v1.channels import router as channels_router
+from app.api.v1.change_history import router as change_history_router
 from app.api.v1.controlled_copies import router as controlled_copies_router
 from app.api.v1.document_access_logs import router as document_access_logs_router
 from app.api.v1.documents import router as documents_router
@@ -27,6 +28,7 @@ api_v1_router = APIRouter()
 api_v1_router.include_router(health_router)
 api_v1_router.include_router(auth_router)
 api_v1_router.include_router(audit_events_router)
+api_v1_router.include_router(change_history_router)
 api_v1_router.include_router(server_accounts_router)
 api_v1_router.include_router(sync_reconciliation_router)
 api_v1_router.include_router(documents_router)
