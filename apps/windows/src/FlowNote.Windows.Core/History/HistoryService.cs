@@ -64,9 +64,11 @@ public sealed class HistoryService(FlowNoteLocalDatabase database)
         string? targetId,
         string? targetTitle,
         string message,
-        DateTime createdAt)
+        DateTime createdAt,
+        SqliteTransaction? transaction = null)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO activity_history (
                 history_id,

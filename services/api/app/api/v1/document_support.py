@@ -18,6 +18,7 @@ from app.db.models import (
     Document,
     DocumentMutationReceipt,
     DocumentTag,
+    DocumentTagRevision,
     DocumentVersion,
     FileObject,
     TagDefinition,
@@ -127,6 +128,17 @@ class DocumentDeleteRequest(BaseModel):
 
     change_reason: str = Field(alias="changeReason", min_length=1)
     base_revision: int = Field(alias="baseRevision", ge=1)
+    mutation_key: str | None = Field(default=None, alias="mutationKey")
+
+
+class DocumentTagMutationRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    base_revision: int = Field(alias="baseRevision", ge=1)
+    added_tags: list[str] = Field(default_factory=list, alias="addedTags")
+    removed_tags: list[str] = Field(default_factory=list, alias="removedTags")
+    intent_hash: str = Field(alias="intentHash", min_length=64, max_length=64)
+    mutation_key: str = Field(alias="mutationKey", min_length=1, max_length=160)
 
 
 def new_public_id(prefix: str) -> str:
@@ -208,6 +220,24 @@ def document_mutation_intent_hash(
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
+    )
+    return sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def document_tag_intent_hash(
+    document_id: str,
+    base_revision: int,
+    added_tags: list[str],
+    removed_tags: list[str],
+) -> str:
+    canonical = "\n".join(
+        [
+            "document-tags-v1",
+            document_id,
+            str(base_revision),
+            "add:" + ",".join(sorted(_normalize_tag_code(tag) for tag in added_tags)),
+            "remove:" + ",".join(sorted(_normalize_tag_code(tag) for tag in removed_tags)),
+        ]
     )
     return sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -378,6 +408,44 @@ def tag_response(session: Session, document_id: str) -> list[str]:
         .order_by(TagDefinition.name)
     ).all()
     return [row[0] for row in rows]
+
+
+def record_document_tag_revision(
+    session: Session,
+    document_id: str,
+    document_revision: int,
+    tags: list[str],
+    mutation_key: str | None = None,
+) -> None:
+    normalized = sorted(clean_tags(tags), key=_normalize_tag_code)
+    session.add(
+        DocumentTagRevision(
+            document_id=document_id,
+            document_revision=document_revision,
+            tags_json=json.dumps(normalized, ensure_ascii=False, separators=(",", ":")),
+            mutation_key=mutation_key,
+        )
+    )
+
+
+def document_tags_at_revision(
+    session: Session,
+    document_id: str,
+    document_revision: int,
+) -> list[str] | None:
+    snapshot = session.scalar(
+        select(DocumentTagRevision)
+        .where(
+            DocumentTagRevision.document_id == document_id,
+            DocumentTagRevision.document_revision <= document_revision,
+        )
+        .order_by(DocumentTagRevision.document_revision.desc())
+        .limit(1)
+    )
+    if snapshot is None:
+        return None
+    value = json.loads(snapshot.tags_json)
+    return [str(tag) for tag in value] if isinstance(value, list) else None
 
 
 def _ensure_tag(session: Session, name: str, *, tag_type: str = "custom") -> TagDefinition:

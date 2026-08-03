@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Text.Json;
 using System.Windows;
 using FlowNote.Windows.Core.History;
 using FlowNote.Windows.Core.ServerApi;
@@ -339,11 +340,16 @@ public partial class HistoryWindow : Window
         string OperatorAction,
         bool IsDependencyHold,
         string LastError,
-        string ConflictCode)
+        string ConflictCode,
+        string ServerValue,
+        string LocalRequest,
+        string AutoMerge,
+        string UserChoice)
     {
         public static SyncQueueRow FromRecord(ServerSyncQueueRecord record)
         {
             var diagnosis = record.Diagnosis;
+            var conflict = BuildConflictPresentation(record);
             return new SyncQueueRow(
                 record.Id,
                 record.Status,
@@ -360,7 +366,80 @@ public partial class HistoryWindow : Window
                 diagnosis.OperatorAction,
                 diagnosis.IsDependencyHold,
                 record.LastError ?? "-",
-                record.ConflictCode ?? "-");
+                record.ConflictCode ?? "-",
+                conflict.ServerValue,
+                conflict.LocalRequest,
+                conflict.AutoMerge,
+                conflict.UserChoice);
+        }
+
+        private static ConflictPresentation BuildConflictPresentation(
+            ServerSyncQueueRecord record)
+        {
+            if (record.Status != "CONFLICT")
+            {
+                return new("-", "-", "-", "-");
+            }
+
+            var localRequest = CompactJson(record.PayloadJson) ?? JsonSerializer.Serialize(new
+            {
+                record.BaseServerRevision,
+                record.ExpectedServerVersionId,
+                record.ExpectedPublishedVersionId,
+                record.LocalFileHashSha256,
+                record.IntentHash,
+                record.IdempotencyKey
+            });
+            if (string.IsNullOrWhiteSpace(record.ConflictDetails))
+            {
+                return new("서버 상세 없음", localRequest, "자동 병합 정보 없음", "관리자 판단 필요");
+            }
+            try
+            {
+                using var json = JsonDocument.Parse(record.ConflictDetails);
+                var detail = json.RootElement.TryGetProperty("detail", out var nested)
+                    ? nested
+                    : json.RootElement;
+                return new ConflictPresentation(
+                    ReadJson(detail, "serverValue") ?? detail.GetRawText(),
+                    ReadJson(detail, "localRequest") ?? localRequest,
+                    ReadJson(detail, "autoMerge") ?? "자동 병합 대상 없음",
+                    ReadJson(detail, "userChoice") ?? "전체 항목 관리자 판단 필요");
+            }
+            catch (JsonException)
+            {
+                return new(
+                    BuildLegacyServerValue(record),
+                    localRequest,
+                    "자동 병합 정보 없음",
+                    "구조화되지 않은 충돌이므로 전체 항목 관리자 판단 필요");
+            }
+        }
+
+        private static string BuildLegacyServerValue(ServerSyncQueueRecord record) =>
+            $"revision {record.BaseServerRevision?.ToString() ?? "확인 필요"} 이후 서버 응답 · " +
+            $"version {record.ServerVersionId ?? "확인 필요"}";
+
+        private static string? ReadJson(JsonElement detail, string name) =>
+            detail.ValueKind == JsonValueKind.Object && detail.TryGetProperty(name, out var value)
+                ? value.GetRawText()
+                : null;
+
+        private static string? CompactJson(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+            try
+            {
+                using var json = JsonDocument.Parse(value);
+                return json.RootElement.GetRawText();
+            }
+            catch (JsonException)
+            {
+                return value;
+            }
         }
 
         private static string FormatStatus(string status)
@@ -397,6 +476,7 @@ public partial class HistoryWindow : Window
                 "document_version" => "문서 버전",
                 "document_publish" => "문서 공개",
                 "document_status" => "문서 상태",
+                "document_tags" => "문서 태그",
                 "field_comment" => "FieldComment",
                 "field_comment_review" => "FieldComment 검토",
                 "field_comment_attachment" => "FieldComment 첨부",
@@ -417,6 +497,7 @@ public partial class HistoryWindow : Window
                 "register_document_version" => "버전 전송",
                 "publish_document_version" => "공개 전송",
                 "update_document_status" => "상태 전송",
+                "replace_document_tags" => "태그 변경 전송",
                 "register_field_comment" => "FieldComment 전송",
                 "update_field_comment_review" => "FieldComment 검토 전송",
                 "register_field_comment_attachment" => "첨부 전송",
@@ -431,6 +512,12 @@ public partial class HistoryWindow : Window
                 _ => action
             };
         }
+
+        private sealed record ConflictPresentation(
+            string ServerValue,
+            string LocalRequest,
+            string AutoMerge,
+            string UserChoice);
     }
 
     private sealed record ReconciliationRow(

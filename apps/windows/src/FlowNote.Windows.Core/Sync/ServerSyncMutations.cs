@@ -60,6 +60,7 @@ public sealed partial class ServerSyncService
                 server_version_id = $server_version_id,
                 server_revision = $server_revision,
                 server_published_version_id = $server_published_version_id,
+                server_tags_json = $server_tags_json,
                 synced_at = $synced_at
             WHERE document_id = $document_id;
 
@@ -72,12 +73,14 @@ public sealed partial class ServerSyncService
         updateDocument.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(serverVersionId) ? DBNull.Value : serverVersionId);
         updateDocument.Parameters.AddWithValue("$server_revision", response.Revision);
         updateDocument.Parameters.AddWithValue("$server_published_version_id", string.IsNullOrWhiteSpace(response.PublishedVersionId) ? DBNull.Value : response.PublishedVersionId);
+        updateDocument.Parameters.AddWithValue("$server_tags_json", JsonSerializer.Serialize(response.Tags));
         updateDocument.Parameters.AddWithValue("$synced_at", now.ToString("O"));
         updateDocument.Parameters.AddWithValue("$document_id", document.DocumentId);
         updateDocument.ExecuteNonQuery();
 
-        UpsertMapping(connection, "document", document.DocumentId, 0, response.DocumentId, serverVersionId, null, null, null, now, serverRevision: response.Revision);
-        UpsertMapping(connection, "document_version", document.DocumentId, 1, response.DocumentId, serverVersionId, null, null, null, now, serverRevision: response.Revision);
+        var serverFileHash = response.LatestVersion?.File.HashSha256;
+        UpsertMapping(connection, "document", document.DocumentId, 0, response.DocumentId, serverVersionId, null, null, null, now, serverRevision: response.Revision, serverFileHashSha256: serverFileHash);
+        UpsertMapping(connection, "document_version", document.DocumentId, 1, response.DocumentId, serverVersionId, null, null, null, now, serverRevision: response.Revision, serverFileHashSha256: serverFileHash);
         MarkQueueSynced(connection, item.Id, response.DocumentId, serverVersionId, null, null, now);
         AdvanceDependentDocumentBases(connection, document.DocumentId, response);
         RecordSyncHistory(connection, "server_sync.succeeded", "document", document.DocumentId, $"Server document synced: {response.DocumentId}", now);

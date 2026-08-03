@@ -4,7 +4,7 @@
 
 Windows WPF 앱은 문서, FieldComment, 첨부, 접근 로그, 보고서 같은 로컬 원천을 SQLite에 먼저 남기고 서버가 설정되어 있으면 동기화를 시도한다. 작업순서는 예외로 FastAPI snapshot을 권위 원천으로 직접 사용하며, 이 문서의 로컬 작업순서 테이블은 기존 기록·오프라인 읽기 캐시·초안으로만 보존한다.
 
-테이블과 동기화 설명은 2026-08-01 현재 `FlowNoteLocalDatabase`와 연결 서비스 코드 기준이다.
+테이블과 동기화 설명은 2026-08-03 현재 `FlowNoteLocalDatabase`와 연결 서비스 코드 기준이다.
 
 ## 경로
 
@@ -19,7 +19,7 @@ Windows WPF 앱은 문서, FieldComment, 첨부, 접근 로그, 보고서 같은
 - `user_accounts`: 로컬 로그인 계정과 role
 - `user_groups`: 관리자 그룹과 작업조
 - `document_folders`: 폴더 트리
-- `documents`: 문서 메타데이터, 최신/공개 버전, 서버 ID, 보고서 서버 revision·내용 hash·source 집합 hash read-back
+- `documents`: 문서 메타데이터, 최신/공개 버전, 서버 ID·revision·태그 집합, 보고서 서버 revision·내용 hash·source 집합 hash read-back
 - `document_versions`: 파일 버전, 변경 사유, 공개 여부, 서버 버전 ID
 - `field_comments`: FieldComment 원천 기록, 서버 코멘트 ID, 마지막 검토 revision
 - `field_comment_attachments`: FieldComment 첨부와 서버 첨부 ID
@@ -37,7 +37,7 @@ Windows WPF 앱은 문서, FieldComment, 첨부, 접근 로그, 보고서 같은
 - `work_sequence_change_history`: 작업순서 이력
 - `work_sequence_notification_candidates`: 작업순서 알림 후보
 - `report_sources`: 로컬 보고서 문서와 근거 source 연결
-- `server_sync_queue`: 서버 전송 큐. 문서 aggregate 기준값 외에 FieldComment 검토 `base_domain_revision`·의도 hash와 보고서 source 집합 hash를 additive 열로 보존
+- `server_sync_queue`: 서버 전송 큐. 문서 aggregate 기준값과 태그 delta payload 외에 FieldComment 검토 `base_domain_revision`·의도 hash와 보고서 source 집합 hash를 additive 열로 보존
 - `server_id_mappings`: 로컬 ID와 서버 ID 연결
 - `server_sync_migration_audit`: 승인 전환한 보존 FAILED 큐와 신규 큐의 무손실 연결. 일반 DB 초기화가 아니라 전환 CLI 승인 실행 시 필요한 경우 생성
 
@@ -63,7 +63,7 @@ Windows WPF 앱은 문서, FieldComment, 첨부, 접근 로그, 보고서 같은
 
 전환 CLI의 dry-run은 DB를 read-only로 열어 감사 테이블이나 큐를 만들지 않는다. 승인 실행만 `server_sync_migration_audit`를 만들고 원천 큐 ID, 대상 idempotency key, 승인자, plan hash, 원천 JSON snapshot을 기록한다. 원천 큐와 로컬 파일은 수정·삭제하지 않으며, 같은 원천 큐 또는 대상 idempotency key의 반복 승인은 신규 원천·큐·감사를 중복 생성하지 않는다. 실행 명령과 전후 SQL 검증은 [보존 동기화 실패 무손실 전환](./legacy-sync-migration.md)을 따른다.
 
-문서 최신 버전은 `documents.version_no`와 `document_versions.is_latest`를 기준으로 서버 최신 버전에 연결한다. 이미 서버에 같은 `version_no`가 있으면 중복 업로드하지 않고 매핑을 복구한다. 공개 버전은 `documents.published_version_no`와 `document_versions.is_published`를 기준으로 서버 publish API에 반영한다. 상태 변경은 현재 로컬 `documents.status`를 서버에 반영하며, `PUBLISHED` 상태는 공개 버전 동기화가 선행되어야 한다.
+문서 최신 버전은 `documents.version_no`와 `document_versions.is_latest`를 기준으로 서버 최신 버전에 연결한다. 이미 서버에 같은 `version_no`가 있으면 SHA-256까지 일치할 때만 중복 업로드 없이 매핑을 복구한다. 공개 버전은 `documents.published_version_no`와 `document_versions.is_published`를 기준으로 서버 publish API에 반영한다. 상태 변경은 큐에 고정한 로컬 상태를 서버에 반영하며, `PUBLISHED` 상태는 공개 버전 동기화가 선행되어야 한다. 태그 변경은 마지막 `server_tags_json`과 현재 로컬 태그를 비교한 추가·제거 delta와 canonical intent hash를 보존한다. 서버는 revision별 태그 집합을 기준으로 겹치지 않는 delta만 병합하고 WPF는 응답과 상세 read-back을 확인한 뒤 태그·문서·mapping·큐·이력을 한 SQLite transaction으로 저장한다.
 
 FieldComment 검토 큐는 생성 시점 `field_comments.review_revision`을 `base_domain_revision`에 고정하고 안정된 큐 key를 서버 `mutationKey`로 보낸다. 서버 성공 응답의 증가한 revision을 로컬에 반영한 뒤에만 큐를 종결한다. 구 큐처럼 base revision이 NULL인 항목은 서버 상세에서 현재 revision을 읽어 요청 기준값으로 사용하되 중간 상태를 자동 생성하지 않는다.
 

@@ -1,6 +1,6 @@
 # 서버 동기화 실패와 재시도 UX
 
-이 문서는 2026-08-01 현재 `ServerSyncService`, 실패 진단 코드와 WPF 이력 화면 기준이다. 아래 누적 건수는 당시 보존 DB의 검증 기록이며 고정 기대값이 아니다.
+이 문서는 2026-08-03 현재 `ServerSyncService`, 실패 진단 코드와 WPF 이력 화면 기준이다. 아래 누적 건수는 당시 보존 DB의 검증 기록이며 고정 기대값이 아니다.
 
 ## 화면 기준
 
@@ -14,18 +14,22 @@
 - `우선순위`: 운영자가 먼저 확인할 순서. `10 설정 필요`, `11 로그인 필요`, `12 연결 확인`, `20 파일 확인`, `21 입력 확인`, `30 문서 먼저`, `31 버전 먼저`, `32 FieldComment 먼저`, `33 근거 먼저`, `50 재시도`, `80 별도 정리`, `81 별도 전환`, `90 완료`
 - `분류`: 서버 URL 미설정, 인증 만료, 네트워크 실패, 로컬 파일 누락, 서버 검증 거부, 선행 문서 미동기화, 선행 문서 버전 미동기화, 선행 FieldComment 미동기화, 보고서 근거 미동기화, 구 FieldNote 큐, 구 형식 큐, 실제 서버 오류, 재시도 가능, 완료
 - `대상`: 문서, 문서 버전, 문서 공개, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, FieldComment 첨부, 접근 로그, 보고서
-- `작업`: 문서 전송, 버전 전송, 공개 전송, 상태 전송, 태그 전체 교체, FieldComment 전송, 검토 변경 전송, 첨부 전송, 열람 시작/종료/자동 종료/다운로드 차단 전송, 보고서 서버 저장
+- `작업`: 문서 전송, 버전 전송, 공개 전송, 상태 전송, 태그 변경 전송, FieldComment 전송, 검토 변경 전송, 첨부 전송, 열람 시작/종료/자동 종료/다운로드 차단 전송, 보고서 서버 저장
 - `시도`: 서버 전송 시도 횟수
 - `마지막 시도`: 마지막 재시도 시간
 - `조치`: 운영자가 먼저 할 일
 - `실패 사유`: 사용자가 조치할 수 있는 한글 실패 문구
 - `충돌 코드`: stale revision, 기준 버전, 공개본 경쟁, 삭제 재전송, 멱등키, SHA-256 불일치를 구분하는 서버 코드
+- `서버 값`: 충돌 응답의 현재 revision, 태그, 상태, 최신/공개 version ID와 확인 가능한 hash
+- `보존된 로컬 요청`: 큐의 고정 payload, base revision, expected version/공개 ID, 로컬 hash, intent와 mutation key
+- `자동 병합 가능`: 태그 충돌 중 서버 변경과 겹치지 않아 별도로 적용할 수 있는 추가·제거 항목
+- `사용자 선택 필요`: 같은 태그의 반대 방향 변경, 비활성·삭제 태그, 파일·상태·공개본·삭제 경쟁처럼 자동 처리하지 않는 항목
 
 `재시도` 버튼은 현재 `PENDING`, `FAILED` 큐를 다시 전송한다. 서버 URL 또는 로그인 토큰이 없으면 재시도하지 않고 “서버 URL 또는 로그인 정보가 없어 재시도할 수 없습니다. 서버 설정과 로그인을 확인하세요. 로컬 데이터는 삭제되지 않습니다.”를 표시한다.
 
 `CONFLICT`는 일반 재시도 대상이 아니다. 운영자는 충돌 행을 선택하고 사유를 입력한 뒤 다음 중 하나를 고른다.
 
-- `로컬 변경 재시도`: 서버 상세를 다시 읽어 최신 `revision`, 최신/공개 버전 ID를 로컬과 큐에 저장하고 `PENDING`으로 바꾼 뒤 로컬 변경을 새 서버 기준에서 재시도한다. 파일/공개/상태 의미가 여전히 맞는지 관리자가 확인한 경우에만 사용한다.
+- `로컬 변경 재시도`: 서버 상세를 다시 읽어 최신 `revision`, 최신/공개 버전 ID를 로컬과 큐에 저장하고 `PENDING`으로 바꾼 뒤 로컬 변경을 새 서버 기준에서 재시도한다. 태그 요청은 추가·제거 의도는 유지하되 새 base revision과 intent hash를 계산한다. 파일/공개/상태/태그 의미가 여전히 맞는지 관리자가 확인한 경우에만 사용한다.
 - `서버본 유지·폐기`: 로컬 전송 요청을 `DISCARDED`로 종결한다. 로컬 문서와 파일, 충돌 원 응답, 큐 행은 삭제하지 않는다.
 
 두 선택은 `resolution_action`, 사유, 해결자, 해결 시각과 `activity_history`에 남고 앱 재시작 뒤에도 표시된다. 사유 없이 버튼을 누를 수 없다. reconciliation의 DIVERGED는 양쪽 hash와 `resolution_status = APPROVED_CONFLICT`도 함께 보존한다.
@@ -62,7 +66,7 @@
 
 신규 큐는 서버에서 마지막으로 확인한 `revision`, 최신 버전 ID, 공개 버전 ID와 로컬 파일 SHA-256을 snapshot으로 남긴다. 구 큐처럼 base revision이 없는 호환 경로에서 서버에 같은 번호의 버전이 이미 있으면 SHA-256이 같은 경우에만 로컬 `server_version_id`, `synced_at`, `server_id_mappings`를 복구한다. hash가 다르면 `FILE_HASH_MISMATCH` 충돌이다. 신규 큐는 서버가 revision 확인 뒤 다음 버전 번호를 배정하므로 로컬 번호와 서버 번호의 우연한 일치를 성공 조건으로 쓰지 않는다.
 
-공개는 항상 특정 로컬 버전 번호의 서버 버전 ID가 확인된 뒤 서버 publish API를 호출한다. 문서 상태와 태그는 enqueue 시 `payload_json`에 고정한 값으로 전송한다. 공개·상태·태그는 큐의 안정 key를 서버 `mutationKey`로 보내며 서버는 같은 transaction에 `document_mutation_receipts`를 저장한다. WPF는 2xx 뒤 문서 상세를 다시 읽어 공개 버전 ID, 상태, 태그와 revision이 일치할 때만 로컬 mapping과 큐를 `SYNCED`로 저장한다. 응답 유실은 같은 key를 다시 보내 receipt를 재생하며 revision·이력·알림·receipt가 늘지 않는다.
+공개는 항상 특정 로컬 버전 번호의 서버 버전 ID가 확인된 뒤 서버 publish API를 호출한다. 문서 상태는 enqueue 시 값을 고정한다. 태그는 `documents.server_tags_json`과 현재 로컬 태그를 비교해 `baseRevision`, `AddedTags`, `RemovedTags`, `IntentHash`, `DesiredTags`를 `payload_json`에 보존한다. 최초 문서 등록 전 만든 태그 큐는 등록 응답의 revision·태그 집합으로 delta를 한 번 확정한 뒤 보낸다. 이미 매핑된 문서인데 서버 태그 기준이 없는 구 큐는 자동 추정하지 않는다. 공개·상태·태그는 안정 key를 `mutationKey`로 보내며 서버는 같은 transaction에 `document_mutation_receipts`를 저장한다. WPF는 2xx와 상세 read-back 뒤 revision, 태그, 공개 포인터, 최신 version ID/hash를 확인하고 로컬 문서·태그 관계·mapping·큐·이력을 한 SQLite transaction으로 저장한다. 응답 유실은 같은 key와 본문을 다시 보내 receipt를 재생하며 revision·감사·receipt가 늘지 않는다.
 
 권위와 충돌 해결표:
 
@@ -70,9 +74,9 @@
 | --- | --- | --- | --- |
 | 문서 상태 | `documents.status`, `revision` | read-back 상태와 큐 snapshot 상태 일치 | `DOCUMENT_READ_BACK_MISMATCH` 또는 stale 충돌 보존 |
 | 공개 버전 | `published_version_id`, 공개 버전 flag, `revision` | read-back 공개 ID가 요청 서버 버전 ID와 일치 | 자동 재공개 금지, 양쪽 ID/hash와 관리자 사유 요구 |
-| 태그 | 서버 `document_tags` 전체 집합, `revision` | 정렬·대소문자 정규화 집합이 snapshot과 일치 | 자동 합집합/덮어쓰기 금지, 최신 서버본 확인 |
+| 태그 | 서버 `document_tags` 활성 집합, `document_tag_revisions`, 문서 `revision` | 응답과 read-back 전체 집합이 같고 로컬 transaction 종결 | 서로 겹치지 않는 delta만 자동 병합. 같은 태그 반대 변경, 비활성·삭제는 구조화된 충돌 |
 
-태그는 서버 권위 동기화 대상에 포함한다. 최초 문서 등록의 tags뿐 아니라 이후 WPF 전체 교체도 `document_tags/replace_document_tags` action으로 큐에 남긴다.
+태그는 서버 권위 동기화 대상에 포함한다. 최초 문서 등록의 tags뿐 아니라 이후 WPF 추가·제거 의도도 `document_tags/replace_document_tags` action으로 큐에 남긴다. action 이름은 로컬 호환을 위해 유지하지만 서버 요청 의미는 전체 교체가 아니라 delta 병합이다. 파일 내용, 문서·버전 상태, 공개 포인터, 삭제 경쟁은 이 경로에서 바꾸지 않는다.
 
 FieldComment 검토 큐는 enqueue 시점의 상태·정리 내용·분석 내용·전이 사유를 `payload_json`에 고정하고 직전 서버 `review_revision`을 `base_domain_revision`으로 보존한다. 오프라인에서 `ANALYZED → REVIEWED → SELECTED`가 연속 입력되면 각 mutation을 별도 key와 snapshot으로 처리하고 앞 응답 revision을 다음 큐 기준값으로 넘긴다. 서버가 409 `FIELD_COMMENT_STALE_REVIEW_REVISION` 또는 `IDEMPOTENCY_KEY_REUSED`를 반환하면 자동 재시도하지 않고 원 응답과 충돌 코드를 보존한다. 성공할 때는 응답 `review_revision`을 로컬 FieldComment에 반영한 뒤 해당 큐를 종결한다.
 

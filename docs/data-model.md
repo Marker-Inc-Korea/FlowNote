@@ -1,6 +1,6 @@
 # FlowNote 데이터 모델
 
-이 문서는 2026-08-01 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
+이 문서는 2026-08-03 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
 
 ## WPF 로컬 SQLite
 
@@ -13,7 +13,7 @@
 | `user_accounts` | 로그인 계정, 표시 이름, role, 그룹/상위자, 상태 |
 | `user_groups` | 관리자 그룹과 라인별 작업조 |
 | `document_folders` | 루트, 기본 폴더, 분류/날짜 폴더 |
-| `documents` | 로컬 문서 메타데이터, 최신/공개 버전, 서버 ID와 보고서 revision/content/source-set hash read-back |
+| `documents` | 로컬 문서 메타데이터, 최신/공개 버전, 서버 ID·revision·태그 집합과 보고서 content/source-set hash read-back |
 | `document_versions` | 문서 버전, 파일 경로, 변경 사유, 공개 여부, 서버 버전 ID |
 | `field_comments` | 현장 코멘트 원천 기록과 서버 코멘트 ID |
 | `field_comment_attachments` | FieldComment 첨부 파일 로컬 경로와 서버 첨부 ID |
@@ -48,6 +48,7 @@ WPF DB에는 다음 수렴 필드가 additive 방식으로 구현되었다. 기�
 | `server_sync_queue.source_set_hash` | `report` enqueue 시 source type/local ID/version/hash/relation을 정렬한 줄 단위 문자열의 SHA-256. source가 없거나 다른 entity type이면 NULL |
 | `server_sync_queue.payload_json` | 상태·태그처럼 enqueue 시점의 변경 의도를 고정해야 하는 신규 action의 정규화 snapshot. 구 큐의 NULL은 보존 |
 | `server_sync_queue.server_conflict_hash_sha256` | 충돌 시 read-only 서버 상세에서 확인한 상대 파일 hash. 로컬 hash, 충돌 원문, 해결 감사와 함께 보존 |
+| `documents.server_tags_json` | WPF가 마지막으로 확인한 서버 권위 태그 집합. 다음 태그 큐의 추가/제거 delta 기준이며 로컬 편집 태그와 별도로 보존 |
 
 `local_schema_versions`, `server_sync_scopes`, `server_id_mappings.server_epoch`은 아직 구현되지 않은 후속 수렴 모델이다. 현재 복구 binding과 판정 이력은 각각 `server_bindings`, `reconciliation_runs`, `reconciliation_items`에 구현되어 있다.
 
@@ -71,7 +72,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-08-01 현재 ORM은 문서·FieldComment 검토·보고서·작업순서 mutation receipt, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 61개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드는 새 테이블이나 저장 snapshot을 만들지 않고 `field_comments`와 `report_sources`의 현재 상태를 요청 시점에 집계한다.
+2026-08-03 현재 ORM은 문서·FieldComment 검토·보고서·작업순서 mutation receipt, 문서 태그 revision snapshot, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 62개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드는 새 테이블이나 저장 snapshot을 만들지 않고 `field_comments`와 `report_sources`의 현재 상태를 요청 시점에 집계한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -87,8 +88,9 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `operator_profiles` | 작업자/작업그룹/대리 입력 주체 |
 | `file_objects` | 서버 로컬 파일 참조, MIME, 크기, SHA-256 |
 | `documents`, `document_versions` | 문서, 버전, 최신/공개 버전. 문서와 개별 버전의 재시도 idempotency key를 각각 유일하게 보존 |
-| `document_mutation_receipts` | 문서 공개·상태·태그 mutation key, intent hash, 적용 revision, 최초 성공 응답 |
-| `tag_definitions`, `document_tags` | 태그 사전과 문서 연결 |
+| `document_mutation_receipts` | 문서 공개·상태·태그·삭제 mutation key, intent hash, 적용 revision, 최초 성공 응답 |
+| `tag_definitions`, `document_tags` | 태그 사전과 현재 문서 연결 |
+| `document_tag_revisions` | 문서 생성과 태그 mutation 뒤 revision별 태그 집합 JSON. stale 태그 delta의 3-way 병합 기준 |
 | `terminal_devices` | Android 현장 단말기 승인 기준 정보 |
 | `field_comments`, `field_comment_attachments` | 현장 코멘트와 첨부. 원천 기록과 개별 첨부의 재시도 idempotency key를 각각 유일하게 보존. 담당자, 검토 기한, 마지막 전이 사유, 선정 시각, `review_revision`은 관리자 해석 영역으로 분리 |
 | `field_comment_review_mutation_receipts` | 검토 mutation key와 intent hash, comment/revision, 최초 응답 JSON snapshot |
@@ -282,7 +284,7 @@ MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_record
 
 서버 ORM의 `documents.status` 제약에는 `DELETED`도 포함된다. 일반 상태 PATCH는 `DELETED`를 받지 않고 전용 DELETE API가 `status = DELETED`, `deleted_at`, 공개 포인터 해제와 감사를 한 transaction에서 처리한다.
 
-`documents.revision`은 서버가 단독으로 증가시키는 문서 aggregate revision이다. 최초 등록은 1이며 새 버전, 문서 상태, 버전 상태, 공개본 교체, 태그 전체 교체, soft delete처럼 서버 기준 상태가 실제로 바뀔 때 한 번 증가한다. WPF의 로컬 `version_no`나 수정 시각으로 대체하지 않는다. WPF는 마지막 서버 read-back 값을 `documents.server_revision`, `documents.server_version_id`, `documents.server_published_version_id`에 보관하고 큐 생성 시 기준값을 복사한다.
+`documents.revision`은 서버가 단독으로 증가시키는 문서 aggregate revision이다. 최초 등록은 1이며 새 버전, 문서 상태, 버전 상태, 공개본 교체, 태그 병합, soft delete처럼 서버 기준 상태가 실제로 바뀔 때 한 번 증가한다. WPF의 로컬 `version_no`나 수정 시각으로 대체하지 않는다. WPF는 마지막 서버 read-back 값을 `documents.server_revision`, `documents.server_version_id`, `documents.server_published_version_id`, `documents.server_tags_json`에 보관하고 큐 생성 시 기준값을 복사한다.
 
 문서 상태 전이는 `WORKING → IN_REVIEW|ARCHIVED`, `IN_REVIEW → WORKING|ARCHIVED`, `PUBLISHED → IN_REVIEW|ARCHIVED`, `ARCHIVED → WORKING|IN_REVIEW`만 상태 API에서 허용한다. `PUBLISHED` 진입은 publish API만 수행한다. `DELETE /api/v1/documents/{document_id}`는 `DELETED`, `deleted_at`, 공개 포인터 해제를 같은 revision 변경으로 처리하며 삭제된 서버 문서는 로컬 재전송으로 암묵 복구하지 않는다.
 
@@ -342,7 +344,7 @@ FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관�
 
 `PENDING`은 전송 가능 또는 선행 조건 대기, `FAILED`는 원인을 해결한 뒤 같은 key로 재시도 가능하거나 로컬 원천 오류로 보존 중, `CONFLICT`는 관리자 판정 전 자동 재시도 금지다. `SYNCED`와 `DISCARDED`만 종결 상태다. `DISCARDED`는 서버본 유지 사유가 있는 감사 종결이며 삭제를 뜻하지 않는다.
 
-`server_sync_queue`는 문서 작업에서 `base_server_revision`, `expected_server_version_id`, `expected_published_version_id`, `local_file_hash_sha256`를 생성 시점 snapshot으로 보존한다. `payload_json`은 문서 상태·태그와 FieldComment 검토 상태/내용을 enqueue 시점 값으로 고정해 여러 오프라인 변경이 마지막 로컬 값으로 뭉개지지 않게 한다. 현재 additive 열인 `base_domain_revision`은 FieldComment 검토 기준 revision, `intent_hash`는 enqueue 핵심 식별자의 진단 hash, `source_set_hash`는 보고서 근거 집합 hash를 보존한다. 같은 현재 형식 의존 그래프에서는 앞 mutation 성공의 read-back revision과 서버 ID를 뒤 mutation 기준값으로 전달하지만, 구 큐의 NULL을 임의 보완하거나 기존 보존 row를 재작성하지 않는다. 409와 read-back 불일치는 일반 전송 실패와 분리해 `CONFLICT`, `conflict_code`, `local_file_hash_sha256`, `server_conflict_hash_sha256`, 원 응답을 기록한다. 공개·문서 상태·태그 구 큐의 `base_server_revision`이 null이면 WPF가 서버 호출 전에 `LEGACY_BASE_MISSING` 충돌을 만들며 현재 revision을 임의 대입하지 않는다. 관리자 해결 뒤 로컬 요청을 최신 서버 revision에서 다시 보내면 `resolution_action = RETRY_LOCAL_ON_LATEST`, 서버본 유지로 폐기하면 `DISCARDED`와 `resolution_action = KEEP_SERVER`를 사용한다. 두 경로 모두 사유, 해결자, 해결 시각과 `activity_history` 감사를 남기며 앱 재시작 뒤에도 유지한다. 큐 요약의 전체 건수에는 감사 종결 상태인 `DISCARDED`를 포함하지만 운영 지표의 처리 대기 깊이에서는 제외한다.
+`server_sync_queue`는 문서 작업에서 `base_server_revision`, `expected_server_version_id`, `expected_published_version_id`, `local_file_hash_sha256`를 생성 시점 snapshot으로 보존한다. 태그 `payload_json`은 `BaseRevision`, `AddedTags`, `RemovedTags`, `IntentHash`, `DesiredTags`와 기준 태그 확인 여부를 저장한다. 문서가 아직 서버에 등록되지 않았다면 최초 등록 응답의 revision·태그 집합으로 delta를 한 번 확정하고 같은 큐 row에 보존한 뒤 전송한다. 이미 매핑된 문서인데 `server_tags_json`이 없는 구 큐는 현재 서버값을 기준값으로 추정하지 않고 `LEGACY_BASE_MISSING` 충돌로 남긴다. 일반 상태와 FieldComment 검토도 enqueue 시점 상태/내용을 `payload_json`에 고정해 여러 오프라인 변경이 마지막 로컬 값으로 뭉개지지 않게 한다. `base_domain_revision`은 FieldComment 검토 기준 revision, `intent_hash`는 일반 큐의 진단 hash이자 태그 큐에서는 서버가 검증하는 canonical 의도 hash, `source_set_hash`는 보고서 근거 집합 hash다. 409와 read-back 불일치는 일반 전송 실패와 분리해 `CONFLICT`, `conflict_code`, 로컬/서버 hash, 원 응답을 기록한다. 관리자 해결 뒤 로컬 요청을 최신 서버 revision에서 다시 보내면 태그 payload의 base와 intent hash도 명시적으로 다시 계산하고 `resolution_action = RETRY_LOCAL_ON_LATEST`를 남긴다. 서버본 유지로 폐기하면 `DISCARDED`와 `KEEP_SERVER`를 사용한다. 두 경로 모두 사유, 해결자, 해결 시각과 `activity_history` 감사를 남기며 앱 재시작 뒤에도 유지한다.
 
 서버 scope 상태는 `ACTIVE`, `RECONCILIATION_REQUIRED`를 사용한다. reconciliation item 결과는 `CONFIRMED`, `ABSENT`, `DIVERGED`, 로컬 적용 결과는 각각 `REBOUND`, `REQUEUE`, `CONFLICT`를 사용한다. 승인 뒤 `resolution_status`는 `REBOUND_CONFIRMED`, `REQUEUED_FOR_RETRY`, `APPROVED_CONFLICT`다. DIVERGED 항목은 local/server hash, 사유, 승인자, 해결 시각을 유지하며 자동 덮어쓰지 않는다. reconciliation run은 `REVIEW_REQUIRED`, `APPLIED`, `FAILED`이며 실패 run과 item은 삭제하지 않는다.
 
@@ -353,6 +355,7 @@ FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관�
 - publish 전에 서버 저장 파일을 다시 읽어 `file_objects.hash_sha256`과 비교한다. 불일치나 파일 누락은 `FILE_HASH_MISMATCH` 충돌이며 공개 포인터를 바꾸지 않는다.
 - 같은 idempotency key의 동일 내용 재시도는 기존 결과를 반환한다. 파일 hash나 핵심 메타데이터가 다르면 `IDEMPOTENCY_KEY_REUSED`로 거부한다.
 - 공개·문서 상태·태그는 같은 mutation key와 intent를 `document_mutation_receipts`에서 재생한다. WPF read-back이 상태·공개 포인터·태그와 revision을 확인하기 전에는 `SYNCED`가 아니다.
+- 태그만 기준 revision 이후의 비경합 추가·제거를 자동 병합한다. 같은 태그의 반대 방향 변경과 비활성·삭제 태그는 구조화된 409로 남기며, 파일·version hash·상태·공개 포인터·삭제는 태그 병합에 포함하지 않는다.
 - 기존 `field_notes`, `field_note_attachments`와 구 큐는 삭제·rename·자동 덮어쓰지 않는다. 읽기 전용 dry-run과 row별 관리자 승인으로 새 FieldComment 원천/큐를 별도 생성하며 원천 snapshot을 감사에 남긴다.
 
 채널/인수인계 상태:

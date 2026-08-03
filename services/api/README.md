@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-08-01 현재 OpenAPI에 등록된 143개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-08-03 현재 OpenAPI에 등록된 143개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -41,13 +41,13 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/documents/published` | Published document list |
 | GET | `/api/v1/documents/{document_id}` | Document detail |
 | GET | `/api/v1/documents/{document_id}/published` | Published version |
-| PUT | `/api/v1/documents/{document_id}/tags` | Replace document tags with base revision and optional mutation key |
+| PUT | `/api/v1/documents/{document_id}/tags` | Merge added/removed tags using base revision, canonical intent hash, and mutation key; legacy full replacement remains compatible |
 | PATCH | `/api/v1/documents/{document_id}/status` | Change document status with base revision and optional mutation key |
 | GET | `/api/v1/documents/{document_id}/versions` | Version list |
 | POST | `/api/v1/documents/{document_id}/versions` | Register new version; optional multipart `idempotencyKey` returns the existing version on retry |
 | PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | Change version status |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | Publish selected version with base revision and optional mutation key |
-| DELETE | `/api/v1/documents/{document_id}` | Soft-delete a document using its base revision and change reason |
+| DELETE | `/api/v1/documents/{document_id}` | Soft-delete a document using its base revision, change reason, and optional mutation key |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | Issue one-time controlled copy grant for the current published version |
 | GET | `/api/v1/controlled-copies/{token}` | Stream the session-bound controlled copy once |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/android-view-grants` | Issue an approved-device Android secure view grant |

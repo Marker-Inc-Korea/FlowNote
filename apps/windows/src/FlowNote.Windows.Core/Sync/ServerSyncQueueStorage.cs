@@ -37,11 +37,24 @@ public sealed partial class ServerSyncService
 
     public static string CreateDocumentTagsIdempotencyKey(
         string documentId,
-        IReadOnlyList<string> tags,
-        DateTime updatedAt)
+        string intentHash)
     {
-        var tagHash = ComputeSha256(JsonSerializer.Serialize(tags.OrderBy(value => value, StringComparer.Ordinal)));
-        return $"wpf:document-tags:{documentId}:{tagHash}:{updatedAt:yyyyMMddHHmmssfffffff}";
+        return $"wpf:document-tags:{documentId}:{intentHash}";
+    }
+
+    public static string CreateDocumentTagIntentHash(
+        string serverDocumentId,
+        int baseRevision,
+        IReadOnlyList<string> addedTags,
+        IReadOnlyList<string> removedTags)
+    {
+        var canonical = string.Join("\n",
+            "document-tags-v1",
+            serverDocumentId,
+            baseRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "add:" + string.Join(",", addedTags.Select(TagService.NormalizeCode).Order()),
+            "remove:" + string.Join(",", removedTags.Select(TagService.NormalizeCode).Order()));
+        return ComputeSha256(canonical);
     }
 
     public static string CreateFieldCommentIdempotencyKey(string commentId)
@@ -125,15 +138,36 @@ public sealed partial class ServerSyncService
         var tags = TagService.CleanTags(document.TagList)
             .OrderBy(value => value, StringComparer.Ordinal)
             .ToList();
+        using var connection = database.OpenConnection();
+        var tagBase = LoadDocumentTagBase(connection, document.DocumentId);
+        var baseTags = tagBase.Tags ?? [];
+        var addedTags = tags.Except(baseTags, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToList();
+        var removedTags = baseTags.Except(tags, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToList();
+        var serverDocumentId = tagBase.ServerDocumentId ?? document.DocumentId;
+        var baseRevision = tagBase.ServerRevision ?? 1;
+        var intentHash = CreateDocumentTagIntentHash(
+            serverDocumentId, baseRevision, addedTags, removedTags);
         Enqueue(
             "document_tags",
             document.DocumentId,
             "replace_document_tags",
             document.DocumentId,
             document.VersionNo,
-            CreateDocumentTagsIdempotencyKey(document.DocumentId, tags, document.UpdatedAt),
+            CreateDocumentTagsIdempotencyKey(document.DocumentId, intentHash),
             failureReason,
-            JsonSerializer.Serialize(new DocumentTagsSyncPayload(tags)));
+            JsonSerializer.Serialize(new DocumentTagsSyncPayload(
+                baseRevision,
+                addedTags,
+                removedTags,
+                intentHash,
+                tagBase.Tags is not null,
+                tags,
+                tagBase.ServerDocumentId is null)),
+            intentHashOverride: intentHash);
     }
 
     private void EnqueueFieldComment(FieldCommentRecord fieldComment, string? failureReason)
@@ -210,7 +244,8 @@ public sealed partial class ServerSyncService
         string idempotencyKey,
         string? failureReason,
         string? payloadJson = null,
-        int? baseDomainRevisionOverride = null)
+        int? baseDomainRevisionOverride = null,
+        string? intentHashOverride = null)
     {
         var now = DateTime.UtcNow;
         var status = string.IsNullOrWhiteSpace(failureReason) ? Pending : Failed;
@@ -218,7 +253,8 @@ public sealed partial class ServerSyncService
         var snapshot = LoadDocumentSyncSnapshot(connection, localDocumentId, localVersionNo);
         var baseDomainRevision = baseDomainRevisionOverride ??
             LoadBaseDomainRevision(connection, entityType, entityId);
-        var intentHash = ComputeSha256($"{entityType}|{entityId}|{action}|{idempotencyKey}|{baseDomainRevision}");
+        var intentHash = intentHashOverride ??
+            ComputeSha256($"{entityType}|{entityId}|{action}|{idempotencyKey}|{baseDomainRevision}");
         var sourceSetHash = entityType == "report" ? LoadReportSourceSetHash(connection, entityId) : null;
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -331,6 +367,42 @@ public sealed partial class ServerSyncService
         command.Parameters.AddWithValue("$id", entityId);
         var value = command.ExecuteScalar();
         return value is null or DBNull ? null : Convert.ToInt32(value);
+    }
+
+    private static DocumentTagBase LoadDocumentTagBase(
+        SqliteConnection connection,
+        string documentId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT server_document_id, server_revision, server_tags_json
+            FROM documents
+            WHERE document_id = $document_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$document_id", documentId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return new(null, null, null);
+        }
+
+        IReadOnlyList<string>? tags = null;
+        if (!reader.IsDBNull(2))
+        {
+            try
+            {
+                tags = JsonSerializer.Deserialize<List<string>>(reader.GetString(2));
+            }
+            catch (JsonException)
+            {
+                tags = null;
+            }
+        }
+        return new(
+            reader.IsDBNull(0) ? null : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetInt32(1),
+            tags);
     }
 
     private static string? LoadReportSourceSetHash(SqliteConnection connection, string reportDocumentId)

@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-08-01 현재 전역 FastAPI 앱에 등록된 143개 method/path 조합과 요청·응답 코드 기준이다. 문서 상태·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-08-03 현재 전역 FastAPI 앱에 등록된 143개 method/path 조합과 요청·응답 코드 기준이다. 문서 상태·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -106,6 +106,7 @@ run 생성은 업무 도메인 원천을 수정하지 않고 서버와 WPF 양�
 | --- | --- | --- |
 | 401/403 | 아니요 | 현재 묶음 중단, 로그인/권한 해결. 로컬 원천 보존 |
 | 409 `STALE_*`, `*_CHANGED`, `*_ORPHAN`, `IDEMPOTENCY_KEY_REUSED`, `SERVER_RECOVERY_DIVERGED` | 아니요 | `CONFLICT` 저장, 최신값 추정·자동 병합 금지 |
+| 409 `TAG_MERGE_CONFLICT`, `TAG_UNAVAILABLE`, `TAG_BASE_UNAVAILABLE`, `TAG_INTENT_HASH_MISMATCH` | 아니요 | 서버 값·로컬 요청·안전 delta·사용자 판단 항목을 분리해 `CONFLICT` 보존. 태그 외 필드는 변경 금지 |
 | 422 | 아니요 | payload/로컬 원천 검증 실패를 보존 `FAILED`로 기록 |
 | 426 `CLIENT_CONTRACT_UNSUPPORTED` | 아니요 | 앱/서버 호환 버전 조정 전 sync 중지 |
 | 503 `SCHEMA_MIGRATION_IN_PROGRESS` 또는 일시 장애 | 예 | `Retry-After` 우선, 없으면 5초~5분 exponential backoff+jitter |
@@ -122,13 +123,13 @@ run 생성은 업무 도메인 원천을 수정하지 않고 서버와 WPF 양�
 | GET | `/api/v1/documents/published` | 공개 문서 목록 |
 | GET | `/api/v1/documents/{document_id}` | 문서 상세 |
 | GET | `/api/v1/documents/{document_id}/published` | 공개 버전 조회 |
-| PUT | `/api/v1/documents/{document_id}/tags` | `baseRevision`, `mutationKey` query 기준 문서 태그 전체 교체 |
+| PUT | `/api/v1/documents/{document_id}/tags` | JSON `baseRevision`, 추가/제거 태그, `intentHash`, `mutationKey` 기준 태그 delta 병합. 구 list body/query 전체 교체 계약도 호환 유지 |
 | PATCH | `/api/v1/documents/{document_id}/status` | JSON `baseRevision`, `mutationKey` 기준 문서 상태 변경 |
 | GET | `/api/v1/documents/{document_id}/versions` | 문서 버전 목록 |
 | POST | `/api/v1/documents/{document_id}/versions` | 새 파일 버전 등록. multipart `idempotencyKey`를 보내면 같은 키의 재시도는 기존 버전을 반환 |
 | PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | JSON `baseRevision` 기준 버전 상태 변경 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | JSON `baseRevision`, 예상 공개본, `mutationKey` 기준으로 특정 버전을 공개 버전으로 지정 |
-| DELETE | `/api/v1/documents/{document_id}` | `baseRevision`, `changeReason`으로 문서를 soft delete. 공개 포인터 해제와 감사를 함께 저장 |
+| DELETE | `/api/v1/documents/{document_id}` | `baseRevision`, `changeReason`, 선택 `mutationKey`로 문서를 soft delete. 공개 포인터 해제·감사·receipt를 함께 저장 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | 현재 공개 버전의 1회성 controlled copy 티켓 발급 |
 | GET | `/api/v1/controlled-copies/{token}` | 발급 사용자·로그인 세션에 묶인 controlled copy 1회 스트리밍 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/android-view-grants` | 승인 Android 단말의 현재 공개 버전 앱 내부 열람 grant 발급 |
@@ -136,9 +137,23 @@ run 생성은 업무 도메인 원천을 수정하지 않고 서버와 WPF 양�
 
 문서 생성 시 허용되는 상태는 `WORKING`, `IN_REVIEW`, `ARCHIVED`이다. `PUBLISHED`는 publish 엔드포인트로만 만든다.
 
-문서 응답과 목록은 서버 권위의 `revision`을 포함한다. 버전 등록 multipart는 `baseRevision`, `baseVersionId`, `fileHashSha256`, `idempotencyKey`를 받을 수 있다. WPF는 네 값을 모두 보내며 서버는 최신 버전 ID와 revision을 원자적으로 비교한 뒤 새 버전 번호를 배정한다. publish JSON은 `baseRevision`, `expectedPublishedVersionId`, `changeReason`, `mutationKey`, 문서 상태 JSON은 `baseRevision`, `status`, `changeReason`, `mutationKey`를 사용한다. 태그 전체 교체는 필수 `baseRevision`과 선택 `mutationKey` query를 사용한다. 버전 상태 API는 `baseRevision`, `status`, `changeReason`을 사용한다.
+문서 응답과 목록은 서버 권위의 `revision`을 포함한다. 버전 등록 multipart는 `baseRevision`, `baseVersionId`, `fileHashSha256`, `idempotencyKey`를 받을 수 있다. WPF는 네 값을 모두 보내며 서버는 최신 버전 ID와 revision을 원자적으로 비교한 뒤 새 버전 번호를 배정한다. publish JSON은 `baseRevision`, `expectedPublishedVersionId`, `changeReason`, `mutationKey`, 문서 상태 JSON은 `baseRevision`, `status`, `changeReason`, `mutationKey`를 사용한다. 버전 상태 API는 `baseRevision`, `status`, `changeReason`을 사용한다.
 
-공개·문서 상태·태그 교체는 서버 권위 mutation이다. 서버는 정규화한 intent hash와 최초 성공 응답을 `document_mutation_receipts`에 문서 변경과 같은 transaction으로 저장한다. 같은 key·같은 intent 재요청은 저장 응답을 반환하고 revision·이력·알림·receipt를 추가하지 않는다. 같은 key를 다른 intent에 사용하면 409 `IDEMPOTENCY_KEY_REUSED`다. WPF는 큐의 같은 key를 그대로 `mutationKey`로 보내고 2xx 뒤 `GET /documents/{document_id}`를 다시 읽어 상태, 공개 버전 ID, 태그와 revision을 확인한 뒤에만 큐를 `SYNCED`로 종결한다. 응답 유실 때도 같은 key로 재전송하므로 receipt 응답에 재결합된다.
+WPF 태그 변경 요청은 다음 JSON을 사용한다.
+
+```json
+{
+  "baseRevision": 7,
+  "addedTags": ["press-a"],
+  "removedTags": ["line-b"],
+  "intentHash": "64자리 SHA-256",
+  "mutationKey": "wpf:document-tags:..."
+}
+```
+
+`intentHash`는 `document-tags-v1`, 서버 문서 ID, `baseRevision`, 정규화·정렬한 추가/제거 태그를 줄 단위로 연결한 canonical 문자열의 SHA-256이다. 서버는 `document_tag_revisions`에서 기준 revision의 태그 집합을 복원한다. 기준 이후 서버가 바꾼 태그와 요청 태그가 겹치지 않으면 현재 서버 집합에 delta를 한 번만 병합한다. 같은 태그에 반대 방향 변경이 있으면 `TAG_MERGE_CONFLICT`, 요청 태그 정의가 비활성 또는 삭제 상태면 `TAG_UNAVAILABLE`, 기준 snapshot이 없으면 `TAG_BASE_UNAVAILABLE`, canonical hash가 다르면 `TAG_INTENT_HASH_MISMATCH` 409를 반환한다. 충돌 `detail`에는 `serverValue`, `localRequest`, `autoMerge`, `userChoice`를 함께 넣는다. 파일 내용, 버전 hash, 문서·버전 상태, `published_version_id`, 삭제 경쟁은 이 태그 병합으로 덮어쓰지 않는다.
+
+공개·문서 상태·태그 병합·선택 mutation key가 있는 삭제는 서버 권위 mutation이다. 서버는 정규화한 intent hash와 최초 성공 응답을 `document_mutation_receipts`에 문서 변경과 같은 transaction으로 저장한다. 같은 key·같은 intent 재요청은 저장 응답을 반환하고 revision·이력·알림·receipt를 추가하지 않는다. 같은 key를 다른 intent에 사용하면 409 `IDEMPOTENCY_KEY_REUSED`다. WPF는 큐의 같은 key를 그대로 `mutationKey`로 보내고 2xx 뒤 `GET /documents/{document_id}`를 다시 읽어 revision, 태그, 공개 포인터, 최신 version ID/hash를 확인한다. 그 결과를 로컬 문서·태그 관계·mapping·큐 종결·감사에 한 transaction으로 반영한 뒤에만 `SYNCED`로 종결한다. 응답 유실 때도 같은 key와 같은 요청 본문을 재전송하므로 receipt 응답에 재결합된다.
 
 문서 버전 등록의 선택적 `idempotencyKey`는 공백을 제거한 뒤 최대 160자로 제한하며 서버 `document_versions.idempotency_key`에 유일하게 저장한다. 같은 키·같은 파일 hash를 같은 문서에 다시 보내면 새 파일이나 버전을 만들지 않고 기존 버전을 반환한다. 다른 문서 사용, 같은 키의 다른 파일 또는 최초 문서 등록의 핵심 메타데이터 불일치는 409 `IDEMPOTENCY_KEY_REUSED`다. 특정 버전 publish도 이미 그 버전이 현재 공개 버전이고 문서·버전 공개 상태가 일치하면 revision을 다시 올리지 않고 현재 문서를 반환한다.
 

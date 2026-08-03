@@ -1,6 +1,15 @@
 # FlowNote 설계 결정
 
-이 문서는 2026-08-01 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
+이 문서는 2026-08-03 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
+
+## 2026-08-03. 문서 태그만 delta 병합하고 나머지 문서 권위 충돌은 사용자 판단으로 남긴다
+
+- WPF 태그 큐는 마지막 서버 `revision`과 `server_tags_json`을 기준으로 추가 태그, 제거 태그, canonical `intentHash`, 안정된 `mutationKey`를 보존한다. 문서 최초 등록 전 만든 큐는 등록 응답의 revision과 태그 집합으로 delta를 한 번 확정한 뒤 같은 큐 row를 전송한다.
+- 서버는 `document_tag_revisions`에서 기준 태그 집합을 복원한다. 기준 이후 서버 변경과 겹치지 않는 태그 delta만 현재 집합에 병합하며 같은 태그의 반대 방향 변경, 비활성·삭제 태그, 기준 snapshot 부재는 구조화된 409로 남긴다.
+- 태그 병합은 파일 내용과 version hash, 문서·버전 상태, `published_version_id`, 삭제를 바꾸지 않는다. 이 값의 경쟁은 기존 stale/base/hash/공개본/삭제 충돌로 보존하고 관리자가 로컬 재시도 또는 서버본 유지 사유를 선택한다.
+- 태그 mutation과 receipt, revision snapshot, 감사 이력은 한 서버 transaction에 저장한다. WPF는 응답과 상세 read-back의 revision·태그·공개 포인터·최신 version ID/hash를 로컬 문서, 태그 관계, mapping, 큐 종결, 이력에 한 SQLite transaction으로 반영한다.
+- 응답 유실과 앱 재시작 뒤에는 같은 mutation key와 같은 delta/hash를 재전송한다. 서버 receipt 재생은 revision과 감사 이력을 늘리지 않으며 WPF는 로컬 transaction이 끝나기 전 큐를 `SYNCED`로 표시하지 않는다.
+- 충돌 작업함은 `서버 값`, `보존된 로컬 요청`, `자동 병합 가능`, `사용자 선택 필요`를 분리한다. 태그 충돌에서 관리자가 최신 서버본 기준 로컬 재시도를 선택하면 base revision과 intent hash를 명시적으로 다시 계산하고 해결자·사유·시각을 남긴다.
 
 ## 2026-08-01. FieldComment 검토 현황은 서버 집계와 실제 현장 준비도를 분리해 표시
 
@@ -93,8 +102,8 @@
 ## 2026-07-16. 문서 aggregate는 서버 revision과 공개 포인터가 권위 원천
 
 - 서버 `documents.revision`, `latest_version_id`, `published_version_id`, 문서/버전 상태와 `file_objects.hash_sha256`가 권위 원천이다. WPF의 `version_no`, `updated_at`, 상태는 로컬 작업과 재전송 원천이며 서버 확인 전 권위값이 아니다.
-- 새 버전, 공개, 문서·버전 상태, 태그 전체 교체, 삭제 요청은 base revision과 필요한 기준 버전 ID를 서버에 보낸다. 서버는 실제 변경 시 revision을 조건부 갱신해 두 Windows 사용자와 서버 관리 변경 중 하나만 성공시키며, 나머지는 구조화된 409로 돌려보낸다. 태그 교체는 필수 `baseRevision` query, 버전 상태 변경은 필수 `baseRevision` JSON 필드를 사용한다.
-- 파일 내용, 공개본, 상태, 삭제는 자동 병합하지 않는다. 태그처럼 서로 독립된 집합형 메타데이터만 후속 patch 설계에서 서버 최신값과 명시적으로 합칠 수 있으며 현재 문서 mutation은 자동 병합하지 않는다.
+- 새 버전, 공개, 문서·버전 상태, 태그 변경, 삭제 요청은 base revision과 필요한 기준 버전 ID를 서버에 보낸다. 서버는 실제 변경 시 revision을 조건부 갱신해 두 Windows 사용자와 서버 관리 변경 중 하나만 성공시키며, 나머지는 구조화된 409로 돌려보낸다. 이 결정 당시 태그 변경은 필수 `baseRevision` query를 쓰는 전체 교체였으나, 2026-08-03 결정에서 JSON delta 병합으로 대체했다. 버전 상태 변경은 필수 `baseRevision` JSON 필드를 계속 사용한다.
+- 파일 내용, 공개본, 상태, 삭제는 자동 병합하지 않는다. 이 결정 당시 태그 자동 병합은 후속 설계였으나, 2026-08-03 결정에서 태그의 비경합 추가·제거만 병합하도록 구현했다.
 - 같은 idempotency key는 같은 의도와 파일 hash에만 재사용한다. 다른 내용은 기존 결과로 위장하지 않고 `IDEMPOTENCY_KEY_REUSED`로 분리한다. 서버 버전 번호가 우연히 같아도 SHA-256이 다르면 성공 매핑하지 않는다.
 - `PUBLISHED` 문서는 항상 같은 문서의 유효한 공개 버전 하나와 연결한다. publish transaction 전에 서버 파일 SHA-256을 재검사하고, 공개본 교체는 예상 공개 버전 ID와 revision이 모두 맞을 때만 수행한다.
 - 충돌은 `CONFLICT` 큐와 원 서버 응답으로 영속화한다. 관리자가 최신 서버본 기준 로컬 변경 재시도 또는 서버본 유지·로컬 요청 폐기를 사유와 함께 선택하며 `DISCARDED`도 삭제하지 않는 종결 감사 상태다.
@@ -111,7 +120,7 @@
 - FieldComment 원천은 불변 `source_hash`로, 검토 영역은 별도 `review_revision`으로 관리한다. 검토 PATCH는 WPF에서 base review revision과 mutation key를 보내며 서버 상태를 맞추기 위한 WPF의 자동 중간 상태 생성은 금지한다. 현재 API는 예상 원천 hash를 요청 필드로 받지 않고 응답·감사 snapshot에서 검증한다. 첨부는 부모 ID와 파일 SHA-256을 별도로 검증한다.
 - 보고서는 본문 hash와 정렬된 source ID/version/hash 집합 hash를 하나의 저장 의도로 취급한다. report, 모든 source, 생성 문서/버전과 mutation receipt는 한 서버 transaction에 저장한다. source가 바뀌었거나 사라졌으면 보고서를 낡은 근거로 자동 저장하지 않는다.
 - 작업순서는 WPF 동기화 큐에 넣지 않고 서버 직접 API로 운영한다. 보드 revision이 보드·항목의 동시성을 직렬화하고 서버 mutation transaction이 change history를 정확히 한 번 만든다. WPF 로컬 작업순서 테이블은 전환 기간의 오프라인 초안·읽기 캐시와 기존 테스트 기록으로 보존하며 서버 미연결 상태의 운영 확정은 금지한다.
-- WPF 큐 재시도 순서는 문서 등록 → 버전 → 공개 → 상태 → FieldComment 원천 → 검토 → 첨부 → 접근 로그 → 보고서/source다. 같은 aggregate는 직렬화한다. 태그 교체 서버 API는 구현되어 있지만 현재 WPF `server_sync_queue` action에는 포함되지 않는다. 선행 ID 누락은 attempt를 늘리지 않고 보류하고, 공통 인증·연결 장애는 묶음을 중단한다.
+- 이 결정 당시 태그 API는 WPF 큐에 연결되지 않았다. 2026-08-03 결정에서 문서 태그 delta 큐와 병합 계약으로 대체했다. 현재 큐 순서는 문서 등록 → 버전 → 공개 → 상태 → 태그 → FieldComment 원천 → 검토 → 첨부 → 접근 로그 → 보고서/source다.
 - 서버는 설치 ID와 복구 epoch를 분리한다. instance/epoch 변경이나 cursor 역행을 감지하면 WPF는 mutation과 polling을 중지하고 기존 cursor·mapping을 보존한 채 reconciliation을 실행한다. 같은 key/hash는 새 ID에 재결합하고, 서버에 없으면 같은 key로 재전송하며, 불일치는 `SERVER_RECOVERY_DIVERGED`로 보존한다. 관리자 감사 후에만 cursor 0 재추적을 허용하고 처리한 `message_id`는 유지한다.
 - 수렴 완료는 비종결 큐 0건, 동일 idempotency key 서버 중복 0건, orphan mapping/source 0건, 문서 공개 포인터·source/version ID·hash 일치와 cursor 재추적 완료를 모두 요구한다. AI 후보 재생성과 보고서 운영은 이 gate 뒤에 수행한다.
 

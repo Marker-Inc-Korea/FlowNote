@@ -2,7 +2,7 @@
 
 ## 최신 유효 Windows x64 통합 기준선
 
-2026-08-01 현재 유효한 무생략 통합 기준선은 아직 없다. 아래 표는 기준선 확정 여부를 확인하는 단일 현황표다. `PASSED` 실행이 나온 뒤에도 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 재현 가능한 기준선으로 확정한다.
+2026-08-03 현재 유효한 무생략 통합 기준선은 아직 없다. 아래 표는 기준선 확정 여부를 확인하는 단일 현황표다. `PASSED` 실행이 나온 뒤에도 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 재현 가능한 기준선으로 확정한다.
 
 | 항목 | 최신 유효 기준선 | 재현 실행 |
 | --- | --- | --- |
@@ -10,15 +10,25 @@
 | `run_id` | 없음 | 없음 |
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
-| FastAPI | 현재 코드·스크립트 guard 166건, macOS 누적 DB 전체 회귀 166/166 통과 | Windows x64 수집·JUnit 무생략 실행 대기 |
-| WPF Core | 현재 macOS 실행 91/91, 스크립트 guard 91건 | Windows 수집·TRX 무생략 실행 대기 |
+| FastAPI | 현재 코드·스크립트 guard 170건, macOS 누적 DB 전체 회귀 170/170 통과 | Windows x64 수집·JUnit 무생략 실행 대기 |
+| WPF Core | 현재 macOS 실행 92/92, 스크립트 guard 92건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 현재 macOS 교차 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 현재 단위 테스트 28/28, debug build·lint PASS, 스크립트 고정값 28건 | Windows 무생략 실행 대기 |
 | SQLite | FastAPI 누적 시험 DB `journal_mode=wal`, `quick_check=ok`, FK 위반 0. Windows 공통 DB 전후 검증 대기 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
-보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했다. 로그인 복구 안내 회귀 2건을 더한 2026-08-01 직접 실행은 89/89가 통과했다. 현재 코드는 이후 추가된 테스트를 포함해 91건이며 Windows x64의 새 수집 목록과 TRX가 91/91인지 별도로 확인해야 한다.
+보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했다. 로그인 복구 안내 회귀 2건을 더한 2026-08-01 직접 실행은 89/89가 통과했다. 현재 코드는 이후 추가된 테스트를 포함해 92건이며 Windows x64의 새 수집 목록과 TRX가 92/92인지 별도로 확인해야 한다.
+
+## 2026-08-03 작업 102 문서 태그 delta 병합과 충돌 작업함
+
+FastAPI 문서 태그 API는 마지막 서버 revision의 태그 집합과 WPF의 추가·제거 의도를 비교한다. 기준 이후 서버 변경과 겹치지 않는 delta만 병합하고, 같은 태그의 반대 방향 변경이나 비활성·삭제 태그는 구조화된 409로 남긴다. 서버는 revision별 태그 집합, mutation receipt와 감사 이력을 같은 transaction에 저장한다. 선택적 `mutationKey`를 받은 문서 삭제도 같은 응답을 재생해 응답 유실 뒤 revision과 감사가 중복되지 않는다.
+
+WPF는 마지막 서버 태그 집합과 delta, canonical intent hash를 큐에 보존한다. 태그 응답과 상세 read-back을 확인한 뒤 문서·태그 관계·mapping·큐·이력을 한 SQLite transaction으로 반영한다. 이력 창은 충돌의 서버 값, 보존된 로컬 요청, 자동 병합 가능 항목과 사용자 선택 항목을 구분해 보여준다.
+
+`services/api/.venv/bin/python -m ruff check app tests`와 누적 시험 DB를 유지한 전체 pytest 170/170이 통과했다. WPF Core 92/92도 통과했고 WPF 앱과 `FlowNote.Windows.SyncConvergenceTests`는 경고·오류 없이 빌드됐다. 새 수집 수에 맞춰 표준 스크립트 guard를 FastAPI 170건, WPF Core 92건으로 갱신했다. 첫 수집 수 확인은 `services/api` 작업 디렉터리에서 가상환경 경로를 한 번 더 붙여 실행해 테스트 시작 전에 실패했으며, `.venv/bin/python`으로 바로잡은 뒤 170건과 ORM 62개 테이블, OpenAPI 143개 method/path 조합을 확인했다.
+
+실제 서버를 사용하는 동기화 수렴 실행, Windows x64 무생략 통합 실행과 Android 검증은 이번에 수행하지 않았다. 기존 SQLite, 로그, 테스트 파일과 빌드 산출물은 삭제하거나 초기화하지 않았다. 최신 유효 Windows x64 통합 기준선은 계속 `대기`다.
 
 ## 2026-08-01 작업 201 전체 Markdown 현재 코드 재대조
 
