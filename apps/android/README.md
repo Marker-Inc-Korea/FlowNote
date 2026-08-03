@@ -2,7 +2,7 @@
 
 `apps/android/`는 FlowNote Android 현장 단말 클라이언트이다. 승인된 현장 태블릿 또는 러기드 단말에서 공개 문서 목록·상세와 PDF/이미지/TXT 앱 내부 보안 열람, FieldComment, 사진 기록, 신호등식 기록, 채널 알림 확인, 인수인계 작성·확인을 수행한다.
 
-기능 목록은 2026-08-01 현재 `app/src/main` 코드 기준이며 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
+기능 목록은 2026-08-03 현재 `app/src/main` 코드 기준이며 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
 
 ## 기술 기준
 
@@ -12,7 +12,7 @@
 - 패키지: `com.flownote.fieldapp`
 - SDK: `minSdk 26`, `targetSdk 35`, `compileSdk 35`
 - 서버 통신: FastAPI `/api/v1` REST API, Bearer token, `HttpURLConnection`
-- 로컬 임시 저장: Android SQLite `flownote_android_outbox.db`와 앱 전용 암호화 첨부 저장소
+- 로컬 임시 저장: Android SQLite `flownote_android_outbox.db`, 처리한 알림용 `flownote_android_notifications.db`와 앱 전용 암호화 첨부 저장소
 
 ## 현재 화면 골격
 
@@ -26,15 +26,15 @@
 - 신호등식 입력: `green`, `yellow`, `red`
 - 채널 알림 조회와 읽음 처리
 - 현재 사용자가 속한 활성 업무 채널과 활성 수신자를 고르는 인수인계 작성. 작업순서, 문서, FieldComment, 작업내역 원천 ID 중 하나가 필수
-- 인수인계 조회와 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 확인
+- 받은 인수인계 확인·보류와 같은 원천에 후속 FieldComment 작성. 확인·보류와 후속 코멘트도 전송 전에 outbox에 보존
 
 주요 버튼은 같은 너비와 최소 높이 56dp를 사용한다. `실패 항목 다시 보내기`는 로그인 버튼 묶음과 분리해 한 줄 전체 터치 영역으로 제공한다. 전송 완료·대기·실패 상태는 색상에만 의존하지 않고 서로 다른 모양의 아이콘과 한글 상태명·건수를 함께 표시하며 접근성 live region으로 갱신한다. 이 값은 코드에 반영된 화면 기준이며 장갑 착용, 한 손 조작, 실제 거치 위치에서의 터치 성공률은 승인 실단말 관찰로 확정한다.
 
-알림은 운영 로그인 동안 `specialUse` foreground service가 사내 HTTPS API를 기본 15초 간격으로 조회한다. 서버 주소와 사용자 조합을 hash한 scope별 cursor를 항목 표시 뒤 동기 저장하므로 앱 화면이 닫히거나 네트워크가 끊겨도 마지막 성공 위치에서 복구한다. 재부팅 시 유효한 로컬 세션이 있으면 `BOOT_COMPLETED` receiver가 서비스를 다시 시작하고, access 만료 시 refresh token을 한 번 회전한다. refresh가 거부되거나 단말이 비활성화되면 token을 폐기하고 서비스를 중단한다. 채널 메시지는 outbox에 넣지 않지만 신규 인수인계는 FieldComment·사진과 같은 암호화 outbox에 보존한다.
+알림은 운영 로그인 동안 `specialUse` foreground service가 사내 HTTPS API를 기본 15초 간격으로 조회한다. 서버 주소와 사용자 조합을 hash한 scope별 cursor와 처리한 공개 `message_id`를 항목 표시 뒤 각각 동기 저장하므로 앱 화면이 닫히거나 네트워크가 끊겨도 마지막 성공 위치에서 복구한다. 처리한 `message_id`는 `(server_user_scope, message_id)` 유일 원장으로 보존해 cursor 재조회 때 같은 알림 표시를 반복하지 않는다. 재부팅 시 유효한 로컬 세션이 있으면 `BOOT_COMPLETED` receiver가 서비스를 다시 시작하고, access 만료 시 refresh token을 한 번 회전한다. refresh가 거부되거나 단말이 비활성화되면 token을 폐기하고 서비스를 중단한다. 서버에서 받은 채널 메시지는 outbox에 넣지 않지만 신규 인수인계, 받은 인수인계 확인·보류와 후속 FieldComment는 FieldComment·사진과 같은 암호화 outbox에 보존한다.
 
 polling의 첫 401은 저장된 refresh token을 지우지 않고 회전을 먼저 시도한다. 회전 뒤에도 401이 반복되거나 단말 비활성화 403을 받았을 때만 세션을 폐기한다. 단순 HTTPS 단절·시간 초과는 세션과 cursor를 유지하고 다음 polling을 기다린다.
 
-FieldComment, 사진과 신규 인수인계는 전송 전에 앱 전용 암호화 outbox에 먼저 저장한다. 앱 화면과 foreground service가 15초 주기로 전송 가능 항목을 재시도하므로 앱 재시작·재부팅·네트워크 재연결 뒤에도 같은 idempotency key로 이어서 보낸다. 마지막으로 서버가 확인한 활성 채널·수신자 목록은 서버 URL+사용자 범위별 Keystore 암호문으로 보관해 재부팅 직후 네트워크가 끊겨도 인수인계를 작성할 수 있게 한다. 서버는 실제 전송 시 멤버십과 원천을 다시 검사하며 로그아웃·단말 거부 때 선택 캐시는 지우고 업무 outbox는 유지한다. FieldComment 사진은 `android-photo:{localId}`, 인수인계는 `android:{deviceId}:handover:{localId}`를 사용한다. 서버가 FieldComment만 저장하고 사진 응답이 실패한 경우에는 서버 `comment_id`를 유지하고 부분 성공·사진 재전송 대기로 표시한다. 서버 저장이 끝난 암호화 사진 파일은 정리한다.
+FieldComment, 사진, 신규 인수인계, 받은 인수인계 확인·보류와 후속 FieldComment는 전송 전에 앱 전용 암호화 outbox에 먼저 저장한다. 앱 화면과 foreground service가 15초 주기로 전송 가능 항목을 재시도하므로 앱 재시작·재부팅·네트워크 재연결 뒤에도 같은 idempotency key로 이어서 보낸다. 마지막으로 서버가 확인한 활성 채널·수신자 목록은 서버 URL+사용자 범위별 Keystore 암호문으로 보관해 재부팅 직후 네트워크가 끊겨도 인수인계를 작성할 수 있게 한다. 받은 인수인계의 후속 입력도 서버 URL+사용자+인수인계 범위별 암호문으로 즉시 보관하며 outbox 저장이 확인된 뒤에만 입력란을 비운다. 서버는 실제 전송 시 멤버십과 원천을 다시 검사하며 로그아웃·단말 거부 때 선택 캐시는 지우고 업무 outbox와 작성 중 입력은 유지한다. FieldComment 사진은 `android-photo:{localId}`, 인수인계는 `android:{deviceId}:handover:{localId}`를 사용한다. 서버가 FieldComment만 저장하고 사진 응답이 실패한 경우에는 서버 `comment_id`를 유지하고 부분 성공·사진 재전송 대기로 표시한다. 인수인계 후속 FieldComment가 저장된 뒤 채널 알림이 실패한 경우도 같은 row에 `comment_id`를 보존하고 다음 재시도에서는 알림만 전송한다. 서버 저장이 끝난 암호화 사진 파일은 정리한다.
 
 화면에는 신규 전송 대기와 전송 실패를 구분해 건수, 보존 상태, 다음 자동 전송 시점과 자동 재시도 한도 초과 여부를 계속 표시한다. 로그인 만료·refresh 거부·단말 비활성화 때도 outbox를 지우지 않으며, 다시 로그인하거나 관리자가 단말 상태를 확인할 때 사용할 승인 단말 ID와 대기·실패 건수를 안내한다. Keystore를 열거나 암호문을 복호화하지 못하면 입력·전송을 차단하고 재설치·초기화 대신 단말 교체 점검을 안내한다. 사용자가 누르는 `실패 항목 다시 보내기`는 `FAILED` 항목에만 적용하며 신규 `PENDING` 항목은 선택하지 않는다. 이 버튼은 로그인 상태이고 실패 항목이 있을 때만 활성화한다. 자동 전송은 기존처럼 `PENDING`과 재시도 시점이 된 `FAILED`를 처리한다.
 
@@ -58,13 +58,15 @@ Android가 자동으로 개인 휴대폰을 등록하지 않는다. 단말 등�
 
 ## 오프라인 임시 저장
 
-네트워크 불안정 구간에서는 FieldComment, 사진 첨부와 신규 인수인계를 SQLite outbox에 임시 저장한다. access/refresh token, outbox JSON 본문과 마지막 오류 안내는 Android Keystore의 비반출 AES-256 GCM 키로 암호화한다. 새 사진은 선택 즉시 앱 전용 `filesDir/outbox-attachments/`로 복사하며 IV와 AES-GCM 암호문만 저장한다. 일반 SharedPreferences와 DB에는 token/원문 사진을 저장하지 않고 Android backup은 manifest에서 차단한다. DB 상태·서버 ID·멱등키·재시도 시각과 scope cursor는 업무 본문이 아니므로 평문 메타데이터로 유지한다.
+네트워크 불안정 구간에서는 FieldComment, 사진 첨부, 신규 인수인계, 받은 인수인계 확인·보류와 후속 FieldComment를 SQLite outbox에 임시 저장한다. access/refresh token, outbox JSON 본문, 작성 중 후속 입력과 마지막 오류 안내는 Android Keystore의 비반출 AES-256 GCM 키로 암호화한다. 새 사진은 선택 즉시 앱 전용 `filesDir/outbox-attachments/`로 복사하며 IV와 AES-GCM 암호문만 저장한다. 일반 SharedPreferences와 DB에는 token/원문 사진을 저장하지 않고 Android backup은 manifest에서 차단한다. DB 상태·서버 ID·멱등키·재시도 시각, scope cursor와 처리한 message ID는 업무 본문이 아니므로 평문 메타데이터로 유지한다.
 
 재전송 정책:
 
 - FieldComment는 `idempotencyKey = android:{deviceId}:{localId}`로 중복 생성을 방지한다.
 - 사진 첨부는 `idempotencyKey = android-photo:{localId}`를 사용한다. FieldComment 서버 저장 후 사진 첨부가 실패하면 같은 outbox row에 서버 `comment_id`를 보존하고 다음 재전송에서 첨부만 다시 시도한다.
 - 인수인계는 `idempotencyKey = android:{deviceId}:handover:{localId}`를 사용한다. 같은 키·같은 요청의 재전송은 기존 인수인계, 채널 메시지와 수신자 receipt를 반환하고 새 row를 만들지 않는다.
+- 받은 인수인계 확인·보류는 같은 receipt 공개 ID에 대한 멱등 갱신으로 재시도한다. 보류는 `FOLLOW_UP_REQUIRED`로 저장해 Windows 감독 화면의 후속 조치 대상에 포함한다.
+- 인수인계 후속 FieldComment는 인수인계 ID, 사용자와 입력 내용의 SHA-256으로 만든 `handover-follow-up:{digest}`를 사용한다. FieldComment 성공 뒤 알림 실패 시 서버 `comment_id`를 outbox에 남겨 같은 코멘트를 만들지 않고 `FIELD_COMMENT_EVENT` 알림만 다시 보낸다.
 - 자동 재시도는 최대 12회이며 15초부터 최대 15분까지 지수 backoff를 적용한다.
 - 재전송 성공 후 서버 원천 ID를 row에 남기고 `SYNCED`로 전환한다.
 - 수동 재전송은 `FAILED` row만 같은 멱등키로 다시 보내며 `PENDING`과 `SYNCED` row는 선택하지 않는다. 따라서 아직 첫 자동 전송을 기다리는 입력이나 이미 완료된 입력을 사용자의 다시 보내기 동작으로 중복 제출하지 않는다.
@@ -117,4 +119,4 @@ Windows 배포 준비 PC의 통합 기준선은 x64 JDK 17, Android Platform 35�
 
 2026-07-22 macOS 보조 run `p0-baseline-144-macos-precheck-20260722-002`은 FastAPI 144건만 통과했고 JDK/Android SDK 부재로 Android `testDebugUnitTest`와 `assembleDebug`는 `NOT_RUN`이다. 이 결과는 Android 기준선이 아니며 Windows x64 표준 환경의 같은 `run_id` 통합 실행에서 Android JUnit과 debug build가 통과해야 한다.
 
-현재 단위 테스트 28건은 API 경로·로그인/FieldComment 계약, 인수인계 필수 원천·수신자·멱등키, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구, outbox 자동 재시도와 `FAILED` 전용 수동 재전송 정책, 대기·실패 상태 안내, 알림 401 refresh·재거부·비활성 단말·연결 단절 분기를 검증한다. outbox 일부 실패는 완료·부분 성공·실패·대기 건수와 실패 항목 전용 재전송 안내를 표시하고, Keystore/암호문 오류는 초기화하지 말고 관리자에게 단말 교체 점검을 요청하도록 안내한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리, 서로 다른 AES 키의 복호화 실패, 주요 버튼 56dp, 상태 live region과 전송 상태 아이콘의 한글 설명을 확인한다. 사진 선택·축소 미리보기·저장 후 초기화와 장갑·한 손 조건의 실제 성공률은 자동 테스트만으로 완료 판정하지 않는다. 실제 단말의 카메라·파일 선택기, 장갑·한 손 조작, 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절을 같은 수동 검증에서 확인한다.
+현재 단위 테스트 32건은 API 경로·로그인/FieldComment 계약, 인수인계 필수 원천·수신자·멱등키, 받은 인수인계 확인·보류 상태와 후속 FieldComment 원천·멱등키, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구, outbox 자동 재시도와 `FAILED` 전용 수동 재전송 정책, 대기·부분 성공·실패 상태 안내, 알림 401 refresh·재거부·비활성 단말·연결 단절 분기를 검증한다. outbox 일부 실패는 완료·부분 성공·실패·대기 건수와 실패 항목 전용 재전송 안내를 표시하고, Keystore/암호문 오류는 초기화하지 말고 관리자에게 단말 교체 점검을 요청하도록 안내한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리, 서로 다른 AES 키의 복호화 실패, 주요 버튼 56dp, 상태 live region과 전송 상태 아이콘의 한글 설명을 확인한다. 사진 선택·축소 미리보기·저장 후 초기화와 장갑·한 손 조건의 실제 성공률은 자동 테스트만으로 완료 판정하지 않는다. 실제 단말의 카메라·파일 선택기, 장갑·한 손 조작, 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절을 같은 수동 검증에서 확인한다.

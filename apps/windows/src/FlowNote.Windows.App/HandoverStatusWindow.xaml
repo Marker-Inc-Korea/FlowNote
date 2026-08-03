@@ -2,9 +2,9 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="인수인계 확인 현황"
-        Width="1080"
+        Width="1360"
         Height="660"
-        MinWidth="920"
+        MinWidth="1180"
         MinHeight="560"
         Background="{StaticResource WindowBackgroundBrush}">
     <Grid Margin="14">
@@ -34,7 +34,7 @@
 
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="430" />
+                <ColumnDefinition Width="700" />
                 <ColumnDefinition Width="10" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
@@ -65,10 +65,13 @@
                               GridLinesVisibility="Horizontal"
                               BorderThickness="0">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="상태" Binding="{Binding StatusLabel}" Width="96" />
-                            <DataGridTextColumn Header="제목" Binding="{Binding Title}" Width="170" />
-                            <DataGridTextColumn Header="발송" Binding="{Binding SentAt, StringFormat=yyyy-MM-dd HH:mm}" Width="135" />
-                            <DataGridTextColumn Header="원천" Binding="{Binding SourceLinkText}" Width="*" />
+                            <DataGridTextColumn Header="운영 단위" Binding="{Binding ChannelTypeLabel}" Width="78" />
+                            <DataGridTextColumn Header="채널" Binding="{Binding ChannelName}" Width="115" />
+                            <DataGridTextColumn Header="상태" Binding="{Binding StatusLabel}" Width="90" />
+                            <DataGridTextColumn Header="미확인" Binding="{Binding UnconfirmedRecipientCount}" Width="60" />
+                            <DataGridTextColumn Header="후속" Binding="{Binding FollowUpRequiredCount}" Width="50" />
+                            <DataGridTextColumn Header="제목" Binding="{Binding Title}" Width="145" />
+                            <DataGridTextColumn Header="필수 원천" Binding="{Binding SourceLinkText}" Width="*" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>

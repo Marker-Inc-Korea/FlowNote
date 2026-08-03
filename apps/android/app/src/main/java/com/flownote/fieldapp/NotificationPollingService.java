@@ -34,6 +34,7 @@ public final class NotificationPollingService extends Service {
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private SecureSessionStore sessionStore;
     private OfflineQueueStore outbox;
+    private NotificationMessageLedger messageLedger;
     private SharedPreferences preferences;
     private String runId;
     private volatile boolean pollRunning;
@@ -48,6 +49,7 @@ public final class NotificationPollingService extends Service {
         try {
             sessionStore = new SecureSessionStore(this);
             outbox = new OfflineQueueStore(this);
+            messageLedger = new NotificationMessageLedger(this);
         } catch (RuntimeException exc) {
             Log.e(TAG, runId + " secure_storage_unavailable", exc);
             startForeground(
@@ -71,6 +73,9 @@ public final class NotificationPollingService extends Service {
         executor.shutdownNow();
         if (outbox != null) {
             outbox.close();
+        }
+        if (messageLedger != null) {
+            messageLedger.close();
         }
         super.onDestroy();
     }
@@ -154,7 +159,11 @@ public final class NotificationPollingService extends Service {
                     continue;
                 }
                 if (shouldDisplay) {
-                    display(item);
+                    String messageId = item.optString("message_id");
+                    if (!messageLedger.contains(scope, messageId)) {
+                        display(item);
+                        messageLedger.record(scope, messageId, itemCursor);
+                    }
                 }
                 // Commit after each displayed or catch-up item. A crash can duplicate at most
                 // one visual alert, while the server receipt remains unique and idempotent.

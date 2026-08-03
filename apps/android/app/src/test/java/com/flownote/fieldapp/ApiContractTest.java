@@ -33,6 +33,10 @@ public final class ApiContractTest {
                 "/api/v1/notification-channels/channel_1/members",
                 ApiPaths.channelMembers("channel_1")
         );
+        assertEquals(
+                "/api/v1/notification-channels/channel_1/messages",
+                ApiPaths.channelMessages("channel_1")
+        );
     }
 
     @Test

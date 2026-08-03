@@ -20,6 +20,10 @@ public final class OutboxStatusMessage {
         if (status.failedCount > 0) {
             String failure = "전송 실패 · 실패 " + status.failedCount
                     + "건 / 전체 대기 " + status.pendingCount + "건 · " + preservation;
+            if (status.partialSuccessCount > 0) {
+                failure += " 부분 성공 " + status.partialSuccessCount
+                        + "건은 FieldComment 원천 저장이 끝났고 사진 또는 채널 알림만 재시도합니다.";
+            }
             if (!hasSession) {
                 return failure + " 다시 로그인한 뒤 실패 항목만 보낼 수 있습니다. 관리자에게 "
                         + deviceReference(deviceId) + "와 실패 건수를 알려주세요.";

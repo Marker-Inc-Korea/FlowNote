@@ -31,8 +31,8 @@ New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
 $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
 $expectedFastApiTestCount = 181
-$expectedWpfCoreTestCount = 95
-$expectedAndroidUnitTestCount = 28
+$expectedWpfCoreTestCount = 98
+$expectedAndroidUnitTestCount = 32
 $stepDisplayNames = @{
     "Check Windows baseline toolchain versions" = "Windows x64 표준 도구 확인"
     "Check .gitignore coverage for known test/build artifact paths" = "테스트·빌드 산출물 Git 제외 규칙 확인"

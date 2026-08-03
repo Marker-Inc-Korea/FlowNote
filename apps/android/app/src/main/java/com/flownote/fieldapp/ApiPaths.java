@@ -37,4 +37,8 @@ public final class ApiPaths {
     public static String channelMembers(String channelId) {
         return NOTIFICATION_CHANNELS + "/" + channelId + "/members";
     }
+
+    public static String channelMessages(String channelId) {
+        return NOTIFICATION_CHANNELS + "/" + channelId + "/messages";
+    }
 }

@@ -328,6 +328,8 @@ Android 현장 입력은 아래 추가 계약을 사용한다.
 - 응답 헤더 `X-FlowNote-Notification-Cursor`는 서버 `channel_messages` 전체의 현재 high-water cursor이며 메시지가 없으면 `0`이다. `X-FlowNote-Next-Cursor`는 이번 응답에서 안전하게 확정할 마지막 cursor(빈 page면 요청 `afterId`), `X-FlowNote-Has-More`는 page가 limit에 도달했는지를 반환한다. 클라이언트는 항목 처리 뒤 `Next-Cursor`까지만 전진하고, 저장값보다 낮은 high-water는 서버 DB 복구/초기화 의심 상태로 다룬다.
 - 응답 항목을 표시·보존한 직후 해당 cursor를 원자적으로 저장한다. 응답 도중 실패하면 마지막 확정 cursor로 다시 조회한다. Android 시스템 알림은 `message_id` 기반 고정 notification ID로 교체하고, 서버 읽음과 receipt는 공개 `message_id` 및 유일한 `receipt_id` row를 반복 갱신해 중복 row를 만들지 않는다.
 - 인수인계 등록은 `message_type = HANDOVER`, `source_id = handover_id`인 채널 메시지를 함께 만들므로 같은 알림 증분 스트림으로 전달된다. receipt 갱신은 동일 `receiptStatus`와 `note`를 반복 요청해도 추가 상태 변경 이력을 만들지 않으며 현재 receipt를 반환한다. timeout에는 같은 receipt ID와 동일 payload로 재시도한다.
+- Android는 받은 인수인계의 `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 갱신을 암호화 outbox에 먼저 보존하고 기존 receipt ID로 재시도한다. `FOLLOW_UP_REQUIRED`는 Windows 인수인계 확인 현황의 후속 조치 인원에 포함되며, `UNREAD`와 `READ`는 미확인 인원으로 집계한다.
+- Android가 같은 원천에 후속 FieldComment를 남기면 `POST /api/v1/field-comments`에 `entrySource = handover_follow_up`, `category = handover-follow-up`, `priority = 2`와 인수인계·업무 원천 연결을 보낸다. 저장된 `comment_id`로 `POST /api/v1/notification-channels/{channel_id}/messages`의 `FIELD_COMMENT_EVENT`를 만든다. 코멘트 저장 뒤 메시지 호출만 실패하면 outbox에 `comment_id`를 남겨 다음 시도에서 메시지만 재요청한다. 같은 채널과 FieldComment의 이벤트는 기존 메시지를 반환하므로 코멘트와 알림을 중복 생성하지 않는다.
 - Android는 service 실행마다 `ANDROID-DELIVERY-{uuid}` run ID를 만들고 알림 표시 시각을 로컬 전달 로그에 남긴다. 읽음 JSON의 `deliveryRunId`/`displayedAt`, receipt JSON의 `deliveryRunId`/`displayedAt`은 선택 필드이며 제공되면 `activity_history.after_value`의 JSON 증거에 서버 처리 시각과 함께 저장한다. token이나 알림 본문은 이 증거에 저장하지 않는다.
 - 멤버십이 `ACTIVE`인 현재 사용자 채널만 반환한다. 권한 없는 채널 및 다른 사용자의 알림은 cursor 범위에 있어도 반환하지 않는다.
 
