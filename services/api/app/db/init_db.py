@@ -9,6 +9,7 @@ from app.db.models import SchemaMigration, ServerIdentity, UserAccount
 from app.db.session import Database
 
 INITIAL_SCHEMA_VERSION = "0001_initial_mvp_schema"
+COMMON_MUTATION_RECEIPT_SCHEMA_VERSION = "0002_common_mutation_receipts"
 DEFAULT_ADMIN_USER_ID = "user-admin"
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "1234"
@@ -819,6 +820,18 @@ def initialize_database(database: Database) -> None:
                 SchemaMigration(
                     version=INITIAL_SCHEMA_VERSION,
                     description="Initial SQLite MVP schema for FlowNote API",
+                )
+            )
+        common_receipt_migration = session.scalar(
+            select(SchemaMigration).where(
+                SchemaMigration.version == COMMON_MUTATION_RECEIPT_SCHEMA_VERSION
+            )
+        )
+        if common_receipt_migration is None:
+            session.add(
+                SchemaMigration(
+                    version=COMMON_MUTATION_RECEIPT_SCHEMA_VERSION,
+                    description="Add common audit event envelopes and sync mutation receipts",
                 )
             )
         session.commit()

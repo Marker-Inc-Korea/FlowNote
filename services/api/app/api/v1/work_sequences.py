@@ -6,7 +6,7 @@ from datetime import date, datetime, timezone
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -24,6 +24,15 @@ from app.db.models import (
     WorkSequenceNotificationCandidate,
 )
 from app.db.session import get_db_session
+from app.services.mutation_receipts import (
+    MutationTrace,
+    canonical_hash,
+    check_common_mutation_replay,
+    mutation_trace,
+    record_common_mutation_failure,
+    record_common_mutation_result,
+    sanitize_audit_text,
+)
 
 router = APIRouter(
     prefix="/work-sequence-boards",
@@ -284,12 +293,28 @@ def _idempotent_response(
     intent_hash: str,
     board_id: str | None = None,
 ) -> WorkSequenceBoardResponse | None:
+    common_receipt = check_common_mutation_replay(
+        session,
+        operation_key=mutation_key,
+        intent_hash=intent_hash,
+        event_type=_mutation_event_type(mutation_type),
+        target_type="work_sequence_board",
+        target_id=board_id,
+    )
     receipt = session.scalar(
         select(WorkSequenceMutationReceipt).where(
             WorkSequenceMutationReceipt.mutation_key == mutation_key
         )
     )
     if receipt is None:
+        if common_receipt is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "COMMON_RECEIPT_LINK_BROKEN",
+                    "message": "공통 receipt와 작업순서 receipt 연결이 끊어졌습니다.",
+                },
+            )
         return None
     if (
         receipt.mutation_type != mutation_type
@@ -348,11 +373,14 @@ def _save_receipt(
     intent_hash: str,
     board: WorkSequenceBoard,
     change_id: str,
+    trace: MutationTrace,
+    reason: str | None,
+    before_hash: str | None,
+    http_status: int,
 ) -> WorkSequenceBoardResponse:
     session.flush()
     response = _board_response(session, board)
-    session.add(
-        WorkSequenceMutationReceipt(
+    receipt = WorkSequenceMutationReceipt(
             mutation_key=mutation_key,
             mutation_type=mutation_type,
             intent_hash_sha256=intent_hash,
@@ -361,9 +389,45 @@ def _save_receipt(
             change_id=change_id,
             response_json=response.model_dump_json(),
         )
+    session.add(receipt)
+    session.flush()
+    record_common_mutation_result(
+        session,
+        operation_key=mutation_key,
+        intent_hash=intent_hash,
+        event_type=_mutation_event_type(mutation_type),
+        trace=trace,
+        target_type="work_sequence_board",
+        target_id=board.board_id,
+        target_version_id=None,
+        target_revision=board.board_revision,
+        reason=reason,
+        before_hash=before_hash,
+        after_hash=canonical_hash(response.model_dump(mode="json")),
+        result="SUCCESS",
+        result_code="APPLIED",
+        http_status=http_status,
+        response_detail={
+            "code": "APPLIED",
+            "targetId": board.board_id,
+            "targetRevision": board.board_revision,
+        },
+        domain_receipt_type="work_sequence_mutation_receipts",
+        domain_receipt_id=str(receipt.id),
+        domain_audit_type="work_sequence_change_history",
+        domain_audit_id=change_id,
     )
     session.commit()
     return response
+
+
+def _mutation_event_type(mutation_type: str) -> str:
+    return {
+        "BOARD_CREATED": "work_sequence.board_created",
+        "ITEM_ADDED": "work_sequence.item_added",
+        "ITEM_REORDERED": "work_sequence.reordered",
+        "ITEM_STATUS_CHANGED": "work_sequence.status_changed",
+    }.get(mutation_type, f"work_sequence.{mutation_type.lower()}")
 
 
 def _record_notification_candidate(
@@ -402,6 +466,7 @@ def _record_notification_candidate(
 
 @router.post("", response_model=WorkSequenceBoardResponse, status_code=status.HTTP_201_CREATED)
 def create_board(
+    http_request: Request,
     request: WorkSequenceBoardCreateRequest,
     current_user: DocumentWriteUser,
     session: Annotated[Session, Depends(get_db_session)],
@@ -460,6 +525,10 @@ def create_board(
         intent_hash=intent_hash,
         board=board,
         change_id=change_id,
+        trace=mutation_trace(current_user, http_request),
+        reason="Initial board creation.",
+        before_hash=None,
+        http_status=status.HTTP_201_CREATED,
     )
 
 
@@ -513,6 +582,7 @@ def get_board(
 
 @router.post("/{board_id}/items", response_model=WorkSequenceBoardResponse, status_code=status.HTTP_201_CREATED)
 def add_item(
+    http_request: Request,
     board_id: str,
     request: WorkSequenceItemCreateRequest,
     current_user: DocumentWriteUser,
@@ -521,6 +591,7 @@ def add_item(
     board = session.scalar(select(WorkSequenceBoard).where(WorkSequenceBoard.board_id == board_id))
     if board is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work sequence board not found.")
+    before_hash = canonical_hash(_board_response(session, board).model_dump(mode="json"))
 
     created_by = _validate_user_id(
         session,
@@ -588,11 +659,16 @@ def add_item(
         intent_hash=intent_hash,
         board=board,
         change_id=change_id,
+        trace=mutation_trace(current_user, http_request),
+        reason="Initial item creation.",
+        before_hash=before_hash,
+        http_status=status.HTTP_201_CREATED,
     )
 
 
 @router.put("/{board_id}/items/order", response_model=WorkSequenceBoardResponse)
 def reorder_items(
+    http_request: Request,
     board_id: str,
     request: WorkSequenceReorderRequest,
     current_user: DocumentWriteUser,
@@ -601,6 +677,7 @@ def reorder_items(
     board = session.scalar(select(WorkSequenceBoard).where(WorkSequenceBoard.board_id == board_id))
     if board is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work sequence board not found.")
+    before_hash = canonical_hash(_board_response(session, board).model_dump(mode="json"))
 
     actor_id = _validate_user_id(session, _clean_optional(request.actor_id) or current_user.user_id, "actorId")
     mutation_key = request.idempotency_key.strip()
@@ -657,7 +734,7 @@ def reorder_items(
         actor_id=actor_id,
         before_value=json.dumps(before, ensure_ascii=False),
         after_value=json.dumps(request.item_ids, ensure_ascii=False),
-        change_reason=request.change_reason,
+        change_reason=sanitize_audit_text(request.change_reason),
         mutation_key=mutation_key,
         board_revision=next_revision,
     )
@@ -678,6 +755,10 @@ def reorder_items(
             intent_hash=intent_hash,
             board=board,
             change_id=change_id,
+            trace=mutation_trace(current_user, http_request),
+            reason=sanitize_audit_text(request.change_reason),
+            before_hash=before_hash,
+            http_status=status.HTTP_200_OK,
         )
     except IntegrityError as exc:
         session.rollback()
@@ -689,15 +770,80 @@ def reorder_items(
 
 @router.patch("/{board_id}/items/{item_id}/status", response_model=WorkSequenceBoardResponse)
 def update_item_status(
+    http_request: Request,
     board_id: str,
     item_id: str,
     request: WorkSequenceItemStatusUpdateRequest,
     current_user: DocumentWriteUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> WorkSequenceBoardResponse:
+    mutation_key = request.idempotency_key.strip()
+    target_status_for_intent = request.status.strip().upper()
+    actor_id_for_intent = _clean_optional(request.actor_id) or current_user.user_id
+    target_hold_reason_for_intent = (
+        _clean_optional(request.hold_reason or request.change_reason)
+        if target_status_for_intent == "HOLD"
+        else None
+    )
+    intent_hash = _intent_hash(
+        "ITEM_STATUS_CHANGED",
+        {
+            "boardId": board_id,
+            "itemId": item_id,
+            "baseBoardRevision": request.base_board_revision,
+            "status": target_status_for_intent,
+            "holdReason": target_hold_reason_for_intent,
+            "actorId": actor_id_for_intent,
+            "changeReason": _clean_optional(request.change_reason),
+        },
+    )
+    trace = mutation_trace(current_user, http_request)
+    reason = sanitize_audit_text(request.change_reason)
+    try:
+        return _update_item_status_mutation(
+            board_id=board_id,
+            item_id=item_id,
+            request=request,
+            current_user=current_user,
+            session=session,
+            mutation_key=mutation_key,
+            intent_hash=intent_hash,
+            trace=trace,
+            reason=reason,
+        )
+    except HTTPException as error:
+        record_common_mutation_failure(
+            session,
+            operation_key=mutation_key,
+            intent_hash=intent_hash,
+            event_type="work_sequence.status_changed",
+            trace=trace,
+            target_type="work_sequence_board",
+            target_id=board_id,
+            target_version_id=None,
+            target_revision=request.base_board_revision,
+            reason=reason,
+            error=error,
+        )
+        raise
+
+
+def _update_item_status_mutation(
+    *,
+    board_id: str,
+    item_id: str,
+    request: WorkSequenceItemStatusUpdateRequest,
+    current_user: CurrentUser,
+    session: Session,
+    mutation_key: str,
+    intent_hash: str,
+    trace: MutationTrace,
+    reason: str | None,
+) -> WorkSequenceBoardResponse:
     board = session.scalar(select(WorkSequenceBoard).where(WorkSequenceBoard.board_id == board_id))
     if board is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work sequence board not found.")
+    before_hash = canonical_hash(_board_response(session, board).model_dump(mode="json"))
     item = session.scalar(
         select(WorkSequenceItem).where(
             WorkSequenceItem.board_id == board_id,
@@ -714,19 +860,6 @@ def update_item_status(
     hold_reason_before = item.hold_reason
     status_changed = before != target_status
     hold_reason_changed = _clean_optional(hold_reason_before) != target_hold_reason
-    mutation_key = request.idempotency_key.strip()
-    intent_hash = _intent_hash(
-        "ITEM_STATUS_CHANGED",
-        {
-            "boardId": board_id,
-            "itemId": item_id,
-            "baseBoardRevision": request.base_board_revision,
-            "status": target_status,
-            "holdReason": target_hold_reason,
-            "actorId": actor_id,
-            "changeReason": _clean_optional(request.change_reason),
-        },
-    )
     if cached := _idempotent_response(
         session,
         mutation_key=mutation_key,
@@ -756,7 +889,7 @@ def update_item_status(
         after_value=json.dumps(
             {"status": target_status, "holdReason": target_hold_reason}, ensure_ascii=False
         ),
-        change_reason=request.change_reason,
+        change_reason=reason,
         mutation_key=mutation_key,
         board_revision=next_revision,
     )
@@ -776,6 +909,10 @@ def update_item_status(
         intent_hash=intent_hash,
         board=board,
         change_id=change_id,
+        trace=trace,
+        reason=reason,
+        before_hash=before_hash,
+        http_status=status.HTTP_200_OK,
     )
 
 

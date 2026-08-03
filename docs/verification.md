@@ -10,7 +10,7 @@
 | `run_id` | 없음 | 없음 |
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
-| FastAPI | 현재 코드·스크립트 guard 170건, macOS 누적 DB 전체 회귀 170/170 통과 | Windows x64 수집·JUnit 무생략 실행 대기 |
+| FastAPI | 현재 코드 176건, macOS 누적 DB 전체 회귀 176/176 통과. 스크립트 guard는 170건 | Windows x64 수집·JUnit 무생략 실행 대기 |
 | WPF Core | 현재 macOS 실행 92/92, 스크립트 guard 92건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 현재 macOS 교차 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
@@ -19,6 +19,14 @@
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
 보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했다. 로그인 복구 안내 회귀 2건을 더한 2026-08-01 직접 실행은 89/89가 통과했다. 현재 코드는 이후 추가된 테스트를 포함해 92건이며 Windows x64의 새 수집 목록과 TRX가 92/92인지 별도로 확인해야 한다.
+
+## 2026-08-03 작업 102 공통 mutation receipt와 감사 envelope
+
+FastAPI는 operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 승인 저장과 작업순서 변경에 기존 도메인 receipt와 공통 `sync_mutation_receipts`, `audit_event_envelopes`를 함께 기록한다. 성공 업무 변경은 세 기록을 한 transaction에 저장한다. 문서 상태, FieldComment 검토, 보고서 승인, 작업순서 항목 상태의 거부·충돌은 업무 변경을 rollback한 뒤 공통 결과를 확정해 같은 요청의 재시도가 같은 HTTP 결과로 수렴한다. 기존 `activity_history`는 백필하지 않고 `/api/v1/audit-events`에서 누락 필드를 표시한 이전 형식으로 함께 조회한다.
+
+현재 OpenAPI는 루트 `GET /`와 새 `GET /api/v1/audit-events`를 포함해 144개 method/path 조합이며 `services/api/README.md`의 API 표와 누락·초과 없이 일치한다. SQLAlchemy ORM은 `audit_event_envelopes`, `sync_mutation_receipts`를 포함해 64개 테이블이다. 공통 receipt·DB 집중 회귀 9/9와 누적 시험 DB 전체 회귀 176/176이 통과했고 `services/api`의 `.venv/bin/python -m ruff check app tests`도 통과했다.
+
+새 테스트 6건이 추가됐지만 `scripts/verify-preserved-tests.ps1`의 FastAPI guard는 아직 170건이다. 따라서 현재 상태로 Windows x64 표준 검증을 실행하면 수집 단계에서 중단된다. 이번 작업에서는 Windows x64 무생략 통합 실행, WPF·Android 검증과 공통 SQLite 스모크를 새로 실행하지 않았다. 기존 SQLite, 로그, 테스트 파일과 산출물은 삭제하거나 초기화하지 않았다.
 
 ## 2026-08-03 작업 102 문서 태그 delta 병합과 충돌 작업함
 

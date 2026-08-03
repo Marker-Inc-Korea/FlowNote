@@ -109,7 +109,7 @@ Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현�
 | 파일 감시 운영 | 허용 | 허용 | 허용 | 금지 | 금지 | WPF 로컬 기능이며 서버 전용 권한은 아직 없다. 서버 로그인 때는 서버 role이 로컬 role보다 우선해야 한다. |
 | 계정 생성·role/상태·임시 비밀번호·세션 운영 | 허용 | 조건부 | 금지 | 금지 | 금지 | `admin`은 `system-admin` 계정을 조회·생성·변경하지 못한다. 마지막 활성 `system-admin` 제거와 자기 자신 잠금·비활성화는 거부한다. |
 | 승인 단말 등록·비활성화·폐기·교체 | 허용 | 허용 | 금지 | 금지 | 금지 | 상태 변경과 기존 단말 세션 폐기는 한 transaction이어야 하며 `RETIRED` 단말은 재활성화하지 않는다. |
-| 접근·권한 감사 조회 | 허용 | 허용 | 금지 | 금지 | 금지 | 현재 접근 로그 조회는 `admin`, `system-admin`만 가능하지만 조회 행위 자체는 별도로 감사하지 않는다. 조회자, 범위, 사유와 내보내기 여부 감사는 구현 보완 항목이다. |
+| 접근·권한·공통 mutation 감사 조회 | 허용 | 허용 | 금지 | 금지 | 금지 | `document_access_logs`와 `/audit-events`는 `admin`, `system-admin`만 조회한다. 조회 행위 자체의 별도 감사와 내보내기 승인은 구현 보완 항목이다. |
 | 외부 AI 질의·ground-truth 작성·검토 | 허용 | 허용 | 허용 | 금지 | 금지 | 외부 AI 질의는 별도 전송 승인·프롬프트·원천 권한·민감정보·kill switch를 통과해야 한다. |
 | ground-truth 최종 승인·폐기 | 허용 | 허용 | 조건부 | 금지 | 금지 | 문서·보고서 관리 중 `document-admin`, `department-manager`만 허용하고 `manager`, `assistant-manager`는 금지한다. 작성·검토·1차·2차 승인자는 모두 달라야 한다. |
 | AI 전송 승인·프롬프트·정책·감사·보존 운영 | 허용 | 금지 | 금지 | 금지 | 금지 | `system-admin` 전용이다. 고객·현장 scope, 최신 `stateTag`, 이중 확인과 완료 후 read-back을 적용한다. |
@@ -217,7 +217,11 @@ Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현�
 
 권한 검증의 성공·거부·실패는 모두 감사 대상이다. 최소 필드는 `run_id`/`correlation_id`, 결과와 HTTP 상태, 사용자·role, 세션, 단말 또는 WPF PC 식별자, 고객·현장 scope, 대상 종류·ID, 문서 version과 domain revision, 요청 사유, 승인자·승인번호, 전후 상태, 서버 시각이다. 비밀번호, access/refresh token, controlled copy/grant 원문, 고객 문서 본문과 AI 질의·응답 원문은 감사에 넣지 않는다.
 
-현재 도메인별 감사 필드는 서로 다르고 모든 API가 `run_id`/`correlation_id`, session ID, 승인번호와 거부 사유를 공통으로 보존한다고 가정할 수 없다. 세 경로 대조에서 필수 필드가 빠진 행은 화면 결과가 맞더라도 감사 누락으로 실패 처리한다.
+`audit_event_envelopes`와 `sync_mutation_receipts`는 operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 승인 저장, 작업순서 변경부터 적용한다. 공통 envelope는 actor/role/session, 선택 device, target/version/revision, 사유·승인, 전후 hash, 성공·거부·충돌 결과, HTTP status, server time, 선택 run ID와 필수 correlation ID를 같은 형식으로 보존한다. 보고서 승인은 승인자와 `APPROVED`를 기록하고 별도 승인 모델이 없는 행위는 `NOT_REQUIRED`로 표시해 승인을 받은 것처럼 추정하지 않는다.
+
+기존 `activity_history`와 도메인 감사는 삭제·수정·백필하지 않는다. `/audit-events`는 공통 envelope가 없는 행을 `이전 형식·일부 필드 없음`으로 표시하고 누락값을 `null`로 반환한다. 공통 적용 대상이 아닌 API는 여전히 모든 공통 필드를 보존한다고 가정할 수 없으므로, 세 경로 대조에서 필수 필드가 빠진 행은 화면 결과가 맞더라도 감사 누락으로 실패 처리한다.
+
+공통 감사의 `safe_payload_json`과 실패 response snapshot에는 정제 code, 대상 식별자·revision, operation/receipt 연결만 허용한다. access/refresh token, 비밀번호, controlled copy/grant 원문, 고객 문서·FieldComment·보고서 본문, 로컬 절대경로, 개인 이름·IP 같은 불필요한 개인정보는 넣지 않는다. 사유에 비밀 키 이름이나 로컬 절대경로가 섞이면 저장 전에 `[REDACTED]`, `[LOCAL_PATH_REDACTED]`로 치환한다. 전후 업무 상태는 원문 대신 SHA-256으로 기록한다.
 
 - 계정 운영자는 계정·세션·단말 변경과 SLA 준수 증거를 남긴다.
 - 문서 책임자는 문서 공개, controlled copy, FieldComment 결정, 보고서와 작업순서의 version/revision·사유를 확인한다.

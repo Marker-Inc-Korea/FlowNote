@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-08-03 현재 전역 FastAPI 앱에 등록된 143개 method/path 조합과 요청·응답 코드 기준이다. 문서 상태·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-08-03 현재 전역 FastAPI 앱에 등록된 144개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -17,6 +17,20 @@ FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서�
 | POST | `/api/v1/auth/change-password` | 본인 현재 비밀번호를 검증하고 새 비밀번호로 변경한 뒤 모든 기존 세션 폐기 |
 
 보호 API는 `Authorization: Bearer {access_token}`을 요구한다. access token은 HMAC 서명 payload이며 서버의 `auth_sessions` 상태와 `access_token_id`까지 검증한다.
+
+operation key가 있는 고위험 mutation은 선택 헤더 `X-FlowNote-Run-Id`와 `X-Correlation-Id`를 받을 수 있다. correlation ID를 생략하면 서버가 새 값을 만들어 공통 감사에 반드시 저장하고 run ID는 파일럿·복구·통합 검증처럼 실행 묶음이 있을 때만 보존한다. 헤더는 각각 최대 100자만 사용하며 token이나 고객 식별 원문을 넣지 않는다.
+
+## 공통 mutation receipt와 감사 조회
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/api/v1/audit-events` | 공통 event envelope와 기존 `activity_history`를 시간순 조회. 선택 `targetType`, `targetId`, `limit` 필터 |
+
+조회는 `admin`, `system-admin`만 허용한다. `limit`은 기본 100, 최소 1, 최대 500이며 응답은 `serverTime` 내림차순 배열이다. 각 행에는 `sourceId`, `formatStatus`, `schemaVersion`, `eventType`, actor·session·device, target·version·revision, `reason`, approval, 전후 SHA-256, result·result code·HTTP status, run/correlation ID, `serverTime`, `missingFields`가 포함된다. 공통 행은 `formatStatus = 공통 형식`, 이전 `activity_history` 행은 `formatStatus = 이전 형식·일부 필드 없음`으로 반환한다. 이전 행의 `actorRole`, session/device, target version/revision, approval, hash, result, HTTP status, run/correlation ID는 추정하지 않고 `null`과 `missingFields`로 표시한다.
+
+operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 승인 저장, 작업순서 변경은 기존 도메인 receipt를 유지하면서 `sync_mutation_receipts`와 `audit_event_envelopes`를 같은 업무 transaction에 추가한다. 같은 key·같은 event/target/intent의 재시도는 최초 결과를 반환하고 업무 revision·도메인 감사·공통 행을 늘리지 않는다. 같은 key의 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`다. 문서 상태, FieldComment 검토, 보고서 승인, 작업순서 항목 상태에서 발생한 업무 거부·충돌도 공통 receipt로 고정되며 같은 요청 재시도는 같은 HTTP 결과로 수렴한다.
+
+공통 응답/감사 payload는 code, 대상 ID·version·revision과 hash 같은 정제 metadata만 저장한다. access/refresh token, 비밀번호, 고객 문서·FieldComment·보고서 원문, 로컬 절대경로와 불필요한 개인정보는 저장하지 않는다. 보고서 승인 envelope는 `approvalStatus = APPROVED`, `approvedBy`를 기록하고 별도 승인 모델이 없는 행위는 `NOT_REQUIRED`로 구분한다.
 
 `must_change_password = true`인 계정은 로그인 응답에서 같은 값을 받지만 `change-password` 이외의 보호 API와 refresh를 사용할 수 없다. 비밀번호 변경 성공 시 현재 세션을 포함한 모든 활성 세션을 폐기하므로 새 비밀번호로 다시 로그인해야 한다. 최소 비밀번호 길이는 8자이며 현재 비밀번호와 같은 값은 거부한다. 새 비밀번호와 임시 비밀번호 hash는 계정별 무작위 salt를 사용한 PBKDF2-SHA256으로 저장하고 기존 개발 계정 hash도 같은 검증기가 호환한다.
 

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, select, update
 from sqlalchemy.exc import IntegrityError
@@ -34,6 +34,14 @@ from app.db.models import (
     WorkSequenceItem,
 )
 from app.db.session import get_db_session
+from app.services.mutation_receipts import (
+    MutationTrace,
+    canonical_hash,
+    check_common_mutation_replay,
+    mutation_trace,
+    record_common_mutation_failure,
+    record_common_mutation_result,
+)
 
 router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(get_current_user)])
 
@@ -861,10 +869,26 @@ def _report_idempotent_response(
 ) -> ReportResponse | None:
     if mutation_key is None:
         return None
+    common_receipt = check_common_mutation_replay(
+        session,
+        operation_key=mutation_key,
+        intent_hash=intent_hash,
+        event_type="report.approved",
+        target_type="report",
+        target_id=None,
+    )
     receipt = session.scalar(
         select(ReportMutationReceipt).where(ReportMutationReceipt.mutation_key == mutation_key)
     )
     if receipt is None:
+        if common_receipt is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "COMMON_RECEIPT_LINK_BROKEN",
+                    "message": "공통 receipt와 보고서 receipt 연결이 끊어졌습니다.",
+                },
+            )
         return None
     if receipt.intent_hash_sha256 != intent_hash:
         raise HTTPException(
@@ -941,15 +965,57 @@ def create_report_draft(
 
 @router.post("", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
 def save_report(
+    http_request: Request,
     request: ReportSaveRequest,
     current_user: ReportWriteUser,
     app_settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> ReportResponse:
-    now = datetime.now(timezone.utc)
     idempotency_key = _clean_idempotency_key(request.idempotency_key)
     mutation_key = _clean_idempotency_key(request.mutation_key) or idempotency_key
     intent_hash = _report_intent_hash(request)
+    trace = mutation_trace(current_user, http_request)
+    target_id = request.draft_report_id or f"report-intent-{intent_hash[:32]}"
+    try:
+        return _save_report_mutation(
+            request=request,
+            current_user=current_user,
+            app_settings=app_settings,
+            session=session,
+            idempotency_key=idempotency_key,
+            mutation_key=mutation_key,
+            intent_hash=intent_hash,
+            trace=trace,
+        )
+    except HTTPException as error:
+        record_common_mutation_failure(
+            session,
+            operation_key=mutation_key,
+            intent_hash=intent_hash,
+            event_type="report.approved",
+            trace=trace,
+            target_type="report",
+            target_id=target_id,
+            target_version_id=None,
+            target_revision=request.base_report_revision,
+            reason=None,
+            error=error,
+        )
+        raise
+
+
+def _save_report_mutation(
+    *,
+    request: ReportSaveRequest,
+    current_user: CurrentUser,
+    app_settings: Settings,
+    session: Session,
+    idempotency_key: str | None,
+    mutation_key: str | None,
+    intent_hash: str,
+    trace: MutationTrace,
+) -> ReportResponse:
+    now = datetime.now(timezone.utc)
     replay = _report_idempotent_response(session, mutation_key, intent_hash)
     if replay is not None:
         return replay
@@ -967,8 +1033,18 @@ def save_report(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Approved or archived report sources cannot be replaced.",
             )
+        before_hash = canonical_hash(
+            {
+                "reportId": report.report_id,
+                "reportRevision": report.report_revision,
+                "status": report.status,
+                "contentHash": report.content_hash_sha256,
+                "sourceSetHash": report.source_set_hash_sha256,
+            }
+        )
         _claim_report_revision(session, report, request.base_report_revision or report.report_revision)
     else:
+        before_hash = None
         if not request.sources:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="sources is required.")
         report = Report(
@@ -1040,7 +1116,7 @@ def save_report(
         session.flush()
         response = _report_response(session, report)
         if mutation_key is not None:
-            session.add(ReportMutationReceipt(
+            receipt = ReportMutationReceipt(
                 mutation_key=mutation_key,
                 intent_hash_sha256=intent_hash,
                 report_id=report.report_id,
@@ -1050,7 +1126,53 @@ def save_report(
                 generated_document_id=report.generated_document_id,
                 generated_version_id=(response.generated_document.latest_version_id if response.generated_document else None),
                 response_json=response.model_dump_json(),
-            ))
+            )
+            session.add(receipt)
+            session.flush()
+            record_common_mutation_result(
+                session,
+                operation_key=mutation_key,
+                intent_hash=intent_hash,
+                event_type="report.approved",
+                trace=trace,
+                target_type="report",
+                target_id=report.report_id,
+                target_version_id=(
+                    response.generated_document.latest_version_id
+                    if response.generated_document
+                    else None
+                ),
+                target_revision=report.report_revision,
+                reason=None,
+                before_hash=before_hash,
+                after_hash=canonical_hash(
+                    {
+                        "reportId": report.report_id,
+                        "reportRevision": report.report_revision,
+                        "status": report.status,
+                        "contentHash": report.content_hash_sha256,
+                        "sourceSetHash": report.source_set_hash_sha256,
+                        "generatedDocumentId": report.generated_document_id,
+                    }
+                ),
+                result="SUCCESS",
+                result_code="APPLIED",
+                http_status=status.HTTP_201_CREATED,
+                response_detail={
+                    "code": "APPLIED",
+                    "targetId": report.report_id,
+                    "targetVersionId": (
+                        response.generated_document.latest_version_id
+                        if response.generated_document
+                        else None
+                    ),
+                    "targetRevision": report.report_revision,
+                },
+                domain_receipt_type="report_mutation_receipts",
+                domain_receipt_id=str(receipt.id),
+                approval_status="APPROVED",
+                approved_by=current_user.user_id,
+            )
         session.commit()
     except IntegrityError as exc:
         session.rollback()

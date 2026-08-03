@@ -49,6 +49,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-08-03 현재 FastAPI 테스트 코드와 저장소 루트 `scripts/verify-preserved-tests.ps1`의 guard는 170개로 일치한다. 새 4건은 비경합 태그 delta의 멱등·동시 병합, 반대 변경과 비활성·삭제 태그의 구조화된 충돌, 문서 삭제 응답 유실 재시도를 검증한다. 스크립트는 수집 원본, 중복 목록, 종료 코드와 JUnit을 같은 `run_id`에 보존하며 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 명령을 안내한다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략해 수행한다. FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존하고 무생략 실행 2회가 같은 clean 소스 커밋에서 모두 통과하기 전에는 유효한 기준선으로 판정하지 않는다.
+2026-08-03 현재 FastAPI 테스트 코드는 176개를 수집하지만 저장소 루트 `scripts/verify-preserved-tests.ps1`의 guard는 170개다. 새 6건은 공통 receipt의 성공·거부·충돌 재시도, operation key 교차 도메인 재사용 차단, 기존 도메인 receipt 연결, 이전 감사의 누락 필드 표시와 migration 보존을 검증한다. 따라서 guard를 현재 수집 수에 맞추기 전에는 Windows x64 표준 검증이 FastAPI 수집 단계에서 중단된다. 스크립트는 수집 원본, 중복 목록, 종료 코드와 JUnit을 같은 `run_id`에 보존하며 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 명령을 안내한다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략해 수행한다. FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존하고 무생략 실행 2회가 같은 clean 소스 커밋에서 모두 통과하기 전에는 유효한 기준선으로 판정하지 않는다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.

@@ -7,9 +7,14 @@ import pytest
 from sqlalchemy import func, inspect, select, text
 
 from app.core.config import Settings
-from app.db.init_db import DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME, initialize_database
+from app.db.init_db import (
+    COMMON_MUTATION_RECEIPT_SCHEMA_VERSION,
+    DEFAULT_ADMIN_PASSWORD,
+    DEFAULT_ADMIN_USERNAME,
+    initialize_database,
+)
 from app.db.init_db import INITIAL_SCHEMA_VERSION, hash_password_for_dev
-from app.db.models import Document, DocumentVersion, FieldComment, FileObject, Role
+from app.db.models import ActivityHistory, Document, DocumentVersion, FieldComment, FileObject, Role
 from app.db.models import SchemaMigration, UserAccount, UserRole
 from app.main import create_app
 from app.db.session import Database
@@ -47,6 +52,7 @@ def test_app_startup_creates_mvp_schema(tmp_path: Path) -> None:
         "ai_call_attempts",
         "ai_sensitive_data_policies",
         "ai_transfer_approvals",
+        "audit_event_envelopes",
         "comment_templates",
         "controlled_copy_grants",
         "document_access_logs",
@@ -67,6 +73,7 @@ def test_app_startup_creates_mvp_schema(tmp_path: Path) -> None:
         "reports",
         "roles",
         "schema_migrations",
+        "sync_mutation_receipts",
         "tag_definitions",
         "terminal_devices",
         "user_accounts",
@@ -99,6 +106,12 @@ def test_app_startup_creates_mvp_schema(tmp_path: Path) -> None:
                 select(SchemaMigration).where(SchemaMigration.version == INITIAL_SCHEMA_VERSION)
             )
             assert migration is not None
+            common_receipt_migration = session.scalar(
+                select(SchemaMigration).where(
+                    SchemaMigration.version == COMMON_MUTATION_RECEIPT_SCHEMA_VERSION
+                )
+            )
+            assert common_receipt_migration is not None
 
             admin_account = session.scalar(
                 select(UserAccount).where(UserAccount.username == DEFAULT_ADMIN_USERNAME)
@@ -157,6 +170,79 @@ def test_app_startup_seeds_default_admin_account_once() -> None:
                 )
             )
             assert admin_count == 1
+
+
+def test_common_receipt_migration_preserves_legacy_audit_and_separate_wpf_queue() -> None:
+    migration_db_path = API_ROOT / "data" / "flownote.common-receipt-migration.test.sqlite3"
+    wpf_queue_db_path = API_ROOT / "data" / "flownote.wpf-queue-preservation.test.sqlite3"
+    database = Database(f"sqlite:///{migration_db_path.as_posix()}")
+    legacy_history_id = "hist-common-receipt-migration-preserved"
+    try:
+        SchemaMigration.__table__.create(database.engine, checkfirst=True)
+        UserAccount.__table__.create(database.engine, checkfirst=True)
+        ActivityHistory.__table__.create(database.engine, checkfirst=True)
+        with database.engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT OR IGNORE INTO schema_migrations (version, description) "
+                    "VALUES (:version, :description)"
+                ),
+                {
+                    "version": INITIAL_SCHEMA_VERSION,
+                    "description": "Legacy schema before common receipt migration",
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT OR IGNORE INTO activity_history "
+                    "(history_id, event_type, target_type, target_id, message) "
+                    "VALUES (:history_id, :event_type, :target_type, :target_id, :message)"
+                ),
+                {
+                    "history_id": legacy_history_id,
+                    "event_type": "legacy.preserved",
+                    "target_type": "document",
+                    "target_id": "doc-legacy-preserved",
+                    "message": "Legacy audit row must remain unchanged.",
+                },
+            )
+        with sqlite3.connect(wpf_queue_db_path) as connection:
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS server_sync_queue (
+                    id INTEGER PRIMARY KEY,
+                    operation_key TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL
+                );
+                INSERT OR IGNORE INTO server_sync_queue (operation_key, status)
+                VALUES ('preserved-wpf-queue-operation', 'FAILED');
+                """
+            )
+
+        initialize_database(database)
+
+        with database.session() as session:
+            legacy = session.scalar(
+                select(ActivityHistory).where(
+                    ActivityHistory.history_id == legacy_history_id
+                )
+            )
+            migration = session.scalar(
+                select(SchemaMigration).where(
+                    SchemaMigration.version == COMMON_MUTATION_RECEIPT_SCHEMA_VERSION
+                )
+            )
+            assert legacy is not None
+            assert legacy.message == "Legacy audit row must remain unchanged."
+            assert migration is not None
+        with sqlite3.connect(wpf_queue_db_path) as connection:
+            queue_row = connection.execute(
+                "SELECT operation_key, status FROM server_sync_queue "
+                "WHERE operation_key = 'preserved-wpf-queue-operation'"
+            ).fetchone()
+        assert queue_row == ("preserved-wpf-queue-operation", "FAILED")
+    finally:
+        database.dispose()
 
 
 def test_mvp_schema_accepts_document_version_and_field_comment() -> None:
