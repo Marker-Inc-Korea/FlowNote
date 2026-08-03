@@ -120,6 +120,9 @@ public sealed record ServerReportSaveRequest
 
     [JsonPropertyName("sourceSetHashSha256")]
     public string? SourceSetHashSha256 { get; init; }
+
+    [JsonPropertyName("reportStatus")]
+    public string ReportStatus { get; init; } = "APPROVED";
 }
 
 public sealed record ServerReportSourceResponse

@@ -180,9 +180,10 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
         DocumentRecord reportDocument,
         FlowNoteServerDocumentClient? serverClient,
         string? serverUserId = null,
+        ReportWorkflowContext? workflow = null,
         CancellationToken cancellationToken = default)
     {
-        EnqueueReport(reportDocument, null);
+        EnqueueReport(reportDocument, workflow, null);
         if (serverClient is null)
         {
             MarkLatestFailure("report", reportDocument.DocumentId, SyncFailureMessages.ServerUrlNotConfigured, countAttempt: true);

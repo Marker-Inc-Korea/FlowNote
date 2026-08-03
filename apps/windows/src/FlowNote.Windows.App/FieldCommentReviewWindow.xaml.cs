@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using FlowNote.Windows.Core.FieldComments;
+using FlowNote.Windows.Core.Reports;
 using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
 using FlowNote.Windows.Core.Sync;
@@ -16,6 +17,8 @@ public partial class FieldCommentReviewWindow : Window
     private readonly FieldCommentService fieldComments;
     private readonly ServerSyncService serverSync;
     private readonly FlowNoteServerDocumentClient? serverClient;
+    private readonly ReportDraftService reports;
+    private readonly long reportFolderId;
     private readonly string actorName;
     private readonly string? serverUserId;
     private readonly ReviewWorkspace workspace = new();
@@ -30,7 +33,9 @@ public partial class FieldCommentReviewWindow : Window
         ServerSyncService serverSync,
         string actorName,
         string? serverUserId,
-        FlowNoteServerDocumentClient? serverClient)
+        FlowNoteServerDocumentClient? serverClient,
+        ReportDraftService reports,
+        long reportFolderId)
     {
         InitializeComponent();
         this.fieldComments = fieldComments;
@@ -38,6 +43,8 @@ public partial class FieldCommentReviewWindow : Window
         this.actorName = actorName;
         this.serverUserId = serverUserId;
         this.serverClient = serverClient;
+        this.reports = reports;
+        this.reportFolderId = reportFolderId;
         DataContext = workspace;
         Loaded += FieldCommentReviewWindow_Loaded;
     }
@@ -158,6 +165,50 @@ public partial class FieldCommentReviewWindow : Window
     private void FieldCommentGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         LoadSelectedComment();
+    }
+
+    private void SendSelectedToReportButton_Click(object sender, RoutedEventArgs e)
+    {
+        OpenReportForComments(FieldCommentGrid.SelectedItems.Cast<FieldCommentReviewRecord>());
+    }
+
+    private void SendCurrentToReportButton_Click(object sender, RoutedEventArgs e)
+    {
+        OpenReportForComments(FieldCommentGrid.SelectedItem is FieldCommentReviewRecord selected
+            ? [selected]
+            : []);
+    }
+
+    private void OpenReportForComments(IEnumerable<FieldCommentReviewRecord> comments)
+    {
+        var selected = comments.ToList();
+        if (selected.Count == 0)
+        {
+            StatusTextBlock.Text = "보고서 근거로 보낼 FieldComment를 선택하세요.";
+            return;
+        }
+
+        var ineligible = selected.Where(item => item.Status != "SELECTED").ToList();
+        if (ineligible.Count > 0)
+        {
+            StatusTextBlock.Text =
+                $"보고서선정 상태가 아닌 항목 {ineligible.Count}건은 보낼 수 없습니다. 검토 상태와 사유를 먼저 저장하세요.";
+            return;
+        }
+
+        var reportWindow = new ReportDraftWindow(
+            reports,
+            reportFolderId,
+            actorName,
+            serverClient,
+            selected.Select(item => item.CommentId).ToArray())
+        {
+            Owner = this
+        };
+        reportWindow.ShowDialog();
+        StatusTextBlock.Text = reportWindow.DocumentSaved
+            ? "선택한 FieldComment에서 보고서 문서를 저장했습니다. 원천 연결은 보고서 상세에서 다시 확인할 수 있습니다."
+            : "선택한 FieldComment를 보고서 작성 화면으로 전달했습니다. 원천 기록은 변경되지 않았습니다.";
     }
 
     private async void SaveReviewButton_Click(object sender, RoutedEventArgs e)

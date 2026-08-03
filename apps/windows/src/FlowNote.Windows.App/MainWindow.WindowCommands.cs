@@ -291,7 +291,9 @@ public partial class MainWindow
             services.ServerSync,
             GetCurrentActorName(),
             currentUser.UserId,
-            serverDocumentClient)
+            serverDocumentClient,
+            services.Reports,
+            GetSelectedFolderOrDefault().Id)
         {
             Owner = this
         };

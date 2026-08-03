@@ -55,6 +55,14 @@ REPORT_SOURCE_TYPES = {
 }
 FIELD_COMMENT_REPORT_SOURCE_STATUS = "SELECTED"
 DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "PUBLISHED", "ARCHIVED"}
+REPORT_SAVE_STATUSES = {"REVIEWED", "APPROVED", "ARCHIVED"}
+REPORT_STATUS_TRANSITIONS = {
+    "DRAFT": {"REVIEWED", "APPROVED"},
+    "AI_DRAFTED": {"REVIEWED", "APPROVED"},
+    "REVIEWED": {"APPROVED"},
+    "APPROVED": {"ARCHIVED"},
+    "ARCHIVED": set(),
+}
 SOURCE_NOT_VISIBLE_DETAIL = {
     "code": "SOURCE_NOT_VISIBLE",
     "message": "요청한 원천을 찾을 수 없거나 현재 공개 범위에서 열람할 수 없습니다.",
@@ -115,6 +123,7 @@ class ReportSaveRequest(BaseModel):
     mutation_key: str | None = Field(default=None, alias="mutationKey", max_length=160)
     content_hash_sha256: str | None = Field(default=None, alias="contentHashSha256")
     source_set_hash_sha256: str | None = Field(default=None, alias="sourceSetHashSha256")
+    report_status: str = Field(default="APPROVED", alias="reportStatus")
 
 
 class ReportSourceResponse(BaseModel):
@@ -408,6 +417,27 @@ def _report_intent_hash(request: ReportSaveRequest) -> str:
     )
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _report_event_type(report_status: str) -> str:
+    return {
+        "REVIEWED": "report.reviewed",
+        "APPROVED": "report.approved",
+        "ARCHIVED": "report.archived",
+    }[report_status]
+
+
+def _validate_report_transition(current_status: str, target_status: str) -> None:
+    if target_status not in REPORT_STATUS_TRANSITIONS.get(current_status, set()):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "REPORT_STATUS_TRANSITION_NOT_ALLOWED",
+                "message": f"보고서 상태를 {current_status}에서 {target_status}(으)로 변경할 수 없습니다.",
+                "currentStatus": current_status,
+                "targetStatus": target_status,
+            },
+        )
 
 
 def _field_comment_source_hash(note: FieldComment) -> str:
@@ -852,11 +882,15 @@ def _report_is_readable(
     current_user: CurrentUser,
 ) -> bool:
     try:
-        _validate_frozen_sources(
-            session,
-            _report_sources(session, report.report_id),
-            current_user,
-        )
+        for source in _report_sources(session, report.report_id):
+            # 읽기에서는 당시 고정 snapshot을 보존한다. 현재 적격 상태와 hash 재검증은
+            # 상태 전이/문서 저장 때만 수행하고, 여기서는 현재 채널 권한만 다시 확인한다.
+            _ensure_source_channel_access(
+                session,
+                current_user,
+                source.source_type,
+                source.source_id,
+            )
     except HTTPException:
         return False
     return True
@@ -866,6 +900,7 @@ def _report_idempotent_response(
     session: Session,
     mutation_key: str | None,
     intent_hash: str,
+    event_type: str,
 ) -> ReportResponse | None:
     if mutation_key is None:
         return None
@@ -873,7 +908,7 @@ def _report_idempotent_response(
         session,
         operation_key=mutation_key,
         intent_hash=intent_hash,
-        event_type="report.approved",
+        event_type=event_type,
         target_type="report",
         target_id=None,
     )
@@ -974,6 +1009,8 @@ def save_report(
     idempotency_key = _clean_idempotency_key(request.idempotency_key)
     mutation_key = _clean_idempotency_key(request.mutation_key) or idempotency_key
     intent_hash = _report_intent_hash(request)
+    target_status = _normalize_choice(request.report_status, REPORT_SAVE_STATUSES, "reportStatus")
+    event_type = _report_event_type(target_status)
     trace = mutation_trace(current_user, http_request)
     target_id = request.draft_report_id or f"report-intent-{intent_hash[:32]}"
     try:
@@ -986,13 +1023,15 @@ def save_report(
             mutation_key=mutation_key,
             intent_hash=intent_hash,
             trace=trace,
+            target_status=target_status,
+            event_type=event_type,
         )
     except HTTPException as error:
         record_common_mutation_failure(
             session,
             operation_key=mutation_key,
             intent_hash=intent_hash,
-            event_type="report.approved",
+            event_type=event_type,
             trace=trace,
             target_type="report",
             target_id=target_id,
@@ -1014,9 +1053,11 @@ def _save_report_mutation(
     mutation_key: str | None,
     intent_hash: str,
     trace: MutationTrace,
+    target_status: str,
+    event_type: str,
 ) -> ReportResponse:
     now = datetime.now(timezone.utc)
-    replay = _report_idempotent_response(session, mutation_key, intent_hash)
+    replay = _report_idempotent_response(session, mutation_key, intent_hash, event_type)
     if replay is not None:
         return replay
     if idempotency_key is not None:
@@ -1028,10 +1069,11 @@ def _save_report_mutation(
         report = session.scalar(select(Report).where(Report.report_id == request.draft_report_id))
         if report is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report draft not found.")
-        if report.status not in {"DRAFT", "AI_DRAFTED"}:
+        _validate_report_transition(report.status, target_status)
+        if request.sources is not None and report.status not in {"DRAFT", "AI_DRAFTED"}:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Approved or archived report sources cannot be replaced.",
+                detail="Reviewed, approved or archived report sources cannot be replaced.",
             )
         before_hash = canonical_hash(
             {
@@ -1055,6 +1097,16 @@ def _save_report_mutation(
         )
         session.add(report)
         session.flush()
+        if target_status == "ARCHIVED":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "REPORT_STATUS_TRANSITION_NOT_ALLOWED",
+                    "message": "새 보고서를 보관 상태로 바로 만들 수 없습니다.",
+                    "currentStatus": "DRAFT",
+                    "targetStatus": target_status,
+                },
+            )
 
     if idempotency_key is not None:
         report.idempotency_key = idempotency_key
@@ -1073,11 +1125,13 @@ def _save_report_mutation(
     report.structure_item_id = _clean_optional(request.structure_item_id) if request.structure_item_id is not None else report.structure_item_id
     report.period_start = request.period_start if request.period_start is not None else report.period_start
     report.period_end = request.period_end if request.period_end is not None else report.period_end
-    report.status = "APPROVED"
-    report.reviewed_by = current_user.user_id
-    report.approved_by = current_user.user_id
-    report.reviewed_at = now
-    report.approved_at = now
+    report.status = target_status
+    if target_status in {"REVIEWED", "APPROVED"}:
+        report.reviewed_by = current_user.user_id
+        report.reviewed_at = now
+    if target_status == "APPROVED":
+        report.approved_by = current_user.user_id
+        report.approved_at = now
 
     sources = saved_sources
     if sources is None:
@@ -1099,6 +1153,24 @@ def _save_report_mutation(
         select(ReportSource).where(ReportSource.report_id == report.report_id).order_by(ReportSource.id)
     ).all())
     _validate_frozen_sources(session, sources, current_user)
+    if request.save_as_document and target_status != "APPROVED":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "REPORT_DOCUMENT_STATUS_MISMATCH",
+                "message": "확정(APPROVED) 단계에서만 보고서 문서를 생성할 수 있습니다.",
+                "reportStatus": target_status,
+            },
+        )
+    if request.save_as_document and report.generated_document_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "REPORT_DOCUMENT_ALREADY_CREATED",
+                "message": "이 보고서에는 이미 생성 문서가 연결되어 있습니다.",
+                "generatedDocumentId": report.generated_document_id,
+            },
+        )
     if request.save_as_document:
         document = _save_report_document(
             session,
@@ -1111,7 +1183,29 @@ def _save_report_mutation(
         )
         report.generated_document_id = document.document_id
 
-    _record_activity(session, "report.approved", current_user.user_id, report, f"Report approved: {report.title}.")
+    if target_status == "ARCHIVED" and report.generated_document_id is not None:
+        generated_document = session.scalar(
+            select(Document).where(Document.document_id == report.generated_document_id)
+        )
+        if generated_document is not None:
+            generated_document.status = "ARCHIVED"
+            generated_document.published_version_id = None
+            generated_document.revision += 1
+            versions = session.scalars(
+                select(DocumentVersion).where(DocumentVersion.document_id == generated_document.document_id)
+            ).all()
+            for version in versions:
+                version.version_status = "ARCHIVED"
+                version.is_published = False
+                version.published_at = None
+
+    _record_activity(
+        session,
+        event_type,
+        current_user.user_id,
+        report,
+        f"Report status changed to {target_status}: {report.title}.",
+    )
     try:
         session.flush()
         response = _report_response(session, report)
@@ -1133,7 +1227,7 @@ def _save_report_mutation(
                 session,
                 operation_key=mutation_key,
                 intent_hash=intent_hash,
-                event_type="report.approved",
+                event_type=event_type,
                 trace=trace,
                 target_type="report",
                 target_id=report.report_id,
@@ -1170,8 +1264,8 @@ def _save_report_mutation(
                 },
                 domain_receipt_type="report_mutation_receipts",
                 domain_receipt_id=str(receipt.id),
-                approval_status="APPROVED",
-                approved_by=current_user.user_id,
+                approval_status="APPROVED" if target_status in {"APPROVED", "ARCHIVED"} else "PENDING",
+                approved_by=current_user.user_id if target_status in {"APPROVED", "ARCHIVED"} else None,
             )
         session.commit()
     except IntegrityError as exc:

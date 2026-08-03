@@ -217,7 +217,7 @@ Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현�
 
 권한 검증의 성공·거부·실패는 모두 감사 대상이다. 최소 필드는 `run_id`/`correlation_id`, 결과와 HTTP 상태, 사용자·role, 세션, 단말 또는 WPF PC 식별자, 고객·현장 scope, 대상 종류·ID, 문서 version과 domain revision, 요청 사유, 승인자·승인번호, 전후 상태, 서버 시각이다. 비밀번호, access/refresh token, controlled copy/grant 원문, 고객 문서 본문과 AI 질의·응답 원문은 감사에 넣지 않는다.
 
-`audit_event_envelopes`와 `sync_mutation_receipts`는 operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 승인 저장, 작업순서 변경부터 적용한다. 공통 envelope는 actor/role/session, 선택 device, target/version/revision, 사유·승인, 전후 hash, 성공·거부·충돌 결과, HTTP status, server time, 선택 run ID와 필수 correlation ID를 같은 형식으로 보존한다. 보고서 승인은 승인자와 `APPROVED`를 기록하고 별도 승인 모델이 없는 행위는 `NOT_REQUIRED`로 표시해 승인을 받은 것처럼 추정하지 않는다.
+`audit_event_envelopes`와 `sync_mutation_receipts`는 operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 상태 전이, 작업순서 변경부터 적용한다. 공통 envelope는 actor/role/session, 선택 device, target/version/revision, 사유·승인, 전후 hash, 성공·거부·충돌 결과, HTTP status, server time, 선택 run ID와 필수 correlation ID를 같은 형식으로 보존한다. 보고서 `REVIEWED`는 승인 대기와 빈 승인자, `APPROVED`·`ARCHIVED`는 승인 완료와 전이 actor를 기록하고 별도 승인 모델이 없는 행위는 `NOT_REQUIRED`로 표시해 승인을 받은 것처럼 추정하지 않는다.
 
 기존 `activity_history`와 도메인 감사는 삭제·수정·백필하지 않는다. `/audit-events`는 공통 envelope가 없는 행을 `이전 형식·일부 필드 없음`으로 표시하고 누락값을 `null`로 반환한다. 공통 적용 대상이 아닌 API는 여전히 모든 공통 필드를 보존한다고 가정할 수 없으므로, 세 경로 대조에서 필수 필드가 빠진 행은 화면 결과가 맞더라도 감사 누락으로 실패 처리한다.
 

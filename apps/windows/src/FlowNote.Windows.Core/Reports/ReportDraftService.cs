@@ -165,6 +165,66 @@ public sealed class ReportDraftService(
         return string.Join(Environment.NewLine, lines);
     }
 
+    public async Task<ServerReportResponse> CreateServerDraftAsync(
+        FlowNoteServerDocumentClient serverClient,
+        string title,
+        string summary,
+        string content,
+        IEnumerable<ReportSourceCandidateRecord> selectedSources,
+        CancellationToken cancellationToken = default)
+    {
+        var selected = selectedSources.ToList();
+        ValidateSourceSet(selected);
+        var sourceMap = MapServerReportSources(selected);
+        if (sourceMap.SkippedSources.Count > 0 || sourceMap.Sources.Count != selected.Count)
+        {
+            throw new InvalidOperationException(
+                "보고서 근거 중 서버 ID가 확인되지 않은 항목이 있습니다. 원천 동기화 상태를 확인하세요.");
+        }
+
+        return await serverClient.CreateReportDraftAsync(
+            new ServerReportDraftCreateRequest
+            {
+                ReportType = "field_review",
+                Title = Clean(title, "현장 검토 보고서 초안"),
+                Summary = Clean(summary, "관리자 요약 미작성"),
+                AnalysisContent = content,
+                Sources = sourceMap.Sources
+            },
+            cancellationToken);
+    }
+
+    public Task<ServerReportResponse> MoveServerDraftToReviewAsync(
+        FlowNoteServerDocumentClient serverClient,
+        ServerReportResponse draft,
+        string title,
+        string summary,
+        string content,
+        CancellationToken cancellationToken = default)
+    {
+        if (draft.Status is not ("DRAFT" or "AI_DRAFTED"))
+        {
+            throw new InvalidOperationException("초안 상태의 보고서만 검토중으로 전환할 수 있습니다.");
+        }
+
+        var reviewIntent = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            string.Join("\n", title, summary, content)))).ToLowerInvariant();
+
+        return serverClient.SaveReportAsync(
+            new ServerReportSaveRequest
+            {
+                DraftReportId = draft.ReportId,
+                BaseReportRevision = draft.ReportRevision,
+                MutationKey = $"wpf:report-review:{draft.ReportId}:r{draft.ReportRevision}:{reviewIntent[..16]}",
+                Title = Clean(title, draft.Title),
+                Summary = Clean(summary, "관리자 요약 미작성"),
+                AnalysisContent = content,
+                ReportStatus = "REVIEWED",
+                SourceSetHashSha256 = draft.SourceSetHashSha256
+            },
+            cancellationToken);
+    }
+
     public DocumentRecord SaveDraftAsDocument(
         long folderId,
         string title,
@@ -206,26 +266,24 @@ public sealed class ReportDraftService(
         string content,
         IEnumerable<ReportSourceCandidateRecord> selectedSources,
         string actorName,
+        ServerReportResponse? reviewedDraft = null,
         CancellationToken cancellationToken = default)
     {
         var selected = selectedSources.ToList();
-        if (serverClient is null)
-        {
-            throw new InvalidOperationException("보고서 저장 직전 원천 재검증을 위해 서버 연결이 필요합니다.");
-        }
-        var verification = await FreezeServerSourcesAsync(serverClient, selected, cancellationToken);
-        if (!verification.Valid)
-        {
-            throw new InvalidOperationException(
-                "보고서 원천 재검증에 실패했습니다. " +
-                string.Join(" / ", verification.Verifications.Where(item => !item.Valid).Select(item => item.Result)));
-        }
         var localDocument = SaveDraftAsDocument(folderId, title, content, actorName, selected, summary);
         var sourceMap = MapServerReportSources(selected);
+        var workflow = reviewedDraft is null
+            ? null
+            : new ReportWorkflowContext(
+                reviewedDraft.ReportId,
+                reviewedDraft.ReportRevision,
+                reviewedDraft.ContentHashSha256 ?? string.Empty,
+                reviewedDraft.SourceSetHashSha256 ?? string.Empty);
         ServerReportResponse? saved = null;
         var syncResult = await serverSync.QueueAndTrySyncReportAsync(
             localDocument,
             serverClient,
+            workflow: workflow,
             cancellationToken: cancellationToken);
         if (serverClient is not null)
         {

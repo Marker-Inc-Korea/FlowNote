@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using FlowNote.Windows.Core.Reports;
 using FlowNote.Windows.Core.ServerApi;
 using FlowNote.Windows.Core.Storage;
@@ -62,6 +63,43 @@ public sealed class ReportDraftServerSourceVerificationTests
         Assert.False(result.Verifications.Single(item => item.SourceType == "WORK_SEQUENCE_ITEM").Valid);
     }
 
+    [Fact]
+    public async Task DraftMovesToReviewedWithRevisionAndStableIntent()
+    {
+        var services = new FlowNoteLocalServices(DatabasePath);
+        var handler = new ReportReviewHandler();
+        var client = new FlowNoteServerDocumentClient(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://flownote.example/")
+        });
+        var draft = new ServerReportResponse
+        {
+            ReportId = "report-review-test",
+            ReportType = "field_review",
+            Title = "검토 전 보고서",
+            Status = "DRAFT",
+            ReportRevision = 3,
+            ContentHashSha256 = new string('a', 64),
+            SourceSetHashSha256 = new string('b', 64)
+        };
+
+        var reviewed = await services.Reports.MoveServerDraftToReviewAsync(
+            client,
+            draft,
+            "검토 보고서",
+            "검토 요약",
+            "검토 본문");
+
+        Assert.Equal("REVIEWED", reviewed.Status);
+        Assert.Equal(4, reviewed.ReportRevision);
+        using var request = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.Equal("REVIEWED", request.RootElement.GetProperty("reportStatus").GetString());
+        Assert.Equal(3, request.RootElement.GetProperty("baseReportRevision").GetInt32());
+        Assert.Equal("검토 본문", request.RootElement.GetProperty("analysisContent").GetString());
+        Assert.StartsWith("wpf:report-review:report-review-test:r3:",
+            request.RootElement.GetProperty("mutationKey").GetString());
+    }
+
     private static ReportSourceCandidateRecord Source(
         string sourceType,
         string sourceId,
@@ -97,6 +135,40 @@ public sealed class ReportDraftServerSourceVerificationTests
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             });
+        }
+    }
+
+    private sealed class ReportReviewHandler : HttpMessageHandler
+    {
+        public string? LastRequestBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Assert.Equal("/api/v1/reports", request.RequestUri?.AbsolutePath);
+            LastRequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            const string json = """
+                {
+                  "report_id":"report-review-test",
+                  "report_type":"field_review",
+                  "title":"검토 보고서",
+                  "summary":"검토 요약",
+                  "analysis_content":"검토 본문",
+                  "status":"REVIEWED",
+                  "ai_draft_used":false,
+                  "created_at":"2026-08-03T00:00:00Z",
+                  "updated_at":"2026-08-03T00:00:01Z",
+                  "sources":[],
+                  "report_revision":4,
+                  "content_hash_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "source_set_hash_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                }
+                """;
+            return new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
         }
     }
 }

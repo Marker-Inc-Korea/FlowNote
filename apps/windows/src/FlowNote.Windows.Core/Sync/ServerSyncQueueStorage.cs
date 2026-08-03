@@ -223,7 +223,10 @@ public sealed partial class ServerSyncService
             failureReason);
     }
 
-    private void EnqueueReport(DocumentRecord reportDocument, string? failureReason)
+    private void EnqueueReport(
+        DocumentRecord reportDocument,
+        ReportWorkflowContext? workflow,
+        string? failureReason)
     {
         Enqueue(
             "report",
@@ -232,7 +235,9 @@ public sealed partial class ServerSyncService
             reportDocument.DocumentId,
             reportDocument.VersionNo,
             CreateReportIdempotencyKey(reportDocument.DocumentId),
-            failureReason);
+            failureReason,
+            workflow is null ? null : JsonSerializer.Serialize(workflow),
+            workflow?.BaseReportRevision);
     }
 
     private void Enqueue(
