@@ -452,6 +452,7 @@ public sealed partial class ServerSyncService
             case "register_access_log_closed":
             case "register_access_log_auto_closed":
             case "register_access_log_download_blocked":
+            case "register_access_log_preview_failed":
                 var accessLog = LoadAccessLog(item.EntityId);
                 if (accessLog is null)
                 {
@@ -533,6 +534,7 @@ public sealed partial class ServerSyncService
         {
             "auto_closed" or "register_access_log_auto_closed" => "register_access_log_auto_closed",
             "download_blocked" or "register_access_log_download_blocked" => "register_access_log_download_blocked",
+            "preview_failed" or "register_access_log_preview_failed" => "register_access_log_preview_failed",
             "view_closed" or "register_access_log_closed" => "register_access_log_closed",
             _ => "register_access_log_started"
         };
@@ -558,6 +560,8 @@ public sealed partial class ServerSyncService
         string? LastError);
 
     private sealed record DocumentStatusSyncPayload(string Status);
+
+    private sealed record AccessLogSyncPayload(string Reason);
 
     private sealed record DocumentTagsSyncPayload(
         int BaseRevision,

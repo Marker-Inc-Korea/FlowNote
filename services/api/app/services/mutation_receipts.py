@@ -309,6 +309,43 @@ def record_common_mutation_failure(
     session.commit()
 
 
+def record_common_audit_event(
+    session: Session,
+    *,
+    event_type: str,
+    trace: MutationTrace,
+    target_type: str,
+    target_id: str,
+    target_version_id: str | None,
+    reason: str | None,
+    result_code: str,
+    http_status: int,
+    safe_payload: dict[str, Any],
+    domain_audit_type: str | None = None,
+    domain_audit_id: str | None = None,
+) -> AuditEventEnvelope:
+    event = _new_event(
+        event_type=event_type,
+        trace=trace,
+        target_type=target_type,
+        target_id=target_id,
+        target_version_id=target_version_id,
+        target_revision=None,
+        reason=reason,
+        before_hash=None,
+        after_hash=None,
+        result="SUCCESS",
+        result_code=result_code,
+        http_status=http_status,
+        safe_payload=safe_payload,
+        domain_audit_type=domain_audit_type,
+        domain_audit_id=domain_audit_id,
+    )
+    session.add(event)
+    session.flush()
+    return event
+
+
 def _new_event(
     *,
     event_type: str,

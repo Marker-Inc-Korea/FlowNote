@@ -67,23 +67,75 @@
                              BorderThickness="0"
                              FontFamily="Consolas"
                              FontSize="13" />
+                    <Border x:Name="PreviewFailurePanel"
+                            Visibility="Collapsed"
+                            Margin="0,8,0,14"
+                            Padding="16"
+                            BorderBrush="#C98A00"
+                            BorderThickness="1"
+                            Background="#FFF8E8"
+                            CornerRadius="4">
+                        <StackPanel>
+                            <TextBlock Text="문서를 안전하게 미리 볼 수 없습니다"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Foreground="#6B4500" />
+                            <TextBlock x:Name="FailureFileTypeTextBlock"
+                                       Margin="0,12,0,0"
+                                       TextWrapping="Wrap" />
+                            <TextBlock x:Name="FailureCategoryTextBlock"
+                                       Margin="0,5,0,0"
+                                       TextWrapping="Wrap" />
+                            <TextBlock x:Name="FailureSummaryTextBlock"
+                                       Margin="0,10,0,0"
+                                       TextWrapping="Wrap" />
+                            <TextBlock x:Name="FailurePreservationTextBlock"
+                                       Margin="0,10,0,0"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap" />
+                            <TextBlock x:Name="FailureNextActionTextBlock"
+                                       Margin="0,10,0,0"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
                     <wv2:WebView2 x:Name="PdfPreview"
                                   Visibility="Collapsed"
                                   Height="520"
                                   Margin="0,8,0,14" />
-                    <DataGrid x:Name="SpreadsheetPreview"
-                              Visibility="Collapsed"
-                              Margin="0,8,0,14"
-                              MinHeight="360"
-                              MaxHeight="520"
-                              AutoGenerateColumns="True"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False"
-                              IsReadOnly="True"
-                              HeadersVisibility="All"
-                              GridLinesVisibility="All"
-                              RowHeight="32"
-                              ColumnHeaderHeight="32" />
+                    <TabControl x:Name="SpreadsheetPreview"
+                                Visibility="Collapsed"
+                                Margin="0,8,0,14"
+                                MinHeight="360"
+                                MaxHeight="520">
+                        <TabControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Name}" />
+                            </DataTemplate>
+                        </TabControl.ItemTemplate>
+                        <TabControl.ContentTemplate>
+                            <DataTemplate>
+                                <Grid Margin="8">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="8" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="{Binding Summary}"
+                                               Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <DataGrid Grid.Row="2"
+                                              ItemsSource="{Binding Table.DefaultView}"
+                                              AutoGenerateColumns="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              IsReadOnly="True"
+                                              HeadersVisibility="All"
+                                              GridLinesVisibility="All"
+                                              RowHeight="32"
+                                              ColumnHeaderHeight="32" />
+                                </Grid>
+                            </DataTemplate>
+                        </TabControl.ContentTemplate>
+                    </TabControl>
                     <Image x:Name="ImagePreview"
                            Visibility="Collapsed"
                            Stretch="Uniform"

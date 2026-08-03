@@ -57,7 +57,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- 2026-08-03 현재 코드와 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 guard는 FastAPI 181건·WPF Core 98건·Android 32건으로 일치한다. Windows에서 FastAPI 수집/JUnit과 WPF Core 수집 목록·TRX를 다시 대조하고 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 run이 같은 clean 소스 커밋에서 2회 연속 `partial_run=false`, `verification-summary.json=PASSED`여야 통합 기준선으로 인정한다.
+- 2026-08-03 현재 수집 결과는 FastAPI 182건·WPF Core 101건·Android 32건이다. 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 guard는 FastAPI 181건·WPF Core 98건·Android 32건이므로 현재 코드와 일치하지 않는다. guard를 맞춘 뒤 Windows에서 FastAPI 수집/JUnit과 WPF Core 수집 목록·TRX를 다시 대조하고, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 run을 같은 clean 소스 커밋에서 2회 연속 실행해야 한다. 두 실행 모두 `partial_run=false`, `verification-summary.json=PASSED`일 때 통합 기준선으로 인정한다.
 
 ## 일일 기록
 

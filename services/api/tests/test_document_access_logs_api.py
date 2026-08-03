@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 
 from app.core.config import Settings
 from app.db.init_db import hash_password_for_dev
-from app.db.models import DocumentAccessLog, UserAccount
+from app.db.models import AuditEventEnvelope, DocumentAccessLog, UserAccount
 from app.main import create_app
 
 
@@ -111,13 +111,41 @@ def test_create_and_list_document_access_logs() -> None:
         closed = closed_response.json()
         assert closed["action"] == "view_closed"
 
+        failed_response = client.post(
+            f"/api/v1/documents/{document['document_id']}/access-logs",
+            headers=headers,
+            json={
+                "documentVersionId": version_id,
+                "action": "preview_failed",
+                "actorId": account.user_id,
+                "reason": "PDF_CORRUPTED",
+            },
+        )
+        assert failed_response.status_code == 201, failed_response.text
+
+        blocked_response = client.post(
+            f"/api/v1/documents/{document['document_id']}/access-logs",
+            headers=headers,
+            json={
+                "documentVersionId": version_id,
+                "action": "download_blocked",
+                "actorId": account.user_id,
+            },
+        )
+        assert blocked_response.status_code == 201, blocked_response.text
+
         list_response = client.get(
             f"/api/v1/documents/{document['document_id']}/access-logs",
             headers=headers,
         )
         assert list_response.status_code == 200
         logs = list_response.json()
-        assert {log["log_id"] for log in logs} >= {started["log_id"], closed["log_id"]}
+        assert {log["log_id"] for log in logs} >= {
+            started["log_id"],
+            closed["log_id"],
+            failed_response.json()["log_id"],
+            blocked_response.json()["log_id"],
+        }
 
         with client.app.state.database.session() as session:
             saved = session.scalars(
@@ -125,7 +153,27 @@ def test_create_and_list_document_access_logs() -> None:
                     DocumentAccessLog.document_id == document["document_id"]
                 )
             ).all()
-            assert len(saved) == 2
+            assert len(saved) == 4
+            envelopes = session.scalars(
+                select(AuditEventEnvelope).where(
+                    AuditEventEnvelope.target_id == document["document_id"],
+                    AuditEventEnvelope.domain_audit_type == "document_access_log",
+                )
+            ).all()
+            assert {event.event_type for event in envelopes} >= {
+                "document.view_started",
+                "document.view_closed",
+                "document.preview_failed",
+                "document.download_blocked",
+            }
+            failed_envelope = next(
+                event for event in envelopes if event.event_type == "document.preview_failed"
+            )
+            assert failed_envelope.reason == "PDF_CORRUPTED"
+            assert failed_envelope.target_version_id == version_id
+            assert failed_envelope.actor_id == "user-admin"
+            assert failed_envelope.session_id
+            assert failed_envelope.correlation_id
 
 
 def test_document_access_log_idempotency_key_returns_existing_log() -> None:

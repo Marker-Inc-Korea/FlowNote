@@ -18,7 +18,7 @@
 - 샘플 문서 등록, 파일 업로드, Drag & Drop 등록
 - 문서 상태 변경과 공개 버전 지정
 - 문서 태그 저장과 표시
-- TXT, PDF, XLSX, 이미지 미리보기
+- TXT의 인코딩·긴 행, PDF의 암호·손상·큰 페이지, XLSX의 다중 시트·수식·병합 범위, 이미지의 회전·투명도·고해상도를 안전 한도 안에서 처리하는 앱 내부 미리보기와 구조화된 한글 실패 안내
 - 문서 열람 시작/종료 로그
 - viewer 수동 닫힘과 다운로드 차단 로그
 - 허용 role의 서버 1회성 controlled copy 저장과 SHA-256 검증, 비허용 role의 기존 차단 안내·이력
@@ -169,7 +169,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-2026-08-03 현재 수집 결과는 FastAPI 182건·WPF Core 97건이며 표준 스크립트 guard는 이전 기준인 170건·92건을 유지한다. Windows에서 수집 목록·JUnit·원시 TRX를 현재 코드와 대조한 뒤, 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
+2026-08-03 현재 수집 결과는 FastAPI 182건·WPF Core 101건이다. 표준 스크립트 guard는 FastAPI 181건·WPF Core 98건으로 현재 코드와 일치하지 않는다. Windows에서 수집 목록·JUnit·원시 TRX를 현재 코드와 대조하고 guard를 맞춘 뒤, 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해야 한다. 두 실행에서 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

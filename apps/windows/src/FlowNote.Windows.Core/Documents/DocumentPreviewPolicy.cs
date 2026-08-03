@@ -4,16 +4,15 @@ namespace FlowNote.Windows.Core.Documents;
 
 public static class DocumentPreviewPolicy
 {
-    public const long MaxTextPreviewBytes = 128 * 1024;
+    public const long MaxTextPreviewBytes = 8 * 1024 * 1024;
     public const int MaxSpreadsheetPreviewRows = 100;
+    public const int MaxSpreadsheetPreviewColumns = 80;
+    public const int MaxSpreadsheetPreviewSheets = 12;
+    public const int MaxSpreadsheetMergeRanges = 200;
+    public const long MaxSpreadsheetXmlPartBytes = 32 * 1024 * 1024;
+    public const int MaxSpreadsheetCompressionRatio = 200;
+    public const int MaxImagePreviewPixelDimension = 4096;
     public const long LargeSampleBytes = 5 * 1024 * 1024;
-    public const string WebView2RuntimeUnavailableMessage =
-        "문서 뷰어를 시작할 수 없습니다.\n" +
-        "누락 항목: Microsoft Edge WebView2 Runtime\n" +
-        "보존된 데이터: 문서 원본, 로컬 DB, 열람 이력은 삭제되지 않았습니다.\n" +
-        "담당자: 현장 관리자 또는 Windows 설치 담당자\n" +
-        "다음 조치: 승인된 WebView2 Runtime을 설치한 뒤 FlowNote를 다시 실행하세요. 계속 실패하면 설치 상태와 보안 정책 점검을 요청하세요.";
-
     private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".txt",
@@ -102,35 +101,35 @@ public static class DocumentPreviewPolicy
 
     public static string BuildLargeTextMessage(long sizeBytes)
     {
-        return $"TXT 파일이 미리보기 기준보다 큽니다.\n파일 크기: {sizeBytes:N0} bytes\n현재 클라이언트는 {MaxTextPreviewBytes:N0} bytes 이하 텍스트만 본문으로 표시하고, 큰 파일은 메타데이터와 열람 이력만 남깁니다.";
+        return $"TXT 파일이 전체 표시 기준보다 큽니다.\n파일 크기: {sizeBytes:N0} bytes\n현재 클라이언트는 긴 행을 행당 {DocumentTextPreviewReader.MaxDisplayedLineCharacters:N0}자로 제한하고 본문 앞부분을 최대 {DocumentTextPreviewReader.MaxDisplayedCharacters:N0}자까지 표시합니다. 원본과 열람 이력은 그대로 보존됩니다.";
     }
 
     public static IReadOnlyList<DocumentPreviewSampleCriterion> SampleCriteria { get; } =
     [
-        new("TXT", "정상", ".txt UTF-8 본문, 128 KiB 이하", "본문 표시, 열람 시작/종료/다운로드 차단/자동 닫힘 로그"),
-        new("TXT", "비정상", ".txt 확장자이지만 UTF-8로 읽을 수 없거나 접근 불가", "한글 오류 안내와 document.preview_failed 이력"),
+        new("TXT", "정상", ".txt UTF-8/UTF-16/CP949 본문", "본문 표시, 열람 시작/종료/다운로드 차단 로그"),
+        new("TXT", "비정상", ".txt 확장자이지만 지원 인코딩으로 읽을 수 없거나 접근 불가", "구조화된 한글 오류 안내와 document.preview_failed 이력"),
         new("TXT", "한글 파일명", "예: 작업표준서-혼합공정.txt", "파일명과 본문 한글 표시"),
         new("TXT", "공백/괄호 파일명", "예: 작업표준서 (혼합 공정).txt", "파일명 공백과 괄호 유지, 열람 로그 기록"),
         new("TXT", "긴 경로", "한글 폴더와 공백이 포함된 160자 이상 로컬 경로", "경로 해석 실패 없이 본문 또는 한글 실패 안내 표시"),
-        new("TXT", "큰 파일", "128 KiB 초과", "본문 대신 메타데이터 표시와 제한 이력"),
+        new("TXT", "큰 파일", "긴 문서 또는 4,096자 초과 행", "긴 행과 본문 뒷부분만 생략하고 원본을 변경하지 않음"),
         new("PDF", "정상", ".pdf 형식 검증 통과", "WebView2 표시, PDF 저장/인쇄 도구 숨김, 다운로드 이벤트 차단"),
         new("PDF", "비정상", ".pdf 확장자이지만 PDF 파서가 열 수 없음", "WebView2 이동 없이 한글 오류 안내와 실패 이력"),
         new("PDF", "한글 파일명", "예: 도면-프레스A-금형배치.pdf", "파일명 한글 유지와 열람 로그"),
         new("PDF", "공백/괄호 파일명", "예: 도면 (프레스 A)-금형배치.pdf", "URI 변환과 WebView2 이동 시 앱 종료 없음"),
         new("PDF", "긴 경로", "한글 폴더와 공백이 포함된 160자 이상 로컬 경로", "경로 해석 실패 없이 표시 또는 한글 실패 안내"),
         new("PDF", "큰 파일", "5 MiB 이상 또는 현장 기준 대용량", "앱 종료 없이 WebView2 표시 또는 실패 안내"),
-        new("XLSX", "정상", "sheet1.xml이 있는 .xlsx", "첫 번째 시트 최대 100행 표시"),
+        new("XLSX", "정상", "workbook 관계가 정상인 .xlsx", "최대 12개 시트, 시트당 100행·80열과 수식 캐시값·병합 범위 표시"),
         new("XLSX", "비정상", "ZIP/XML 구조가 깨진 .xlsx", "한글 오류 안내와 실패 이력"),
         new("XLSX", "한글 파일명", "예: 품질점검표-라인A.xlsx", "파일명 한글 유지와 첫 시트 표시"),
         new("XLSX", "공백/괄호 파일명", "예: 품질점검표 (라인 A).xlsx", "파일명 공백과 괄호 유지, 첫 시트 표시"),
         new("XLSX", "긴 경로", "한글 폴더와 공백이 포함된 160자 이상 로컬 경로", "경로 해석 실패 없이 최대 100행 표시"),
-        new("XLSX", "큰 파일", "5 MiB 이상 또는 행/열이 많은 파일", "최대 100행 표시, 앱 종료 없음"),
-        new("이미지", "정상", ".jpg/.png/.bmp/.gif/.tif/.webp", "이미지 표시와 메타데이터 표시"),
+        new("XLSX", "큰 파일", "5 MiB 이상 또는 시트/행/열이 많은 파일", "최대 12개 시트와 시트당 100행·80열 표시, 앱 종료 없음"),
+        new("이미지", "정상", ".jpg/.png/.bmp/.gif/.tif/.webp", "EXIF 회전과 지원 형식 투명도를 반영한 이미지 표시"),
         new("이미지", "비정상", "이미지 디코더가 읽을 수 없는 파일", "한글 오류 안내와 실패 이력"),
         new("이미지", "한글 파일명", "예: 사진-설비점검-라인A.jpg", "파일명 한글 유지와 이미지 표시"),
         new("이미지", "공백/괄호 파일명", "예: 사진 (설비 점검)-라인A.jpg", "URI 변환과 이미지 디코딩 시 앱 종료 없음"),
         new("이미지", "긴 경로", "한글 폴더와 공백이 포함된 160자 이상 로컬 경로", "경로 해석 실패 없이 이미지 또는 한글 실패 안내"),
-        new("이미지", "큰 파일", "5 MiB 이상 또는 고해상도", "앱 종료 없이 이미지 표시 또는 실패 안내")
+        new("이미지", "큰 파일", "5 MiB 이상 또는 고해상도", "최대 변 4,096px로 안전 축소해 표시하거나 구조화된 실패 안내")
     ];
 
     public static IReadOnlyList<DocumentPreviewExceptionSampleCriterion> FactoryExceptionSampleCriteria { get; } =
@@ -141,9 +140,9 @@ public static class DocumentPreviewPolicy
             "작업표준서-혼합공정-대용량.txt",
             "Text",
             DocumentPreviewKind.Text,
-            "128 KiB 초과 익명 텍스트",
-            "본문 대신 메타데이터와 한글 제한 안내를 표시하고 document.preview_failed 이력을 남긴다.",
-            true),
+            "긴 행과 긴 본문이 있는 합성 익명 텍스트",
+            "긴 행 또는 문서 뒷부분만 생략하고 원본과 열람 이력을 보존한다.",
+            false),
         new(
             "PDF",
             "손상",
@@ -178,7 +177,7 @@ public static class DocumentPreviewPolicy
             "Spreadsheet",
             DocumentPreviewKind.Spreadsheet,
             "5 MiB 이상 익명 엑셀 양식",
-            "첫 번째 시트를 최대 100행까지 표시하고 열람/종료/다운로드 차단 로그를 남긴다.",
+            "최대 12개 시트를 시트당 100행·80열까지 표시하고 열람/종료/다운로드 차단 로그를 남긴다.",
             false),
         new(
             "이미지",

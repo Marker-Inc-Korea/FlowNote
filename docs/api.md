@@ -212,10 +212,10 @@ grant 응답은 `grant_id`, 상대 `stream_url`, 문서/버전 ID, 만료 시각
 
 | Method | Path | 설명 |
 | --- | --- | --- |
-| POST | `/api/v1/documents/{document_id}/access-logs` | 문서 접근 로그 등록 |
+| POST | `/api/v1/documents/{document_id}/access-logs` | 문서 열람 시작·종료, 미리보기 실패, 다운로드 차단 접근 로그와 공통 event envelope 등록 |
 | GET | `/api/v1/documents/{document_id}/access-logs` | 문서 접근 로그 조회 |
 
-`action` 값은 `view_started`, `view_closed`, `download_blocked`, `auto_closed`, controlled copy 이벤트와 Android의 `android_view_granted`, `android_view_stream_started`, `android_view_completed`, `android_view_failed`, `android_view_blocked`, `android_view_expired`를 사용한다. 두 계약의 이벤트는 사용자, 세션에 연결된 단말, 문서 버전, IP, user agent, 사유를 `document_access_logs`와 `activity_history`에 함께 남긴다. 존재하지 않는 문서는 외래키로 문서 접근 로그를 만들 수 없으므로 요청 ID와 사유를 `activity_history`에 남긴다. 조회는 `admin`, `system-admin`만 가능하다.
+`action` 값은 `view_started`, `view_closed`, `preview_failed`, `download_blocked`, `auto_closed`, controlled copy 이벤트와 Android의 `android_view_granted`, `android_view_stream_started`, `android_view_completed`, `android_view_failed`, `android_view_blocked`, `android_view_expired`를 사용한다. Windows 열람 시작·종료·미리보기 실패·다운로드 차단은 사용자, 세션에 연결된 단말, 문서 버전, correlation ID와 정제된 실패 코드를 `document_access_logs`와 공통 `audit_event_envelopes`에 함께 남긴다. 존재하지 않는 문서는 외래키로 문서 접근 로그를 만들 수 없으므로 요청 ID와 사유를 `activity_history`에 남긴다. 조회는 `admin`, `system-admin`만 가능하다.
 
 ## FieldComment
 

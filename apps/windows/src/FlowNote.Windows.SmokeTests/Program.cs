@@ -1287,6 +1287,29 @@ try
         services.ServerSync.CountQueuedForEntity("document_access_log", blockedDownloadLogId.ToString(), "FAILED") == 1,
         "missing server URL should create one failed download blocked access log sync row");
 
+    var previewFailedLogId = services.DocumentViewLogs.RecordPreviewFailed(
+        koreanPdfDocument.DocumentId,
+        koreanPdfDocument.VersionNo,
+        memberLogin.DisplayName ?? "team member",
+        "PDF_CORRUPTED");
+    var previewFailedLog = services.DocumentViewLogs.GetLog(previewFailedLogId);
+    Require(previewFailedLog?.CloseReason == "preview_failed", "preview failure should keep a separate access log");
+    Require(
+        services.History.ListHistory().Any(item =>
+            item.EventType == "document.preview_failed" &&
+            item.TargetId == koreanPdfDocument.DocumentId &&
+            item.Message.Contains("PDF_CORRUPTED", StringComparison.Ordinal)),
+        "preview failure should keep only the stable failure code in local history");
+    var previewFailedSyncResult = await services.ServerSync.QueueAndTrySyncAccessLogAsync(
+        previewFailedLog!,
+        "preview_failed",
+        null,
+        reason: "PDF_CORRUPTED");
+    Require(!previewFailedSyncResult.Success, "missing server URL should keep preview failure sync queued locally");
+    Require(
+        services.ServerSync.CountQueuedForEntity("document_access_log", previewFailedLogId.ToString(), "FAILED") == 1,
+        "missing server URL should create one failed preview failure access log sync row");
+
     var previewCriteria = DocumentPreviewPolicy.SampleCriteria;
     foreach (var fileType in new[] { "TXT", "PDF", "XLSX", "이미지" })
     {
@@ -1336,8 +1359,8 @@ try
         if (criterion.FileType == "TXT" && criterion.CaseName == "대용량")
         {
             Require(
-                new FileInfo(samplePath).Length > DocumentPreviewPolicy.MaxTextPreviewBytes,
-                "large TXT sample should exceed the text preview limit");
+                new FileInfo(samplePath).Length > DocumentTextPreviewReader.MaxDisplayedCharacters,
+                "large TXT sample should exceed the safe displayed character limit");
         }
 
         if (criterion.FileType is "XLSX" || criterion is { FileType: "이미지", CaseName: "고해상도" })
@@ -1362,7 +1385,7 @@ try
             criterion.DocumentType,
             smokeActorName,
             samplePath,
-            tags: ["preview-exception-smoke", criterion.FileType, criterion.CaseName]);
+            tags: ["preview-exception-smoke", "sample-source:SYNTHETIC", criterion.FileType, criterion.CaseName]);
 
         var exceptionWindowCloseLogId = services.DocumentViewLogs.StartDocumentView(
             exceptionDocument.DocumentId,
@@ -1449,7 +1472,7 @@ try
             $"{criterion.FileType} exception preview should record download blocked history");
 
         Console.WriteLine(
-            $"Preview exception smoke: type={criterion.FileType}, case={criterion.CaseName}, sample={samplePath}, logs={exceptionWindowCloseLogId}/{exceptionAutoCloseLogId}/{exceptionDownloadBlockedLogId}");
+            $"Preview exception smoke: source=SYNTHETIC, type={criterion.FileType}, case={criterion.CaseName}, sample={samplePath}, logs={exceptionWindowCloseLogId}/{exceptionAutoCloseLogId}/{exceptionDownloadBlockedLogId}");
     }
 
     var previewTxtPath = Path.Combine(testDirectory, $"미리보기-TXT-한글-{runStamp}.txt");
@@ -1481,7 +1504,7 @@ try
             documentType,
             smokeActorName,
             samplePath,
-            tags: ["preview-smoke", fileType]);
+            tags: ["preview-smoke", "sample-source:SYNTHETIC", fileType]);
 
         var previewWindowCloseLogId = services.DocumentViewLogs.StartDocumentView(
             previewDocument.DocumentId,
@@ -1548,7 +1571,7 @@ try
             $"{fileType} preview should record download blocked history");
 
         Console.WriteLine(
-            $"Preview audit smoke: type={fileType}, sample={samplePath}, logs={previewWindowCloseLogId}/{previewAutoCloseLogId}/{previewDownloadBlockedLogId}");
+            $"Preview audit smoke: source=SYNTHETIC, type={fileType}, sample={samplePath}, logs={previewWindowCloseLogId}/{previewAutoCloseLogId}/{previewDownloadBlockedLogId}");
     }
 
     var leadFieldComment = services.FieldComments.AddDocumentComment(
