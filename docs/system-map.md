@@ -58,7 +58,7 @@ WPF 메인 화면은 로그인 역할에 맞춘 첫 업무 3개를 기존 메뉴
 | Android 인수인계 | Android 암호화 outbox → 서버 | 서버 `handover_id`, 연결 채널·원천·수신자 receipt, 승인 세션의 `device_id` | `android:{deviceId}:handover:{localId}`. 같은 키의 요청 내용이 다르면 `IDEMPOTENCY_KEY_REUSED` | 서버가 인수인계·채널 메시지·receipt를 한 transaction에 한 번만 저장하고 기존 `handover_id`를 재전송 응답에 반환 |
 | 알림 cursor | 서버 → WPF/Android | 서버 scope·user별 high-water cursor와 공개 `message_id` | `message_id` 유일 처리. cursor 역행은 `SERVER_EPOCH_CHANGED` 복구 절차 | 표시/처리 row와 cursor 전진이 한 로컬 transaction에 완료 |
 
-operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 승인 저장과 작업순서 변경은 도메인 receipt를 유지하면서 공통 `SyncMutationReceipt`와 `AuditEventEnvelope`를 연결한다. 성공 시 업무 변경·도메인 receipt·공통 두 행을 한 transaction에 저장한다. 문서 상태, FieldComment 검토, 보고서 승인, 작업순서 항목 상태의 거부·충돌은 업무 변경을 rollback한 뒤 공통 결과만 확정해 같은 요청의 재시도가 같은 HTTP 결과로 수렴하도록 한다. 기존 `activity_history`는 백필하지 않으며 `/api/v1/audit-events`에서 누락 필드를 명시한 이전 형식으로 함께 조회한다.
+operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 상태 전이와 작업순서 변경은 도메인 receipt를 유지하면서 공통 `SyncMutationReceipt`와 `AuditEventEnvelope`를 연결한다. 성공 시 업무 변경·도메인 receipt·공통 두 행을 한 transaction에 저장한다. 문서 상태, FieldComment 검토, 보고서 상태 전이, 작업순서 항목 상태의 거부·충돌은 업무 변경을 rollback한 뒤 공통 결과만 확정해 같은 요청의 재시도가 같은 HTTP 결과로 수렴하도록 한다. 기존 `activity_history`는 백필하지 않으며 `/api/v1/audit-events`에서 누락 필드를 명시한 이전 형식으로 함께 조회한다.
 
 WPF `변경 이력`은 `/api/v1/change-history` read model을 사용해 문서, FieldComment, 보고서, 작업순서와 공통 동기화 mutation을 한 목록에 표시한다. `audit_event_envelopes`가 권위 원천이며 read model은 저장하지 않는다. 첫 페이지의 event ID 상한을 커서에 고정하고 조치 필요·문제 유형 우선순위·시간 순으로 읽어 pagination 중 신규 event가 섞이지 않게 한다. 충돌, 실패, 미연결 mutation, 필수 감사 필드 누락과 권한 거부 뒤 revision 변경을 먼저 표시하고 영향, 현재 상태, 담당자, 다음 행동을 함께 계산한다. 문서 충돌은 로컬 이력의 충돌 조치, FieldComment는 검토, 보고서는 보고서, 작업순서는 작업판 화면으로 연결하며 원본 event envelope는 같은 창에서 다시 조회한다. 목록 합계와 상세는 동일한 역할·채널 멤버십 정책을 사용하고 권한 밖 대상은 `404`와 목록 제외로 존재를 숨긴다.
 
@@ -212,9 +212,9 @@ Windows와 Android의 알림은 장기적으로 개인 메신저가 아니라 �
 
 ## 보고서
 
-보고서는 FieldComment, 문서, 작업순서 항목/이력을 근거로 수동 초안을 만들고 문서로 저장하는 최소 흐름이 구현되어 있다. WPF 초안 화면은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_HISTORY` 후보 가운데 서로 다른 source type을 2종 이상 선택하게 한다. Core의 초안 고정은 `WORK_SEQUENCE_ITEM`도 지원하며 작업순서 항목은 서버의 현재 항목과 최신 변경 기록을, 작업순서 이력은 선택한 변경 기록의 존재와 ID를 확인한다. 검증할 수 없는 원천 유형이나 달라진 snapshot이 하나라도 있으면 초안 생성을 중단한다. 검증을 통과한 snapshot은 저장 직전에 다시 확인한다.
+보고서는 FieldComment 작업함·상세에서 `SELECTED` 원천을 넘기고, 공개 문서와 작업순서 항목/이력을 더해 수동 초안을 만드는 흐름으로 연결된다. WPF 초안 화면은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_HISTORY` 후보 가운데 서로 다른 source type을 2종 이상 선택하게 하고 기존 보고서의 고정 source도 유형별로 보여준다. Core의 초안 고정은 `WORK_SEQUENCE_ITEM`도 지원하며 작업순서 항목은 서버의 현재 항목과 최신 변경 기록을, 작업순서 이력은 선택한 변경 기록의 존재와 ID를 확인한다. 검증할 수 없는 원천 유형이나 달라진 snapshot이 하나라도 있으면 서버 초안을 만들지 않는다.
 
-최초 재검증에서 서버에 연결할 수 없거나 source가 달라졌으면 WPF는 로컬 보고서 파일, `report_sources`, `server_sync_queue`를 만들지 않는다. 재검증을 통과하면 로컬 보고서 문서와 source를 보존한 뒤 `/api/v1/reports` 저장을 시도한다. 이 시점 이후 전송이 실패하면 `server_sync_queue`에 남기고 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다. 서버는 FieldComment의 관찰 버전과 선정 `review_revision`, 원천 hash를 `report_sources`에 고정한다. 최종 문서 저장 직전에 상태·version·revision·hash·채널 권한을 다시 읽고 달라졌으면 `409`로 차단한다. 생성 문서는 source의 type/ID/version/revision/trace/hash를 포함해 최종 문서에서 원천까지 역추적된다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
+서버 보고서는 `DRAFT → REVIEWED → APPROVED → ARCHIVED`로 전이한다. WPF는 검토중 전이를 거쳐 확정 저장하며 확정 단계에서만 문서를 생성한다. 생성 문서 상태는 요청의 `documentStatus`로 연결하므로 보고서 확정이 자동 공개 최신본을 뜻하지 않는다. 검토중 전환 뒤 편집 내용이 달라지면 새 초안과 재검토를 요구하고, 보고서를 보관하면 연결된 생성 문서와 버전도 함께 보관하되 고정 source와 receipt는 유지한다. 최종 저장은 로컬 보고서 문서와 source를 먼저 보존한 뒤 `/api/v1/reports`를 호출한다. 전송 실패나 source 변경 충돌은 `server_sync_queue`에 남고 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다. 서버는 FieldComment의 관찰 버전과 선정 `review_revision`, 원천 hash를 `report_sources`에 고정하고 상태 전이·문서 저장 직전에 상태·version·revision·hash·채널 권한을 다시 검사한다. 확정 뒤 원천이 바뀌어도 보고서 상세는 당시 source snapshot을 유지하며 현재 채널 권한을 통과한 사용자가 type/ID/version/revision/trace/hash로 역추적할 수 있다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
 
 ## 후속 연동
 

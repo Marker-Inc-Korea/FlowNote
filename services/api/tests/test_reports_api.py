@@ -303,6 +303,127 @@ def test_report_draft_final_document_and_source_traceability() -> None:
         assert linked_report["generated_document"]["generated_version_ids"]
 
 
+def test_report_review_approval_archive_workflow_keeps_hashes_and_receipts_aligned() -> None:
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        document = create_document(client, headers)
+        field_comment = create_field_comment(client, headers, document)
+        draft_response = client.post(
+            "/api/v1/reports/drafts",
+            headers=headers,
+            json={
+                "reportType": "field_review",
+                "title": "단계형 현장 검토 보고서",
+                "analysisContent": "검토된 FieldComment를 공개 문서와 대조한다.",
+                "sources": [
+                    {"sourceType": "FIELD_COMMENT", "sourceId": field_comment["comment_id"]},
+                    {
+                        "sourceType": "DOCUMENT",
+                        "sourceId": document["document_id"],
+                        "sourceVersionId": document["published_version_id"],
+                    },
+                ],
+            },
+        )
+        assert draft_response.status_code == 201, draft_response.text
+        draft = draft_response.json()
+
+        review_key = f"report-review:{uuid4().hex}"
+        review_response = client.post(
+            "/api/v1/reports",
+            headers=headers,
+            json={
+                "draftReportId": draft["report_id"],
+                "baseReportRevision": draft["report_revision"],
+                "mutationKey": review_key,
+                "reportStatus": "REVIEWED",
+                "sourceSetHashSha256": draft["source_set_hash_sha256"],
+            },
+        )
+        assert review_response.status_code == 201, review_response.text
+        reviewed = review_response.json()
+        assert reviewed["status"] == "REVIEWED"
+        assert reviewed["generated_document_id"] is None
+
+        approval_key = f"report-approve:{uuid4().hex}"
+        approval_response = client.post(
+            "/api/v1/reports",
+            headers=headers,
+            json={
+                "draftReportId": reviewed["report_id"],
+                "baseReportRevision": reviewed["report_revision"],
+                "mutationKey": approval_key,
+                "reportStatus": "APPROVED",
+                "saveAsDocument": True,
+                "documentStatus": "IN_REVIEW",
+                "sourceSetHashSha256": reviewed["source_set_hash_sha256"],
+            },
+        )
+        assert approval_response.status_code == 201, approval_response.text
+        approved = approval_response.json()
+        assert approved["status"] == "APPROVED"
+        assert approved["generated_document"]["status"] == "IN_REVIEW"
+
+        archive_key = f"report-archive:{uuid4().hex}"
+        archive_response = client.post(
+            "/api/v1/reports",
+            headers=headers,
+            json={
+                "draftReportId": approved["report_id"],
+                "baseReportRevision": approved["report_revision"],
+                "mutationKey": archive_key,
+                "reportStatus": "ARCHIVED",
+                "sourceSetHashSha256": approved["source_set_hash_sha256"],
+            },
+        )
+        assert archive_response.status_code == 201, archive_response.text
+        archived = archive_response.json()
+        assert archived["status"] == "ARCHIVED"
+        assert archived["generated_document"]["status"] == "ARCHIVED"
+
+        reopened_source = client.patch(
+            f"/api/v1/field-comments/{field_comment['comment_id']}",
+            headers=headers,
+            json={
+                "status": "REVIEWED",
+                "transitionReason": "보고서 확정 뒤 원천 재검토",
+                "baseReviewRevision": field_comment["review_revision"],
+                "mutationKey": f"reopen-after-report:{uuid4().hex}",
+            },
+        )
+        assert reopened_source.status_code == 200, reopened_source.text
+        historical_detail = client.get(
+            f"/api/v1/reports/{archived['report_id']}",
+            headers=headers,
+        )
+        assert historical_detail.status_code == 200, historical_detail.text
+        historical_field_comment = next(
+            source
+            for source in historical_detail.json()["sources"]
+            if source["source_type"] == "FIELD_COMMENT"
+        )
+        assert historical_field_comment["source_revision"] == field_comment["review_revision"]
+        assert historical_field_comment["source_hash_sha256"] == field_comment["source_hash_sha256"]
+
+        with client.app.state.database.session() as session:
+            receipts = session.scalars(
+                select(ReportMutationReceipt)
+                .where(ReportMutationReceipt.report_id == draft["report_id"])
+                .order_by(ReportMutationReceipt.report_revision)
+            ).all()
+            assert [receipt.report_revision for receipt in receipts] == [2, 3, 4]
+            response_by_revision = {
+                reviewed["report_revision"]: reviewed,
+                approved["report_revision"]: approved,
+                archived["report_revision"]: archived,
+            }
+            for receipt in receipts:
+                response = response_by_revision[receipt.report_revision]
+                assert receipt.content_hash_sha256 == response["content_hash_sha256"]
+                assert receipt.source_set_hash_sha256 == response["source_set_hash_sha256"]
+                assert receipt.generated_document_id == response["generated_document_id"]
+
+
 def test_report_save_rejects_source_changed_after_selection_with_409() -> None:
     with create_test_client() as client:
         headers = auth_headers(client)

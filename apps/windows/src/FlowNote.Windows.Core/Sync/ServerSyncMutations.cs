@@ -8,7 +8,6 @@ using FlowNote.Windows.Core.Storage;
 using FlowNote.Windows.Core.Tags;
 using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace FlowNote.Windows.Core.Sync;
@@ -626,7 +625,11 @@ public sealed partial class ServerSyncService
         FlowNoteServerDocumentClient serverClient,
         CancellationToken cancellationToken)
     {
-        if (TryGetReportServerMapping(item.EntityId) is { ServerReportId: not null } existing)
+        var workflow = string.IsNullOrWhiteSpace(item.PayloadJson)
+            ? null
+            : JsonSerializer.Deserialize<ReportWorkflowContext>(item.PayloadJson);
+        if (workflow is null &&
+            TryGetReportServerMapping(item.EntityId) is { ServerReportId: not null } existing)
         {
             MarkQueueSynced(
                 item.Id,
@@ -657,9 +660,9 @@ public sealed partial class ServerSyncService
         }
 
         var content = await File.ReadAllTextAsync(filePath, cancellationToken);
-        var sources = MapQueuedReportSources(item.EntityId);
+        var sources = workflow is null ? MapQueuedReportSources(item.EntityId) : [];
         var sourceCount = CountQueuedReportSources(item.EntityId);
-        if (sourceCount == 0 || sources.Count < sourceCount)
+        if (sourceCount == 0 || (workflow is null && sources.Count < sourceCount))
         {
             throw new InvalidOperationException(SyncFailureMessages.ReportSourceDependencyNotSynced);
         }
@@ -669,60 +672,23 @@ public sealed partial class ServerSyncService
             {
                 IdempotencyKey = item.IdempotencyKey,
                 MutationKey = item.IdempotencyKey,
+                DraftReportId = workflow?.DraftReportId,
+                BaseReportRevision = workflow?.BaseReportRevision,
                 ReportType = "field_review",
                 Title = document.Title,
                 Summary = document.LatestComment,
                 AnalysisContent = content,
-                Sources = sources,
+                Sources = workflow is null ? sources : null,
                 SaveAsDocument = true,
                 DocumentTitle = document.Title,
-                DocumentStatus = document.Status
+                DocumentStatus = document.Status,
+                ReportStatus = workflow?.TargetStatus ?? "APPROVED",
+                SourceSetHashSha256 = workflow?.SourceSetHashSha256
             },
             cancellationToken);
 
-        VerifyReportReadBack(response);
+        ReportHashVerifier.Verify(response);
         LinkReportDocumentToServer(item, document, response, DateTime.UtcNow);
     }
-
-    private static void VerifyReportReadBack(ServerReportResponse response)
-    {
-        if (response.ReportRevision < 1 || string.IsNullOrWhiteSpace(response.ContentHashSha256) ||
-            response.ContentHashSha256.Length != 64 || string.IsNullOrWhiteSpace(response.SourceSetHashSha256) ||
-            response.SourceSetHashSha256.Length != 64)
-        {
-            throw new InvalidOperationException("서버 보고서 revision/content/source-set hash read-back이 불완전합니다.");
-        }
-
-        var normalized = response.Sources
-            .Select(source => new SortedDictionary<string, object?>
-            {
-                ["relation_type"] = source.RelationType,
-                ["source_hash_sha256"] = source.SourceHashSha256,
-                ["source_id"] = source.SourceId,
-                ["source_revision"] = source.SourceRevision,
-                ["source_type"] = source.SourceType,
-                ["source_version_id"] = source.SourceVersionId
-            })
-            .OrderBy(item => Convert.ToString(item["source_type"], System.Globalization.CultureInfo.InvariantCulture))
-            .ThenBy(item => Convert.ToString(item["source_id"], System.Globalization.CultureInfo.InvariantCulture))
-            .ThenBy(item => Convert.ToString(item["source_version_id"], System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty)
-            .ThenBy(item => Convert.ToString(item["relation_type"], System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty)
-            .ThenBy(item => Convert.ToString(item["source_hash_sha256"], System.Globalization.CultureInfo.InvariantCulture))
-            .ToList();
-        var canonical = JsonSerializer.Serialize(normalized, new JsonSerializerOptions
-        {
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        });
-        var readBackHash = ComputeSha256(canonical);
-        if (!string.Equals(readBackHash, response.SourceSetHashSha256, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new FlowNoteServerConflictException(
-                "REPORT_SOURCE_SET_HASH_MISMATCH",
-                "서버 보고서 source read-back hash가 aggregate hash와 다릅니다.",
-                null, response.ReportRevision, response.Status, null, null,
-                $"server={response.SourceSetHashSha256}; readBack={readBackHash}");
-        }
-    }
-
 
 }

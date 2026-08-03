@@ -30,7 +30,7 @@ FastAPI 신규 테스트 3건은 원천 event 수와 필터 합계 일치, snaps
 
 ## 2026-08-03 작업 102 공통 mutation receipt와 감사 envelope
 
-FastAPI는 operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 승인 저장과 작업순서 변경에 기존 도메인 receipt와 공통 `sync_mutation_receipts`, `audit_event_envelopes`를 함께 기록한다. 성공 업무 변경은 세 기록을 한 transaction에 저장한다. 문서 상태, FieldComment 검토, 보고서 승인, 작업순서 항목 상태의 거부·충돌은 업무 변경을 rollback한 뒤 공통 결과를 확정해 같은 요청의 재시도가 같은 HTTP 결과로 수렴한다. 기존 `activity_history`는 백필하지 않고 `/api/v1/audit-events`에서 누락 필드를 표시한 이전 형식으로 함께 조회한다.
+FastAPI는 operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 상태 전이와 작업순서 변경에 기존 도메인 receipt와 공통 `sync_mutation_receipts`, `audit_event_envelopes`를 함께 기록한다. 성공 업무 변경은 세 기록을 한 transaction에 저장한다. 문서 상태, FieldComment 검토, 보고서 상태 전이, 작업순서 항목 상태의 거부·충돌은 업무 변경을 rollback한 뒤 공통 결과를 확정해 같은 요청의 재시도가 같은 HTTP 결과로 수렴한다. 기존 `activity_history`는 백필하지 않고 `/api/v1/audit-events`에서 누락 필드를 표시한 이전 형식으로 함께 조회한다.
 
 현재 OpenAPI는 루트 `GET /`와 새 `GET /api/v1/audit-events`를 포함해 144개 method/path 조합이며 `services/api/README.md`의 API 표와 누락·초과 없이 일치한다. SQLAlchemy ORM은 `audit_event_envelopes`, `sync_mutation_receipts`를 포함해 64개 테이블이다. 공통 receipt·DB 집중 회귀 9/9와 누적 시험 DB 전체 회귀 176/176이 통과했고 `services/api`의 `.venv/bin/python -m ruff check app tests`도 통과했다.
 

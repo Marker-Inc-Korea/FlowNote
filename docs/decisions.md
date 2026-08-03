@@ -2,12 +2,22 @@
 
 이 문서는 2026-08-03 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
 
+## 2026-08-03. 보고서 작성은 FieldComment 정제에서 시작해 단계형 상태와 고정 원천으로 끝낸다
+
+- FieldComment 작업함의 다중 선택과 상세의 현재 항목에서 `SELECTED` 원천을 보고서 화면으로 넘긴다. 보고서 화면은 현재 공개 문서, 작업순서 이력, 기존 보고서의 고정 source를 유형별로 함께 보여준다.
+- 서버 보고서는 `DRAFT → REVIEWED → APPROVED → ARCHIVED`로 전이한다. 기존 API 호환을 위해 상태를 생략한 저장은 `APPROVED`지만 WPF 업무 흐름은 `REVIEWED`를 거친다. 문서는 `APPROVED` 전이에서만 생성하고 명시한 문서 상태를 사용하므로 자동 공개 최신본으로 취급하지 않는다.
+- `REVIEWED` 이후에는 고정 source를 교체하지 않는다. `ARCHIVED` 전이는 연결된 생성 문서와 버전을 함께 보관하고 공개 포인터를 해제하되 고정 source와 receipt는 보존한다.
+- 검토·확정·보관 전이 직전에 source의 현재 적격 상태, version/revision/hash와 채널 권한을 다시 검증한다. source가 바뀌면 최신값으로 자동 대체하지 않고 저장을 거부한다.
+- WPF 최종 저장은 로컬 보고서와 `report_sources`를 먼저 남긴다. 서버 거부나 통신 실패는 같은 `server_sync_queue` 행의 실패·충돌 사유로 보존하며 로컬 파일과 source를 삭제하지 않는다.
+- 각 전이는 report revision, 내용 hash, source 집합 hash와 receipt를 한 transaction으로 저장한다. WPF는 서버 응답의 내용/source 집합 hash를 다시 계산해 일치할 때만 큐를 종결한다.
+- 확정 뒤 원천 상태나 hash가 달라져도 보고서 상세는 당시 고정 source를 보존한다. 읽기 시 현재 채널 권한은 계속 검사하며 source ID/version/revision/trace/hash에서 당시 원천으로 돌아갈 수 있게 한다. 이 결정은 2026-07-27 결정의 “현재 적격 상태가 아니면 확정 보고서도 숨김” 부분을 대체한다.
+
 ## 2026-08-03. 공통 mutation receipt와 감사 envelope는 도메인 감사를 대체하지 않고 연결한다
 
 - `0002_common_mutation_receipts`는 `audit_event_envelopes`, `sync_mutation_receipts`만 additive 방식으로 추가한다. 기존 `activity_history`, 문서·FieldComment·보고서·작업순서 receipt와 과거 row는 이동·수정·백필하지 않는다.
 - operation key는 공통 receipt에서 서버 전체 UNIQUE다. 같은 key·같은 event/target/intent는 최초 성공 또는 거부·충돌 결과를 재생하고 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`로 거부한다. key 재사용 시도 자체는 기존 receipt를 바꾸지 않고 별도 conflict envelope로 남긴다.
 - 성공 mutation은 업무 row, 기존 도메인 receipt, 공통 receipt/envelope를 한 transaction에 저장한다. 업무 거부·충돌은 업무 transaction을 rollback하고 공통 거부 receipt만 확정해 같은 재시도가 같은 HTTP 결과로 수렴하게 한다.
-- 첫 적용 대상은 operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 승인 저장과 작업순서 변경이다. 성공 공통 receipt는 기존 도메인 receipt의 테이블명과 PK를 보존한다. 성공·거부·충돌·재시도 전체 공통 결과 고정은 문서 상태, FieldComment 검토, 보고서 승인, 작업순서 항목 상태부터 적용한다.
+- 첫 적용 대상은 operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 상태 전이와 작업순서 변경이다. 성공 공통 receipt는 기존 도메인 receipt의 테이블명과 PK를 보존한다. 성공·거부·충돌·재시도 전체 공통 결과 고정은 문서 상태, FieldComment 검토, 보고서 상태 전이, 작업순서 항목 상태부터 적용한다.
 - 공통 envelope는 actor/role/session, 선택 device, target/version/revision, reason/approval, 전후 hash, result/HTTP status, server time, 선택 run ID와 필수 correlation ID를 사용한다. 이전 감사의 누락값은 추정하지 않고 조회에서 `이전 형식·일부 필드 없음`으로 구분한다.
 - 공통 payload는 정제 metadata만 허용한다. token, 비밀번호, 고객 원문, 로컬 절대경로와 불필요한 개인정보는 저장하지 않고 전후 상태는 canonical SHA-256으로 연결한다. 일반 감사는 최소 1년 보존하며 자동 purge는 별도 승인된 보존·폐기 결정 전까지 두지 않는다.
 
@@ -37,11 +47,11 @@
 
 ## 2026-07-20. 보고서 근거는 선정 상태·고정 버전·원천 hash로 확정
 
-- 보고서 초안과 최종 저장은 서로 다른 source type을 최소 2종 요구하며 같은 `source_type + source_id + source_version_id` 중복을 거부한다.
+- 최초 보고서 source 집합은 서로 다른 source type을 최소 2종 요구하며 같은 `source_type + source_id + source_version_id` 중복을 거부한다. 이후 상태 전이는 고정 source 집합을 재사용한다.
 - FieldComment source는 `SELECTED` 상태, 관찰 문서 버전과 원천 작성자가 모두 있어야 한다. 문서 source는 현재 공개 버전만 허용한다.
 - 작업순서 항목은 최신 변경 ID 또는 항목 ID, 작업순서 이력은 변경 ID, 작업내역은 최신 버전 ID를 `source_version_id`로 고정한다.
 - 각 `report_sources` row는 독립 `trace_id`와 저장 시점 `source_hash_sha256`를 가진다. 최종 문서 저장 직전에 원천 version과 hash를 다시 계산해 달라졌으면 `409`로 차단한다.
-- 승인·보관 상태 보고서는 기존 draft ID를 통한 source 교체를 허용하지 않는다. WPF 로컬 보고서도 같은 2종·version·중복 조건을 먼저 검사하고 trace/hash를 보존한다.
+- source 교체 가능 상태는 2026-08-03 단계형 보고서 결정에 따라 `DRAFT`, `AI_DRAFTED`로 제한한다. WPF 로컬 보고서도 같은 2종·version·중복 조건을 먼저 검사하고 trace/hash를 보존한다.
 - 기존 2026-07-01 결정의 보고서 후보 범위는 유지하되 FieldComment 후보 상태는 현재 코드의 `SELECTED` 전용 조건으로 좁힌다.
 
 ## 2026-07-20. AI ground-truth는 2인 승인과 준비도 계열을 분리
@@ -552,7 +562,7 @@
 - 서버 PC 1대는 고객 하나와 현장 하나만 담당한다. 계정·문서·채널·보고서·검색 후보에 멀티 scope 열을 추가하지 않고 서버 설정을 경계로 사용한다.
 - 선택 scope 헤더와 로그인·refresh scope 입력이 서버 경계와 다르거나 서로 충돌하면 행 조회 전에 `404 SCOPE_NOT_FOUND`로 거부하고 감사한다. 입력 생략은 현재 서버 경계를 뜻한다.
 - 기존 단일 현장 SQLite와 파일 저장소는 변환하지 않는다. 배포·rollback 모두 같은 DB와 파일을 열며 row 수, 공개 ID, source hash와 파일 SHA-256 비교로 무손실을 확인한다.
-- 보고서 목록·상세·source 조회는 모든 원천의 현재 적격 상태와 채널 멤버십을 다시 검사한다. 하나라도 실패하면 목록에서 보고서 전체를 제외하고 상세/source는 같은 정제 `404`를 반환해 source 존재를 드러내지 않는다.
+- 보고서 목록·상세·source 조회의 현재 적격 상태 재검사는 2026-08-03 단계형 보고서 결정으로 대체했다. 현재는 당시 고정 snapshot을 유지하고 채널 멤버십만 다시 검사하며, 권한 실패 시 목록 제외와 정제 `404` 정책은 유지한다.
 - `red` 신호 또는 `conflict_flag = true`인 FieldComment는 독립 검토 대상으로 고정한다. 분석자와 같은 사용자의 검토·선정·제외·보관 결정을 서버가 거부한다.
 - WPF와 Android는 공개 오류 코드로 권한 없음, 단말 비승인, 다른 현장 범위, 원천 없음·비공개를 구분한다. 서버 오류 원문, token, 내부 경로, stack trace는 화면에 표시하지 않는다.
 - 여러 고객·현장을 한 서버에서 지원하는 변경은 전 엔티티 scope 모델, 기존 데이터 백필, 검색·감사 격리, 무손실 migration과 rollback 도구를 포함한 별도 결정 없이는 시작하지 않는다.
