@@ -30,24 +30,24 @@
                 </Grid.RowDefinitions>
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Left">
-                        <TextBlock Text="FieldComment 정제와 실제 현장 AI 준비 현황"
+                        <TextBlock Text="FieldComment 관리자 작업함"
                                    FontSize="16"
                                    FontWeight="SemiBold" />
                         <TextBlock x:Name="AIReadinessBoundaryTextBlock"
                                    Margin="0,4,0,0"
                                    Foreground="{StaticResource SecondaryTextBrush}"
-                                   Text="서버 승인 범위의 준비도 정보를 불러오는 중입니다."
+                                   Text="FieldComment 운영 집계를 먼저 불러오고, AI 준비도는 후속 참고 지표로 표시합니다."
                                    TextWrapping="Wrap" />
                     </StackPanel>
                     <TextBlock DockPanel.Dock="Right"
                                Margin="16,0,0,0"
                                Foreground="#8A4B08"
-                               Text="합성·시험 자료는 실제 현장 준비도에 합산하지 않음"
+                               Text="검토·분석·선정 운영 우선 · AI 준비도는 후속 참고"
                                FontWeight="SemiBold"
                                VerticalAlignment="Center" />
                 </DockPanel>
 
-                <UniformGrid Grid.Row="1" Columns="5" Margin="0,8,0,0">
+                <UniformGrid Grid.Row="1" Columns="6" Margin="0,8,0,0">
                     <Button Margin="0,0,4,0" Tag="UNREVIEWED" Click="DashboardFilterButton_Click">
                         <StackPanel>
                             <TextBlock Text="미검토" HorizontalAlignment="Center" />
@@ -78,6 +78,12 @@
                             <TextBlock x:Name="UnassignedCountTextBlock" Text="-" FontSize="19" FontWeight="SemiBold" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
+                    <Button Margin="4,0,0,0" Tag="OVERDUE" Click="DashboardFilterButton_Click">
+                        <StackPanel>
+                            <TextBlock Text="기한 초과" HorizontalAlignment="Center" />
+                            <TextBlock x:Name="OverdueCountTextBlock" Text="-" FontSize="19" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                 </UniformGrid>
 
                 <Grid Grid.Row="2" Margin="0,8,0,0">
@@ -94,7 +100,7 @@
                                    Text="서버 조회 전"
                                    TextWrapping="Wrap" />
                     </GroupBox>
-                    <GroupBox Grid.Column="2" Header="실제 현장 자료가 부족한 범주·유형">
+                    <GroupBox Grid.Column="2" Header="후속 AI 활용 참고(운영 처리 기준 아님)">
                         <DataGrid ItemsSource="{Binding ReadinessGaps}"
                                   AutoGenerateColumns="False"
                                   IsReadOnly="True"
@@ -155,6 +161,7 @@
                 Padding="12">
             <Grid>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -250,7 +257,36 @@
                     </StackPanel>
                 </UniformGrid>
 
-                <Grid Grid.Row="2" Margin="0,10,0,0">
+                <UniformGrid Grid.Row="2" Columns="6" Margin="0,10,0,0">
+                    <StackPanel Margin="0,0,8,0">
+                        <TextBlock Text="담당 역할" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <ComboBox x:Name="AssignedRoleFilterComboBox" Height="28" Margin="0,3,0,0"
+                                  DisplayMemberPath="Label" SelectedValuePath="Value" />
+                    </StackPanel>
+                    <StackPanel Margin="0,0,8,0">
+                        <TextBlock Text="신호등" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <ComboBox x:Name="SignalFilterComboBox" Height="28" Margin="0,3,0,0"
+                                  DisplayMemberPath="Label" SelectedValuePath="Value" />
+                    </StackPanel>
+                    <StackPanel Margin="0,0,8,0">
+                        <TextBlock Text="채널" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBox x:Name="ChannelFilterTextBox" Height="28" Margin="0,3,0,0" ToolTip="서버 채널 ID·이름·유형" />
+                    </StackPanel>
+                    <StackPanel Margin="0,0,8,0">
+                        <TextBlock Text="문서 버전" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBox x:Name="DocumentVersionFilterTextBox" Height="28" Margin="0,3,0,0" ToolTip="로컬 문서 버전 번호" />
+                    </StackPanel>
+                    <StackPanel Margin="0,0,8,0">
+                        <TextBlock Text="검토 기한 시작" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <DatePicker x:Name="ReviewDueFromDatePicker" Height="28" Margin="0,3,0,0" />
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="검토 기한 종료" FontSize="11" Foreground="{StaticResource SecondaryTextBrush}" />
+                        <DatePicker x:Name="ReviewDueToDatePicker" Height="28" Margin="0,3,0,0" />
+                    </StackPanel>
+                </UniformGrid>
+
+                <Grid Grid.Row="3" Margin="0,10,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
@@ -336,7 +372,7 @@
                         Padding="12">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="44" />
+                            <RowDefinition Height="66" />
                             <RowDefinition Height="86" />
                             <RowDefinition Height="86" />
                             <RowDefinition Height="*" />
@@ -353,6 +389,12 @@
                                        FontSize="11"
                                        Foreground="{StaticResource SecondaryTextBrush}"
                                        Text="원천 hash · 첨부 · 문서 버전 · 채널 권한: 서버 조회 전" />
+                            <TextBlock x:Name="IndependentReviewGuidanceTextBlock"
+                                       Margin="0,3,0,0"
+                                       FontSize="11"
+                                       Foreground="#9C2B1B"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap" />
                         </StackPanel>
                         <StackPanel Grid.Row="1" Margin="0,8,0,0">
                             <TextBlock Text="원천 기록(불변)" FontWeight="SemiBold" Foreground="#8A4B08" />

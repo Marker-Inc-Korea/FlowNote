@@ -414,6 +414,32 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerFieldCommentResponse>(response, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ServerFieldCommentResponse>> ListFieldCommentsAsync(
+        ServerFieldCommentListFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string>();
+        AddQuery(query, "assignedRole", filter.AssignedRole);
+        AddQuery(query, "signalLevel", filter.SignalLevel);
+        AddQuery(query, "channel", filter.Channel);
+        AddQuery(query, "documentVersionId", filter.DocumentVersionId);
+        AddQuery(query, "reviewDueFrom", filter.ReviewDueFrom?.ToUniversalTime().ToString("O"));
+        AddQuery(query, "reviewDueTo", filter.ReviewDueTo?.ToUniversalTime().ToString("O"));
+        query.Add($"limit={Math.Clamp(filter.Limit, 1, 500)}");
+        using var response = await httpClient.GetAsync(
+            $"api/v1/field-comments?{string.Join("&", query)}",
+            cancellationToken);
+        return await ReadJsonResponse<List<ServerFieldCommentResponse>>(response, cancellationToken);
+    }
+
+    private static void AddQuery(List<string> query, string name, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            query.Add($"{name}={Uri.EscapeDataString(value.Trim())}");
+        }
+    }
+
     public async Task<ServerFieldCommentTraceResponse> GetFieldCommentTraceabilityAsync(
         string commentId,
         CancellationToken cancellationToken = default)

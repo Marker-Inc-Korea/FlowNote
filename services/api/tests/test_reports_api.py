@@ -296,6 +296,9 @@ def test_report_draft_final_document_and_source_traceability() -> None:
         )
         linked_report = next(item for item in trace["reports"] if item["report_id"] == saved["report_id"])
         assert linked_report["source_version_id"] == field_comment["document_version_id"]
+        assert linked_report["source_revision"] == trace["field_comment"]["review_revision"]
+        assert linked_report["source_hash_sha256"] == trace["field_comment"]["source_hash_sha256"]
+        assert linked_report["trace_id"]
         assert linked_report["generated_document"]["document_id"] == saved["generated_document_id"]
         assert linked_report["generated_document"]["generated_version_ids"]
 

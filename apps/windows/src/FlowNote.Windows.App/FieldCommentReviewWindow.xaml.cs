@@ -22,6 +22,7 @@ public partial class FieldCommentReviewWindow : Window
     private IReadOnlyList<ServerFieldCommentQualityItemResponse> qualityIssues = [];
     private ServerFieldCommentBulkReviewRequest? lastBulkRequest;
     private IReadOnlyDictionary<string, FieldCommentReviewRecord>? lastBulkLocalByServerId;
+    private IReadOnlySet<string>? serverChannelFilterIds;
     private bool loadingSavedViews;
 
     public FieldCommentReviewWindow(
@@ -81,6 +82,27 @@ public partial class FieldCommentReviewWindow : Window
             new StatusOption("SOURCE_HASH_MISMATCH", "품질: hash 불일치"),
             new StatusOption("SOURCE_REVISION_MISMATCH", "품질: revision 불일치")
         };
+        AssignedRoleFilterComboBox.ItemsSource = new[]
+        {
+            new StatusOption("ALL", "전체"),
+            new StatusOption("line-foreman", "반장"),
+            new StatusOption("team-lead", "조장"),
+            new StatusOption("assistant-manager", "대리"),
+            new StatusOption("manager", "관리자"),
+            new StatusOption("department-manager", "부서장"),
+            new StatusOption("document-admin", "문서 관리자"),
+            new StatusOption("admin", "서버 관리자"),
+            new StatusOption("system-admin", "시스템 관리자")
+        };
+        SignalFilterComboBox.ItemsSource = new[]
+        {
+            new StatusOption("ALL", "전체"),
+            new StatusOption("red", "빨강"),
+            new StatusOption("yellow", "노랑"),
+            new StatusOption("green", "초록")
+        };
+        AssignedRoleFilterComboBox.SelectedValue = "ALL";
+        SignalFilterComboBox.SelectedValue = "ALL";
         foreach (var combo in new[] { AgingFilterComboBox, AttachmentFilterComboBox, ReportLinkFilterComboBox, WorkbenchFilterComboBox })
         {
             combo.DisplayMemberPath = nameof(StatusOption.Label);
@@ -106,13 +128,14 @@ public partial class FieldCommentReviewWindow : Window
         }
     }
 
-    private void SavedViewComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void SavedViewComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (loadingSavedViews || SavedViewComboBox.SelectedItem is not FieldCommentSavedView view)
         {
             return;
         }
         ApplyFilter(view.Filter);
+        await RefreshServerChannelFilterAsync();
         RefreshComments($"저장된 보기 '{view.Name}'를 적용했습니다.");
     }
 
@@ -128,6 +151,7 @@ public partial class FieldCommentReviewWindow : Window
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
         await Task.WhenAll(RefreshQualityIssuesAsync(), RefreshReviewDashboardAsync());
+        await RefreshServerChannelFilterAsync();
         RefreshComments("필터를 적용했습니다.");
     }
 
@@ -378,21 +402,7 @@ public partial class FieldCommentReviewWindow : Window
         try
         {
             var trace = await serverClient.GetFieldCommentTraceabilityAsync(serverCommentId);
-            var reportLines = trace.Reports.Count == 0
-                ? "보고서 연결 없음"
-                : string.Join(Environment.NewLine, trace.Reports.Select(report =>
-                    $"- {report.Title} ({report.Status}) → " +
-                    (report.GeneratedDocument is null
-                        ? "최종 문서 없음"
-                        : $"{report.GeneratedDocument.Title} / 버전 {report.GeneratedDocument.GeneratedVersionIds.Count}개")));
-            MessageBox.Show(
-                this,
-                $"원천 hash: {trace.FieldComment.SourceHashSha256}{Environment.NewLine}" +
-                $"감사 이력: {trace.Audit.Count}건{Environment.NewLine}" +
-                $"보고서 연결: {trace.Reports.Count}건{Environment.NewLine}{reportLines}",
-                "FieldComment → 보고서 → 최종 문서 역추적",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            new FieldCommentTraceabilityWindow(trace) { Owner = this }.ShowDialog();
             StatusTextBlock.Text = "서버 감사 이력과 최종 문서 연결을 확인했습니다.";
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
@@ -456,38 +466,19 @@ public partial class FieldCommentReviewWindow : Window
 
         try
         {
-            var dashboardTask = serverClient.GetFieldCommentReviewDashboardAsync();
-            var readinessTask = serverClient.GetAISearchReadinessAsync();
-            await Task.WhenAll(dashboardTask, readinessTask);
-            var dashboard = await dashboardTask;
-            var readiness = await readinessTask;
-
+            var dashboard = await serverClient.GetFieldCommentReviewDashboardAsync();
             UnreviewedCountTextBlock.Text = $"{dashboard.UnreviewedCount}건";
             ConflictCountTextBlock.Text = $"{dashboard.ConflictCount}건";
             SafetyQualityRiskCountTextBlock.Text = $"{dashboard.SafetyQualityRiskCount}건";
             ReportUnlinkedCountTextBlock.Text = $"{dashboard.ReportUnlinkedCount}건";
             UnassignedCountTextBlock.Text = $"{dashboard.UnassignedCount}건";
+            OverdueCountTextBlock.Text = $"{dashboard.OverdueCount}건";
             ReviewStatusSummaryTextBlock.Text = string.Join(" · ", FieldCommentService.ReviewStatuses
                 .Where(status => Count(dashboard.CountsByStatus, status) > 0)
                 .Select(status => $"{FormatStatus(status)} {Count(dashboard.CountsByStatus, status)}건"));
             if (string.IsNullOrWhiteSpace(ReviewStatusSummaryTextBlock.Text))
             {
                 ReviewStatusSummaryTextBlock.Text = "서버에 FieldComment가 없습니다.";
-            }
-
-            AIReadinessBoundaryTextBlock.Text =
-                $"고객 승인 ANONYMOUS_FIELD {readiness.FieldReadiness.GroundTruthCount}/{readiness.GroundTruthMinimum}건" +
-                $" · 부족 {readiness.FieldReadiness.GroundTruthGap}건 · " +
-                $"합성·시험 SMOKE_REGRESSION {readiness.SmokeRegressionReadiness.GroundTruthCount}건(실제 준비도 제외)";
-
-            workspace.ReadinessGaps.Clear();
-            foreach (var gap in readiness.CategoryScenarioGaps)
-            {
-                workspace.ReadinessGaps.Add(new ReviewGapRow(
-                    FormatCategory(gap.Category),
-                    FormatScenario(gap.ScenarioType),
-                    $"{gap.Count}/{gap.Required}",
-                    gap.Missing));
             }
 
             workspace.ReviewActions.Clear();
@@ -500,6 +491,30 @@ public partial class FieldCommentReviewWindow : Window
                     action.NextAction,
                     action.WorkbenchFilter));
             }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            ResetReviewDashboard(
+                $"서버에서 FieldComment 작업함 집계를 불러오지 못해 숫자를 표시하지 않습니다. {SummarizeException(exception)}");
+            return;
+        }
+
+        try
+        {
+            var readiness = await serverClient.GetAISearchReadinessAsync();
+            AIReadinessBoundaryTextBlock.Text =
+                $"운영 작업함 정상 · 후속 참고: 고객 승인 ANONYMOUS_FIELD {readiness.FieldReadiness.GroundTruthCount}/{readiness.GroundTruthMinimum}건" +
+                $" · 부족 {readiness.FieldReadiness.GroundTruthGap}건 · " +
+                $"합성·시험 {readiness.SmokeRegressionReadiness.GroundTruthCount}건(운영 처리 기준에서 제외)";
+            workspace.ReadinessGaps.Clear();
+            foreach (var gap in readiness.CategoryScenarioGaps)
+            {
+                workspace.ReadinessGaps.Add(new ReviewGapRow(
+                    FormatCategory(gap.Category),
+                    FormatScenario(gap.ScenarioType),
+                    $"{gap.Count}/{gap.Required}",
+                    gap.Missing));
+            }
             foreach (var action in readiness.OperatorActions.Where(item => readiness.ReadinessFailures.Contains(item.Code)))
             {
                 workspace.ReviewActions.Add(new ReviewActionRow(
@@ -509,13 +524,14 @@ public partial class FieldCommentReviewWindow : Window
                     action.NextAction,
                     null));
             }
-            ReviewActionGrid.SelectedItem = workspace.ReviewActions.FirstOrDefault();
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
-            ResetReviewDashboard(
-                $"서버에서 준비도를 불러오지 못해 숫자를 표시하지 않습니다. {SummarizeException(exception)}");
+            AIReadinessBoundaryTextBlock.Text =
+                $"FieldComment 작업함은 정상입니다. 후속 AI 참고 지표만 불러오지 못했습니다: {SummarizeException(exception)}";
+            workspace.ReadinessGaps.Clear();
         }
+        ReviewActionGrid.SelectedItem = workspace.ReviewActions.FirstOrDefault();
     }
 
     private void ResetReviewDashboard(string message)
@@ -525,6 +541,7 @@ public partial class FieldCommentReviewWindow : Window
         SafetyQualityRiskCountTextBlock.Text = "-";
         ReportUnlinkedCountTextBlock.Text = "-";
         UnassignedCountTextBlock.Text = "-";
+        OverdueCountTextBlock.Text = "-";
         ReviewStatusSummaryTextBlock.Text = "실제 서버 집계 없음";
         AIReadinessBoundaryTextBlock.Text = message;
         workspace.ReadinessGaps.Clear();
@@ -579,6 +596,14 @@ public partial class FieldCommentReviewWindow : Window
                 .ToHashSet(StringComparer.Ordinal);
         foreach (var comment in fieldComments.ListForReview(filter))
         {
+            if (serverChannelFilterIds is not null)
+            {
+                var serverCommentId = fieldComments.GetServerCommentId(comment.CommentId);
+                if (string.IsNullOrWhiteSpace(serverCommentId) || !serverChannelFilterIds.Contains(serverCommentId))
+                {
+                    continue;
+                }
+            }
             if (workbench == "HIGH_RISK" &&
                 !comment.ConflictFlag &&
                 !string.Equals(comment.SignalLevel, "red", StringComparison.OrdinalIgnoreCase))
@@ -625,6 +650,10 @@ public partial class FieldCommentReviewWindow : Window
             AuthorText: AuthorFilterTextBox.Text,
             TagText: TagFilterTextBox.Text,
             AssignedTo: AssignedFilterTextBox.Text,
+            AssignedRole: AssignedRoleFilterComboBox.SelectedValue?.ToString(),
+            SignalLevel: SignalFilterComboBox.SelectedValue?.ToString(),
+            ChannelText: ChannelFilterTextBox.Text,
+            DocumentVersionText: DocumentVersionFilterTextBox.Text,
             LineText: LineFilterTextBox.Text,
             EquipmentText: EquipmentFilterTextBox.Text,
             ProcessText: ProcessFilterTextBox.Text,
@@ -644,6 +673,8 @@ public partial class FieldCommentReviewWindow : Window
             PriorityOrder: true,
             CreatedFrom: CreatedFromDatePicker.SelectedDate,
             CreatedTo: CreatedToDatePicker.SelectedDate,
+            ReviewDueFrom: ReviewDueFromDatePicker.SelectedDate,
+            ReviewDueTo: ReviewDueToDatePicker.SelectedDate,
             Limit: workbench == "HIGH_RISK" ? 500 : 300);
     }
 
@@ -654,6 +685,10 @@ public partial class FieldCommentReviewWindow : Window
         AuthorFilterTextBox.Text = filter.AuthorText ?? string.Empty;
         TagFilterTextBox.Text = filter.TagText ?? string.Empty;
         AssignedFilterTextBox.Text = filter.AssignedTo ?? string.Empty;
+        AssignedRoleFilterComboBox.SelectedValue = filter.AssignedRole ?? "ALL";
+        SignalFilterComboBox.SelectedValue = filter.SignalLevel ?? "ALL";
+        ChannelFilterTextBox.Text = filter.ChannelText ?? string.Empty;
+        DocumentVersionFilterTextBox.Text = filter.DocumentVersionText ?? string.Empty;
         LineFilterTextBox.Text = filter.LineText ?? string.Empty;
         EquipmentFilterTextBox.Text = filter.EquipmentText ?? string.Empty;
         ProcessFilterTextBox.Text = filter.ProcessText ?? string.Empty;
@@ -671,6 +706,8 @@ public partial class FieldCommentReviewWindow : Window
             : "ALL";
         CreatedFromDatePicker.SelectedDate = filter.CreatedFrom;
         CreatedToDatePicker.SelectedDate = filter.CreatedTo;
+        ReviewDueFromDatePicker.SelectedDate = filter.ReviewDueFrom;
+        ReviewDueToDatePicker.SelectedDate = filter.ReviewDueTo;
     }
 
     private void LoadSelectedComment()
@@ -689,6 +726,7 @@ public partial class FieldCommentReviewWindow : Window
             ConflictCheckBox.IsChecked = false;
             ConflictBasisTextBox.Text = string.Empty;
             EvidenceTextBlock.Text = "원천 hash · 첨부 · 문서 버전 · 채널 권한: 서버 조회 전";
+            IndependentReviewGuidanceTextBlock.Text = string.Empty;
             return;
         }
 
@@ -702,6 +740,10 @@ public partial class FieldCommentReviewWindow : Window
         ReviewDueDatePicker.SelectedDate = selected.ReviewDueAt;
         ConflictCheckBox.IsChecked = selected.ConflictFlag;
         ConflictBasisTextBox.Text = selected.ConflictBasis ?? string.Empty;
+        IndependentReviewGuidanceTextBlock.Text = selected.ConflictFlag ||
+            string.Equals(selected.SignalLevel, "red", StringComparison.OrdinalIgnoreCase)
+            ? "독립 검토 필수: 빨간 신호 또는 상충 기록은 분석자와 다른 결정 역할(관리자·문서 관리자 등)이 검토·선정·제외해야 합니다."
+            : "분석은 반장·조장 이상, 검토·선정·제외는 결정 역할 권한이 필요합니다.";
 
         foreach (var attachment in fieldComments.ListAttachments(selected.CommentId))
         {
@@ -725,7 +767,8 @@ public partial class FieldCommentReviewWindow : Window
             {
                 return;
             }
-            EvidenceTextBlock.Text = $"hash {server.SourceHashSha256[..Math.Min(12, server.SourceHashSha256.Length)]}… · 첨부 {server.AttachmentCount}건 · 문서 버전 {server.DocumentVersionId ?? "없음"} · 채널 권한 {FormatChannelAccess(server.ChannelAccess)}";
+            var channels = server.ChannelLabels.Count == 0 ? "미연결" : string.Join(", ", server.ChannelLabels);
+            EvidenceTextBlock.Text = $"hash {server.SourceHashSha256[..Math.Min(12, server.SourceHashSha256.Length)]}… · revision {server.ReviewRevision} · 첨부 {server.AttachmentCount}건 · 문서 버전 {server.DocumentVersionId ?? "없음"} · 담당 역할 {FormatRole(server.AssignedRole)} · 채널 {channels} / 권한 {FormatChannelAccess(server.ChannelAccess)}";
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
@@ -754,6 +797,53 @@ public partial class FieldCommentReviewWindow : Window
         "DENIED" => "차단",
         "NOT_LINKED" => "채널 미연결",
         _ => value
+    };
+
+    private async Task RefreshServerChannelFilterAsync()
+    {
+        var channel = ChannelFilterTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(channel))
+        {
+            serverChannelFilterIds = null;
+            return;
+        }
+        if (serverClient is null)
+        {
+            serverChannelFilterIds = new HashSet<string>(StringComparer.Ordinal);
+            StatusTextBlock.Text = "채널 필터는 서버 연결이 필요합니다. 원천 기록은 보존되며 서버 로그인 후 다시 조회할 수 있습니다.";
+            return;
+        }
+        try
+        {
+            var rows = await serverClient.ListFieldCommentsAsync(new ServerFieldCommentListFilter
+            {
+                Channel = channel,
+                Limit = 500
+            });
+            serverChannelFilterIds = rows.Select(item => item.CommentId).ToHashSet(StringComparer.Ordinal);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            serverChannelFilterIds = new HashSet<string>(StringComparer.Ordinal);
+            StatusTextBlock.Text = BuildPreservedSourceFailureMessage(
+                exception,
+                "채널 필터를 조회하지 못했습니다.",
+                "서버 연결과 채널 이름을 확인한 뒤 필터를 다시 적용하세요.");
+        }
+    }
+
+    private static string FormatRole(string? role) => role switch
+    {
+        null or "" => "미지정",
+        "line-foreman" => "반장",
+        "team-lead" => "조장",
+        "assistant-manager" => "대리",
+        "manager" => "관리자",
+        "department-manager" => "부서장",
+        "document-admin" => "문서 관리자",
+        "admin" => "서버 관리자",
+        "system-admin" => "시스템 관리자",
+        _ => role
     };
 
     private static string FormatStatus(string status)
@@ -800,6 +890,7 @@ public partial class FieldCommentReviewWindow : Window
         "HIGH_RISK" => "안전·품질 위험",
         "REPORT_UNLINKED" => "보고서 미연결",
         "UNASSIGNED" => "담당자 없음",
+        "OVERDUE" => "기한 초과",
         _ => workbench
     };
 

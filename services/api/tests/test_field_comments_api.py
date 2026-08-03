@@ -15,7 +15,10 @@ from app.db.models import (
     FieldCommentAttachment,
     FieldCommentReviewMutationReceipt,
     FileObject,
+    NotificationChannel,
     UserAccount,
+    WorkSequenceBoard,
+    WorkSequenceItem,
 )
 from app.main import create_app
 
@@ -426,6 +429,126 @@ def test_review_workbench_filters_and_priority_flags_are_explicit() -> None:
         assert quality["connection_quality"]["incomplete_report_trace_count"] >= 0
         assert quality["connection_quality"]["field_comment_source_hash_mismatch_count"] >= 0
         assert quality["connection_quality"]["duplicate_report_source_count"] >= 0
+
+
+def test_manager_workbench_filters_role_signal_channel_version_and_due_date() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        marker = uuid4().hex[:10]
+        created = client.post(
+            "/api/v1/field-comments",
+            headers=headers,
+            json={
+                "documentId": document["document_id"],
+                "documentVersionId": document["latest_version"]["version_id"],
+                "rawContent": f"관리자 작업함 복합 필터 {marker}",
+                "signalLevel": "red",
+            },
+        ).json()
+        due_at = "2030-08-03T09:00:00Z"
+        assigned = client.patch(
+            f"/api/v1/field-comments/{created['comment_id']}",
+            headers=headers,
+            json={
+                "status": "ASSIGNED",
+                "assignedTo": "user-admin",
+                "reviewDueAt": due_at,
+                "transitionReason": "복합 필터 검증 담당 배정",
+                "baseReviewRevision": created["review_revision"],
+                "mutationKey": f"filter-assignment-{marker}",
+            },
+        )
+        assert assigned.status_code == 200, assigned.text
+        with client.app.state.database.session() as session:
+            session.add(NotificationChannel(
+                channel_id=f"channel-{marker}",
+                name=f"품질 위험 {marker}",
+                channel_type="PROCESS",
+                source_type="FIELD_COMMENT",
+                source_id=created["comment_id"],
+                source_version_id=document["latest_version"]["version_id"],
+                status="ACTIVE",
+                created_by="user-admin",
+            ))
+            session.commit()
+
+        response = client.get(
+            "/api/v1/field-comments",
+            headers=headers,
+            params={
+                "assignedRole": "admin",
+                "signalLevel": "RED",
+                "channel": marker,
+                "documentVersionId": document["latest_version"]["version_id"],
+                "reviewDueFrom": "2030-08-03T00:00:00Z",
+                "reviewDueTo": "2030-08-04T00:00:00Z",
+            },
+        )
+        assert response.status_code == 200, response.text
+        row = next(item for item in response.json() if item["comment_id"] == created["comment_id"])
+        assert row["assigned_role"] == "admin"
+        assert row["signal_level"].lower() == "red"
+        assert any(marker in label for label in row["channel_labels"])
+        assert row["document_version_id"] == document["latest_version"]["version_id"]
+
+
+def test_traceability_includes_source_document_attachment_and_work_sequence() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        marker = uuid4().hex[:10]
+        created = client.post(
+            "/api/v1/field-comments",
+            headers=headers,
+            json={
+                "documentId": document["document_id"],
+                "documentVersionId": document["latest_version"]["version_id"],
+                "rawContent": f"역추적 상세 검증 {marker}",
+            },
+        ).json()
+        attachment = client.post(
+            f"/api/v1/field-comments/{created['comment_id']}/attachments",
+            headers=headers,
+            data={"attachmentType": "photo", "caption": "역추적 사진"},
+            files={"file": (f"trace-{marker}.png", b"trace-image", "image/png")},
+        )
+        assert attachment.status_code == 201, attachment.text
+        with client.app.state.database.session() as session:
+            board_id = f"board-{marker}"
+            session.add(WorkSequenceBoard(
+                board_id=board_id,
+                title=f"역추적 작업판 {marker}",
+                description="FieldComment 관련 작업순서",
+                line_code="line-a",
+                status="ACTIVE",
+                board_revision=1,
+                created_by="user-admin",
+            ))
+            session.flush()
+            session.add(WorkSequenceItem(
+                item_id=f"item-{marker}",
+                board_id=board_id,
+                title=f"역추적 작업 {marker}",
+                document_id=document["document_id"],
+                status="WAITING",
+                sort_order=1,
+                assigned_to="user-admin",
+                created_by="user-admin",
+            ))
+            session.commit()
+
+        response = client.get(
+            f"/api/v1/field-comments/{created['comment_id']}/traceability",
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        trace = response.json()
+        assert trace["field_comment"]["source_hash_sha256"] == created["source_hash_sha256"]
+        assert trace["field_comment"]["review_revision"] == created["review_revision"]
+        assert trace["source_document"]["observed_version_id"] == document["latest_version"]["version_id"]
+        assert trace["attachments"][0]["file"]["hash_sha256"] == attachment.json()["file"]["hash_sha256"]
+        assert any(item["item_id"] == f"item-{marker}" for item in trace["work_sequences"])
 
 
 def test_field_comment_source_fields_are_immutable_in_database() -> None:

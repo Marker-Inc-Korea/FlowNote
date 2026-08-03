@@ -1,0 +1,117 @@
+<Window x:Class="FlowNote.Windows.App.FieldCommentTraceabilityWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="FieldComment 원천 역추적"
+        Width="1180"
+        Height="820"
+        MinWidth="960"
+        MinHeight="680"
+        Background="{StaticResource WindowBackgroundBrush}">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Background="{StaticResource PanelBackgroundBrush}"
+                BorderBrush="{StaticResource PanelBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="12">
+            <StackPanel>
+                <TextBlock Text="원천 → 검토 이력 → 문서·작업순서 → 보고서 근거"
+                           FontSize="17"
+                           FontWeight="SemiBold" />
+                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap">
+                    <Run Text="원천 hash " FontWeight="SemiBold" />
+                    <Run Text="{Binding FieldComment.SourceHashSha256}" />
+                    <Run Text="  ·  검토 revision " FontWeight="SemiBold" />
+                    <Run Text="{Binding FieldComment.ReviewRevision}" />
+                    <Run Text="  ·  관찰 버전 " FontWeight="SemiBold" />
+                    <Run Text="{Binding FieldComment.DocumentVersionId, TargetNullValue=없음}" />
+                </TextBlock>
+                <TextBlock Margin="0,4,0,0"
+                           Foreground="#8A4B08"
+                           Text="원천 본문·첨부는 변경하지 않고 관리자 해석과 보고서 연결을 별도 이력으로 표시합니다." />
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" Margin="0,10,0,10" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <GroupBox Header="원천 본문과 관찰 문서">
+                    <Grid Margin="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Text="{Binding FieldComment.RawContent}"
+                                 IsReadOnly="True"
+                                 MinHeight="82"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto" />
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="{Binding SourceDocument.Title, TargetNullValue=연결 문서 없음}" FontWeight="SemiBold" />
+                            <TextBlock Margin="0,4,0,0"><Run Text="문서 ID: " /><Run Text="{Binding SourceDocument.DocumentId, TargetNullValue=없음}" /></TextBlock>
+                            <TextBlock Margin="0,4,0,0"><Run Text="관찰 버전: " /><Run Text="{Binding SourceDocument.ObservedVersionId, TargetNullValue=없음}" /></TextBlock>
+                            <TextBlock Margin="0,4,0,0"><Run Text="공개 버전: " /><Run Text="{Binding SourceDocument.PublishedVersionId, TargetNullValue=없음}" /></TextBlock>
+                        </StackPanel>
+                    </Grid>
+                </GroupBox>
+
+                <GroupBox Header="첨부" Margin="0,10,0,0">
+                    <DataGrid ItemsSource="{Binding Attachments}" AutoGenerateColumns="False" IsReadOnly="True"
+                              CanUserAddRows="False" MinHeight="110">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="첨부 ID" Binding="{Binding AttachmentId}" Width="180" />
+                            <DataGridTextColumn Header="파일명" Binding="{Binding File.OriginalFilename}" Width="*" />
+                            <DataGridTextColumn Header="유형" Binding="{Binding AttachmentType}" Width="90" />
+                            <DataGridTextColumn Header="파일 hash" Binding="{Binding File.HashSha256}" Width="260" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </GroupBox>
+
+                <GroupBox Header="검토 이력" Margin="0,10,0,0">
+                    <DataGrid ItemsSource="{Binding Audit}" AutoGenerateColumns="False" IsReadOnly="True"
+                              CanUserAddRows="False" MinHeight="130">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="시간" Binding="{Binding CreatedAt, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" />
+                            <DataGridTextColumn Header="이벤트" Binding="{Binding EventType}" Width="190" />
+                            <DataGridTextColumn Header="사유" Binding="{Binding ChangeReason}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </GroupBox>
+
+                <GroupBox Header="관련 작업순서" Margin="0,10,0,0">
+                    <DataGrid ItemsSource="{Binding WorkSequences}" AutoGenerateColumns="False" IsReadOnly="True"
+                              CanUserAddRows="False" MinHeight="110">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="작업판" Binding="{Binding BoardTitle}" Width="*" />
+                            <DataGridTextColumn Header="작업 항목" Binding="{Binding ItemTitle}" Width="*" />
+                            <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="110" />
+                            <DataGridTextColumn Header="담당자" Binding="{Binding AssignedTo}" Width="150" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </GroupBox>
+
+                <GroupBox Header="보고서 연결" Margin="0,10,0,0">
+                    <DataGrid ItemsSource="{Binding Reports}" AutoGenerateColumns="False" IsReadOnly="True"
+                              CanUserAddRows="False" MinHeight="130">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="보고서" Binding="{Binding Title}" Width="*" />
+                            <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="90" />
+                            <DataGridTextColumn Header="고정 버전" Binding="{Binding SourceVersionId}" Width="170" />
+                            <DataGridTextColumn Header="고정 revision" Binding="{Binding SourceRevision}" Width="100" />
+                            <DataGridTextColumn Header="trace ID" Binding="{Binding TraceId}" Width="190" />
+                            <DataGridTextColumn Header="원천 hash" Binding="{Binding SourceHashSha256}" Width="260" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </GroupBox>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Button Grid.Row="2" Width="90" Height="30" HorizontalAlignment="Right"
+                Content="닫기" IsCancel="True" />
+    </Grid>
+</Window>

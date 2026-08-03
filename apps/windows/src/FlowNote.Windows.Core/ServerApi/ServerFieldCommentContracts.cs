@@ -181,6 +181,9 @@ public sealed record ServerFieldCommentResponse
     [JsonPropertyName("assigned_to")]
     public string? AssignedTo { get; init; }
 
+    [JsonPropertyName("assigned_role")]
+    public string? AssignedRole { get; init; }
+
     [JsonPropertyName("review_due_at")]
     public DateTime? ReviewDueAt { get; init; }
 
@@ -201,6 +204,20 @@ public sealed record ServerFieldCommentResponse
 
     [JsonPropertyName("channel_access")]
     public string ChannelAccess { get; init; } = "NOT_LINKED";
+
+    [JsonPropertyName("channel_labels")]
+    public IReadOnlyList<string> ChannelLabels { get; init; } = [];
+}
+
+public sealed record ServerFieldCommentListFilter
+{
+    public string? AssignedRole { get; init; }
+    public string? SignalLevel { get; init; }
+    public string? Channel { get; init; }
+    public string? DocumentVersionId { get; init; }
+    public DateTime? ReviewDueFrom { get; init; }
+    public DateTime? ReviewDueTo { get; init; }
+    public int Limit { get; init; } = 500;
 }
 
 public sealed record ServerFieldCommentReviewRequest
@@ -470,6 +487,9 @@ public sealed record ServerFieldCommentReviewDashboardResponse
     [JsonPropertyName("unassigned_count")]
     public int UnassignedCount { get; init; }
 
+    [JsonPropertyName("overdue_count")]
+    public int OverdueCount { get; init; }
+
     [JsonPropertyName("actions")]
     public IReadOnlyList<ServerFieldCommentReviewActionResponse> Actions { get; init; } = [];
 }
@@ -554,8 +574,17 @@ public sealed record ServerFieldCommentTraceDocumentResponse
     [JsonPropertyName("status")]
     public string Status { get; init; } = string.Empty;
 
+    [JsonPropertyName("latest_version_id")]
+    public string? LatestVersionId { get; init; }
+
+    [JsonPropertyName("published_version_id")]
+    public string? PublishedVersionId { get; init; }
+
     [JsonPropertyName("generated_version_ids")]
     public IReadOnlyList<string> GeneratedVersionIds { get; init; } = [];
+
+    [JsonPropertyName("observed_version_id")]
+    public string? ObservedVersionId { get; init; }
 }
 
 public sealed record ServerFieldCommentTraceReportResponse
@@ -572,8 +601,41 @@ public sealed record ServerFieldCommentTraceReportResponse
     [JsonPropertyName("source_version_id")]
     public string? SourceVersionId { get; init; }
 
+    [JsonPropertyName("source_revision")]
+    public int? SourceRevision { get; init; }
+
+    [JsonPropertyName("source_hash_sha256")]
+    public string SourceHashSha256 { get; init; } = string.Empty;
+
+    [JsonPropertyName("trace_id")]
+    public string TraceId { get; init; } = string.Empty;
+
     [JsonPropertyName("generated_document")]
     public ServerFieldCommentTraceDocumentResponse? GeneratedDocument { get; init; }
+}
+
+public sealed record ServerFieldCommentTraceWorkSequenceResponse
+{
+    [JsonPropertyName("board_id")]
+    public string BoardId { get; init; } = string.Empty;
+
+    [JsonPropertyName("board_title")]
+    public string BoardTitle { get; init; } = string.Empty;
+
+    [JsonPropertyName("item_id")]
+    public string ItemId { get; init; } = string.Empty;
+
+    [JsonPropertyName("item_title")]
+    public string ItemTitle { get; init; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("assigned_to")]
+    public string? AssignedTo { get; init; }
+
+    [JsonPropertyName("document_id")]
+    public string? DocumentId { get; init; }
 }
 
 public sealed record ServerFieldCommentTraceResponse
@@ -581,8 +643,17 @@ public sealed record ServerFieldCommentTraceResponse
     [JsonPropertyName("field_comment")]
     public ServerFieldCommentResponse FieldComment { get; init; } = new();
 
+    [JsonPropertyName("source_document")]
+    public ServerFieldCommentTraceDocumentResponse? SourceDocument { get; init; }
+
+    [JsonPropertyName("attachments")]
+    public IReadOnlyList<ServerFieldCommentAttachmentResponse> Attachments { get; init; } = [];
+
     [JsonPropertyName("audit")]
     public IReadOnlyList<ServerFieldCommentAuditResponse> Audit { get; init; } = [];
+
+    [JsonPropertyName("work_sequences")]
+    public IReadOnlyList<ServerFieldCommentTraceWorkSequenceResponse> WorkSequences { get; init; } = [];
 
     [JsonPropertyName("reports")]
     public IReadOnlyList<ServerFieldCommentTraceReportResponse> Reports { get; init; } = [];

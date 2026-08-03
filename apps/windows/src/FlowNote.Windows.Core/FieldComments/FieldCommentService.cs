@@ -246,6 +246,28 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
             command.Parameters.AddWithValue("$assigned_to", $"%{assignedTo}%");
         }
 
+        var assignedRole = CleanFilter(filter.AssignedRole);
+        if (!string.IsNullOrWhiteSpace(assignedRole) &&
+            !string.Equals(assignedRole, "ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            clauses.Add("EXISTS (SELECT 1 FROM user_accounts assigned_user WHERE assigned_user.user_id = comment.assigned_to AND assigned_user.role = $assigned_role)");
+            command.Parameters.AddWithValue("$assigned_role", assignedRole);
+        }
+
+        var signalLevel = CleanFilter(filter.SignalLevel);
+        if (!string.IsNullOrWhiteSpace(signalLevel) && !string.Equals(signalLevel, "ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            clauses.Add("lower(comment.signal_level) = lower($signal_level)");
+            command.Parameters.AddWithValue("$signal_level", signalLevel);
+        }
+
+        var documentVersionText = CleanFilter(filter.DocumentVersionText);
+        if (!string.IsNullOrWhiteSpace(documentVersionText))
+        {
+            clauses.Add("CAST(comment.document_version_no AS TEXT) LIKE $document_version_text");
+            command.Parameters.AddWithValue("$document_version_text", $"%{documentVersionText}%");
+        }
+
         AddTypedTagFilter(clauses, command, "line", filter.LineText);
         AddTypedTagFilter(clauses, command, "equipment", filter.EquipmentText);
         AddTypedTagFilter(clauses, command, "process", filter.ProcessText);
@@ -311,6 +333,18 @@ public sealed class FieldCommentService(FlowNoteLocalDatabase database)
         {
             clauses.Add("comment.created_at < $created_to");
             command.Parameters.AddWithValue("$created_to", filter.CreatedTo.Value.Date.AddDays(1).ToString("O"));
+        }
+
+        if (filter.ReviewDueFrom is not null)
+        {
+            clauses.Add("comment.review_due_at >= $review_due_from");
+            command.Parameters.AddWithValue("$review_due_from", filter.ReviewDueFrom.Value.Date.ToString("O"));
+        }
+
+        if (filter.ReviewDueTo is not null)
+        {
+            clauses.Add("comment.review_due_at < $review_due_to");
+            command.Parameters.AddWithValue("$review_due_to", filter.ReviewDueTo.Value.Date.AddDays(1).ToString("O"));
         }
 
         var where = clauses.Count == 0 ? string.Empty : $"WHERE {string.Join(" AND ", clauses)}";
