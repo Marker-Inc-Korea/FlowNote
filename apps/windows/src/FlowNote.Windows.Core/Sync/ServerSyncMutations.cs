@@ -549,7 +549,7 @@ public sealed partial class ServerSyncService
     {
         var accessLog = LoadAccessLog(item.EntityId)
             ?? throw new InvalidOperationException($"Local access log not found: {item.EntityId}");
-        var isCloseAction = item.Action is "register_access_log_closed" or "register_access_log_auto_closed" or "register_access_log_download_blocked";
+        var isCloseAction = item.Action is "register_access_log_closed" or "register_access_log_auto_closed" or "register_access_log_download_blocked" or "register_access_log_preview_failed";
         if (TryGetAccessLogServerId(accessLog.Id, isCloseAction) is { } existingServerLogId)
         {
             MarkQueueSynced(item.Id, null, null, null, existingServerLogId);
@@ -567,9 +567,13 @@ public sealed partial class ServerSyncService
         {
             "register_access_log_auto_closed" => "auto_closed",
             "register_access_log_download_blocked" => "download_blocked",
+            "register_access_log_preview_failed" => "preview_failed",
             "register_access_log_closed" => "view_closed",
             _ => "view_started"
         };
+        var accessLogPayload = string.IsNullOrWhiteSpace(item.PayloadJson)
+            ? null
+            : JsonSerializer.Deserialize<AccessLogSyncPayload>(item.PayloadJson);
         var response = await serverClient.RegisterAccessLogAsync(
             documentMapping.ServerDocumentId,
             new ServerDocumentAccessLogCreateRequest
@@ -578,7 +582,8 @@ public sealed partial class ServerSyncService
                 Action = action,
                 ActorId = Clean(serverUserId),
                 UserAgent = "FlowNote.Windows",
-                IdempotencyKey = item.IdempotencyKey
+                IdempotencyKey = item.IdempotencyKey,
+                Reason = Clean(accessLogPayload?.Reason)
             },
             cancellationToken);
 
@@ -605,8 +610,8 @@ public sealed partial class ServerSyncService
 
         UpsertMapping(
             connection,
-            item.Action == "register_access_log_download_blocked"
-                ? "document_access_log_download_blocked"
+            item.Action is "register_access_log_download_blocked" or "register_access_log_preview_failed"
+                ? item.Action.Replace("register_", "document_", StringComparison.Ordinal)
                 : isCloseAction ? "document_access_log_closed" : "document_access_log_started",
             accessLog.Id.ToString(),
             0,

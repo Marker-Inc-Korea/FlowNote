@@ -164,9 +164,10 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
         string action,
         FlowNoteServerDocumentClient? serverClient,
         string? serverUserId = null,
+        string? reason = null,
         CancellationToken cancellationToken = default)
     {
-        EnqueueAccessLog(accessLog, action, null);
+        EnqueueAccessLog(accessLog, action, null, reason);
         if (serverClient is null)
         {
             MarkLatestFailure("document_access_log", accessLog.Id.ToString(), SyncFailureMessages.ServerUrlNotConfigured);
@@ -293,6 +294,7 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
                     case "register_access_log_closed":
                     case "register_access_log_auto_closed":
                     case "register_access_log_download_blocked":
+                    case "register_access_log_preview_failed":
                         await SyncAccessLogAsync(item, serverClient, serverUserId, cancellationToken);
                         break;
                     case "register_report":

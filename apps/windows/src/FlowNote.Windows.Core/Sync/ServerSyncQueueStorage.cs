@@ -209,7 +209,11 @@ public sealed partial class ServerSyncService
             Math.Max(1, fieldComment.ReviewRevision - 1));
     }
 
-    private void EnqueueAccessLog(DocumentViewLogRecord accessLog, string action, string? failureReason)
+    private void EnqueueAccessLog(
+        DocumentViewLogRecord accessLog,
+        string action,
+        string? failureReason,
+        string? reason)
     {
         var normalizedAction = NormalizeAccessLogAction(action);
 
@@ -220,7 +224,10 @@ public sealed partial class ServerSyncService
             accessLog.DocumentId,
             accessLog.VersionNo,
             CreateAccessLogIdempotencyKey(accessLog.Id, normalizedAction),
-            failureReason);
+            failureReason,
+            string.IsNullOrWhiteSpace(reason)
+                ? null
+                : JsonSerializer.Serialize(new AccessLogSyncPayload(reason.Trim())));
     }
 
     private void EnqueueReport(
@@ -552,6 +559,7 @@ public sealed partial class ServerSyncService
                     WHEN 'register_access_log_closed' THEN 80
                     WHEN 'register_access_log_auto_closed' THEN 80
                     WHEN 'register_access_log_download_blocked' THEN 80
+                    WHEN 'register_access_log_preview_failed' THEN 80
                     WHEN 'register_report' THEN 90
                     ELSE 100
                 END,
@@ -691,12 +699,13 @@ public sealed partial class ServerSyncService
             case "register_access_log_closed":
             case "register_access_log_auto_closed":
             case "register_access_log_download_blocked":
+            case "register_access_log_preview_failed":
                 if (!long.TryParse(item.EntityId, out var accessLogId))
                 {
                     return false;
                 }
 
-                var isCloseAction = item.Action is "register_access_log_closed" or "register_access_log_auto_closed" or "register_access_log_download_blocked";
+                var isCloseAction = item.Action is "register_access_log_closed" or "register_access_log_auto_closed" or "register_access_log_download_blocked" or "register_access_log_preview_failed";
                 if (TryGetAccessLogServerId(accessLogId, isCloseAction) is { } serverLogId)
                 {
                     MarkQueueAlreadySynced(item, null, null, null, serverLogId, null);

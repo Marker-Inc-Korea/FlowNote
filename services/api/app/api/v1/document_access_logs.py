@@ -9,9 +9,13 @@ from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import AccessLogReadUser, get_current_user
+from app.core.auth import AccessLogReadUser, AuthenticatedUser, get_current_user
 from app.db.models import Document, DocumentAccessLog, DocumentVersion, UserAccount
 from app.db.session import get_db_session
+from app.services.mutation_receipts import (
+    mutation_trace,
+    record_common_audit_event,
+)
 
 router = APIRouter(
     prefix="/documents",
@@ -23,12 +27,26 @@ ACTIONS = {
     "view_started",
     "view_closed",
     "download_blocked",
+    "preview_failed",
     "auto_closed",
     "controlled_copy_requested",
     "controlled_copy_allowed",
     "controlled_copy_completed",
     "controlled_copy_failed",
     "controlled_copy_blocked",
+}
+
+EVENT_TYPES = {
+    "view_started": "document.view_started",
+    "view_closed": "document.view_closed",
+    "auto_closed": "document.auto_closed",
+    "download_blocked": "document.download_blocked",
+    "preview_failed": "document.preview_failed",
+    "controlled_copy_requested": "document.controlled_copy_requested",
+    "controlled_copy_allowed": "document.controlled_copy_allowed",
+    "controlled_copy_completed": "document.controlled_copy_completed",
+    "controlled_copy_failed": "document.controlled_copy_failed",
+    "controlled_copy_blocked": "document.controlled_copy_blocked",
 }
 
 
@@ -153,6 +171,7 @@ def create_document_access_log(
     payload: DocumentAccessLogCreateRequest,
     request: Request,
     session: Annotated[Session, Depends(get_db_session)],
+    current_user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> DocumentAccessLogResponse:
     _validate_document(session, document_id)
     version_id = _validate_version(session, document_id, payload.document_version_id)
@@ -181,6 +200,24 @@ def create_document_access_log(
     )
     session.add(log)
     try:
+        session.flush()
+        record_common_audit_event(
+            session,
+            event_type=EVENT_TYPES[action],
+            trace=mutation_trace(current_user, request),
+            target_type="document",
+            target_id=document_id,
+            target_version_id=version_id,
+            reason=_clean_optional(payload.reason),
+            result_code=action.upper(),
+            http_status=status.HTTP_201_CREATED,
+            safe_payload={
+                "action": action,
+                "documentAccessLogId": log.id,
+            },
+            domain_audit_type="document_access_log",
+            domain_audit_id=str(log.id),
+        )
         session.commit()
     except IntegrityError as exc:
         session.rollback()

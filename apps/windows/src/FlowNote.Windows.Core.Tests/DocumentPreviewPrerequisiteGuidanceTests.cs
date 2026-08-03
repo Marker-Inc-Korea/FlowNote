@@ -8,13 +8,14 @@ public sealed class DocumentPreviewPrerequisiteGuidanceTests
     [Fact]
     public void WebView2FailureShowsActionableKoreanGuidance()
     {
-        var message = DocumentPreviewPolicy.WebView2RuntimeUnavailableMessage;
+        var failure = DocumentPreviewFailure.Create(
+            DocumentPreviewKind.Pdf,
+            DocumentPreviewFailureCategory.ViewerUnavailable);
 
-        Assert.Contains("Microsoft Edge WebView2 Runtime", message);
-        Assert.Contains("누락 항목:", message);
-        Assert.Contains("보존된 데이터:", message);
-        Assert.Contains("담당자:", message);
-        Assert.Contains("다음 조치:", message);
-        Assert.Contains("다시 실행", message);
+        Assert.Equal("PDF", failure.FileType);
+        Assert.Contains("뷰어", failure.CategoryName);
+        Assert.Contains("보존", DocumentPreviewFailure.PreservationMessage);
+        Assert.Contains("Windows 설치 담당자", failure.NextAction);
+        Assert.Contains("WebView2 Runtime", failure.NextAction);
     }
 }
