@@ -75,17 +75,20 @@ public sealed class TagService(FlowNoteLocalDatabase database)
     internal static void ReplaceDocumentTags(
         SqliteConnection connection,
         string documentId,
-        IEnumerable<string> tags)
+        IEnumerable<string> tags,
+        SqliteTransaction? transaction = null)
     {
         using var delete = connection.CreateCommand();
+        delete.Transaction = transaction;
         delete.CommandText = "DELETE FROM document_tags WHERE document_id = $document_id;";
         delete.Parameters.AddWithValue("$document_id", documentId);
         delete.ExecuteNonQuery();
 
         foreach (var tagName in CleanTags(tags))
         {
-            var tagId = EnsureTag(connection, tagName);
+            var tagId = EnsureTag(connection, tagName, transaction);
             using var insert = connection.CreateCommand();
+            insert.Transaction = transaction;
             insert.CommandText = """
                 INSERT OR IGNORE INTO document_tags (document_id, tag_id, created_at)
                 VALUES ($document_id, $tag_id, $created_at);
@@ -135,11 +138,15 @@ public sealed class TagService(FlowNoteLocalDatabase database)
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
-    private static string EnsureTag(SqliteConnection connection, string tagName)
+    private static string EnsureTag(
+        SqliteConnection connection,
+        string tagName,
+        SqliteTransaction? transaction = null)
     {
         var code = NormalizeCode(tagName);
         using (var lookup = connection.CreateCommand())
         {
+            lookup.Transaction = transaction;
             lookup.CommandText = """
                 SELECT tag_id
                 FROM tag_definitions
@@ -165,6 +172,7 @@ public sealed class TagService(FlowNoteLocalDatabase database)
 
         var tagId = $"tag-{Guid.NewGuid():N}";
         using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
         insert.CommandText = """
             INSERT INTO tag_definitions (tag_id, tag_type, code, name, parent_tag_id, is_active, created_at)
             VALUES ($tag_id, 'custom', $code, $name, NULL, 1, $created_at);

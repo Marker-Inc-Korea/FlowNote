@@ -43,6 +43,7 @@ public sealed class DocumentSyncConflictPersistenceTests
             1L,
             ScalarLong(verify, "SELECT COUNT(*) FROM field_notes WHERE note_id = $value;", legacyId));
         Assert.True(ColumnExists(verify, "documents", "server_revision"));
+        Assert.True(ColumnExists(verify, "documents", "server_tags_json"));
         Assert.True(ColumnExists(verify, "server_sync_queue", "conflict_code"));
         Assert.True(ColumnExists(verify, "server_sync_queue", "resolution_reason"));
         Assert.True(ColumnExists(verify, "server_sync_queue", "base_domain_revision"));
@@ -217,6 +218,7 @@ public sealed class DocumentSyncConflictPersistenceTests
                 SET server_document_id = $server_document_id,
                     server_version_id = $server_version_id,
                     server_revision = 5,
+                    server_tags_json = '[]',
                     synced_at = $now
                 WHERE document_id = $document_id;
                 INSERT INTO server_id_mappings (
@@ -272,8 +274,22 @@ public sealed class DocumentSyncConflictPersistenceTests
         Assert.Equal(1, result.Synced);
         Assert.Equal(1, handler.PutCount);
         Assert.Equal(1, handler.ReadBackCount);
-        Assert.Contains("mutationKey=wpf%3Adocument-tags%3A", handler.PutRequestUri);
-        Assert.Equal("[\"line-a\",\"press-a\"]", handler.PutBody);
+        Assert.DoesNotContain("mutationKey=", handler.PutRequestUri);
+        using (var request = JsonDocument.Parse(handler.PutBody))
+        {
+            Assert.Equal(5, request.RootElement.GetProperty("baseRevision").GetInt32());
+            Assert.Equal(
+                ["line-a", "press-a"],
+                request.RootElement.GetProperty("addedTags").EnumerateArray()
+                    .Select(value => value.GetString()!).ToArray());
+            Assert.Empty(request.RootElement.GetProperty("removedTags").EnumerateArray());
+            Assert.StartsWith(
+                "wpf:document-tags:",
+                request.RootElement.GetProperty("mutationKey").GetString());
+            Assert.Equal(
+                64,
+                request.RootElement.GetProperty("intentHash").GetString()!.Length);
+        }
         using var verify = database.OpenConnection();
         Assert.Equal(
             1L,
@@ -286,6 +302,103 @@ public sealed class DocumentSyncConflictPersistenceTests
             ScalarLong(
                 verify,
                 "SELECT server_revision FROM documents WHERE document_id = $value;",
+                documentId));
+        Assert.Equal(
+            "[\"line-a\",\"press-a\"]",
+            ScalarString(
+                verify,
+                "SELECT server_tags_json FROM documents WHERE document_id = $value;",
+                documentId));
+    }
+
+    [Fact]
+    public async Task TagResponseLossLeavesLocalTransactionUntouchedAndRetryConverges()
+    {
+        var database = CreateDatabase();
+        var suffix = Guid.NewGuid().ToString("N");
+        var documentId = $"doc-tags-loss-{suffix}";
+        var relativePath = Path.Combine("Files", "CoreSyncTests", $"tags-loss-{suffix}.txt");
+        var absolutePath = Path.Combine(FlowNoteLocalDatabase.DefaultDataDirectory, relativePath);
+        var serverScope = $"https://tag-loss-{suffix}.example/";
+        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
+        await File.WriteAllTextAsync(absolutePath, $"tag response loss evidence {suffix}");
+        InsertPendingDocument(database, documentId, relativePath);
+        var now = DateTime.UtcNow;
+        using (var connection = database.OpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE documents
+                SET server_document_id = $server_document_id,
+                    server_version_id = $server_version_id,
+                    server_revision = 5,
+                    server_tags_json = '[]',
+                    synced_at = $now
+                WHERE document_id = $document_id;
+                INSERT INTO server_id_mappings (
+                    entity_type, local_id, local_version_no, server_document_id,
+                    server_version_id, server_revision, synced_at)
+                VALUES ('document', $document_id, 0, $server_document_id,
+                        $server_version_id, 5, $now);
+                INSERT INTO server_bindings (
+                    server_scope, server_instance_id, server_epoch, schema_contract,
+                    api_contract_min, api_contract_max, status,
+                    observed_server_instance_id, observed_server_epoch, updated_at)
+                VALUES ($server_scope, 'srv-tag-authority', 1, 1, 1, 1, 'ACTIVE',
+                        'srv-tag-authority', 1, $now);
+                """;
+            command.Parameters.AddWithValue("$document_id", documentId);
+            command.Parameters.AddWithValue("$server_document_id", $"server-{documentId}");
+            command.Parameters.AddWithValue("$server_version_id", $"version-{documentId}");
+            command.Parameters.AddWithValue("$now", now.ToString("O"));
+            command.Parameters.AddWithValue("$server_scope", serverScope);
+            command.ExecuteNonQuery();
+        }
+        var record = new FlowNote.Windows.Core.Documents.DocumentRecord(
+            0, documentId, 0, "태그 응답 유실", Path.GetFileName(absolutePath), "Text",
+            "WORKING", "user-admin", now, now, relativePath, 1, null, ["line-a"]);
+        var handler = new TagAuthorityHandler(
+            $"server-{documentId}", $"version-{documentId}", ["line-a"],
+            loseFirstReadBack: true);
+        using var http = new HttpClient(handler) { BaseAddress = new Uri(serverScope) };
+        var client = new FlowNoteServerDocumentClient(http);
+
+        var first = await new ServerSyncService(database).QueueAndTrySyncDocumentTagsAsync(
+            record, client, "user-admin");
+        Assert.False(first.Success);
+        using (var verify = database.OpenConnection())
+        {
+            Assert.Equal(
+                5L,
+                ScalarLong(
+                    verify,
+                    "SELECT server_revision FROM documents WHERE document_id = $value;",
+                    documentId));
+            Assert.Equal(
+                1L,
+                ScalarLong(
+                    verify,
+                    "SELECT COUNT(*) FROM server_sync_queue WHERE entity_id = $value AND status = 'FAILED';",
+                    documentId));
+        }
+
+        var second = await new ServerSyncService(database).RetryPendingAsync(client, "user-admin");
+        Assert.True(second.Synced >= 1, second.Message);
+        Assert.Equal(2, handler.PutCount);
+        Assert.Equal(2, handler.PutBodies.Count);
+        Assert.Equal(handler.PutBodies[0], handler.PutBodies[1]);
+        using var converged = database.OpenConnection();
+        Assert.Equal(
+            6L,
+            ScalarLong(
+                converged,
+                "SELECT server_revision FROM documents WHERE document_id = $value;",
+                documentId));
+        Assert.Equal(
+            1L,
+            ScalarLong(
+                converged,
+                "SELECT COUNT(*) FROM server_sync_queue WHERE entity_id = $value AND status = 'SYNCED';",
                 documentId));
     }
 
@@ -430,6 +543,14 @@ public sealed class DocumentSyncConflictPersistenceTests
         return Convert.ToInt64(command.ExecuteScalar());
     }
 
+    private static string ScalarString(SqliteConnection connection, string sql, string value)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("$value", value);
+        return Convert.ToString(command.ExecuteScalar()) ?? string.Empty;
+    }
+
     private sealed class ConflictHandler : HttpMessageHandler
     {
         public string RequestBody { get; private set; } = string.Empty;
@@ -539,12 +660,14 @@ public sealed class DocumentSyncConflictPersistenceTests
     private sealed class TagAuthorityHandler(
         string serverDocumentId,
         string serverVersionId,
-        IReadOnlyList<string> tags) : HttpMessageHandler
+        IReadOnlyList<string> tags,
+        bool loseFirstReadBack = false) : HttpMessageHandler
     {
         public int PutCount { get; private set; }
         public int ReadBackCount { get; private set; }
         public string PutRequestUri { get; private set; } = string.Empty;
         public string PutBody { get; private set; } = string.Empty;
+        public List<string> PutBodies { get; } = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -562,11 +685,19 @@ public sealed class DocumentSyncConflictPersistenceTests
                 PutBody = request.Content is null
                     ? string.Empty
                     : await request.Content.ReadAsStringAsync(cancellationToken);
+                PutBodies.Add(PutBody);
                 return JsonResponse(DocumentJson());
             }
             if (request.Method == HttpMethod.Get)
             {
                 ReadBackCount++;
+                if (loseFirstReadBack && ReadBackCount == 1)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                    {
+                        Content = new StringContent("{\"detail\":\"simulated response loss\"}")
+                    };
+                }
                 return JsonResponse(DocumentJson());
             }
             return new HttpResponseMessage(HttpStatusCode.NotFound);

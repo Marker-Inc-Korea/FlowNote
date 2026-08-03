@@ -1,6 +1,6 @@
 # 0001 Initial FlowNote API Schema
 
-FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기준은 2026-08-01 현재 `services/api/app/db/models.py`와 역할별 `models_*.py`다. 앱 시작 시 `services/api/app/db/init_db.py`가 기존 WPF 로컬 스키마가 아닌지 먼저 확인한 뒤 `Base.metadata.create_all()`로 서버 테이블을 보장한다.
+FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기준은 2026-08-03 현재 `services/api/app/db/models.py`와 역할별 `models_*.py`다. 앱 시작 시 `services/api/app/db/init_db.py`가 기존 WPF 로컬 스키마가 아닌지 먼저 확인한 뒤 `Base.metadata.create_all()`로 서버 테이블을 보장한다.
 
 ## Version
 
@@ -22,9 +22,10 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 | `file_objects` | Server-local stored file metadata |
 | `documents` | Document metadata and latest/published version refs |
 | `document_versions` | Version metadata, change reason, latest/published flags |
-| `document_mutation_receipts` | Publish/status/tag mutation key, intent hash, applied revision, and first response snapshot |
+| `document_mutation_receipts` | Publish/status/tag/delete mutation key, intent hash, applied revision, and first response snapshot |
 | `tag_definitions` | Tag dictionary |
 | `document_tags` | Document-tag relation |
+| `document_tag_revisions` | Document revision-specific tag snapshots used for non-conflicting delta merges |
 | `terminal_devices` | Field terminal registry basis |
 | `field_comments` | FieldComment source history, review/analysis fields, and server-authoritative `review_revision` |
 | `field_comment_attachments` | FieldComment attachment relation |
@@ -73,7 +74,7 @@ FastAPI 서버의 첫 SQLite 스키마 설명이다. 실제 테이블 생성 기
 - Creating or uploading a version does not automatically publish the document.
 - Controlled copy can only target the current published version; grants expire quickly and are consumed once.
 - FieldComment must reference at least one of document, structure item, or work record.
-- Document publish/status/tag writes, FieldComment review writes, and report saves use domain revisions plus immutable mutation receipts; each receipt commits with its aggregate mutation.
+- Document publish/status/tag/delete writes, FieldComment review writes, and report saves use domain revisions plus immutable mutation receipts; each receipt commits with its aggregate mutation. Tag delta merge also stores the resulting tag set in `document_tag_revisions`.
 - Sync manifest identifies the server installation and explicit recovery epoch. Reconciliation records classify WPF queue inventory without rewriting domain source rows and require administrator approval for every proposed action.
 - External AI calls are disabled by default. A generic HTTPS JSON adapter exists only for explicit `test` scope; no provider-specific production client or production activation is configured.
 - `ai_sensitive_data_policies` keeps immutable customer/site policy versions and separated review, approval, activation, replacement, withdrawal, and retirement history. Only the active version contributes deny terms and customer identifiers to the provider-boundary content filter.

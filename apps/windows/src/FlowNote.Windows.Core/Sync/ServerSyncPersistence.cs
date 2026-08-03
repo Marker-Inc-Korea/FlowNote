@@ -153,15 +153,18 @@ public sealed partial class ServerSyncService
     private static void UpdateDocumentServerState(
         SqliteConnection connection,
         string localDocumentId,
-        ServerDocumentResponse response)
+        ServerDocumentResponse response,
+        SqliteTransaction? transaction = null)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             UPDATE documents
             SET server_document_id = $server_document_id,
                 server_version_id = $server_version_id,
                 server_revision = $server_revision,
                 server_published_version_id = $server_published_version_id,
+                server_tags_json = $server_tags_json,
                 synced_at = $synced_at
             WHERE document_id = $document_id;
             """;
@@ -169,6 +172,7 @@ public sealed partial class ServerSyncService
         command.Parameters.AddWithValue("$server_version_id", string.IsNullOrWhiteSpace(response.LatestVersionId) ? DBNull.Value : response.LatestVersionId);
         command.Parameters.AddWithValue("$server_revision", response.Revision);
         command.Parameters.AddWithValue("$server_published_version_id", string.IsNullOrWhiteSpace(response.PublishedVersionId) ? DBNull.Value : response.PublishedVersionId);
+        command.Parameters.AddWithValue("$server_tags_json", JsonSerializer.Serialize(response.Tags));
         command.Parameters.AddWithValue("$synced_at", DateTime.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$document_id", localDocumentId);
         command.ExecuteNonQuery();
@@ -836,6 +840,10 @@ public sealed partial class ServerSyncService
             "IDEMPOTENCY_KEY_REUSED" => "멱등키 내용 불일치",
             "FILE_HASH_MISMATCH" => "파일 SHA-256 불일치",
             "DOCUMENT_READ_BACK_MISMATCH" => "서버 read-back 권위 불일치",
+            "TAG_MERGE_CONFLICT" => "같은 태그의 추가·제거 경쟁 충돌",
+            "TAG_UNAVAILABLE" => "비활성·삭제 태그 충돌",
+            "TAG_BASE_UNAVAILABLE" => "태그 기준 revision 스냅샷 누락",
+            "TAG_INTENT_HASH_MISMATCH" => "태그 변경 의도 hash 불일치",
             "LEGACY_BASE_MISSING" => "구 큐 서버 기준값 누락",
             _ => "서버 문서 충돌"
         };

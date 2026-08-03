@@ -9,6 +9,7 @@ from sqlalchemy import case, desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.v1.document_tag_mutations import apply_document_tag_mutation
 from app.api.v1.document_support import (
     CREATABLE_DOCUMENT_STATUSES,
     DOCUMENT_STATUSES,
@@ -17,6 +18,7 @@ from app.api.v1.document_support import (
     DocumentListItem,
     DocumentResponse,
     DocumentStatusUpdateRequest,
+    DocumentTagMutationRequest,
     DocumentVersionPublishRequest,
     DocumentVersionResponse,
     DocumentVersionStatusUpdateRequest,
@@ -35,6 +37,7 @@ from app.api.v1.document_support import (
     path_sha256 as _path_sha256,
     published_version_for_document as _published_version_for_document,
     record_activity as _record_activity,
+    record_document_tag_revision as _record_document_tag_revision,
     replace_document_tags as _replace_document_tags,
     require_live_document as _require_live_document,
     save_file_object as _save_file_object,
@@ -160,6 +163,7 @@ async def create_document(
     session.add(document)
     session.add(version)
     _replace_document_tags(session, document_id, cleaned_tags)
+    _record_document_tag_revision(session, document_id, 1, cleaned_tags)
     try:
         session.commit()
     except IntegrityError as exc:
@@ -281,43 +285,22 @@ def get_published_document_version(
 
 
 @router.put("/{document_id}/tags", response_model=DocumentResponse)
-def replace_document_tags(
+def merge_document_tags(
     document_id: str,
-    tags: list[str],
+    payload: DocumentTagMutationRequest | list[str],
     current_user: DocumentWriteUser,
-    base_revision: Annotated[int, Query(alias="baseRevision", ge=1)],
     session: Annotated[Session, Depends(get_db_session)],
+    base_revision: Annotated[int | None, Query(alias="baseRevision", ge=1)] = None,
     mutation_key: Annotated[str | None, Query(alias="mutationKey")] = None,
 ) -> DocumentResponse:
-    cleaned_tags = _clean_tags(tags)
-    mutation_key = _clean_idempotency_key(mutation_key)
-    intent_hash = _document_mutation_intent_hash(
-        "REPLACE_TAGS",
-        document_id,
-        {"baseRevision": base_revision, "tags": cleaned_tags},
-    )
-    replay = _document_mutation_replay(
-        session, mutation_key, "REPLACE_TAGS", document_id, intent_hash
-    )
-    if replay is not None:
-        return replay
-    document = _require_live_document(session, document_id)
-
-    _claim_revision(session, document, base_revision)
-    _replace_document_tags(session, document_id, cleaned_tags)
-    session.flush()
-    response = _document_response(session, document)
-    _store_document_mutation_receipt(
+    return apply_document_tag_mutation(
         session,
-        mutation_key=mutation_key,
-        mutation_type="REPLACE_TAGS",
-        intent_hash=intent_hash,
-        document=document,
-        response=response,
+        document_id=document_id,
+        payload=payload,
         actor_id=current_user.user_id,
+        legacy_base_revision=base_revision,
+        legacy_mutation_key=mutation_key,
     )
-    session.commit()
-    return response
 
 
 @router.patch("/{document_id}/status", response_model=DocumentResponse)
@@ -770,8 +753,19 @@ def delete_document(
     current_user: DocumentGovernanceUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> DocumentResponse:
-    document = _require_live_document(session, document_id)
     reason = _validate_change_reason(payload.change_reason)
+    mutation_key = _clean_idempotency_key(payload.mutation_key)
+    intent_hash = _document_mutation_intent_hash(
+        "DELETE_DOCUMENT",
+        document_id,
+        {"baseRevision": payload.base_revision, "changeReason": reason},
+    )
+    replay = _document_mutation_replay(
+        session, mutation_key, "DELETE_DOCUMENT", document_id, intent_hash
+    )
+    if replay is not None:
+        return replay
+    document = _require_live_document(session, document_id)
     before = document.status
     _claim_revision(session, document, payload.base_revision)
     now = datetime.now(timezone.utc)
@@ -797,6 +791,16 @@ def delete_document(
         after_value="DELETED",
         change_reason=reason,
     )
+    session.flush()
+    response = _document_response(session, document)
+    _store_document_mutation_receipt(
+        session,
+        mutation_key=mutation_key,
+        mutation_type="DELETE_DOCUMENT",
+        intent_hash=intent_hash,
+        document=document,
+        response=response,
+        actor_id=current_user.user_id,
+    )
     session.commit()
-    session.refresh(document)
-    return _document_response(session, document)
+    return response

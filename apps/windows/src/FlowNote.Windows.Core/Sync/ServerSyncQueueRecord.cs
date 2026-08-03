@@ -28,6 +28,7 @@ public sealed record ServerSyncQueueRecord(
     int? BaseDomainRevision,
     string? IntentHash,
     string? SourceSetHash,
+    string? PayloadJson,
     string? ConflictCode,
     string? ConflictDetails,
     string? ResolutionAction,

@@ -191,18 +191,25 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerDocumentResponse>(response, cancellationToken);
     }
 
-    public async Task<ServerDocumentResponse> ReplaceDocumentTagsAsync(
+    public async Task<ServerDocumentResponse> MergeDocumentTagsAsync(
         string documentId,
-        IReadOnlyList<string> tags,
         int baseRevision,
+        IReadOnlyList<string> addedTags,
+        IReadOnlyList<string> removedTags,
+        string intentHash,
         string mutationKey,
         CancellationToken cancellationToken = default)
     {
-        var query =
-            $"baseRevision={baseRevision}&mutationKey={Uri.EscapeDataString(mutationKey)}";
         using var response = await httpClient.PutAsJsonAsync(
-            $"api/v1/documents/{Uri.EscapeDataString(documentId)}/tags?{query}",
-            tags,
+            $"api/v1/documents/{Uri.EscapeDataString(documentId)}/tags",
+            new ServerDocumentTagMutationRequest
+            {
+                BaseRevision = baseRevision,
+                AddedTags = addedTags,
+                RemovedTags = removedTags,
+                IntentHash = intentHash,
+                MutationKey = mutationKey
+            },
             cancellationToken);
         return await ReadJsonResponse<ServerDocumentResponse>(response, cancellationToken);
     }

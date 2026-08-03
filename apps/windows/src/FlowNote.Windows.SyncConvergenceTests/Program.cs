@@ -251,7 +251,11 @@ static ConvergenceEvidence ReadEvidence(
         SELECT COUNT(*),
                SUM(CASE WHEN status = 'SYNCED' THEN 1 ELSE 0 END),
                MAX(CASE WHEN local_document_id = $document_id THEN server_document_id END),
-               MAX(CASE WHEN local_document_id = $document_id THEN server_version_id END)
+               MAX(CASE
+                   WHEN local_document_id = $document_id
+                    AND entity_type = 'document_publish'
+                   THEN server_version_id
+               END)
         FROM server_sync_queue
         WHERE entity_id IN ({placeholders});
         """;

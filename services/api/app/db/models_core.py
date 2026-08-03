@@ -336,6 +336,33 @@ class DocumentMutationReceipt(Base):
     )
 
 
+class DocumentTagRevision(Base):
+    __tablename__ = "document_tag_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id",
+            "document_revision",
+            name="uq_document_tag_revisions_document_revision",
+        ),
+        Index(
+            "ix_document_tag_revisions_document_revision",
+            "document_id",
+            "document_revision",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    document_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("documents.document_id"), nullable=False, index=True
+    )
+    document_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    tags_json: Mapped[str] = mapped_column(Text, nullable=False)
+    mutation_key: Mapped[str | None] = mapped_column(String(160), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class TagDefinition(Base):
     __tablename__ = "tag_definitions"
     __table_args__ = (

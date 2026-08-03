@@ -395,7 +395,7 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
                    server_attachment_id, server_log_id, base_server_revision,
                    expected_server_version_id, expected_published_version_id,
                    local_file_hash_sha256, base_domain_revision, intent_hash, source_set_hash,
-                   conflict_code, conflict_details,
+                   payload_json, conflict_code, conflict_details,
                    resolution_action, resolution_reason, resolved_by, resolved_at
                    ,server_conflict_hash_sha256
             FROM server_sync_queue
@@ -448,8 +448,9 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
                 reader.IsDBNull(29) ? null : reader.GetString(29),
                 reader.IsDBNull(30) ? null : reader.GetString(30),
                 reader.IsDBNull(31) ? null : reader.GetString(31),
-                reader.IsDBNull(32) ? null : DateTime.Parse(reader.GetString(32)),
-                reader.IsDBNull(33) ? null : reader.GetString(33)));
+                reader.IsDBNull(32) ? null : reader.GetString(32),
+                reader.IsDBNull(33) ? null : DateTime.Parse(reader.GetString(33)),
+                reader.IsDBNull(34) ? null : reader.GetString(34)));
         }
 
         return records;
@@ -500,11 +501,14 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
 
         string localDocumentId;
         string serverDocumentId;
+        string action;
+        string? payloadJson;
         using (var connection = database.OpenConnection())
         using (var lookup = connection.CreateCommand())
         {
             lookup.CommandText = """
-                SELECT COALESCE(queue.local_document_id, queue.entity_id), document.server_document_id
+                SELECT COALESCE(queue.local_document_id, queue.entity_id),
+                       document.server_document_id, queue.action, queue.payload_json
                 FROM server_sync_queue AS queue
                 JOIN documents AS document
                   ON document.document_id = COALESCE(queue.local_document_id, queue.entity_id)
@@ -519,14 +523,35 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
             }
             localDocumentId = reader.GetString(0);
             serverDocumentId = reader.GetString(1);
+            action = reader.GetString(2);
+            payloadJson = reader.IsDBNull(3) ? null : reader.GetString(3);
         }
 
         var serverDocument = await serverClient.GetDocumentAsync(serverDocumentId, cancellationToken);
+        string? rebasedIntentHash = null;
+        string? rebasedPayloadJson = null;
+        if (action == "replace_document_tags" && ReadTagsPayload(payloadJson) is { } tagPayload)
+        {
+            rebasedIntentHash = CreateDocumentTagIntentHash(
+                serverDocumentId,
+                serverDocument.Revision,
+                tagPayload.AddedTags,
+                tagPayload.RemovedTags);
+            rebasedPayloadJson = JsonSerializer.Serialize(tagPayload with
+            {
+                BaseRevision = serverDocument.Revision,
+                IntentHash = rebasedIntentHash,
+                BaseTagsKnown = true,
+                CanResolveBaseAfterDocumentRegistration = false
+            });
+        }
         var now = DateTime.UtcNow;
         using (var connection = database.OpenConnection())
         {
-            UpdateDocumentServerState(connection, localDocumentId, serverDocument);
+            using var transaction = connection.BeginTransaction();
+            UpdateDocumentServerState(connection, localDocumentId, serverDocument, transaction);
             using var command = connection.CreateCommand();
+            command.Transaction = transaction;
             command.CommandText = """
                 UPDATE server_sync_queue
                 SET status = 'PENDING',
@@ -534,6 +559,8 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
                     base_server_revision = $base_server_revision,
                     expected_server_version_id = $expected_server_version_id,
                     expected_published_version_id = $expected_published_version_id,
+                    intent_hash = COALESCE($intent_hash, intent_hash),
+                    payload_json = COALESCE($payload_json, payload_json),
                     resolution_action = 'RETRY_LOCAL_ON_LATEST',
                     resolution_reason = $reason,
                     resolved_by = $resolved_by,
@@ -543,6 +570,8 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
             command.Parameters.AddWithValue("$base_server_revision", serverDocument.Revision);
             command.Parameters.AddWithValue("$expected_server_version_id", string.IsNullOrWhiteSpace(serverDocument.LatestVersionId) ? DBNull.Value : serverDocument.LatestVersionId);
             command.Parameters.AddWithValue("$expected_published_version_id", string.IsNullOrWhiteSpace(serverDocument.PublishedVersionId) ? DBNull.Value : serverDocument.PublishedVersionId);
+            command.Parameters.AddWithValue("$intent_hash", string.IsNullOrWhiteSpace(rebasedIntentHash) ? DBNull.Value : rebasedIntentHash);
+            command.Parameters.AddWithValue("$payload_json", string.IsNullOrWhiteSpace(rebasedPayloadJson) ? DBNull.Value : rebasedPayloadJson);
             command.Parameters.AddWithValue("$reason", reason.Trim());
             command.Parameters.AddWithValue("$resolved_by", resolvedBy.Trim());
             command.Parameters.AddWithValue("$resolved_at", now.ToString("O"));
@@ -551,7 +580,8 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
             {
                 throw new InvalidOperationException("충돌 상태가 변경되어 최신 목록을 다시 확인해야 합니다.");
             }
-            RecordSyncHistory(connection, "server_sync.conflict_retry_selected", "server_sync_queue", queueId.ToString(), $"서버 revision {serverDocument.Revision}을 기준으로 로컬 변경 재시도를 선택했습니다. 사유: {reason.Trim()}", now);
+            RecordSyncHistory(connection, "server_sync.conflict_retry_selected", "server_sync_queue", queueId.ToString(), $"서버 revision {serverDocument.Revision}을 기준으로 로컬 변경 재시도를 선택했습니다. 사유: {reason.Trim()}", now, transaction);
+            transaction.Commit();
         }
 
         return await RetryPendingAsync(serverClient, serverUserId, cancellationToken);

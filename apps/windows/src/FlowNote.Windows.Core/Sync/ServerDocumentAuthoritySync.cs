@@ -42,12 +42,6 @@ public sealed partial class ServerSyncService
         FlowNoteServerDocumentClient serverClient,
         CancellationToken cancellationToken)
     {
-        var baseServerRevision = ReadCurrentBaseServerRevision(item);
-        if (baseServerRevision is null)
-        {
-            throw LegacyBaseConflict("구 태그 큐에는 서버 기준 revision이 없어 자동 교체할 수 없습니다.");
-        }
-
         var document = LoadDocument(item.EntityId)
             ?? throw new InvalidOperationException($"Local document not found: {item.EntityId}");
         var mapping = TryGetDocumentServerMapping(item.EntityId);
@@ -56,14 +50,43 @@ public sealed partial class ServerSyncService
             throw new InvalidOperationException(SyncFailureMessages.DocumentDependencyNotSynced);
         }
 
-        var tags = ReadTagsPayload(item.PayloadJson)
-            ?? TagService.CleanTags(document.TagList)
-                .OrderBy(value => value, StringComparer.Ordinal)
-                .ToList();
-        var response = await serverClient.ReplaceDocumentTagsAsync(
+        var payload = ReadTagsPayload(item.PayloadJson);
+        if (payload is { BaseTagsKnown: false, CanResolveBaseAfterDocumentRegistration: true })
+        {
+            payload = ResolveDeferredDocumentTagPayload(item, mapping.ServerDocumentId);
+        }
+        var baseServerRevision = payload?.BaseRevision ?? ReadCurrentBaseServerRevision(item);
+        if (baseServerRevision is null)
+        {
+            throw LegacyBaseConflict("구 태그 큐에는 서버 기준 revision이 없어 자동 교체할 수 없습니다.");
+        }
+        if (payload is null || !payload.BaseTagsKnown)
+        {
+            throw LegacyBaseConflict(
+                "구 태그 큐에는 서버 기준 태그 집합이 없어 추가·제거 의도를 안전하게 계산할 수 없습니다.");
+        }
+        if (payload.BaseRevision != baseServerRevision.Value ||
+            !string.Equals(
+                payload.IntentHash,
+                ReadCurrentIntentHash(item.Id),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new FlowNoteServerConflictException(
+                "TAG_INTENT_HASH_MISMATCH",
+                "보존된 태그 요청의 baseRevision 또는 intent hash가 큐 메타데이터와 다릅니다.",
+                baseServerRevision,
+                mapping.ServerRevision,
+                null,
+                mapping.ServerVersionId,
+                mapping.ServerPublishedVersionId,
+                item.PayloadJson ?? "{}");
+        }
+        var response = await serverClient.MergeDocumentTagsAsync(
             mapping.ServerDocumentId,
-            tags,
             baseServerRevision.Value,
+            payload.AddedTags,
+            payload.RemovedTags,
+            payload.IntentHash,
             item.IdempotencyKey,
             cancellationToken);
         var authoritative = await ReadBackDocumentAuthorityAsync(
@@ -71,12 +94,16 @@ public sealed partial class ServerSyncService
             response.DocumentId,
             expectedStatus: null,
             expectedPublishedVersionId: null,
-            expectedTags: tags,
+            expectedTags: response.Tags,
             cancellationToken);
         var now = DateTime.UtcNow;
+        var latestHash = authoritative.LatestVersion?.File.HashSha256;
 
         using var connection = database.OpenConnection();
-        UpdateDocumentServerState(connection, document.DocumentId, authoritative);
+        using var transaction = connection.BeginTransaction();
+        UpdateDocumentServerState(connection, document.DocumentId, authoritative, transaction);
+        TagService.ReplaceDocumentTags(
+            connection, document.DocumentId, authoritative.Tags, transaction);
         UpsertMapping(
             connection,
             "document_tags",
@@ -88,7 +115,9 @@ public sealed partial class ServerSyncService
             null,
             null,
             now,
-            serverRevision: authoritative.Revision);
+            serverRevision: authoritative.Revision,
+            serverFileHashSha256: latestHash,
+            transaction: transaction);
         UpsertMapping(
             connection,
             "document",
@@ -100,7 +129,9 @@ public sealed partial class ServerSyncService
             null,
             null,
             now,
-            serverRevision: authoritative.Revision);
+            serverRevision: authoritative.Revision,
+            serverFileHashSha256: latestHash,
+            transaction: transaction);
         MarkQueueSynced(
             connection,
             item.Id,
@@ -108,15 +139,90 @@ public sealed partial class ServerSyncService
             authoritative.LatestVersionId,
             null,
             null,
-            now);
-        AdvanceDependentDocumentBases(connection, document.DocumentId, authoritative);
+            now,
+            transaction: transaction);
+        AdvanceDependentDocumentBases(
+            connection, document.DocumentId, authoritative, transaction);
         RecordSyncHistory(
             connection,
             "server_sync.succeeded",
             "document_tags",
             document.DocumentId,
             $"Server document tags synced and read back: {authoritative.DocumentId} revision {authoritative.Revision}",
-            now);
+            now,
+            transaction);
+        transaction.Commit();
+    }
+
+    private DocumentTagsSyncPayload ResolveDeferredDocumentTagPayload(
+        QueueItem item,
+        string serverDocumentId)
+    {
+        var original = ReadTagsPayload(item.PayloadJson)
+            ?? throw LegacyBaseConflict("보존된 태그 요청 본문을 읽을 수 없습니다.");
+        using var connection = database.OpenConnection();
+        using var select = connection.CreateCommand();
+        select.CommandText = """
+            SELECT server_revision, server_tags_json
+            FROM documents
+            WHERE document_id = $document_id
+            LIMIT 1;
+            """;
+        select.Parameters.AddWithValue("$document_id", item.EntityId);
+        using var reader = select.ExecuteReader();
+        if (!reader.Read() || reader.IsDBNull(0) || reader.IsDBNull(1))
+        {
+            throw LegacyBaseConflict(
+                "문서 등록 응답의 서버 revision과 태그 기준 집합이 없어 태그 의도를 확정할 수 없습니다.");
+        }
+        var baseRevision = reader.GetInt32(0);
+        IReadOnlyList<string> baseTags;
+        try
+        {
+            baseTags = JsonSerializer.Deserialize<List<string>>(reader.GetString(1)) ?? [];
+        }
+        catch (JsonException)
+        {
+            throw LegacyBaseConflict("문서 등록 응답의 서버 태그 기준 집합을 읽을 수 없습니다.");
+        }
+        reader.Close();
+
+        var addedTags = original.DesiredTags
+            .Except(baseTags, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToList();
+        var removedTags = baseTags
+            .Except(original.DesiredTags, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToList();
+        var intentHash = CreateDocumentTagIntentHash(
+            serverDocumentId, baseRevision, addedTags, removedTags);
+        var resolved = new DocumentTagsSyncPayload(
+            baseRevision,
+            addedTags,
+            removedTags,
+            intentHash,
+            true,
+            original.DesiredTags,
+            false);
+        using var update = connection.CreateCommand();
+        update.CommandText = """
+            UPDATE server_sync_queue
+            SET base_server_revision = $base_revision,
+                intent_hash = $intent_hash,
+                payload_json = $payload_json
+            WHERE id = $id
+              AND status IN ('PENDING', 'FAILED');
+            """;
+        update.Parameters.AddWithValue("$base_revision", baseRevision);
+        update.Parameters.AddWithValue("$intent_hash", intentHash);
+        update.Parameters.AddWithValue("$payload_json", JsonSerializer.Serialize(resolved));
+        update.Parameters.AddWithValue("$id", item.Id);
+        if (update.ExecuteNonQuery() != 1)
+        {
+            throw new InvalidOperationException("태그 큐 기준 상태가 변경되어 요청 의도를 확정하지 못했습니다.");
+        }
+        return resolved;
     }
 
     private static string? ReadStatusPayload(string? payloadJson)
@@ -136,7 +242,7 @@ public sealed partial class ServerSyncService
         }
     }
 
-    private static IReadOnlyList<string>? ReadTagsPayload(string? payloadJson)
+    private static DocumentTagsSyncPayload? ReadTagsPayload(string? payloadJson)
     {
         if (string.IsNullOrWhiteSpace(payloadJson))
         {
@@ -145,7 +251,7 @@ public sealed partial class ServerSyncService
 
         try
         {
-            return JsonSerializer.Deserialize<DocumentTagsSyncPayload>(payloadJson)?.Tags;
+            return JsonSerializer.Deserialize<DocumentTagsSyncPayload>(payloadJson);
         }
         catch (JsonException)
         {
@@ -188,6 +294,15 @@ public sealed partial class ServerSyncService
         command.Parameters.AddWithValue("$id", item.Id);
         var value = command.ExecuteScalar();
         return value is null or DBNull ? null : Convert.ToInt32(value);
+    }
+
+    private string? ReadCurrentIntentHash(long queueId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT intent_hash FROM server_sync_queue WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", queueId);
+        return command.ExecuteScalar() as string;
     }
 
     private static void AdvanceDependentFieldCommentReviewBases(
@@ -258,22 +373,26 @@ public sealed partial class ServerSyncService
     private static void AdvanceDependentDocumentBases(
         SqliteConnection connection,
         string localDocumentId,
-        ServerDocumentResponse response) =>
+        ServerDocumentResponse response,
+        SqliteTransaction? transaction = null) =>
         AdvanceDependentDocumentBases(
             connection,
             localDocumentId,
             response.Revision,
             response.LatestVersionId,
-            response.PublishedVersionId);
+            response.PublishedVersionId,
+            transaction);
 
     private static void AdvanceDependentDocumentBases(
         SqliteConnection connection,
         string localDocumentId,
         int serverRevision,
         string? latestVersionId,
-        string? publishedVersionId)
+        string? publishedVersionId,
+        SqliteTransaction? transaction = null)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             UPDATE server_sync_queue
             SET base_server_revision = $revision,
@@ -285,8 +404,7 @@ public sealed partial class ServerSyncService
               AND action IN (
                   'register_document_version',
                   'publish_document_version',
-                  'update_document_status',
-                  'replace_document_tags'
+                  'update_document_status'
               );
             """;
         command.Parameters.AddWithValue("$revision", serverRevision);

@@ -51,6 +51,7 @@ def test_app_startup_creates_mvp_schema(tmp_path: Path) -> None:
         "controlled_copy_grants",
         "document_access_logs",
         "document_tags",
+        "document_tag_revisions",
         "document_versions",
         "documents",
         "field_comment_attachments",

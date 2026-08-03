@@ -59,9 +59,11 @@ public sealed partial class ServerSyncService
         string? serverLogId,
         DateTime syncedAt,
         string? serverAttachmentId = null,
-        string? serverReportId = null)
+        string? serverReportId = null,
+        SqliteTransaction? transaction = null)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             UPDATE server_sync_queue
             SET status = 'SYNCED',
@@ -129,9 +131,11 @@ public sealed partial class ServerSyncService
         DateTime syncedAt,
         string? serverReportId = null,
         int? serverRevision = null,
-        string? serverFileHashSha256 = null)
+        string? serverFileHashSha256 = null,
+        SqliteTransaction? transaction = null)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO server_id_mappings (
                 entity_type,
@@ -195,7 +199,8 @@ public sealed partial class ServerSyncService
         string targetType,
         string targetId,
         string message,
-        DateTime createdAt)
+        DateTime createdAt,
+        SqliteTransaction? transaction = null)
     {
         HistoryService.Record(
             connection,
@@ -205,7 +210,8 @@ public sealed partial class ServerSyncService
             targetId,
             null,
             message,
-            createdAt);
+            createdAt,
+            transaction);
     }
 
     private static string SummarizeFailure(Exception exception)
@@ -553,7 +559,14 @@ public sealed partial class ServerSyncService
 
     private sealed record DocumentStatusSyncPayload(string Status);
 
-    private sealed record DocumentTagsSyncPayload(IReadOnlyList<string> Tags);
+    private sealed record DocumentTagsSyncPayload(
+        int BaseRevision,
+        IReadOnlyList<string> AddedTags,
+        IReadOnlyList<string> RemovedTags,
+        string IntentHash,
+        bool BaseTagsKnown,
+        IReadOnlyList<string> DesiredTags,
+        bool CanResolveBaseAfterDocumentRegistration);
 
     private sealed record FieldCommentReviewSyncPayload(
         string Status,
@@ -589,6 +602,11 @@ public sealed partial class ServerSyncService
         string? ServerVersionId,
         string? ServerPublishedVersionId,
         string? LocalFileHashSha256);
+
+    private sealed record DocumentTagBase(
+        string? ServerDocumentId,
+        int? ServerRevision,
+        IReadOnlyList<string>? Tags);
 
     private sealed record ReportServerMapping(string? ServerReportId, string? ServerDocumentId, string? ServerVersionId);
 

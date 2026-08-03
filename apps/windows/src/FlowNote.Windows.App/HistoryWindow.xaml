@@ -135,6 +135,10 @@
                                 <DataGridTextColumn Header="마지막 시도" Binding="{Binding LastAttemptAt, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" />
                                 <DataGridTextColumn Header="조치" Binding="{Binding OperatorAction}" Width="260" />
                                 <DataGridTextColumn Header="실패 사유" Binding="{Binding LastError}" Width="360" />
+                                <DataGridTextColumn Header="서버 값" Binding="{Binding ServerValue}" Width="280" />
+                                <DataGridTextColumn Header="보존된 로컬 요청" Binding="{Binding LocalRequest}" Width="300" />
+                                <DataGridTextColumn Header="자동 병합 가능" Binding="{Binding AutoMerge}" Width="240" />
+                                <DataGridTextColumn Header="사용자 선택 필요" Binding="{Binding UserChoice}" Width="280" />
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>

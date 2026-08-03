@@ -1,6 +1,6 @@
 # FlowNote 시스템 맵
 
-이 시스템 맵은 2026-08-01 현재 실행 코드와 저장소 경계를 기준으로 한다. 서버 복구 경계 manifest/reconciliation은 구현되었고 수렴 경계의 나머지 미구현 항목은 `목표 계약`으로, 후속 외부 연동은 마지막 절에서 구분한다.
+이 시스템 맵은 2026-08-03 현재 실행 코드와 저장소 경계를 기준으로 한다. 서버 복구 경계 manifest/reconciliation은 구현되었고 수렴 경계의 나머지 미구현 항목은 `목표 계약`으로, 후속 외부 연동은 마지막 절에서 구분한다.
 
 ## 실행 구성
 
@@ -30,7 +30,7 @@ FastAPI Server
 
 FastAPI 서버 SQLite와 WPF 로컬 SQLite는 서로 대체하거나 공유하는 파일이 아니다. 같은 이름의 문서 테이블도 서버는 `document_versions.version_id`, WPF는 로컬 `id`와 문서별 `version_no`를 기준으로 하므로 각 프로세스가 자기 DB만 초기화해야 한다. FastAPI는 기존 WPF 테이블 형태를 감지하면 `Base.metadata.create_all()` 전에 시작을 거부한다.
 
-WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. FieldComment 검토 큐는 base review revision과 mutation key를, 첨부는 부모 comment ID와 파일 SHA-256을 보낸다. 보고서는 예외로, 초안 생성 때 서버에서 선택 원천의 상태와 version/revision/hash를 검증해 snapshot을 먼저 고정한다. 이 검증을 통과한 뒤 로컬 보고서 문서와 `report_sources`를 남기고 source 집합 hash를 큐에 고정하며, 이후 서버 저장이 실패하면 `register_report` 항목으로 `/api/v1/reports` 저장을 재시도한다. 성공 응답의 source 집합을 다시 hash하고 report revision·내용/source 집합 hash를 로컬에 보존한 경우에만 종결한다. 큐 재시도는 단순 생성 순서가 아니라 같은 문서 또는 보고서 근거 단위로 묶고, 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다. 문서 버전과 FieldComment 첨부도 큐의 idempotency key를 서버 multipart 요청에 전달해 응답 유실 뒤 재시도가 중복 버전이나 파일을 만들지 않게 한다.
+WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태/태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 태그 큐는 마지막 서버 revision·태그 집합 대비 추가/제거와 canonical intent hash를 보내고, 서버는 revision별 태그 snapshot으로 비경합 delta만 병합한다. 같은 태그의 반대 방향 변경과 비활성·삭제 태그는 자동으로 덮어쓰지 않는다. FieldComment 검토 큐는 base review revision과 mutation key를, 첨부는 부모 comment ID와 파일 SHA-256을 보낸다. 보고서는 초안 생성 때 서버에서 선택 원천의 상태와 version/revision/hash를 검증해 snapshot을 먼저 고정한다. 이 검증을 통과한 뒤 로컬 보고서 문서와 `report_sources`를 남기고 source 집합 hash를 큐에 고정하며, 이후 서버 저장이 실패하면 `register_report` 항목으로 `/api/v1/reports` 저장을 재시도한다. 성공 응답의 source 집합을 다시 hash하고 report revision·내용/source 집합 hash를 로컬에 보존한 경우에만 종결한다. 큐 재시도는 같은 문서 또는 보고서 근거 단위로 묶고, 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다. 재전송 가능한 mutation은 같은 key와 의도를 유지해 응답 유실 뒤에도 중복 버전, revision 또는 감사 이력을 만들지 않는다.
 
 WPF 메인 화면은 로그인 역할에 맞춘 첫 업무 3개를 기존 메뉴·창과 같은 권한 검사 경로로 연결한다. 현재 역할 구분은 관리자, 반장, 조장, 작업자이며 문서 찾기, 인수인계, 작업판, 채널·알림, 코멘트 검토, 보고서 근거 선정, 동기화·충돌 확인을 우선순위에 맞춰 보여준다. 문서 검색은 현재 폴더의 파일명·제목·태그·사용자·최근 코멘트를 대상으로 하고, 상태 필터와 함께 폴더 이동이나 목록 갱신 뒤에도 유지된다. 권한이 없는 기능은 필요한 역할과 현장 관리자 문의 방법을 안내한다. 하단 동기화 상태는 대기·실패/충돌·보류 건수, 로컬 데이터와 원본 파일의 보존 여부, `이력 > 동기화 큐`에서 확인할 다음 조치를 색상에 의존하지 않고 표시한다.
 
@@ -46,7 +46,8 @@ WPF 메인 화면은 로그인 역할에 맞춘 첫 업무 3개를 기존 메뉴
 | --- | --- | --- | --- | --- |
 | 문서 등록 | WPF 문서 메타데이터·최초 파일 → 서버 | `document_id`, `revision`, `latest_version_id`, 파일 SHA-256 | 안정된 문서 등록 key. 같은 key의 핵심 메타/hash 차이는 `IDEMPOTENCY_KEY_REUSED` | 서버 문서/버전 ID, revision, hash를 같은 로컬 transaction에서 매핑하고 큐 `SYNCED` |
 | 문서 버전 | WPF 버전 파일 → 서버 | 문서 revision, 기준 latest version ID, 서버 배정 `version_no` | 버전 key+파일 hash. 기준 불일치는 `STALE_REVISION`/`STALE_BASE_VERSION`, hash 불일치는 `FILE_HASH_MISMATCH` | 서버 version ID·revision·hash read-back과 로컬 원천 hash가 모두 일치 |
-| 공개·문서/버전 상태·태그 | WPF 명시 mutation → 서버, 이후 서버 snapshot → WPF | 문서 revision, `published_version_id`, 상태와 태그 집합 | 요청별 안정 key와 base revision. `PUBLISHED_VERSION_CHANGED`, `DOCUMENT_DELETED` 포함 409는 `CONFLICT` | 공개 포인터와 상태가 같은 revision에 속하고 서버 snapshot을 로컬에 반영 |
+| 공개·문서/버전 상태 | WPF 명시 mutation → 서버, 이후 서버 snapshot → WPF | 문서 revision, `published_version_id`, 문서·버전 상태와 version hash | 요청별 안정 key와 base revision. stale/base/hash/공개본/삭제 경쟁은 `CONFLICT` | 자동 덮어쓰기 없이 서버 snapshot과 사용자 선택을 보존하고, 확정 응답을 로컬 transaction에 반영 |
+| 문서 태그 | WPF 추가/제거 delta → 서버, 권위 집합 → WPF | 문서 revision, `document_tag_revisions`, 현재 활성 태그 집합 | mutation key+canonical intent hash. 비경합 delta만 병합하고 `TAG_MERGE_CONFLICT`, `TAG_UNAVAILABLE`은 사용자 판단 | revision·전체 태그·공개 포인터·최신 version/hash를 문서·태그·mapping·큐·감사에 한 transaction으로 반영 |
 | FieldComment 원천 | WPF/Android 불변 입력 → 서버 | 서버 `comment_id`, 원천 hash, 연결 document/version ID | 원천 생성 key. 같은 key의 원천/연결 hash 차이는 `IDEMPOTENCY_KEY_REUSED` | 서버 comment ID·원천 hash·연결 ID 매핑 확인. 원천은 이후 수정·삭제하지 않음 |
 | FieldComment 검토 | WPF 검토 mutation → 서버 | `review_revision`과 원천 hash. 서버가 상태·담당·기한·정리·분석의 권위 원천 | mutation key+`baseReviewRevision`; `FIELD_COMMENT_STALE_REVIEW_REVISION`, `IDEMPOTENCY_KEY_REUSED` | 서버 검토 snapshot과 증가한 revision을 로컬에 반영한 뒤 `SYNCED`; 자동 단계 보간 금지 |
 | FieldComment 첨부 | 로컬 파일 → 서버 | 서버 attachment ID, 부모 comment ID, file object hash | 첨부 key+`parentCommentId`+`fileSha256`; `ATTACHMENT_PARENT_MISMATCH`, `ATTACHMENT_FILE_HASH_MISMATCH`, `IDEMPOTENCY_KEY_REUSED` | 서버 attachment/file hash를 확인하고 매핑. 로컬 파일은 보존 정책 전까지 유지 |
@@ -118,8 +119,10 @@ UserAccount
 DocumentFolder
   -> Document
       -> DocumentVersion
+      -> DocumentMutationReceipt
       -> ControlledCopyGrant -> AuthSession + UserAccount + optional TerminalDevice
       -> DocumentTag
+      -> DocumentTagRevision
       -> FieldComment
       -> DocumentViewLog
 

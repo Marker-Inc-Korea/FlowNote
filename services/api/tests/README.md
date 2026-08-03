@@ -2,7 +2,7 @@
 
 이 디렉터리는 FlowNote FastAPI 서버 테스트를 보관한다.
 
-범위와 수집 기준선은 2026-08-01 현재 테스트 코드 기준이다.
+범위와 수집 기준선은 2026-08-03 현재 테스트 코드 기준이다.
 
 ## 현재 테스트 범위
 
@@ -17,8 +17,8 @@
 - Android 승인 단말 로그인, 마지막 접속 갱신, 단말 등록/변경/비활성화/폐기/교체, 기존 세션 폐기와 권한 검증
 - 문서 등록, 파일 저장, SHA-256, 크기, MIME/확장자 메타데이터
 - 새 문서 버전 등록과 이전 최신 버전 `SUPERSEDED` 처리
-- 문서 상태 변경, 버전 상태 변경, 명시적 공개 버전 지정, 공개 문서 조회, 공개·상태·태그 mutation receipt 재생과 key 재사용 충돌
-- 문서 태그 생성/교체와 태그 사전 조회
+- 문서 상태 변경, 버전 상태 변경, 명시적 공개 버전 지정, 공개 문서 조회, 공개·상태·태그·삭제 mutation receipt 재생과 key 재사용 충돌
+- 문서 태그 생성, 구 전체 교체 계약 호환, 비경합 delta의 순차·동시 병합, 같은 태그의 반대 변경과 비활성·삭제 태그 충돌, 태그 사전 조회
 - 문서 쓰기, FieldComment 등록, 열람 로그 조회 권한 검증
 - FieldComment 등록, 목록, 문서별 조회, 원천 불변·삭제 차단, 단계형 관리자 검토, 담당자·기한, 최대 200건 일괄 처리, 원천 hash 감사와 품질 작업함/지표
 - FieldComment 검토 revision의 동시 요청 1건만 성공, 같은 mutation receipt 재생, 오래된 revision·다른 intent key 재사용 차단
@@ -49,6 +49,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-08-01 현재 FastAPI 테스트 코드와 저장소 루트 `scripts/verify-preserved-tests.ps1`의 guard는 166개로 일치한다. 새 2건은 FieldComment 검토 대시보드의 서버 권위 집계·담당자·다음 조치 계약과 분석 권한 경계를 검증한다. 스크립트는 수집 원본, 중복 목록, 종료 코드와 JUnit을 같은 `run_id`에 보존하며 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 명령을 안내한다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략해 수행한다. FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존하고 무생략 실행 2회가 같은 clean 소스 커밋에서 모두 통과하기 전에는 유효한 기준선으로 판정하지 않는다.
+2026-08-03 현재 FastAPI 테스트 코드와 저장소 루트 `scripts/verify-preserved-tests.ps1`의 guard는 170개로 일치한다. 새 4건은 비경합 태그 delta의 멱등·동시 병합, 반대 변경과 비활성·삭제 태그의 구조화된 충돌, 문서 삭제 응답 유실 재시도를 검증한다. 스크립트는 수집 원본, 중복 목록, 종료 코드와 JUnit을 같은 `run_id`에 보존하며 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 명령을 안내한다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략해 수행한다. FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존하고 무생략 실행 2회가 같은 clean 소스 커밋에서 모두 통과하기 전에는 유효한 기준선으로 판정하지 않는다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.

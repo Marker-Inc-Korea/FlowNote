@@ -185,6 +185,24 @@ public sealed record ServerDocumentStatusUpdateRequest
     public string? MutationKey { get; init; }
 }
 
+public sealed record ServerDocumentTagMutationRequest
+{
+    [JsonPropertyName("baseRevision")]
+    public int BaseRevision { get; init; }
+
+    [JsonPropertyName("addedTags")]
+    public IReadOnlyList<string> AddedTags { get; init; } = [];
+
+    [JsonPropertyName("removedTags")]
+    public IReadOnlyList<string> RemovedTags { get; init; } = [];
+
+    [JsonPropertyName("intentHash")]
+    public string IntentHash { get; init; } = string.Empty;
+
+    [JsonPropertyName("mutationKey")]
+    public string MutationKey { get; init; } = string.Empty;
+}
+
 public sealed record ServerControlledCopyGrantResponse
 {
     [JsonPropertyName("grant_id")]

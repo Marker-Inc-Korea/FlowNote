@@ -71,6 +71,7 @@ public sealed partial class FlowNoteLocalDatabase
                 server_version_id TEXT NULL,
                 server_revision INTEGER NULL,
                 server_published_version_id TEXT NULL,
+                server_tags_json TEXT NULL,
                 synced_at TEXT NULL
             );
 
@@ -517,6 +518,7 @@ public sealed partial class FlowNoteLocalDatabase
         EnsureColumn(connection, "documents", "server_version_id", "TEXT NULL");
         EnsureColumn(connection, "documents", "server_revision", "INTEGER NULL");
         EnsureColumn(connection, "documents", "server_published_version_id", "TEXT NULL");
+        EnsureColumn(connection, "documents", "server_tags_json", "TEXT NULL");
         EnsureColumn(connection, "documents", "synced_at", "TEXT NULL");
         EnsureColumn(connection, "document_versions", "version_status", "TEXT NOT NULL DEFAULT 'WORKING'");
         EnsureColumn(connection, "document_versions", "is_latest", "INTEGER NOT NULL DEFAULT 0");
