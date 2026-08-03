@@ -9,13 +9,14 @@ from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.auth import (
+    AuthenticatedUser,
     CurrentUser,
     FIELD_COMMENT_DECIDE_ROLES,
     FieldCommentAnalyzeUser,
@@ -46,6 +47,15 @@ from app.db.models import (
     WorkSequenceItem,
 )
 from app.db.session import get_db_session
+from app.services.mutation_receipts import (
+    MutationTrace,
+    canonical_hash,
+    check_common_mutation_replay,
+    mutation_trace,
+    record_common_mutation_failure,
+    record_common_mutation_result,
+    sanitize_audit_text,
+)
 
 router = APIRouter(prefix="/field-comments", tags=["field-comments"], dependencies=[Depends(get_current_user)])
 document_field_comments_router = APIRouter(
@@ -542,12 +552,28 @@ def _review_idempotent_response(
 ) -> FieldCommentResponse | None:
     if mutation_key is None:
         return None
+    common_receipt = check_common_mutation_replay(
+        session,
+        operation_key=mutation_key,
+        intent_hash=intent_hash,
+        event_type="field_comment.review_changed",
+        target_type="field_comment",
+        target_id=comment_id,
+    )
     receipt = session.scalar(
         select(FieldCommentReviewMutationReceipt).where(
             FieldCommentReviewMutationReceipt.mutation_key == mutation_key
         )
     )
     if receipt is None:
+        if common_receipt is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "COMMON_RECEIPT_LINK_BROKEN",
+                    "message": "공통 receipt와 FieldComment receipt 연결이 끊어졌습니다.",
+                },
+            )
         return None
     if receipt.comment_id != comment_id or receipt.intent_hash_sha256 != intent_hash:
         raise HTTPException(
@@ -1814,6 +1840,7 @@ def get_field_comment(
 
 @router.patch("/{comment_id}", response_model=FieldCommentResponse)
 def review_field_comment(
+    http_request: Request,
     comment_id: str,
     request: FieldCommentReviewRequest,
     current_user: FieldCommentAnalyzeUser,
@@ -1822,6 +1849,49 @@ def review_field_comment(
 ) -> FieldCommentResponse:
     mutation_key = _clean_idempotency_key(request.mutation_key)
     intent_hash = _review_intent_hash(comment_id, request)
+    trace = mutation_trace(current_user, http_request)
+    reason = sanitize_audit_text(request.transition_reason)
+    try:
+        return _apply_field_comment_review_mutation(
+            comment_id=comment_id,
+            request=request,
+            current_user=current_user,
+            app_settings=app_settings,
+            session=session,
+            mutation_key=mutation_key,
+            intent_hash=intent_hash,
+            trace=trace,
+            reason=reason,
+        )
+    except HTTPException as error:
+        record_common_mutation_failure(
+            session,
+            operation_key=mutation_key,
+            intent_hash=intent_hash,
+            event_type="field_comment.review_changed",
+            trace=trace,
+            target_type="field_comment",
+            target_id=comment_id,
+            target_version_id=None,
+            target_revision=request.base_review_revision,
+            reason=reason,
+            error=error,
+        )
+        raise
+
+
+def _apply_field_comment_review_mutation(
+    *,
+    comment_id: str,
+    request: FieldCommentReviewRequest,
+    current_user: AuthenticatedUser,
+    app_settings: Settings,
+    session: Session,
+    mutation_key: str | None,
+    intent_hash: str,
+    trace: MutationTrace,
+    reason: str | None,
+) -> FieldCommentResponse:
     replay = _review_idempotent_response(session, comment_id, mutation_key, intent_hash)
     if replay is not None:
         return replay
@@ -1830,6 +1900,7 @@ def review_field_comment(
     if note is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field comment not found.")
 
+    before_hash = canonical_hash(_review_snapshot(note))
     base_revision = request.base_review_revision or note.review_revision
     _claim_review_revision(session, note, base_revision)
     _apply_review_change(
@@ -1845,13 +1916,40 @@ def review_field_comment(
         session.flush()
         response = _field_comment_response(note)
         if mutation_key is not None:
-            session.add(FieldCommentReviewMutationReceipt(
+            receipt = FieldCommentReviewMutationReceipt(
                 mutation_key=mutation_key,
                 intent_hash_sha256=intent_hash,
                 comment_id=comment_id,
                 review_revision=note.review_revision,
                 response_json=response.model_dump_json(),
-            ))
+            )
+            session.add(receipt)
+            session.flush()
+            record_common_mutation_result(
+                session,
+                operation_key=mutation_key,
+                intent_hash=intent_hash,
+                event_type="field_comment.review_changed",
+                trace=trace,
+                target_type="field_comment",
+                target_id=comment_id,
+                target_version_id=note.document_version_id,
+                target_revision=note.review_revision,
+                reason=reason,
+                before_hash=before_hash,
+                after_hash=canonical_hash(_review_snapshot(note)),
+                result="SUCCESS",
+                result_code="APPLIED",
+                http_status=status.HTTP_200_OK,
+                response_detail={
+                    "code": "APPLIED",
+                    "targetId": comment_id,
+                    "targetVersionId": note.document_version_id,
+                    "targetRevision": note.review_revision,
+                },
+                domain_receipt_type="field_comment_review_mutation_receipts",
+                domain_receipt_id=str(receipt.id),
+            )
         session.commit()
     except (IntegrityError, ValueError) as exc:
         session.rollback()

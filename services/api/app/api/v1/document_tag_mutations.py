@@ -12,6 +12,7 @@ from app.api.v1.document_support import (
     clean_tags,
     conflict,
     document_mutation_intent_hash,
+    document_authority_hash,
     document_mutation_replay,
     document_response,
     document_tag_intent_hash,
@@ -23,7 +24,9 @@ from app.api.v1.document_support import (
     store_document_mutation_receipt,
     tag_response,
 )
+from app.core.auth import AuthenticatedUser
 from app.db.models import Document, TagDefinition
+from app.services.mutation_receipts import MutationTrace
 
 
 def apply_document_tag_mutation(
@@ -31,7 +34,8 @@ def apply_document_tag_mutation(
     *,
     document_id: str,
     payload: DocumentTagMutationRequest | list[str],
-    actor_id: str,
+    current_user: AuthenticatedUser,
+    trace: MutationTrace,
     legacy_base_revision: int | None,
     legacy_mutation_key: str | None,
 ) -> DocumentResponse:
@@ -41,7 +45,8 @@ def apply_document_tag_mutation(
             session,
             document_id=document_id,
             tags=payload,
-            actor_id=actor_id,
+            current_user=current_user,
+            trace=trace,
             base_revision=legacy_base_revision,
             mutation_key=legacy_mutation_key,
         )
@@ -67,6 +72,7 @@ def apply_document_tag_mutation(
         session.commit()
         return replay
     document = require_live_document(session, document_id)
+    before_hash = document_authority_hash(session, document)
     if base_revision > document.revision:
         raise conflict(
             "FUTURE_REVISION",
@@ -183,7 +189,9 @@ def apply_document_tag_mutation(
             intent_hash=intent_hash,
             document=document,
             response=response,
-            actor_id=actor_id,
+            actor_id=current_user.user_id,
+            trace=trace,
+            before_hash=before_hash,
         )
         session.commit()
         return response
@@ -196,7 +204,7 @@ def apply_document_tag_mutation(
     record_activity(
         session,
         event_type="document.tags_merged",
-        actor_id=actor_id,
+        actor_id=current_user.user_id,
         target_type="document",
         target_id=document.document_id,
         target_title=document.title,
@@ -213,7 +221,9 @@ def apply_document_tag_mutation(
         intent_hash=intent_hash,
         document=document,
         response=response,
-        actor_id=actor_id,
+        actor_id=current_user.user_id,
+        trace=trace,
+        before_hash=before_hash,
     )
     session.commit()
     return response
@@ -224,7 +234,8 @@ def _replace_tags_for_legacy_client(
     *,
     document_id: str,
     tags: list[str],
-    actor_id: str,
+    current_user: AuthenticatedUser,
+    trace: MutationTrace,
     base_revision: int | None,
     mutation_key: str | None,
 ) -> DocumentResponse:
@@ -247,6 +258,7 @@ def _replace_tags_for_legacy_client(
         session.commit()
         return replay
     document = require_live_document(session, document_id)
+    before_hash = document_authority_hash(session, document)
     claim_revision(session, document, base_revision)
     before_tags = tag_response(session, document_id)
     replace_document_tags(session, document_id, cleaned_tags)
@@ -256,7 +268,7 @@ def _replace_tags_for_legacy_client(
     record_activity(
         session,
         event_type="document.tags_changed",
-        actor_id=actor_id,
+        actor_id=current_user.user_id,
         target_type="document",
         target_id=document.document_id,
         target_title=document.title,
@@ -273,7 +285,9 @@ def _replace_tags_for_legacy_client(
         intent_hash=intent_hash,
         document=document,
         response=response,
-        actor_id=actor_id,
+        actor_id=current_user.user_id,
+        trace=trace,
+        before_hash=before_hash,
     )
     session.commit()
     return response

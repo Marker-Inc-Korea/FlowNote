@@ -24,6 +24,12 @@ from app.db.models import (
     TagDefinition,
     UserAccount,
 )
+from app.services.mutation_receipts import (
+    MutationTrace,
+    canonical_hash,
+    check_common_mutation_replay,
+    record_common_mutation_result,
+)
 
 DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "PUBLISHED", "ARCHIVED"}
 CREATABLE_DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "ARCHIVED"}
@@ -251,12 +257,29 @@ def document_mutation_replay(
 ) -> DocumentResponse | None:
     if mutation_key is None:
         return None
+    event_type = document_mutation_event_type(mutation_type)
+    common_receipt = check_common_mutation_replay(
+        session,
+        operation_key=mutation_key,
+        intent_hash=intent_hash,
+        event_type=event_type,
+        target_type="document",
+        target_id=document_id,
+    )
     receipt = session.scalar(
         select(DocumentMutationReceipt).where(
             DocumentMutationReceipt.mutation_key == mutation_key
         )
     )
     if receipt is None:
+        if common_receipt is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "COMMON_RECEIPT_LINK_BROKEN",
+                    "message": "The common receipt has no matching document receipt.",
+                },
+            )
         return None
     if (
         receipt.mutation_type != mutation_type
@@ -282,11 +305,15 @@ def store_document_mutation_receipt(
     document: Document,
     response: DocumentResponse,
     actor_id: str,
+    trace: MutationTrace | None = None,
+    reason: str | None = None,
+    target_version_id: str | None = None,
+    before_hash: str | None = None,
+    after_hash: str | None = None,
 ) -> None:
     if mutation_key is None:
         return
-    session.add(
-        DocumentMutationReceipt(
+    receipt = DocumentMutationReceipt(
             mutation_key=mutation_key,
             mutation_type=mutation_type,
             intent_hash_sha256=intent_hash,
@@ -295,6 +322,59 @@ def store_document_mutation_receipt(
             response_json=response.model_dump_json(),
             created_by=actor_id,
         )
+    session.add(receipt)
+    if trace is not None:
+        session.flush()
+        record_common_mutation_result(
+            session,
+            operation_key=mutation_key,
+            intent_hash=intent_hash,
+            event_type=document_mutation_event_type(mutation_type),
+            trace=trace,
+            target_type="document",
+            target_id=document.document_id,
+            target_version_id=target_version_id,
+            target_revision=document.revision,
+            reason=reason,
+            before_hash=before_hash,
+            after_hash=after_hash or document_authority_hash(session, document),
+            result="SUCCESS",
+            result_code="APPLIED",
+            http_status=status.HTTP_200_OK,
+            response_detail={
+                "code": "APPLIED",
+                "targetId": document.document_id,
+                "targetVersionId": target_version_id,
+                "targetRevision": document.revision,
+            },
+            domain_receipt_type="document_mutation_receipts",
+            domain_receipt_id=str(receipt.id),
+        )
+
+
+def document_mutation_event_type(mutation_type: str) -> str:
+    return {
+        "UPDATE_STATUS": "document.status_changed",
+        "PUBLISH_VERSION": "document.version_published",
+        "DELETE_DOCUMENT": "document.deleted",
+        "MERGE_TAGS": "document.tags_merged",
+        "REPLACE_TAGS": "document.tags_changed",
+    }.get(mutation_type, f"document.{mutation_type.lower()}")
+
+
+def document_authority_hash(session: Session, document: Document) -> str:
+    latest = latest_version_for_document(session, document.document_id)
+    latest_hash = latest[1].hash_sha256 if latest is not None else None
+    return canonical_hash(
+        {
+            "documentId": document.document_id,
+            "revision": document.revision,
+            "status": document.status,
+            "latestVersionId": document.latest_version_id,
+            "publishedVersionId": document.published_version_id,
+            "latestVersionHash": latest_hash,
+            "tags": tag_response(session, document.document_id),
+        }
     )
 
 

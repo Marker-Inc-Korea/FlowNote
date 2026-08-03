@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import case, desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -30,6 +30,8 @@ from app.api.v1.document_support import (
     conflict as _conflict,
     delete_stored_file as _delete_stored_file,
     document_mutation_intent_hash as _document_mutation_intent_hash,
+    document_authority_hash as _document_authority_hash,
+    document_mutation_event_type as _document_mutation_event_type,
     document_mutation_replay as _document_mutation_replay,
     document_response as _document_response,
     latest_version_for_document as _latest_version_for_document,
@@ -55,6 +57,11 @@ from app.core.config import Settings, get_settings
 from app.core.storage import resolve_storage_root
 from app.db.models import Document, DocumentVersion, FileObject
 from app.db.session import get_db_session
+from app.services.mutation_receipts import (
+    mutation_trace,
+    record_common_mutation_failure,
+    sanitize_audit_text,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"], dependencies=[Depends(get_current_user)])
 
@@ -286,6 +293,7 @@ def get_published_document_version(
 
 @router.put("/{document_id}/tags", response_model=DocumentResponse)
 def merge_document_tags(
+    request: Request,
     document_id: str,
     payload: DocumentTagMutationRequest | list[str],
     current_user: DocumentWriteUser,
@@ -297,7 +305,8 @@ def merge_document_tags(
         session,
         document_id=document_id,
         payload=payload,
-        actor_id=current_user.user_id,
+        current_user=current_user,
+        trace=mutation_trace(current_user, request),
         legacy_base_revision=base_revision,
         legacy_mutation_key=mutation_key,
     )
@@ -305,59 +314,83 @@ def merge_document_tags(
 
 @router.patch("/{document_id}/status", response_model=DocumentResponse)
 def update_document_status(
+    request: Request,
     document_id: str,
     payload: DocumentStatusUpdateRequest,
     current_user: DocumentGovernanceUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> DocumentResponse:
-    target_status = _validate_status(payload.status, DOCUMENT_STATUSES)
     mutation_key = _clean_idempotency_key(payload.mutation_key)
+    target_status_for_intent = payload.status.strip().upper()
+    raw_reason = _clean_change_reason(payload.change_reason)
+    reason = sanitize_audit_text(raw_reason)
     intent_hash = _document_mutation_intent_hash(
         "UPDATE_STATUS",
         document_id,
         {
             "baseRevision": payload.base_revision,
-            "changeReason": _clean_change_reason(payload.change_reason),
-            "status": target_status,
+            "changeReason": raw_reason,
+            "status": target_status_for_intent,
         },
     )
-    replay = _document_mutation_replay(
-        session, mutation_key, "UPDATE_STATUS", document_id, intent_hash
-    )
-    if replay is not None:
-        return replay
-    document = _require_live_document(session, document_id)
-
-    before = document.status
-    if before != target_status:
-        _validate_document_status_transition(before, target_status)
-        _claim_revision(session, document, payload.base_revision)
-        document.status = target_status
-        _record_activity(
-            session,
-            event_type="document.status_changed",
-            actor_id=current_user.user_id,
-            target_type="document",
-            target_id=document.document_id,
-            target_title=document.title,
-            message=f"Document status changed from {before} to {target_status}.",
-            before_value=before,
-            after_value=target_status,
-            change_reason=_clean_change_reason(payload.change_reason),
+    trace = mutation_trace(current_user, request)
+    try:
+        target_status = _validate_status(payload.status, DOCUMENT_STATUSES)
+        replay = _document_mutation_replay(
+            session, mutation_key, "UPDATE_STATUS", document_id, intent_hash
         )
-    session.flush()
-    response = _document_response(session, document)
-    _store_document_mutation_receipt(
-        session,
-        mutation_key=mutation_key,
-        mutation_type="UPDATE_STATUS",
-        intent_hash=intent_hash,
-        document=document,
-        response=response,
-        actor_id=current_user.user_id,
-    )
-    session.commit()
-    return response
+        if replay is not None:
+            return replay
+        document = _require_live_document(session, document_id)
+        before_hash = _document_authority_hash(session, document)
+        before = document.status
+        if before != target_status:
+            _validate_document_status_transition(before, target_status)
+            _claim_revision(session, document, payload.base_revision)
+            document.status = target_status
+            _record_activity(
+                session,
+                event_type="document.status_changed",
+                actor_id=current_user.user_id,
+                target_type="document",
+                target_id=document.document_id,
+                target_title=document.title,
+                message=f"Document status changed from {before} to {target_status}.",
+                before_value=before,
+                after_value=target_status,
+                change_reason=reason,
+            )
+        session.flush()
+        response = _document_response(session, document)
+        _store_document_mutation_receipt(
+            session,
+            mutation_key=mutation_key,
+            mutation_type="UPDATE_STATUS",
+            intent_hash=intent_hash,
+            document=document,
+            response=response,
+            actor_id=current_user.user_id,
+            trace=trace,
+            reason=reason,
+            before_hash=before_hash,
+        )
+        session.commit()
+        return response
+    except HTTPException as error:
+        record_common_mutation_failure(
+            session,
+            operation_key=mutation_key,
+            intent_hash=intent_hash,
+            event_type=_document_mutation_event_type("UPDATE_STATUS"),
+            trace=trace,
+            target_type="document",
+            target_id=document_id,
+            target_version_id=None,
+            target_revision=payload.base_revision,
+            reason=reason,
+            error=error,
+        )
+        raise
 
 
 @router.get("/{document_id}/versions", response_model=list[DocumentVersionResponse])
@@ -440,6 +473,7 @@ def update_document_version_status(
 
 @router.post("/{document_id}/versions/{version_id}/publish", response_model=DocumentResponse)
 def publish_document_version(
+    request: Request,
     document_id: str,
     version_id: str,
     payload: DocumentVersionPublishRequest,
@@ -447,13 +481,16 @@ def publish_document_version(
     app_settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> DocumentResponse:
+    trace = mutation_trace(current_user, request)
+    raw_reason = _clean_change_reason(payload.change_reason)
+    reason = sanitize_audit_text(raw_reason)
     mutation_key = _clean_idempotency_key(payload.mutation_key)
     intent_hash = _document_mutation_intent_hash(
         "PUBLISH_VERSION",
         document_id,
         {
             "baseRevision": payload.base_revision,
-            "changeReason": _clean_change_reason(payload.change_reason),
+            "changeReason": raw_reason,
             "expectedPublishedVersionId": payload.expected_published_version_id,
             "versionId": version_id,
         },
@@ -464,6 +501,7 @@ def publish_document_version(
     if replay is not None:
         return replay
     document = _require_live_document(session, document_id)
+    before_hash = _document_authority_hash(session, document)
     row = session.execute(
         select(DocumentVersion)
         .where(
@@ -520,6 +558,10 @@ def publish_document_version(
             document=document,
             response=response,
             actor_id=current_user.user_id,
+            trace=trace,
+            reason=reason,
+            target_version_id=version_id,
+            before_hash=before_hash,
         )
         session.commit()
         return response
@@ -570,7 +612,7 @@ def publish_document_version(
         message=f"Document version v{version.version_no} was published.",
         before_value=previous_published_version_id,
         after_value=version.version_id,
-        change_reason=_clean_change_reason(payload.change_reason),
+        change_reason=reason,
     )
     if previous_document_status != "PUBLISHED":
         _record_activity(
@@ -583,7 +625,7 @@ def publish_document_version(
             message=f"Document status changed from {previous_document_status} to PUBLISHED.",
             before_value=previous_document_status,
             after_value="PUBLISHED",
-            change_reason=_clean_change_reason(payload.change_reason),
+            change_reason=reason,
         )
 
     session.flush()
@@ -596,6 +638,10 @@ def publish_document_version(
         document=document,
         response=response,
         actor_id=current_user.user_id,
+        trace=trace,
+        reason=reason,
+        target_version_id=version_id,
+        before_hash=before_hash,
     )
     session.commit()
     return response
@@ -748,17 +794,19 @@ async def create_document_version(
 
 @router.delete("/{document_id}", response_model=DocumentResponse)
 def delete_document(
+    request: Request,
     document_id: str,
     payload: DocumentDeleteRequest,
     current_user: DocumentGovernanceUser,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> DocumentResponse:
-    reason = _validate_change_reason(payload.change_reason)
+    raw_reason = _validate_change_reason(payload.change_reason)
+    reason = sanitize_audit_text(raw_reason) or "[REDACTED]"
     mutation_key = _clean_idempotency_key(payload.mutation_key)
     intent_hash = _document_mutation_intent_hash(
         "DELETE_DOCUMENT",
         document_id,
-        {"baseRevision": payload.base_revision, "changeReason": reason},
+        {"baseRevision": payload.base_revision, "changeReason": raw_reason},
     )
     replay = _document_mutation_replay(
         session, mutation_key, "DELETE_DOCUMENT", document_id, intent_hash
@@ -766,6 +814,7 @@ def delete_document(
     if replay is not None:
         return replay
     document = _require_live_document(session, document_id)
+    before_hash = _document_authority_hash(session, document)
     before = document.status
     _claim_revision(session, document, payload.base_revision)
     now = datetime.now(timezone.utc)
@@ -801,6 +850,9 @@ def delete_document(
         document=document,
         response=response,
         actor_id=current_user.user_id,
+        trace=mutation_trace(current_user, request),
+        reason=reason,
+        before_hash=before_hash,
     )
     session.commit()
     return response

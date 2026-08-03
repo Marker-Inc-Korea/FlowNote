@@ -40,7 +40,7 @@ WPF 메인 화면은 로그인 역할에 맞춘 첫 업무 3개를 기존 메뉴
 
 ## 로컬 우선 데이터와 서버 권위 원천의 수렴 경계
 
-아래 표는 새 동기화 작업이 따라야 하는 단일 운영 계약이다. `로컬 원천`은 서버 확인 전까지 삭제할 수 없는 입력·파일·큐를 뜻하고, `서버 권위`는 두 WPF 인스턴스, Android, AI 검색과 보고서가 최종 판정에 사용하는 값이다. 현재 코드에 없는 공통 mutation receipt나 versioned migration은 구현 전 목표 계약으로 표시하며, 해당 행의 검증을 통과하기 전에는 다중 WPF 쓰기를 허용하지 않는다.
+아래 표는 새 동기화 작업이 따라야 하는 단일 운영 계약이다. `로컬 원천`은 서버 확인 전까지 삭제할 수 없는 입력·파일·큐를 뜻하고 `서버 권위`는 두 WPF 인스턴스, Android, AI 검색과 보고서가 최종 판정에 사용하는 값이다. 공통 mutation receipt와 versioned migration은 `0002_common_mutation_receipts`까지 구현되었으며 아직 코드에 없는 계약만 목표로 구분한다. 각 행의 검증을 통과하기 전에는 다중 WPF 쓰기를 허용하지 않는다.
 
 | 대상 | 로컬 원천과 방향 | 서버 권위·동시성 키 | 멱등 키와 충돌 | 종결·수렴 조건 |
 | --- | --- | --- | --- | --- |
@@ -57,6 +57,8 @@ WPF 메인 화면은 로그인 역할에 맞춘 첫 업무 3개를 기존 메뉴
 | 작업순서 이력 | 클라이언트가 별도 생성하지 않고 서버 mutation에서 파생 | 서버 append-only `change_id`, board revision | 부모 mutation key에서 1회 생성 | mutation 1건당 의미상 이력 1건, orphan 0건 |
 | Android 인수인계 | Android 암호화 outbox → 서버 | 서버 `handover_id`, 연결 채널·원천·수신자 receipt, 승인 세션의 `device_id` | `android:{deviceId}:handover:{localId}`. 같은 키의 요청 내용이 다르면 `IDEMPOTENCY_KEY_REUSED` | 서버가 인수인계·채널 메시지·receipt를 한 transaction에 한 번만 저장하고 기존 `handover_id`를 재전송 응답에 반환 |
 | 알림 cursor | 서버 → WPF/Android | 서버 scope·user별 high-water cursor와 공개 `message_id` | `message_id` 유일 처리. cursor 역행은 `SERVER_EPOCH_CHANGED` 복구 절차 | 표시/처리 row와 cursor 전진이 한 로컬 transaction에 완료 |
+
+operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 승인 저장과 작업순서 변경은 도메인 receipt를 유지하면서 공통 `SyncMutationReceipt`와 `AuditEventEnvelope`를 연결한다. 성공 시 업무 변경·도메인 receipt·공통 두 행을 한 transaction에 저장한다. 문서 상태, FieldComment 검토, 보고서 승인, 작업순서 항목 상태의 거부·충돌은 업무 변경을 rollback한 뒤 공통 결과만 확정해 같은 요청의 재시도가 같은 HTTP 결과로 수렴하도록 한다. 기존 `activity_history`는 백필하지 않으며 `/api/v1/audit-events`에서 누락 필드를 명시한 이전 형식으로 함께 조회한다.
 
 재시도기는 같은 aggregate를 직렬화하고 다음 순서로 처리한다.
 
@@ -141,6 +143,12 @@ WorkSequenceBoard
 Report
   -> ReportSource
   -> generated Document
+
+AuditEventEnvelope
+  -> SyncMutationReceipt
+      -> DocumentMutationReceipt | FieldCommentReviewMutationReceipt
+      -> ReportMutationReceipt | WorkSequenceMutationReceipt
+  -> legacy ActivityHistory (read-only combined query, no backfill)
 
 AISearchCandidate
   -> published DocumentVersion

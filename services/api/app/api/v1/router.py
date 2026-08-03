@@ -6,6 +6,7 @@ from app.api.v1.ai_queries import router as ai_queries_router
 from app.api.v1.ai_operations import router as ai_operations_router
 from app.api.v1.ai_sensitive_data_policies import router as ai_sensitive_data_policies_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.audit_events import router as audit_events_router
 from app.api.v1.android_document_views import router as android_document_views_router
 from app.api.v1.channels import router as channels_router
 from app.api.v1.controlled_copies import router as controlled_copies_router
@@ -25,6 +26,7 @@ from app.api.v1.work_sequences import router as work_sequences_router
 api_v1_router = APIRouter()
 api_v1_router.include_router(health_router)
 api_v1_router.include_router(auth_router)
+api_v1_router.include_router(audit_events_router)
 api_v1_router.include_router(server_accounts_router)
 api_v1_router.include_router(sync_reconciliation_router)
 api_v1_router.include_router(documents_router)

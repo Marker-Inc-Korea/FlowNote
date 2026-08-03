@@ -72,7 +72,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-08-03 현재 ORM은 문서·FieldComment 검토·보고서·작업순서 mutation receipt, 문서 태그 revision snapshot, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 62개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드는 새 테이블이나 저장 snapshot을 만들지 않고 `field_comments`와 `report_sources`의 현재 상태를 요청 시점에 집계한다.
+2026-08-03 현재 ORM은 공통 감사 event envelope와 mutation receipt, 문서·FieldComment 검토·보고서·작업순서의 도메인 receipt, 문서 태그 revision snapshot, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 64개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드는 새 테이블이나 저장 snapshot을 만들지 않고 `field_comments`와 `report_sources`의 현재 상태를 요청 시점에 집계한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -89,6 +89,8 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `file_objects` | 서버 로컬 파일 참조, MIME, 크기, SHA-256 |
 | `documents`, `document_versions` | 문서, 버전, 최신/공개 버전. 문서와 개별 버전의 재시도 idempotency key를 각각 유일하게 보존 |
 | `document_mutation_receipts` | 문서 공개·상태·태그·삭제 mutation key, intent hash, 적용 revision, 최초 성공 응답 |
+| `audit_event_envelopes` | 공통 감사 계약. event/actor·role/session·device/target·version·revision/reason/approval/hash/result/server time/run·correlation ID와 도메인 감사 연결을 저장 |
+| `sync_mutation_receipts` | 전역 유일 operation key, intent hash, 성공·거부·충돌 결과, HTTP 상태, 공통 event ID와 기존 도메인 receipt 연결을 저장 |
 | `tag_definitions`, `document_tags` | 태그 사전과 현재 문서 연결 |
 | `document_tag_revisions` | 문서 생성과 태그 mutation 뒤 revision별 태그 집합 JSON. stale 태그 delta의 3-way 병합 기준 |
 | `terminal_devices` | Android 현장 단말기 승인 기준 정보 |
@@ -126,15 +128,20 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `android_document_view_grants` | Android 앱 내부 열람용 token hash, 사용자·세션·필수 승인 단말·공개 버전·미디어 종류·크기·SHA-256, 만료·소비·실패 상태 |
 | `activity_history` | 서버 활동 이력 |
 
-남은 수렴 계약 구현 시 서버 DB에는 다음 additive 모델을 추가한다. FieldComment 검토·보고서·작업순서의 도메인별 revision/hash/receipt는 구현 완료되어 이 목표 목록에서 제외했다.
+`audit_event_envelopes`와 `sync_mutation_receipts`는 migration `0002_common_mutation_receipts`에서 additive 방식으로 추가한다. 기존 `activity_history`와 도메인 receipt를 이동·수정·백필하지 않는다. 공통 행이 없는 이전 감사는 조회 시 `이전 형식·일부 필드 없음`으로 표시하고 role·session·revision·result 같은 누락값을 추정하지 않는다.
 
-| 목표 테이블/열 | 불변식 |
-| --- | --- |
-| `sync_mutation_receipts` | `idempotency_key` UNIQUE, domain/action, `intent_hash`, 결과 entity/server ID·revision·hash를 보존. 응답 유실 뒤 reconciliation의 공통 조회 원천 |
+`sync_mutation_receipts.operation_key`는 서버 전체에서 UNIQUE다. 같은 key·같은 event/target/intent는 최초 성공 또는 거부·충돌 결과로 수렴하고 같은 key의 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`로 거부한다. 성공 행은 기존 `document_mutation_receipts`, `field_comment_review_mutation_receipts`, `report_mutation_receipts`, `work_sequence_mutation_receipts`의 테이블명과 PK를 연결한다. 업무 변경, 도메인 receipt, 공통 envelope/receipt는 같은 transaction에서 commit한다. 문서 상태, FieldComment 검토, 보고서 승인, 작업순서 항목 상태의 거부·충돌은 업무 transaction을 rollback한 뒤 공통 거부 receipt만 별도 transaction으로 확정하며 업무 row가 바뀌지 않았음을 revision으로 검증한다.
 
-`sync_mutation_receipts`는 도메인 row를 대체하지 않는다. 도메인 transaction 안에서 도메인 row와 함께 기록하며, 같은 key·같은 `intent_hash` 요청은 저장된 결과를 반환하고 다른 hash는 `IDEMPOTENCY_KEY_REUSED`로 거부한다. 문서·버전·FieldComment·첨부·접근 로그·보고서에 이미 있는 개별 `idempotency_key` UNIQUE도 유지해 이중으로 중복을 차단한다.
+공통 envelope의 필수 필드는 `event_type`, actor ID/role, session ID, target type/ID, result/result code/HTTP status, correlation ID, server time이다. operation key가 있는 mutation은 intent hash와 공통 receipt 연결도 필수다. device ID와 run ID는 요청 세션·헤더에 값이 있을 때만 저장하고 target version/revision·reason·approval·전후 hash는 아래 행위 계약을 따른다.
 
-현재 구현된 `field_comment_review_mutation_receipts`와 `report_mutation_receipts`는 공통 receipt가 아니라 도메인별 영수증이다. 두 테이블 모두 최대 160자의 mutation key를 전역 UNIQUE로 두고 intent hash와 최초 응답 JSON을 보존한다. FieldComment 영수증은 같은 comment의 같은 `review_revision`을 한 번만 허용하고, 보고서 영수증은 같은 report의 같은 `report_revision`을 한 번만 허용한다. SQLite 기존 DB에는 `field_comments.review_revision`과 보고서의 세 aggregate 열을 additive 보완하며 새 receipt 테이블은 ORM `create_all`로 생성한다.
+| 행위 | target version/revision | 사유 | 승인 | 전후 hash |
+| --- | --- | --- | --- | --- |
+| 문서 상태·공개·삭제·태그 | 문서 revision 필수, 공개는 version ID 필수 | 삭제 필수, 나머지는 현재 API 계약상 선택 | 별도 승인 모델이 없어 `NOT_REQUIRED` | 성공 필수, 거부·충돌은 선택 |
+| FieldComment 검토 | document version이 있으면 기록, review revision 필수 | 상태 전이 시 필수, 해석 필드만 바꾸면 선택 | 별도 승인 모델이 없어 `NOT_REQUIRED` | 성공 필수, 거부·충돌은 선택 |
+| 보고서 승인 저장 | 생성 version이 있으면 기록, report revision 필수 | 현재 API 계약상 선택 | `APPROVED`, `approved_by` 필수 | 성공 필수, 거부·충돌은 선택 |
+| 작업순서 변경 | board revision 필수 | 생성은 서버 고정 사유, 순서·상태는 현재 API 계약상 선택 | 별도 승인 모델이 없어 `NOT_REQUIRED` | 성공 필수, 거부·충돌은 선택 |
+
+공통 `safe_payload_json`과 실패 응답 snapshot에는 operation key, schema 이름, 정제 코드와 식별자/revision만 저장한다. token, 비밀번호, 고객 문서·FieldComment·보고서 원문, 로컬 절대경로, 불필요한 개인정보는 저장하지 않는다. 전후 상태는 원문 대신 canonical SHA-256으로 기록한다.
 
 채널 메시지는 별도 개인 DM이나 개인 메신저 수집이 아니라 업무 채널 멤버십 기준으로 조회된다. 사용자별 알림 목록과 읽음 처리는 `channel_messages`와 `notification_channel_members.last_read_message_id`, `last_read_at`를 함께 사용한다.
 

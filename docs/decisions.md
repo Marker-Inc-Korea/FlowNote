@@ -2,6 +2,15 @@
 
 이 문서는 2026-08-03 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
 
+## 2026-08-03. 공통 mutation receipt와 감사 envelope는 도메인 감사를 대체하지 않고 연결한다
+
+- `0002_common_mutation_receipts`는 `audit_event_envelopes`, `sync_mutation_receipts`만 additive 방식으로 추가한다. 기존 `activity_history`, 문서·FieldComment·보고서·작업순서 receipt와 과거 row는 이동·수정·백필하지 않는다.
+- operation key는 공통 receipt에서 서버 전체 UNIQUE다. 같은 key·같은 event/target/intent는 최초 성공 또는 거부·충돌 결과를 재생하고 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`로 거부한다. key 재사용 시도 자체는 기존 receipt를 바꾸지 않고 별도 conflict envelope로 남긴다.
+- 성공 mutation은 업무 row, 기존 도메인 receipt, 공통 receipt/envelope를 한 transaction에 저장한다. 업무 거부·충돌은 업무 transaction을 rollback하고 공통 거부 receipt만 확정해 같은 재시도가 같은 HTTP 결과로 수렴하게 한다.
+- 첫 적용 대상은 operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 승인 저장과 작업순서 변경이다. 성공 공통 receipt는 기존 도메인 receipt의 테이블명과 PK를 보존한다. 성공·거부·충돌·재시도 전체 공통 결과 고정은 문서 상태, FieldComment 검토, 보고서 승인, 작업순서 항목 상태부터 적용한다.
+- 공통 envelope는 actor/role/session, 선택 device, target/version/revision, reason/approval, 전후 hash, result/HTTP status, server time, 선택 run ID와 필수 correlation ID를 사용한다. 이전 감사의 누락값은 추정하지 않고 조회에서 `이전 형식·일부 필드 없음`으로 구분한다.
+- 공통 payload는 정제 metadata만 허용한다. token, 비밀번호, 고객 원문, 로컬 절대경로와 불필요한 개인정보는 저장하지 않고 전후 상태는 canonical SHA-256으로 연결한다. 일반 감사는 최소 1년 보존하며 자동 purge는 별도 승인된 보존·폐기 결정 전까지 두지 않는다.
+
 ## 2026-08-03. 문서 태그만 delta 병합하고 나머지 문서 권위 충돌은 사용자 판단으로 남긴다
 
 - WPF 태그 큐는 마지막 서버 `revision`과 `server_tags_json`을 기준으로 추가 태그, 제거 태그, canonical `intentHash`, 안정된 `mutationKey`를 보존한다. 문서 최초 등록 전 만든 큐는 등록 응답의 revision과 태그 집합으로 delta를 한 번 확정한 뒤 같은 큐 row를 전송한다.
@@ -115,7 +124,7 @@
 
 - WPF 공통 SQLite는 불안정한 사내망에서도 파일·입력·큐를 잃지 않기 위한 로컬 작업 원장이다. FastAPI DB는 운영 상태, 공개 포인터, FieldComment 검토, 보고서 source, 작업순서와 AI 근거 판정의 권위 원천이다. 로컬 row 수와 서버 row 수가 같다는 사실만으로 수렴을 판정하지 않는다.
 - 서버 수락 전 로컬 원천·파일·큐를 삭제하지 않는다. 서버가 2xx를 반환해도 entity ID, revision, file/content/source hash를 read-back하고 `server_id_mappings`와 큐 종결을 같은 로컬 transaction에 저장하기 전에는 `SYNCED`가 아니다.
-- 모든 재전송 가능한 mutation은 안정된 idempotency key와 의도를 식별할 hash를 갖는 것을 수렴 목표로 둔다. 현재 FieldComment 검토와 보고서는 도메인별 mutation receipt를 같은 transaction에 저장하고, 공통 `sync_mutation_receipts`는 후속 범위다. 응답 유실, 503, timeout, 앱 재시작은 같은 key와 같은 요청 의도로 재시도하며 서버 결과 row와 의미상 이력은 각각 한 번만 생성한다.
+- 모든 재전송 가능한 mutation은 안정된 idempotency key와 의도를 식별할 hash를 갖는 것을 수렴 목표로 둔다. 이 결정 당시 FieldComment 검토와 보고서의 도메인 receipt까지만 구현되어 있었고 공통 `sync_mutation_receipts`는 2026-08-03 결정으로 구현되었다. 응답 유실, 503, timeout, 앱 재시작은 같은 key와 같은 요청 의도로 재시도하며 서버 결과 row와 의미상 이력은 각각 한 번만 생성한다.
 - 409 충돌은 자동 최신값 추정, 단계 보간, last-write-wins로 해결하지 않는다. `STALE_REVISION` 계열, source/hash 변경, orphan, key 재사용을 구조화된 코드로 보존하고 관리자가 최신 서버본 기준 재시도 또는 사유가 있는 `DISCARDED`를 선택한다. `SYNCED`, `DISCARDED`만 종결 상태이며 원천·큐·감사는 어느 상태에서도 자동 삭제하지 않는다.
 - FieldComment 원천은 불변 `source_hash`로, 검토 영역은 별도 `review_revision`으로 관리한다. 검토 PATCH는 WPF에서 base review revision과 mutation key를 보내며 서버 상태를 맞추기 위한 WPF의 자동 중간 상태 생성은 금지한다. 현재 API는 예상 원천 hash를 요청 필드로 받지 않고 응답·감사 snapshot에서 검증한다. 첨부는 부모 ID와 파일 SHA-256을 별도로 검증한다.
 - 보고서는 본문 hash와 정렬된 source ID/version/hash 집합 hash를 하나의 저장 의도로 취급한다. report, 모든 source, 생성 문서/버전과 mutation receipt는 한 서버 transaction에 저장한다. source가 바뀌었거나 사라졌으면 보고서를 낡은 근거로 자동 저장하지 않는다.
@@ -124,7 +133,7 @@
 - 서버는 설치 ID와 복구 epoch를 분리한다. instance/epoch 변경이나 cursor 역행을 감지하면 WPF는 mutation과 polling을 중지하고 기존 cursor·mapping을 보존한 채 reconciliation을 실행한다. 같은 key/hash는 새 ID에 재결합하고, 서버에 없으면 같은 key로 재전송하며, 불일치는 `SERVER_RECOVERY_DIVERGED`로 보존한다. 관리자 감사 후에만 cursor 0 재추적을 허용하고 처리한 `message_id`는 유지한다.
 - 수렴 완료는 비종결 큐 0건, 동일 idempotency key 서버 중복 0건, orphan mapping/source 0건, 문서 공개 포인터·source/version ID·hash 일치와 cursor 재추적 완료를 모두 요구한다. AI 후보 재생성과 보고서 운영은 이 gate 뒤에 수행한다.
 
-2026-07-21 구현 상태에서 작업순서 직접 운영 경계와 FieldComment 검토·첨부, 보고서 저장의 도메인별 서버 수렴 계약에 더해 server manifest, WPF URL별 binding, instance/epoch/cursor 복구 경계 차단과 관리자 reconciliation 적용까지 구현되었다. FastAPI는 FieldComment `review_revision`과 검토 receipt, 보고서 `report_revision`·내용/source 집합 hash와 보고서 receipt, 첨부 부모·파일 hash 검증을 사용한다. WPF는 검토 큐의 base revision/mutation key, 첨부 SHA-256을 보내고 자동 중간 상태 생성을 하지 않으며 성공 응답의 검토 revision을 로컬에 반영한다. 보고서 큐는 안정 key를 `idempotencyKey`와 `mutationKey`로 보내고, 응답 source를 정규화해 source-set hash를 대조한 뒤 report revision과 두 hash를 로컬에 보존한다. 공통 `sync_mutation_receipts`는 여전히 목표 계약이다. 제품 전체의 운영 완료 판정은 두 WPF 인스턴스와 한 서버에서 동시 문서 수정/공개, FieldComment 검토/첨부, 보고서 저장, 작업순서 변경을 수행하고 503·응답 유실·stale revision·서버 복구·앱 재시작을 주입한 뒤 SQL 증거를 비교해야 한다.
+2026-07-21 구현 상태에서 작업순서 직접 운영 경계와 FieldComment 검토·첨부, 보고서 저장의 도메인별 서버 수렴 계약에 더해 server manifest, WPF URL별 binding, instance/epoch/cursor 복구 경계 차단과 관리자 reconciliation 적용까지 구현되었다. FastAPI는 FieldComment `review_revision`과 검토 receipt, 보고서 `report_revision`·내용/source 집합 hash와 보고서 receipt, 첨부 부모·파일 hash 검증을 사용한다. WPF는 검토 큐의 base revision/mutation key, 첨부 SHA-256을 보내고 자동 중간 상태 생성을 하지 않으며 성공 응답의 검토 revision을 로컬에 반영한다. 보고서 큐는 안정 key를 `idempotencyKey`와 `mutationKey`로 보내고 응답 source를 정규화해 source-set hash를 대조한 뒤 report revision과 두 hash를 로컬에 보존한다. 당시 목표였던 공통 `sync_mutation_receipts`는 2026-08-03 구현되었다. 제품 전체의 운영 완료 판정은 두 WPF 인스턴스와 한 서버에서 동시 문서 수정/공개, FieldComment 검토/첨부, 보고서 저장, 작업순서 변경을 수행하고 503·응답 유실·stale revision·서버 복구·앱 재시작을 주입한 뒤 SQL 증거를 비교해야 한다.
 
 ## 2026-07-20. DB schema 호환은 additive versioned migration과 무손실 증거로 판정
 
