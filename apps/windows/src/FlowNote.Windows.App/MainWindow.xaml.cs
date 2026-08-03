@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly FlowNoteServerTerminalDeviceClient? serverTerminalDeviceClient;
     private readonly FlowNoteServerAccountClient? serverAccountClient;
     private readonly FlowNoteServerAIOperationsClient? serverAIOperationsClient;
+    private readonly FlowNoteServerAuditClient? serverAuditClient;
     private readonly bool canRegisterDocuments;
     private readonly bool canGovernDocuments;
     private readonly bool canManageFileWatch;
@@ -60,6 +61,7 @@ public partial class MainWindow : Window
             serverTerminalDeviceClient,
             serverAccountClient,
             serverAIOperationsClient,
+            serverAuditClient,
             serverHttpClient) = CreateServerClients(currentUser);
         notificationServerScope = serverHttpClient?.BaseAddress is null
             ? null
@@ -101,6 +103,7 @@ public partial class MainWindow : Window
         FlowNoteServerTerminalDeviceClient? TerminalDeviceClient,
         FlowNoteServerAccountClient? AccountClient,
         FlowNoteServerAIOperationsClient? AIOperationsClient,
+        FlowNoteServerAuditClient? AuditClient,
         HttpClient? HttpClient) CreateServerClients(LoginResult currentUser)
     {
         var httpClient =
@@ -109,7 +112,7 @@ public partial class MainWindow : Window
             string.IsNullOrWhiteSpace(currentUser.AccessToken))
         {
             httpClient?.Dispose();
-            return (null, null, null, null, null, null);
+            return (null, null, null, null, null, null, null);
         }
 
         httpClient.DefaultRequestHeaders.Authorization =
@@ -122,6 +125,7 @@ public partial class MainWindow : Window
             new FlowNoteServerTerminalDeviceClient(httpClient),
             new FlowNoteServerAccountClient(httpClient),
             new FlowNoteServerAIOperationsClient(httpClient),
+            new FlowNoteServerAuditClient(httpClient),
             httpClient);
     }
 }

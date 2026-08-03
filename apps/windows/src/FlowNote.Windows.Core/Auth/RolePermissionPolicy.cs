@@ -120,6 +120,8 @@ public static class RolePermissionPolicy
         return !string.IsNullOrWhiteSpace(role) && AccessLogReadRoles.Contains(role);
     }
 
+    public static bool CanReadChangeHistory(string? role) => CanGovernDocuments(role);
+
     public static bool CanManageUsers(string? role)
     {
         return !string.IsNullOrWhiteSpace(role) && UserManagementRoles.Contains(role);

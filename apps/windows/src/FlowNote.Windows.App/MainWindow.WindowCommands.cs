@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Windows;
 using FlowNote.Windows.Core.Auth;
+using FlowNote.Windows.Core.ServerApi;
 
 namespace FlowNote.Windows.App;
 
@@ -68,6 +69,45 @@ public partial class MainWindow
         };
         window.ShowDialog();
         RefreshSyncState();
+    }
+
+    private void ChangeHistoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (serverAuditClient is null ||
+            !RolePermissionPolicy.CanReadChangeHistory(currentUser.Role))
+        {
+            workspace.StatusText =
+                "변경 이력은 관리자급 권한과 서버 연결이 필요합니다. 현장 관리자에게 로그인 ID와 필요한 업무를 전달하세요.";
+            return;
+        }
+
+        new ChangeHistoryWindow(serverAuditClient, OpenChangeHistoryAction)
+        {
+            Owner = this
+        }.ShowDialog();
+    }
+
+    private void OpenChangeHistoryAction(ServerChangeHistoryItem item)
+    {
+        switch (item.ActionRoute)
+        {
+            case "DOCUMENT_CONFLICT":
+                HistoryButton_Click(this, new RoutedEventArgs());
+                break;
+            case "FIELD_COMMENT_REVIEW":
+                FieldCommentReviewButton_Click(this, new RoutedEventArgs());
+                break;
+            case "REPORT":
+                ReportDraftButton_Click(this, new RoutedEventArgs());
+                break;
+            case "WORK_SEQUENCE":
+                WorkSequenceAdminButton_Click(this, new RoutedEventArgs());
+                break;
+            default:
+                workspace.StatusText =
+                    $"{item.EventId}는 변경 이력 화면의 원본 감사 상세에서 확인하세요.";
+                break;
+        }
     }
 
     private void UserManagementButton_Click(object sender, RoutedEventArgs e)

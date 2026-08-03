@@ -143,6 +143,8 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 공통 `safe_payload_json`과 실패 응답 snapshot에는 operation key, schema 이름, 정제 코드와 식별자/revision만 저장한다. token, 비밀번호, 고객 문서·FieldComment·보고서 원문, 로컬 절대경로, 불필요한 개인정보는 저장하지 않는다. 전후 상태는 원문 대신 canonical SHA-256으로 기록한다.
 
+통합 변경 이력은 새 테이블이 아니다. `audit_event_envelopes`를 원천으로 `sync_mutation_receipts` 연결 여부와 현재 `documents`, `field_comments`, `reports`, `work_sequence_boards`, `work_sequence_items` 상태를 조회 시점에 결합한다. 따라서 화면용 합계, 위험도, 조치 필요 여부, 영향, 담당자와 다음 행동은 파생 값이며 원천 감사를 수정하지 않고 언제든 다시 만들 수 있다. pagination snapshot은 최초 조회 시점의 event ID 상한만 커서에 보존하고 서버 DB에는 저장하지 않는다.
+
 채널 메시지는 별도 개인 DM이나 개인 메신저 수집이 아니라 업무 채널 멤버십 기준으로 조회된다. 사용자별 알림 목록과 읽음 처리는 `channel_messages`와 `notification_channel_members.last_read_message_id`, `last_read_at`를 함께 사용한다.
 
 `terminal_devices`는 개인 휴대폰 자동 등록 테이블이 아니라 승인된 현장 태블릿 또는 러기드 단말의 운영 기준이다. 단말 용도 `device_mode`는 현장 열람용 `viewer`와 관리 지원용 `admin_support`를 사용한다. 상태는 `ACTIVE`, `INACTIVE`, `RETIRED`이고 폐기 단말은 재활성화하지 않는다. `registered_by`, `updated_by`는 등록자와 마지막 변경자, `replaced_device_id`는 교체 단말이 대체한 기존 단말 ID를 보존한다. Android 앱은 로그인 시 `deviceId`를 보내며, 서버는 같은 ID가 `terminal_devices.device_id`에 있고 `status = ACTIVE`일 때만 세션을 만든다. 성공한 Android 세션은 `auth_sessions.device_id`에 단말 ID를 남기고 로그인 성공 때마다 `terminal_devices.last_seen_at`을 갱신한다. 등록, 정보 변경, 비활성화, 폐기, 교체 이력은 `activity_history`의 `terminal_device.*` 이벤트로 추적한다.

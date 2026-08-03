@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-08-03 현재 OpenAPI에 등록된 144개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-08-03 현재 OpenAPI에 등록된 146개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -23,6 +23,8 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/auth/me` | Current user lookup |
 | POST | `/api/v1/auth/change-password` | Required/self password change and session revocation |
 | GET | `/api/v1/audit-events` | Read common mutation envelopes and legacy activity history with explicit missing fields |
+| GET | `/api/v1/change-history` | Rebuildable, permission-filtered integrated change history and action items |
+| GET | `/api/v1/change-history/{event_id}` | Permission-filtered source audit and current target detail |
 | GET | `/api/v1/server-accounts` | Server account list |
 | POST | `/api/v1/server-accounts` | Create server account with one-time temporary password input |
 | PATCH | `/api/v1/server-accounts/{user_id}` | Change display name, role, or status |
@@ -162,6 +164,8 @@ The pilot server is a single customer/site boundary. Optional `X-FlowNote-Custom
 Document write responses carry the server-authoritative aggregate `revision`. Version registration, status changes, publish, tag replacement, and soft delete compare the caller's base revision and relevant latest/published version before committing. Publish, status, and tag mutations store the normalized intent and first successful response in `document_mutation_receipts` within the same transaction. Replaying the same mutation key and intent returns that response without another revision or audit event; reusing the key for another intent returns a structured HTTP 409 conflict. WPF reads the document back after a successful response and marks the queue `SYNCED` only after the authoritative status, published version, tags, and revision agree.
 
 Operation-key mutations for document authority, FieldComment review, report approval, and work sequences also write `sync_mutation_receipts` and `audit_event_envelopes` without replacing their domain receipts or audit rows. Optional `X-FlowNote-Run-Id` and `X-Correlation-Id` headers link a verification run; the server creates a correlation ID when it is omitted. `GET /api/v1/audit-events` is restricted to `admin` and `system-admin`, combines common envelopes with legacy `activity_history`, and marks unavailable legacy fields instead of inferring values.
+
+`GET /api/v1/change-history` derives a read model from `audit_event_envelopes`; it does not create a second authority table. Governance roles can filter by time, actor/role, device, target, version/revision, result, risk, run, and correlation ID. Channel-restricted targets are omitted for non-members in both list totals and detail. The first page fixes an event ID snapshot anchor so cursor pagination does not duplicate or omit rows when new audit events arrive.
 
 Development defaults such as `admin / 1234` and the default token secret are local development values only.
 
