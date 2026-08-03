@@ -252,6 +252,32 @@ public final class FlowNoteApiClient {
         return patchJson(ApiPaths.handoverReceipt(handoverId, receiptId), body.toString());
     }
 
+    public JSONObject createFieldCommentChannelMessage(
+            String channelId,
+            String commentId,
+            String handoverId,
+            String handoverTitle
+    ) throws IOException, JSONException {
+        StringBuilder body = new StringBuilder("{");
+        JsonEscaper.appendStringField(body, "messageType", "FIELD_COMMENT_EVENT", true);
+        JsonEscaper.appendStringField(body, "sourceType", "FIELD_COMMENT", true);
+        JsonEscaper.appendStringField(body, "sourceId", commentId, true);
+        JsonEscaper.appendStringField(
+                body,
+                "title",
+                "인수인계 후속 FieldComment: " + handoverTitle,
+                true
+        );
+        JsonEscaper.appendStringField(
+                body,
+                "body",
+                "원천 인수인계 " + handoverId + "에서 후속 FieldComment를 작성했습니다.",
+                false
+        );
+        body.append('}');
+        return postJson(ApiPaths.channelMessages(channelId), body.toString(), true);
+    }
+
     public JSONObject createFieldComment(FieldCommentDraft draft) throws IOException, JSONException {
         if (!draft.canSend()) {
             throw new IOException("FieldComment target and rawContent are required.");
@@ -269,6 +295,30 @@ public final class FlowNoteApiClient {
         JsonEscaper.appendStringField(body, "entrySource", "android_field_terminal", true);
         JsonEscaper.appendStringField(body, "deviceId", draft.deviceId, false);
         JsonEscaper.appendStringField(body, "idempotencyKey", draft.idempotencyKey, true);
+        body.append('}');
+        return postJson(ApiPaths.FIELD_COMMENTS, body.toString(), true);
+    }
+
+    public JSONObject createHandoverFollowUpFieldComment(HandoverFollowUpDraft handoverDraft)
+            throws IOException, JSONException {
+        FieldCommentDraft draft = handoverDraft.toFieldCommentDraft();
+        if (!handoverDraft.canQueue() || !draft.canSend()) {
+            throw new IOException("Handover follow-up source and rawContent are required.");
+        }
+        StringBuilder body = new StringBuilder("{");
+        JsonEscaper.appendStringField(body, "documentId", draft.documentId, false);
+        JsonEscaper.appendStringField(body, "documentVersionId", draft.documentVersionId, false);
+        JsonEscaper.appendStringField(body, "workRecordId", draft.workRecordId, false);
+        JsonEscaper.appendStringField(body, "commentType", "issue", true);
+        JsonEscaper.appendStringField(body, "inputMode", "free_text", true);
+        JsonEscaper.appendStringField(body, "rawContent", draft.rawContent, true);
+        JsonEscaper.appendStringField(body, "authorId", draft.authorId, false);
+        JsonEscaper.appendStringField(body, "reportedBy", draft.authorId, false);
+        JsonEscaper.appendStringField(body, "entrySource", "handover_follow_up", true);
+        JsonEscaper.appendStringField(body, "deviceId", draft.deviceId, false);
+        JsonEscaper.appendStringField(body, "category", "handover-follow-up", false);
+        body.append(",\"priority\":2");
+        JsonEscaper.appendStringField(body, "idempotencyKey", draft.idempotencyKey, false);
         body.append('}');
         return postJson(ApiPaths.FIELD_COMMENTS, body.toString(), true);
     }

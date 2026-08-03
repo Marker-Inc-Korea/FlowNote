@@ -315,6 +315,15 @@ public sealed record ServerHandoverResponse
 
     public string StatusLabel => ChannelLabelFormatter.FormatHandoverStatus(Status);
 
+    public int UnconfirmedRecipientCount => Receipts.Count(item =>
+        item.ReceiptStatus is "UNREAD" or "READ");
+
+    public int FollowUpRequiredCount => Receipts.Count(item =>
+        item.ReceiptStatus == "FOLLOW_UP_REQUIRED");
+
+    public string ReceiptSummary =>
+        $"미확인 {UnconfirmedRecipientCount}명 / 후속 {FollowUpRequiredCount}명";
+
     public string SourceLinkText
     {
         get

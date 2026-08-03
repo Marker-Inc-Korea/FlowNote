@@ -11,7 +11,7 @@ public final class OutboxStatusMessageTest {
         assertEquals(
                 "전송 완료 · 대기 0건 · 모든 현장 기록을 서버에 저장했습니다.",
                 OutboxStatusMessage.format(
-                        new OutboxQueueStatus(0, 0, 0, 0, 0L),
+                        new OutboxQueueStatus(0, 0, 0, 0, 0, 0L),
                         1_000L,
                         true,
                         "tablet-a"
@@ -22,7 +22,7 @@ public final class OutboxStatusMessageTest {
     @Test
     public void waitingQueueShowsPreservationAndNextRetry() {
         String message = OutboxStatusMessage.format(
-                new OutboxQueueStatus(2, 0, 0, 0, 76_000L),
+                new OutboxQueueStatus(2, 0, 0, 0, 0, 76_000L),
                 1_000L,
                 true,
                 "tablet-a"
@@ -37,7 +37,7 @@ public final class OutboxStatusMessageTest {
     @Test
     public void rejectedSessionExplainsLoginAndAdministratorContact() {
         String message = OutboxStatusMessage.format(
-                new OutboxQueueStatus(1, 1, 1, 0, 0L),
+                new OutboxQueueStatus(1, 1, 1, 0, 0, 0L),
                 1_000L,
                 false,
                 "tablet-a"
@@ -52,7 +52,7 @@ public final class OutboxStatusMessageTest {
     @Test
     public void exhaustedQueueRequiresManualRetry() {
         String message = OutboxStatusMessage.format(
-                new OutboxQueueStatus(3, 2, 0, 2, Long.MAX_VALUE),
+                new OutboxQueueStatus(3, 2, 0, 2, 0, Long.MAX_VALUE),
                 1_000L,
                 true,
                 ""
@@ -62,5 +62,19 @@ public final class OutboxStatusMessageTest {
         assertTrue(message.contains("실패 항목 다시 보내기"));
         assertTrue(message.contains("실패 2건 / 전체 대기 3건"));
         assertTrue(message.contains("화면의 승인 단말 ID"));
+    }
+
+    @Test
+    public void partialSuccessExplainsThatOnlyAttachmentOrChannelMessageWillRetry() {
+        String message = OutboxStatusMessage.format(
+                new OutboxQueueStatus(2, 2, 1, 0, 1, 0L),
+                1_000L,
+                true,
+                "tablet-a"
+        );
+
+        assertTrue(message.contains("부분 성공 1건"));
+        assertTrue(message.contains("FieldComment 원천 저장이 끝났고"));
+        assertTrue(message.contains("사진 또는 채널 알림만 재시도"));
     }
 }

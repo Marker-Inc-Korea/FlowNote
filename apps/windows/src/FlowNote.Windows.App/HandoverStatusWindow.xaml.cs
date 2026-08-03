@@ -37,10 +37,21 @@ public partial class HandoverStatusWindow : Window
 
         try
         {
-            var handovers = await channelClient!.ListHandoversAsync(200);
-            HandoverGrid.ItemsSource = handovers;
+            var handoversTask = channelClient!.ListHandoversAsync(200);
+            var channelsTask = channelClient.ListChannelsAsync(status: "ACTIVE");
+            await Task.WhenAll(handoversTask, channelsTask);
+            var channels = channelsTask.Result.ToDictionary(item => item.ChannelId);
+            var rows = handoversTask.Result
+                .Select(handover => HandoverSupervisionRow.From(
+                    handover,
+                    channels.GetValueOrDefault(handover.ChannelId)))
+                .ToList();
+            HandoverGrid.ItemsSource = rows;
             ReceiptGrid.ItemsSource = Array.Empty<ServerHandoverReceiptResponse>();
-            StatusTextBlock.Text = $"인수인계 {handovers.Count}건을 조회했습니다.";
+            var unconfirmed = rows.Sum(item => item.UnconfirmedRecipientCount);
+            var followUp = rows.Sum(item => item.FollowUpRequiredCount);
+            StatusTextBlock.Text =
+                $"인수인계 {rows.Count}건 · 미확인 {unconfirmed}명 · 후속 조치 {followUp}명을 조회했습니다.";
         }
         catch (Exception exception)
         {
@@ -50,14 +61,16 @@ public partial class HandoverStatusWindow : Window
 
     private void HandoverGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (HandoverGrid.SelectedItem is not ServerHandoverResponse handover)
+        if (HandoverGrid.SelectedItem is not HandoverSupervisionRow row)
         {
             ReceiptGrid.ItemsSource = Array.Empty<ServerHandoverReceiptResponse>();
             return;
         }
 
-        ReceiptGrid.ItemsSource = handover.Receipts;
-        StatusTextBlock.Text = $"{handover.Title}: 수신자 {handover.Receipts.Count}명의 상태를 표시합니다.";
+        ReceiptGrid.ItemsSource = row.Handover.Receipts;
+        StatusTextBlock.Text =
+            $"{row.ChannelTypeLabel} · {row.ChannelName} · {row.Title}: " +
+            $"{row.Handover.ReceiptSummary}. 수신자별 상태와 후속 메모를 확인하세요.";
     }
 
     private async void ReadButton_Click(object sender, RoutedEventArgs e)
@@ -87,7 +100,7 @@ public partial class HandoverStatusWindow : Window
             return;
         }
 
-        if (HandoverGrid.SelectedItem is not ServerHandoverResponse handover ||
+        if (HandoverGrid.SelectedItem is not HandoverSupervisionRow row ||
             ReceiptGrid.SelectedItem is not ServerHandoverReceiptResponse receipt)
         {
             StatusTextBlock.Text = "상태를 변경할 인수인계와 수신자를 선택하세요.";
@@ -97,7 +110,7 @@ public partial class HandoverStatusWindow : Window
         try
         {
             var updated = await channelClient!.UpdateHandoverReceiptAsync(
-                handover.HandoverId,
+                row.Handover.HandoverId,
                 receipt.ReceiptId,
                 new ServerHandoverReceiptUpdateRequest
                 {
@@ -120,12 +133,13 @@ public partial class HandoverStatusWindow : Window
             return;
         }
 
-        if (HandoverGrid.SelectedItem is not ServerHandoverResponse handover)
+        if (HandoverGrid.SelectedItem is not HandoverSupervisionRow row)
         {
             StatusTextBlock.Text = "후속 FieldComment를 만들 인수인계를 선택하세요.";
             return;
         }
 
+        var handover = row.Handover;
         var content = Clean(ReceiptNoteTextBox.Text)
             ?? $"Windows 확인 현황에서 후속 FieldComment를 작성했습니다. 제목: {handover.Title}";
         try
@@ -146,16 +160,19 @@ public partial class HandoverStatusWindow : Window
 
     private void ReplaceSelectedHandover(ServerHandoverResponse updated)
     {
-        if (HandoverGrid.ItemsSource is not IEnumerable<ServerHandoverResponse> current)
+        if (HandoverGrid.ItemsSource is not IEnumerable<HandoverSupervisionRow> current)
         {
             return;
         }
 
         var handovers = current
-            .Select(item => item.HandoverId == updated.HandoverId ? updated : item)
+            .Select(item => item.Handover.HandoverId == updated.HandoverId
+                ? item with { Handover = updated }
+                : item)
             .ToList();
         HandoverGrid.ItemsSource = handovers;
-        HandoverGrid.SelectedItem = handovers.First(item => item.HandoverId == updated.HandoverId);
+        HandoverGrid.SelectedItem = handovers.First(
+            item => item.Handover.HandoverId == updated.HandoverId);
         ReceiptGrid.ItemsSource = updated.Receipts;
     }
 
@@ -195,4 +212,27 @@ public partial class HandoverStatusWindow : Window
             "기존 인수인계, FieldComment와 수신 확인 기록",
             "네트워크를 확인하고 목록을 새로고침한 뒤 다시 시도하세요.");
     }
+}
+
+internal sealed record HandoverSupervisionRow(
+    ServerHandoverResponse Handover,
+    string ChannelName,
+    string ChannelTypeLabel)
+{
+    public string Title => Handover.Title;
+
+    public string StatusLabel => Handover.StatusLabel;
+
+    public int UnconfirmedRecipientCount => Handover.UnconfirmedRecipientCount;
+
+    public int FollowUpRequiredCount => Handover.FollowUpRequiredCount;
+
+    public string SourceLinkText => Handover.SourceLinkText;
+
+    public static HandoverSupervisionRow From(
+        ServerHandoverResponse handover,
+        ServerNotificationChannelResponse? channel) => new(
+            handover,
+            channel?.Name ?? handover.ChannelId,
+            channel?.ChannelTypeLabel ?? "채널");
 }

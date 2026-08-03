@@ -11,14 +11,26 @@
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
 | FastAPI | 현재 코드 181건. macOS 누적 DB 전체 회귀는 180/181 통과 후 실패 1건의 단독 재실행이 통과했다. 스크립트 guard 181건 | Windows x64 수집·JUnit 무생략 실행 대기 |
-| WPF Core | 현재 macOS 실행 95/95, 스크립트 guard 95건 | Windows 수집·TRX 무생략 실행 대기 |
+| WPF Core | 현재 macOS 실행 98/98, 스크립트 guard 98건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 현재 macOS 교차 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
-| Android | 현재 단위 테스트 28/28, debug build·lint PASS, 스크립트 고정값 28건 | Windows 무생략 실행 대기 |
+| Android | 현재 단위 테스트 32/32, debug build·lint PASS, 스크립트 고정값 32건 | Windows 무생략 실행 대기 |
 | SQLite | FastAPI 누적 시험 DB `journal_mode=wal`, `quick_check=ok`, FK 위반 0. Windows 공통 DB 전후 검증 대기 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
-보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했다. 로그인 복구 안내 회귀 2건을 더한 2026-08-01 직접 실행은 89/89가 통과했다. 현재 코드는 통합 변경 이력 클라이언트 테스트를 포함해 95건이며 Windows x64의 새 수집 목록과 TRX가 95/95인지 별도로 확인해야 한다.
+보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했다. 로그인 복구 안내 회귀 2건을 더한 2026-08-01 직접 실행은 89/89가 통과했다. 현재 코드는 인수인계 감독 집계 테스트를 포함해 98건이며 Windows x64의 새 수집 목록과 TRX가 98/98인지 별도로 확인해야 한다.
+
+## 2026-08-03 작업 102 인수인계 확인·보류와 후속 기록 보존
+
+Android의 받은 인수인계 화면은 확인과 보류를 암호화 outbox에 먼저 저장하고, 같은 원천에 후속 FieldComment를 작성할 수 있게 바뀌었다. 작성 중 입력도 사용자와 인수인계 범위별 암호문으로 보존한다. 후속 코멘트 저장 뒤 채널 알림이 실패하면 서버 `comment_id`를 같은 row에 남겨 다음 시도에서 알림만 보낸다. 알림 polling은 사용자 scope와 공개 `message_id`를 별도 SQLite 원장에 기록해 cursor 재조회 시 같은 시스템 알림 표시를 반복하지 않는다.
+
+Windows 인수인계 확인 현황은 활성 채널과 인수인계를 함께 조회한다. 목록에는 운영 단위와 채널을 표시하고 `UNREAD`·`READ` 수신자는 미확인, `FOLLOW_UP_REQUIRED` 수신자는 후속 조치 인원으로 집계한다. 수신자별 receipt와 후속 메모 원문은 기존 상세 표에 그대로 남긴다.
+
+`apps/android`에서 `./gradlew testDebugUnitTest assembleDebug lintDebug --warning-mode=fail --rerun-tasks`를 실행해 단위 테스트 32/32, debug build와 lint가 모두 통과했다. JUnit XML, APK와 lint 보고서는 `apps/android/app/build/`에 보존했다. `apps/windows`에서는 `dotnet test src/FlowNote.Windows.Core.Tests/FlowNote.Windows.Core.Tests.csproj --no-restore --logger 'console;verbosity=minimal'`로 98/98을 확인했고, `dotnet build src/FlowNote.Windows.App/FlowNote.Windows.App.csproj --no-restore -p:EnableWindowsTargeting=true`도 경고 0개·오류 0개로 통과했다. 빌드 산출물은 각 프로젝트의 `bin/`, `obj/`에 보존했다. 표준 스크립트 guard는 WPF Core 98건, Android 32건으로 맞췄다.
+
+클라이언트가 사용하는 기존 서버 계약은 `services/api`에서 `.venv/bin/python -m pytest -q tests/test_channels_api.py tests/test_field_comments_api.py`로 다시 확인했고 25/25가 통과했다.
+
+이번 검증은 macOS ARM64 보조 실행이다. 실제 Windows 화면 조작, Windows x64 무생략 통합 실행, 공통 누적 SQLite 스모크, 승인 Android 실단말·계측 테스트는 수행하지 않았으므로 최신 통합 기준선은 계속 `대기`다. 기존 SQLite, 로그와 테스트 산출물은 삭제하거나 초기화하지 않았다.
 
 ## 2026-08-03 후보 4 변경 이력과 조치 필요 항목 통합 화면
 
@@ -88,7 +100,7 @@ Android 상단 전송 상태를 완료·대기·실패로 나누고 각 상태�
 
 `python3 -m unittest scripts/test_pilot_readiness.py scripts/test_manage_pilot_run.py scripts/test_manage_pilot_run_android.py`를 실행해 29/29가 통과했다. 승인 전 템플릿 잠금, 계약 고정과 템플릿 개방, 철회 뒤 재잠금과 원시 보존, 승인된 중단 기준, rollback 결정권자의 재개 승인, schema version 12와 기존 파일럿 판정을 함께 확인했다. 실행 중 생성된 시험 폴더는 `data/local/pilot-tool-tests/`에 누적 보존했고 삭제하거나 초기화하지 않았다. 이 결과는 고객 유사망, 승인 장비와 실제 승인자가 참여한 현장 파일럿 PASS가 아니다.
 
-표준 스크립트는 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed를 서로 대조한다. 현재 기대값은 95건이며 수집·고유·TRX total/passed 중 하나라도 95와 다르거나 실패·오류·건너뜀이 있으면 중단한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 화면과 요약에 실패 단계, 기대값과 실제값, 보존된 데이터와 증거 경로, 담당자, 새 RunId 재실행 명령을 이 순서로 남긴다.
+표준 스크립트는 WPF Core 수집 목록을 `wpf-core-collected-tests.txt`, 원본 수집 출력을 `wpf-core-collection.log`, 실행 결과를 `wpf-core-tests.trx`로 같은 run 폴더에 남기고 수집·고유·TRX total/passed를 서로 대조한다. 현재 기대값은 98건이며 수집·고유·TRX total/passed 중 하나라도 98과 다르거나 실패·오류·건너뜀이 있으면 중단한다. 각 장시간 단계가 시작될 때 콘솔과 `verification-summary.json`에 현재 단계, 기대값, 실제값, 다음 조치와 보존 경로를 먼저 기록한다. 실패하면 같은 화면과 요약에 실패 단계, 기대값과 실제값, 보존된 데이터와 증거 경로, 담당자, 새 RunId 재실행 명령을 이 순서로 남긴다.
 
 변경된 실패 안내는 PowerShell SDK 보조 호스트로 macOS 환경 게이트를 의도적으로 실패시킨 `candidate1-macos-ux-failure-20260730-01`에서 확인했다. 콘솔·단계 로그·`verification-summary.json`은 현재 단계, 기대값, 실제값, 중단 원인, 보존된 데이터, 재실행 전 조치와 증거 경로를 모두 한 화면 구조로 남겼다. 현재 호스트는 macOS ARM64라 Windows 누적 공통 DB 스모크와 Windows x64 무생략 실행 2회는 수행하지 못했다. 따라서 최신 유효 통합 기준선은 계속 `대기`다. 기존 실패의 DB·JUnit·TRX·로그는 삭제하거나 덮어쓰지 않았다.
 

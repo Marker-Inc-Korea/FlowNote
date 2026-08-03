@@ -130,6 +130,57 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
         return localId;
     }
 
+    public String enqueueHandoverReceipt(HandoverReceiptDraft draft) {
+        if (!draft.canQueue()) {
+            throw new IllegalArgumentException("인수인계 확인 또는 보류 상태가 완전하지 않습니다.");
+        }
+        return enqueueJson(
+                draft.localId,
+                "handover_receipt",
+                toPayload(draft),
+                draft.idempotencyKey
+        );
+    }
+
+    public String enqueueHandoverFollowUp(HandoverFollowUpDraft draft) {
+        if (!draft.canQueue()) {
+            throw new IllegalArgumentException("후속 FieldComment의 인수인계, 원천과 내용이 필요합니다.");
+        }
+        return enqueueJson(
+                draft.localId,
+                "handover_follow_up",
+                toPayload(draft),
+                draft.idempotencyKey
+        );
+    }
+
+    private String enqueueJson(
+            String requestedLocalId,
+            String kind,
+            JSONObject payload,
+            String idempotencyKey
+    ) {
+        long now = System.currentTimeMillis();
+        String localId = FieldCommentDraft.nonEmpty(requestedLocalId, UUID.randomUUID().toString());
+        ContentValues values = new ContentValues();
+        values.put("local_id", localId);
+        values.put("kind", kind);
+        values.put("payload", cryptoBox.encrypt(payload.toString()));
+        values.put("status", "PENDING");
+        values.put("idempotency_key", idempotencyKey);
+        values.put("attempt_count", 0);
+        values.put("last_attempt_at", 0);
+        values.put("created_at", now);
+        values.put("updated_at", now);
+        getWritableDatabase().insertWithOnConflict(
+                "outbox",
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_IGNORE
+        );
+        return localId;
+    }
+
     public List<OutboxItem> listPending(long nowMillis) {
         return listPending(nowMillis, false);
     }
@@ -178,10 +229,14 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
         int failed = 0;
         int ready = 0;
         int blocked = 0;
+        int partialSuccess = 0;
         long nextRetryAt = Long.MAX_VALUE;
         try (Cursor cursor = getReadableDatabase().query(
                 "outbox",
-                new String[]{"status", "attempt_count", "last_attempt_at"},
+                new String[]{
+                        "status", "attempt_count", "last_attempt_at",
+                        "kind", "server_id", "attachment_uri"
+                },
                 "status IN ('PENDING', 'FAILED')",
                 null,
                 null,
@@ -193,6 +248,15 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
                 String status = cursor.getString(0);
                 if ("FAILED".equals(status)) {
                     failed++;
+                    String kind = cursor.getString(3);
+                    String serverId = cursor.getString(4);
+                    String attachmentUri = cursor.getString(5);
+                    if (serverId != null && (
+                            "handover_follow_up".equals(kind)
+                                    || "field_comment".equals(kind) && attachmentUri != null
+                    )) {
+                        partialSuccess++;
+                    }
                 }
                 int attemptCount = cursor.getInt(1);
                 long lastAttemptAt = cursor.getLong(2);
@@ -211,7 +275,14 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
                 }
             }
         }
-        return new OutboxQueueStatus(pending, failed, ready, blocked, nextRetryAt);
+        return new OutboxQueueStatus(
+                pending,
+                failed,
+                ready,
+                blocked,
+                partialSuccess,
+                nextRetryAt
+        );
     }
 
     public SyncSummary retryPending(FlowNoteApiClient apiClient, String createdBy) {
@@ -233,9 +304,10 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
         String lastErrorMessage = null;
         for (OutboxItem item : items) {
             markAttempt(item.localId, item.attemptCount + 1);
-            boolean partialSuccess = "field_comment".equals(item.kind)
-                    && item.serverId != null
-                    && item.attachmentUri != null;
+            boolean partialSuccess = (
+                    "field_comment".equals(item.kind) && item.attachmentUri != null
+                    || "handover_follow_up".equals(item.kind)
+            ) && item.serverId != null;
             try {
                 String serverId;
                 if ("field_comment".equals(item.kind)) {
@@ -271,6 +343,31 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
                 } else if ("handover".equals(item.kind)) {
                     JSONObject response = apiClient.createHandover(item.toHandoverDraft());
                     serverId = response.getString("handover_id");
+                } else if ("handover_receipt".equals(item.kind)) {
+                    HandoverReceiptDraft draft = item.toHandoverReceiptDraft();
+                    apiClient.updateHandoverReceipt(
+                            draft.handoverId,
+                            draft.receiptId,
+                            draft.receiptStatus,
+                            draft.note,
+                            draft.deliveryRunId
+                    );
+                    serverId = draft.receiptId;
+                } else if ("handover_follow_up".equals(item.kind)) {
+                    HandoverFollowUpDraft draft = item.toHandoverFollowUpDraft();
+                    serverId = item.serverId;
+                    if (serverId == null) {
+                        JSONObject response = apiClient.createHandoverFollowUpFieldComment(draft);
+                        serverId = response.getString("comment_id");
+                        markServerId(item.localId, serverId);
+                        partialSuccess = true;
+                    }
+                    apiClient.createFieldCommentChannelMessage(
+                            draft.channelId,
+                            serverId,
+                            draft.handoverId,
+                            draft.handoverTitle
+                    );
                 } else {
                     throw new IOException("지원하지 않는 outbox 종류입니다.");
                 }
@@ -324,6 +421,42 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
             payload.put("sourceId", draft.sourceId);
             payload.put("sourceVersionId", draft.sourceVersionId);
             payload.put("recipientIds", new org.json.JSONArray(draft.recipientIds));
+            payload.put("deviceId", draft.deviceId);
+            payload.put("authorId", draft.authorId);
+            payload.put("idempotencyKey", draft.idempotencyKey);
+        } catch (JSONException exc) {
+            throw new IllegalStateException(exc);
+        }
+        return payload;
+    }
+
+    private JSONObject toPayload(HandoverReceiptDraft draft) {
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("localId", draft.localId);
+            payload.put("handoverId", draft.handoverId);
+            payload.put("receiptId", draft.receiptId);
+            payload.put("receiptStatus", draft.receiptStatus);
+            payload.put("note", draft.note);
+            payload.put("deliveryRunId", draft.deliveryRunId);
+            payload.put("idempotencyKey", draft.idempotencyKey);
+        } catch (JSONException exc) {
+            throw new IllegalStateException(exc);
+        }
+        return payload;
+    }
+
+    private JSONObject toPayload(HandoverFollowUpDraft draft) {
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("localId", draft.localId);
+            payload.put("handoverId", draft.handoverId);
+            payload.put("channelId", draft.channelId);
+            payload.put("handoverTitle", draft.handoverTitle);
+            payload.put("sourceType", draft.sourceType);
+            payload.put("sourceId", draft.sourceId);
+            payload.put("sourceVersionId", draft.sourceVersionId);
+            payload.put("rawContent", draft.rawContent);
             payload.put("deviceId", draft.deviceId);
             payload.put("authorId", draft.authorId);
             payload.put("idempotencyKey", draft.idempotencyKey);
@@ -466,6 +599,36 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
                     json.optString("sourceId", null),
                     json.optString("sourceVersionId", null),
                     recipientIds,
+                    json.optString("deviceId", null),
+                    json.optString("authorId", null),
+                    idempotencyKey
+            );
+        }
+
+        HandoverReceiptDraft toHandoverReceiptDraft() throws JSONException {
+            JSONObject json = new JSONObject(payload);
+            return new HandoverReceiptDraft(
+                    json.optString("localId", localId),
+                    json.optString("handoverId", null),
+                    json.optString("receiptId", null),
+                    json.optString("receiptStatus", null),
+                    json.optString("note", null),
+                    json.optString("deliveryRunId", null),
+                    idempotencyKey
+            );
+        }
+
+        HandoverFollowUpDraft toHandoverFollowUpDraft() throws JSONException {
+            JSONObject json = new JSONObject(payload);
+            return new HandoverFollowUpDraft(
+                    json.optString("localId", localId),
+                    json.optString("handoverId", null),
+                    json.optString("channelId", null),
+                    json.optString("handoverTitle", "인수인계"),
+                    json.optString("sourceType", null),
+                    json.optString("sourceId", null),
+                    json.optString("sourceVersionId", null),
+                    json.optString("rawContent", ""),
                     json.optString("deviceId", null),
                     json.optString("authorId", null),
                     idempotencyKey

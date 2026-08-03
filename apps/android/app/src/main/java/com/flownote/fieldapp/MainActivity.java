@@ -29,7 +29,9 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public final class MainActivity extends Activity implements HandoverComposerView.Listener {
+public final class MainActivity extends Activity implements
+        HandoverComposerView.Listener,
+        ReceivedHandoverView.Listener {
     private static final int REQUEST_PICK_PHOTO = 1001;
     private static final long OUTBOX_REFRESH_MILLIS = 15_000L;
     private static final String OUTBOX_LOG_TAG = "FlowNoteOutbox";
@@ -55,6 +57,7 @@ public final class MainActivity extends Activity implements HandoverComposerView
     private SharedPreferences preferences;
     private SecureSessionStore sessionStore;
     private HandoverSelectionCache handoverSelectionCache;
+    private HandoverFollowUpDraftStore handoverFollowUpDraftStore;
     private OfflineQueueStore outbox;
     private FlowNoteApiClient apiClient;
 
@@ -92,6 +95,7 @@ public final class MainActivity extends Activity implements HandoverComposerView
         try {
             sessionStore = new SecureSessionStore(this);
             handoverSelectionCache = new HandoverSelectionCache(this);
+            handoverFollowUpDraftStore = new HandoverFollowUpDraftStore(this);
             outbox = new OfflineQueueStore(this);
             restoreSettings();
         } catch (RuntimeException exc) {
@@ -553,54 +557,17 @@ public final class MainActivity extends Activity implements HandoverComposerView
 
     private void showHandovers(JSONArray handovers) {
         contentArea.removeAllViews();
-        for (int i = 0; i < handovers.length(); i++) {
-            JSONObject handover = handovers.optJSONObject(i);
-            if (handover == null) {
-                continue;
-            }
-            contentArea.addView(text(handover.optString("title"), 17, "#1F2A30"));
-            contentArea.addView(text(handover.optString("body"), 15, "#3D4852"));
-            JSONArray receipts = handover.optJSONArray("receipts");
-            if (receipts == null) {
-                continue;
-            }
-            for (int j = 0; j < receipts.length(); j++) {
-                JSONObject receipt = receipts.optJSONObject(j);
-                if (receipt == null || !receipt.optString("recipient_id").equals(currentUserId)) {
-                    continue;
-                }
-                String handoverId = handover.optString("handover_id");
-                String receiptId = receipt.optString("receipt_id");
-                LinearLayout row = row();
-                addRowButton(row, "읽음", view -> updateReceipt(handoverId, receiptId, "READ"));
-                addRowButton(row, "확인", view -> updateReceipt(handoverId, receiptId, "ACKNOWLEDGED"));
-                addRowButton(
-                        row,
-                        "후속 필요",
-                        view -> updateReceipt(handoverId, receiptId, "FOLLOW_UP_REQUIRED")
-                );
-                contentArea.addView(row);
-            }
-        }
-    }
-
-    private void updateReceipt(String handoverId, String receiptId, String receiptStatus) {
-        if (!requireSecureStorage()) {
-            return;
-        }
-        executor.execute(() -> {
-            try {
-                apiClient.updateHandoverReceipt(
-                        handoverId,
-                        receiptId,
-                        receiptStatus,
-                        null,
-                        preferences.getString("delivery_run_id", null));
-                postStatus("인수인계 상태 저장 완료");
-            } catch (Exception exc) {
-                postStatus("인수인계 상태 저장 실패: " + UserErrorMessage.from(exc));
-            }
-        });
+        ReceivedHandoverView receivedView = new ReceivedHandoverView(
+                this,
+                this,
+                handoverFollowUpDraftStore,
+                serverUrlInput.getText().toString(),
+                currentUserId,
+                deviceIdInput.getText().toString(),
+                preferences.getString("delivery_run_id", null)
+        );
+        receivedView.show(handovers);
+        contentArea.addView(receivedView);
     }
 
     private void pickPhoto() {
@@ -751,7 +718,8 @@ public final class MainActivity extends Activity implements HandoverComposerView
                         : outbox.retryPending(apiClient, currentUserId);
                 if (summary.failedCount > 0) {
                     String partial = summary.partialSuccessCount > 0
-                            ? ", 본문 저장 후 사진 재전송 대기 " + summary.partialSuccessCount + "건"
+                            ? ", 원천 저장 후 사진·채널 알림 재전송 대기 "
+                            + summary.partialSuccessCount + "건"
                             : "";
                     postStatus(
                             "현장 기록은 이 단말에 보존되어 있습니다. 완료 " + summary.successCount +
@@ -938,10 +906,47 @@ public final class MainActivity extends Activity implements HandoverComposerView
         retryOutbox(false);
     }
 
+    @Override
+    public boolean onQueueReceipt(HandoverReceiptDraft draft) {
+        if (!requireSecureStorage() || !draft.canQueue()) {
+            updateStatus("확인 또는 보류할 인수인계 상태를 다시 선택하세요.");
+            return false;
+        }
+        try {
+            outbox.enqueueHandoverReceipt(draft);
+        } catch (Exception exc) {
+            updateStatus("인수인계 상태 보존 실패: " + UserErrorMessage.from(exc));
+            return false;
+        }
+        refreshOutboxStatus();
+        updateStatus("확인·보류 상태를 기기에 보존했습니다. 연결되면 서버에 이어서 반영합니다.");
+        retryOutbox(false);
+        return true;
+    }
+
+    @Override
+    public boolean onQueueFollowUp(HandoverFollowUpDraft draft) {
+        if (!requireSecureStorage() || !draft.canQueue()) {
+            updateStatus("후속 FieldComment 내용과 연결된 원천을 확인하세요. 입력 내용은 보존됩니다.");
+            return false;
+        }
+        try {
+            outbox.enqueueHandoverFollowUp(draft);
+        } catch (Exception exc) {
+            updateStatus("후속 FieldComment 보존 실패: " + UserErrorMessage.from(exc));
+            return false;
+        }
+        refreshOutboxStatus();
+        updateStatus("후속 FieldComment를 기기에 보존했습니다. 코멘트 저장 후 알림이 실패하면 알림만 재시도합니다.");
+        retryOutbox(false);
+        return true;
+    }
+
     private boolean hasUsableSecureStorage() {
         return secureStorageError == null
                 && sessionStore != null
                 && handoverSelectionCache != null
+                && handoverFollowUpDraftStore != null
                 && outbox != null;
     }
 

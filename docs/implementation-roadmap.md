@@ -67,7 +67,7 @@
 
 ## 다음 우선순위
 
-1. 현재 코드와 표준 스크립트 guard는 FastAPI 181건·WPF Core 95건·Android 28건으로 일치한다. FastAPI 수집/JUnit·도구 부족 실패 안내와 의도적 불일치 단위 검증도 보강했다. 다음에는 Windows x64에서 FastAPI 수집 총 181건·고유 181건·중복 0건과 JUnit 181/181, WPF Core 수집 목록과 TRX `total/passed=95/95`, Android JUnit 28/28을 대조한다. 이어 누적 공통 DB 스모크 전후 무결성, Android debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, `PASSED` 실행 ID를 같은 clean 소스 커밋에서 2회 연속 남겨야 한다. 현재 최신 유효 기준선과 재현 실행은 모두 `대기`다.
+1. 현재 코드와 표준 스크립트 guard는 FastAPI 181건·WPF Core 98건·Android 32건으로 일치한다. FastAPI 수집/JUnit·도구 부족 실패 안내와 의도적 불일치 단위 검증도 보강했다. 다음에는 Windows x64에서 FastAPI 수집 총 181건·고유 181건·중복 0건과 JUnit 181/181, WPF Core 수집 목록과 TRX `total/passed=98/98`, Android JUnit 32/32를 대조한다. 이어 누적 공통 DB 스모크 전후 무결성, Android debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, `PASSED` 실행 ID를 같은 clean 소스 커밋에서 2회 연속 남겨야 한다. 현재 최신 유효 기준선과 재현 실행은 모두 `대기`다.
 2. [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다. `PILOT-20260728-1501-FULLPILOT-001`은 이 승인과 장비가 없는 상태를 검증해 460개 미충족 조건으로 `FAIL`했으므로, 현재 상태는 구현 완료가 아니라 파일럿 착수 `대기`다. RPO/RTO, 비상 연락, 이전 승인 패키지와 운영·보안·현장 승인자를 먼저 확정한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
 4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다. APK 설치·rollback은 승인 ADB serial, 동일 signer와 더 낮은 이전 versionCode를 확인하고, AAB는 관리형 스토어가 전달한 서명 APK를 별도로 검증한다. `full_pilot`의 전달·무결성·보안·단말 수명주기·패키지 승인 원시 CSV와 같은 `run_id`의 실제 증거가 모두 PASS일 때만 완료한다.
