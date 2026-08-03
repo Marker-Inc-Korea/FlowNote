@@ -147,7 +147,7 @@ flowchart LR
 | FastAPI 업무 API와 SQLite 모델 | 구현됨 |
 | Windows WPF 문서·검토·운영 화면 | 구현됨 |
 | Android 현장 단말 최소 업무 흐름 | 구현됨 |
-| 개별 내부 기술 검증 | 단계적으로 진행 중. 현재 FastAPI는 181건을 수집하며 WPF Core 98/98과 Android 최신 단위 검증 32/32가 통과했다. FastAPI 최신 전체 실행과 단독 재실행 결과는 [검증 기록](./docs/verification.md)에 보존 |
+| 개별 내부 기술 검증 | 단계적으로 진행 중. 현재 수집 결과는 FastAPI 182건·WPF Core 101건·Android 32건이다. WPF Core 101/101과 Android 32/32는 통과했으며 FastAPI 최신 전체 실행은 180/181 통과 뒤 실패한 1건의 단독 재실행이 통과했다. 이후 추가된 접근 로그 집중 회귀 4/4도 통과했다. 전체 결과는 [검증 기록](./docs/verification.md)에 보존 |
 | 현장 사용성 검증 | 피드백을 조금씩 수집하며 진행 중 |
 | Windows 서버·WPF·Android 단일 실행 통합 기준선 | 대기 |
 | 운영 코드 서명, MDM, 인증서와 현장별 설치 확정 | 대기 |
@@ -158,17 +158,17 @@ flowchart LR
 
 ## 내부 기술 검증 스냅샷
 
-2026-08-01 현재 서버·Windows 컴포넌트와 Android 단위 테스트의 최신 확인 결과는 아래와 같다.
+2026-08-03 현재 서버·Windows 컴포넌트와 Android 단위 테스트의 최신 확인 결과는 아래와 같다.
 
 | 검증 대상 | 결과 |
 | --- | --- |
-| FastAPI OpenAPI | 루트 `GET /` 포함 143개 method/path |
-| SQLAlchemy ORM | 61개 테이블 |
-| FastAPI 테스트 | 166개 통과 |
-| Python 정적 검사 | Ruff 통과 |
-| WPF Core 테스트 | 91개 통과 |
+| FastAPI OpenAPI | 루트 `GET /` 포함 146개 method/path |
+| SQLAlchemy ORM | 64개 테이블 |
+| FastAPI 테스트 | 현재 182개 수집. 최신 전체 실행은 180/181 통과 뒤 실패 1건의 단독 재실행 통과, 이후 접근 로그 집중 회귀 4/4 통과 |
+| Python 정적 검사 | 최근 보존 기록에서 Ruff 통과. 이번 문서 점검에서는 재실행하지 않음 |
+| WPF Core 테스트 | 101/101 통과 |
 | WPF 앱 빌드 | 경고 0개, 오류 0개 |
-| Android 단위 테스트 | 28개 통과 |
+| Android 단위 테스트 | 32/32 통과 |
 | Android debug 빌드·lint | `assembleDebug`, `lintDebug` 통과 |
 
 이 결과는 macOS ARM64 개발 호스트에서 실행한 API·Core 테스트, Windows 대상 교차 빌드, Android 개발 빌드를 기준으로 한다. 개별 내부 검증은 기능 개발과 함께 계속 진행한다. 실제 Windows UI 조작, 공통 누적 SQLite를 사용하는 Windows 통합 스모크, 승인 Android 실단말, 운영 HTTPS·코드 서명·MDM 검증을 한 실행 ID로 묶은 전체 구성요소 통합 기준선은 아직 `대기`다. 상세 실행 기록과 과거 실패 증거는 [검증 자동화 문서](./docs/verification.md)에 보존한다.
@@ -230,7 +230,7 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
 ```
 
-전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 2026-08-03 현재 코드와 스크립트 guard는 FastAPI 181건·WPF Core 98건·Android 32건으로 일치한다. Windows x64 수집 목록과 WPF Core TRX, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 실행을 같은 clean 소스 커밋에서 2회 통과해야 유효한 통합 기준선으로 판정한다. 수집/JUnit 또는 도구 검사가 실패하면 현재 단계·기대값·실제값·보존 증거와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 재실행 방법을 함께 안내한다.
+전체 Windows 기준선은 `scripts/verify-preserved-tests.ps1`로 FastAPI, WPF Core, Android 단위 테스트, 누적 SQLite 무결성과 스모크 증거를 하나의 실행 ID에 묶어 검증한다. 2026-08-03 현재 수집 결과는 FastAPI 182건·WPF Core 101건·Android 32건이지만 스크립트 guard는 FastAPI 181건·WPF Core 98건·Android 32건이어서 현재 코드와 일치하지 않는다. guard를 맞춘 뒤 Windows x64 수집 목록과 WPF Core TRX, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 실행을 같은 clean 소스 커밋에서 2회 통과해야 유효한 통합 기준선으로 판정한다. 수집/JUnit 또는 도구 검사가 실패하면 현재 단계·기대값·실제값·보존 증거와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 재실행 방법을 함께 안내한다.
 
 | Windows x64 통합 기준선 | 첫 실행 | 재현 실행 |
 | --- | --- | --- |
