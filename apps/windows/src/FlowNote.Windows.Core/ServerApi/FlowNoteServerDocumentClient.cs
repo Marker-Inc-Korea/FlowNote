@@ -877,6 +877,22 @@ public sealed class FlowNoteServerDocumentClient
                 detail.TryGetProperty(name, out var value) && value.TryGetInt32(out var number)
                     ? number
                     : null;
+            bool ReadBool(string name) =>
+                detail.TryGetProperty(name, out var value) &&
+                value.ValueKind is JsonValueKind.True;
+            var allowedActions = detail.TryGetProperty("allowedActions", out var actions) &&
+                actions.ValueKind == JsonValueKind.Array
+                ? actions.EnumerateArray()
+                    .Where(value => value.ValueKind == JsonValueKind.String)
+                    .Select(value => value.GetString()!)
+                    .ToArray()
+                : [];
+            var retryNotBeforeSeconds = detail.TryGetProperty("retryPolicy", out var retryPolicy) &&
+                retryPolicy.ValueKind == JsonValueKind.Object &&
+                retryPolicy.TryGetProperty("retryNotBeforeSeconds", out var retryDelay) &&
+                retryDelay.TryGetInt32(out var seconds)
+                ? seconds
+                : 0;
             return new FlowNoteServerConflictException(
                 ReadString("code") ?? "SERVER_CONFLICT",
                 ReadString("message") ?? "서버 문서 변경과 로컬 요청이 충돌했습니다.",
@@ -885,7 +901,12 @@ public sealed class FlowNoteServerDocumentClient
                 ReadString("currentStatus"),
                 ReadString("currentLatestVersionId"),
                 ReadString("currentPublishedVersionId"),
-                errorBody);
+                errorBody,
+                ReadString("schemaVersion"),
+                ReadString("conflictKind"),
+                allowedActions,
+                ReadBool("autoMergeAllowed"),
+                retryNotBeforeSeconds);
         }
         catch (JsonException)
         {

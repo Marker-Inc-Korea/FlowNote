@@ -120,6 +120,9 @@ FieldComment, 사진, 신규 인수인계와 받은 인수인계의 확인·보�
 FastAPI 라우터는 인증 의존성, 공개 요청·응답 모델과 HTTP 오류 변환만 맡는다. FieldComment는 계약 DTO, 조회 조립, 검토 전이, 첨부 검증을 분리하고, 보고서는 source 가시성·version/revision/hash 고정 검증과 상태 전이를 별도 서비스에 둔다. 작업순서는 revision 선점, change history, 알림 후보와 receipt 기록을 mutation 서비스가 함께 처리한다. 상태를 바꾸는 서비스 진입점이 transaction의 commit/rollback을 소유하며 하위 검증·조회 함수는 commit하지 않는다. 업무 row·도메인 receipt·공통 receipt·감사는 같은 transaction에 포함하고, FieldComment 일괄 검토만 항목 하나를 원자 단위로 삼아 성공 항목을 보존한다.
 
 WPF의 공개 `FieldCommentService`는 기존 호출 계약을 유지하는 facade다. SQLite 쓰기와 첨부 저장은 `FieldCommentRepository`, 검토 작업함 조회는 `FieldCommentWorkbenchQuery`, 허용 상태와 전이 검증은 `FieldCommentWorkflowService`가 맡는다. 의존 방향은 facade → query/repository/workflow이며 query와 repository가 서로 호출하지 않는다.
+
+문서 동기화의 자동 수렴 경계는 활성 태그의 독립 추가·제거 집합까지다. 서버가 태그 기준 snapshot을 복원할 수 있고 양쪽 delta가 같은 태그에서 반대 방향이 아닐 때만 자동 병합한다. 파일/버전, 문서·버전 상태, 공개 포인터와 soft delete는 409 이후 `CONFLICT` 작업함으로 이동하며 서버값 read-back, 로컬 intent, 기준 snapshot hash, 원본 위치와 허용 행동을 보존한다. 앱 재시작·server epoch 변경·reconciliation은 이 큐와 해결 이력을 삭제하거나 자동 재기준화하지 않는다.
+
 ```text
 UserAccount
   -> role

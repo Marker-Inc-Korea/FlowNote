@@ -636,3 +636,12 @@
 - 공개 라우터와 WPF facade가 외부 계약을 유지하고, 서비스는 검증·전이·transaction 단위를 소유한다. 서비스에서 API 라우터로 역참조하지 않아 순환 의존을 만들지 않는다.
 - 공통 내부 결과는 `mutation-outcome-v1`로 고정한다. 성공·부분 성공·충돌·거부, receipt, revision, 원천 보존, 담당 역할, 다음 화면 경로와 실패 항목 ID를 표현한다. 공개 JSON으로 자동 직렬화하지 않는다.
 - 단일 mutation은 업무 row·receipt·audit를 한 transaction으로 처리한다. FieldComment 일괄 검토의 canonical 부분 성공 단위는 항목 하나이며, 항목 내부는 원자적이고 항목 사이 성공은 보존한다.
+
+## 2026-08-04. 문서 충돌 해결은 허용 행동과 새 mutation으로 종결한다
+
+- 상태 변경과 공개 변경은 같은 base revision에서 우선순위를 두지 않는다. 먼저 revision을 선점한 단일 mutation만 성공하고 나머지는 사용자 결정이 필요한 409로 남긴다.
+- `KEEP_SERVER` 뒤 로컬 문서와 파일은 삭제하지 않는다. 원 전송 intent와 충돌 응답, 해결자·사유·시각은 큐 수명 동안 계속 표시하며 큐 행도 삭제하지 않는다.
+- 충돌 해결은 문서 관리 역할의 사용자만 수행하고 사유는 10자 이상으로 한다. 공개본 변경과 삭제 종결은 키보드로 조작 가능한 2단계 확인을 사용한다.
+- 태그 definition 비활성화는 과거 연결과 snapshot을 지우는 tombstone이 아니다. 비활성·삭제 definition이 요청 delta에 포함되면 자동 병합하지 않는다.
+- `DOCUMENT_READ_BACK_MISMATCH`는 5분 동안 재전송을 금지한다. 그 밖의 409도 자동 재시도하지 않으며 `allowedActions`에 있는 행동만 사용한다.
+- `REGISTER_NEW_VERSION`은 기존 파일을 복사하거나 덮어쓰지 않는다. 저장된 원본 hash를 다시 확인하고 원 큐를 보존 종결한 뒤 새 idempotency key와 현재 서버 revision의 별도 mutation을 만든다.

@@ -35,7 +35,12 @@ public sealed record ServerSyncQueueRecord(
     string? ResolutionReason,
     string? ResolvedBy,
     DateTime? ResolvedAt,
-    string? ServerConflictHashSha256)
+    string? ServerConflictHashSha256,
+    string? BaseSnapshotHashSha256,
+    string? ServerReadBackJson,
+    string? AllowedActionsJson,
+    string? SourcePreservedPath,
+    DateTime? RetryNotBefore)
 {
     public ServerSyncQueueDiagnosis Diagnosis =>
         ServerSyncQueueDiagnostics.Classify(Status, EntityType, Action, LastError);

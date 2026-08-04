@@ -49,6 +49,11 @@ public sealed class DocumentSyncConflictPersistenceTests
         Assert.True(ColumnExists(verify, "server_sync_queue", "base_domain_revision"));
         Assert.True(ColumnExists(verify, "server_sync_queue", "intent_hash"));
         Assert.True(ColumnExists(verify, "server_sync_queue", "source_set_hash"));
+        Assert.True(ColumnExists(verify, "server_sync_queue", "base_snapshot_hash_sha256"));
+        Assert.True(ColumnExists(verify, "server_sync_queue", "server_read_back_json"));
+        Assert.True(ColumnExists(verify, "server_sync_queue", "allowed_actions_json"));
+        Assert.True(ColumnExists(verify, "server_sync_queue", "source_preserved_path"));
+        Assert.True(ColumnExists(verify, "server_sync_queue", "retry_not_before"));
         Assert.True(ColumnExists(verify, "field_comments", "review_revision"));
         Assert.True(ColumnExists(verify, "server_id_mappings", "server_file_hash_sha256"));
     }
@@ -67,7 +72,11 @@ public sealed class DocumentSyncConflictPersistenceTests
         Assert.Equal("STALE_REVISION", conflict.ConflictCode);
         Assert.Equal(3, conflict.BaseServerRevision);
 
-        restarted.DiscardConflict(queueId, "user-admin", "서버 공개본을 유지하기로 확인");
+        restarted.DiscardConflict(
+            queueId,
+            "user-admin",
+            "서버 공개본을 유지하기로 확인",
+            "document-admin");
 
         var afterSecondRestart = new ServerSyncService(new FlowNoteLocalDatabase(DatabasePath));
         var discarded = Assert.Single(afterSecondRestart.ListQueueItems(), item => item.Id == queueId);
@@ -106,6 +115,11 @@ public sealed class DocumentSyncConflictPersistenceTests
         Assert.Equal(8, exception.CurrentRevision);
         Assert.Equal("PUBLISHED", exception.CurrentStatus);
         Assert.Equal("ver-public", exception.CurrentPublishedVersionId);
+        Assert.Equal("document-conflict-v1", exception.SchemaVersion);
+        Assert.Equal("DOCUMENT_STATE", exception.ConflictKind);
+        Assert.Equal(["KEEP_SERVER", "RETRY_WITH_LATEST"], exception.AllowedActions);
+        Assert.False(exception.AutoMergeAllowed);
+        Assert.Equal(300, exception.RetryNotBeforeSeconds);
     }
 
     [Fact]
@@ -309,6 +323,119 @@ public sealed class DocumentSyncConflictPersistenceTests
                 verify,
                 "SELECT server_tags_json FROM documents WHERE document_id = $value;",
                 documentId));
+        var queueRecord = Assert.Single(
+            new ServerSyncService(database).ListQueueItems(),
+            item => item.EntityId == documentId && item.EntityType == "document_tags");
+        Assert.Equal(64, queueRecord.BaseSnapshotHashSha256?.Length);
+        Assert.Equal(relativePath, queueRecord.SourcePreservedPath);
+    }
+
+    [Theory]
+    [InlineData("replace_document_tags", "TAG_MERGE_CONFLICT", true, false)]
+    [InlineData("publish_document_version", "PUBLISHED_VERSION_CHANGED", true, false)]
+    [InlineData("register_document_version", "STALE_BASE_VERSION", false, true)]
+    [InlineData("register_document_version", "DOCUMENT_DELETED", false, false)]
+    public void ConflictPolicyAllowsOnlyExplicitDocumentResolutionActions(
+        string action,
+        string code,
+        bool retryLatest,
+        bool newVersion)
+    {
+        var allowed = DocumentConflictResolutionPolicy.AllowedActions(action, code);
+
+        Assert.Contains(DocumentConflictResolutionPolicy.KeepServer, allowed);
+        Assert.Equal(retryLatest, allowed.Contains(DocumentConflictResolutionPolicy.RetryWithLatest));
+        Assert.Equal(newVersion, allowed.Contains(DocumentConflictResolutionPolicy.RegisterNewVersion));
+    }
+
+    [Fact]
+    public async Task NewVersionResolutionPreservesSourceAndCreatesSeparateMutation()
+    {
+        var database = CreateDatabase();
+        var suffix = Guid.NewGuid().ToString("N");
+        var documentId = $"doc-new-version-{suffix}";
+        var relativePath = Path.Combine("Files", "CoreSyncTests", $"new-version-{suffix}.txt");
+        var absolutePath = Path.Combine(FlowNoteLocalDatabase.DefaultDataDirectory, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
+        await File.WriteAllTextAsync(absolutePath, $"new version source {suffix}");
+        var hashBefore = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(absolutePath)))
+            .ToLowerInvariant();
+        InsertPendingDocument(database, documentId, relativePath);
+
+        long conflictId;
+        var originalKey = $"version-conflict-{suffix}";
+        using (var connection = database.OpenConnection())
+        using (var transaction = connection.BeginTransaction())
+        {
+            using var setup = connection.CreateCommand();
+            setup.Transaction = transaction;
+            setup.CommandText = """
+                UPDATE documents
+                SET server_document_id = $server_document_id,
+                    server_version_id = $server_version_id,
+                    server_revision = 4,
+                    synced_at = $now
+                WHERE document_id = $document_id;
+                INSERT INTO server_id_mappings (
+                    entity_type, local_id, local_version_no, server_document_id,
+                    server_version_id, server_revision, synced_at)
+                VALUES ('document', $document_id, 0, $server_document_id,
+                        $server_version_id, 4, $now);
+                INSERT INTO server_sync_queue (
+                    sync_id, entity_type, entity_id, action, local_document_id,
+                    local_version_no, idempotency_key, status, attempt_count,
+                    created_at, base_server_revision, local_file_hash_sha256,
+                    conflict_code, conflict_details, allowed_actions_json,
+                    source_preserved_path)
+                VALUES (
+                    $sync_id, 'document_version', $document_id,
+                    'register_document_version', $document_id, 1,
+                    $idempotency_key, 'CONFLICT', 1, $now, 4,
+                    $local_file_hash, 'STALE_BASE_VERSION', '{}',
+                    '["KEEP_SERVER","REGISTER_NEW_VERSION"]', $source_path);
+                SELECT last_insert_rowid();
+                """;
+            setup.Parameters.AddWithValue("$server_document_id", $"server-{documentId}");
+            setup.Parameters.AddWithValue("$server_version_id", $"version-{documentId}");
+            setup.Parameters.AddWithValue("$document_id", documentId);
+            setup.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
+            setup.Parameters.AddWithValue("$sync_id", $"sync-conflict-{suffix}");
+            setup.Parameters.AddWithValue("$idempotency_key", originalKey);
+            setup.Parameters.AddWithValue("$local_file_hash", hashBefore);
+            setup.Parameters.AddWithValue("$source_path", relativePath);
+            conflictId = Convert.ToInt64(setup.ExecuteScalar());
+            transaction.Commit();
+        }
+
+        using var http = new HttpClient(new NewVersionResolutionHandler($"server-{documentId}"))
+        {
+            BaseAddress = new Uri($"https://new-version-{suffix}.example/")
+        };
+        var service = new ServerSyncService(database);
+        await service.ResolveConflictAsNewVersionAsync(
+            conflictId,
+            new FlowNoteServerDocumentClient(http),
+            "user-admin",
+            "서버 최신본 기준으로 새 버전 등록",
+            "document-admin",
+            "user-admin");
+
+        var records = service.ListQueueItems()
+            .Where(item => item.EntityId == documentId)
+            .ToList();
+        var original = Assert.Single(records, item => item.Id == conflictId);
+        var created = Assert.Single(records, item => item.Id != conflictId);
+        Assert.Equal("DISCARDED", original.Status);
+        Assert.Equal("REGISTER_NEW_VERSION", original.ResolutionAction);
+        Assert.NotEqual(originalKey, created.IdempotencyKey);
+        Assert.Equal(5, created.BaseServerRevision);
+        Assert.Equal(relativePath, created.SourcePreservedPath);
+        Assert.Equal(hashBefore, created.LocalFileHashSha256);
+        var hashAfter = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(absolutePath)))
+            .ToLowerInvariant();
+        Assert.Equal(hashBefore, hashAfter);
     }
 
     [Fact]
@@ -566,7 +693,7 @@ public sealed class DocumentSyncConflictPersistenceTests
             {
                 Content = new StringContent(
                     """
-                    {"detail":{"code":"STALE_REVISION","message":"stale","documentId":"server-document","expectedRevision":7,"currentRevision":8,"currentStatus":"PUBLISHED","currentLatestVersionId":"ver-latest","currentPublishedVersionId":"ver-public"}}
+                    {"detail":{"schemaVersion":"document-conflict-v1","code":"STALE_REVISION","conflictKind":"DOCUMENT_STATE","message":"stale","documentId":"server-document","expectedRevision":7,"currentRevision":8,"currentStatus":"PUBLISHED","currentLatestVersionId":"ver-latest","currentPublishedVersionId":"ver-public","allowedActions":["KEEP_SERVER","RETRY_WITH_LATEST"],"autoMergeAllowed":false,"retryPolicy":{"automatic":false,"retryNotBeforeSeconds":300}}}
                     """,
                     Encoding.UTF8,
                     "application/json")
@@ -597,6 +724,44 @@ public sealed class DocumentSyncConflictPersistenceTests
             {
                 Content = new StringContent("{\"detail\":\"offline\"}", Encoding.UTF8, "application/json")
             });
+    }
+
+    private sealed class NewVersionResolutionHandler(string serverDocumentId) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (request.RequestUri?.AbsolutePath.EndsWith("/api/v1/sync/manifest", StringComparison.Ordinal) == true)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                {
+                    Content = new StringContent("{\"detail\":\"retry deferred\"}", Encoding.UTF8, "application/json")
+                });
+            }
+            var json = JsonSerializer.Serialize(new
+            {
+                document_id = serverDocumentId,
+                title = "서버 최신 문서",
+                description = (string?)null,
+                document_type = "Text",
+                owner_id = (string?)null,
+                category_id = (string?)null,
+                status = "WORKING",
+                revision = 5,
+                latest_version_id = $"latest-{serverDocumentId}",
+                published_version_id = (string?)null,
+                created_at = DateTime.UtcNow,
+                updated_at = DateTime.UtcNow,
+                tags = Array.Empty<string>(),
+                latest_version = (object?)null,
+                published_version = (object?)null
+            });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            });
+        }
     }
 
     private sealed class DocumentSuccessHandler(string localDocumentId, string filePath) : HttpMessageHandler

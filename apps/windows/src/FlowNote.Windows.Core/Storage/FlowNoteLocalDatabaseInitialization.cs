@@ -458,6 +458,11 @@ public sealed partial class FlowNoteLocalDatabase
                 ,source_set_hash TEXT NULL
                 ,payload_json TEXT NULL
                 ,server_conflict_hash_sha256 TEXT NULL
+                ,base_snapshot_hash_sha256 TEXT NULL
+                ,server_read_back_json TEXT NULL
+                ,allowed_actions_json TEXT NULL
+                ,source_preserved_path TEXT NULL
+                ,retry_not_before TEXT NULL
             );
 
             CREATE INDEX IF NOT EXISTS ix_server_sync_queue_status
@@ -555,6 +560,11 @@ public sealed partial class FlowNoteLocalDatabase
         EnsureColumn(connection, "server_sync_queue", "source_set_hash", "TEXT NULL");
         EnsureColumn(connection, "server_sync_queue", "payload_json", "TEXT NULL");
         EnsureColumn(connection, "server_sync_queue", "server_conflict_hash_sha256", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "base_snapshot_hash_sha256", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "server_read_back_json", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "allowed_actions_json", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "source_preserved_path", "TEXT NULL");
+        EnsureColumn(connection, "server_sync_queue", "retry_not_before", "TEXT NULL");
         EnsureColumn(connection, "reconciliation_items", "resolution_status", "TEXT NULL");
         EnsureColumn(connection, "server_bindings", "restore_pilot_run_id", "TEXT NULL");
         EnsureColumn(connection, "server_bindings", "restore_backup_set_id", "TEXT NULL");

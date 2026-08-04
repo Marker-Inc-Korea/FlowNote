@@ -273,12 +273,12 @@ def document_mutation_replay(
     )
     if receipt is None:
         if common_receipt is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "code": "COMMON_RECEIPT_LINK_BROKEN",
-                    "message": "The common receipt has no matching document receipt.",
-                },
+            raise conflict(
+                "COMMON_RECEIPT_LINK_BROKEN",
+                "The common receipt has no matching document receipt.",
+                document=session.scalar(
+                    select(Document).where(Document.document_id == document_id)
+                ),
             )
         return None
     if (
@@ -386,8 +386,23 @@ def conflict(
     expected_revision: int | None = None,
     extra: dict[str, object | None] | None = None,
 ) -> HTTPException:
+    conflict_kind, allowed_actions = document_conflict_policy(code)
+    server_value = {
+        "revision": document.revision if document is not None else None,
+        "status": document.status if document is not None else None,
+        "latestVersionId": document.latest_version_id if document is not None else None,
+        "publishedVersionId": (
+            document.published_version_id if document is not None else None
+        ),
+        "deleted": bool(
+            document is not None
+            and (document.deleted_at is not None or document.status == "DELETED")
+        ),
+    }
     detail: dict[str, object | None] = {
+        "schemaVersion": "document-conflict-v1",
         "code": code,
+        "conflictKind": conflict_kind,
         "message": message,
         "documentId": document.document_id if document is not None else None,
         "expectedRevision": expected_revision,
@@ -397,10 +412,39 @@ def conflict(
         "currentPublishedVersionId": (
             document.published_version_id if document is not None else None
         ),
+        "serverValue": server_value,
+        "localRequest": {"baseRevision": expected_revision},
+        "baseSnapshotHash": None,
+        "allowedActions": allowed_actions,
+        "autoMergeAllowed": False,
+        "sourcePreserved": True,
+        "retryPolicy": {
+            "automatic": False,
+            "retryNotBeforeSeconds": 300 if code == "DOCUMENT_READ_BACK_MISMATCH" else 0,
+        },
     }
     if extra:
         detail.update(extra)
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
+def document_conflict_policy(code: str) -> tuple[str, list[str]]:
+    if code.startswith("TAG_"):
+        return "TAG_SET", ["KEEP_SERVER", "RETRY_WITH_LATEST"]
+    if code in {"STALE_BASE_VERSION", "FILE_HASH_MISMATCH"}:
+        return "CONTENT_VERSION", ["KEEP_SERVER", "REGISTER_NEW_VERSION"]
+    if code == "PUBLISHED_VERSION_CHANGED":
+        return "PUBLISHED_VERSION", ["KEEP_SERVER", "RETRY_WITH_LATEST"]
+    if code == "DOCUMENT_DELETED":
+        return "SOFT_DELETE", ["KEEP_SERVER"]
+    if code in {
+        "IDEMPOTENCY_KEY_REUSED",
+        "COMMON_RECEIPT_LINK_BROKEN",
+        "IDEMPOTENT_VERSION_BROKEN",
+        "DOCUMENT_WRITE_CONFLICT",
+    }:
+        return "MUTATION_IDENTITY", ["KEEP_SERVER"]
+    return "DOCUMENT_STATE", ["KEEP_SERVER", "RETRY_WITH_LATEST"]
 
 
 def require_live_document(session: Session, document_id: str) -> Document:
@@ -416,7 +460,15 @@ def require_live_document(session: Session, document_id: str) -> Document:
     return document
 
 
-def claim_revision(session: Session, document: Document, expected_revision: int | None) -> int:
+def claim_revision(
+    session: Session,
+    document: Document,
+    expected_revision: int | None,
+    *,
+    local_request: dict[str, object | None] | None = None,
+    allowed_actions: list[str] | None = None,
+    conflict_kind: str | None = None,
+) -> int:
     base_revision = document.revision if expected_revision is None else expected_revision
     claimed = session.execute(
         update(Document)
@@ -430,11 +482,19 @@ def claim_revision(session: Session, document: Document, expected_revision: int 
     if claimed.rowcount != 1:
         session.rollback()
         current = session.scalar(select(Document).where(Document.id == document.id))
+        extra: dict[str, object | None] = {}
+        if local_request is not None:
+            extra["localRequest"] = local_request
+        if allowed_actions is not None:
+            extra["allowedActions"] = allowed_actions
+        if conflict_kind is not None:
+            extra["conflictKind"] = conflict_kind
         raise conflict(
             "STALE_REVISION",
             "The document changed after the client base revision. Administrator resolution is required.",
             document=current,
             expected_revision=base_revision,
+            extra=extra or None,
         )
     document.revision = base_revision + 1
     return document.revision

@@ -255,6 +255,7 @@ def record_common_mutation_failure(
         )
     )
     detail = _exception_detail(error)
+    error.detail = detail
     result = "CONFLICT" if error.status_code == status.HTTP_409_CONFLICT else "REJECTED"
     detail_code = detail.get("code") if isinstance(detail, dict) else None
     result_code = str(detail_code or f"HTTP_{error.status_code}")[:80]
@@ -405,7 +406,9 @@ def _safe_response_detail(detail: Any) -> Any:
     if not isinstance(detail, dict):
         return _redact_sensitive_text(str(detail)) or "Mutation rejected."
     allowed = {
+        "schemaVersion",
         "code",
+        "conflictKind",
         "message",
         "documentId",
         "expectedRevision",
@@ -413,11 +416,44 @@ def _safe_response_detail(detail: Any) -> Any:
         "currentStatus",
         "currentLatestVersionId",
         "currentPublishedVersionId",
+        "serverValue",
+        "localRequest",
+        "baseSnapshotHash",
+        "allowedActions",
+        "autoMergeAllowed",
+        "sourcePreserved",
+        "retryPolicy",
+        "autoMerge",
+        "userChoice",
+        "expectedIntentHash",
+        "requestIntentHash",
+        "expectedFileHash",
+        "actualFileHash",
+        "existingFileHash",
+        "requestFileHash",
+        "expectedPublishedVersionId",
+        "expectedLatestVersionId",
         "targetId",
         "targetVersionId",
         "targetRevision",
     }
-    return {key: value for key, value in detail.items() if key in allowed}
+    return {
+        key: _safe_response_value(value)
+        for key, value in detail.items()
+        if key in allowed
+    }
+
+
+def _safe_response_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _safe_response_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_safe_response_value(item) for item in value]
+    if isinstance(value, str):
+        return _redact_sensitive_text(value)
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return _redact_sensitive_text(str(value))
 
 
 def _exception_detail(error: HTTPException) -> Any:

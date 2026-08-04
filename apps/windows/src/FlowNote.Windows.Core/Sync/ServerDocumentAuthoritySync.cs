@@ -7,7 +7,7 @@ namespace FlowNote.Windows.Core.Sync;
 
 public sealed partial class ServerSyncService
 {
-    private async Task<string?> TryReadConflictServerHashAsync(
+    private async Task<ConflictServerReadBack?> TryReadConflictServerAuthorityAsync(
         QueueItem item,
         FlowNoteServerDocumentClient serverClient,
         CancellationToken cancellationToken)
@@ -26,7 +26,9 @@ public sealed partial class ServerSyncService
             var version = item.Action == "publish_document_version"
                 ? document.PublishedVersion ?? document.LatestVersion
                 : document.LatestVersion ?? document.PublishedVersion;
-            return version?.File.HashSha256;
+            return new ConflictServerReadBack(
+                version?.File.HashSha256,
+                JsonSerializer.Serialize(document));
         }
         catch (Exception exception) when (
             exception is HttpRequestException or

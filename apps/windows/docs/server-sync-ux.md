@@ -20,8 +20,10 @@
 - `조치`: 운영자가 먼저 할 일
 - `실패 사유`: 사용자가 조치할 수 있는 한글 실패 문구
 - `충돌 코드`: stale revision, 기준 버전, 공개본 경쟁, 삭제 재전송, 멱등키, SHA-256 불일치를 구분하는 서버 코드
+- `판정`: 아이콘과 함께 `자동 병합 가능`, `사용자 결정 필요`, `재전송 금지`를 표시한다. 색상만으로 상태를 구분하지 않는다.
 - `서버 값`: 충돌 응답의 현재 revision, 태그, 상태, 최신/공개 version ID와 확인 가능한 hash
 - `보존된 로컬 요청`: 큐의 고정 payload, base revision, expected version/공개 ID, 로컬 hash, intent와 mutation key
+- `기준/현재 revision`, `원본 보존 위치`, `허용 행동`, `서버 read-back`: 비교와 종결 전에 확인할 기준값이다. 긴 파일명과 사유는 가로 스크롤 또는 전체 텍스트 접근을 제공한다.
 - `자동 병합 가능`: 태그 충돌 중 서버 변경과 겹치지 않아 별도로 적용할 수 있는 추가·제거 항목
 - `사용자 선택 필요`: 같은 태그의 반대 방향 변경, 비활성·삭제 태그, 파일·상태·공개본·삭제 경쟁처럼 자동 처리하지 않는 항목
 
@@ -29,10 +31,11 @@
 
 `CONFLICT`는 일반 재시도 대상이 아니다. 운영자는 충돌 행을 선택하고 사유를 입력한 뒤 다음 중 하나를 고른다.
 
-- `로컬 변경 재시도`: 서버 상세를 다시 읽어 최신 `revision`, 최신/공개 버전 ID를 로컬과 큐에 저장하고 `PENDING`으로 바꾼 뒤 로컬 변경을 새 서버 기준에서 재시도한다. 태그 요청은 추가·제거 의도는 유지하되 새 base revision과 intent hash를 계산한다. 파일/공개/상태/태그 의미가 여전히 맞는지 관리자가 확인한 경우에만 사용한다.
+- `로컬 변경 재시도`: `RETRY_WITH_LATEST`가 허용된 태그·공개·상태 충돌에서만 사용한다. 서버 상세를 다시 읽고 관리자가 의미를 확인한 뒤 base revision과 기대 ID를 명시적으로 갱신한다. 태그 요청은 추가·제거 intent를 유지하면서 intent hash를 다시 계산한다.
+- `새 버전으로 등록`: `REGISTER_NEW_VERSION`이 허용된 버전 충돌에서만 사용한다. 보존 원본의 hash를 다시 확인하고 원 큐는 해결 이력과 함께 남긴 뒤 새 mutation을 추가한다. 파일을 복사하거나 덮어쓰지 않는다.
 - `서버본 유지·폐기`: 로컬 전송 요청을 `DISCARDED`로 종결한다. 로컬 문서와 파일, 충돌 원 응답, 큐 행은 삭제하지 않는다.
 
-두 선택은 `resolution_action`, 사유, 해결자, 해결 시각과 `activity_history`에 남고 앱 재시작 뒤에도 표시된다. 사유 없이 버튼을 누를 수 없다. reconciliation의 DIVERGED는 양쪽 hash와 `resolution_status = APPROVED_CONFLICT`도 함께 보존한다.
+세 선택은 `resolution_action`, 10자 이상의 사유, 해결자, 해결 시각과 `activity_history`에 남고 앱 재시작 뒤에도 표시된다. 문서 관리 역할이 없으면 필요한 역할과 사내 관리자 문의가 필요하다고 안내한다. 공개본 변경과 삭제 종결은 키보드로 접근 가능한 2단계 확인을 거친다. `DOCUMENT_READ_BACK_MISMATCH`는 5분 동안 `재전송 금지`로 표시한다. 200% 확대, 긴 파일명과 긴 사유에서도 비교값과 확인 버튼이 잘리지 않는지 수동 검증한다. reconciliation의 DIVERGED는 양쪽 hash와 `resolution_status = APPROVED_CONFLICT`도 함께 보존한다.
 
 `서버 재결합` 탭은 서버 URL·instance·epoch 변경, cursor 역행 또는 명시적 복구 장애 manifest로 자동 전송과 polling이 중지된 경우에 사용한다. `판정 실행`은 로컬 `server_sync_queue` 전체를 idempotency key와 선택적 파일 hash, 기존 mapping과 함께 서버에 보내 `CONFIRMED/REBOUND`, `ABSENT/REQUEUE`, `DIVERGED/CONFLICT` 판정을 저장한다. `승인 적용`은 관리자 사유가 필수이며 모든 항목의 서버 제안 조치를 그대로 확인한다. 적용되면 mapping과 큐 상태, 승인 instance/epoch와 cursor 초기 위치를 한 transaction에서 갱신하지만 binding은 `POST_APPROVAL_RESTART_REQUIRED`로 남아 자동 전송과 polling을 계속 막는다. 처리한 `message_id`, 기존 큐와 로컬 원천은 삭제하지 않는다.
 

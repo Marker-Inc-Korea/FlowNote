@@ -104,10 +104,22 @@ public sealed partial class ServerSyncService
         string? serverVersionId,
         int? serverRevision,
         string? serverPublishedVersionId,
-        DateTime syncedAt)
+        DateTime syncedAt,
+        ServerDocumentResponse? authoritative = null)
     {
         using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        if (authoritative is not null)
+        {
+            UpdateDocumentServerState(connection, document.DocumentId, authoritative, transaction);
+            TagService.ReplaceDocumentTags(
+                connection,
+                document.DocumentId,
+                authoritative.Tags,
+                transaction);
+        }
         using var update = connection.CreateCommand();
+        update.Transaction = transaction;
         update.CommandText = """
             UPDATE document_versions
             SET server_version_id = $server_version_id,
@@ -131,13 +143,14 @@ public sealed partial class ServerSyncService
         update.Parameters.AddWithValue("$version_no", version.VersionNo);
         update.ExecuteNonQuery();
 
-        UpsertMapping(connection, "document_version", document.DocumentId, version.VersionNo, serverDocumentId, serverVersionId, null, null, null, syncedAt, serverRevision: serverRevision);
+        var serverFileHash = authoritative?.LatestVersion?.File.HashSha256;
+        UpsertMapping(connection, "document_version", document.DocumentId, version.VersionNo, serverDocumentId, serverVersionId, null, null, null, syncedAt, serverRevision: serverRevision, serverFileHashSha256: serverFileHash, transaction: transaction);
         if (version.IsLatest || document.VersionNo == version.VersionNo)
         {
-            UpsertMapping(connection, "document", document.DocumentId, 0, serverDocumentId, serverVersionId, null, null, null, syncedAt, serverRevision: serverRevision);
+            UpsertMapping(connection, "document", document.DocumentId, 0, serverDocumentId, serverVersionId, null, null, null, syncedAt, serverRevision: serverRevision, serverFileHashSha256: serverFileHash, transaction: transaction);
         }
 
-        MarkQueueSynced(connection, item.Id, serverDocumentId, serverVersionId, null, null, syncedAt);
+        MarkQueueSynced(connection, item.Id, serverDocumentId, serverVersionId, null, null, syncedAt, transaction: transaction);
         if (serverRevision is not null)
         {
             AdvanceDependentDocumentBases(
@@ -145,9 +158,11 @@ public sealed partial class ServerSyncService
                 document.DocumentId,
                 serverRevision.Value,
                 serverVersionId,
-                serverPublishedVersionId);
+                serverPublishedVersionId,
+                transaction);
         }
-        RecordSyncHistory(connection, "server_sync.succeeded", "document_version", document.DocumentId, $"Server document version synced: {serverDocumentId} v{version.VersionNo}", syncedAt);
+        RecordSyncHistory(connection, "server_sync.succeeded", "document_version", document.DocumentId, $"Server document version synced: {serverDocumentId} v{version.VersionNo}", syncedAt, transaction);
+        transaction.Commit();
     }
 
     private static void UpdateDocumentServerState(
@@ -790,8 +805,15 @@ public sealed partial class ServerSyncService
         QueueItem item,
         FlowNoteServerConflictException exception,
         string reason,
-        string? serverHashSha256 = null)
+        ConflictServerReadBack? readBack = null)
     {
+        var allowedActions = DocumentConflictResolutionPolicy.AllowedActions(
+            item.Action,
+            exception.ConflictCode,
+            exception.AllowedActions);
+        var retryNotBefore = exception.RetryNotBeforeSeconds > 0
+            ? DateTime.UtcNow.AddSeconds(exception.RetryNotBeforeSeconds).ToString("O")
+            : null;
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -802,7 +824,10 @@ public sealed partial class ServerSyncService
                 conflict_details = $conflict_details,
                 server_conflict_hash_sha256 = COALESCE(
                     $server_conflict_hash_sha256,
-                    server_conflict_hash_sha256)
+                    server_conflict_hash_sha256),
+                server_read_back_json = COALESCE($server_read_back_json, server_read_back_json),
+                allowed_actions_json = $allowed_actions_json,
+                retry_not_before = $retry_not_before
             WHERE id = $id;
             """;
         command.Parameters.AddWithValue("$last_error", reason);
@@ -810,7 +835,16 @@ public sealed partial class ServerSyncService
         command.Parameters.AddWithValue("$conflict_details", exception.ResponseBody);
         command.Parameters.AddWithValue(
             "$server_conflict_hash_sha256",
-            string.IsNullOrWhiteSpace(serverHashSha256) ? DBNull.Value : serverHashSha256);
+            string.IsNullOrWhiteSpace(readBack?.HashSha256) ? DBNull.Value : readBack.HashSha256);
+        command.Parameters.AddWithValue(
+            "$server_read_back_json",
+            string.IsNullOrWhiteSpace(readBack?.AuthorityJson) ? DBNull.Value : readBack.AuthorityJson);
+        command.Parameters.AddWithValue(
+            "$allowed_actions_json",
+            DocumentConflictResolutionPolicy.ToJson(allowedActions));
+        command.Parameters.AddWithValue(
+            "$retry_not_before",
+            retryNotBefore is null ? DBNull.Value : retryNotBefore);
         command.Parameters.AddWithValue("$id", item.Id);
         command.ExecuteNonQuery();
         RecordSyncHistory(
@@ -838,6 +872,8 @@ public sealed partial class ServerSyncService
             "PUBLISHED_VERSION_CHANGED" => "공개본 교체 경쟁 충돌",
             "DOCUMENT_DELETED" => "서버 삭제 문서 재전송 충돌",
             "IDEMPOTENCY_KEY_REUSED" => "멱등키 내용 불일치",
+            "IDEMPOTENT_VERSION_BROKEN" => "멱등 버전 원천 불일치",
+            "DOCUMENT_WRITE_CONFLICT" => "문서 저장 제약 충돌",
             "FILE_HASH_MISMATCH" => "파일 SHA-256 불일치",
             "DOCUMENT_READ_BACK_MISMATCH" => "서버 read-back 권위 불일치",
             "TAG_MERGE_CONFLICT" => "같은 태그의 추가·제거 경쟁 충돌",

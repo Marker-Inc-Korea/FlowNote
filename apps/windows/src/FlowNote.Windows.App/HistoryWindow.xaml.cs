@@ -14,6 +14,7 @@ public partial class HistoryWindow : Window
     private readonly ServerReconciliationService serverReconciliation;
     private readonly FlowNoteServerDocumentClient? serverDocumentClient;
     private readonly string? serverUserId;
+    private readonly string serverUserRole;
     private readonly Func<Task<string>>? resumeServerTraffic;
 
     public HistoryWindow(
@@ -22,6 +23,7 @@ public partial class HistoryWindow : Window
         ServerReconciliationService serverReconciliation,
         FlowNoteServerDocumentClient? serverDocumentClient,
         string? serverUserId,
+        string serverUserRole,
         Func<Task<string>>? resumeServerTraffic = null)
     {
         InitializeComponent();
@@ -30,6 +32,7 @@ public partial class HistoryWindow : Window
         this.serverReconciliation = serverReconciliation;
         this.serverDocumentClient = serverDocumentClient;
         this.serverUserId = serverUserId;
+        this.serverUserRole = serverUserRole;
         this.resumeServerTraffic = resumeServerTraffic;
         ReconciliationReasonTextBox.TextChanged += (_, _) => UpdateApprovalButtonState();
         ReconciliationRiskAcknowledgementCheckBox.Checked += (_, _) => UpdateApprovalButtonState();
@@ -272,12 +275,55 @@ public partial class HistoryWindow : Window
 
         try
         {
+            if (!selected.CanRetryWithLatest)
+            {
+                SyncQueueSummaryTextBlock.Text = "이 충돌은 최신 서버값 기준 재요청이 허용되지 않습니다.";
+                return;
+            }
+            if (!ConfirmDangerousResolution(selected, "최신 서버값 기준으로 명시적 재요청"))
+            {
+                return;
+            }
             var actor = string.IsNullOrWhiteSpace(serverUserId) ? "관리자" : serverUserId;
             var result = await serverSync.RetryConflictUsingLatestServerAsync(
                 selected.Id,
                 serverDocumentClient,
                 actor!,
                 reason,
+                serverUserRole,
+                serverUserId);
+            RefreshAll();
+            SyncQueueSummaryTextBlock.Text = result.Message;
+        }
+        catch (InvalidOperationException exception)
+        {
+            RefreshAll();
+            SyncQueueSummaryTextBlock.Text = exception.Message;
+        }
+    }
+
+    private async void NewVersionConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SyncQueueGrid.SelectedItem is not SyncQueueRow { Status: "CONFLICT" } selected ||
+            !selected.CanRegisterNewVersion)
+        {
+            SyncQueueSummaryTextBlock.Text = "새 버전 등록이 허용된 문서 버전 충돌을 선택하세요.";
+            return;
+        }
+        if (serverDocumentClient is null)
+        {
+            SyncQueueSummaryTextBlock.Text = "서버 연결과 로그인이 필요합니다. 원본과 충돌 큐는 보존됩니다.";
+            return;
+        }
+        var reason = ConflictReasonTextBox.Text.Trim();
+        try
+        {
+            var result = await serverSync.ResolveConflictAsNewVersionAsync(
+                selected.Id,
+                serverDocumentClient,
+                string.IsNullOrWhiteSpace(serverUserId) ? "관리자" : serverUserId!,
+                reason,
+                serverUserRole,
                 serverUserId);
             RefreshAll();
             SyncQueueSummaryTextBlock.Text = result.Message;
@@ -305,10 +351,15 @@ public partial class HistoryWindow : Window
 
         try
         {
+            if (!ConfirmDangerousResolution(selected, "서버본 유지로 종결"))
+            {
+                return;
+            }
             serverSync.DiscardConflict(
                 selected.Id,
                 string.IsNullOrWhiteSpace(serverUserId) ? "관리자" : serverUserId!,
-                reason);
+                reason,
+                serverUserRole);
             RefreshAll();
             SyncQueueSummaryTextBlock.Text = "서버본 유지로 로컬 전송 요청을 폐기했으며 사유와 감사 이력을 저장했습니다.";
         }
@@ -317,6 +368,30 @@ public partial class HistoryWindow : Window
             RefreshAll();
             SyncQueueSummaryTextBlock.Text = exception.Message;
         }
+    }
+
+    private static bool ConfirmDangerousResolution(SyncQueueRow selected, string action)
+    {
+        if (selected.Action is not ("publish_document_version" or "delete_document"))
+        {
+            return true;
+        }
+        var first = MessageBox.Show(
+            $"공개본 변경 또는 삭제 충돌을 '{action}' 행동으로 처리합니다. 서버값과 로컬 요청을 비교했습니까?",
+            "위험한 충돌 해결 1단계",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (first != MessageBoxResult.Yes)
+        {
+            return false;
+        }
+        return MessageBox.Show(
+            "원본 파일과 충돌 이력은 남지만 선택한 전송 요청은 종결됩니다. 계속하시겠습니까?",
+            "위험한 충돌 해결 2단계",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No) == MessageBoxResult.Yes;
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)
@@ -334,6 +409,7 @@ public partial class HistoryWindow : Window
         string OperationalState,
         string Category,
         string EntityText,
+        string Action,
         string ActionText,
         int AttemptCount,
         DateTime? LastAttemptAt,
@@ -341,10 +417,17 @@ public partial class HistoryWindow : Window
         bool IsDependencyHold,
         string LastError,
         string ConflictCode,
+        string ConflictState,
         string ServerValue,
         string LocalRequest,
+        string RevisionComparison,
+        string SourcePreservedPath,
+        string AllowedActions,
+        string ServerReadBack,
         string AutoMerge,
-        string UserChoice)
+        string UserChoice,
+        bool CanRetryWithLatest,
+        bool CanRegisterNewVersion)
     {
         public static SyncQueueRow FromRecord(ServerSyncQueueRecord record)
         {
@@ -360,6 +443,7 @@ public partial class HistoryWindow : Window
                 diagnosis.OperationalState,
                 diagnosis.Category,
                 $"{FormatEntityType(record.EntityType)} / {record.EntityId}",
+                record.Action,
                 FormatAction(record.Action),
                 record.AttemptCount,
                 record.LastAttemptAt,
@@ -367,10 +451,21 @@ public partial class HistoryWindow : Window
                 diagnosis.IsDependencyHold,
                 record.LastError ?? "-",
                 record.ConflictCode ?? "-",
+                conflict.State,
                 conflict.ServerValue,
                 conflict.LocalRequest,
+                conflict.RevisionComparison,
+                record.SourcePreservedPath ?? "원본 경로 없음",
+                conflict.AllowedActions,
+                CompactJson(record.ServerReadBackJson) ?? "read-back 없음",
                 conflict.AutoMerge,
-                conflict.UserChoice);
+                conflict.UserChoice,
+                DocumentConflictResolutionPolicy.Contains(
+                    record.AllowedActionsJson,
+                    DocumentConflictResolutionPolicy.RetryWithLatest),
+                DocumentConflictResolutionPolicy.Contains(
+                    record.AllowedActionsJson,
+                    DocumentConflictResolutionPolicy.RegisterNewVersion));
         }
 
         private static ConflictPresentation BuildConflictPresentation(
@@ -378,7 +473,7 @@ public partial class HistoryWindow : Window
         {
             if (record.Status != "CONFLICT")
             {
-                return new("-", "-", "-", "-");
+                return new("-", "-", "-", "-", "-", "-", "-");
             }
 
             var localRequest = CompactJson(record.PayloadJson) ?? JsonSerializer.Serialize(new
@@ -392,7 +487,14 @@ public partial class HistoryWindow : Window
             });
             if (string.IsNullOrWhiteSpace(record.ConflictDetails))
             {
-                return new("서버 상세 없음", localRequest, "자동 병합 정보 없음", "관리자 판단 필요");
+                return new(
+                    "⚠ 사용자 결정 필요",
+                    "서버 상세 없음",
+                    localRequest,
+                    $"{record.BaseServerRevision?.ToString() ?? "-"} / -",
+                    FormatAllowedActions(record.AllowedActionsJson),
+                    "자동 병합 정보 없음",
+                    "관리자 판단 필요");
             }
             try
             {
@@ -401,19 +503,57 @@ public partial class HistoryWindow : Window
                     ? nested
                     : json.RootElement;
                 return new ConflictPresentation(
+                    record.RetryNotBefore is not null && record.RetryNotBefore > DateTime.UtcNow
+                        ? "⛔ 재전송 금지"
+                        : ReadJsonBoolean(detail, "autoMergeAllowed")
+                            ? "✓ 자동 병합 가능"
+                            : "⚠ 사용자 결정 필요",
                     ReadJson(detail, "serverValue") ?? detail.GetRawText(),
                     ReadJson(detail, "localRequest") ?? localRequest,
+                    $"{record.BaseServerRevision?.ToString() ?? "-"} / {ReadJsonNumber(detail, "currentRevision") ?? "-"}",
+                    FormatAllowedActions(record.AllowedActionsJson),
                     ReadJson(detail, "autoMerge") ?? "자동 병합 대상 없음",
                     ReadJson(detail, "userChoice") ?? "전체 항목 관리자 판단 필요");
             }
             catch (JsonException)
             {
                 return new(
+                    "⚠ 사용자 결정 필요",
                     BuildLegacyServerValue(record),
                     localRequest,
+                    $"{record.BaseServerRevision?.ToString() ?? "-"} / -",
+                    FormatAllowedActions(record.AllowedActionsJson),
                     "자동 병합 정보 없음",
                     "구조화되지 않은 충돌이므로 전체 항목 관리자 판단 필요");
             }
+        }
+
+        private static bool ReadJsonBoolean(JsonElement detail, string name) =>
+            detail.ValueKind == JsonValueKind.Object &&
+            detail.TryGetProperty(name, out var value) &&
+            value.ValueKind == JsonValueKind.True;
+
+        private static string? ReadJsonNumber(JsonElement detail, string name) =>
+            detail.ValueKind == JsonValueKind.Object && detail.TryGetProperty(name, out var value)
+                ? value.ToString()
+                : null;
+
+        private static string FormatAllowedActions(string? actionsJson)
+        {
+            var actions = new List<string>();
+            if (DocumentConflictResolutionPolicy.Contains(actionsJson, DocumentConflictResolutionPolicy.KeepServer))
+            {
+                actions.Add("서버 유지");
+            }
+            if (DocumentConflictResolutionPolicy.Contains(actionsJson, DocumentConflictResolutionPolicy.RegisterNewVersion))
+            {
+                actions.Add("새 버전으로 등록");
+            }
+            if (DocumentConflictResolutionPolicy.Contains(actionsJson, DocumentConflictResolutionPolicy.RetryWithLatest))
+            {
+                actions.Add("최신값 확인 후 명시적 재요청");
+            }
+            return actions.Count == 0 ? "허용 행동 확인 필요" : string.Join(" · ", actions);
         }
 
         private static string BuildLegacyServerValue(ServerSyncQueueRecord record) =>
@@ -514,8 +654,11 @@ public partial class HistoryWindow : Window
         }
 
         private sealed record ConflictPresentation(
+            string State,
             string ServerValue,
             string LocalRequest,
+            string RevisionComparison,
+            string AllowedActions,
             string AutoMerge,
             string UserChoice);
     }
