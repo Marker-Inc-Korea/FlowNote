@@ -1,6 +1,6 @@
 # FlowNote 시스템 맵
 
-이 시스템 맵은 2026-08-03 현재 실행 코드와 저장소 경계를 기준으로 한다. 서버 복구 경계 manifest/reconciliation은 구현되었고 수렴 경계의 나머지 미구현 항목은 `목표 계약`으로, 후속 외부 연동은 마지막 절에서 구분한다.
+이 시스템 맵은 2026-08-04 현재 실행 코드와 저장소 경계를 기준으로 한다. 서버 복구 경계 manifest/reconciliation은 구현되었고 수렴 경계의 나머지 미구현 항목은 `목표 계약`으로, 후속 외부 연동은 마지막 절에서 구분한다.
 
 ## 실행 구성
 
@@ -31,7 +31,7 @@ FastAPI Server
 
 FastAPI 서버 SQLite와 WPF 로컬 SQLite는 서로 대체하거나 공유하는 파일이 아니다. 같은 이름의 문서 테이블도 서버는 `document_versions.version_id`, WPF는 로컬 `id`와 문서별 `version_no`를 기준으로 하므로 각 프로세스가 자기 DB만 초기화해야 한다. FastAPI는 기존 WPF 테이블 형태를 감지하면 `Base.metadata.create_all()` 전에 시작을 거부한다.
 
-WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/공개/상태/태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 태그 큐는 마지막 서버 revision·태그 집합 대비 추가/제거와 canonical intent hash를 보내고, 서버는 revision별 태그 snapshot으로 비경합 delta만 병합한다. 같은 태그의 반대 방향 변경과 비활성·삭제 태그는 자동으로 덮어쓰지 않는다. FieldComment 검토 큐는 base review revision과 mutation key를, 첨부는 부모 comment ID와 파일 SHA-256을 보낸다. 보고서는 초안 생성 때 서버에서 선택 원천의 상태와 version/revision/hash를 검증해 snapshot을 먼저 고정한다. 이 검증을 통과한 뒤 로컬 보고서 문서와 `report_sources`를 남기고 source 집합 hash를 큐에 고정하며, 이후 서버 저장이 실패하면 `register_report` 항목으로 `/api/v1/reports` 저장을 재시도한다. 성공 응답의 source 집합을 다시 hash하고 report revision·내용/source 집합 hash를 로컬에 보존한 경우에만 종결한다. 큐 재시도는 같은 문서 또는 보고서 근거 단위로 묶고, 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다. 재전송 가능한 mutation은 같은 key와 의도를 유지해 응답 유실 뒤에도 중복 버전, revision 또는 감사 이력을 만들지 않는다.
+WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/상태/태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고, 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 새 문서 공개는 예외다. 현재 UI는 서버 승인 작업함에서 최신 version·revision·file hash를 고정해 검토를 요청하고 승인 ID로 직접 공개하며, 로컬 선공개나 새 공개 큐를 만들지 않는다. 누적된 구 공개 큐와 처리기는 삭제하지 않지만 승인 강제 기본값에서는 승인 ID가 없어 자동 공개할 수 없다. 태그 큐는 마지막 서버 revision·태그 집합 대비 추가/제거와 canonical intent hash를 보내고, 서버는 revision별 태그 snapshot으로 비경합 delta만 병합한다. 같은 태그의 반대 방향 변경과 비활성·삭제 태그는 자동으로 덮어쓰지 않는다. FieldComment 검토 큐는 base review revision과 mutation key를, 첨부는 부모 comment ID와 파일 SHA-256을 보낸다. 보고서는 초안 생성 때 서버에서 선택 원천의 상태와 version/revision/hash를 검증해 snapshot을 먼저 고정한다. 이 검증을 통과한 뒤 로컬 보고서 문서와 `report_sources`를 남기고 source 집합 hash를 큐에 고정하며, 이후 서버 저장이 실패하면 `register_report` 항목으로 `/api/v1/reports` 저장을 재시도한다. 성공 응답의 source 집합을 다시 hash하고 report revision·내용/source 집합 hash를 로컬에 보존한 경우에만 종결한다. 큐 재시도는 같은 문서 또는 보고서 근거 단위로 묶고, 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다. 재전송 가능한 mutation은 같은 key와 의도를 유지해 응답 유실 뒤에도 중복 버전, revision 또는 감사 이력을 만들지 않는다.
 
 WPF 메인 화면은 로그인 역할에 맞춘 첫 업무 3개를 기존 메뉴·창과 같은 권한 검사 경로로 연결한다. 현재 역할 구분은 관리자, 반장, 조장, 작업자이며 문서 찾기, 인수인계, 작업판, 채널·알림, 코멘트 검토, 보고서 근거 선정, 동기화·충돌 확인을 우선순위에 맞춰 보여준다. 문서 검색은 현재 폴더의 파일명·제목·태그·사용자·최근 코멘트를 대상으로 하고, 상태 필터와 함께 폴더 이동이나 목록 갱신 뒤에도 유지된다. 권한이 없는 기능은 필요한 역할과 현장 관리자 문의 방법을 안내한다. 하단 동기화 상태는 대기·실패/충돌·보류 건수, 로컬 데이터와 원본 파일의 보존 여부, `이력 > 동기화 큐`에서 확인할 다음 조치를 색상에 의존하지 않고 표시한다.
 
@@ -47,7 +47,8 @@ WPF 메인 화면은 로그인 역할에 맞춘 첫 업무 3개를 기존 메뉴
 | --- | --- | --- | --- | --- |
 | 문서 등록 | WPF 문서 메타데이터·최초 파일 → 서버 | `document_id`, `revision`, `latest_version_id`, 파일 SHA-256 | 안정된 문서 등록 key. 같은 key의 핵심 메타/hash 차이는 `IDEMPOTENCY_KEY_REUSED` | 서버 문서/버전 ID, revision, hash를 같은 로컬 transaction에서 매핑하고 큐 `SYNCED` |
 | 문서 버전 | WPF 버전 파일 → 서버 | 문서 revision, 기준 latest version ID, 서버 배정 `version_no` | 버전 key+파일 hash. 기준 불일치는 `STALE_REVISION`/`STALE_BASE_VERSION`, hash 불일치는 `FILE_HASH_MISMATCH` | 서버 version ID·revision·hash read-back과 로컬 원천 hash가 모두 일치 |
-| 공개·문서/버전 상태 | WPF 명시 mutation → 서버, 이후 서버 snapshot → WPF | 문서 revision, `published_version_id`, 문서·버전 상태와 version hash | 요청별 안정 key와 base revision. stale/base/hash/공개본/삭제 경쟁은 `CONFLICT` | 자동 덮어쓰기 없이 서버 snapshot과 사용자 선택을 보존하고, 확정 응답을 로컬 transaction에 반영 |
+| 문서 검토·공개 | WPF 승인 작업함 → 서버 직접 호출. 로컬 선공개·신규 공개 큐 없음 | 승인 ID, exact version·문서 revision·file hash, `published_version_id` | 요청·결정·공개·취소별 mutation key. stale version/revision/hash와 역할 분리 위반은 서버에서 거부 | 승인 projection·append-only event와 서버 공개 포인터를 다시 읽어 확인. 구 공개 큐는 별도 호환 이력으로 보존 |
+| 문서/버전 상태 | WPF 명시 mutation → 서버, 이후 서버 snapshot → WPF | 문서 revision, 문서·버전 상태와 version hash | 요청별 안정 key와 base revision. stale/base/hash/공개본/삭제 경쟁은 `CONFLICT` | 자동 덮어쓰기 없이 서버 snapshot과 사용자 선택을 보존하고, 확정 응답을 로컬 transaction에 반영 |
 | 문서 태그 | WPF 추가/제거 delta → 서버, 권위 집합 → WPF | 문서 revision, `document_tag_revisions`, 현재 활성 태그 집합 | mutation key+canonical intent hash. 비경합 delta만 병합하고 `TAG_MERGE_CONFLICT`, `TAG_UNAVAILABLE`은 사용자 판단 | revision·전체 태그·공개 포인터·최신 version/hash를 문서·태그·mapping·큐·감사에 한 transaction으로 반영 |
 | FieldComment 원천 | WPF/Android 불변 입력 → 서버 | 서버 `comment_id`, 원천 hash, 연결 document/version ID | 원천 생성 key. 같은 key의 원천/연결 hash 차이는 `IDEMPOTENCY_KEY_REUSED` | 서버 comment ID·원천 hash·연결 ID 매핑 확인. 원천은 이후 수정·삭제하지 않음 |
 | FieldComment 검토 | WPF 검토 mutation → 서버 | `review_revision`과 원천 hash. 서버가 상태·담당·기한·정리·분석의 권위 원천 | mutation key+`baseReviewRevision`; `FIELD_COMMENT_STALE_REVIEW_REVISION`, `IDEMPOTENCY_KEY_REUSED` | 서버 검토 snapshot과 증가한 revision을 로컬에 반영한 뒤 `SYNCED`; 자동 단계 보간 금지 |
@@ -70,7 +71,7 @@ WPF `변경 이력`은 `/api/v1/change-history` read model을 사용해 문서, 
 ```text
 문서 등록
   -> 문서 버전
-  -> 공개 포인터
+  -> 누적 구 공개 큐(호환 경로)
   -> 문서/버전 상태와 태그
   -> FieldComment 원천
   -> FieldComment 검토
@@ -121,7 +122,7 @@ FastAPI 라우터는 인증 의존성, 공개 요청·응답 모델과 HTTP 오�
 
 WPF의 공개 `FieldCommentService`는 기존 호출 계약을 유지하는 facade다. SQLite 쓰기와 첨부 저장은 `FieldCommentRepository`, 검토 작업함 조회는 `FieldCommentWorkbenchQuery`, 허용 상태와 전이 검증은 `FieldCommentWorkflowService`가 맡는다. 의존 방향은 facade → query/repository/workflow이며 query와 repository가 서로 호출하지 않는다.
 
-문서 동기화의 자동 수렴 경계는 활성 태그의 독립 추가·제거 집합까지다. 서버가 태그 기준 snapshot을 복원할 수 있고 양쪽 delta가 같은 태그에서 반대 방향이 아닐 때만 자동 병합한다. 파일/버전, 문서·버전 상태, 공개 포인터와 soft delete는 409 이후 `CONFLICT` 작업함으로 이동하며 서버값 read-back, 로컬 intent, 기준 snapshot hash, 원본 위치와 허용 행동을 보존한다. 앱 재시작·server epoch 변경·reconciliation은 이 큐와 해결 이력을 삭제하거나 자동 재기준화하지 않는다.
+문서 동기화의 자동 수렴 경계는 활성 태그의 독립 추가·제거 집합까지다. 서버가 태그 기준 snapshot을 복원할 수 있고 양쪽 delta가 같은 태그에서 반대 방향이 아닐 때만 자동 병합한다. 파일/버전, 문서·버전 상태, 누적 구 공개 큐와 soft delete는 409 이후 `CONFLICT` 작업함으로 이동하며 서버값 read-back, 로컬 intent, 기준 snapshot hash, 원본 위치와 허용 행동을 보존한다. 현재 승인 작업함의 공개는 이 큐 경로와 분리한다. 앱 재시작·server epoch 변경·reconciliation은 큐와 해결 이력을 삭제하거나 자동 재기준화하지 않는다.
 
 문서 공개 흐름은 `작성/새 version → 검토 요청 → 지정 검토자 승인 또는 반려 → 승인된 exact version 공개`다. 승인 projection과 append-only event가 문서 상태·공개 포인터와 분리되어 원본을 보존하며, 공개 mutation이 approval ID, document revision, version ID와 file hash를 transaction 안에서 다시 확인한다. 연결된 기존 `DOCUMENT` 채널에는 같은 transaction에서 문서 이벤트를 추가하고 기존 채널 멤버십·읽음 receipt·공통 감사를 그대로 사용한다. WPF 승인 작업함은 서버 상태를 권위로 다시 읽으며 로컬 선공개를 하지 않는다.
 
@@ -197,7 +198,7 @@ WPF 로컬 DB는 공개 버전을 `documents.published_version_no`와 `document_
 
 허용 role의 제한 다운로드는 WPF 로컬 원본 복사가 아니라 서버 controlled copy를 사용한다. WPF가 현재 공개 버전의 티켓을 요청하면 서버는 공개 상태, 저장소 경계, 크기와 SHA-256을 검사하고 사용자·로그인 세션에 묶인 기본 60초 1회성 grant를 발급한다. 같은 Bearer 세션으로 한 번만 스트리밍하며 WPF는 저장 뒤 응답 SHA-256과 실제 파일을 다시 대조한다. 발급·허용·완료·실패·차단은 문서 접근 로그와 활동 이력으로 추적한다.
 
-서버-WPF 동기화에서는 같은 문서의 서버 ID 선행 조건을 우선한다. 재시도 큐는 문서 등록, 문서 버전, 공개, 상태, 태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 순서로 처리한다. 보고서는 여러 문서의 근거를 묶어도 모든 비보고서 전송 대기 항목보다 뒤에 배치한다. 문서 최초 등록이 서버 ID를 받아야 문서 버전, 태그, FieldComment, 접근 로그가 후속 서버 ID에 연결된다. 공개는 해당 버전의 서버 버전 ID가 있어야 실행하고 `PUBLISHED` 상태 변경은 공개 버전 매핑이 있어야 서버에 반영한다. 공개·문서 상태·태그 큐에 생성 당시의 `base_server_revision`이 없는 구 항목은 최신값을 추정해 보내지 않고 서버 호출 전에 `LEGACY_BASE_MISSING` 충돌로 보존한다.
+서버-WPF 동기화에서는 같은 문서의 서버 ID 선행 조건을 우선한다. 재시도 큐는 문서 등록, 문서 버전, 누적 구 공개 큐, 상태, 태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 순서로 처리한다. 보고서는 여러 문서의 근거를 묶어도 모든 비보고서 전송 대기 항목보다 뒤에 배치한다. 문서 최초 등록이 서버 ID를 받아야 문서 버전, 태그, FieldComment, 접근 로그가 후속 서버 ID에 연결된다. 현재 공개는 승인 작업함에서 직접 처리하며 `PUBLISHED` 진입은 공개 API만 수행한다. 구 공개·문서 상태·태그 큐에 생성 당시의 `base_server_revision`이 없으면 최신값을 추정해 보내지 않고 서버 호출 전에 `LEGACY_BASE_MISSING` 충돌로 보존한다.
 
 ## FieldComment
 
@@ -235,7 +236,7 @@ MES/ERP는 후속 연동 대상이다. 현재 코드는 내부 작업순서와 �
 
 후속 어댑터가 도입되더라도 초기 수동 입력 데이터와 같은 연결점을 사용한다. 외부 작업지시는 `work_records.work_order_no`, `work_records.external_system`, `work_records.external_ref_id`, `work_sequence_items.work_order_no`로 연결하고, 작업지시 문서는 `work_records.work_instruction_document_id`와 `work_sequence_items.document_id`로 연결한다. FieldComment와 보고서는 `work_record_id`와 `report_sources`를 통해 작업내역과 근거를 추적한다.
 
-AI 관련 현재 구현은 외부 AI 호출이 아니라 서버 DB에서 `ai_search_candidates` 근거 후보를 재생성하고 목록/품질을 점검하는 read model이다. 공개 문서 후보는 삭제되지 않은 공개 문서 버전만 사용하고, 보고서 source도 실제 원천을 다시 확인한다. 특히 `DOCUMENT` 원천이 삭제 상태이거나 `deleted_at`이 설정되어 있으면 보고서가 남아 있어도 검색 후보로 만들지 않는다. WPF `AI 근거 후보 운영 점검` 화면은 서버 후보 재생성, source별 후보 수, 제외 사유와 운영 조치, FieldComment 검토 준비도, 후보 목록, 원천 추적값 복사를 제공한다. 운영 점검 흐름은 후보 재생성, source별 후보 수 확인, 제외 사유와 운영 조치 확인, 후보 row에서 원천 문서 버전/FieldComment/작업순서 이력/보고서 source로 역추적하는 순서다. FieldComment 검토 준비도는 분석/검토/선정 상태 100건 기준의 부족분을 먼저 보여주며, 이 수치가 부족하면 AI 답변 생성보다 FieldComment 검토와 보고서 source 정리를 우선한다.
+AI 관련 기초 구현은 외부 호출 경계와 분리된 `ai_search_candidates` read model이다. 서버 DB에서 근거 후보를 재생성하고 목록과 품질을 점검한다. 공개 문서 후보는 삭제되지 않은 공개 문서 버전만 사용하고, 보고서 source도 실제 원천을 다시 확인한다. 특히 `DOCUMENT` 원천이 삭제 상태이거나 `deleted_at`이 설정되어 있으면 보고서가 남아 있어도 검색 후보로 만들지 않는다. WPF `AI 근거 후보 운영 점검` 화면은 서버 후보 재생성, source별 후보 수, 제외 사유와 운영 조치, FieldComment 검토 준비도, 후보 목록, 원천 추적값 복사를 제공한다. 운영 점검 흐름은 후보 재생성, source별 후보 수 확인, 제외 사유와 운영 조치 확인, 후보 row에서 원천 문서 버전/FieldComment/작업순서 이력/보고서 source로 역추적하는 순서다. FieldComment 검토 준비도는 분석/검토/선정 상태 100건 기준의 부족분을 먼저 보여주며, 이 수치가 부족하면 AI 답변 생성보다 FieldComment 검토와 보고서 source 정리를 우선한다.
 
 외부 provider 착수 전 회귀 흐름은 WPF에서 후보 포함 근거·수동 제외 원천으로 질문 사례 구성 → 첫 승인 → 다른 사용자의 2차 승인 → 승인 사례를 dataset version으로 구성 → 작성자와 다른 검토자 → 제한 role의 독립 2단계 승인 → 승인 dataset에 결합한 동일 snapshot 평가 2회 → 권한을 반영한 후보 순위와 기대 candidate/source/version/trace ID 비교 → 원천 URI 확인 → 재생성 전후 ID/content hash와 순위 비교 → 서버가 snapshot hash로 고정한 24칸 표본을 WPF에서 두 사람이 독립 검토 → 불일치 시 같은 화면에서 제3 합의 순서다. WPF `24칸 독립 검토`는 첫 판정의 blind 상태, 두 판정 비교, 불일치 case 축소, 기대·실제·제외 근거 trace를 서버 상태에 따라 표시한다. 실행과 케이스 snapshot은 서버 SQLite에 누적하며 삭제·비공개·보관/제외·민감정보·고객 식별자·로컬 경로·사라진 보고서 원천·권한 없는 채널은 부정 근거로 기록한다. 합성/시험 스모크, `PILOT`, 고객 승인 `ANONYMOUS_FIELD`는 별도 지표이며 provider 착수 48건에는 마지막 분류만 사용한다. 근거가 없는 질문은 답변 생성 대상이 아니라 `INSUFFICIENT_EVIDENCE`로 고정한다. dataset 조회·변경·전이와 대체본 참조는 서버 고객·현장·DB scope를 다시 검사하고 대체본은 라인·준비도 계열·dataset key도 같아야 한다.
 

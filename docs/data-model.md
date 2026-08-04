@@ -50,6 +50,8 @@ WPF DB에는 다음 수렴 필드가 additive 방식으로 구현되었다. 기�
 | `server_sync_queue.server_conflict_hash_sha256` | 충돌 시 read-only 서버 상세에서 확인한 상대 파일 hash. 로컬 hash, 충돌 원문, 해결 감사와 함께 보존 |
 | `documents.server_tags_json` | WPF가 마지막으로 확인한 서버 권위 태그 집합. 다음 태그 큐의 추가/제거 delta 기준이며 로컬 편집 태그와 별도로 보존 |
 
+현재 WPF UI의 문서 공개는 `server_sync_queue`에 새 항목을 만들지 않고 서버 승인 작업함에서 직접 처리한다. 로컬 DB의 `document_publish/publish_document_version` 큐와 처리 코드는 누적 이력·호환 목적으로 남아 있으며, 승인 강제 기본값에서는 승인 ID가 없어 자동 공개할 수 없다. 이 행들은 삭제하거나 현재 승인 이력으로 추정해 바꾸지 않는다.
+
 `local_schema_versions`, `server_sync_scopes`, `server_id_mappings.server_epoch`은 아직 구현되지 않은 후속 수렴 모델이다. 현재 복구 binding과 판정 이력은 각각 `server_bindings`, `reconciliation_runs`, `reconciliation_items`에 구현되어 있다.
 
 FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_versions` 테이블이 있어도 열과 키 계약이 다른 별도 스키마다. WPF `document_versions`는 로컬 `id`를 PK로 사용하고 문서별 `version_no`와 선택적 `server_version_id`를 보존하며, 서버의 `version_id` 열이나 서버 grant FK를 소유하지 않는다. `FLOWNOTE_DATABASE_URL`은 `FLOWNOTE_LOCAL_DATA_DIR` 또는 `FLOWNOTE_LOCAL_DATABASE_PATH`로 결정되는 WPF DB 파일을 가리키면 안 된다.
@@ -315,6 +317,7 @@ MES/ERP 어댑터는 후속 범위이므로 검색 후보 생성은 `work_record
 FieldComment 상태:
 
 - `NEW`
+- `ASSIGNED` (API·감사·화면의 논리 상태. SQLite에는 `NEW`와 `assigned_to` 조합으로 저장)
 - `NEEDS_REVIEW`
 - `ANALYZED`
 - `REVIEWED`

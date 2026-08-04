@@ -1,6 +1,6 @@
 # FlowNote 배포
 
-이 문서는 2026-08-03 현재 저장소의 실행 코드와 배포 스크립트 기준이다. 서명, MDM, 현장 인증서처럼 실제 운영 환경에서만 확정 가능한 내용은 후속 점검 항목으로 구분한다.
+이 문서는 2026-08-04 현재 저장소의 실행 코드와 배포 스크립트 기준이다. 서명, MDM, 현장 인증서처럼 실제 운영 환경에서만 확정 가능한 내용은 후속 점검 항목으로 구분한다.
 
 ## 기준
 
@@ -586,6 +586,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 
 | 구분 | 변수 | 운영 기준 |
 | --- | --- | --- |
+| 서버 | `FLOWNOTE_ENVIRONMENT` 또는 `FLOWNOTE_ENV` | 실행 환경 이름. 현재 `.env.example`은 `FLOWNOTE_ENV`를 사용 |
 | 서버 | `FLOWNOTE_DATABASE_URL` | `sqlite:///C:/FlowNote/Server/data/flownote.sqlite3` |
 | 서버 | `FLOWNOTE_STORAGE_ROOT` | `C:\FlowNote\Server\storage` |
 | 서버 | `FLOWNOTE_ACCESS_TOKEN_SECRET` | 현장별 긴 비밀값. 기본값 사용 금지 |
@@ -628,6 +629,8 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | WPF | `FLOWNOTE_LOCAL_DATA_DIR` | `C:\FlowNote\LocalData`처럼 DB와 `Files\`를 함께 둘 폴더 |
 | WPF | `FLOWNOTE_LOCAL_DATABASE_PATH` | 특정 DB 파일을 직접 지정할 때만 사용. 지정 시 `FLOWNOTE_LOCAL_DATA_DIR`보다 DB 경로 우선 |
 | WPF | `FLOWNOTE_API_BASE_URL` | 서버 PC 주소. 예: `http://192.168.0.10:5184` |
+
+`services/api/.env.example`은 `FLOWNOTE_DOCUMENT_APPROVAL_REQUESTER_REVIEWER_SEPARATION`과 `FLOWNOTE_DOCUMENT_APPROVAL_REQUESTER_PUBLISHER_SEPARATION`을 주석 예시로 제공한다. 같은 사용자가 요청·검토하거나 요청·공개할 수 있는 현장은 배포 전용 환경 또는 Git에 포함하지 않는 `.env`에서 정책값을 명시해야 한다. 주석을 그대로 둔 기본 미설정 상태에서는 같은 사용자의 해당 작업을 서버가 차단한다.
 
 `FLOWNOTE_LOCAL_DATABASE_PATH`를 지정하면 WPF DB 파일 위치가 그 값으로 고정된다. 다만 로컬 파일 저장 위치는 `FLOWNOTE_LOCAL_DATA_DIR` 기준으로 관리하는 편이 운영자가 백업 대상을 이해하기 쉽다. 운영에서는 특별한 이유가 없으면 `FLOWNOTE_LOCAL_DATA_DIR`만 지정한다.
 

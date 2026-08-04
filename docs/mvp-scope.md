@@ -1,6 +1,6 @@
 # FlowNote MVP 범위
 
-이 문서는 2026-08-03 현재 코드 기준이다. 구현되지 않은 기능은 “현재 제외 범위”, “후속 계층 착수 기준”, “후속 MVP 후보”에만 둔다.
+이 문서는 2026-08-04 현재 코드 기준이다. 구현되지 않은 기능은 “현재 제외 범위”, “후속 계층 착수 기준”, “후속 MVP 후보”에만 둔다.
 
 ## 현재 MVP 구현
 
@@ -9,7 +9,7 @@
 - Windows WPF 로그인과 탐색기형 문서 화면
 - 로컬 SQLite 기반 문서/폴더/사용자/이력 저장
 - FastAPI 서버 로그인과 Bearer token 인증
-- 문서 등록, 버전 추가, 상태 변경, 공개 버전 지정
+- 문서 등록, 버전 추가, 상태 변경, 최신 version·revision·file hash 검토 요청, 지정 검토자의 승인·반려, 승인 ID 기반 공개·취소와 append-only 승인 이력
 - 문서 태그
 - 문서 미리보기, 열람 시작/수동 종료 로그, 다운로드 차단
 - WPF 허용 role의 공개 버전 controlled copy 1회성 저장과 SHA-256 검증
@@ -30,7 +30,7 @@
 - Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 업무 채널·수신자·원천을 고르는 인수인계 작성, 받은 인수인계 확인·보류와 같은 원천의 후속 FieldComment
 - Android 보안 본문 열람용 승인 단말·사용자·세션·현재 공개 버전 바인딩 1회 grant, 크기·SHA-256 검증, 내부 캐시 자동 정리와 화면 캡처 차단
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
-- WPF 로컬 저장 후 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장 큐와 서버 ID 매핑
+- WPF 로컬 저장 후 문서 최초 등록, 문서 버전, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장 큐와 서버 ID 매핑. 현재 UI의 문서 공개는 서버 승인 작업함이 직접 처리하며 새 공개 큐를 만들지 않는다. 누적 구 공개 큐와 처리기는 보존한다.
 - 같은 소스와 버전에서 framework-dependent와 self-contained WPF MSI를 함께 만드는 패키징 스크립트, .NET Desktop Runtime 설치 차단 안내와 FastAPI 작업 스케줄러 등록·검증/관리 스크립트
 
 Android 보안 뷰어의 승인 실단말 검증, 운영 배포용 서명/MDM/인증서, 현장별 단말 등록·비활성화 운영 절차, foreground service의 Doze·강제 중지/MDM 복구 실기와 장갑·한 손·거치 조건의 UX 실측은 아직 완료 범위가 아니다. 초기 알림 전달은 WPF 창 활성 polling과 Android 로그인 세션 foreground service의 사내망 HTTPS polling으로 구현되어 있다.
