@@ -6,6 +6,13 @@
         Background="{StaticResource WindowBackgroundBrush}"
         WindowStartupLocation="CenterOwner">
     <Grid Margin="14">
+        <Grid.Resources>
+            <Style x:Key="WrappedCellText" TargetType="TextBlock">
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" />
+            </Style>
+        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -14,7 +21,8 @@
         <TextBlock x:Name="SummaryTextBlock" Margin="0,0,0,10"
                    FontWeight="SemiBold" Foreground="{StaticResource PrimaryTextBrush}" />
         <DataGrid Grid.Row="1" ItemsSource="{Binding}" AutoGenerateColumns="False"
-                  IsReadOnly="True" CanUserAddRows="False">
+                  IsReadOnly="True" CanUserAddRows="False"
+                  AutomationProperties.Name="FieldComment 일괄 처리 결과">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="FieldComment" Binding="{Binding CommentId}" Width="210" />
                 <DataGridTextColumn Header="현재" Binding="{Binding FromStatus}" Width="90" />
@@ -22,9 +30,11 @@
                 <DataGridTextColumn Header="결과" Binding="{Binding ResultLabel}" Width="82" />
                 <DataGridCheckBoxColumn Header="허용" Binding="{Binding Allowed}" Width="60" />
                 <DataGridTextColumn Header="실패 코드" Binding="{Binding FailureCode}" Width="160" />
-                <DataGridTextColumn Header="실패 원인" Binding="{Binding FailureReason}" Width="*" />
+                <DataGridTextColumn Header="실패 원인" Binding="{Binding FailureReason}" Width="*"
+                                    ElementStyle="{StaticResource WrappedCellText}" />
                 <DataGridTextColumn Header="재시도 대상" Binding="{Binding RetryTargetLabel}" Width="150" />
-                <DataGridTextColumn Header="복구 안내" Binding="{Binding RecoveryGuidance}" Width="260" />
+                <DataGridTextColumn Header="복구 안내" Binding="{Binding RecoveryGuidance}" Width="260"
+                                    ElementStyle="{StaticResource WrappedCellText}" />
                 <DataGridTextColumn Header="revision" Binding="{Binding ReviewRevision}" Width="76" />
                 <DataGridTextColumn Header="receipt" Binding="{Binding Receipt}" Width="170" />
             </DataGrid.Columns>

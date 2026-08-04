@@ -6,16 +6,20 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import Settings
 from app.db.init_db import hash_password_for_dev
 from app.db.models import (
+    ActivityHistory,
+    AuditEventEnvelope,
     FieldComment,
     FieldCommentAttachment,
     FieldCommentReviewMutationReceipt,
     FileObject,
     NotificationChannel,
+    SyncMutationReceipt,
     UserAccount,
     WorkSequenceBoard,
     WorkSequenceItem,
@@ -255,6 +259,88 @@ def test_review_revision_allows_only_one_concurrent_wpf_review_and_replays_recei
                 )
             )
             assert receipts == 1
+
+
+def test_review_receipt_failure_rolls_back_business_row_and_domain_audit() -> None:
+    with create_test_client() as client:
+        document = create_document(client)
+        headers = auth_headers(client)
+        created = client.post(
+            "/api/v1/field-comments",
+            headers=headers,
+            json={
+                "documentId": document["document_id"],
+                "documentVersionId": document["latest_version"]["version_id"],
+                "rawContent": f"transaction rollback {uuid4().hex}",
+            },
+        ).json()
+        mutation_key = f"review-rollback-{uuid4().hex}"
+        engine = client.app.state.database.engine
+
+        def fail_domain_receipt(
+            _connection,
+            _cursor,
+            statement,
+            _parameters,
+            _context,
+            _executemany,
+        ) -> None:
+            if "INSERT INTO field_comment_review_mutation_receipts" in statement:
+                raise IntegrityError(statement, {}, RuntimeError("injected receipt failure"))
+
+        event.listen(engine, "before_cursor_execute", fail_domain_receipt)
+        try:
+            response = client.patch(
+                f"/api/v1/field-comments/{created['comment_id']}",
+                headers=headers,
+                json={
+                    "status": "ANALYZED",
+                    "analysisContent": "rollback 대상 분석",
+                    "transitionReason": "transaction 중간 예외 주입",
+                    "baseReviewRevision": created["review_revision"],
+                    "mutationKey": mutation_key,
+                },
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", fail_domain_receipt)
+
+        assert response.status_code == 409, response.text
+        with client.app.state.database.session() as session:
+            note = session.scalar(
+                select(FieldComment).where(
+                    FieldComment.comment_id == created["comment_id"]
+                )
+            )
+            assert note is not None
+            assert note.review_revision == created["review_revision"]
+            assert note.status == "NEW"
+            assert note.analysis_content is None
+            assert session.scalar(
+                select(func.count())
+                .select_from(FieldCommentReviewMutationReceipt)
+                .where(FieldCommentReviewMutationReceipt.mutation_key == mutation_key)
+            ) == 0
+            assert session.scalar(
+                select(func.count())
+                .select_from(ActivityHistory)
+                .where(
+                    ActivityHistory.target_id == created["comment_id"],
+                    ActivityHistory.event_type == "field_comment.review_changed",
+                )
+            ) == 0
+            common = session.scalar(
+                select(SyncMutationReceipt).where(
+                    SyncMutationReceipt.operation_key == mutation_key
+                )
+            )
+            failure_audit = session.scalar(
+                select(AuditEventEnvelope).where(
+                    AuditEventEnvelope.target_id == created["comment_id"],
+                    AuditEventEnvelope.result == "CONFLICT",
+                )
+            )
+            assert common is not None and common.result == "CONFLICT"
+            assert failure_audit is not None
 
 
 def test_attachment_lost_response_retry_keeps_one_attachment_and_file_object() -> None:

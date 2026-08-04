@@ -10,8 +10,8 @@
 | `run_id` | 없음 | 없음 |
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
-| FastAPI | 현재 수집 182건. 이번 변경의 접근 로그 회귀는 4/4 통과했다. 스크립트 guard 181건 | Windows x64 수집·JUnit 무생략 실행 대기 |
-| WPF Core | 현재 macOS 실행 101/101, 스크립트 guard 98건 | Windows 수집·TRX 무생략 실행 대기 |
+| FastAPI | 현재 수집 186건. 책임 분리 집중 회귀와 transaction 예외 주입을 포함한다. 스크립트 guard 186건 | Windows x64 수집·JUnit 무생략 실행 대기 |
+| WPF Core | 현재 macOS 실행 102/102, 스크립트 guard 102건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 현재 macOS 교차 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 현재 단위 테스트 32/32, debug build·lint PASS, 스크립트 고정값 32건 | Windows 무생략 실행 대기 |
@@ -1321,3 +1321,22 @@ Android 알림 polling에서 access 401을 받은 즉시 공통 인증 실패 �
 | 운영 서명 후보 APK, 이전 승인 APK, MDM 승인 증거 | 제공되지 않음 |
 
 debug APK 부정 시험의 최신 보존 경로는 `data/local/pilot-evidence/ANDROID-RELEASE-PRECHECK-20260731-004/`이다. 현재 결과는 자동 사전 점검만 통과한 상태다. 승인 ADB serial과 운영 서명 후보/이전 승인 APK가 없으므로 설치·업그레이드·rollback, 실제 대기 outbox rollback 차단, Doze·재부팅·강제 중지/kiosk 복구, 사내 HTTPS 단절·복구, 발급·비활성화·분실·교체, 장갑·한 손·거치 관찰은 실행하지 않았다. 따라서 같은 `run_id`의 Android 전달·무결성·보안·수명주기·운영 패키지 승인·Field UX 원시 행은 아직 `PASS`가 아니며 운영 완료 판정은 `대기`다.
+
+## 2026-08-04 책임 분리 계약 검증
+
+분리 전후 공개 계약은 기존 API 회귀 테스트의 상태 코드·오류 코드·JSON 필드 대조로 확인한다. 별도 공개 `MutationOutcome` 필드는 기대하지 않는다. 다음 검증을 함께 실행한다.
+
+```text
+cd services/api
+.venv/bin/python -m pytest
+.venv/bin/python -m ruff check app tests
+cd ../..
+dotnet test ./apps/windows/src/FlowNote.Windows.Core.Tests/FlowNote.Windows.Core.Tests.csproj
+dotnet build ./apps/windows/src/FlowNote.Windows.App/FlowNote.Windows.App.csproj -p:EnableWindowsTargeting=true
+```
+
+집중 검증은 FieldComment 일괄 처리에서 성공 항목을 제외한 실패 ID만 재시도하는지, stale revision과 멱등키가 같은 요청을 가리키는지 확인한다. 보고서는 source version/revision/hash 변경과 채널 비가시성을 기존 오류로 거부하고, 작업순서는 경쟁 mutation 중 하나만 revision을 선점하며 change history와 receipt가 한 번만 남아야 한다. transaction 중간 실패에서는 업무 row·성공 도메인 receipt·성공 도메인 audit가 함께 rollback되고, 재시도 수렴에 필요한 공통 실패 receipt와 실패 audit만 별도 transaction으로 남아야 한다. WPF는 공통 안내를 실패 내용 → 원천 보존 → 담당 역할 → 다음 행동 순으로 표시하며 긴 문구 줄바꿈과 화면 읽기 이름을 확인한다.
+
+macOS 개발 환경에서 Ruff 검사와 책임 분리 집중 회귀 45/45, WPF Core 102/102가 통과했다. WPF 앱 빌드는 `EnableWindowsTargeting` 없이 처음 실행했을 때 `NETSDK1100`으로 실패했다. 위 교차 빌드 명령으로 다시 실행한 결과는 경고 0개·오류 0개다. FastAPI 최종 수집 수는 186개다.
+
+FastAPI 전체 회귀는 서로 다른 두 검증 프로세스가 같은 누적 SQLite를 사용한 상태에서 실행되어 각각 181/185와 182/185가 통과했다. 실패 항목에는 AI ground-truth·준비도 집계, AI 질의, Android 문서 보기, SQLite 잠금과 서버 epoch 동시 증가가 포함됐다. 이 항목들을 동시 실행 없이 다시 검사한 결과 모두 통과했지만, AI ground-truth 재현성은 한 차례 더 `FAILED`를 반환한 뒤 재실행에서 통과해 실행 순서에 따른 불안정성이 남아 있다. 따라서 FastAPI 전체 186건이 한 번에 통과했다고 보지는 않으며, 이번 FieldComment·보고서·작업순서 변경 범위는 집중 회귀 45건 통과를 기준으로 확인했다. 기존 SQLite, 최초 실패 기록과 실행 산출물은 삭제하거나 초기화하지 않았다.

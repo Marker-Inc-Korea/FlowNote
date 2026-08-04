@@ -90,6 +90,28 @@ public sealed class FieldCommentWorkflowFailureGuidanceTests
         Assert.DoesNotContain("덮어쓰기", message);
     }
 
+    [Fact]
+    public void PartialOutcomeKeepsFailedItemsAndUsesFourPartGuidance()
+    {
+        var outcome = new MutationOutcome<string>(
+            MutationOutcomeStatus.PartialSuccess,
+            "FIELD_COMMENT_BULK_PARTIAL_SUCCESS",
+            "일부 FieldComment만 저장했습니다.",
+            Value: "result",
+            ResponsibleRole: "FieldComment 검토 담당자",
+            ActionRoute: "/field-comments?retry=failed",
+            RetryItemIds: ["comment-failed"]);
+
+        var message = WorkflowFailureGuidance.FromOutcome(outcome);
+
+        Assert.True(outcome.Succeeded);
+        Assert.Equal(["comment-failed"], outcome.FailedItemIds);
+        AssertFourPartOrder(message);
+        Assert.Contains("원천 데이터와 이미 완료된 변경", message);
+        Assert.Contains("FieldComment 검토 담당자", message);
+        Assert.Contains("/field-comments?retry=failed", message);
+    }
+
     private static void AssertFourPartOrder(string message)
     {
         var failure = message.IndexOf("무엇이 실패했는지:", StringComparison.Ordinal);

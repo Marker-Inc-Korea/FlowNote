@@ -2,6 +2,15 @@ namespace FlowNote.Windows.Core.ServerApi;
 
 public static class WorkflowFailureGuidance
 {
+    public static string FromOutcome<T>(MutationOutcome<T> outcome) =>
+        Format(
+            outcome.Message,
+            outcome.SourcePreserved ? "원천 데이터와 이미 완료된 변경" : "원천 데이터 보존 여부를 확인해야 합니다.",
+            outcome.ResponsibleRole ?? "현재 사용자",
+            outcome.ActionRoute is null
+                ? "오류 내용을 확인한 뒤 다시 시도하세요."
+                : $"안내된 화면에서 실패 항목만 처리하세요: {outcome.ActionRoute}");
+
     public static string Format(
         string failure,
         string preserved,
