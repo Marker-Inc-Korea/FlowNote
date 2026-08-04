@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     customer_scope: str | None = None
     site_scope: str | None = None
     field_comment_independent_review_required: bool = True
+    document_approval_workflow_enforced: bool = True
+    document_approval_requester_reviewer_separation: bool | None = None
+    document_approval_requester_publisher_separation: bool | None = None
     ai_external_call_enabled: bool = False
     ai_readiness_gate_enabled: bool = True
     ai_provider: str = "UNCONFIGURED"

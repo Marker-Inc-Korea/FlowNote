@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using FlowNote.Windows.Core.Explorer;
 using FlowNote.Windows.Core.Folders;
+using FlowNote.Windows.Core.ServerApi;
 using Microsoft.Win32;
 
 namespace FlowNote.Windows.App;
@@ -98,39 +99,31 @@ public partial class MainWindow
         }
     }
 
-    private async void PublishDocumentButton_Click(object sender, RoutedEventArgs e)
+    private void PublishDocumentButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!EnsureDocumentGovernanceAllowed())
+        if (!canRegisterDocuments)
         {
+            workspace.StatusText = "검토 요청에는 문서 작성 권한이 필요합니다. 시스템 관리자에게 문의하세요.";
             return;
         }
-
-        if (DocumentGrid.SelectedItem is not ExplorerDocument document)
+        if (serverHttpClient is null)
         {
-            workspace.StatusText = "공개할 문서를 선택하세요.";
+            workspace.StatusText = "승인 작업함은 서버 로그인 연결이 필요합니다.";
             return;
         }
-
-        try
+        var initialDocumentId = DocumentGrid.SelectedItem is ExplorerDocument selected
+            ? services.ServerSync.GetControlledCopyServerMapping(selected.DocumentId, selected.VersionNo)?.ServerDocumentId
+            : null;
+        var window = new DocumentApprovalWindow(
+            new FlowNoteServerApprovalClient(serverHttpClient),
+            canRegisterDocuments,
+            canGovernDocuments,
+            initialDocumentId)
         {
-            var published = services.Documents.PublishVersion(
-                document.DocumentId,
-                document.VersionNo,
-                GetCurrentActorName());
-            var syncResult = await services.ServerSync.QueueAndTrySyncDocumentPublishAsync(
-                published,
-                serverDocumentClient,
-                currentUser.UserId);
-            var statusText = syncResult.Success
-                ? $"문서 버전을 공개하고 서버에 반영했습니다: {document.FileName} v{document.VersionNo}"
-                : $"문서 버전을 공개했습니다: {document.FileName} v{document.VersionNo}. 서버 동기화는 큐에 남겼습니다. {syncResult.Message}";
-            RefreshDocuments(selectedFolder?.Id, statusText);
-        }
-        catch (InvalidOperationException exception)
-        {
-            workspace.StatusText = exception.Message;
-            RefreshSyncState();
-        }
+            Owner = this
+        };
+        window.ShowDialog();
+        RefreshDocuments(selectedFolder?.Id, "서버 승인 작업함을 닫았습니다. 공개 상태는 서버 승인 이력을 기준으로 확인하세요.");
     }
 
     private async void UploadFileButton_Click(object sender, RoutedEventArgs e)

@@ -30,6 +30,13 @@
                             Height="30"
                             Content="복사본 저장"
                             Click="DownloadCopyButton_Click" />
+                    <Button x:Name="ApprovalWorkbenchButton"
+                            Width="112"
+                            Height="30"
+                            Margin="0,6,0,0"
+                            Content="검토·승인 이력"
+                            Click="ApprovalWorkbenchButton_Click"
+                            AutomationProperties.Name="문서 검토 및 공개 승인 이력 열기" />
                     <TextBlock x:Name="SecurityPolicyTextBlock"
                                Margin="0,6,0,0"
                                TextAlignment="Right"

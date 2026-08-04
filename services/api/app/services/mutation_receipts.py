@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import AuthenticatedUser
 from app.db.models import (
     AuditEventEnvelope,
+    DocumentApprovalMutationReceipt,
     DocumentMutationReceipt,
     FieldCommentReviewMutationReceipt,
     ReportMutationReceipt,
@@ -119,6 +120,12 @@ def _reject_cross_domain_legacy_key_reuse(
     target_type: str,
 ) -> None:
     owners: set[str] = set()
+    if session.scalar(
+        select(DocumentApprovalMutationReceipt.id).where(
+            DocumentApprovalMutationReceipt.mutation_key == operation_key
+        )
+    ) is not None:
+        owners.add("document_approval")
     if session.scalar(
         select(DocumentMutationReceipt.id).where(
             DocumentMutationReceipt.mutation_key == operation_key

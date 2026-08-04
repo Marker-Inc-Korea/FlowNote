@@ -1,6 +1,6 @@
 # FlowNote 데이터 모델
 
-이 문서는 2026-08-03 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
+이 문서는 2026-08-04 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·검토·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
 
 ## WPF 로컬 SQLite
 
@@ -72,7 +72,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-08-03 현재 ORM은 공통 감사 event envelope와 mutation receipt, 문서·FieldComment 검토·보고서·작업순서의 도메인 receipt, 문서 태그 revision snapshot, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 64개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드는 새 테이블이나 저장 snapshot을 만들지 않고 `field_comments`와 `report_sources`의 현재 상태를 요청 시점에 집계한다.
+2026-08-04 현재 ORM은 공통 감사 event envelope와 mutation receipt, 문서·FieldComment 검토·보고서·작업순서의 도메인 receipt, 문서 태그 revision snapshot, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 67개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드는 새 테이블이나 저장 snapshot을 만들지 않고 `field_comments`와 `report_sources`의 현재 상태를 요청 시점에 집계한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -87,8 +87,11 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `auth_sessions` | access token ID, refresh token hash, 세션 만료/폐기 상태, Android 승인 단말 `device_id` |
 | `operator_profiles` | 작업자/작업그룹/대리 입력 주체 |
 | `file_objects` | 서버 로컬 파일 참조, MIME, 크기, SHA-256 |
-| `documents`, `document_versions` | 문서, 버전, 최신/공개 버전. 문서와 개별 버전의 재시도 idempotency key를 각각 유일하게 보존 |
+| `documents`, `document_versions` | 문서, 버전, 최신/공개 버전과 공개 승인 근거. 문서와 개별 버전의 재시도 idempotency key를 각각 유일하게 보존 |
 | `document_mutation_receipts` | 문서 공개·상태·태그·삭제 mutation key, intent hash, 적용 revision, 최초 성공 응답 |
+| `document_approvals` | 정확한 문서 version·revision·file hash, 요청자, 지정 검토자·역할, 상태와 결정·취소·공개 시각을 보존하는 승인 projection |
+| `document_approval_events` | 요청·승인·반려·취소·stale·공개·공개 철회 append-only 이력 |
+| `document_approval_mutation_receipts` | 검토 요청·결정·취소 mutation key, intent hash와 최초 응답 snapshot |
 | `audit_event_envelopes` | 공통 감사 계약. event/actor·role/session·device/target·version·revision/reason/approval/hash/result/server time/run·correlation ID와 도메인 감사 연결을 저장 |
 | `sync_mutation_receipts` | 전역 유일 operation key, intent hash, 성공·거부·충돌 결과, HTTP 상태, 공통 event ID와 기존 도메인 receipt 연결을 저장 |
 | `tag_definitions`, `document_tags` | 태그 사전과 현재 문서 연결 |
@@ -128,15 +131,16 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `android_document_view_grants` | Android 앱 내부 열람용 token hash, 사용자·세션·필수 승인 단말·공개 버전·미디어 종류·크기·SHA-256, 만료·소비·실패 상태 |
 | `activity_history` | 서버 활동 이력 |
 
-`audit_event_envelopes`와 `sync_mutation_receipts`는 migration `0002_common_mutation_receipts`에서 additive 방식으로 추가한다. 기존 `activity_history`와 도메인 receipt를 이동·수정·백필하지 않는다. 공통 행이 없는 이전 감사는 조회 시 `이전 형식·일부 필드 없음`으로 표시하고 role·session·revision·result 같은 누락값을 추정하지 않는다.
+`audit_event_envelopes`와 `sync_mutation_receipts`는 migration `0002_common_mutation_receipts`에서 additive 방식으로 추가한다. `0003_document_approval_workflow`는 승인 테이블 3개와 `documents.publication_approval_id`, `documents.publication_origin`을 추가한다. 기존 `activity_history`와 도메인 receipt를 이동·수정·백필하지 않으며, 이전 공개본은 승인 근거를 추정하지 않고 `LEGACY_PUBLICATION`으로 둔다. 공통 행이 없는 이전 감사는 조회 시 `이전 형식·일부 필드 없음`으로 표시하고 role·session·revision·result 같은 누락값을 추정하지 않는다.
 
-`sync_mutation_receipts.operation_key`는 서버 전체에서 UNIQUE다. 같은 key·같은 event/target/intent는 최초 성공 또는 거부·충돌 결과로 수렴하고 같은 key의 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`로 거부한다. 성공 행은 기존 `document_mutation_receipts`, `field_comment_review_mutation_receipts`, `report_mutation_receipts`, `work_sequence_mutation_receipts`의 테이블명과 PK를 연결한다. 업무 변경, 도메인 receipt, 공통 envelope/receipt는 같은 transaction에서 commit한다. 문서 상태, FieldComment 검토, 보고서 상태 전이, 작업순서 항목 상태의 거부·충돌은 업무 transaction을 rollback한 뒤 공통 거부 receipt만 별도 transaction으로 확정하며 업무 row가 바뀌지 않았음을 revision으로 검증한다.
+`sync_mutation_receipts.operation_key`는 서버 전체에서 UNIQUE다. 같은 key·같은 event/target/intent는 최초 성공 또는 거부·충돌 결과로 수렴하고 같은 key의 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`로 거부한다. 성공 행은 기존 `document_mutation_receipts`, `document_approval_mutation_receipts`, `field_comment_review_mutation_receipts`, `report_mutation_receipts`, `work_sequence_mutation_receipts`의 테이블명과 PK를 연결한다. 업무 변경, 도메인 receipt, 공통 envelope/receipt는 같은 transaction에서 commit한다. 문서 상태, FieldComment 검토, 보고서 상태 전이, 작업순서 항목 상태의 거부·충돌은 업무 transaction을 rollback한 뒤 공통 거부 receipt만 별도 transaction으로 확정하며 업무 row가 바뀌지 않았음을 revision으로 검증한다.
 
 공통 envelope의 필수 필드는 `event_type`, actor ID/role, session ID, target type/ID, result/result code/HTTP status, correlation ID, server time이다. operation key가 있는 mutation은 intent hash와 공통 receipt 연결도 필수다. device ID와 run ID는 요청 세션·헤더에 값이 있을 때만 저장하고 target version/revision·reason·approval·전후 hash는 아래 행위 계약을 따른다.
 
 | 행위 | target version/revision | 사유 | 승인 | 전후 hash |
 | --- | --- | --- | --- | --- |
-| 문서 상태·공개·삭제·태그 | 문서 revision 필수, 공개는 version ID 필수 | 삭제 필수, 나머지는 현재 API 계약상 선택 | 별도 승인 모델이 없어 `NOT_REQUIRED` | 성공 필수, 거부·충돌은 선택 |
+| 문서 상태·삭제·태그 | 문서 revision 필수 | 삭제 필수, 나머지는 현재 API 계약상 선택 | `NOT_REQUIRED` | 성공 필수, 거부·충돌은 선택 |
+| 문서 검토 요청·결정·취소·공개 | 문서 revision과 version ID 필수 | 요청·결정·취소는 필수, 공개는 현재 API 계약상 선택 | 요청은 `PENDING`, 승인·공개는 `APPROVED`, 반려·취소·stale은 `REJECTED`와 승인 ID 기록 | 성공 필수, 거부·충돌은 선택 |
 | FieldComment 검토 | document version이 있으면 기록, review revision 필수 | 상태 전이 시 필수, 해석 필드만 바꾸면 선택 | 별도 승인 모델이 없어 `NOT_REQUIRED` | 성공 필수, 거부·충돌은 선택 |
 | 보고서 상태 전이 | 생성 version이 있으면 기록, report revision 필수 | 현재 API 계약상 선택 | `REVIEWED`는 `PENDING`/승인자 없음, `APPROVED`·`ARCHIVED`는 `APPROVED`/전이 actor 필수 | 성공 필수, 거부·충돌은 선택 |
 | 작업순서 변경 | board revision 필수 | 생성은 서버 고정 사유, 순서·상태는 현재 API 계약상 선택 | 별도 승인 모델이 없어 `NOT_REQUIRED` | 성공 필수, 거부·충돌은 선택 |
@@ -468,3 +472,12 @@ WPF 사용자 관리는 서버 로그인 세션이 있으면 서버 계정 운�
 - `server_read_back_json`, `server_conflict_hash_sha256`는 409 직후 다시 읽은 서버 문서 권위와 선택 파일 hash를 보존한다. `allowed_actions_json`, `retry_not_before`는 해당 충돌에 허용된 행동과 read-back 불일치 보호 기간을 고정한다.
 - `source_preserved_path`는 새 버전 전송에 사용할 로컬 원본의 보존 위치다. 원본을 복사하거나 덮어쓰지 않으며, 전송 직전 hash가 `local_file_hash_sha256`와 다르면 새 mutation을 만들지 않는다.
 - 해결 시 `resolution_action`, `resolution_reason`, `resolved_by`, `resolved_at`을 원 큐에 남긴다. 해결 사유는 10자 이상이며 문서 관리 역할의 사용자가 수행한다. `KEEP_SERVER`는 원 큐를 `DISCARDED`로 종결하고, `REGISTER_NEW_VERSION`은 원 큐를 보존 종결한 뒤 새 `sync_id`·idempotency key의 `PENDING` mutation을 추가한다.
+
+## 문서 검토·공개 승인 모델
+
+- `document_approvals`는 한 검토 요청의 현재 projection이다. `document_id`, 정확한 `version_id`, 요청 mutation이 선점한 `base_document_revision`, `source_file_hash_sha256`, 요청자, 검토자 사용자 ID 또는 role, 요청 사유와 기한을 고정한다.
+- 상태는 `REQUESTED`, `APPROVED`, `REJECTED`, `CANCELLED`, `STALE`, `PUBLISHED`다. 반려·취소·stale 요청을 다시 대기 상태로 되돌리지 않으며, 수정본은 새 mutation key로 새 요청을 만든다.
+- `document_approval_events`는 `REQUESTED`, `APPROVED`, `REJECTED`, `CANCELLED`, `MARKED_STALE`, `PUBLISHED`, `PUBLICATION_WITHDRAWN` append-only 이력이다. actor·role·문서 revision·version·hash·사유를 당시 값으로 보존한다.
+- `document_approval_mutation_receipts`와 공통 `sync_mutation_receipts`, `audit_event_envelopes`, `activity_history`는 요청·결정·취소와 같은 transaction에 포함된다. 같은 key와 intent는 기존 응답을 재생하고 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`다.
+- `documents.publication_approval_id`는 새 공개본의 승인 근거를 가리키며 `publication_origin = APPROVAL_WORKFLOW`를 사용한다. migration 전 공개본은 승인 근거를 추정하지 않고 `publication_origin = LEGACY_PUBLICATION`, null 승인 ID로 유지한다.
+- 승인 공개를 취소하면 아직 `ISSUED`인 Android 열람 grant와 controlled copy grant는 `FAILED`로 바뀐다. 이미 소비된 복사본은 회수됐다고 추정하지 않고 기존 소비·감사 이력을 유지한다.

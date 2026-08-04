@@ -36,6 +36,7 @@ def create_test_client() -> TestClient:
         database_url=TEST_DATABASE_URL,
         test_database_url=TEST_DATABASE_URL,
         storage_root=str(TEST_STORAGE_ROOT),
+        document_approval_workflow_enforced=False,
     )
     return TestClient(create_app(app_settings))
 

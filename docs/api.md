@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-08-03 현재 전역 FastAPI 앱에 등록된 146개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약, 통합 변경 이력 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-08-04 현재 전역 FastAPI 앱에 등록된 151개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약, 통합 변경 이력 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -150,7 +150,7 @@ run 생성은 업무 도메인 원천을 수정하지 않고 서버와 WPF 양�
 | GET | `/api/v1/documents/{document_id}/versions` | 문서 버전 목록 |
 | POST | `/api/v1/documents/{document_id}/versions` | 새 파일 버전 등록. multipart `idempotencyKey`를 보내면 같은 키의 재시도는 기존 버전을 반환 |
 | PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | JSON `baseRevision` 기준 버전 상태 변경 |
-| POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | JSON `baseRevision`, 예상 공개본, `mutationKey` 기준으로 특정 버전을 공개 버전으로 지정 |
+| POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | JSON `approvalId`, `baseRevision`, 예상 공개본, `mutationKey` 기준으로 승인된 특정 버전을 공개 버전으로 지정 |
 | DELETE | `/api/v1/documents/{document_id}` | `baseRevision`, `changeReason`, 선택 `mutationKey`로 문서를 soft delete. 공개 포인터 해제·감사·receipt를 함께 저장 |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | 현재 공개 버전의 1회성 controlled copy 티켓 발급 |
 | GET | `/api/v1/controlled-copies/{token}` | 발급 사용자·로그인 세션에 묶인 controlled copy 1회 스트리밍 |
@@ -582,6 +582,9 @@ WPF `RolePermissionPolicy`와의 대조:
 - `FLOWNOTE_CUSTOMER_SCOPE` (단일 서버 고객 경계. 생략 시 `FLOWNOTE_AI_CUSTOMER_SCOPE`)
 - `FLOWNOTE_SITE_SCOPE` (단일 서버 현장 경계. 생략 시 `FLOWNOTE_AI_SITE_SCOPE`)
 - `FLOWNOTE_FIELD_COMMENT_INDEPENDENT_REVIEW_REQUIRED` (기본 `true`; 위험 신호·상충 원천 maker-checker)
+- `FLOWNOTE_DOCUMENT_APPROVAL_WORKFLOW_ENFORCED` (기본 `true`; 새 문서 공개에 승인 근거 요구)
+- `FLOWNOTE_DOCUMENT_APPROVAL_REQUESTER_REVIEWER_SEPARATION` (기본 미설정; 같은 사용자가 요청·검토할 때 현장 정책을 명시해야 함)
+- `FLOWNOTE_DOCUMENT_APPROVAL_REQUESTER_PUBLISHER_SEPARATION` (기본 미설정; 같은 사용자가 요청·공개할 때 현장 정책을 명시해야 함)
 - `FLOWNOTE_RESTORE_FAULT_CODE` (기본 빈 값; 복구 장애 실기 전용)
 - `FLOWNOTE_RESTORE_BLOCK_REASON` (기본 빈 값; 선택 차단 사유)
 - `FLOWNOTE_RESTORE_PILOT_RUN_ID`
@@ -655,3 +658,18 @@ FieldComment `/bulk-review/execute`는 항목별 transaction을 유지한다. `s
 태그 JSON delta는 `baseRevision`, `addedTags`, `removedTags`, canonical `intentHash`, `mutationKey`를 사용한다. 서버가 기준 snapshot을 복원하고 같은 태그의 반대 변경, 비활성·삭제 태그, 기준 snapshot 부재, intent hash 불일치가 없을 때만 mutation 전체를 현재 집합에 병합한다. 일부 안전 delta가 있더라도 나머지 delta가 충돌하면 부분 적용하지 않고 전체 요청을 409로 보존한다. 파일 내용/hash·최신 버전·문서/버전 상태·`published_version_id`·soft delete는 `autoMergeAllowed=false`이며 자동 병합하지 않는다.
 
 같은 mutation key와 같은 canonical intent를 재전송하면 성공 응답은 기존 document receipt에서, 기록된 409·422 응답은 공통 mutation receipt에서 재생한다. 구조화된 409는 첫 응답과 재생 응답의 detail을 같게 유지하며 새 revision, 알림, receipt 또는 감사 행을 만들지 않는다. 공통 receipt에는 허용된 충돌 필드만 저장하고 중첩 문자열의 비밀값·개인 로컬 경로 패턴을 정제한다. 같은 key의 다른 intent는 `IDEMPOTENCY_KEY_REUSED`이며 `KEEP_SERVER`만 허용한다.
+
+## 문서 검토·공개 승인 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| `POST` | `/api/v1/document-approvals` | 최신 문서 version·revision·file hash와 검토 담당을 고정해 검토 요청 |
+| `GET` | `/api/v1/document-approvals` | 승인 작업함 조회. `documentId`, `state`, `assignedToMe` 필터 지원 |
+| `GET` | `/api/v1/document-approvals/{approval_id}` | projection과 append-only 상태 이력 조회 |
+| `POST` | `/api/v1/document-approvals/{approval_id}/decision` | 지정 검토자의 `APPROVE` 또는 `REJECT` 결정 |
+| `POST` | `/api/v1/document-approvals/{approval_id}/cancel` | 대기·승인·공개 승인을 취소하고 공개본이면 미사용 grant 무효화 |
+| `POST` | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | `approvalId`와 승인된 revision/version/hash를 다시 확인해 공개 |
+
+요청 생성은 `documentId`, `versionId`, `baseDocumentRevision`, `sourceFileHashSha256`, `reviewerUserId` 또는 `reviewerRole` 하나, `reason`, 선택 `dueAt`, 필수 `mutationKey`를 받는다. 결정과 취소도 사유와 mutation key가 필수다. 공개 요청은 새 계약에서 `approvalId`가 필수이며, 배포 전환용 `FLOWNOTE_DOCUMENT_APPROVAL_WORKFLOW_ENFORCED=false`를 명시한 호환 환경에서만 생략할 수 있다.
+
+승인되지 않은 공개는 `APPROVAL_REQUIRED` 또는 `APPROVAL_NOT_APPROVED`, 승인 뒤 version/revision/hash가 바뀐 공개는 `APPROVAL_STALE` 409다. 작성자와 검토자·공개자의 동일인 여부가 현장 설정에서 정해지지 않은 채 같은 actor가 처리하면 `APPROVAL_REVIEWER_SEPARATION_POLICY_REQUIRED` 또는 `APPROVAL_SEPARATION_POLICY_REQUIRED`로 차단한다. 분리 강제 설정에서 같은 actor이면 403이다. 반려·stale 응답과 WPF 화면은 원본과 승인 기록 보존, 담당 검토자와 새 요청 행동을 함께 표시한다.

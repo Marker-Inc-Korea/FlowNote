@@ -46,6 +46,7 @@
 - Windows 창 활성 중 polling과 Android 로그인 세션 foreground service polling, cursor 기반 증분 조회·연결 실패 backoff·재부팅 복구
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
 - 공개 문서 버전의 60초 1회성 controlled copy 발급·스트리밍, 서버 무결성 재검사, 감사 로그와 WPF 저장·SHA-256 검증
+- FastAPI 문서 검토·공개 승인 projection과 append-only 이력, 정확한 version·revision·file hash 검증, 역할 분리 설정, 공개 취소 시 미사용 열람 grant 무효화, WPF 승인 작업함과 서버 API 클라이언트
 
 ## 설계 완료, 부분 구현
 
@@ -68,7 +69,7 @@
 
 ## 다음 우선순위
 
-1. 현재 수집 결과는 FastAPI 182건·WPF Core 101건·Android 32건이다. 표준 스크립트 guard는 FastAPI 181건·WPF Core 98건·Android 32건이므로 현재 코드와 일치하지 않는다. FastAPI 수집/JUnit·도구 부족 실패 안내와 의도적 불일치 단위 검증은 이미 보강했다. 다음에는 guard를 현재 수집값에 맞춘 뒤 Windows x64에서 FastAPI 수집 총 182건·고유 182건·중복 0건과 JUnit 182/182, WPF Core 수집 목록과 TRX `total/passed=101/101`, Android JUnit 32/32를 대조한다. 이어 누적 공통 DB 스모크 전후 무결성, Android debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, `PASSED` 실행 ID를 같은 clean 소스 커밋에서 2회 연속 남겨야 한다. 현재 최신 유효 기준선과 재현 실행은 모두 `대기`다.
+1. 현재 수집 결과는 FastAPI 192건·WPF Core 109건·Android 32건이다. 표준 스크립트 guard는 FastAPI 186건·WPF Core 102건·Android 32건이므로 현재 코드와 일치하지 않는다. FastAPI 수집/JUnit·도구 부족 실패 안내와 의도적 불일치 단위 검증은 이미 보강했다. 다음에는 guard를 현재 수집값에 맞춘 뒤 Windows x64에서 FastAPI 수집 총 192건·고유 192건·중복 0건과 JUnit 192/192, WPF Core 수집 목록과 TRX `total/passed=109/109`, Android JUnit 32/32를 대조한다. 이어 누적 공통 DB 스모크 전후 무결성, Android debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, `PASSED` 실행 ID를 같은 clean 소스 커밋에서 2회 연속 남겨야 한다. 현재 최신 유효 기준선과 재현 실행은 모두 `대기`다.
 2. [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다. `PILOT-20260728-1501-FULLPILOT-001`은 이 승인과 장비가 없는 상태를 검증해 460개 미충족 조건으로 `FAIL`했으므로, 현재 상태는 구현 완료가 아니라 파일럿 착수 `대기`다. RPO/RTO, 비상 연락, 이전 승인 패키지와 운영·보안·현장 승인자를 먼저 확정한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
 4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다. APK 설치·rollback은 승인 ADB serial, 동일 signer와 더 낮은 이전 versionCode를 확인하고, AAB는 관리형 스토어가 전달한 서명 APK를 별도로 검증한다. `full_pilot`의 전달·무결성·보안·단말 수명주기·패키지 승인 원시 CSV와 같은 `run_id`의 실제 증거가 모두 PASS일 때만 완료한다.

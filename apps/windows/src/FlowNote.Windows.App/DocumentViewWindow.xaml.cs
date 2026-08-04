@@ -91,6 +91,10 @@ public partial class DocumentViewWindow : Window
         SaveCommentButton.IsEnabled = canWriteFieldComments && fieldCommentService is not null && !string.IsNullOrWhiteSpace(document.DocumentId);
         SelectAttachmentButton.IsEnabled = SaveCommentButton.IsEnabled;
         ClearAttachmentButton.IsEnabled = false;
+        ApprovalWorkbenchButton.IsEnabled =
+            serverDocumentClient is not null &&
+            serverSyncService is not null &&
+            RolePermissionPolicy.CanRegisterDocuments(this.userRole);
         StartDocumentViewLog();
         RefreshHeader();
         LoadPreview(document);
@@ -99,6 +103,26 @@ public partial class DocumentViewWindow : Window
     }
 
     public bool CommentSaved { get; private set; }
+
+    private void ApprovalWorkbenchButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (serverDocumentClient is null || serverSyncService is null)
+        {
+            return;
+        }
+        var mapping = serverSyncService.GetControlledCopyServerMapping(
+            document.DocumentId,
+            document.VersionNo);
+        var window = new DocumentApprovalWindow(
+            serverDocumentClient.CreateApprovalClient(),
+            RolePermissionPolicy.CanRegisterDocuments(userRole),
+            RolePermissionPolicy.CanGovernDocuments(userRole),
+            mapping?.ServerDocumentId)
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+    }
 
     protected override void OnClosed(EventArgs e)
     {
@@ -168,6 +192,9 @@ public partial class DocumentViewWindow : Window
         DownloadCopyButton.ToolTip = canDownloadDocument
             ? "통제된 복사본을 저장하고 로컬 이력에 기록합니다."
             : "이 역할은 문서 다운로드가 차단되며 시도 이력이 기록됩니다.";
+        ApprovalWorkbenchButton.ToolTip = ApprovalWorkbenchButton.IsEnabled
+            ? "이 문서의 검토 요청, 승인, 반려, 공개와 보존된 상태 이력을 확인합니다."
+            : "문서 작성 권한과 서버 연결이 필요합니다. 시스템 관리자에게 문의하세요.";
         SaveCommentButton.ToolTip = canWriteFieldComments
             ? "현장 코멘트를 저장하고 로컬 이력에 기록합니다."
             : "이 역할은 현장 코멘트를 저장할 수 없습니다.";

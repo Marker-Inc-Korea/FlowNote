@@ -192,7 +192,7 @@
                                       Click="ApplyDocumentStatusButton_Click" />
                         </MenuItem>
                         <MenuItem x:Name="PublishDocumentButton"
-                                  Header="공개"
+                                  Header="검토·공개 승인 작업함"
                                   Style="{StaticResource HeaderSubmenuItemStyle}"
                                   Click="PublishDocumentButton_Click" />
                         <Separator />

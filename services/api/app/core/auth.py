@@ -420,6 +420,7 @@ DocumentGovernanceUser = Annotated[
     AuthenticatedUser,
     Depends(require_roles(*DOCUMENT_GOVERNANCE_ROLES)),
 ]
+DocumentReviewUser = DocumentGovernanceUser
 FieldCommentCreateUser = Annotated[
     AuthenticatedUser,
     Depends(require_roles(*FIELD_COMMENT_CREATE_ROLES)),

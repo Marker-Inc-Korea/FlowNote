@@ -78,6 +78,8 @@ class DocumentResponse(BaseModel):
     revision: int
     latest_version_id: str | None
     published_version_id: str | None
+    publication_approval_id: str | None = None
+    publication_origin: str = "LEGACY_PUBLICATION"
     created_at: datetime
     updated_at: datetime
     tags: list[str] = Field(default_factory=list)
@@ -95,6 +97,8 @@ class DocumentListItem(BaseModel):
     latest_version_no: int | None = None
     latest_filename: str | None = None
     published_version_id: str | None = None
+    publication_approval_id: str | None = None
+    publication_origin: str = "LEGACY_PUBLICATION"
     published_version_no: int | None = None
     published_filename: str | None = None
     tags: list[str] = Field(default_factory=list)
@@ -127,6 +131,7 @@ class DocumentVersionPublishRequest(BaseModel):
         default=None, alias="expectedPublishedVersionId"
     )
     mutation_key: str | None = Field(default=None, alias="mutationKey")
+    approval_id: str | None = Field(default=None, alias="approvalId")
 
 
 class DocumentDeleteRequest(BaseModel):
@@ -310,6 +315,9 @@ def store_document_mutation_receipt(
     target_version_id: str | None = None,
     before_hash: str | None = None,
     after_hash: str | None = None,
+    approval_status: str = "NOT_REQUIRED",
+    approved_by: str | None = None,
+    approval_reference: str | None = None,
 ) -> None:
     if mutation_key is None:
         return
@@ -349,6 +357,9 @@ def store_document_mutation_receipt(
             },
             domain_receipt_type="document_mutation_receipts",
             domain_receipt_id=str(receipt.id),
+            approval_status=approval_status,
+            approved_by=approved_by,
+            approval_reference=approval_reference,
         )
 
 
@@ -760,6 +771,8 @@ def document_response(session: Session, document: Document) -> DocumentResponse:
         revision=document.revision,
         latest_version_id=document.latest_version_id,
         published_version_id=document.published_version_id,
+        publication_approval_id=document.publication_approval_id,
+        publication_origin=document.publication_origin,
         created_at=document.created_at,
         updated_at=document.updated_at,
         tags=tags,

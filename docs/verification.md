@@ -10,15 +10,23 @@
 | `run_id` | 없음 | 없음 |
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
-| FastAPI | 현재 수집 186건. 책임 분리 집중 회귀와 transaction 예외 주입을 포함한다. 스크립트 guard 186건 | Windows x64 수집·JUnit 무생략 실행 대기 |
-| WPF Core | 현재 macOS 실행 107/107, 스크립트 guard 102건 | Windows 수집·TRX 무생략 실행 대기 |
+| FastAPI | 현재 수집 192건. 문서 승인·공개 집중 회귀와 transaction 예외 주입을 포함한다. 스크립트 guard 186건 | Windows x64 수집·JUnit 무생략 실행 대기 |
+| WPF Core | 현재 macOS 실행 109/109, 스크립트 guard 102건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 현재 macOS 교차 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 현재 단위 테스트 32/32, debug build·lint PASS, 스크립트 고정값 32건 | Windows 무생략 실행 대기 |
 | SQLite | FastAPI 누적 시험 DB `journal_mode=wal`, `quick_check=ok`, FK 위반 0. Windows 공통 DB 전후 검증 대기 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
-보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했다. 로그인 복구 안내 회귀 2건을 더한 2026-08-01 직접 실행은 89/89가 통과했다. 인수인계 감독 집계 테스트까지 포함한 98건이 통과한 뒤 문서 미리보기 회귀 3건을 추가한 시점에는 101/101이었다. 책임 분리 회귀 1건과 이번 문서 충돌 회귀 5건을 더한 현재 macOS 실행은 107/107이다. Windows x64의 새 수집 목록과 TRX가 107/107인지 별도로 확인하고 스크립트 guard도 현재 수치에 맞춰야 한다.
+보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했다. 로그인 복구 안내 회귀 2건을 더한 2026-08-01 직접 실행은 89/89가 통과했다. 인수인계 감독 집계 테스트까지 포함한 98건이 통과한 뒤 문서 미리보기 회귀 3건을 추가한 시점에는 101/101이었다. 책임 분리 회귀 1건과 문서 충돌 회귀 5건을 더한 시점에는 107/107이었다. 문서 승인 서버 클라이언트 회귀 2건을 추가한 현재 macOS 실행은 109/109이다. Windows x64의 새 수집 목록과 TRX가 109/109인지 별도로 확인하고 스크립트 guard도 현재 수치에 맞춰야 한다.
+
+## 2026-08-04 작업 102 문서 검토·공개 승인
+
+FastAPI에 최신 문서의 정확한 version·revision·file hash를 고정하는 검토 요청, 지정 검토자의 승인·반려, 승인 버전 공개와 승인 취소 API를 추가했다. 승인 projection과 append-only 이벤트, mutation receipt는 원본 문서와 함께 보존한다. 새 공개는 승인 ID를 요구하며, 요청자와 검토자·공개자가 같은 경우에는 현장 역할 분리 설정이 명시돼 있어야 한다. 공개 승인을 취소하면 공개 포인터와 미사용 Android·controlled copy grant만 무효화하고 문서 버전과 기존 소비·감사 이력은 유지한다. WPF는 로컬 선공개 대신 서버 승인 작업함에서 요청·결정·공개·취소와 상태 이력을 처리한다.
+
+`services/api`에서 `.venv/bin/python -m pytest -q tests/test_document_approvals_api.py tests/test_documents_api.py`를 실행해 19/19, `tests/test_reports_api.py`를 실행해 12/12가 통과했다. 변경 Python과 테스트의 Ruff 검사도 통과했다. 첫 FastAPI 전체 실행은 보고서 테스트 도우미가 새 승인 강제 기본값을 끄지 않아 승인 ID 없는 공개 11건이 409로 거부됐고 `181 passed, 11 failed`로 끝났다. `test_documents_api`와 같은 호환 설정을 보고서 테스트 도우미에 적용한 뒤 전체 회귀를 다시 실행해 192/192 통과를 확인했다. 실패 실행과 재실행 중 생성된 SQLite, 파일과 테스트 기록은 삭제하거나 초기화하지 않았다.
+
+WPF Core 전체 회귀는 `dotnet test src/FlowNote.Windows.Core.Tests/FlowNote.Windows.Core.Tests.csproj --no-restore --logger 'console;verbosity=minimal'`로 109/109가 통과했다. `dotnet build src/FlowNote.Windows.App/FlowNote.Windows.App.csproj --no-restore -p:EnableWindowsTargeting=true`도 경고 0개·오류 0개로 완료됐다. OpenAPI 151개 method/path는 `docs/api.md`와 `services/api/README.md`에서 누락·초과 0건이었고, ORM 67개 테이블도 데이터 모델 문서 3곳에 모두 반영됐다. 표준 스크립트 guard는 FastAPI 186건·WPF Core 102건으로 현재 192건·109건과 맞지 않는다. Windows x64 무생략 통합 실행, 누적 공통 DB 스모크, 실제 WPF 화면 조작과 Android 검증은 수행하지 않았으므로 최신 통합 기준선은 계속 `대기`다.
 
 ## 2026-08-04 작업 102 문서 충돌 판정과 수동 종결
 

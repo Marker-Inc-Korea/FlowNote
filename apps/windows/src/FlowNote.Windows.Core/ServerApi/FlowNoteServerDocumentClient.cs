@@ -22,6 +22,8 @@ public sealed class FlowNoteServerDocumentClient
     public Uri BaseAddress => httpClient.BaseAddress
         ?? throw new InvalidOperationException("서버 기본 URL이 설정되지 않았습니다.");
 
+    public FlowNoteServerApprovalClient CreateApprovalClient() => new(httpClient);
+
     public async Task<ServerSyncManifest> GetSyncManifestAsync(
         CancellationToken cancellationToken = default)
     {

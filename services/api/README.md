@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-08-03 현재 OpenAPI에 등록된 146개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-08-04 현재 OpenAPI에 등록된 151개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -49,8 +49,13 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/documents/{document_id}/versions` | Version list |
 | POST | `/api/v1/documents/{document_id}/versions` | Register new version; optional multipart `idempotencyKey` returns the existing version on retry |
 | PATCH | `/api/v1/documents/{document_id}/versions/{version_id}/status` | Change version status |
-| POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | Publish selected version with base revision and optional mutation key |
+| POST | `/api/v1/documents/{document_id}/versions/{version_id}/publish` | Publish the exact approved version with approval ID, base revision, and optional mutation key |
 | DELETE | `/api/v1/documents/{document_id}` | Soft-delete a document using its base revision, change reason, and optional mutation key |
+| POST | `/api/v1/document-approvals` | Request review for the exact latest version, revision, and file hash |
+| GET | `/api/v1/document-approvals` | List approval work items with document, state, and assignee filters |
+| GET | `/api/v1/document-approvals/{approval_id}` | Read the approval projection and append-only events |
+| POST | `/api/v1/document-approvals/{approval_id}/decision` | Approve or reject as the assigned governance reviewer |
+| POST | `/api/v1/document-approvals/{approval_id}/cancel` | Cancel a pending, approved, or published approval and withdraw unused grants when published |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/controlled-copy` | Issue one-time controlled copy grant for the current published version |
 | GET | `/api/v1/controlled-copies/{token}` | Stream the session-bound controlled copy once |
 | POST | `/api/v1/documents/{document_id}/versions/{version_id}/android-view-grants` | Issue an approved-device Android secure view grant |
@@ -212,6 +217,9 @@ Useful settings:
 - `FLOWNOTE_CUSTOMER_SCOPE`: single-customer server boundary; falls back to `FLOWNOTE_AI_CUSTOMER_SCOPE`
 - `FLOWNOTE_SITE_SCOPE`: single-site server boundary; falls back to `FLOWNOTE_AI_SITE_SCOPE`
 - `FLOWNOTE_FIELD_COMMENT_INDEPENDENT_REVIEW_REQUIRED`: default `true`
+- `FLOWNOTE_DOCUMENT_APPROVAL_WORKFLOW_ENFORCED`: default `true`; requires an approved exact-version request for new publication
+- `FLOWNOTE_DOCUMENT_APPROVAL_REQUESTER_REVIEWER_SEPARATION`: default unset; the site must explicitly allow or require separation when requester and reviewer are the same user
+- `FLOWNOTE_DOCUMENT_APPROVAL_REQUESTER_PUBLISHER_SEPARATION`: default unset; the site must explicitly allow or require separation when requester and publisher are the same user
 - `FLOWNOTE_RESTORE_FAULT_CODE`: default empty; 복구 장애 실기 전용이며 `partial_restore`, `old_database_new_files`, `missing_file`, `wrong_server_epoch`만 허용
 - `FLOWNOTE_RESTORE_BLOCK_REASON`: default empty; 복구 장애 차단 사유
 - `FLOWNOTE_RESTORE_PILOT_RUN_ID`: default empty; 장애 실기 run ID

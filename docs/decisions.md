@@ -645,3 +645,12 @@
 - 태그 definition 비활성화는 과거 연결과 snapshot을 지우는 tombstone이 아니다. 비활성·삭제 definition이 요청 delta에 포함되면 자동 병합하지 않는다.
 - `DOCUMENT_READ_BACK_MISMATCH`는 5분 동안 재전송을 금지한다. 그 밖의 409도 자동 재시도하지 않으며 `allowedActions`에 있는 행동만 사용한다.
 - `REGISTER_NEW_VERSION`은 기존 파일을 복사하거나 덮어쓰지 않는다. 저장된 원본 hash를 다시 확인하고 원 큐를 보존 종결한 뒤 새 idempotency key와 현재 서버 revision의 별도 mutation을 만든다.
+
+## 2026-08-04. 새 문서 공개는 exact-version 승인 근거를 요구한다
+
+- 새 공개는 단일 검토 단계와 별도 공개 mutation을 사용한다. 현장별 문서 트리나 여러 승인 단계를 제품 공통 규칙으로 강제하지 않는다.
+- 요청자와 검토자, 요청자와 공개자의 분리 여부에는 제품 기본값을 두지 않는다. 현장 설정이 없고 같은 actor인 경우만 차단하며, 서로 다른 actor의 정상 업무는 설정 부재로 막지 않는다.
+- 대리 승인과 긴급 공개는 현재 계약에 넣지 않는다. 추후 도입하려면 대리 권한 근거 또는 긴급 승인 번호, 범위·만료·사후 검토 기한을 새 append-only 이벤트로 먼저 설계하며 기존 승인 필드를 덮어쓰지 않는다.
+- `dueAt`은 작업함 기한과 지연 표시 기준이며 자동 만료가 아니다. 재지정은 기존 요청 취소 후 새 요청으로 처리한다. 반려 요청은 재사용하지 않고 수정된 정확한 version/hash로 새 요청을 만든다.
+- 승인 취소가 현재 공개 승인과 연결돼 있으면 공개 포인터를 철회하고 미사용 Android/controlled copy grant를 무효화한다. 소비된 controlled copy와 과거 열람·감사 이력은 삭제하지 않는다.
+- migration 전 공개본은 `LEGACY_PUBLICATION`으로 계속 열람한다. 승인 ID를 소급 생성하거나 actor·hash를 추정하지 않으며, migration 뒤 새 공개부터 승인 계약을 적용한다.
