@@ -95,6 +95,11 @@
                                         Margin="0,0,8,0"
                                         Content="로컬 변경 재시도"
                                         Click="RetryConflictButton_Click" />
+                                <Button Width="138"
+                                        Height="32"
+                                        Margin="0,0,8,0"
+                                        Content="새 버전으로 등록"
+                                        Click="NewVersionConflictButton_Click" />
                                 <Button Width="126"
                                         Height="32"
                                         Margin="0,0,8,0"
@@ -126,6 +131,7 @@
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="상태" Binding="{Binding StatusText}" Width="78" />
                                 <DataGridTextColumn Header="충돌 코드" Binding="{Binding ConflictCode}" Width="170" />
+                                <DataGridTextColumn Header="판정" Binding="{Binding ConflictState}" Width="150" />
                                 <DataGridTextColumn Header="우선순위" Binding="{Binding PriorityText}" Width="104" />
                                 <DataGridTextColumn Header="운영 상태" Binding="{Binding OperationalState}" Width="118" />
                                 <DataGridTextColumn Header="분류" Binding="{Binding Category}" Width="150" />
@@ -137,6 +143,10 @@
                                 <DataGridTextColumn Header="실패 사유" Binding="{Binding LastError}" Width="360" />
                                 <DataGridTextColumn Header="서버 값" Binding="{Binding ServerValue}" Width="280" />
                                 <DataGridTextColumn Header="보존된 로컬 요청" Binding="{Binding LocalRequest}" Width="300" />
+                                <DataGridTextColumn Header="기준/현재 revision" Binding="{Binding RevisionComparison}" Width="150" />
+                                <DataGridTextColumn Header="원본 보존 위치" Binding="{Binding SourcePreservedPath}" Width="260" />
+                                <DataGridTextColumn Header="허용 행동" Binding="{Binding AllowedActions}" Width="250" />
+                                <DataGridTextColumn Header="서버 read-back" Binding="{Binding ServerReadBack}" Width="300" />
                                 <DataGridTextColumn Header="자동 병합 가능" Binding="{Binding AutoMerge}" Width="240" />
                                 <DataGridTextColumn Header="사용자 선택 필요" Binding="{Binding UserChoice}" Width="280" />
                             </DataGrid.Columns>

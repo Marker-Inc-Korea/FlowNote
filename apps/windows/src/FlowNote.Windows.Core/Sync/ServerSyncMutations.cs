@@ -144,7 +144,8 @@ public sealed partial class ServerSyncService
                 existingServerVersion.VersionId,
                 serverDocument.Revision,
                 serverDocument.PublishedVersionId,
-                DateTime.UtcNow);
+                DateTime.UtcNow,
+                serverDocument);
             return;
         }
 
@@ -186,15 +187,20 @@ public sealed partial class ServerSyncService
                 throw;
             }
 
+            var serverDocument = await serverClient.GetDocumentAsync(
+                documentMapping.ServerDocumentId,
+                cancellationToken);
+
             MarkDocumentVersionSynced(
                 item,
                 document,
                 localVersion,
                 documentMapping.ServerDocumentId,
                 existingServerVersion.VersionId,
-                documentMapping.ServerRevision,
-                documentMapping.ServerPublishedVersionId,
-                DateTime.UtcNow);
+                serverDocument.Revision,
+                serverDocument.PublishedVersionId,
+                DateTime.UtcNow,
+                serverDocument);
             return;
         }
 
@@ -207,7 +213,8 @@ public sealed partial class ServerSyncService
             response.VersionId,
             updatedServerDocument.Revision,
             updatedServerDocument.PublishedVersionId,
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            updatedServerDocument);
     }
 
     private async Task SyncDocumentPublishAsync(
@@ -257,12 +264,15 @@ public sealed partial class ServerSyncService
         var now = DateTime.UtcNow;
 
         using var connection = database.OpenConnection();
-        UpdateDocumentServerState(connection, document.DocumentId, authoritative);
-        UpsertMapping(connection, "document_publish", document.DocumentId, versionNo, authoritative.DocumentId, publishedVersionId, null, null, null, now, serverRevision: authoritative.Revision);
-        UpsertMapping(connection, "document", document.DocumentId, 0, authoritative.DocumentId, authoritative.LatestVersionId ?? documentMapping.ServerVersionId, null, null, null, now, serverRevision: authoritative.Revision);
-        MarkQueueSynced(connection, item.Id, authoritative.DocumentId, publishedVersionId, null, null, now);
-        AdvanceDependentDocumentBases(connection, document.DocumentId, authoritative);
-        RecordSyncHistory(connection, "server_sync.succeeded", "document_publish", document.DocumentId, $"Server document publish synced and read back: {authoritative.DocumentId} v{versionNo} revision {authoritative.Revision}", now);
+        using var transaction = connection.BeginTransaction();
+        UpdateDocumentServerState(connection, document.DocumentId, authoritative, transaction);
+        TagService.ReplaceDocumentTags(connection, document.DocumentId, authoritative.Tags, transaction);
+        UpsertMapping(connection, "document_publish", document.DocumentId, versionNo, authoritative.DocumentId, publishedVersionId, null, null, null, now, serverRevision: authoritative.Revision, transaction: transaction);
+        UpsertMapping(connection, "document", document.DocumentId, 0, authoritative.DocumentId, authoritative.LatestVersionId ?? documentMapping.ServerVersionId, null, null, null, now, serverRevision: authoritative.Revision, transaction: transaction);
+        MarkQueueSynced(connection, item.Id, authoritative.DocumentId, publishedVersionId, null, null, now, transaction: transaction);
+        AdvanceDependentDocumentBases(connection, document.DocumentId, authoritative, transaction);
+        RecordSyncHistory(connection, "server_sync.succeeded", "document_publish", document.DocumentId, $"Server document publish synced and read back: {authoritative.DocumentId} v{versionNo} revision {authoritative.Revision}", now, transaction);
+        transaction.Commit();
     }
 
     private async Task SyncDocumentStatusAsync(
@@ -317,12 +327,15 @@ public sealed partial class ServerSyncService
         var serverVersionId = authoritative.LatestVersionId ?? documentMapping.ServerVersionId;
 
         using var connection = database.OpenConnection();
-        UpdateDocumentServerState(connection, document.DocumentId, authoritative);
-        UpsertMapping(connection, "document_status", document.DocumentId, item.LocalVersionNo ?? document.VersionNo, authoritative.DocumentId, serverVersionId, null, null, null, now, serverRevision: authoritative.Revision);
-        UpsertMapping(connection, "document", document.DocumentId, 0, authoritative.DocumentId, serverVersionId, null, null, null, now, serverRevision: authoritative.Revision);
-        MarkQueueSynced(connection, item.Id, authoritative.DocumentId, serverVersionId, null, null, now);
-        AdvanceDependentDocumentBases(connection, document.DocumentId, authoritative);
-        RecordSyncHistory(connection, "server_sync.succeeded", "document_status", document.DocumentId, $"Server document status synced and read back: {authoritative.DocumentId} {targetStatus} revision {authoritative.Revision}", now);
+        using var transaction = connection.BeginTransaction();
+        UpdateDocumentServerState(connection, document.DocumentId, authoritative, transaction);
+        TagService.ReplaceDocumentTags(connection, document.DocumentId, authoritative.Tags, transaction);
+        UpsertMapping(connection, "document_status", document.DocumentId, item.LocalVersionNo ?? document.VersionNo, authoritative.DocumentId, serverVersionId, null, null, null, now, serverRevision: authoritative.Revision, transaction: transaction);
+        UpsertMapping(connection, "document", document.DocumentId, 0, authoritative.DocumentId, serverVersionId, null, null, null, now, serverRevision: authoritative.Revision, transaction: transaction);
+        MarkQueueSynced(connection, item.Id, authoritative.DocumentId, serverVersionId, null, null, now, transaction: transaction);
+        AdvanceDependentDocumentBases(connection, document.DocumentId, authoritative, transaction);
+        RecordSyncHistory(connection, "server_sync.succeeded", "document_status", document.DocumentId, $"Server document status synced and read back: {authoritative.DocumentId} {targetStatus} revision {authoritative.Revision}", now, transaction);
+        transaction.Commit();
     }
 
     private async Task SyncFieldCommentAsync(

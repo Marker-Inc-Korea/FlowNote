@@ -559,6 +559,10 @@ public sealed partial class ServerSyncService
         int AttemptCount,
         string? LastError);
 
+    private sealed record ConflictServerReadBack(
+        string? HashSha256,
+        string? AuthorityJson);
+
     private sealed record DocumentStatusSyncPayload(string Status);
 
     private sealed record AccessLogSyncPayload(string Reason);
@@ -605,7 +609,10 @@ public sealed partial class ServerSyncService
         int? ServerRevision,
         string? ServerVersionId,
         string? ServerPublishedVersionId,
-        string? LocalFileHashSha256);
+        string? LocalFileHashSha256,
+        string? ServerStatus,
+        string? ServerTagsJson,
+        string? SourcePreservedPath);
 
     private sealed record DocumentTagBase(
         string? ServerDocumentId,

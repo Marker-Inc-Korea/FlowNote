@@ -268,6 +268,14 @@ public sealed partial class ServerSyncService
         var intentHash = intentHashOverride ??
             ComputeSha256($"{entityType}|{entityId}|{action}|{idempotencyKey}|{baseDomainRevision}");
         var sourceSetHash = entityType == "report" ? LoadReportSourceSetHash(connection, entityId) : null;
+        var baseSnapshotHash = ComputeSha256(JsonSerializer.Serialize(new
+        {
+            snapshot.ServerRevision,
+            snapshot.ServerVersionId,
+            snapshot.ServerPublishedVersionId,
+            snapshot.ServerStatus,
+            snapshot.ServerTagsJson
+        }));
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO server_sync_queue (
@@ -290,6 +298,8 @@ public sealed partial class ServerSyncService
                 intent_hash,
                 source_set_hash
                 ,payload_json
+                ,base_snapshot_hash_sha256
+                ,source_preserved_path
             )
             VALUES (
                 $sync_id,
@@ -311,6 +321,8 @@ public sealed partial class ServerSyncService
                 $intent_hash,
                 $source_set_hash
                 ,$payload_json
+                ,$base_snapshot_hash_sha256
+                ,$source_preserved_path
             )
             ON CONFLICT(idempotency_key) DO UPDATE SET
                 status = CASE
@@ -340,7 +352,13 @@ public sealed partial class ServerSyncService
                 base_domain_revision = COALESCE(server_sync_queue.base_domain_revision, excluded.base_domain_revision),
                 intent_hash = COALESCE(server_sync_queue.intent_hash, excluded.intent_hash),
                 source_set_hash = COALESCE(server_sync_queue.source_set_hash, excluded.source_set_hash),
-                payload_json = COALESCE(server_sync_queue.payload_json, excluded.payload_json);
+                payload_json = COALESCE(server_sync_queue.payload_json, excluded.payload_json),
+                base_snapshot_hash_sha256 = COALESCE(
+                    server_sync_queue.base_snapshot_hash_sha256,
+                    excluded.base_snapshot_hash_sha256),
+                source_preserved_path = COALESCE(
+                    server_sync_queue.source_preserved_path,
+                    excluded.source_preserved_path);
             """;
         command.Parameters.AddWithValue("$sync_id", $"sync-{Guid.NewGuid():N}");
         command.Parameters.AddWithValue("$entity_type", entityType);
@@ -360,6 +378,12 @@ public sealed partial class ServerSyncService
         command.Parameters.AddWithValue("$intent_hash", intentHash);
         command.Parameters.AddWithValue("$source_set_hash", string.IsNullOrWhiteSpace(sourceSetHash) ? DBNull.Value : sourceSetHash);
         command.Parameters.AddWithValue("$payload_json", string.IsNullOrWhiteSpace(payloadJson) ? DBNull.Value : payloadJson);
+        command.Parameters.AddWithValue("$base_snapshot_hash_sha256", baseSnapshotHash);
+        command.Parameters.AddWithValue(
+            "$source_preserved_path",
+            string.IsNullOrWhiteSpace(snapshot.SourcePreservedPath)
+                ? DBNull.Value
+                : snapshot.SourcePreservedPath);
         command.ExecuteNonQuery();
 
         if (!string.IsNullOrWhiteSpace(failureReason))
@@ -450,14 +474,15 @@ public sealed partial class ServerSyncService
     {
         if (string.IsNullOrWhiteSpace(localDocumentId))
         {
-            return new(null, null, null, null);
+            return new(null, null, null, null, null, null, null);
         }
 
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT document.server_revision, document.server_version_id,
                    document.server_published_version_id,
-                   COALESCE(version.local_path, document.local_path)
+                   COALESCE(version.local_path, document.local_path),
+                   document.status, document.server_tags_json
             FROM documents AS document
             LEFT JOIN document_versions AS version
               ON version.document_id = document.document_id
@@ -470,7 +495,7 @@ public sealed partial class ServerSyncService
         using var reader = command.ExecuteReader();
         if (!reader.Read())
         {
-            return new(null, null, null, null);
+            return new(null, null, null, null, null, null, null);
         }
 
         var storedPath = reader.IsDBNull(3) ? null : reader.GetString(3);
@@ -489,7 +514,10 @@ public sealed partial class ServerSyncService
             reader.IsDBNull(0) ? null : reader.GetInt32(0),
             reader.IsDBNull(1) ? null : reader.GetString(1),
             reader.IsDBNull(2) ? null : reader.GetString(2),
-            hash);
+            hash,
+            reader.IsDBNull(4) ? null : reader.GetString(4),
+            reader.IsDBNull(5) ? null : reader.GetString(5),
+            storedPath);
     }
 
     private IReadOnlyList<QueueItem> LoadRetryItems()

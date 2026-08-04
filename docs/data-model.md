@@ -461,3 +461,10 @@ WPF 사용자 관리는 서버 로그인 세션이 있으면 서버 계정 운�
 - 서버 `reconciliation_runs`와 `reconciliation_items`는 run, 원래 client item, 양쪽 hash, 이전·현재 server ID, 판정, 승인자·사유·종결 상태를 보존한다. 상태는 run `REVIEW_REQUIRED/APPLIED/FAILED`, item 판정 `CONFIRMED/ABSENT/DIVERGED`, 조치 `REBOUND/REQUEUE/CONFLICT`, 승인 종결 `REBOUND_CONFIRMED/REQUEUED_FOR_RETRY/APPROVED_CONFLICT`다. 실패 run과 divergence row는 삭제하지 않는다.
 - WPF `server_bindings`는 정규화 URL별 승인된 instance/epoch와 관측값, 복구 pilot run·backup set·승인·담당자·장애 코드, 수렴 상태를 함께 둔다. `RECONCILIATION_REQUIRED`와 `POST_APPROVAL_RESTART_REQUIRED`에서는 자동 전송과 polling을 금지한다. 정상 manifest를 다시 읽으면 장애 코드를 비우고 `POST_APPROVAL_VERIFICATION_REQUIRED`로 바꾸지만, 이 상태만으로 안전 수렴을 확정하지 않는다.
 - WPF `reconciliation_runs/items`는 서버 판정 원문과 로컬 적용 결과를 보존한다. 기존 `server_id_mappings`, `server_sync_queue`, `server_notification_cursors`, `server_notification_messages` 행은 삭제하지 않고 갱신 또는 종결 상태로 전환한다.
+
+## WPF 문서 충돌 snapshot과 해결 이력
+
+- `server_sync_queue.base_snapshot_hash_sha256`는 enqueue 시점의 서버 revision, 최신/공개 version ID, 상태와 서버 태그 snapshot을 canonical JSON으로 묶은 SHA-256이다.
+- `server_read_back_json`, `server_conflict_hash_sha256`는 409 직후 다시 읽은 서버 문서 권위와 선택 파일 hash를 보존한다. `allowed_actions_json`, `retry_not_before`는 해당 충돌에 허용된 행동과 read-back 불일치 보호 기간을 고정한다.
+- `source_preserved_path`는 새 버전 전송에 사용할 로컬 원본의 보존 위치다. 원본을 복사하거나 덮어쓰지 않으며, 전송 직전 hash가 `local_file_hash_sha256`와 다르면 새 mutation을 만들지 않는다.
+- 해결 시 `resolution_action`, `resolution_reason`, `resolved_by`, `resolved_at`을 원 큐에 남긴다. 해결 사유는 10자 이상이며 문서 관리 역할의 사용자가 수행한다. `KEEP_SERVER`는 원 큐를 `DISCARDED`로 종결하고, `REGISTER_NEW_VERSION`은 원 큐를 보존 종결한 뒤 새 `sync_id`·idempotency key의 `PENDING` mutation을 추가한다.

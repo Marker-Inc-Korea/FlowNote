@@ -689,7 +689,14 @@ def test_stale_base_version_is_rejected_without_version_regression() -> None:
                 files={"file": (pdf_path.name, file, "application/pdf")},
             )
         assert stale_writer.status_code == 409
-        assert stale_writer.json()["detail"]["code"] == "STALE_BASE_VERSION"
+        conflict_detail = stale_writer.json()["detail"]
+        assert conflict_detail["code"] == "STALE_BASE_VERSION"
+        assert conflict_detail["schemaVersion"] == "document-conflict-v1"
+        assert conflict_detail["conflictKind"] == "CONTENT_VERSION"
+        assert conflict_detail["allowedActions"] == [
+            "KEEP_SERVER",
+            "REGISTER_NEW_VERSION",
+        ]
 
         detail = client.get(
             f"/api/v1/documents/{created['document_id']}", headers=headers
@@ -756,7 +763,13 @@ def test_published_version_replacement_race_requires_administrator_resolution() 
             },
         )
         assert competing.status_code == 409
-        assert competing.json()["detail"]["code"] == "PUBLISHED_VERSION_CHANGED"
+        conflict_detail = competing.json()["detail"]
+        assert conflict_detail["code"] == "PUBLISHED_VERSION_CHANGED"
+        assert conflict_detail["conflictKind"] == "PUBLISHED_VERSION"
+        assert conflict_detail["allowedActions"] == [
+            "KEEP_SERVER",
+            "RETRY_WITH_LATEST",
+        ]
 
         detail = client.get(
             f"/api/v1/documents/{created['document_id']}", headers=headers
@@ -802,7 +815,10 @@ def test_deleted_document_rejects_local_resend_and_preserves_audit() -> None:
                 files={"file": (pdf_v2_path.name, file, "application/pdf")},
             )
         assert resend.status_code == 409
-        assert resend.json()["detail"]["code"] == "DOCUMENT_DELETED"
+        conflict_detail = resend.json()["detail"]
+        assert conflict_detail["code"] == "DOCUMENT_DELETED"
+        assert conflict_detail["conflictKind"] == "SOFT_DELETE"
+        assert conflict_detail["allowedActions"] == ["KEEP_SERVER"]
 
         with client.app.state.database.session() as session:
             document = session.scalar(
@@ -867,6 +883,8 @@ def test_revision_and_stale_conflict_survive_server_app_restart() -> None:
         assert detail["code"] == "STALE_REVISION"
         assert detail["expectedRevision"] == 1
         assert detail["currentRevision"] == 2
+        assert detail["localRequest"]["status"] == "ARCHIVED"
+        assert detail["autoMergeAllowed"] is False
 
 
 def test_publish_rejects_tampered_server_file_hash() -> None:

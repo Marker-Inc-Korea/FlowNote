@@ -647,3 +647,11 @@ dataset 상태는 `DRAFT → IN_REVIEW → PENDING_FIRST_APPROVAL → PENDING_SE
 이번 책임 분리는 기존 경로, HTTP 상태, JSON 필드명, 오류 코드와 DB schema를 바꾸지 않는다. 클라이언트가 모르는 필드를 공개 응답에 임의로 추가하지 않으며, 향후 공개 확장이 필요하면 선택 필드만 추가하고 기존 필드의 의미와 필수 여부를 유지한다. 도메인 오류 매핑은 stale revision·멱등키 재사용·원천 hash 불일치를 `409`, 권한 거부를 `403` 또는 존재 은닉 정책의 `404`, 입력·전이 조건 위반을 `422`, 찾을 수 없는 공개 자원을 `404`로 유지한다.
 
 FieldComment `/bulk-review/execute`는 항목별 transaction을 유지한다. `success=true`인 항목은 같은 mutation key로 재전송하지 않고 `success=false`인 항목만 새 요청 대상으로 삼는다. 보고서 source 검증 실패와 작업순서 revision 충돌도 기존 공개 오류 본문을 그대로 반환한다.
+
+## 문서 충돌 detail 공통 계약
+
+문서 mutation의 HTTP 409는 기존 `code`를 유지하면서 선택 필드인 `schemaVersion=document-conflict-v1`, `conflictKind`, `serverValue`, `localRequest`, `baseSnapshotHash`, `allowedActions`, `autoMergeAllowed`, `sourcePreserved`, `retryPolicy`를 함께 반환한다. 기존 `expectedRevision`, `currentRevision`, `currentStatus`, `currentLatestVersionId`, `currentPublishedVersionId`도 그대로 유지한다. `allowedActions`는 `KEEP_SERVER`, `RETRY_WITH_LATEST`, `REGISTER_NEW_VERSION` 중 해당 충돌에 허용된 값만 포함한다.
+
+태그 JSON delta는 `baseRevision`, `addedTags`, `removedTags`, canonical `intentHash`, `mutationKey`를 사용한다. 서버가 기준 snapshot을 복원하고 같은 태그의 반대 변경, 비활성·삭제 태그, 기준 snapshot 부재, intent hash 불일치가 없을 때만 mutation 전체를 현재 집합에 병합한다. 일부 안전 delta가 있더라도 나머지 delta가 충돌하면 부분 적용하지 않고 전체 요청을 409로 보존한다. 파일 내용/hash·최신 버전·문서/버전 상태·`published_version_id`·soft delete는 `autoMergeAllowed=false`이며 자동 병합하지 않는다.
+
+같은 mutation key와 같은 canonical intent를 재전송하면 성공 응답은 기존 document receipt에서, 기록된 409·422 응답은 공통 mutation receipt에서 재생한다. 구조화된 409는 첫 응답과 재생 응답의 detail을 같게 유지하며 새 revision, 알림, receipt 또는 감사 행을 만들지 않는다. 공통 receipt에는 허용된 충돌 필드만 저장하고 중첩 문자열의 비밀값·개인 로컬 경로 패턴을 정제한다. 같은 key의 다른 intent는 `IDEMPOTENCY_KEY_REUSED`이며 `KEEP_SERVER`만 허용한다.

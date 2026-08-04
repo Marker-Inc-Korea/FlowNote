@@ -176,9 +176,9 @@ async def create_document(
     except IntegrityError as exc:
         session.rollback()
         _delete_stored_file(storage_root, file_object.storage_key)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Document could not be saved because of a database constraint.",
+        raise _conflict(
+            "DOCUMENT_WRITE_CONFLICT",
+            "Document could not be saved because of a database constraint.",
         ) from exc
     session.refresh(document)
     return _document_response(session, document)
@@ -346,7 +346,12 @@ def update_document_status(
         before = document.status
         if before != target_status:
             _validate_document_status_transition(before, target_status)
-            _claim_revision(session, document, payload.base_revision)
+            _claim_revision(
+                session,
+                document,
+                payload.base_revision,
+                local_request=payload.model_dump(by_alias=True),
+            )
             document.status = target_status
             _record_activity(
                 session,
@@ -449,7 +454,12 @@ def update_document_version_status(
             detail="Published versions must be changed through the publish endpoint.",
         )
     if before != target_status:
-        _claim_revision(session, document, payload.base_revision)
+        _claim_revision(
+            session,
+            document,
+            payload.base_revision,
+            local_request=payload.model_dump(by_alias=True),
+        )
         version.version_status = target_status
         _record_activity(
             session,
@@ -578,7 +588,12 @@ def publish_document_version(
             extra={"expectedPublishedVersionId": payload.expected_published_version_id},
         )
 
-    _claim_revision(session, document, payload.base_revision)
+    _claim_revision(
+        session,
+        document,
+        payload.base_revision,
+        local_request={**payload.model_dump(by_alias=True), "versionId": version_id},
+    )
 
     previous_document_status = document.status
     previous_published_version_id = document.published_version_id
@@ -686,15 +701,19 @@ async def create_document_version(
         )
         if existing is not None:
             if existing.document_id != document_id:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="idempotencyKey is already used by another document.",
+                raise _conflict(
+                    "IDEMPOTENCY_KEY_REUSED",
+                    "idempotencyKey is already used by another document.",
+                    document=document,
+                    expected_revision=base_revision,
                 )
             existing_file = session.get(FileObject, existing.file_object_id)
             if existing_file is None:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Idempotent document version has no file object.",
+                raise _conflict(
+                    "IDEMPOTENT_VERSION_BROKEN",
+                    "Idempotent document version has no file object.",
+                    document=document,
+                    expected_revision=base_revision,
                 )
             if existing_file.hash_sha256 != actual_upload_hash:
                 raise _conflict(
@@ -737,7 +756,19 @@ async def create_document_version(
     session.flush()
 
     try:
-        _claim_revision(session, document, base_revision)
+        _claim_revision(
+            session,
+            document,
+            base_revision,
+            local_request={
+                "baseRevision": base_revision,
+                "baseVersionId": base_version_id,
+                "fileHashSha256": actual_upload_hash,
+                "changeReason": change_reason,
+            },
+            allowed_actions=["KEEP_SERVER", "REGISTER_NEW_VERSION"],
+            conflict_kind="CONTENT_VERSION",
+        )
     except HTTPException:
         _delete_stored_file(storage_root, file_object.storage_key)
         raise
@@ -784,9 +815,13 @@ async def create_document_version(
                 existing_file = session.get(FileObject, existing.file_object_id)
                 if existing_file is not None:
                     return _version_response(existing, existing_file)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Document version could not be saved because of a database constraint.",
+        raise _conflict(
+            "DOCUMENT_WRITE_CONFLICT",
+            "Document version could not be saved because of a database constraint.",
+            document=session.scalar(
+                select(Document).where(Document.document_id == document_id)
+            ),
+            expected_revision=base_revision,
         ) from exc
     session.refresh(version)
     return _version_response(version, file_object)
@@ -816,7 +851,12 @@ def delete_document(
     document = _require_live_document(session, document_id)
     before_hash = _document_authority_hash(session, document)
     before = document.status
-    _claim_revision(session, document, payload.base_revision)
+    _claim_revision(
+        session,
+        document,
+        payload.base_revision,
+        local_request=payload.model_dump(by_alias=True),
+    )
     now = datetime.now(timezone.utc)
     session.query(DocumentVersion).filter(
         DocumentVersion.document_id == document_id,

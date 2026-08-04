@@ -319,11 +319,11 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
                 failed++;
                 var reason = $"{TranslateConflictCode(exception.ConflictCode)}: {exception.Message}";
                 firstFailureReason ??= reason;
-                var serverHash = await TryReadConflictServerHashAsync(
+                var readBack = await TryReadConflictServerAuthorityAsync(
                     item,
                     serverClient,
                     cancellationToken);
-                RecordConflict(item, exception, reason, serverHash);
+                RecordConflict(item, exception, reason, readBack);
             }
             catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
             {
@@ -400,7 +400,9 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
                    local_file_hash_sha256, base_domain_revision, intent_hash, source_set_hash,
                    payload_json, conflict_code, conflict_details,
                    resolution_action, resolution_reason, resolved_by, resolved_at
-                   ,server_conflict_hash_sha256
+                   ,server_conflict_hash_sha256, base_snapshot_hash_sha256,
+                   server_read_back_json, allowed_actions_json,
+                   source_preserved_path, retry_not_before
             FROM server_sync_queue
             ORDER BY
                 CASE status
@@ -453,18 +455,20 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
                 reader.IsDBNull(31) ? null : reader.GetString(31),
                 reader.IsDBNull(32) ? null : reader.GetString(32),
                 reader.IsDBNull(33) ? null : DateTime.Parse(reader.GetString(33)),
-                reader.IsDBNull(34) ? null : reader.GetString(34)));
+                reader.IsDBNull(34) ? null : reader.GetString(34),
+                reader.IsDBNull(35) ? null : reader.GetString(35),
+                reader.IsDBNull(36) ? null : reader.GetString(36),
+                reader.IsDBNull(37) ? null : reader.GetString(37),
+                reader.IsDBNull(38) ? null : reader.GetString(38),
+                reader.IsDBNull(39) ? null : DateTime.Parse(reader.GetString(39))));
         }
 
         return records;
     }
 
-    public void DiscardConflict(long queueId, string resolvedBy, string reason)
+    public void DiscardConflict(long queueId, string resolvedBy, string reason, string resolvedRole)
     {
-        if (string.IsNullOrWhiteSpace(resolvedBy) || string.IsNullOrWhiteSpace(reason))
-        {
-            throw new InvalidOperationException("충돌 폐기에는 관리자와 폐기 사유가 필요합니다.");
-        }
+        DocumentConflictResolutionPolicy.ValidateResolution(resolvedBy, reason, resolvedRole);
 
         var now = DateTime.UtcNow;
         using var connection = database.OpenConnection();
@@ -494,24 +498,25 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
         FlowNoteServerDocumentClient serverClient,
         string resolvedBy,
         string reason,
+        string resolvedRole,
         string? serverUserId = null,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(resolvedBy) || string.IsNullOrWhiteSpace(reason))
-        {
-            throw new InvalidOperationException("충돌 재시도에는 관리자와 선택 사유가 필요합니다.");
-        }
+        DocumentConflictResolutionPolicy.ValidateResolution(resolvedBy, reason, resolvedRole);
 
         string localDocumentId;
         string serverDocumentId;
         string action;
         string? payloadJson;
+        string? allowedActionsJson;
+        DateTime? retryNotBefore;
         using (var connection = database.OpenConnection())
         using (var lookup = connection.CreateCommand())
         {
             lookup.CommandText = """
                 SELECT COALESCE(queue.local_document_id, queue.entity_id),
-                       document.server_document_id, queue.action, queue.payload_json
+                       document.server_document_id, queue.action, queue.payload_json,
+                       queue.allowed_actions_json, queue.retry_not_before
                 FROM server_sync_queue AS queue
                 JOIN documents AS document
                   ON document.document_id = COALESCE(queue.local_document_id, queue.entity_id)
@@ -528,6 +533,20 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
             serverDocumentId = reader.GetString(1);
             action = reader.GetString(2);
             payloadJson = reader.IsDBNull(3) ? null : reader.GetString(3);
+            allowedActionsJson = reader.IsDBNull(4) ? null : reader.GetString(4);
+            retryNotBefore = reader.IsDBNull(5) ? null : DateTime.Parse(reader.GetString(5));
+        }
+
+        if (!DocumentConflictResolutionPolicy.Contains(
+                allowedActionsJson,
+                DocumentConflictResolutionPolicy.RetryWithLatest))
+        {
+            throw new InvalidOperationException("이 충돌은 최신 서버값 기준 재요청이 허용되지 않습니다.");
+        }
+        if (retryNotBefore is not null && retryNotBefore > DateTime.UtcNow)
+        {
+            throw new InvalidOperationException(
+                $"서버 read-back 불일치 보호 기간입니다. {retryNotBefore:yyyy-MM-dd HH:mm:ss} 이후 다시 확인하세요.");
         }
 
         var serverDocument = await serverClient.GetDocumentAsync(serverDocumentId, cancellationToken);

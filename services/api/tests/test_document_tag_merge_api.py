@@ -168,7 +168,12 @@ def test_opposing_and_unavailable_tag_changes_return_structured_conflicts() -> N
         )
         assert opposing.status_code == 409
         detail = opposing.json()["detail"]
+        assert detail["schemaVersion"] == "document-conflict-v1"
         assert detail["code"] == "TAG_MERGE_CONFLICT"
+        assert detail["conflictKind"] == "TAG_SET"
+        assert detail["allowedActions"] == ["KEEP_SERVER", "RETRY_WITH_LATEST"]
+        assert detail["autoMergeAllowed"] is False
+        assert detail["sourcePreserved"] is True
         assert detail["serverValue"]["revision"] == 2
         assert detail["localRequest"]["addedTags"] == ["line-a"]
         assert detail["autoMerge"]["removedTags"] == ["inactive-tag"]
