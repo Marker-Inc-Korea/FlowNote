@@ -47,14 +47,16 @@ EXCEL_SAMPLE_SOURCE = (
 )
 
 
-def create_test_client() -> TestClient:
-    app_settings = Settings(
-        _env_file=None,
-        environment="test",
-        database_url=TEST_DATABASE_URL,
-        test_database_url=TEST_DATABASE_URL,
-        storage_root=str(TEST_STORAGE_ROOT),
-    )
+def create_test_client(**setting_overrides: object) -> TestClient:
+    values: dict[str, object] = {
+        "environment": "test",
+        "database_url": TEST_DATABASE_URL,
+        "test_database_url": TEST_DATABASE_URL,
+        "storage_root": str(TEST_STORAGE_ROOT),
+        "document_approval_workflow_enforced": False,
+    }
+    values.update(setting_overrides)
+    app_settings = Settings(_env_file=None, **values)
     return TestClient(create_app(app_settings))
 
 

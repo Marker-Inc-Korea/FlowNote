@@ -271,6 +271,10 @@ class Document(TimestampMixin, Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     latest_version_id: Mapped[str | None] = mapped_column(String(64))
     published_version_id: Mapped[str | None] = mapped_column(String(64))
+    publication_approval_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    publication_origin: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="LEGACY_PUBLICATION"
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

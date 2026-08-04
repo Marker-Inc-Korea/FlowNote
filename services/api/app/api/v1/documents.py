@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.document_tag_mutations import apply_document_tag_mutation
+from app.api.v1.document_approvals import record_publication, validate_publication_approval
 from app.api.v1.document_support import (
     CREATABLE_DOCUMENT_STATUSES,
     DOCUMENT_STATUSES,
@@ -211,6 +212,8 @@ def list_documents(
                 latest_version_no=version.version_no,
                 latest_filename=file_object.original_filename,
                 published_version_id=document.published_version_id,
+                publication_approval_id=document.publication_approval_id,
+                publication_origin=document.publication_origin,
                 published_version_no=published_version.version_no if published_version else None,
                 published_filename=published_file.original_filename if published_file else None,
                 tags=_tag_response(session, document.document_id),
@@ -249,6 +252,8 @@ def list_published_documents(
                 latest_version_no=None,
                 latest_filename=None,
                 published_version_id=document.published_version_id,
+                publication_approval_id=document.publication_approval_id,
+                publication_origin=document.publication_origin,
                 published_version_no=version.version_no,
                 published_filename=file_object.original_filename,
                 tags=_tag_response(session, document.document_id),
@@ -502,6 +507,7 @@ def publish_document_version(
             "baseRevision": payload.base_revision,
             "changeReason": raw_reason,
             "expectedPublishedVersionId": payload.expected_published_version_id,
+            "approvalId": payload.approval_id,
             "versionId": version_id,
         },
     )
@@ -553,6 +559,15 @@ def publish_document_version(
             expected_revision=payload.base_revision,
             extra={"expectedFileHash": file_object.hash_sha256, "actualFileHash": actual_hash},
         )
+    approval = validate_publication_approval(
+        session,
+        settings=app_settings,
+        document=document,
+        version=version,
+        file_hash=actual_hash,
+        approval_id=payload.approval_id,
+        actor=current_user,
+    )
     if (
         document.status == "PUBLISHED"
         and document.published_version_id == version.version_id
@@ -572,6 +587,9 @@ def publish_document_version(
             reason=reason,
             target_version_id=version_id,
             before_hash=before_hash,
+            approval_status="APPROVED" if approval is not None else "NOT_REQUIRED",
+            approved_by=approval.decided_by if approval is not None else None,
+            approval_reference=approval.approval_id if approval is not None else None,
         )
         session.commit()
         return response
@@ -616,6 +634,13 @@ def publish_document_version(
     version.published_at = now
     document.published_version_id = version.version_id
     document.status = "PUBLISHED"
+    record_publication(
+        session,
+        approval=approval,
+        document=document,
+        actor=current_user,
+        reason=reason,
+    )
 
     _record_activity(
         session,
@@ -657,6 +682,9 @@ def publish_document_version(
         reason=reason,
         target_version_id=version_id,
         before_hash=before_hash,
+        approval_status="APPROVED" if approval is not None else "NOT_REQUIRED",
+        approved_by=approval.decided_by if approval is not None else None,
+        approval_reference=approval.approval_id if approval is not None else None,
     )
     session.commit()
     return response
@@ -867,6 +895,8 @@ def delete_document(
     )
     document.status = "DELETED"
     document.published_version_id = None
+    document.publication_approval_id = None
+    document.publication_origin = "LEGACY_PUBLICATION"
     document.deleted_at = now
     _record_activity(
         session,

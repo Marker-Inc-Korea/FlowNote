@@ -1,0 +1,128 @@
+<Window x:Class="FlowNote.Windows.App.DocumentApprovalWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="문서 검토·공개 승인 작업함"
+        Width="1180" Height="760" MinWidth="900" MinHeight="620"
+        Background="{StaticResource WindowBackgroundBrush}">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="2*" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel>
+            <StackPanel>
+                <TextBlock Text="문서 검토·공개 승인" FontSize="22" FontWeight="SemiBold" />
+                <TextBlock Text="승인은 정확한 서버 version·revision·file hash에 고정됩니다. 원본과 모든 결정 이력은 보존됩니다."
+                           Margin="0,4,0,0" Foreground="{StaticResource SecondaryTextBrush}" />
+            </StackPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <CheckBox x:Name="AssignedToMeCheckBox" Content="내 작업만" Margin="0,0,10,0"
+                          VerticalAlignment="Center" AutomationProperties.Name="내 승인 작업만 표시" />
+                <Button Content="새로고침" Width="92" Height="32" Click="RefreshButton_Click"
+                        AutomationProperties.Name="승인 작업함 새로고침" />
+            </StackPanel>
+        </DockPanel>
+
+        <DataGrid x:Name="ApprovalGrid" Grid.Row="2" IsReadOnly="True" AutoGenerateColumns="False"
+                  SelectionMode="Single" SelectionChanged="ApprovalGrid_SelectionChanged"
+                  AutomationProperties.Name="문서 승인 작업 목록">
+            <DataGrid.Columns>
+                <DataGridTemplateColumn Header="상태" Width="170">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border x:Name="StatusBadge" CornerRadius="3" Padding="6,3" Background="#E5E7EB">
+                                <TextBlock Text="{Binding StatusDisplay}" FontWeight="SemiBold" />
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Status}" Value="REQUESTED">
+                                    <Setter TargetName="StatusBadge" Property="Background" Value="#DBEAFE" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Status}" Value="APPROVED">
+                                    <Setter TargetName="StatusBadge" Property="Background" Value="#DCFCE7" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Status}" Value="REJECTED">
+                                    <Setter TargetName="StatusBadge" Property="Background" Value="#FEE2E2" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Status}" Value="STALE">
+                                    <Setter TargetName="StatusBadge" Property="Background" Value="#FEF3C7" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Status}" Value="PUBLISHED">
+                                    <Setter TargetName="StatusBadge" Property="Background" Value="#D1FAE5" />
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="문서 ID" Binding="{Binding DocumentId}" Width="190" />
+                <DataGridTextColumn Header="버전 ID" Binding="{Binding VersionId}" Width="190" />
+                <DataGridTextColumn Header="요청자" Binding="{Binding RequesterId}" Width="140" />
+                <DataGridTextColumn Header="검토 담당" Binding="{Binding ReviewerDisplay}" Width="150" />
+                <DataGridTextColumn Header="기한" Binding="{Binding DueAt, StringFormat=yyyy-MM-dd HH:mm}" Width="135" />
+                <DataGridTextColumn Header="요청 사유" Binding="{Binding RequestReason}" Width="*" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Border Grid.Row="4" Padding="12" BorderBrush="{StaticResource PanelBorderBrush}"
+                BorderThickness="1" Background="{StaticResource PanelBackgroundBrush}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="새 검토 요청" FontWeight="SemiBold" />
+                    <TextBox x:Name="DocumentIdTextBox" Margin="0,8,0,0" ToolTip="서버 문서 ID"
+                             AutomationProperties.Name="검토 요청 문서 ID" />
+                    <TextBox x:Name="ReasonTextBox" Margin="0,6,0,0" MinHeight="54" TextWrapping="Wrap"
+                             AcceptsReturn="True" ToolTip="검토 요청 또는 결정 사유"
+                             AutomationProperties.Name="검토 요청 및 결정 사유" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="담당 지정" FontWeight="SemiBold" />
+                    <TextBox x:Name="ReviewerUserIdTextBox" Margin="0,8,0,0" ToolTip="검토자 사용자 ID. 역할과 동시에 입력하지 않습니다."
+                             AutomationProperties.Name="검토자 사용자 ID" />
+                    <TextBox x:Name="ReviewerRoleTextBox" Margin="0,6,0,0" ToolTip="검토 역할. 사용자 ID와 동시에 입력하지 않습니다."
+                             AutomationProperties.Name="검토자 역할" />
+                    <DatePicker x:Name="DueDatePicker" Margin="0,6,0,0" ToolTip="검토 기한"
+                                AutomationProperties.Name="검토 기한" />
+                </StackPanel>
+                <StackPanel Grid.Column="4" VerticalAlignment="Bottom">
+                    <Button x:Name="RequestButton" Content="검토 요청" Height="32" Click="RequestButton_Click" />
+                    <Button x:Name="ApproveButton" Content="승인" Height="32" Margin="0,6,0,0" Click="ApproveButton_Click" />
+                    <Button x:Name="RejectButton" Content="반려" Height="32" Margin="0,6,0,0" Click="RejectButton_Click" />
+                    <Button x:Name="PublishButton" Content="공개" Height="32" Margin="0,6,0,0" Click="PublishButton_Click" />
+                    <Button x:Name="CancelButton" Content="승인 취소" Height="32" Margin="0,6,0,0" Click="CancelButton_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="3*" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="GuidanceTextBox" IsReadOnly="True" TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto" AutomationProperties.Name="다음 작업 안내" />
+            <DataGrid x:Name="EventGrid" Grid.Column="2" IsReadOnly="True" AutoGenerateColumns="False"
+                      AutomationProperties.Name="승인 상태 이력">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="시각" Binding="{Binding CreatedAt, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" />
+                    <DataGridTextColumn Header="상태" Binding="{Binding EventType}" Width="130" />
+                    <DataGridTextColumn Header="담당자" Binding="{Binding ActorId}" Width="140" />
+                    <DataGridTextColumn Header="역할" Binding="{Binding ActorRole}" Width="120" />
+                    <DataGridTextColumn Header="사유" Binding="{Binding Reason}" Width="*" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Grid>
+    </Grid>
+</Window>

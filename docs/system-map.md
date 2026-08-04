@@ -41,7 +41,7 @@ WPF 메인 화면은 로그인 역할에 맞춘 첫 업무 3개를 기존 메뉴
 
 ## 로컬 우선 데이터와 서버 권위 원천의 수렴 경계
 
-아래 표는 새 동기화 작업이 따라야 하는 단일 운영 계약이다. `로컬 원천`은 서버 확인 전까지 삭제할 수 없는 입력·파일·큐를 뜻하고 `서버 권위`는 두 WPF 인스턴스, Android, AI 검색과 보고서가 최종 판정에 사용하는 값이다. 공통 mutation receipt와 versioned migration은 `0002_common_mutation_receipts`까지 구현되었으며 아직 코드에 없는 계약만 목표로 구분한다. 각 행의 검증을 통과하기 전에는 다중 WPF 쓰기를 허용하지 않는다.
+아래 표는 새 동기화 작업이 따라야 하는 단일 운영 계약이다. `로컬 원천`은 서버 확인 전까지 삭제할 수 없는 입력·파일·큐를 뜻하고 `서버 권위`는 두 WPF 인스턴스, Android, AI 검색과 보고서가 최종 판정에 사용하는 값이다. 공통 mutation receipt와 versioned migration은 문서 승인 흐름을 추가한 `0003_document_approval_workflow`까지 구현되었으며 아직 코드에 없는 계약만 목표로 구분한다. 각 행의 검증을 통과하기 전에는 다중 WPF 쓰기를 허용하지 않는다.
 
 | 대상 | 로컬 원천과 방향 | 서버 권위·동시성 키 | 멱등 키와 충돌 | 종결·수렴 조건 |
 | --- | --- | --- | --- | --- |
@@ -122,6 +122,8 @@ FastAPI 라우터는 인증 의존성, 공개 요청·응답 모델과 HTTP 오�
 WPF의 공개 `FieldCommentService`는 기존 호출 계약을 유지하는 facade다. SQLite 쓰기와 첨부 저장은 `FieldCommentRepository`, 검토 작업함 조회는 `FieldCommentWorkbenchQuery`, 허용 상태와 전이 검증은 `FieldCommentWorkflowService`가 맡는다. 의존 방향은 facade → query/repository/workflow이며 query와 repository가 서로 호출하지 않는다.
 
 문서 동기화의 자동 수렴 경계는 활성 태그의 독립 추가·제거 집합까지다. 서버가 태그 기준 snapshot을 복원할 수 있고 양쪽 delta가 같은 태그에서 반대 방향이 아닐 때만 자동 병합한다. 파일/버전, 문서·버전 상태, 공개 포인터와 soft delete는 409 이후 `CONFLICT` 작업함으로 이동하며 서버값 read-back, 로컬 intent, 기준 snapshot hash, 원본 위치와 허용 행동을 보존한다. 앱 재시작·server epoch 변경·reconciliation은 이 큐와 해결 이력을 삭제하거나 자동 재기준화하지 않는다.
+
+문서 공개 흐름은 `작성/새 version → 검토 요청 → 지정 검토자 승인 또는 반려 → 승인된 exact version 공개`다. 승인 projection과 append-only event가 문서 상태·공개 포인터와 분리되어 원본을 보존하며, 공개 mutation이 approval ID, document revision, version ID와 file hash를 transaction 안에서 다시 확인한다. 연결된 기존 `DOCUMENT` 채널에는 같은 transaction에서 문서 이벤트를 추가하고 기존 채널 멤버십·읽음 receipt·공통 감사를 그대로 사용한다. WPF 승인 작업함은 서버 상태를 권위로 다시 읽으며 로컬 선공개를 하지 않는다.
 
 ```text
 UserAccount

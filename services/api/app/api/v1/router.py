@@ -12,6 +12,7 @@ from app.api.v1.channels import router as channels_router
 from app.api.v1.change_history import router as change_history_router
 from app.api.v1.controlled_copies import router as controlled_copies_router
 from app.api.v1.document_access_logs import router as document_access_logs_router
+from app.api.v1.document_approvals import router as document_approvals_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.field_comments import document_field_comments_router
 from app.api.v1.field_comments import router as field_comments_router
@@ -32,6 +33,7 @@ api_v1_router.include_router(change_history_router)
 api_v1_router.include_router(server_accounts_router)
 api_v1_router.include_router(sync_reconciliation_router)
 api_v1_router.include_router(documents_router)
+api_v1_router.include_router(document_approvals_router)
 api_v1_router.include_router(android_document_views_router)
 api_v1_router.include_router(controlled_copies_router)
 api_v1_router.include_router(document_access_logs_router)

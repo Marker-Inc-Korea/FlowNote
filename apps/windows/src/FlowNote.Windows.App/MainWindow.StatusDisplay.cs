@@ -252,7 +252,7 @@ public partial class MainWindow
         AIOperationsButton.IsEnabled =
             RolePermissionPolicy.CanOperateAIOperations(currentUser.Role);
         ApplyDocumentStatusButton.IsEnabled = canGovernDocuments;
-        PublishDocumentButton.IsEnabled = canGovernDocuments;
+        PublishDocumentButton.IsEnabled = canRegisterDocuments;
         DocumentStatusComboBox.IsEnabled = canGovernDocuments;
         FileListDropZone.AllowDrop = canRegisterDocuments;
         FileWatchButton.IsEnabled = canManageFileWatch;
@@ -274,7 +274,9 @@ public partial class MainWindow
             "인수인계 확인 현황은 관리자/반장/조장 이상 권한에서 사용할 수 있습니다." +
             contact;
         ApplyDocumentStatusButton.ToolTip = noGovernancePermission;
-        PublishDocumentButton.ToolTip = noGovernancePermission;
+        PublishDocumentButton.ToolTip = canRegisterDocuments
+            ? "검토 요청과 역할별 승인·반려·공개 작업함을 엽니다."
+            : "문서 작성 권한이 필요합니다. 시스템 관리자에게 문의하세요.";
         DocumentStatusComboBox.ToolTip = noGovernancePermission;
         FieldCommentReviewButton.ToolTip = noReportWritePermission;
         ReportDraftButton.ToolTip = noReportWritePermission;

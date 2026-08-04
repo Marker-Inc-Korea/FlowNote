@@ -10,6 +10,7 @@ from app.db.session import Database
 
 INITIAL_SCHEMA_VERSION = "0001_initial_mvp_schema"
 COMMON_MUTATION_RECEIPT_SCHEMA_VERSION = "0002_common_mutation_receipts"
+DOCUMENT_APPROVAL_SCHEMA_VERSION = "0003_document_approval_workflow"
 DEFAULT_ADMIN_USER_ID = "user-admin"
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "1234"
@@ -398,6 +399,36 @@ def _ensure_document_revision(database: Database) -> None:
             connection.execute(
                 text("UPDATE documents SET revision = 1 WHERE revision IS NULL OR revision < 1")
             )
+
+
+def _ensure_document_publication_provenance(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+    with database.engine.begin() as connection:
+        existing = {row[1] for row in connection.execute(text("PRAGMA table_info(documents)"))}
+        if not existing:
+            return
+        if "publication_approval_id" not in existing:
+            connection.execute(text("ALTER TABLE documents ADD COLUMN publication_approval_id VARCHAR(64)"))
+        if "publication_origin" not in existing:
+            connection.execute(
+                text(
+                    "ALTER TABLE documents ADD COLUMN publication_origin VARCHAR(30) "
+                    "NOT NULL DEFAULT 'LEGACY_PUBLICATION'"
+                )
+            )
+        connection.execute(
+            text(
+                "UPDATE documents SET publication_origin = 'LEGACY_PUBLICATION' "
+                "WHERE publication_origin IS NULL OR publication_origin = ''"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_documents_publication_approval_id "
+                "ON documents (publication_approval_id)"
+            )
+        )
 
 
 def _ensure_reconciliation_resolution_status(database: Database) -> None:
@@ -792,6 +823,7 @@ def initialize_database(database: Database) -> None:
     _ensure_auth_session_device_column(database)
     _ensure_document_access_log_reason_column(database)
     _ensure_document_revision(database)
+    _ensure_document_publication_provenance(database)
     _ensure_reconciliation_resolution_status(database)
     _ensure_work_sequence_columns(database)
     _ensure_ai_evidence_snapshot_has_no_candidate_fk(database)
@@ -832,6 +864,18 @@ def initialize_database(database: Database) -> None:
                 SchemaMigration(
                     version=COMMON_MUTATION_RECEIPT_SCHEMA_VERSION,
                     description="Add common audit event envelopes and sync mutation receipts",
+                )
+            )
+        approval_migration = session.scalar(
+            select(SchemaMigration).where(
+                SchemaMigration.version == DOCUMENT_APPROVAL_SCHEMA_VERSION
+            )
+        )
+        if approval_migration is None:
+            session.add(
+                SchemaMigration(
+                    version=DOCUMENT_APPROVAL_SCHEMA_VERSION,
+                    description="Add document review and publication approval workflow",
                 )
             )
         session.commit()

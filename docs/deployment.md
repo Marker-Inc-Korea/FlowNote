@@ -593,6 +593,9 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | 서버 | `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS` | 기본 14일. 현장 보안 정책에 따라 조정 |
 | 서버 | `FLOWNOTE_CUSTOMER_SCOPE`, `FLOWNOTE_SITE_SCOPE` | 서버 PC 1대의 단일 고객·현장 경계. 생략하면 AI scope 설정 사용 |
 | 서버 | `FLOWNOTE_FIELD_COMMENT_INDEPENDENT_REVIEW_REQUIRED` | 기본 `true`. 위험 신호·상충 FieldComment의 분석자와 결정자 분리 |
+| 서버 | `FLOWNOTE_DOCUMENT_APPROVAL_WORKFLOW_ENFORCED` | 기본 `true`. 새 문서 공개에 정확한 version·revision·file hash 승인 근거 요구 |
+| 서버 | `FLOWNOTE_DOCUMENT_APPROVAL_REQUESTER_REVIEWER_SEPARATION` | 기본 미설정. 같은 사용자가 요청·검토하는 현장 정책을 `true` 또는 `false`로 명시 |
+| 서버 | `FLOWNOTE_DOCUMENT_APPROVAL_REQUESTER_PUBLISHER_SEPARATION` | 기본 미설정. 같은 사용자가 요청·공개하는 현장 정책을 `true` 또는 `false`로 명시 |
 | 서버 | `FLOWNOTE_RESTORE_FAULT_CODE` | 기본 빈 값. 별도 PC 복구 장애 실기에서만 허용 코드 설정 |
 | 서버 | `FLOWNOTE_RESTORE_BLOCK_REASON` | 기본 빈 값. 복구 장애 차단 사유 |
 | 서버 | `FLOWNOTE_RESTORE_PILOT_RUN_ID` | 기본 빈 값. 익명 장애 실기 run ID |
@@ -897,7 +900,7 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 2026-08-03 현재 수집 결과는 FastAPI 182건, WPF Core 101건, Android 32건이다. 스크립트 guard는 FastAPI 181건, WPF Core 98건, Android 32건이므로 현재 코드와 일치하지 않는다. 스크립트는 수집 원본·중복 목록·JUnit과 종료 코드를 보존하고 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터·새 `RunId` 실행 명령을 안내한다. Windows 수집 목록과 WPF Core TRX를 대조하고 guard를 맞춘 뒤, 같은 clean 소스 커밋에서 Windows x64 무생략 실행을 2회 연속 통과해야 유효 기준선으로 확정한다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 2026-08-04 현재 수집 결과는 FastAPI 192건, WPF Core 109건, Android 32건이다. 스크립트 guard는 FastAPI 186건, WPF Core 102건, Android 32건이므로 현재 코드와 일치하지 않는다. 스크립트는 수집 원본·중복 목록·JUnit과 종료 코드를 보존하고 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터·새 `RunId` 실행 명령을 안내한다. Windows 수집 목록과 WPF Core TRX를 대조하고 guard를 맞춘 뒤, 같은 clean 소스 커밋에서 Windows x64 무생략 실행을 2회 연속 통과해야 유효 기준선으로 확정한다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 

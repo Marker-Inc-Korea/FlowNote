@@ -1,19 +1,19 @@
 # API Database
 
-FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 코드이며 문서는 2026-08-03 현재 모델을 따라간다.
+FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 코드이며 문서는 2026-08-04 현재 모델을 따라간다.
 
 ## 현재 코드 기준
 
 - 연결 모듈: `app/db/session.py`
 - ORM 모델: `app/db/models.py`
 - 초기화 모듈: `app/db/init_db.py`
-- 스키마 설명: `migrations/0001_initial_mvp_schema.md`, `migrations/0002_common_mutation_receipts.md`
+- 스키마 설명: `migrations/0001_initial_mvp_schema.md`, `migrations/0002_common_mutation_receipts.md`, `migrations/0003_document_approval_workflow.md`
 
-앱 시작 시 먼저 DB 스키마 소유권을 확인한 뒤 `Base.metadata.create_all()`로 테이블을 보장하고 `schema_migrations`에 `0001_initial_mvp_schema`, `0002_common_mutation_receipts`를 기록한다. 기존 WPF `documents`/`document_versions` 형태를 감지하면 서버 테이블 생성 전에 시작을 거부한다. 기존 서버 SQLite DB 호환을 위해 일부 컬럼과 제약은 초기화 과정에서 보정한다.
+앱 시작 시 먼저 DB 스키마 소유권을 확인한 뒤 `Base.metadata.create_all()`로 테이블을 보장하고 `schema_migrations`에 `0001_initial_mvp_schema`, `0002_common_mutation_receipts`, `0003_document_approval_workflow`를 기록한다. 기존 WPF `documents`/`document_versions` 형태를 감지하면 서버 테이블 생성 전에 시작을 거부한다. 기존 서버 SQLite DB 호환을 위해 일부 컬럼과 제약은 초기화 과정에서 보정한다.
 
 ## 주요 테이블
 
-2026-08-03 현재 ORM 생성 기준은 다음 64개 테이블이다.
+2026-08-04 현재 ORM 생성 기준은 다음 67개 테이블이다.
 
 - `schema_migrations`
 - `server_identity`
@@ -24,6 +24,7 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 - `file_objects`
 - `documents`, `document_versions`
 - `document_mutation_receipts`
+- `document_approvals`, `document_approval_events`, `document_approval_mutation_receipts`
 - `audit_event_envelopes`, `sync_mutation_receipts`
 - `tag_definitions`, `document_tags`, `document_tag_revisions`
 - `terminal_devices`
@@ -61,6 +62,8 @@ FastAPI 서버의 SQLite 스키마 설명 영역이다. 실제 생성 기준은 
 `work_sequence_boards.board_revision`은 보드 aggregate 변경을 직렬화한다. `work_sequence_change_history`는 mutation key와 적용 revision을 정확히 한 건씩 보존하고, `work_sequence_mutation_receipts`는 intent hash·결과 revision·change ID·최초 응답 snapshot을 저장해 동일 key 재시도가 새 이력을 만들지 않게 한다.
 
 `document_mutation_receipts`는 문서 공개·상태·태그·삭제의 mutation key와 intent hash, 적용 revision, 최초 성공 응답을 문서 변경과 같은 transaction에 보존한다. `document_tag_revisions`는 문서 revision별 태그 집합을 저장해 오래된 기준에서 들어온 추가·제거 요청의 비경합 여부를 판정한다. `field_comments.review_revision`은 관리자 검토 aggregate의 낙관적 잠금 기준이다. `field_comment_review_mutation_receipts`는 mutation key·intent hash·결과 revision·최초 응답 snapshot을 같은 검토 transaction에 보존한다. `reports.report_revision`, `content_hash_sha256`, `source_set_hash_sha256`은 보고서와 고정 근거 집합의 수렴 기준이고, `report_mutation_receipts`는 생성 문서/버전을 포함한 최초 결과를 보존한다. 기존 서버 SQLite에는 초기화 과정에서 새 열을 additive 방식으로 보완하고 새 receipt 테이블은 ORM metadata로 생성한다.
+
+`document_approvals`는 최신 문서의 정확한 version·revision·file hash와 요청자·지정 검토자를 고정한 현재 projection이다. `document_approval_events`는 요청·결정·stale·공개·공개 철회 이력을 append-only로 보존하고, `document_approval_mutation_receipts`는 요청·결정·취소의 mutation key와 최초 응답을 저장한다. `documents.publication_approval_id`와 `publication_origin`은 현재 공개본의 승인 근거를 구분하며 이전 공개본은 `LEGACY_PUBLICATION`으로 유지한다.
 
 `audit_event_envelopes`는 공통 actor/role/session/device, target/version/revision, 사유·승인, 전후 hash, 결과·HTTP 상태, server time과 run/correlation ID를 저장한다. `sync_mutation_receipts`는 전역 유일 operation key와 intent hash, 공통 event, 기존 도메인 receipt를 연결한다. 두 테이블은 기존 감사나 receipt를 백필하지 않는 additive schema이며 공통 payload에는 원문·token·비밀번호·로컬 절대경로를 저장하지 않는다.
 
