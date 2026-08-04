@@ -639,3 +639,11 @@ dataset 상태는 `DRAFT → IN_REVIEW → PENDING_FIRST_APPROVAL → PENDING_SE
 동일 idempotency key와 payload/file hash의 서버 원천이 있으면 그 server ID/revision을 반환해 재결합한다. 같은 key의 서버 원천이 없으면 기존 key를 유지한 재전송 대상으로 판정하고, 같은 key의 hash가 다르면 자동 덮어쓰기 없이 divergence로 보존한다.
 
 복구 장애 manifest는 복구 연습 서버 프로세스를 시작하기 전에 `FLOWNOTE_RESTORE_FAULT_CODE`, `FLOWNOTE_RESTORE_PILOT_RUN_ID`, `FLOWNOTE_RESTORE_BACKUP_SET_ID`, `FLOWNOTE_RESTORE_APPROVAL_ID`, `FLOWNOTE_RESTORE_RESPONSIBLE_OWNER`를 모두 설정해야 활성화된다. 허용 장애 코드는 `partial_restore`, `old_database_new_files`, `missing_file`, `wrong_server_epoch`다. 하나라도 빠지거나 허용되지 않은 코드이면 manifest는 `503`으로 실패하며 WPF는 전송과 polling을 시작하지 않는다. `FLOWNOTE_RESTORE_BLOCK_REASON`은 선택 설명이다. 이 설정은 복구 데이터 자체를 변조하는 주입기가 아니라, 승인된 별도 PC 실기에서 이미 만든 장애 상태를 WPF 차단 화면·reconciliation run·감사에 묶는 fail-closed 표지다. reconciliation 승인만으로 프로세스 환경값을 자동 해제하지 않는다. 승인 감사 저장 뒤 복구 연습 서버를 정상 종료하고 `FLOWNOTE_RESTORE_*` 표지를 제거해 다시 시작해야 정상 manifest가 반환된다.
+
+## 내부 변경 결과와 외부 계약 불변
+
+서버 내부 변경 서비스는 `mutation-outcome-v1` 결과를 사용할 수 있다. 기준 필드는 `schema_version`, `status`, `code`, `message`, `value`, `receipt`, `revision`, `source_preserved`, `responsible_role`, `action_route`, `retry_item_ids`다. `status`는 `SUCCESS`, `PARTIAL_SUCCESS`, `CONFLICT`, `REJECTED` 중 하나이며 부분 성공의 `retry_item_ids`에는 실패 항목만 넣는다. 이 모델은 내부 서비스와 WPF 안내 정책에서 같은 뜻을 공유하기 위한 모델이지 새 공개 API DTO가 아니다.
+
+이번 책임 분리는 기존 경로, HTTP 상태, JSON 필드명, 오류 코드와 DB schema를 바꾸지 않는다. 클라이언트가 모르는 필드를 공개 응답에 임의로 추가하지 않으며, 향후 공개 확장이 필요하면 선택 필드만 추가하고 기존 필드의 의미와 필수 여부를 유지한다. 도메인 오류 매핑은 stale revision·멱등키 재사용·원천 hash 불일치를 `409`, 권한 거부를 `403` 또는 존재 은닉 정책의 `404`, 입력·전이 조건 위반을 `422`, 찾을 수 없는 공개 자원을 `404`로 유지한다.
+
+FieldComment `/bulk-review/execute`는 항목별 transaction을 유지한다. `success=true`인 항목은 같은 mutation key로 재전송하지 않고 `success=false`인 항목만 새 요청 대상으로 삼는다. 보고서 source 검증 실패와 작업순서 revision 충돌도 기존 공개 오류 본문을 그대로 반환한다.

@@ -549,6 +549,9 @@
         <TextBlock Grid.Row="3"
                    x:Name="StatusTextBlock"
                    Margin="2,8,0,0"
-                   Foreground="{StaticResource SecondaryTextBrush}" />
+                   Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                   TextWrapping="Wrap"
+                   Focusable="True"
+                   AutomationProperties.Name="처리 결과와 복구 안내" />
     </Grid>
 </Window>

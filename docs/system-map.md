@@ -115,6 +115,11 @@ FieldComment, 사진, 신규 인수인계와 받은 인수인계의 확인·보�
 
 ## 주요 도메인
 
+### 변경 서비스 책임 경계
+
+FastAPI 라우터는 인증 의존성, 공개 요청·응답 모델과 HTTP 오류 변환만 맡는다. FieldComment는 계약 DTO, 조회 조립, 검토 전이, 첨부 검증을 분리하고, 보고서는 source 가시성·version/revision/hash 고정 검증과 상태 전이를 별도 서비스에 둔다. 작업순서는 revision 선점, change history, 알림 후보와 receipt 기록을 mutation 서비스가 함께 처리한다. 상태를 바꾸는 서비스 진입점이 transaction의 commit/rollback을 소유하며 하위 검증·조회 함수는 commit하지 않는다. 업무 row·도메인 receipt·공통 receipt·감사는 같은 transaction에 포함하고, FieldComment 일괄 검토만 항목 하나를 원자 단위로 삼아 성공 항목을 보존한다.
+
+WPF의 공개 `FieldCommentService`는 기존 호출 계약을 유지하는 facade다. SQLite 쓰기와 첨부 저장은 `FieldCommentRepository`, 검토 작업함 조회는 `FieldCommentWorkbenchQuery`, 허용 상태와 전이 검증은 `FieldCommentWorkflowService`가 맡는다. 의존 방향은 facade → query/repository/workflow이며 query와 repository가 서로 호출하지 않는다.
 ```text
 UserAccount
   -> role
