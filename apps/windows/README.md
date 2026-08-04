@@ -4,7 +4,7 @@
 
 현재 프로젝트는 WPF UI `net10.0-windows`, Core와 스모크 테스트 `net10.0`을 대상으로 한다. 현재 기능 목록은 `FlowNote.Windows.App`, `FlowNote.Windows.Core`, `FlowNote.Windows.SmokeTests` 코드에 실제 연결된 범위만 포함한다.
 
-이 문서는 2026-08-03 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
+이 문서는 2026-08-04 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
 
 ## 현재 구현
 
@@ -35,7 +35,7 @@
 - AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
 - `AI 정답셋`: 후보 포함 근거와 수동 제외 원천으로 사례 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·대체·폐기, 평가 run 실행·이전 run 비교, 실제 익명 현장 24칸 독립 표본 검토와 불일치 제3 합의, 실제/합성 자료와 외부 호출 차단 사유를 구분한 운영 준비도 확인
 - `system-admin` 전용 `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 민감정보 정책 작성·분리 검토·승인·활성·대체·철회·폐기, 전역/현재 현장 kill switch와 호출·비용·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 일괄 실행, 고객/현장 질의 상세, 단일 즉시 만료와 legal hold 설정·해제·감사 read-back
-- 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 공개, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장. 태그 delta 병합과 revision별 기준 집합, 공개·상태·태그 mutation receipt와 read-back, FieldComment 검토 base revision·mutation key, 첨부 부모·파일 SHA-256, 보고서 source 집합 hash, 문서 버전·첨부 idempotency key 전달을 포함한다. 이력 창은 큐 깊이·최장 대기·최근 처리량·실패 분포·row별 운영 상태와 구조화된 충돌의 서버 값·로컬 요청·자동 병합 가능·사용자 선택 항목을 표시한다.
+- 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장. 태그 delta 병합과 revision별 기준 집합, 상태·태그 mutation receipt와 read-back, FieldComment 검토 base revision·mutation key, 첨부 부모·파일 SHA-256, 보고서 source 집합 hash, 문서 버전·첨부 idempotency key 전달을 포함한다. 현재 UI의 문서 공개는 이 큐에 새 항목을 만들지 않고 서버 승인 작업함에서 승인 ID와 함께 직접 처리한다. 기존 `document_publish/publish_document_version` 큐는 누적 이력과 호환 처리기로만 보존하며 승인 강제 기본값에서는 승인 ID가 없어 자동 공개하지 못한다. 이력 창은 큐 깊이·최장 대기·최근 처리량·실패 분포·row별 운영 상태와 구조화된 충돌의 서버 값·로컬 요청·자동 병합 가능·사용자 선택 항목을 표시한다.
 - 서버 복구 경계 보호: sync manifest의 instance/epoch/API contract와 알림 cursor를 URL별 binding에 저장하고, URL·instance·epoch 변경, cursor 역행 또는 `partial_restore`·`old_database_new_files`·`missing_file`·`wrong_server_epoch` 복구 장애 신호 시 자동 전송과 polling 중지. 복구 장애 manifest의 pilot run·backup set·복구 승인·담당자와 수렴 상태도 binding에 보존
 - 이력 창 `서버 재결합`: 연결 상태와 안전 수렴 상태, 차단 원인, 보존된 원천, 승인 전 금지 행동, 담당자·증거 연결, 다음 단계를 분리해 표시하고 전체 큐 inventory의 `CONFIRMED`/`ABSENT`/`DIVERGED` 판정과 `REBOUND`/`REQUEUE`/`CONFLICT` 제안 검토. 명시적 장애 run은 관리자 승인 뒤에도 `POST_APPROVAL_RESTART_REQUIRED`로 전송·polling 차단을 유지하고, 서버의 `FLOWNOTE_RESTORE_*` 표지 제거와 재시작 뒤 `업무 재개 확인`에서 정상 manifest를 읽어야 cursor 재추적·재전송·polling 재개
 - 보존 동기화 실패 전환 CLI: FAILED 큐를 읽기 전용 dry-run으로 분류하고, plan hash와 row별 운영자 승인을 받은 구 `create`/FieldNote 항목만 현재 action의 별도 큐로 무손실 전환

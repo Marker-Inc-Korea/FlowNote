@@ -1,6 +1,6 @@
 # 서버 동기화 실패와 재시도 UX
 
-이 문서는 2026-08-03 현재 `ServerSyncService`, 실패 진단 코드와 WPF 이력 화면 기준이다. 아래 누적 건수는 당시 보존 DB의 검증 기록이며 고정 기대값이 아니다.
+이 문서는 2026-08-04 현재 `ServerSyncService`, 문서 승인 작업함, 실패 진단 코드와 WPF 이력 화면 기준이다. 아래 누적 건수는 당시 보존 DB의 검증 기록이며 고정 기대값이 아니다.
 
 ## 화면 기준
 
@@ -49,7 +49,7 @@
 
 `업무 재개 확인`은 서버 재시작을 대신하는 버튼이 아니다. 서버가 실제로 다시 시작된 뒤 정상 manifest를 read-back하는 동작이며, 그 전에는 `POST_APPROVAL_RESTART_REQUIRED`와 차단 안내가 유지된다. 연결 재개 뒤에도 화면은 “안전 수렴 확정”으로 표시하지 않고 별도 DB·파일·중복 mutation·권한 우회 증거가 필요하다고 안내한다.
 
-재시도 루프는 선행 문서, 문서 버전, FieldComment, 보고서 근거가 아직 서버 ID로 연결되지 않은 항목을 `보류`로 집계한다. 보류 항목은 `FAILED` 상태와 한글 실패 사유를 유지하지만 실제 서버 호출을 하지 않고 `attempt_count`를 올리지 않는다. 같은 재시도 배치 안에서는 문서 등록 → 버전 → 공개 → 상태 → 태그 → FieldComment → 검토 → 첨부 → 접근 로그 → 보고서 순서로 처리한다. 앞 mutation 성공 뒤 read-back한 revision과 최신/공개 버전 ID를 같은 run의 뒤쪽 현재 형식 큐 기준값으로 넘긴다. 구 큐의 누락 기준값은 자동 보완하지 않는다.
+재시도 루프는 선행 문서, 문서 버전, FieldComment, 보고서 근거가 아직 서버 ID로 연결되지 않은 항목을 `보류`로 집계한다. 보류 항목은 `FAILED` 상태와 한글 실패 사유를 유지하지만 실제 서버 호출을 하지 않고 `attempt_count`를 올리지 않는다. 같은 재시도 배치 안에서는 문서 등록 → 버전 → 구 공개 큐 → 상태 → 태그 → FieldComment → 검토 → 첨부 → 접근 로그 → 보고서 순서로 처리한다. 구 공개 큐 단계는 누적 `document_publish/publish_document_version` 이력을 보존하기 위한 호환 경로이며 현재 UI가 새로 만드는 공개 흐름이 아니다. 앞 mutation 성공 뒤 read-back한 revision과 최신/공개 버전 ID를 같은 run의 뒤쪽 현재 형식 큐 기준값으로 넘긴다. 구 큐의 누락 기준값은 자동 보완하지 않는다.
 
 ## 실패 문구
 
@@ -69,14 +69,16 @@
 
 신규 큐는 서버에서 마지막으로 확인한 `revision`, 최신 버전 ID, 공개 버전 ID와 로컬 파일 SHA-256을 snapshot으로 남긴다. 구 큐처럼 base revision이 없는 호환 경로에서 서버에 같은 번호의 버전이 이미 있으면 SHA-256이 같은 경우에만 로컬 `server_version_id`, `synced_at`, `server_id_mappings`를 복구한다. hash가 다르면 `FILE_HASH_MISMATCH` 충돌이다. 신규 큐는 서버가 revision 확인 뒤 다음 버전 번호를 배정하므로 로컬 번호와 서버 번호의 우연한 일치를 성공 조건으로 쓰지 않는다.
 
-공개는 항상 특정 로컬 버전 번호의 서버 버전 ID가 확인된 뒤 서버 publish API를 호출한다. 문서 상태는 enqueue 시 값을 고정한다. 태그는 `documents.server_tags_json`과 현재 로컬 태그를 비교해 `baseRevision`, `AddedTags`, `RemovedTags`, `IntentHash`, `DesiredTags`를 `payload_json`에 보존한다. 최초 문서 등록 전 만든 태그 큐는 등록 응답의 revision·태그 집합으로 delta를 한 번 확정한 뒤 보낸다. 이미 매핑된 문서인데 서버 태그 기준이 없는 구 큐는 자동 추정하지 않는다. 공개·상태·태그는 안정 key를 `mutationKey`로 보내며 서버는 같은 transaction에 `document_mutation_receipts`를 저장한다. WPF는 2xx와 상세 read-back 뒤 revision, 태그, 공개 포인터, 최신 version ID/hash를 확인하고 로컬 문서·태그 관계·mapping·큐·이력을 한 SQLite transaction으로 저장한다. 응답 유실은 같은 key와 본문을 다시 보내 receipt를 재생하며 revision·감사·receipt가 늘지 않는다.
+현재 UI의 문서 공개는 서버 승인 작업함에서 최신 version·revision·file hash를 고정해 검토를 요청하고, 승인된 작업의 `approvalId`를 publish API에 직접 보낸다. 이 흐름은 로컬 문서를 먼저 공개하거나 새 `document_publish` 큐를 만들지 않으며, 성공 뒤 승인 목록을 서버에서 다시 읽는다. 기존 `document_publish/publish_document_version` 큐와 처리기는 누적 이력 호환을 위해 남아 있지만 `approvalId`를 보내지 않는다. 따라서 `FLOWNOTE_DOCUMENT_APPROVAL_WORKFLOW_ENFORCED=true`인 기본 설정에서는 자동 공개 경로가 아니며, 서버 거부와 원본 큐를 보존한다.
+
+문서 상태는 enqueue 시 값을 고정한다. 태그는 `documents.server_tags_json`과 현재 로컬 태그를 비교해 `baseRevision`, `AddedTags`, `RemovedTags`, `IntentHash`, `DesiredTags`를 `payload_json`에 보존한다. 최초 문서 등록 전 만든 태그 큐는 등록 응답의 revision·태그 집합으로 delta를 한 번 확정한 뒤 보낸다. 이미 매핑된 문서인데 서버 태그 기준이 없는 구 큐는 자동 추정하지 않는다. 상태·태그는 안정 key를 `mutationKey`로 보내며 서버는 같은 transaction에 `document_mutation_receipts`를 저장한다. WPF는 2xx와 상세 read-back 뒤 revision, 태그, 공개 포인터, 최신 version ID/hash를 확인하고 로컬 문서·태그 관계·mapping·큐·이력을 한 SQLite transaction으로 저장한다. 응답 유실은 같은 key와 본문을 다시 보내 receipt를 재생하며 revision·감사·receipt가 늘지 않는다.
 
 권위와 충돌 해결표:
 
 | 대상 | 서버 권위 값 | WPF 성공 조건 | 불일치 처리 |
 | --- | --- | --- | --- |
 | 문서 상태 | `documents.status`, `revision` | read-back 상태와 큐 snapshot 상태 일치 | `DOCUMENT_READ_BACK_MISMATCH` 또는 stale 충돌 보존 |
-| 공개 버전 | `published_version_id`, 공개 버전 flag, `revision` | read-back 공개 ID가 요청 서버 버전 ID와 일치 | 자동 재공개 금지, 양쪽 ID/hash와 관리자 사유 요구 |
+| 공개 버전 | `published_version_id`, 공개 버전 flag, 승인 ID, `revision` | 승인 작업함의 exact version·revision·hash가 서버 공개 응답과 일치 | 자동 재공개 금지. 구 공개 큐는 승인 강제 설정에서 재전송하지 않고 원본 보존 |
 | 태그 | 서버 `document_tags` 활성 집합, `document_tag_revisions`, 문서 `revision` | 응답과 read-back 전체 집합이 같고 로컬 transaction 종결 | 서로 겹치지 않는 delta만 자동 병합. 같은 태그 반대 변경, 비활성·삭제는 구조화된 충돌 |
 
 태그는 서버 권위 동기화 대상에 포함한다. 최초 문서 등록의 tags뿐 아니라 이후 WPF 추가·제거 의도도 `document_tags/replace_document_tags` action으로 큐에 남긴다. action 이름은 로컬 호환을 위해 유지하지만 서버 요청 의미는 전체 교체가 아니라 delta 병합이다. 파일 내용, 문서·버전 상태, 공개 포인터, 삭제 경쟁은 이 경로에서 바꾸지 않는다.
@@ -137,7 +139,7 @@ controlled copy는 사용자가 즉시 수행하는 서버 발급·스트리밍 
 1. 서버 URL, 로그인, 네트워크 문제를 먼저 조치한다.
 2. 로컬 파일 누락 문서는 파일 위치를 복구한다.
 3. 같은 문서의 `document/register_document`를 먼저 동기화한다.
-4. 같은 문서의 `document_version/register_document_version`과 `document_publish/publish_document_version`을 처리한다.
+4. 같은 문서의 `document_version/register_document_version`을 처리한다. 누적된 `document_publish/publish_document_version`은 호환 큐로 분류하며 현재 승인 작업함의 새 공개와 합치지 않는다.
 5. FieldComment를 먼저 동기화한 뒤 첨부, 검토 변경, 접근 로그를 재시도한다.
 6. 구 FieldNote와 구 `create` 큐는 자동 재시도 대상에서 분리한다. 별도 전환 CLI의 읽기 전용 dry-run으로 원천·파일·대상 action을 확인하고, 운영자가 승인한 row만 신규 큐로 전환한다.
 
@@ -150,9 +152,9 @@ controlled copy는 사용자가 즉시 수행하는 서버 발급·스트리밍 
 3. 같은 문서를 다시 큐에 넣어도 `idempotency_key` 기준으로 큐가 중복 생성되지 않는지 확인한다.
 4. 같은 문서에 FieldComment와 첨부를 저장하고, 접근 로그 시작/종료를 남긴다.
 5. 문서 v2 추가, publish, 상태 변경을 수행한다.
-6. FieldComment, 검토 변경, 첨부, 접근 로그, 문서 버전, 공개, 상태, 보고서 큐가 로컬에 남고 실패 사유가 한글로 표시되는지 확인한다.
+6. FieldComment, 검토 변경, 첨부, 접근 로그, 문서 버전, 상태, 보고서 큐와 누적 구 공개 큐가 로컬에 남고 실패 사유가 한글로 표시되는지 확인한다.
 7. 서버를 켜고 같은 계정으로 로그인한 뒤 `재시도`를 누른다.
-8. 문서, 문서 버전, 공개, 상태, 태그, FieldComment, 검토 변경, 첨부, 접근 로그, 보고서 큐가 `SYNCED`로 바뀌고 각 원천 테이블의 서버 ID와 `synced_at`, `server_id_mappings`가 채워지는지 확인한다.
+8. 문서, 문서 버전, 상태, 태그, FieldComment, 검토 변경, 첨부, 접근 로그, 보고서 큐가 `SYNCED`로 바뀌고 각 원천 테이블의 서버 ID와 `synced_at`, `server_id_mappings`가 채워지는지 확인한다. 공개는 승인 작업함에서 별도로 요청·승인·공개하고 서버 승인 이력과 공개 포인터를 확인한다.
 9. 이미 `SYNCED`인 항목을 다시 큐에 넣어도 큐 건수와 시도 횟수가 증가하지 않는지 확인한다.
 10. 만료된 토큰으로 재시도하면 인증 만료 문구가 표시되고, 로컬 데이터와 큐가 삭제되지 않는지 확인한다.
 11. 사용자 A/B가 같은 base revision에서 각각 새 버전, 공개 교체, 상태 변경을 보내 하나만 성공하고 다른 요청이 `CONFLICT`로 남는지 확인한다.
