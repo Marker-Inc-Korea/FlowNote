@@ -72,6 +72,10 @@
 - 보고서를 `ARCHIVED`로 폐기해도 `report_sources`, trace ID, source version/hash, 생성 문서 버전과 승인 감사는 삭제하지 않는다. 폐기는 검색·운영 사용 중단이지 근거 삭제가 아니다.
 - 원천 FieldComment는 보고서 폐기, 재생성, 동기화 충돌 해결 중에도 수정·삭제하지 않는다. 새 해석이나 정정은 관리자 영역의 새 이력 또는 새 보고서로 남긴다.
 
+확정 보고서의 오류는 보관이나 제자리 수정으로 처리하지 않는다. 상세 화면의 `정정본 만들기`에서 위험 설명을 확인하고 정정 사유를 입력하면 독립 `DRAFT`가 생성된다. 기준 보고서의 FieldComment source는 당시 snapshot 그대로 복사하되 생성·재검토·확정 직전에 현재 `SELECTED` 상태, `review_revision`, 원천 hash와 채널 권한을 다시 검사한다. 달라진 source는 자동 제외하지 않고 기존 확정본 보존 → 담당 검토자 문의 → `현재 원천 선택`에서 전체 source 다시 선택 순서로 안내한다.
+
+정정본 승인 전에는 기존 확정본이 유효하다. 정정본을 다시 검토하고 확정하면 이전 보고서는 `대체됨`, 이전 생성 문서는 `보관`, 새 생성 문서는 `검토중`으로 표시한다. FieldComment 상세의 보고서 역추적과 보고서 계보에서는 이전·현재 source와 생성 문서를 모두 조회할 수 있다.
+
 ## 품질 지표 계산 기준
 
 - FieldComment↔보고서 연결률은 `report_sources.source_type = FIELD_COMMENT`인 distinct `source_id` 수를 전체 FieldComment 수로 나눈다. 한 원천을 여러 보고서가 사용해도 분자는 1이다.

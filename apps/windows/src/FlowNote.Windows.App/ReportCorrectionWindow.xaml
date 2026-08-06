@@ -1,0 +1,94 @@
+<Window x:Class="FlowNote.Windows.App.ReportCorrectionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="보고서 정정본 만들기"
+        Width="980"
+        Height="720"
+        MinWidth="820"
+        MinHeight="620"
+        Background="{StaticResource WindowBackgroundBrush}">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="150" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Background="#FFF7ED" BorderBrush="#C2410C" BorderThickness="1" CornerRadius="4" Padding="12">
+            <StackPanel>
+                <TextBlock FontWeight="Bold" Foreground="#9A3412" Text="주의 · 정정본은 기존 확정본을 직접 고치지 않습니다." />
+                <TextBlock Margin="0,5,0,0" TextWrapping="Wrap"
+                           Text="새 초안을 만들고 다시 검토·확정합니다. 새 정정본이 확정되기 전까지 기존 보고서가 유효하며, 확정 문서는 자동 공개되지 않습니다." />
+                <DockPanel Margin="0,7,0,0">
+                    <Button x:Name="SelectSourcesButton" DockPanel.Dock="Right" Width="118" Height="26"
+                            Content="현재 원천 선택" Click="SelectSourcesButton_Click" />
+                    <TextBlock x:Name="SourceSnapshotTextBlock" VerticalAlignment="Center" />
+                </DockPanel>
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="0,10,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="2*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Margin="0,0,10,0">
+                <TextBlock Text="보고서 제목" Foreground="{StaticResource SecondaryTextBrush}" />
+                <TextBox x:Name="TitleTextBox" Margin="0,4,0,0" Height="30" />
+            </StackPanel>
+            <StackPanel Grid.Column="1">
+                <TextBlock Text="정정 사유 (필수)" Foreground="{StaticResource SecondaryTextBrush}" />
+                <TextBox x:Name="ReasonTextBox" Margin="0,4,0,0" Height="30" />
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="요약" FontWeight="SemiBold" />
+                <TextBox x:Name="SummaryTextBox" Margin="0,5,0,10" Height="84" AcceptsReturn="True" TextWrapping="Wrap" />
+                <TextBlock Text="분석 내용" FontWeight="SemiBold" />
+                <TextBox x:Name="AnalysisTextBox" Margin="0,5,0,0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Height="220" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="결론" FontWeight="SemiBold" />
+                <TextBox x:Name="ConclusionTextBox" Margin="0,5,0,10" Height="130" AcceptsReturn="True" TextWrapping="Wrap" />
+                <TextBlock Text="조치 계획" FontWeight="SemiBold" />
+                <TextBox x:Name="ActionPlanTextBox" Margin="0,5,0,0" Height="190" AcceptsReturn="True" TextWrapping="Wrap" />
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="3" Margin="0,10,0,0" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="4">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Margin="10,8" FontWeight="SemiBold" Text="정정 계보 · 유효본과 과거 생성 문서" />
+                <DataGrid x:Name="LineageGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" BorderThickness="0">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="상태" Binding="{Binding StatusLabel}" Width="110" />
+                        <DataGridTextColumn Header="보고서" Binding="{Binding Title}" Width="*" />
+                        <DataGridTextColumn Header="revision" Binding="{Binding ReportRevision}" Width="75" />
+                        <DataGridTextColumn Header="대체 대상" Binding="{Binding ReplacesReportId}" Width="180" />
+                        <DataGridTextColumn Header="생성 문서" Binding="{Binding GeneratedDocumentId}" Width="180" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </Border>
+
+        <DockPanel Grid.Row="4" Margin="0,10,0,0">
+            <TextBlock x:Name="StatusTextBlock" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Foreground="{StaticResource SecondaryTextBrush}"
+                       Text="변경 사유를 입력한 뒤 정정 초안을 만드세요." />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="CreateButton" Width="112" Height="30" Margin="8,0,8,0" Content="정정 초안 만들기" Click="CreateButton_Click" />
+                <Button x:Name="ReviewButton" Width="98" Height="30" Margin="0,0,8,0" Content="재검토 요청" IsEnabled="False" Click="ReviewButton_Click" />
+                <Button x:Name="ApproveButton" Width="98" Height="30" Margin="0,0,8,0" Content="정정본 확정" IsEnabled="False" Click="ApproveButton_Click" />
+                <Button Width="72" Height="30" Content="닫기" IsCancel="True" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

@@ -37,7 +37,7 @@ FIELD_COMMENT_REPORT_SOURCE_STATUS = "SELECTED"
 REPORT_STATUS_TRANSITIONS = {
     "DRAFT": {"REVIEWED", "APPROVED"},
     "AI_DRAFTED": {"REVIEWED", "APPROVED"},
-    "REVIEWED": {"APPROVED"},
+    "REVIEWED": {"DRAFT", "APPROVED"},
     "APPROVED": {"ARCHIVED"},
     "ARCHIVED": set(),
 }
@@ -266,6 +266,7 @@ def _hash_payload(payload: dict) -> str:
 
 def _report_event_type(report_status: str) -> str:
     return {
+        "DRAFT": "report.review_invalidated",
         "REVIEWED": "report.reviewed",
         "APPROVED": "report.approved",
         "ARCHIVED": "report.archived",

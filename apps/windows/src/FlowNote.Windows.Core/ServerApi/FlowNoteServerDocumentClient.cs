@@ -522,6 +522,28 @@ public sealed class FlowNoteServerDocumentClient
         return await ReadJsonResponse<ServerReportResponse>(response, cancellationToken);
     }
 
+    public async Task<ServerReportResponse> CreateReportCorrectionAsync(
+        string reportId,
+        ServerReportCorrectionCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/v1/reports/{reportId}/corrections",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerReportResponse>(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ServerReportLineageItemResponse>> ListReportLineageAsync(
+        string reportId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/reports/{reportId}/lineage",
+            cancellationToken);
+        return await ReadJsonResponse<List<ServerReportLineageItemResponse>>(response, cancellationToken);
+    }
+
     public async Task<ServerWorkSequenceBoardResponse> CreateWorkSequenceBoardAsync(
         ServerWorkSequenceBoardCreateRequest request,
         CancellationToken cancellationToken = default)

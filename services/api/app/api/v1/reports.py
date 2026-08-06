@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import desc, select, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -53,35 +53,16 @@ from app.services.report_source_service import (
     _validate_report_transition,
     _validate_work_record,
 )
+from app.services.report_lifecycle_service import (
+    archive_generated_document,
+    finalize_report_replacement,
+    validate_correction_contract,
+)
 
 router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(get_current_user)])
 
-REPORT_SOURCE_TYPES = {
-    "FIELD_COMMENT",
-    "DOCUMENT",
-    "WORK_SEQUENCE_ITEM",
-    "WORK_SEQUENCE_HISTORY",
-    "WORK_RECORD",
-    "WORK_RECORD_VERSION",
-}
-FIELD_COMMENT_REPORT_SOURCE_STATUS = "SELECTED"
 DOCUMENT_STATUSES = {"WORKING", "IN_REVIEW", "PUBLISHED", "ARCHIVED"}
-REPORT_SAVE_STATUSES = {"REVIEWED", "APPROVED", "ARCHIVED"}
-REPORT_STATUS_TRANSITIONS = {
-    "DRAFT": {"REVIEWED", "APPROVED"},
-    "AI_DRAFTED": {"REVIEWED", "APPROVED"},
-    "REVIEWED": {"APPROVED"},
-    "APPROVED": {"ARCHIVED"},
-    "ARCHIVED": set(),
-}
-SOURCE_NOT_VISIBLE_DETAIL = {
-    "code": "SOURCE_NOT_VISIBLE",
-    "message": "요청한 원천을 찾을 수 없거나 현재 공개 범위에서 열람할 수 없습니다.",
-}
-REPORT_NOT_VISIBLE_DETAIL = {
-    "code": "RESOURCE_NOT_FOUND",
-    "message": "요청한 보고서를 찾을 수 없습니다.",
-}
+REPORT_SAVE_STATUSES = {"DRAFT", "REVIEWED", "APPROVED", "ARCHIVED"}
 
 
 class ReportSourceRequest(BaseModel):
@@ -135,6 +116,9 @@ class ReportSaveRequest(BaseModel):
     content_hash_sha256: str | None = Field(default=None, alias="contentHashSha256")
     source_set_hash_sha256: str | None = Field(default=None, alias="sourceSetHashSha256")
     report_status: str = Field(default="APPROVED", alias="reportStatus")
+    report_family_id: str | None = Field(default=None, alias="reportFamilyId")
+    replaces_report_id: str | None = Field(default=None, alias="replacesReportId")
+    replaces_report_revision: int | None = Field(default=None, alias="replacesReportRevision", ge=1)
 
 
 class ReportSourceResponse(BaseModel):
@@ -184,6 +168,16 @@ class ReportResponse(BaseModel):
     report_revision: int
     content_hash_sha256: str | None
     source_set_hash_sha256: str | None
+    report_family_id: str
+    replaces_report_id: str | None
+    replaces_report_revision: int | None
+    correction_reason: str | None
+    superseded_by_report_id: str | None
+    superseded_at: datetime | None
+    current_effective_report_id: str | None
+    is_current_effective: bool
+    requires_re_review: bool
+    replacement_state: str
 
 
 def _new_public_id(prefix: str) -> str:
@@ -203,6 +197,10 @@ def _report_content_hash(report: Report) -> str:
         "period_start": report.period_start.isoformat() if report.period_start else None,
         "period_end": report.period_end.isoformat() if report.period_end else None,
         "status": report.status,
+        "report_family_id": report.report_family_id,
+        "replaces_report_id": report.replaces_report_id,
+        "replaces_report_revision": report.replaces_report_revision,
+        "correction_reason": report.correction_reason,
     })
 
 
@@ -416,13 +414,33 @@ def _apply_report_document_tags(
         session.add(DocumentTag(document_id=document_id, tag_id=tag.tag_id))
 
 
-def _report_response(session: Session, report: Report) -> ReportResponse:
+def _report_response(
+    session: Session,
+    report: Report,
+    current_user: CurrentUser | None = None,
+) -> ReportResponse:
     sources = session.scalars(
         select(ReportSource).where(ReportSource.report_id == report.report_id).order_by(ReportSource.id)
     ).all()
     document = None
     if report.generated_document_id is not None:
         document = session.scalar(select(Document).where(Document.document_id == report.generated_document_id))
+    family_id = report.report_family_id or report.report_id
+    current_effective = session.scalar(
+        select(Report).where(
+            Report.report_family_id == family_id,
+            Report.status == "APPROVED",
+            Report.superseded_by_report_id.is_(None),
+        )
+    )
+
+    def visible_id(target_id: str | None) -> str | None:
+        if target_id is None or current_user is None:
+            return target_id
+        target = session.scalar(select(Report).where(Report.report_id == target_id))
+        if target is None or not _report_is_readable(session, target, current_user):
+            return None
+        return target_id
 
     return ReportResponse(
         report_id=report.report_id,
@@ -436,7 +454,7 @@ def _report_response(session: Session, report: Report) -> ReportResponse:
         structure_item_id=report.structure_item_id,
         period_start=report.period_start,
         period_end=report.period_end,
-        status=report.status,
+        status="SUPERSEDED" if report.superseded_by_report_id else report.status,
         ai_draft_used=report.ai_draft_used,
         generated_document_id=report.generated_document_id,
         created_by=report.created_by,
@@ -474,6 +492,25 @@ def _report_response(session: Session, report: Report) -> ReportResponse:
         report_revision=report.report_revision,
         content_hash_sha256=report.content_hash_sha256,
         source_set_hash_sha256=report.source_set_hash_sha256,
+        report_family_id=family_id,
+        replaces_report_id=visible_id(report.replaces_report_id),
+        replaces_report_revision=report.replaces_report_revision,
+        correction_reason=report.correction_reason,
+        superseded_by_report_id=visible_id(report.superseded_by_report_id),
+        superseded_at=report.superseded_at,
+        current_effective_report_id=visible_id(
+            current_effective.report_id if current_effective is not None else None
+        ),
+        is_current_effective=(
+            current_effective is not None and current_effective.report_id == report.report_id
+        ),
+        requires_re_review=report.replaces_report_id is not None and report.status != "APPROVED",
+        replacement_state=(
+            "SUPERSEDED" if report.superseded_by_report_id
+            else "REPLACEMENT_COMMITTED" if report.replaces_report_id and report.status == "APPROVED"
+            else "CORRECTION_PENDING" if report.replaces_report_id
+            else "NONE"
+        ),
     )
 
 
@@ -613,6 +650,7 @@ def create_report_draft(
         ai_draft_used=False,
         created_by=current_user.user_id,
     )
+    report.report_family_id = report.report_id
     session.add(report)
     session.flush()
     _replace_report_sources(session, report.report_id, request.sources, current_user)
@@ -628,7 +666,7 @@ def create_report_draft(
         session.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report draft could not be saved.") from exc
     session.refresh(report)
-    return _report_response(session, report)
+    return _report_response(session, report, current_user)
 
 
 @router.post("", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
@@ -672,6 +710,9 @@ def save_report(
             target_revision=request.base_report_revision,
             reason=None,
             error=error,
+            related_target_type="report" if request.replaces_report_id else None,
+            related_target_id=request.replaces_report_id,
+            related_target_revision=request.replaces_report_revision,
         )
         raise
 
@@ -696,12 +737,45 @@ def _save_report_mutation(
     if idempotency_key is not None:
         existing = session.scalar(select(Report).where(Report.idempotency_key == idempotency_key))
         if existing is not None:
-            return _report_response(session, existing)
+            return _report_response(session, existing, current_user)
 
     if request.draft_report_id is not None:
         report = session.scalar(select(Report).where(Report.report_id == request.draft_report_id))
         if report is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report draft not found.")
+        if report.superseded_by_report_id is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "REPORT_IMMUTABLE", "message": "대체된 확정 보고서는 제자리에서 변경할 수 없습니다."},
+            )
+        validate_correction_contract(report, request)
+        if target_status == "DRAFT" and report.replaces_report_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "REPORT_STATUS_TRANSITION_NOT_ALLOWED", "message": "일반 보고서는 검토 뒤 초안으로 되돌릴 수 없습니다."},
+            )
+        if report.status == "REVIEWED" and target_status == "APPROVED" and any(
+            value is not None for value in (
+                request.report_type,
+                request.title,
+                request.summary,
+                request.analysis_content,
+                request.conclusion,
+                request.action_plan,
+                request.work_record_id,
+                request.structure_item_id,
+                request.period_start,
+                request.period_end,
+                request.sources,
+            )
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "REPORT_REVIEW_INVALIDATED",
+                    "message": "검토 뒤 내용이 바뀌었습니다. 정정본을 초안으로 되돌린 뒤 다시 검토하세요.",
+                },
+            )
         _validate_report_transition(report.status, target_status)
         if request.sources is not None and report.status not in {"DRAFT", "AI_DRAFTED"}:
             raise HTTPException(
@@ -728,6 +802,7 @@ def _save_report_mutation(
             title=_clean_required(request.title, "title"),
             created_by=current_user.user_id,
         )
+        report.report_family_id = report.report_id
         session.add(report)
         session.flush()
         if target_status == "ARCHIVED":
@@ -759,6 +834,11 @@ def _save_report_mutation(
     report.period_start = request.period_start if request.period_start is not None else report.period_start
     report.period_end = request.period_end if request.period_end is not None else report.period_end
     report.status = target_status
+    if target_status == "DRAFT":
+        report.reviewed_by = None
+        report.reviewed_at = None
+        report.approved_by = None
+        report.approved_at = None
     if target_status in {"REVIEWED", "APPROVED"}:
         report.reviewed_by = current_user.user_id
         report.reviewed_at = now
@@ -795,6 +875,15 @@ def _save_report_mutation(
                 "reportStatus": target_status,
             },
         )
+    if report.replaces_report_id is not None and target_status == "APPROVED":
+        if not request.save_as_document or request.document_status.strip().upper() != "IN_REVIEW":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "REPORT_CORRECTION_PUBLICATION_REVIEW_REQUIRED",
+                    "message": "정정본 확정 문서는 검토중 상태로 새로 생성해 공개 승인을 다시 받아야 합니다.",
+                },
+            )
     if request.save_as_document and report.generated_document_id is not None:
         raise HTTPException(
             status_code=409,
@@ -816,21 +905,11 @@ def _save_report_mutation(
         )
         report.generated_document_id = document.document_id
 
-    if target_status == "ARCHIVED" and report.generated_document_id is not None:
-        generated_document = session.scalar(
-            select(Document).where(Document.document_id == report.generated_document_id)
-        )
-        if generated_document is not None:
-            generated_document.status = "ARCHIVED"
-            generated_document.published_version_id = None
-            generated_document.revision += 1
-            versions = session.scalars(
-                select(DocumentVersion).where(DocumentVersion.document_id == generated_document.document_id)
-            ).all()
-            for version in versions:
-                version.version_status = "ARCHIVED"
-                version.is_published = False
-                version.published_at = None
+    replaced_report = None
+    if report.replaces_report_id is not None and target_status == "APPROVED":
+        replaced_report = finalize_report_replacement(session, report, now)
+    if target_status == "ARCHIVED":
+        archive_generated_document(session, report.generated_document_id)
 
     _record_activity(
         session,
@@ -841,7 +920,7 @@ def _save_report_mutation(
     )
     try:
         session.flush()
-        response = _report_response(session, report)
+        response = _report_response(session, report, current_user)
         if mutation_key is not None:
             receipt = ReportMutationReceipt(
                 mutation_key=mutation_key,
@@ -852,6 +931,9 @@ def _save_report_mutation(
                 source_set_hash_sha256=report.source_set_hash_sha256,
                 generated_document_id=report.generated_document_id,
                 generated_version_id=(response.generated_document.latest_version_id if response.generated_document else None),
+                report_family_id=report.report_family_id,
+                replaces_report_id=report.replaces_report_id,
+                replaces_report_revision=report.replaces_report_revision,
                 response_json=response.model_dump_json(),
             )
             session.add(receipt)
@@ -870,7 +952,7 @@ def _save_report_mutation(
                     else None
                 ),
                 target_revision=report.report_revision,
-                reason=None,
+                reason=report.correction_reason,
                 before_hash=before_hash,
                 after_hash=canonical_hash(
                     {
@@ -899,101 +981,15 @@ def _save_report_mutation(
                 domain_receipt_id=str(receipt.id),
                 approval_status="APPROVED" if target_status in {"APPROVED", "ARCHIVED"} else "PENDING",
                 approved_by=current_user.user_id if target_status in {"APPROVED", "ARCHIVED"} else None,
+                related_target_type="report" if report.replaces_report_id else None,
+                related_target_id=report.replaces_report_id,
+                related_target_revision=(
+                    report.replaces_report_revision if replaced_report is not None else None
+                ),
             )
         session.commit()
     except IntegrityError as exc:
         session.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report could not be saved.") from exc
     session.refresh(report)
-    return _report_response(session, report)
-
-
-@router.get("", response_model=list[ReportResponse])
-def list_reports(
-    current_user: CurrentUser,
-    session: Annotated[Session, Depends(get_db_session)],
-) -> list[ReportResponse]:
-    reports = session.scalars(select(Report).order_by(desc(Report.updated_at), desc(Report.id))).all()
-    readable: list[Report] = []
-    filtered_count = 0
-    for report in reports:
-        if _report_is_readable(session, report, current_user):
-            readable.append(report)
-        else:
-            filtered_count += 1
-    _record_report_access(
-        session,
-        actor_id=current_user.user_id,
-        event_type="report.list_read",
-        report_id=None,
-        title=None,
-        message=f"보고서 목록 권한 재검사 완료: 반환 {len(readable)}건, 비노출 {filtered_count}건.",
-    )
-    session.commit()
-    return [_report_response(session, report) for report in readable]
-
-
-@router.get("/{report_id}", response_model=ReportResponse)
-def get_report(
-    report_id: str,
-    current_user: CurrentUser,
-    session: Annotated[Session, Depends(get_db_session)],
-) -> ReportResponse:
-    report = session.scalar(select(Report).where(Report.report_id == report_id))
-    if report is None or not _report_is_readable(session, report, current_user):
-        _record_report_access(
-            session,
-            actor_id=current_user.user_id,
-            event_type="report.read_denied",
-            report_id=report_id,
-            title=None,
-            message="보고서 또는 원천을 현재 권한으로 열람할 수 없어 존재를 숨겼습니다.",
-        )
-        session.commit()
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=REPORT_NOT_VISIBLE_DETAIL,
-        )
-    _record_report_access(
-        session,
-        actor_id=current_user.user_id,
-        event_type="report.read_granted",
-        report_id=report.report_id,
-        title=report.title,
-        message="보고서와 모든 원천의 현재 열람 권한을 재검사해 조회를 허용했습니다.",
-    )
-    session.commit()
-    return _report_response(session, report)
-
-
-@router.get("/{report_id}/sources", response_model=list[ReportSourceResponse])
-def list_report_sources(
-    report_id: str,
-    current_user: CurrentUser,
-    session: Annotated[Session, Depends(get_db_session)],
-) -> list[ReportSourceResponse]:
-    report = session.scalar(select(Report).where(Report.report_id == report_id))
-    if report is None or not _report_is_readable(session, report, current_user):
-        _record_report_access(
-            session,
-            actor_id=current_user.user_id,
-            event_type="report.source_read_denied",
-            report_id=report_id,
-            title=None,
-            message="보고서 원천 열람 권한 재검사에 실패해 보고서와 원천의 존재를 숨겼습니다.",
-        )
-        session.commit()
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=REPORT_NOT_VISIBLE_DETAIL,
-        )
-    _record_report_access(
-        session,
-        actor_id=current_user.user_id,
-        event_type="report.source_read_granted",
-        report_id=report.report_id,
-        title=report.title,
-        message="보고서의 모든 원천에 대한 현재 열람 권한을 재검사해 조회를 허용했습니다.",
-    )
-    session.commit()
-    return _report_response(session, report).sources
+    return _report_response(session, report, current_user)

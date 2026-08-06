@@ -203,6 +203,7 @@
                               CanUserAddRows="False"
                               BorderThickness="0">
                         <DataGrid.Columns>
+                            <DataGridTextColumn Header="상태" Binding="{Binding StatusLabel}" Width="86" />
                             <DataGridTextColumn Header="유형" Binding="{Binding SourceTypeLabel}" Width="98" />
                             <DataGridTextColumn Header="보고서" Binding="{Binding ReportTitle}" Width="*" />
                             <DataGridTextColumn Header="고정 버전" Binding="{Binding SourceVersionId}" Width="110" />

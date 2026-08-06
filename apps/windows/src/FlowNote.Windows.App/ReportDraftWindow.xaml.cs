@@ -204,7 +204,7 @@ public partial class ReportDraftWindow : Window
                 serverWorkflowReport = result.Saved;
                 WorkflowStateTextBlock.Text =
                     $"작성 단계: 확정 · revision {result.Saved.ReportRevision} · 내용/source hash 일치 확인";
-                new ReportDetailWindow(result.Saved, serverReports) { Owner = this }.ShowDialog();
+                new ReportDetailWindow(result.Saved, serverReports, reports) { Owner = this }.ShowDialog();
             }
             return;
         }
@@ -342,7 +342,7 @@ public partial class ReportDraftWindow : Window
         try
         {
             var report = await serverReports.GetReportAsync(selected.ReportId);
-            new ReportDetailWindow(report, serverReports) { Owner = this }.ShowDialog();
+            new ReportDetailWindow(report, serverReports, reports) { Owner = this }.ShowDialog();
         }
         catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException)
         {
@@ -413,5 +413,16 @@ public partial class ReportDraftWindow : Window
         string? SourceVersionId,
         int? SourceRevision,
         string SourceHashSha256,
-        string TraceId);
+        string TraceId)
+    {
+        public string StatusLabel => ReportStatus switch
+        {
+            "APPROVED" => "● 유효",
+            "SUPERSEDED" => "↪ 대체됨",
+            "ARCHIVED" => "▣ 보관",
+            "REVIEWED" => "◐ 검토중",
+            "DRAFT" => "○ 초안",
+            _ => ReportStatus
+        };
+    }
 }

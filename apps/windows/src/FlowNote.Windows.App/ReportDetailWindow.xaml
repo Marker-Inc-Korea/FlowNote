@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="보고서 상세와 원천 역추적"
         Width="1180"
-        Height="720"
+        Height="780"
         MinWidth="940"
         MinHeight="560"
         Background="{StaticResource WindowBackgroundBrush}">
@@ -11,6 +11,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="140" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
@@ -23,7 +24,7 @@
                 <TextBlock Text="{Binding Title}" FontSize="17" FontWeight="SemiBold" />
                 <TextBlock Margin="0,6,0,0" TextWrapping="Wrap">
                     <Run Text="상태 " FontWeight="SemiBold" />
-                    <Run Text="{Binding Status}" />
+                    <Run x:Name="LifecycleStatusRun" Text="{Binding Status}" />
                     <Run Text="  ·  report revision " FontWeight="SemiBold" />
                     <Run Text="{Binding ReportRevision}" />
                     <Run Text="  ·  생성 문서 " FontWeight="SemiBold" />
@@ -33,6 +34,8 @@
                     <Run Text="내용 hash " FontWeight="SemiBold" />
                     <Run Text="{Binding ContentHashSha256}" />
                 </TextBlock>
+                <TextBlock x:Name="CorrectionInfoTextBlock" Margin="0,4,0,0" TextWrapping="Wrap"
+                           Foreground="#8A4B08" />
                 <TextBlock Margin="0,4,0,0" TextWrapping="Wrap">
                     <Run Text="source 집합 hash " FontWeight="SemiBold" />
                     <Run Text="{Binding SourceSetHashSha256}" />
@@ -58,12 +61,28 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <DockPanel Grid.Row="2">
+        <Border Grid.Row="2" Margin="0,0,0,10" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="4">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Margin="10,8" FontWeight="SemiBold" Text="보고서 계보 · 현재 유효본과 과거 생성 문서" />
+                <DataGrid x:Name="LineageGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" BorderThickness="0">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="상태" Binding="{Binding StatusLabel}" Width="110" />
+                        <DataGridTextColumn Header="제목" Binding="{Binding Title}" Width="*" />
+                        <DataGridTextColumn Header="정정 사유" Binding="{Binding CorrectionReason}" Width="220" />
+                        <DataGridTextColumn Header="생성 문서" Binding="{Binding GeneratedDocumentId}" Width="190" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+        </Border>
+
+        <DockPanel Grid.Row="3">
             <TextBlock x:Name="StatusTextBlock"
                        VerticalAlignment="Center"
                        Foreground="{StaticResource SecondaryTextBrush}"
                        Text="원천을 선택하면 당시 version/revision/hash로 확인할 수 있습니다." />
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="CreateCorrectionButton" Width="112" Height="30" Margin="0,0,8,0"
+                        Content="정정본 만들기" Click="CreateCorrectionButton_Click" />
                 <Button Width="132" Height="30" Margin="0,0,8,0"
                         Content="선택 원천 돌아가기"
                         Click="OpenSourceButton_Click" />

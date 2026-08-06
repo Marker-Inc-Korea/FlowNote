@@ -234,6 +234,20 @@ Windows와 Android의 알림은 장기적으로 개인 메신저가 아니라 �
 
 서버 보고서는 `DRAFT → REVIEWED → APPROVED → ARCHIVED`로 전이한다. WPF는 검토중 전이를 거쳐 확정 저장하며 확정 단계에서만 문서를 생성한다. 생성 문서 상태는 요청의 `documentStatus`로 연결하므로 보고서 확정이 자동 공개 최신본을 뜻하지 않는다. 검토중 전환 뒤 편집 내용이 달라지면 새 초안과 재검토를 요구하고, 보고서를 보관하면 연결된 생성 문서와 버전도 함께 보관하되 고정 source와 receipt는 유지한다. 최종 저장은 로컬 보고서 문서와 source를 먼저 보존한 뒤 `/api/v1/reports`를 호출한다. 전송 실패나 source 변경 충돌은 `server_sync_queue`에 남고 성공하면 `documents.server_report_id`, `documents.server_document_id`, `document_versions.server_version_id`, `server_id_mappings`를 채운다. 서버는 FieldComment의 관찰 버전과 선정 `review_revision`, 원천 hash를 `report_sources`에 고정하고 상태 전이·문서 저장 직전에 상태·version·revision·hash·채널 권한을 다시 검사한다. 확정 뒤 원천이 바뀌어도 보고서 상세는 당시 source snapshot을 유지하며 현재 채널 권한을 통과한 사용자가 type/ID/version/revision/trace/hash로 역추적할 수 있다. AI가 자동 작성하는 보고서는 아직 구현 범위가 아니다.
 
+확정 뒤 오류는 기존 보고서를 수정하지 않고 같은 계열의 정정 `DRAFT`로 처리한다. 정정본은 기준 보고서의 제목·내용과 전체 source snapshot을 읽기 기준으로 복사하고 필수 정정 사유, 독립 revision/hash/receipt/audit를 가진다. 정정 승인 전에는 기존 `APPROVED`가 유효하며, 승인 transaction 뒤에는 새 보고서 하나만 유효하고 이전 보고서는 `SUPERSEDED` projection과 과거 생성 문서·source trace를 유지한다.
+
+```text
+현재 APPROVED ──정정 생성 transaction──> 정정 DRAFT ──재검토──> REVIEWED
+      │                                       │
+      └──────────── 승인 전까지 유효 ──────────┘
+
+정정 REVIEWED ──승인 transaction──> 새 APPROVED(유효, 새 문서 IN_REVIEW)
+                                      └─ 이전 보고서 SUPERSEDED
+                                         이전 생성 문서 ARCHIVED
+```
+
+목록·상세·계보는 각 보고서의 모든 source에 현재 채널 권한을 다시 적용한다. 권한을 통과하지 못한 계열 구성원과 related target은 반환하지 않는다. AI 후보 재생성은 유효본의 source만 사용하며 대체된 과거본은 추적·감사 조회에만 남긴다.
+
 ## 후속 연동
 
 MES/ERP는 후속 연동 대상이다. 현재 코드는 내부 작업순서와 문서/FieldComment 기록을 먼저 안정적으로 축적하는 단계다.

@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-08-04 현재 전역 FastAPI 앱에 등록된 151개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency 계약, 통합 변경 이력 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-08-06 현재 전역 FastAPI 앱에 등록된 153개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency·정정/대체 계약, 통합 변경 이력 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -28,7 +28,7 @@ operation key가 있는 고위험 mutation은 선택 헤더 `X-FlowNote-Run-Id`�
 | GET | `/api/v1/change-history` | 공통 event envelope에서 재생성한 통합 변경 이력과 조치 필요 항목 조회 |
 | GET | `/api/v1/change-history/{event_id}` | 같은 권한 정책으로 현재 업무 상태와 원본 event envelope 상세 조회 |
 
-조회는 `admin`, `system-admin`만 허용한다. `limit`은 기본 100, 최소 1, 최대 500이며 응답은 `serverTime` 내림차순 배열이다. 각 행에는 `sourceId`, `formatStatus`, `schemaVersion`, `eventType`, actor·session·device, target·version·revision, `reason`, approval, 전후 SHA-256, result·result code·HTTP status, run/correlation ID, `serverTime`, `missingFields`가 포함된다. 공통 행은 `formatStatus = 공통 형식`, 이전 `activity_history` 행은 `formatStatus = 이전 형식·일부 필드 없음`으로 반환한다. 이전 행의 `actorRole`, session/device, target version/revision, approval, hash, result, HTTP status, run/correlation ID는 추정하지 않고 `null`과 `missingFields`로 표시한다.
+조회는 `admin`, `system-admin`만 허용한다. `limit`은 기본 100, 최소 1, 최대 500이며 응답은 `serverTime` 내림차순 배열이다. 각 행에는 `sourceId`, `formatStatus`, `schemaVersion`, `eventType`, actor·session·device, target·version·revision, 선택적 related target type/ID/revision, `reason`, approval, 전후 SHA-256, result·result code·HTTP status, run/correlation ID, `serverTime`, `missingFields`가 포함된다. 정정 생성·대체 확정은 related target에 기준 보고서와 revision을 기록한다. 공통 행은 `formatStatus = 공통 형식`, 이전 `activity_history` 행은 `formatStatus = 이전 형식·일부 필드 없음`으로 반환한다. 이전 행의 `actorRole`, session/device, target version/revision, related target, approval, hash, result, HTTP status, run/correlation ID는 추정하지 않고 `null`과 `missingFields`로 표시한다.
 
 operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 상태 전이, 작업순서 변경은 기존 도메인 receipt를 유지하면서 `sync_mutation_receipts`와 `audit_event_envelopes`를 같은 업무 transaction에 추가한다. 같은 key·같은 event/target/intent의 재시도는 최초 결과를 반환하고 업무 revision·도메인 감사·공통 행을 늘리지 않는다. 같은 key의 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`다. 문서 상태, FieldComment 검토, 보고서 상태 전이, 작업순서 항목 상태에서 발생한 업무 거부·충돌도 공통 receipt로 고정되며 같은 요청 재시도는 같은 HTTP 결과로 수렴한다.
 
@@ -342,14 +342,20 @@ Android 현장 입력은 아래 추가 계약을 사용한다.
 | Method | Path | 설명 |
 | --- | --- | --- |
 | POST | `/api/v1/reports/drafts` | 수동 보고서 초안 생성 |
-| POST | `/api/v1/reports` | 보고서 상태 전이와 확정 문서 저장. `reportStatus`는 `REVIEWED`, `APPROVED`, `ARCHIVED`를 사용하며 생략 시 기존 호환을 위해 `APPROVED` |
+| POST | `/api/v1/reports` | 보고서 상태 전이와 확정 문서 저장. 일반 보고서는 `REVIEWED`, `APPROVED`, `ARCHIVED`, 정정본 재검토는 추가로 `DRAFT`를 사용 |
+| POST | `/api/v1/reports/{report_id}/corrections` | 현재 유효한 확정본을 기준으로 독립 정정 `DRAFT` 생성 |
 | GET | `/api/v1/reports` | 보고서 목록 |
 | GET | `/api/v1/reports/{report_id}` | 보고서 상세 |
 | GET | `/api/v1/reports/{report_id}/sources` | 보고서 고정 원천 목록 |
+| GET | `/api/v1/reports/{report_id}/lineage` | 현재 권한으로 볼 수 있는 같은 계열의 유효본·대체본·과거 생성 문서 조회 |
 
 최초 draft 생성과 draft 없이 source를 직접 보내는 호환 저장은 서로 다른 `sourceType` 최소 2종을 요구하며 같은 type/id/version 중복을 거부한다. 기존 draft를 전이할 때는 고정 source를 다시 보내지 않아도 된다. source는 `DRAFT` 또는 `AI_DRAFTED` 상태에서만 교체할 수 있고 `REVIEWED` 이후에는 바꿀 수 없다. 응답의 각 source는 `source_type`, `source_id`, 고정 `source_version_id`, FieldComment `source_revision`, 독립 `trace_id`, 저장 시점 `source_hash_sha256`를 반환한다.
 
-상태 전이는 `DRAFT|AI_DRAFTED → REVIEWED|APPROVED`, `REVIEWED → APPROVED`, `APPROVED → ARCHIVED`만 허용한다. 기존 호환 호출은 `reportStatus`를 생략하면 `APPROVED`를 사용하지만 WPF 작성 흐름은 `REVIEWED`를 반드시 거친다. 확정 문서는 `APPROVED` 전이에서 `saveAsDocument = true`일 때 한 번만 만들며, 요청한 `documentStatus`를 사용하므로 자동으로 공개 최신본이 되지 않는다. `ARCHIVED` 전이는 연결된 생성 문서와 모든 버전을 보관하고 공개 포인터를 해제하지만 보고서 source와 mutation receipt는 유지한다.
+일반 보고서 상태 전이는 `DRAFT|AI_DRAFTED → REVIEWED|APPROVED`, `REVIEWED → APPROVED`, `APPROVED → ARCHIVED`만 허용한다. 정정본은 재검토가 필요할 때만 `REVIEWED → DRAFT`로 되돌릴 수 있다. 기존 호환 호출은 `reportStatus`를 생략하면 `APPROVED`를 사용하지만 WPF 작성 흐름은 `REVIEWED`를 반드시 거친다. 확정 문서는 `APPROVED` 전이에서 `saveAsDocument = true`일 때 한 번만 만들며, 요청한 `documentStatus`를 사용하므로 자동으로 공개 최신본이 되지 않는다. `ARCHIVED` 전이는 연결된 생성 문서와 모든 버전을 보관하고 공개 포인터를 해제하지만 보고서 source와 mutation receipt는 유지한다.
+
+정정 생성 요청은 `correctionReason`, `baseReportRevision`, `mutationKey`, 선택적 `sourceSetHashSha256`, 선택적 전체 `sources`를 받는다. `sources`를 생략하면 기준 보고서의 전체 고정 snapshot을 새 trace ID로 복사하고, 보내면 선택한 전체 집합을 새 snapshot으로 사용한다. 원천이 바뀌거나 채널 권한이 달라지면 자동 제외하지 않고 `409 REPORT_CORRECTION_SOURCE_CONFLICT`와 `SOURCE_SNAPSHOT_CHANGED` 또는 `SOURCE_ACCESS_CHANGED`를 반환한다. 같은 확정본의 두 정정 생성은 하나만 성공하며 나머지는 `REPORT_CORRECTION_ALREADY_EXISTS` 또는 경합 시 `REPORT_CORRECTION_RACE`다. 같은 mutation key·같은 intent 재전송은 최초 정정본 응답을 반환한다.
+
+정정본의 상태 요청은 `reportFamilyId`, `replacesReportId`, `replacesReportRevision`, `sourceSetHashSha256`를 서버 응답과 동일하게 보내야 한다. 정정본은 `DRAFT → REVIEWED → APPROVED`를 다시 거치며, 검토 뒤 내용이 바뀌면 승인 요청을 `REPORT_REVIEW_INVALIDATED`로 거부한다. 이때 `REVIEWED → DRAFT`로 되돌려 내용을 저장한 뒤 다시 `REVIEWED`로 전환한다. 정정 승인에는 `saveAsDocument = true`, `documentStatus = IN_REVIEW`가 필수다. 승인 transaction에서 새 보고서를 유효본으로 만들고 이전 보고서를 논리 `SUPERSEDED`, 이전 생성 문서를 `ARCHIVED`로 전환한다. 새 문서는 공개 포인터 없이 별도 공개 승인을 기다린다.
 
 보고서 source 타입은 `FIELD_COMMENT`, `DOCUMENT`, `WORK_SEQUENCE_ITEM`, `WORK_SEQUENCE_HISTORY`, `WORK_RECORD`, `WORK_RECORD_VERSION`을 사용한다. 서버 저장은 `SELECTED` FieldComment와 현재 공개 문서 버전만 허용하며 FieldComment의 관찰 문서 버전을 source에 자동 고정한다. 활성 업무 채널에 연결된 source는 actor의 활성 멤버십을 검사한다. WPF 초안 화면은 `SELECTED` FieldComment, 공개 문서, 작업순서 이력과 기존 보고서의 고정 source를 유형별로 표시한다. FieldComment 작업함의 다중 선택과 상세 화면의 현재 항목에서 보고서 화면으로 바로 이동할 수 있다. WPF Core의 저장 전 검증은 `WORK_SEQUENCE_ITEM`도 받아 현재 항목과 최신 변경 기록을 확인하고 `WORK_SEQUENCE_HISTORY`는 선택한 변경 기록의 존재와 ID를 확인한다. `SELECTED` 전이에는 관찰 문서 버전과 원천 작성자가 필요하다.
 
@@ -357,7 +363,7 @@ Android 현장 입력은 아래 추가 계약을 사용한다.
 
 보고서 목록 조회는 반환·비노출 건수를, 상세/source 조회는 허용·거부를 `activity_history`에 기록한다.
 
-구현된 보고서 저장 계약은 `idempotencyKey`, `mutationKey`, `reportStatus`, 기존 초안의 선택적 `baseReportRevision`, 선택적 `contentHashSha256`, `sourceSetHashSha256`을 받는다. 각 source 요청은 `sourceType`, `sourceId`, 선택적 `sourceVersionId`, `sourceRevision`, `sourceHashSha256`, `relationType`을 보내며 서버가 현재 원천을 검증해 revision/hash를 고정한다. 내용 hash는 보고서 유형·제목·본문·작업/구조/기간·상태의 정규화 JSON, source 집합 hash는 source type/ID/version/revision/hash/relation의 정렬 canonical JSON을 SHA-256으로 계산한다.
+구현된 보고서 저장 계약은 `idempotencyKey`, `mutationKey`, `reportStatus`, 기존 초안의 선택적 `baseReportRevision`, 선택적 `contentHashSha256`, `sourceSetHashSha256`과 정정본의 `reportFamilyId`, `replacesReportId`, `replacesReportRevision`을 받는다. 각 source 요청은 `sourceType`, `sourceId`, 선택적 `sourceVersionId`, `sourceRevision`, `sourceHashSha256`, `relationType`을 보내며 서버가 현재 원천을 검증해 revision/hash를 고정한다. 내용 hash는 보고서 유형·제목·본문·작업/구조/기간·상태와 정정 계열·대체 대상·사유의 정규화 JSON, source 집합 hash는 source type/ID/version/revision/hash/relation의 정렬 canonical JSON을 SHA-256으로 계산한다.
 
 서버는 검토·확정·보관 전이와 문서/파일 생성 직전에 모든 source의 존재·상태·version·hash와 채널 권한을 다시 읽는다. 원천이 사라지거나 비공개·권한 밖 상태가 되면 `404 SOURCE_NOT_VISIBLE`, 여전히 적격이지만 고정 hash/revision이 달라지면 `409`로 중단한다. 허용되지 않은 상태 전이는 `REPORT_STATUS_TRANSITION_NOT_ALLOWED`, 확정 이외 단계의 문서 생성은 `REPORT_DOCUMENT_STATUS_MISMATCH`, 이미 생성 문서가 있는 보고서의 중복 생성은 `REPORT_DOCUMENT_ALREADY_CREATED`로 거부한다. 기존 초안 revision 경합은 `REPORT_STALE_REVISION`, 클라이언트가 보낸 두 hash와 서버 계산값 불일치는 각각 `REPORT_CONTENT_HASH_MISMATCH`, `REPORT_SOURCE_SET_HASH_MISMATCH`다. `mutationKey`가 없으면 `idempotencyKey`를 mutation key로 사용하며 같은 key·같은 intent는 `report_mutation_receipts`의 최초 응답을 반환하고 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`다. 각 상태 전이는 보고서, 고정 source, 선택적 생성 document/version, 두 hash와 mutation receipt를 한 transaction으로 확정한다. 응답은 `report_revision`, `content_hash_sha256`, `source_set_hash_sha256`, `generated_document`와 source별 확정 ID/version/hash를 반환한다. WPF는 서버 응답의 content/source 집합 hash를 다시 계산해 일치할 때만 report/document/version ID와 hash를 로컬에 보존하고 큐를 `SYNCED`로 종결한다. 최종 저장 요청 전 로컬 보고서와 `report_sources`를 먼저 보존하므로 서버 거부·통신 실패 때도 기존 동기화 화면에서 같은 큐의 실패·충돌 사유를 확인하고 재시도할 수 있다.
 

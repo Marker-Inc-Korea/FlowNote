@@ -188,6 +188,9 @@ def record_common_mutation_result(
     approval_status: str = "NOT_REQUIRED",
     approved_by: str | None = None,
     approval_reference: str | None = None,
+    related_target_type: str | None = None,
+    related_target_id: str | None = None,
+    related_target_revision: int | None = None,
 ) -> SyncMutationReceipt:
     event = _new_event(
         event_type=event_type,
@@ -211,6 +214,9 @@ def record_common_mutation_result(
         approval_status=approval_status,
         approved_by=approved_by,
         approval_reference=approval_reference,
+        related_target_type=related_target_type,
+        related_target_id=related_target_id,
+        related_target_revision=related_target_revision,
     )
     session.add(event)
     session.flush()
@@ -252,6 +258,9 @@ def record_common_mutation_failure(
     target_revision: int | None,
     reason: str | None,
     error: HTTPException,
+    related_target_type: str | None = None,
+    related_target_id: str | None = None,
+    related_target_revision: int | None = None,
 ) -> None:
     if operation_key is None:
         return
@@ -292,6 +301,9 @@ def record_common_mutation_failure(
                     "operationKey": operation_key,
                     "existingReceiptId": existing.receipt_id,
                 },
+                related_target_type=related_target_type,
+                related_target_id=related_target_id,
+                related_target_revision=related_target_revision,
             )
         )
         session.commit()
@@ -313,6 +325,9 @@ def record_common_mutation_failure(
         result_code=result_code,
         http_status=error.status_code,
         response_detail=detail,
+        related_target_type=related_target_type,
+        related_target_id=related_target_id,
+        related_target_revision=related_target_revision,
     )
     session.commit()
 
@@ -374,6 +389,9 @@ def _new_event(
     approval_status: str = "NOT_REQUIRED",
     approved_by: str | None = None,
     approval_reference: str | None = None,
+    related_target_type: str | None = None,
+    related_target_id: str | None = None,
+    related_target_revision: int | None = None,
 ) -> AuditEventEnvelope:
     return AuditEventEnvelope(
         event_id=f"aevt_{uuid4().hex}",
@@ -387,6 +405,9 @@ def _new_event(
         target_id=target_id,
         target_version_id=target_version_id,
         target_revision=target_revision,
+        related_target_type=related_target_type,
+        related_target_id=related_target_id,
+        related_target_revision=related_target_revision,
         reason=_redact_sensitive_text(reason),
         approval_status=approval_status,
         approved_by=approved_by,

@@ -114,6 +114,7 @@ def ensure_android_handover_source(
             select(Report.id).where(
                 Report.report_id == source_id,
                 Report.status == "APPROVED",
+                Report.superseded_by_report_id.is_(None),
             )
         ) is not None
     elif source_type == "CHANNEL_MESSAGE":

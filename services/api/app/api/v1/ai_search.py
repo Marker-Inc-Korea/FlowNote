@@ -105,6 +105,11 @@ EXCLUDED_REASON_GUIDANCE = {
         "operator_action": "보관된 보고서를 후보로 쓸 필요가 있으면 보고서 상태를 먼저 검토한다.",
         "source_type": "REPORT_SOURCE",
     },
+    "report_source_superseded_report": {
+        "label": "대체된 과거 보고서 source 제외",
+        "operator_action": "재생성 후보에는 현재 유효본을 사용하고, 과거본은 계보와 감사 근거로만 조회한다.",
+        "source_type": "REPORT_SOURCE",
+    },
     "report_source_without_trace_id": {
         "label": "보고서 source 식별자 누락",
         "operator_action": "source_type과 source_id가 비어 있는 보고서 근거를 보완하거나 삭제한다.",
@@ -463,6 +468,7 @@ def _report_source_rows(session: Session) -> list[tuple[ReportSource, Report]]:
         .join(Report, Report.report_id == ReportSource.report_id)
         .where(
             Report.status != "ARCHIVED",
+            Report.superseded_by_report_id.is_(None),
             func.trim(func.coalesce(ReportSource.source_type, "")) != "",
             func.trim(func.coalesce(ReportSource.source_id, "")) != "",
         )
@@ -762,6 +768,12 @@ def _excluded_counts_by_reason(
         .join(Report, ReportSource.report_id == Report.report_id)
         .where(Report.status == "ARCHIVED")
     ) or 0
+    report_sources_superseded_report = session.scalar(
+        select(func.count())
+        .select_from(ReportSource)
+        .join(Report, ReportSource.report_id == Report.report_id)
+        .where(Report.superseded_by_report_id.is_not(None))
+    ) or 0
     report_sources_blank_trace = session.scalar(
         select(func.count())
         .select_from(ReportSource)
@@ -807,6 +819,7 @@ def _excluded_counts_by_reason(
         "work_sequence_history_without_trace_text": work_sequence_history_empty,
         "report_source_missing_report": report_sources_missing_report,
         "report_source_archived_report": report_sources_archived_report,
+        "report_source_superseded_report": report_sources_superseded_report,
         "report_source_without_trace_id": report_sources_blank_trace,
         "report_source_missing_origin": report_sources_missing_origin,
     }
@@ -1223,7 +1236,11 @@ def _excluded_reference_result(
             actual_reason = (
                 "report_source_archived_report"
                 if report is not None and report.status == "ARCHIVED"
-                else "report_source_missing_origin"
+                else (
+                    "report_source_superseded_report"
+                    if report is not None and report.superseded_by_report_id is not None
+                    else "report_source_missing_origin"
+                )
             )
         else:
             actual_reason = "SOURCE_NOT_CANDIDATE"

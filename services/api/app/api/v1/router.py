@@ -19,6 +19,8 @@ from app.api.v1.field_comments import router as field_comments_router
 from app.api.v1.field_comment_review_dashboard import router as field_comment_review_dashboard_router
 from app.api.v1.health import router as health_router
 from app.api.v1.reports import router as reports_router
+from app.api.v1.report_queries import router as report_queries_router
+from app.api.v1.report_corrections import router as report_corrections_router
 from app.api.v1.server_accounts import router as server_accounts_router
 from app.api.v1.sync_reconciliation import router as sync_reconciliation_router
 from app.api.v1.tags import router as tags_router
@@ -44,6 +46,8 @@ api_v1_router.include_router(tags_router)
 api_v1_router.include_router(terminal_devices_router)
 api_v1_router.include_router(work_sequences_router)
 api_v1_router.include_router(reports_router)
+api_v1_router.include_router(report_corrections_router)
+api_v1_router.include_router(report_queries_router)
 api_v1_router.include_router(ai_search_router)
 api_v1_router.include_router(ai_field_readiness_reviews_router)
 api_v1_router.include_router(ai_queries_router)

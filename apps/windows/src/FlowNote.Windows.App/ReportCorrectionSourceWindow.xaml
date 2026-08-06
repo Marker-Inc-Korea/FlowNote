@@ -1,0 +1,32 @@
+<Window x:Class="FlowNote.Windows.App.ReportCorrectionSourceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="정정본 현재 원천 선택"
+        Width="900" Height="620" MinWidth="720" MinHeight="480"
+        Background="{StaticResource WindowBackgroundBrush}">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock TextWrapping="Wrap"
+                   Text="기준 보고서의 과거 snapshot은 그대로 보존됩니다. 여기서는 정정본이 사용할 현재 원천 전체를 다시 선택합니다. 서로 다른 유형을 2종 이상 선택하세요." />
+        <DataGrid Grid.Row="1" x:Name="SourceGrid" Margin="0,10" SelectionMode="Extended"
+                  AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="유형" Binding="{Binding SourceType}" Width="150" />
+                <DataGridTextColumn Header="제목" Binding="{Binding Title}" Width="*" />
+                <DataGridTextColumn Header="설명" Binding="{Binding Detail}" Width="220" />
+                <DataGridTextColumn Header="현재 snapshot" Binding="{Binding SnapshotLabel}" Width="260" />
+            </DataGrid.Columns>
+        </DataGrid>
+        <DockPanel Grid.Row="2">
+            <TextBlock x:Name="StatusTextBlock" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Width="104" Height="30" Margin="8,0,8,0" Content="선택 원천 확인" Click="ConfirmButton_Click" />
+                <Button Width="72" Height="30" Content="취소" IsCancel="True" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>
