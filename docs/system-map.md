@@ -37,6 +37,10 @@ WPF 메인 화면은 로그인 역할에 맞춘 첫 업무 3개를 기존 메뉴
 
 `작업내역`의 동기화 큐 화면은 각 row를 완료, 보존 구 형식, 선행 조건 대기, 수동 조치 필요, 재시도 가능의 운영 상태로 구분한다. 전체 보존 건수는 `PENDING`, `FAILED`/`CONFLICT`, `SYNCED`, `DISCARDED`를 모두 세며, 서버본 유지로 종결한 `DISCARDED`는 삭제하지 않되 처리 대기 깊이에서는 제외한다. 요약은 `SYNCED`와 `DISCARDED`가 아닌 큐 깊이, 그중 가장 오래된 `created_at` 기준 대기 시간, 최근 1시간 `SYNCED` 처리량, `FAILED` 진단 분포를 표시한다. 인증 만료와 서버 연결 실패·시간 초과는 뒤 항목도 같은 원인으로 연속 실패시키지 않도록 현재 재시도 묶음을 즉시 중단하고, 항목 자체의 검증·로컬 파일 오류는 실패를 기록한 뒤 다음 독립 항목을 계속 처리한다.
 
+승인 작업함 공개는 서버 publish 응답과 문서 상세 read-back을 비교한 뒤 WPF의 문서 공개 포인터, version flag, 태그, `server_id_mappings`, 로컬 성공 큐 receipt와 이력을 한 SQLite transaction으로 갱신한다. 서버 성공 뒤 로컬 반영이 중단되면 작업함 새로고침이 `PUBLISHED` 승인 ID와 문서 공개 포인터를 다시 읽어 같은 로컬 receipt로 수렴시킨다.
+
+문서 충돌 작업함의 행동은 `서버본 유지`, `새 revision으로 다시 요청`, `로컬 태그 delta만 재적용`으로 나뉜다. 마지막 행동은 태그에만 보이며 공개본·삭제에는 나타나지 않는다. 서버 삭제가 확인되면 같은 로컬 문서의 미처리 큐를 `DOCUMENT_DELETED` 충돌로 전환하고 자동 전송을 멈춘다. 관리자가 서버본 유지 사유를 기록하면 큐만 `DISCARDED`로 종결하며 로컬 원천은 유지한다.
+
 과거 구 `create` action과 FieldNote/첨부가 남은 FAILED 큐는 일반 재시도가 현재 계약으로 자동 해석하지 않는다. `FlowNote.Windows.SyncMigrationTool`이 먼저 SQLite read-only dry-run으로 전체 FAILED 큐를 배타적으로 분류하고 안정된 plan hash를 만든다. 운영자가 plan hash와 row ID를 명시해 승인하면 전환 가능한 항목만 현재 action의 별도 `PENDING` 큐로 만들고 `server_sync_migration_audit`에 원천 snapshot과 연결을 남긴다. 기존 큐, 원천 행과 파일은 수정·삭제하지 않는다.
 
 ## 로컬 우선 데이터와 서버 권위 원천의 수렴 경계

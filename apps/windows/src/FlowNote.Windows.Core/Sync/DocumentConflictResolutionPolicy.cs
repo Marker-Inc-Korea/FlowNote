@@ -6,6 +6,7 @@ public static class DocumentConflictResolutionPolicy
 {
     public const string KeepServer = "KEEP_SERVER";
     public const string RetryWithLatest = "RETRY_WITH_LATEST";
+    public const string ReapplyTagDelta = "REAPPLY_TAG_DELTA";
     public const string RegisterNewVersion = "REGISTER_NEW_VERSION";
 
     public static IReadOnlyList<string> AllowedActions(
@@ -25,6 +26,10 @@ public static class DocumentConflictResolutionPolicy
             {
                 actions.Add(RetryWithLatest);
             }
+            if (queueAction == "replace_document_tags")
+            {
+                actions.Add(ReapplyTagDelta);
+            }
             else if (queueAction == "register_document_version" &&
                 conflictCode is "STALE_REVISION" or "STALE_BASE_VERSION" or "FILE_HASH_MISMATCH")
             {
@@ -39,6 +44,10 @@ public static class DocumentConflictResolutionPolicy
         if (queueAction is not ("replace_document_tags" or "publish_document_version" or "update_document_status"))
         {
             actions.Remove(RetryWithLatest);
+        }
+        if (queueAction != "replace_document_tags")
+        {
+            actions.Remove(ReapplyTagDelta);
         }
         if (conflictCode is "DOCUMENT_DELETED" or "IDEMPOTENCY_KEY_REUSED")
         {
@@ -85,7 +94,7 @@ public static class DocumentConflictResolutionPolicy
     }
 
     private static bool IsKnown(string action) =>
-        action is KeepServer or RetryWithLatest or RegisterNewVersion;
+        action is KeepServer or RetryWithLatest or ReapplyTagDelta or RegisterNewVersion;
 
     private static readonly HashSet<string> DocumentManagementRoles = new(
         ["admin", "manager", "system-admin", "document-admin", "assistant-manager", "department-manager"],

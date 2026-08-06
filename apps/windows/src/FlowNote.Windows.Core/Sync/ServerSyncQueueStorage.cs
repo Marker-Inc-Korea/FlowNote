@@ -52,8 +52,14 @@ public sealed partial class ServerSyncService
             "document-tags-v1",
             serverDocumentId,
             baseRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            "add:" + string.Join(",", addedTags.Select(TagService.NormalizeCode).Order()),
-            "remove:" + string.Join(",", removedTags.Select(TagService.NormalizeCode).Order()));
+            "add:" + string.Join(",", addedTags
+                .Select(TagService.NormalizeCode)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(value => value, StringComparer.Ordinal)),
+            "remove:" + string.Join(",", removedTags
+                .Select(TagService.NormalizeCode)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(value => value, StringComparer.Ordinal)));
         return ComputeSha256(canonical);
     }
 

@@ -591,7 +591,8 @@ public sealed partial class ServerSyncService
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT server_document_id, server_version_id
+            SELECT server_document_id, server_version_id, server_revision,
+                   server_published_version_id, server_file_hash_sha256
             FROM server_id_mappings
             WHERE entity_type = $entity_type
               AND local_id = $local_id
@@ -609,7 +610,10 @@ public sealed partial class ServerSyncService
 
         return new DocumentServerMapping(
             reader.IsDBNull(0) ? null : reader.GetString(0),
-            reader.IsDBNull(1) ? null : reader.GetString(1));
+            reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetInt32(2),
+            reader.IsDBNull(3) ? null : reader.GetString(3),
+            reader.IsDBNull(4) ? null : reader.GetString(4));
     }
 
     private string? TryGetFieldCommentServerId(string commentId)
@@ -815,7 +819,9 @@ public sealed partial class ServerSyncService
             ? DateTime.UtcNow.AddSeconds(exception.RetryNotBeforeSeconds).ToString("O")
             : null;
         using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             UPDATE server_sync_queue
             SET status = 'CONFLICT',
@@ -847,13 +853,47 @@ public sealed partial class ServerSyncService
             retryNotBefore is null ? DBNull.Value : retryNotBefore);
         command.Parameters.AddWithValue("$id", item.Id);
         command.ExecuteNonQuery();
+        if (exception.ConflictCode == "DOCUMENT_DELETED")
+        {
+            using var related = connection.CreateCommand();
+            related.Transaction = transaction;
+            related.CommandText = """
+                UPDATE server_sync_queue
+                SET status = 'CONFLICT',
+                    last_error = $last_error,
+                    conflict_code = 'DOCUMENT_DELETED',
+                    conflict_details = $conflict_details,
+                    server_read_back_json = COALESCE($server_read_back_json, server_read_back_json),
+                    allowed_actions_json = '["KEEP_SERVER"]',
+                    retry_not_before = NULL
+                WHERE id <> $id
+                  AND COALESCE(local_document_id, entity_id) = $local_document_id
+                  AND status IN ('PENDING', 'FAILED');
+                """;
+            related.Parameters.AddWithValue(
+                "$last_error",
+                "서버 문서가 삭제되어 관련 미처리 요청은 자동 재전송하지 않습니다. 서버본 유지로 보존 종결하세요.");
+            related.Parameters.AddWithValue("$conflict_details", exception.ResponseBody);
+            related.Parameters.AddWithValue(
+                "$server_read_back_json",
+                string.IsNullOrWhiteSpace(readBack?.AuthorityJson)
+                    ? DBNull.Value
+                    : readBack.AuthorityJson);
+            related.Parameters.AddWithValue("$id", item.Id);
+            related.Parameters.AddWithValue(
+                "$local_document_id",
+                item.LocalDocumentId ?? item.EntityId);
+            related.ExecuteNonQuery();
+        }
         RecordSyncHistory(
             connection,
             "server_sync.conflict_detected",
             item.EntityType,
             item.EntityId,
             $"{reason} 기준 revision={exception.ExpectedRevision?.ToString() ?? "없음"}, 서버 revision={exception.CurrentRevision?.ToString() ?? "없음"}",
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            transaction);
+        transaction.Commit();
     }
 
     private static string TranslateConflictCode(string code)
@@ -879,6 +919,7 @@ public sealed partial class ServerSyncService
             "TAG_MERGE_CONFLICT" => "같은 태그의 추가·제거 경쟁 충돌",
             "TAG_UNAVAILABLE" => "비활성·삭제 태그 충돌",
             "TAG_BASE_UNAVAILABLE" => "태그 기준 revision 스냅샷 누락",
+            "TAG_AGGREGATE_CHANGED" => "태그 외 문서 변경과의 aggregate revision 충돌",
             "TAG_INTENT_HASH_MISMATCH" => "태그 변경 의도 hash 불일치",
             "LEGACY_BASE_MISSING" => "구 큐 서버 기준값 누락",
             _ => "서버 문서 충돌"

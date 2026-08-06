@@ -171,7 +171,11 @@ def test_opposing_and_unavailable_tag_changes_return_structured_conflicts() -> N
         assert detail["schemaVersion"] == "document-conflict-v1"
         assert detail["code"] == "TAG_MERGE_CONFLICT"
         assert detail["conflictKind"] == "TAG_SET"
-        assert detail["allowedActions"] == ["KEEP_SERVER", "RETRY_WITH_LATEST"]
+        assert detail["allowedActions"] == [
+            "KEEP_SERVER",
+            "RETRY_WITH_LATEST",
+            "REAPPLY_TAG_DELTA",
+        ]
         assert detail["autoMergeAllowed"] is False
         assert detail["sourcePreserved"] is True
         assert detail["serverValue"]["revision"] == 2
@@ -201,6 +205,72 @@ def test_opposing_and_unavailable_tag_changes_return_structured_conflicts() -> N
         unavailable_detail = unavailable.json()["detail"]
         assert unavailable_detail["code"] == "TAG_UNAVAILABLE"
         assert any(item["reason"] == "INACTIVE" for item in unavailable_detail["userChoice"])
+
+
+def test_tag_delta_does_not_auto_merge_across_non_tag_aggregate_revision() -> None:
+    pdf_path, _, _, _ = prepare_factory_sample_files()
+    suffix = uuid4().hex
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        created = post_document_with_tags(
+            client, headers, pdf_path, f"Aggregate tag conflict {suffix}", ["line-a"]
+        )
+        document_id = created["document_id"]
+
+        status_response = client.patch(
+            f"/api/v1/documents/{document_id}/status",
+            headers=headers,
+            json={
+                "status": "IN_REVIEW",
+                "changeReason": "태그 기준 뒤 상태 변경",
+                "baseRevision": 1,
+                "mutationKey": f"status-before-tag:{suffix}",
+            },
+        )
+        assert status_response.status_code == 200, status_response.text
+
+        stale_tag = client.put(
+            f"/api/v1/documents/{document_id}/tags",
+            headers=headers,
+            json=tag_mutation(
+                document_id, 1, ["press-a"], [], f"tag-after-status:{suffix}"
+            ),
+        )
+        assert stale_tag.status_code == 409
+        detail = stale_tag.json()["detail"]
+        assert detail["code"] == "TAG_AGGREGATE_CHANGED"
+        assert detail["autoMergeAllowed"] is False
+        assert detail["authoritativeSnapshot"] == {
+            "revision": 2,
+            "status": "IN_REVIEW",
+            "deleted": False,
+            "latestVersionId": created["latest_version_id"],
+            "latestVersionHashSha256": created["latest_version"]["file"]["hash_sha256"],
+            "publishedVersionId": None,
+            "publishedVersionHashSha256": None,
+            "tags": ["line-a"],
+            "allowedActions": [
+                "KEEP_SERVER",
+                "RETRY_WITH_LATEST",
+                "REAPPLY_TAG_DELTA",
+            ],
+        }
+        assert detail["serverValue"]["latestVersionHashSha256"]
+        assert detail["serverValue"]["tags"] == ["line-a"]
+
+        read_back = client.get(
+            f"/api/v1/documents/{document_id}", headers=headers
+        ).json()
+        assert read_back["revision"] == 2
+        assert read_back["tags"] == ["line-a"]
+
+
+def test_canonical_tag_intent_hash_deduplicates_normalized_codes() -> None:
+    assert document_tag_intent_hash(
+        "doc-canonical", 7, [" Line A ", "line   a", "PRESS"], [" Old Tag "]
+    ) == document_tag_intent_hash(
+        "doc-canonical", 7, ["press", "line-a"], ["old-tag", "OLD TAG"]
+    )
 
 
 def test_deleted_tag_and_document_delete_replay_preserve_authority_once() -> None:

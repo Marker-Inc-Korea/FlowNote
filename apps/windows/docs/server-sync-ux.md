@@ -31,7 +31,8 @@
 
 `CONFLICT`는 일반 재시도 대상이 아니다. 운영자는 충돌 행을 선택하고 사유를 입력한 뒤 다음 중 하나를 고른다.
 
-- `로컬 변경 재시도`: `RETRY_WITH_LATEST`가 허용된 태그·공개·상태 충돌에서만 사용한다. 서버 상세를 다시 읽고 관리자가 의미를 확인한 뒤 base revision과 기대 ID를 명시적으로 갱신한다. 태그 요청은 추가·제거 intent를 유지하면서 intent hash를 다시 계산한다.
+- `새 revision으로 다시 요청`: WPF에서는 상태·공개 충돌에 사용한다. 서버의 태그 충돌 응답에도 호환 행동인 `RETRY_WITH_LATEST`가 포함될 수 있지만, WPF는 일반 재요청을 막고 아래의 태그 전용 행동을 사용한다. 서버 상세를 다시 읽고 관리자가 의미를 확인한 뒤 base revision과 기대 ID를 명시적으로 갱신한다.
+- `로컬 태그 delta만 재적용`: `REAPPLY_TAG_DELTA`가 허용된 태그 충돌에서만 사용한다. 추가·제거 intent는 유지하고 최신 base revision으로 canonical intent hash를 다시 계산한다.
 - `새 버전으로 등록`: `REGISTER_NEW_VERSION`이 허용된 버전 충돌에서만 사용한다. 보존 원본의 hash를 다시 확인하고 원 큐는 해결 이력과 함께 남긴 뒤 새 mutation을 추가한다. 파일을 복사하거나 덮어쓰지 않는다.
 - `서버본 유지·폐기`: 로컬 전송 요청을 `DISCARDED`로 종결한다. 로컬 문서와 파일, 충돌 원 응답, 큐 행은 삭제하지 않는다.
 
@@ -69,9 +70,9 @@
 
 신규 큐는 서버에서 마지막으로 확인한 `revision`, 최신 버전 ID, 공개 버전 ID와 로컬 파일 SHA-256을 snapshot으로 남긴다. 구 큐처럼 base revision이 없는 호환 경로에서 서버에 같은 번호의 버전이 이미 있으면 SHA-256이 같은 경우에만 로컬 `server_version_id`, `synced_at`, `server_id_mappings`를 복구한다. hash가 다르면 `FILE_HASH_MISMATCH` 충돌이다. 신규 큐는 서버가 revision 확인 뒤 다음 버전 번호를 배정하므로 로컬 번호와 서버 번호의 우연한 일치를 성공 조건으로 쓰지 않는다.
 
-현재 UI의 문서 공개는 서버 승인 작업함에서 최신 version·revision·file hash를 고정해 검토를 요청하고 승인된 작업의 `approvalId`를 publish API에 직접 보낸다. 이 흐름은 로컬 문서를 먼저 공개하거나 새 `document_publish` 큐를 만들지 않으며 성공 뒤 승인 목록을 서버에서 다시 읽는다. 기존 `document_publish/publish_document_version` 큐와 처리기는 누적 이력 호환을 위해 남아 있지만 `approvalId`를 보내지 않는다. 따라서 `FLOWNOTE_DOCUMENT_APPROVAL_WORKFLOW_ENFORCED=true`인 기본 설정에서는 자동 공개 경로가 아니며 서버 거부와 원본 큐를 보존한다.
+현재 UI의 문서 공개는 서버 승인 작업함에서 최신 version·revision·file hash를 고정해 검토를 요청하고 승인된 작업의 `approvalId`를 publish API에 직접 보낸다. publish 응답을 버리지 않고 문서 상세를 다시 읽어 status, revision, 공개 version ID/hash/flag와 승인 ID를 비교한다. 일치하면 로컬 문서·버전 flag·태그·mapping·`apply_approval_publication_read_back` 성공 큐 receipt·이력을 한 SQLite transaction으로 반영한다. 중간 실패는 전부 rollback하며, 응답 유실이나 앱 재시작 뒤 작업함 새로고침이 서버 `PUBLISHED` 승인과 상세를 읽어 복구한다. 기존 `document_publish/publish_document_version` 큐는 누적 이력 호환을 위해 남아 있지만 승인 ID가 없으므로 승인 강제 기본값의 자동 공개 경로가 아니다.
 
-문서 상태는 enqueue 시 값을 고정한다. 태그는 `documents.server_tags_json`과 현재 로컬 태그를 비교해 `baseRevision`, `AddedTags`, `RemovedTags`, `IntentHash`, `DesiredTags`를 `payload_json`에 보존한다. 최초 문서 등록 전 만든 태그 큐는 등록 응답의 revision·태그 집합으로 delta를 한 번 확정한 뒤 보낸다. 이미 매핑된 문서인데 서버 태그 기준이 없는 구 큐는 자동 추정하지 않는다. 상태·태그는 안정 key를 `mutationKey`로 보내며 서버는 같은 transaction에 `document_mutation_receipts`를 저장한다. WPF는 2xx와 상세 read-back 뒤 revision, 태그, 공개 포인터, 최신 version ID/hash를 확인하고 로컬 문서·태그 관계·mapping·큐·이력을 한 SQLite transaction으로 저장한다. 응답 유실은 같은 key와 본문을 다시 보내 receipt를 재생하며 revision·감사·receipt가 늘지 않는다.
+문서 상태는 enqueue 시 값을 고정한다. 태그는 `documents.server_tags_json`과 현재 로컬 태그를 비교해 `baseRevision`, `AddedTags`, `RemovedTags`, `IntentHash`, `DesiredTags`를 `payload_json`에 보존한다. canonical hash 입력은 UTF-8/LF, `document-tags-v1`, 서버 문서 ID, base revision, add, remove 순서이며 정규화한 code를 중복 제거·ordinal 정렬한다. 최초 문서 등록 전 만든 태그 큐는 등록 응답의 revision·태그 집합으로 delta를 한 번 확정한 뒤 보낸다. 이미 매핑된 문서인데 서버 태그 기준이 없는 구 큐는 자동 추정하지 않는다. 상태·태그는 안정 key를 `mutationKey`로 보내며 서버는 같은 transaction에 `document_mutation_receipts`를 저장한다. WPF는 2xx와 상세 read-back 뒤 revision, 태그, 공개 포인터, 최신 version ID/hash를 확인하고 로컬 문서·태그 관계·mapping·큐·이력을 한 SQLite transaction으로 저장한다. 응답 유실은 같은 key와 본문을 다시 보내 receipt를 재생하며 revision·감사·receipt가 늘지 않는다.
 
 권위와 충돌 해결표:
 
@@ -79,7 +80,7 @@
 | --- | --- | --- | --- |
 | 문서 상태 | `documents.status`, `revision` | read-back 상태와 큐 snapshot 상태 일치 | `DOCUMENT_READ_BACK_MISMATCH` 또는 stale 충돌 보존 |
 | 공개 버전 | `published_version_id`, 공개 버전 flag, 승인 ID, `revision` | 승인 작업함의 exact version·revision·hash가 서버 공개 응답과 일치 | 자동 재공개 금지. 구 공개 큐는 승인 강제 설정에서 재전송하지 않고 원본 보존 |
-| 태그 | 서버 `document_tags` 활성 집합, `document_tag_revisions`, 문서 `revision` | 응답과 read-back 전체 집합이 같고 로컬 transaction 종결 | 서로 겹치지 않는 delta만 자동 병합. 같은 태그 반대 변경, 비활성·삭제는 구조화된 충돌 |
+| 태그 | 서버 `document_tags` 활성 집합, `document_tag_revisions`, 문서 `revision` | 응답과 read-back 전체 집합이 같고 로컬 transaction 종결 | base 뒤 모든 revision이 태그 revision일 때 서로 겹치지 않는 delta만 자동 병합. 같은 태그 반대 변경, 비활성·삭제, 태그 외 aggregate revision은 구조화된 충돌 |
 
 태그는 서버 권위 동기화 대상에 포함한다. 최초 문서 등록의 tags뿐 아니라 이후 WPF 추가·제거 의도도 `document_tags/replace_document_tags` action으로 큐에 남긴다. action 이름은 로컬 호환을 위해 유지하지만 서버 요청 의미는 전체 교체가 아니라 delta 병합이다. 파일 내용, 문서·버전 상태, 공개 포인터, 삭제 경쟁은 이 경로에서 바꾸지 않는다.
 

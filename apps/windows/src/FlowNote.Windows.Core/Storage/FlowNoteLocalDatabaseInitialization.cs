@@ -481,6 +481,7 @@ public sealed partial class FlowNoteLocalDatabase
                 server_log_id TEXT NULL,
                 server_revision INTEGER NULL,
                 server_file_hash_sha256 TEXT NULL,
+                server_published_version_id TEXT NULL,
                 synced_at TEXT NOT NULL,
                 UNIQUE(entity_type, local_id, local_version_no)
             );
@@ -581,6 +582,7 @@ public sealed partial class FlowNoteLocalDatabase
         EnsureColumn(connection, "server_id_mappings", "server_report_id", "TEXT NULL");
         EnsureColumn(connection, "server_id_mappings", "server_revision", "INTEGER NULL");
         EnsureColumn(connection, "server_id_mappings", "server_file_hash_sha256", "TEXT NULL");
+        EnsureColumn(connection, "server_id_mappings", "server_published_version_id", "TEXT NULL");
         EnsureColumn(connection, "report_sources", "trace_id", "TEXT NULL");
         EnsureColumn(connection, "report_sources", "source_hash_sha256", "TEXT NULL");
         EnsureColumn(connection, "report_sources", "source_revision", "INTEGER NULL");

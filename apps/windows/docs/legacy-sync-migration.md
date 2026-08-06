@@ -57,6 +57,9 @@ dotnet run --project apps/windows/src/FlowNote.Windows.SyncMigrationTool -- \
 - 구 첨부는 결정적 새 첨부 ID와 새 FieldComment ID로 연결하고 파일 경로, 원본 파일명, hash, 작성자, 촬영/생성 시각을 그대로 보존한다.
 - 감사 JSON은 전환 당시 구 원천의 전체 column snapshot과 `legacy_domain_name = FieldNote`를 남겨 구 명칭과 원천 ID를 추적한다.
 - 현재 큐 schema 확장은 기존 행을 재작성하지 않고 `base_domain_revision`, `intent_hash`, `source_set_hash`를 nullable column으로 추가한다. 신규 FieldComment 검토/보고서 큐만 enqueue 시 값을 고정하며 구 큐의 NULL은 migration 증거다.
+- 승인 작업함 직접 공개는 구 `document_publish/publish_document_version` 행을 현재 승인으로 변환하지 않는다. 새 공개의 서버 상세 read-back만 `apply_approval_publication_read_back` 성공 receipt로 추가하며 구 행의 key, 상태, 오류와 원천은 그대로 둔다.
+- 서버 삭제가 확인된 현재 형식 문서 큐와 같은 문서의 미처리 큐는 삭제하지 않고 `DOCUMENT_DELETED` 충돌로 보존한다. 자동 migration이나 재생으로 문서를 복원하지 않으며 관리자가 `KEEP_SERVER`와 사유를 남겨야 `DISCARDED`로 종결한다.
+- canonical tag intent가 없는 구 태그 큐는 현재 서버 태그를 과거 기준으로 추정하지 않는다. UTF-8/LF·정규화·중복 제거·ordinal 정렬 계약으로 intent를 만들 수 있는 기준 snapshot이 있을 때만 별도 현재 형식 큐를 승인 생성한다.
 - `scripts/verify-field-comment-report-convergence.py`는 지정한 WPF/API SQLite를 출력 폴더에 복사하고 같은 `run_id`의 무결성 JSON을 만든다. 현재 증거는 DB 파일 SHA-256, `integrity_check`/FK 위반, WPF 큐 상태별 count·전체 row canonical hash·idempotency 중복, 원천 파일 경로 집합 hash, 서버 report source orphan·FieldComment source hash 불일치·idempotency 중복이다. 원본 DB, 기존 큐, 원천 row, 파일 경로와 파일은 삭제하지 않는다. 실제 원천 파일 내용 SHA-256과 migration 전후 자동 비교는 아직 이 스크립트의 검증 범위가 아니다.
 
 ## 검증 기준

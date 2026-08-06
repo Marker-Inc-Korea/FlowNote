@@ -118,7 +118,8 @@ public partial class MainWindow
             new FlowNoteServerApprovalClient(serverHttpClient),
             canRegisterDocuments,
             canGovernDocuments,
-            initialDocumentId)
+            initialDocumentId,
+            services.ServerSync)
         {
             Owner = this
         };

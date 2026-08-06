@@ -14,6 +14,7 @@ from app.api.v1.document_support import (
     document_mutation_intent_hash,
     document_authority_hash,
     document_mutation_replay,
+    document_revisions_since_are_tag_only,
     document_response,
     document_tag_intent_hash,
     document_tags_at_revision,
@@ -113,6 +114,42 @@ def apply_document_tag_mutation(
             },
         )
     base_by_code = {_normalize(tag): tag for tag in base_tags}
+
+    if not document_revisions_since_are_tag_only(
+        session, document_id, base_revision, document.revision
+    ):
+        server_response = document_response(session, document)
+        raise conflict(
+            "TAG_AGGREGATE_CHANGED",
+            "A non-tag document mutation changed the aggregate after baseRevision; automatic tag merge is unsafe.",
+            document=document,
+            expected_revision=base_revision,
+            extra={
+                "serverValue": {
+                    "revision": document.revision,
+                    "tags": current_tags,
+                    "status": document.status,
+                    "latestVersionId": document.latest_version_id,
+                    "latestVersionHashSha256": (
+                        server_response.latest_version.file.hash_sha256
+                        if server_response.latest_version is not None
+                        else None
+                    ),
+                    "publishedVersionId": document.published_version_id,
+                    "publishedVersionHashSha256": (
+                        server_response.published_version.file.hash_sha256
+                        if server_response.published_version is not None
+                        else None
+                    ),
+                    "deleted": server_response.authoritative_snapshot.deleted,
+                },
+                "localRequest": payload.model_dump(by_alias=True),
+                "autoMerge": {"addedTags": [], "removedTags": []},
+                "userChoice": [
+                    {"field": "aggregate", "reason": "NON_TAG_REVISION_AFTER_BASE"}
+                ],
+            },
+        )
 
     requested_codes = set(added_by_code) | set(removed_by_code)
     definitions = (

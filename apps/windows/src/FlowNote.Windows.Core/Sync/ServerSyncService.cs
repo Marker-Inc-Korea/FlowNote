@@ -500,7 +500,44 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
         string reason,
         string resolvedRole,
         string? serverUserId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await RetryConflictUsingLatestServerAsync(
+            queueId,
+            serverClient,
+            resolvedBy,
+            reason,
+            resolvedRole,
+            tagDeltaOnly: false,
+            serverUserId,
+            cancellationToken);
+
+    public async Task<ServerSyncResult> ReapplyTagDeltaAsync(
+        long queueId,
+        FlowNoteServerDocumentClient serverClient,
+        string resolvedBy,
+        string reason,
+        string resolvedRole,
+        string? serverUserId = null,
+        CancellationToken cancellationToken = default) =>
+        await RetryConflictUsingLatestServerAsync(
+            queueId,
+            serverClient,
+            resolvedBy,
+            reason,
+            resolvedRole,
+            tagDeltaOnly: true,
+            serverUserId,
+            cancellationToken);
+
+    private async Task<ServerSyncResult> RetryConflictUsingLatestServerAsync(
+        long queueId,
+        FlowNoteServerDocumentClient serverClient,
+        string resolvedBy,
+        string reason,
+        string resolvedRole,
+        bool tagDeltaOnly,
+        string? serverUserId,
+        CancellationToken cancellationToken)
     {
         DocumentConflictResolutionPolicy.ValidateResolution(resolvedBy, reason, resolvedRole);
 
@@ -537,11 +574,20 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
             retryNotBefore = reader.IsDBNull(5) ? null : DateTime.Parse(reader.GetString(5));
         }
 
-        if (!DocumentConflictResolutionPolicy.Contains(
-                allowedActionsJson,
-                DocumentConflictResolutionPolicy.RetryWithLatest))
+        var requiredAction = tagDeltaOnly
+            ? DocumentConflictResolutionPolicy.ReapplyTagDelta
+            : DocumentConflictResolutionPolicy.RetryWithLatest;
+        if (!DocumentConflictResolutionPolicy.Contains(allowedActionsJson, requiredAction))
         {
-            throw new InvalidOperationException("이 충돌은 최신 서버값 기준 재요청이 허용되지 않습니다.");
+            throw new InvalidOperationException(tagDeltaOnly
+                ? "이 충돌은 로컬 태그 delta 재적용이 허용되지 않습니다."
+                : "이 충돌은 새 revision 기준 재요청이 허용되지 않습니다.");
+        }
+        if (tagDeltaOnly != (action == "replace_document_tags"))
+        {
+            throw new InvalidOperationException(tagDeltaOnly
+                ? "태그 충돌만 로컬 태그 delta를 재적용할 수 있습니다."
+                : "태그 충돌은 별도의 '로컬 태그 delta만 재적용' 행동을 사용하세요.");
         }
         if (retryNotBefore is not null && retryNotBefore > DateTime.UtcNow)
         {
@@ -583,7 +629,7 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
                     expected_published_version_id = $expected_published_version_id,
                     intent_hash = COALESCE($intent_hash, intent_hash),
                     payload_json = COALESCE($payload_json, payload_json),
-                    resolution_action = 'RETRY_LOCAL_ON_LATEST',
+                    resolution_action = $resolution_action,
                     resolution_reason = $reason,
                     resolved_by = $resolved_by,
                     resolved_at = $resolved_at
@@ -595,6 +641,9 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
             command.Parameters.AddWithValue("$intent_hash", string.IsNullOrWhiteSpace(rebasedIntentHash) ? DBNull.Value : rebasedIntentHash);
             command.Parameters.AddWithValue("$payload_json", string.IsNullOrWhiteSpace(rebasedPayloadJson) ? DBNull.Value : rebasedPayloadJson);
             command.Parameters.AddWithValue("$reason", reason.Trim());
+            command.Parameters.AddWithValue(
+                "$resolution_action",
+                tagDeltaOnly ? "REAPPLY_TAG_DELTA" : "RETRY_AS_NEW_REVISION");
             command.Parameters.AddWithValue("$resolved_by", resolvedBy.Trim());
             command.Parameters.AddWithValue("$resolved_at", now.ToString("O"));
             command.Parameters.AddWithValue("$id", queueId);
@@ -602,7 +651,18 @@ public sealed partial class ServerSyncService(FlowNoteLocalDatabase database)
             {
                 throw new InvalidOperationException("충돌 상태가 변경되어 최신 목록을 다시 확인해야 합니다.");
             }
-            RecordSyncHistory(connection, "server_sync.conflict_retry_selected", "server_sync_queue", queueId.ToString(), $"서버 revision {serverDocument.Revision}을 기준으로 로컬 변경 재시도를 선택했습니다. 사유: {reason.Trim()}", now, transaction);
+            RecordSyncHistory(
+                connection,
+                tagDeltaOnly
+                    ? "server_sync.tag_delta_reapply_selected"
+                    : "server_sync.conflict_new_revision_selected",
+                "server_sync_queue",
+                queueId.ToString(),
+                tagDeltaOnly
+                    ? $"서버 revision {serverDocument.Revision} 기준으로 로컬 태그 delta만 재적용했습니다. 사유: {reason.Trim()}"
+                    : $"서버 revision {serverDocument.Revision} 기준으로 새 revision 요청을 만들었습니다. 사유: {reason.Trim()}",
+                now,
+                transaction);
             transaction.Commit();
         }
 

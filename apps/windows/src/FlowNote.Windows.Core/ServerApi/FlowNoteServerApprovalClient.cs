@@ -62,7 +62,7 @@ public sealed class FlowNoteServerApprovalClient(HttpClient httpClient)
         return await ReadAsync<ServerDocumentApprovalResponse>(response, cancellationToken);
     }
 
-    public async Task PublishAsync(
+    public async Task<ServerApprovalDocumentResponse> PublishAsync(
         ServerDocumentApprovalResponse approval,
         string reason,
         string mutationKey,
@@ -77,7 +77,7 @@ public sealed class FlowNoteServerApprovalClient(HttpClient httpClient)
                 reason,
                 mutationKey),
             cancellationToken);
-        await ReadAsync<ServerApprovalDocumentResponse>(response, cancellationToken);
+        return await ReadAsync<ServerApprovalDocumentResponse>(response, cancellationToken);
     }
 
     private static async Task<T> ReadAsync<T>(
@@ -205,11 +205,40 @@ public sealed record ServerApprovalDocumentResponse(
     [property: JsonPropertyName("title")] string Title,
     [property: JsonPropertyName("revision")] int Revision,
     [property: JsonPropertyName("latest_version_id")] string? LatestVersionId,
-    [property: JsonPropertyName("latest_version")] ServerApprovalVersionResponse? LatestVersion);
+    [property: JsonPropertyName("latest_version")] ServerApprovalVersionResponse? LatestVersion)
+{
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("published_version_id")]
+    public string? PublishedVersionId { get; init; }
+
+    [JsonPropertyName("publication_approval_id")]
+    public string? PublicationApprovalId { get; init; }
+
+    [JsonPropertyName("published_version")]
+    public ServerApprovalVersionResponse? PublishedVersion { get; init; }
+
+    [JsonPropertyName("tags")]
+    public IReadOnlyList<string> Tags { get; init; } = [];
+}
 
 public sealed record ServerApprovalVersionResponse(
     [property: JsonPropertyName("version_id")] string VersionId,
-    [property: JsonPropertyName("file")] ServerApprovalFileResponse File);
+    [property: JsonPropertyName("file")] ServerApprovalFileResponse File)
+{
+    [JsonPropertyName("version_no")]
+    public int VersionNo { get; init; }
+
+    [JsonPropertyName("version_status")]
+    public string VersionStatus { get; init; } = string.Empty;
+
+    [JsonPropertyName("is_latest")]
+    public bool IsLatest { get; init; }
+
+    [JsonPropertyName("is_published")]
+    public bool IsPublished { get; init; }
+}
 
 public sealed record ServerApprovalFileResponse(
     [property: JsonPropertyName("hash_sha256")] string? HashSha256);
