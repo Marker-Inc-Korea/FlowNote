@@ -460,6 +460,11 @@ class FieldComment(TimestampMixin, Base):
     document_version_id: Mapped[str | None] = mapped_column(String(64))
     structure_item_id: Mapped[str | None] = mapped_column(String(64))
     work_record_id: Mapped[str | None] = mapped_column(String(64))
+    source_type: Mapped[str | None] = mapped_column(String(50))
+    source_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    source_revision: Mapped[int | None] = mapped_column(Integer)
+    server_scope: Mapped[str | None] = mapped_column(String(500))
+    intent_hash_sha256: Mapped[str | None] = mapped_column(String(64))
     comment_type: Mapped[str] = mapped_column(String(30), nullable=False)
     input_mode: Mapped[str] = mapped_column(String(30), nullable=False)
     signal_level: Mapped[str | None] = mapped_column(String(20))
@@ -519,6 +524,11 @@ def prevent_field_comment_source_update(_mapper: object, _connection: object, ta
         "document_version_id",
         "structure_item_id",
         "work_record_id",
+        "source_type",
+        "source_id",
+        "source_revision",
+        "server_scope",
+        "intent_hash_sha256",
         "comment_type",
         "input_mode",
         "signal_level",

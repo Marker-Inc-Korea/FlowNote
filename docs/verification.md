@@ -1415,3 +1415,23 @@ WPF 계약 검증은 영역·상태·blocker·cursor 필터 직렬화, snapshot 
 | `dotnet build ./apps/windows/src/FlowNote.Windows.App/FlowNote.Windows.App.csproj -p:EnableWindowsTargeting=true` | PASS, 경고 0·오류 0 |
 
 첫 전체 실행에서는 cursor 보조 모듈 분리 뒤 이전 `_invalid_cursor` 이름이 필터 불일치 분기 한 곳에 남아 16/17건만 통과했다. 참조를 `invalid_cursor`로 바로잡은 뒤 해당 테스트를 단독 재실행했고, 최종 전체 실행에서 17/17건이 통과했다. 종합 fixture 작성 중 확인된 외래키 삽입 순서 실패는 부모 row를 먼저 flush하도록 수정해 재검증했다. 실패 기록과 누적 SQLite는 삭제하거나 초기화하지 않았다.
+
+## 2026-08-06 Android 작업순서 열람·현장 기록 원천 연결 검증
+
+API 집중 검증은 오늘 날짜 같은 라인의 작업판 101개를 누적 테스트 DB에 추가해 첫 100건과 다음 1건 paging을 확인한다. 일반 현장 사용자는 본인 배정 또는 활성 `WORK_SEQUENCE_ITEM` 채널 항목만 읽고, 상세 응답의 board revision·공개 document/version·허용 channel ID를 원천 row와 대조한다. 작업순서에서 생성한 FieldComment와 인수인계는 source item/revision, 공개 문서/version, server/customer/site/user/device intent hash를 서버 row와 감사에서 확인한다. FieldComment 저장 뒤 문서 공개 상태가 바뀐 재전송은 같은 idempotency key로 기존 `comment_id`를 반환한다. 채널 탈퇴 뒤 상세는 404, 단말 비활성화 뒤 기존 access token 요청은 401이어야 한다.
+
+Android 단위 테스트는 서버와 같은 정렬 JSON 규칙의 intent hash, recipient 순서 정규화, server/user/device scope별 idempotency key 분리를 확인한다. 화면·controller·snapshot 저장소는 `MainActivity`와 분리하고 `MainActivity.java`가 1,000줄을 넘지 않는지 확인한다. 자동 검증은 200% 글꼴·고대비·장갑·한 손·실제 거치 조작과 재부팅 뒤 실단말 snapshot/outbox 복구를 완료 판정하지 않는다. 이 항목은 승인 실단말의 별도 원시 증거가 필요하다.
+
+집중 검증 명령은 다음과 같다.
+
+```text
+cd services/api
+.venv/bin/python -m pytest -q tests/test_work_sequences_api.py tests/test_android_document_view_api.py tests/test_channels_api.py tests/test_field_comments_api.py
+.venv/bin/python -m ruff check app tests
+cd ../../apps/android
+./gradlew testDebugUnitTest
+./gradlew assembleDebug
+./gradlew lintDebug --warning-mode=fail
+```
+
+최종 실행 결과는 API 41건 통과, Ruff 통과, Android 단위 테스트 35건 통과, debug APK 조립 통과, lint 경고·오류 없음이다. `MainActivity.java`는 995줄로 확인했다. 누적 SQLite와 테스트 산출물은 삭제하거나 초기화하지 않았다.

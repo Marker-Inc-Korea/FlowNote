@@ -17,6 +17,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -26,10 +27,18 @@ public final class FlowNoteApiClient {
         void onAuthenticationRejected();
     }
 
+    public interface SessionRefreshListener {
+        void onSessionRefreshed(JSONObject payload);
+    }
+
     private final String baseUrl;
     private final ContentResolver contentResolver;
     private String accessToken;
     private AuthenticationFailureListener authenticationFailureListener;
+    private SessionRefreshListener sessionRefreshListener;
+    private String refreshToken;
+    private String customerScope;
+    private String siteScope;
 
     public FlowNoteApiClient(String baseUrl, ContentResolver contentResolver) {
         String cleaned = baseUrl == null ? "" : baseUrl.trim();
@@ -46,6 +55,18 @@ public final class FlowNoteApiClient {
 
     public void setAuthenticationFailureListener(AuthenticationFailureListener listener) {
         this.authenticationFailureListener = listener;
+    }
+
+    public void setRefreshSession(
+            String refreshToken,
+            String customerScope,
+            String siteScope,
+            SessionRefreshListener listener
+    ) {
+        this.refreshToken = refreshToken;
+        this.customerScope = customerScope;
+        this.siteScope = siteScope;
+        this.sessionRefreshListener = listener;
     }
 
     static boolean shouldDiscardStoredSession(int httpStatus) {
@@ -87,10 +108,45 @@ public final class FlowNoteApiClient {
     public JSONObject refresh(String refreshToken) throws IOException, JSONException {
         StringBuilder body = new StringBuilder("{");
         JsonEscaper.appendStringField(body, "refresh_token", refreshToken, true);
+        JsonEscaper.appendStringField(body, "customerScope", customerScope, false);
+        JsonEscaper.appendStringField(body, "siteScope", siteScope, false);
         body.append('}');
         JSONObject result = postJson(ApiPaths.REFRESH, body.toString(), false);
         accessToken = result.getString("access_token");
+        this.refreshToken = result.getString("refresh_token");
         return result;
+    }
+
+    public JSONObject listWorkSequenceFieldBoards(
+            String boardDate,
+            String lineCode,
+            String status,
+            int offset,
+            int limit
+    ) throws IOException, JSONException {
+        StringBuilder path = new StringBuilder(ApiPaths.WORK_SEQUENCE_FIELD_BOARDS);
+        path.append("?boardDate=").append(url(boardDate));
+        if (lineCode != null && !lineCode.trim().isEmpty()) {
+            path.append("&lineCode=").append(url(lineCode.trim()));
+        }
+        path.append("&status=").append(url(status));
+        path.append("&offset=").append(Math.max(0, offset));
+        path.append("&limit=").append(Math.max(1, Math.min(100, limit)));
+        return getObjectWithRefresh(path.toString());
+    }
+
+    public JSONObject getWorkSequenceFieldBoard(String boardId, Integer expectedRevision)
+            throws IOException, JSONException {
+        return getObjectWithRefresh(withRevision(
+                ApiPaths.workSequenceFieldBoard(urlPath(boardId)), expectedRevision
+        ));
+    }
+
+    public JSONObject getWorkSequenceFieldItem(String itemId, Integer expectedRevision)
+            throws IOException, JSONException {
+        return getObjectWithRefresh(withRevision(
+                ApiPaths.workSequenceFieldItem(urlPath(itemId)), expectedRevision
+        ));
     }
 
     public JSONArray listPublishedDocuments() throws IOException, JSONException {
@@ -222,6 +278,18 @@ public final class FlowNoteApiClient {
         JsonEscaper.appendStringField(body, "sourceType", draft.sourceType, true);
         JsonEscaper.appendStringField(body, "sourceId", draft.sourceId, true);
         JsonEscaper.appendStringField(body, "sourceVersionId", draft.sourceVersionId, false);
+        if (draft.sourceRevision != null) {
+            body.append(",\"sourceRevision\":").append(draft.sourceRevision);
+        }
+        JsonEscaper.appendStringField(body, "relatedDocumentId", draft.relatedDocumentId, false);
+        JsonEscaper.appendStringField(
+                body,
+                "relatedDocumentVersionId",
+                draft.relatedDocumentVersionId,
+                false
+        );
+        JsonEscaper.appendStringField(body, "serverScope", draft.serverScope, false);
+        JsonEscaper.appendStringField(body, "intentHashSha256", draft.intentHashSha256, false);
         body.append(",\"recipientIds\":[");
         for (int index = 0; index < draft.recipientIds.size(); index++) {
             if (index > 0) {
@@ -286,6 +354,13 @@ public final class FlowNoteApiClient {
         JsonEscaper.appendStringField(body, "documentId", draft.documentId, false);
         JsonEscaper.appendStringField(body, "documentVersionId", draft.documentVersionId, false);
         JsonEscaper.appendStringField(body, "workRecordId", draft.workRecordId, false);
+        JsonEscaper.appendStringField(body, "sourceType", draft.sourceType, false);
+        JsonEscaper.appendStringField(body, "sourceId", draft.sourceId, false);
+        if (draft.sourceRevision != null) {
+            body.append(",\"sourceRevision\":").append(draft.sourceRevision);
+        }
+        JsonEscaper.appendStringField(body, "serverScope", draft.serverScope, false);
+        JsonEscaper.appendStringField(body, "intentHashSha256", draft.intentHashSha256, false);
         JsonEscaper.appendStringField(body, "commentType", "issue", true);
         JsonEscaper.appendStringField(body, "inputMode", draft.normalizedInputMode(), true);
         JsonEscaper.appendStringField(body, "signalLevel", draft.signalLevel, false);
@@ -391,6 +466,50 @@ public final class FlowNoteApiClient {
         return new JSONObject(readResponse(connection));
     }
 
+    private JSONObject getObjectWithRefresh(String path) throws IOException, JSONException {
+        try {
+            return getObject(path, false);
+        } catch (IOException first) {
+            if (!isUnauthorized(first) || refreshToken == null || refreshToken.trim().isEmpty()) {
+                notifyAuthenticationFailure(first);
+                throw first;
+            }
+            JSONObject refreshed = refresh(refreshToken);
+            if (sessionRefreshListener != null) {
+                sessionRefreshListener.onSessionRefreshed(refreshed);
+            }
+            return getObject(path, true);
+        }
+    }
+
+    private JSONObject getObject(String path, boolean notifyFailure) throws IOException, JSONException {
+        HttpURLConnection connection = openConnection(path, "GET", true);
+        return new JSONObject(readResponse(connection, notifyFailure));
+    }
+
+    private static boolean isUnauthorized(IOException exception) {
+        String message = exception.getMessage();
+        return message != null && message.startsWith("HTTP 401");
+    }
+
+    private void notifyAuthenticationFailure(IOException exception) {
+        if (isAuthenticationRejected(exception) && authenticationFailureListener != null) {
+            authenticationFailureListener.onAuthenticationRejected();
+        }
+    }
+
+    private static String withRevision(String path, Integer expectedRevision) {
+        return expectedRevision == null ? path : path + "?expectedRevision=" + expectedRevision;
+    }
+
+    private static String url(String value) throws IOException {
+        return URLEncoder.encode(value == null ? "" : value, "UTF-8");
+    }
+
+    private static String urlPath(String value) throws IOException {
+        return url(value).replace("+", "%20");
+    }
+
     private JSONObject postJson(String path, String body, boolean authenticated) throws IOException, JSONException {
         HttpURLConnection connection = openConnection(path, "POST", authenticated);
         writeJsonBody(connection, body);
@@ -432,11 +551,15 @@ public final class FlowNoteApiClient {
     }
 
     private String readResponse(HttpURLConnection connection) throws IOException {
+        return readResponse(connection, true);
+    }
+
+    private String readResponse(HttpURLConnection connection, boolean notifyFailure) throws IOException {
         int code = connection.getResponseCode();
         InputStream stream = code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream();
         String body = readFully(stream);
         if (code < 200 || code >= 300) {
-            if (shouldDiscardStoredSession(code, body)
+            if (notifyFailure && shouldDiscardStoredSession(code, body)
                     && authenticationFailureListener != null) {
                 authenticationFailureListener.onAuthenticationRejected();
             }

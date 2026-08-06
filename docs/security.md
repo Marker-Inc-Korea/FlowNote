@@ -451,3 +451,11 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 승인 단말 세션과 서버 재결합 영역은 `admin`, `system-admin` 전용이다. 다른 governance role에는 실제 건수 대신 필요한 역할, 문의 방법과 원천 보존 안내만 반환한다. 이 제한 때문에 전체 합계도 사용자가 볼 수 있는 조치만 의미하며 전사 절대 합계로 해석하지 않는다.
 
 대시보드는 읽기 전용이며 업무 row, SQLite, 동기화 큐, 감사 envelope와 receipt를 수정하지 않는다. 담당 역할·다음 행동은 안내이며 자동 승인, 자동 공개, 자동 전달, 세션 해지나 충돌 해결 권한을 부여하지 않는다. WPF 이동 뒤 기존 화면과 서버가 역할·채널 scope·base revision·mutation key를 다시 검증한다. 영역 집계 실패 응답에는 내부 예외, SQL, 로컬 경로, 비밀값이나 권한 밖 target 식별자를 넣지 않는다.
+
+## Android 작업순서 scope와 cache 보호
+
+Android 작업순서 읽기는 access token만으로 허용하지 않는다. 현재 세션에 `ACTIVE` 승인 단말 ID가 있어야 하고 role, 본인 배정 또는 활성 채널 멤버십으로 항목 범위를 제한한다. 목록·상세·채널 메시지 deep link마다 이 조건과 현재 board revision을 다시 확인하며 읽음은 `work_sequence.android_read` 감사로 남긴다. Android에는 작업순서 상태·순서 mutation API를 제공하지 않는다.
+
+마지막 성공 snapshot은 Android Keystore AES-256 GCM으로 암호화한다. cache scope는 정규화 서버 URL, customer/site scope, user ID, device ID를 모두 포함하고 7일 뒤 만료한다. scope가 하나라도 달라지면 기존 cache key를 열지 않으며 서버 재결합·재로그인 때 다른 고객·현장·채널의 항목을 합치지 않는다. 앱 backup은 계속 비활성이고 snapshot은 외부 저장소에 쓰지 않는다.
+
+작업순서에서 생성하는 FieldComment·사진·인수인계의 idempotency key와 intent hash에는 server/user/device/work-sequence source가 포함된다. intent에는 board revision과 당시 공개 document/version도 들어간다. 서버는 새 원천 저장 전에 현재 공개 상태·revision·채널을 확인하고 자동으로 최신 값으로 덮어쓰지 않는다. 이미 저장한 원천의 공개 ID는 outbox 부분 성공 상태에 보존하며 후속 사진·알림 재시도에서 같은 ID를 사용한다. 연결 문서가 비공개로 바뀌면 새 열람 grant와 새 source mutation은 거부하되 기존 outbox 입력을 삭제하지 않는다.

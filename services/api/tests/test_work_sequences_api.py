@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -16,7 +17,10 @@ from app.db.models import (
     FileObject,
     Handover,
     HandoverReceipt,
+    NotificationChannel,
+    NotificationChannelMember,
     SyncMutationReceipt,
+    TerminalDevice,
     UserAccount,
     WorkSequenceBoard,
     WorkSequenceCandidateDelivery,
@@ -55,6 +59,314 @@ def auth_headers(client: TestClient) -> dict[str, str]:
     )
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def test_android_field_work_sequence_paging_scope_source_and_document_recheck() -> None:
+    suffix = uuid4().hex[:10]
+    username = f"field-wseq-{suffix}"
+    password = "field-work-sequence-password"
+    user_id = f"user-field-wseq-{suffix}"
+    recipient_id = f"user-field-recipient-{suffix}"
+    device_id = f"device-field-wseq-{suffix}"
+    line_code = f"line-field-{suffix}"
+    today = date.today()
+    with create_test_client() as client:
+        with client.app.state.database.session() as session:
+            session.add_all([
+                UserAccount(
+                    user_id=user_id,
+                    username=username,
+                    login_id=username,
+                    display_name="현장 작업자",
+                    role="team-member",
+                    password_hash=hash_password_for_dev(password),
+                    is_active=True,
+                    status="ACTIVE",
+                ),
+                UserAccount(
+                    user_id=recipient_id,
+                    username=f"field-recipient-{suffix}",
+                    login_id=f"field-recipient-{suffix}",
+                    display_name="다음 작업자",
+                    role="team-member",
+                    password_hash=hash_password_for_dev(password),
+                    is_active=True,
+                    status="ACTIVE",
+                ),
+                TerminalDevice(
+                    device_id=device_id,
+                    device_name="현장 작업순서 단말",
+                    device_mode="viewer",
+                    status="ACTIVE",
+                ),
+            ])
+            file_object = FileObject(
+                storage_key=f"work-sequence-field/{suffix}.pdf",
+                original_filename=f"{suffix}.pdf",
+                extension="pdf",
+                mime_type="application/pdf",
+                file_family="pdf",
+                size_bytes=10,
+                hash_sha256="b" * 64,
+            )
+            session.add(file_object)
+            session.flush()
+            document_id = f"document-field-{suffix}"
+            version_id = f"version-field-{suffix}"
+            session.add(Document(
+                document_id=document_id,
+                title="현장 공개 작업 표준",
+                document_type="work_instruction",
+                status="PUBLISHED",
+                latest_version_id=version_id,
+                published_version_id=version_id,
+                revision=3,
+                owner_id="user-admin",
+            ))
+            session.add(DocumentVersion(
+                version_id=version_id,
+                document_id=document_id,
+                file_object_id=file_object.id,
+                version_no=1,
+                change_reason="Android 작업순서 공개 문서 검증",
+                version_status="PUBLISHED",
+                is_latest=True,
+                is_published=True,
+                created_by="user-admin",
+            ))
+            first_board_id = f"wseqboard-field-{suffix}-000"
+            first_item_id = f"wseqitem-field-{suffix}-000"
+            for index in range(101):
+                board_id = f"wseqboard-field-{suffix}-{index:03d}"
+                item_id = f"wseqitem-field-{suffix}-{index:03d}"
+                session.add(WorkSequenceBoard(
+                    board_id=board_id,
+                    title=f"현장 작업판 {index:03d}",
+                    line_code=line_code,
+                    board_date=today,
+                    status="ACTIVE",
+                    board_revision=7,
+                    created_by="user-admin",
+                ))
+                session.add(WorkSequenceItem(
+                    item_id=item_id,
+                    board_id=board_id,
+                    title=f"현장 작업 {index:03d}",
+                    document_id=document_id if index == 0 else None,
+                    status="WAITING",
+                    sort_order=1,
+                    assigned_to=None if index == 0 else user_id,
+                    created_by="user-admin",
+                ))
+            channel_id = f"channel-field-wseq-{suffix}"
+            session.add(NotificationChannel(
+                channel_id=channel_id,
+                name="작업순서 현장 채널",
+                channel_type="LINE",
+                source_type="WORK_SEQUENCE_ITEM",
+                source_id=first_item_id,
+                status="ACTIVE",
+                created_by="user-admin",
+            ))
+            session.flush()
+            session.add_all([
+                NotificationChannelMember(
+                    member_id=f"member-field-{suffix}",
+                    channel_id=channel_id,
+                    user_id=user_id,
+                    member_role="MEMBER",
+                    status="ACTIVE",
+                    added_by="user-admin",
+                ),
+                NotificationChannelMember(
+                    member_id=f"member-field-recipient-{suffix}",
+                    channel_id=channel_id,
+                    user_id=recipient_id,
+                    member_role="MEMBER",
+                    status="ACTIVE",
+                    added_by="user-admin",
+                ),
+                ChannelMessage(
+                    message_id=f"chmsg-field-{suffix}",
+                    channel_id=channel_id,
+                    message_type="WORK_SEQUENCE_EVENT",
+                    source_type="WORK_SEQUENCE_ITEM",
+                    source_id=first_item_id,
+                    title="작업순서 확인",
+                    created_by="user-admin",
+                ),
+            ])
+            session.commit()
+
+        login = client.post("/api/v1/auth/login", json={
+            "username": username,
+            "password": password,
+            "deviceId": device_id,
+        })
+        assert login.status_code == 200, login.text
+        login_payload = login.json()
+        headers = {"Authorization": f"Bearer {login_payload['access_token']}"}
+        first_page = client.get(
+            "/api/v1/work-sequence-field-boards",
+            headers=headers,
+            params={"boardDate": today.isoformat(), "lineCode": line_code, "limit": 100},
+        )
+        assert first_page.status_code == 200, first_page.text
+        assert len(first_page.json()["items"]) == 100
+        assert first_page.json()["total"] == 101
+        assert first_page.json()["has_more"] is True
+        second_page = client.get(
+            "/api/v1/work-sequence-field-boards",
+            headers=headers,
+            params={
+                "boardDate": today.isoformat(),
+                "lineCode": line_code,
+                "offset": 100,
+                "limit": 100,
+            },
+        )
+        assert second_page.status_code == 200, second_page.text
+        assert len(second_page.json()["items"]) == 1
+        assert second_page.json()["has_more"] is False
+
+        detail = client.get(
+            f"/api/v1/work-sequence-field-boards/by-item/{first_item_id}",
+            headers=headers,
+            params={"expectedRevision": 7},
+        )
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["customer_scope"] == login_payload["customer_scope"]
+        assert detail.json()["site_scope"] == login_payload["site_scope"]
+        assert detail.json()["user_id"] == user_id
+        assert detail.json()["device_id"] == device_id
+        source_item = detail.json()["items"][0]
+        assert detail.json()["board_id"] == first_board_id
+        assert source_item["source_id"] == first_item_id
+        assert source_item["source_revision"] == 7
+        assert source_item["published_document"]["version_id"] == version_id
+        assert source_item["allowed_channel_ids"] == [channel_id]
+
+        server_scope = "http://field-server.local"
+        raw_content = "압력 상승을 확인했습니다."
+        field_intent = canonical_hash({
+            "serverScope": server_scope,
+            "customerScope": login_payload["customer_scope"],
+            "siteScope": login_payload["site_scope"],
+            "userId": user_id,
+            "deviceId": device_id,
+            "sourceType": "WORK_SEQUENCE_ITEM",
+            "sourceId": first_item_id,
+            "sourceRevision": 7,
+            "documentId": document_id,
+            "documentVersionId": version_id,
+            "workRecordId": None,
+            "rawContent": raw_content,
+            "inputMode": "free_text",
+            "signalLevel": None,
+        })
+        comment_key = f"android:wseq:field-comment:{suffix}"
+        comment_request = {
+            "documentId": document_id,
+            "documentVersionId": version_id,
+            "sourceType": "WORK_SEQUENCE_ITEM",
+            "sourceId": first_item_id,
+            "sourceRevision": 7,
+            "serverScope": server_scope,
+            "intentHashSha256": field_intent,
+            "rawContent": raw_content,
+            "inputMode": "free_text",
+            "entrySource": "android_field_terminal",
+            "deviceId": device_id,
+            "idempotencyKey": comment_key,
+        }
+        comment = client.post("/api/v1/field-comments", headers=headers, json=comment_request)
+        assert comment.status_code == 201, comment.text
+        assert comment.json()["source_id"] == first_item_id
+        assert comment.json()["intent_hash_sha256"] == field_intent
+        replay = client.post("/api/v1/field-comments", headers=headers, json=comment_request)
+        assert replay.status_code == 201
+        assert replay.json()["comment_id"] == comment.json()["comment_id"]
+
+        handover_title = "다음 교대 확인"
+        handover_body = "압력 상태를 다시 확인하세요."
+        handover_intent = canonical_hash({
+            "serverScope": server_scope,
+            "customerScope": login_payload["customer_scope"],
+            "siteScope": login_payload["site_scope"],
+            "userId": user_id,
+            "deviceId": device_id,
+            "sourceType": "WORK_SEQUENCE_ITEM",
+            "sourceId": first_item_id,
+            "sourceRevision": 7,
+            "relatedDocumentId": document_id,
+            "relatedDocumentVersionId": version_id,
+            "channelId": channel_id,
+            "recipientIds": [recipient_id],
+            "title": handover_title,
+            "body": handover_body,
+        })
+        handover = client.post("/api/v1/handovers", headers=headers, json={
+            "channelId": channel_id,
+            "title": handover_title,
+            "body": handover_body,
+            "sourceType": "WORK_SEQUENCE_ITEM",
+            "sourceId": first_item_id,
+            "sourceRevision": 7,
+            "relatedDocumentId": document_id,
+            "relatedDocumentVersionId": version_id,
+            "serverScope": server_scope,
+            "intentHashSha256": handover_intent,
+            "recipientIds": [recipient_id],
+            "entrySource": "android_field_terminal",
+            "deviceId": device_id,
+            "idempotencyKey": f"android:wseq:handover:{suffix}",
+        })
+        assert handover.status_code == 201, handover.text
+        assert handover.json()["source_revision"] == 7
+        assert handover.json()["related_document_version_id"] == version_id
+
+        with client.app.state.database.session() as session:
+            document = session.scalar(select(Document).where(Document.document_id == document_id))
+            document.status = "IN_REVIEW"
+            session.commit()
+        replay_after_document_change = client.post(
+            "/api/v1/field-comments", headers=headers, json=comment_request
+        )
+        assert replay_after_document_change.status_code == 201
+        assert replay_after_document_change.json()["comment_id"] == comment.json()["comment_id"]
+
+        with client.app.state.database.session() as session:
+            membership = session.scalar(select(NotificationChannelMember).where(
+                NotificationChannelMember.channel_id == channel_id,
+                NotificationChannelMember.user_id == user_id,
+            ))
+            membership.status = "REMOVED"
+            session.commit()
+        hidden = client.get(
+            f"/api/v1/work-sequence-field-boards/{first_board_id}", headers=headers
+        )
+        assert hidden.status_code == 404
+
+        with client.app.state.database.session() as session:
+            terminal = session.scalar(select(TerminalDevice).where(TerminalDevice.device_id == device_id))
+            terminal.status = "INACTIVE"
+            session.commit()
+        inactive = client.get(
+            "/api/v1/work-sequence-field-boards",
+            headers=headers,
+            params={"boardDate": today.isoformat(), "lineCode": line_code},
+        )
+        assert inactive.status_code == 401
+
+        with client.app.state.database.session() as session:
+            assert session.scalar(select(func.count()).select_from(ActivityHistory).where(
+                ActivityHistory.event_type == "work_sequence.android_read",
+                ActivityHistory.actor_id == user_id,
+            )) >= 3
+            assert session.scalar(select(func.count()).select_from(ActivityHistory).where(
+                ActivityHistory.event_type == "field_comment.work_sequence_source_linked",
+                ActivityHistory.target_id == comment.json()["comment_id"],
+            )) == 1
 
 
 def test_work_sequence_board_item_reorder_status_and_history() -> None:

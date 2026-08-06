@@ -623,7 +623,13 @@ def get_field_comment_traceability(
         .order_by(FieldCommentAttachment.created_at, FieldCommentAttachment.id)
     ).all()
     work_sequence_rows = []
-    if note.document_id:
+    if note.source_type == "WORK_SEQUENCE_ITEM" and note.source_id:
+        work_sequence_rows = session.execute(
+            select(WorkSequenceItem, WorkSequenceBoard)
+            .join(WorkSequenceBoard, WorkSequenceBoard.board_id == WorkSequenceItem.board_id)
+            .where(WorkSequenceItem.item_id == note.source_id)
+        ).all()
+    elif note.document_id:
         work_sequence_rows = session.execute(
             select(WorkSequenceItem, WorkSequenceBoard)
             .join(WorkSequenceBoard, WorkSequenceBoard.board_id == WorkSequenceItem.board_id)

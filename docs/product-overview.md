@@ -26,7 +26,7 @@ FlowNote는 생산공장 현장의 문서와 현장 경험을 함께 남기는 �
 - 보고서 초안 생성 보조, 초안→검토중→확정→보관 상태 전이, 확정 문서 저장과 원천 역추적. 보고서 revision·내용/source 집합 hash·mutation receipt와 상태 전이 직전 원천 재검증 포함
 - FastAPI 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부·인수인계 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 작성·확인·보류와 같은 원천의 후속 FieldComment. 확인·보류·후속 FieldComment도 전송 전에 암호화 outbox에 보존
+- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, 허용된 오늘의 작업순서 목록·상세와 공개 문서 연결, 작업순서 원천이 고정된 FieldComment·사진·인수인계 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 인수인계 작성·확인·보류와 같은 원천의 후속 FieldComment. 확인·보류·후속 FieldComment도 전송 전에 암호화 outbox에 보존
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
 - FastAPI 서버 계정 수명주기 API와 Windows WPF 서버 계정 운영 화면: 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기
 - 임시 비밀번호 로그인 후 WPF 비밀번호 변경 강제, 변경 완료 시 기존 세션 폐기와 새 비밀번호 재로그인
@@ -43,6 +43,8 @@ FlowNote는 생산공장 현장의 문서와 현장 경험을 함께 남기는 �
 운영 판정과 AI·보고서 근거의 권위 원천은 FastAPI 서버다. WPF 로컬 DB는 연결이 불안정한 동안 원천 파일·입력·outbox를 무손실 보존하는 로컬 우선 작업 원장이지, 서버와 별개의 최종 상태 원장이 아니다. 서버가 수락하기 전 로컬 원천은 삭제하지 않고, 서버가 수락한 뒤에는 서버 ID·revision·파일 hash·공개 포인터·보고서 source ID를 다시 읽어 매핑까지 확인한 경우에만 수렴 완료로 판정한다. timeout, 503, 응답 유실과 앱 재시작은 같은 idempotency key로 재시도하고 409는 자동 덮어쓰기하지 않는다.
 
 작업순서의 최종 운영은 서버 직접 API로 구현되었다. WPF 관리자·TV 화면은 서버 목록과 상세 snapshot을 읽고, 관리 화면은 `board_revision`을 `baseBoardRevision`으로 보내며 사용자 동작마다 새 mutation key를 생성한다. 서버는 의미 있는 변경마다 revision을 1 증가시키고 change history 1건과 mutation receipt를 같은 트랜잭션에 저장한다. 응답 유실로 볼 수 있는 전송 오류는 같은 key로 한 번 재시도하고, stale revision은 최신 snapshot을 새로 읽은 뒤 사용자가 확인하고 다시 시도하게 한다. 로컬 작업순서 테이블은 오프라인 읽기 캐시·초안과 기존 테스트 기록으로 보존하며 `server_sync_queue`에 새 작업순서 mutation을 넣지 않는다. 서버 미연결·조회 실패로 권위 snapshot이 없으면 생성·항목 추가·순서·상태 확정을 차단한다.
+
+Android 작업순서는 첫 단계에서 읽기와 현장 기록 원천 연결만 제공한다. 오늘 날짜·활성 작업판을 기본으로 하고 라인 필터는 현장별 선호값으로 저장할 수 있지만 공통 문서 구조로 강제하지 않는다. 보관 작업판은 사용자가 따로 선택해야 하며 상태·순서 변경은 WPF 관리 권한에 남긴다. Android는 사용자·승인 단말·활성 채널 범위의 항목만 받고, 7일 이내 마지막 성공 snapshot을 서버·고객·현장·사용자·단말 scope별 암호문으로 읽는다. 공개 문서가 비공개로 전환되면 새 상세 응답에서 문서 요약을 제거하고 보안 열람을 차단한다. 작업순서에서 시작한 FieldComment와 인수인계는 item ID, board revision, 당시 공개 document/version을 불변 원천으로 저장한다.
 
 문서 공개는 정확한 version·revision·file hash를 고정한 검토 요청과 지정 검토자의 승인 뒤에만 진행한다. 승인 projection과 append-only 이력을 원본 문서와 분리해 보존하고, WPF 승인 작업함은 서버 상태를 다시 읽어 요청·승인·반려·공개·취소를 처리한다. 이전 공개본은 승인 근거를 추정하지 않고 `LEGACY_PUBLICATION`으로 유지한다.
 

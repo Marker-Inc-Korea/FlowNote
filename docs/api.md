@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-08-06 현재 전역 FastAPI 앱에 등록된 160개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency·정정/대체 계약, 작업순서 후보 전달, 통합 변경 이력·운영 준비도 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-08-06 현재 전역 FastAPI 앱에 등록된 163개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency·정정/대체 계약, 작업순서 후보 전달·Android 현장 열람, 통합 변경 이력·운영 준비도 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -711,3 +711,15 @@ FieldComment `/bulk-review/execute`는 항목별 transaction을 유지한다. `s
 승인되지 않은 공개는 `APPROVAL_REQUIRED` 또는 `APPROVAL_NOT_APPROVED`, 승인 뒤 version/revision/hash가 바뀐 공개는 `APPROVAL_STALE` 409다. 작성자와 검토자·공개자의 동일인 여부가 현장 설정에서 정해지지 않은 채 같은 actor가 처리하면 `APPROVAL_REVIEWER_SEPARATION_POLICY_REQUIRED` 또는 `APPROVAL_SEPARATION_POLICY_REQUIRED`로 차단한다. 분리 강제 설정에서 같은 actor이면 403이다. 반려·stale 응답과 WPF 화면은 원본과 승인 기록 보존, 담당 검토자와 새 요청 행동을 함께 표시한다.
 
 현재 공개 승인을 취소하면 공개 포인터와 flag를 철회하고 문서·대상 버전을 `WORKING`으로 되돌린다. 새 공개본은 자신을 승인한 ID를 `publication_approval_id`로 대체하며 이전 승인과 이벤트는 수정·삭제하지 않는다. 따라서 활성 공개 승인 관계는 문서 포인터 기준 1:1이고 승인 이력은 여러 건일 수 있다.
+
+## Android 작업순서 읽기 API
+
+`GET /api/v1/work-sequence-field-boards`는 승인된 활성 단말의 읽기 전용 목록이다. query는 `boardDate`(기본 오늘), `lineCode`(선택), `status`(`ACTIVE` 기본, 사용자가 보관판을 선택하면 `ARCHIVED`), `offset`(0 이상), `limit`(1~100, 기본 50)을 받는다. 응답은 `items`, `offset`, `limit`, `total`, `has_more`, `refreshed_at`, `customer_scope`, `site_scope`, `user_id`, `device_id`를 반환한다.
+
+`GET /api/v1/work-sequence-field-boards/{board_id}`와 `GET /api/v1/work-sequence-field-boards/by-item/{item_id}`는 같은 상세 응답을 반환한다. 상세에도 서버가 확인한 `customer_scope`, `site_scope`, `user_id`, `device_id`를 넣어 단말이 요청 당시 cache scope와 다시 대조한다. 선택적인 `expectedRevision`이 현재 `board_revision`과 다르면 `409 WORK_SEQUENCE_REVISION_CHANGED`다. 현재 역할·배정·활성 채널에서 항목이 보이지 않으면 다른 scope의 존재 여부를 드러내지 않고 `404 WORK_SEQUENCE_NOT_VISIBLE`을 반환한다. `by-item`은 `WORK_SEQUENCE_ITEM` 채널 메시지 deep link에 사용한다.
+
+상세 항목에는 기존 작업순서 ID·제목·설명·작업번호·상태·보류 사유·순서·배정자와 함께 `source_type = WORK_SEQUENCE_ITEM`, `source_id`, `source_revision`, `document_access`, `published_document`, `allowed_channel_ids`를 제공한다. `published_document`는 현재 공개 상태인 경우에만 `document_id`, `version_id`, `title`, `document_revision`을 담는다. 비공개 전환 시 `document_access = NOT_PUBLISHED`, `published_document = null`이다. Android용 상태·순서 변경 endpoint는 없다.
+
+`POST /api/v1/field-comments`의 작업순서 원천 요청은 기존 필드에 `sourceType`, `sourceId`, `sourceRevision`, `serverScope`, `intentHashSha256`를 additive하게 보낸다. `documentId`와 `documentVersionId`는 현재 작업 항목의 공개 문서와 같아야 한다. 서버가 계산한 customer/site/user/device/work-sequence/document/content intent와 hash가 다르거나 revision·공개 문서가 바뀌면 409로 거부한다. 같은 idempotency key와 같은 intent가 이미 저장된 경우에는 이후 revision·공개 상태가 바뀌어도 기존 `comment_id`를 반환해 부분 성공 재시도가 수렴하게 한다.
+
+`POST /api/v1/handovers`는 작업순서 원천에 `sourceRevision`, `relatedDocumentId`, `relatedDocumentVersionId`, `serverScope`, `intentHashSha256`를 추가한다. hash에는 channel, 정렬된 recipient ID, 제목과 본문도 포함한다. 새 저장 전에는 활성 채널 멤버십, 현재 board revision과 공개 문서를 다시 확인한다. 동일 idempotency key·intent 재전송은 기존 handover/message/receipt를 반환한다.

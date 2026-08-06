@@ -18,6 +18,14 @@ public final class HandoverDraft {
     public final String deviceId;
     public final String authorId;
     public final String idempotencyKey;
+    public final Integer sourceRevision;
+    public final String relatedDocumentId;
+    public final String relatedDocumentVersionId;
+    public final String serverScope;
+    public final String intentHashSha256;
+    public final String sourceCustomerScope;
+    public final String sourceSiteScope;
+    public final String sourceBoardId;
 
     public HandoverDraft(
             String localId,
@@ -32,20 +40,49 @@ public final class HandoverDraft {
             String authorId,
             String idempotencyKey
     ) {
+        this(
+                localId, channelId, title, body, sourceType, sourceId, sourceVersionId,
+                recipientIds, deviceId, authorId, idempotencyKey, null
+        );
+    }
+
+    public HandoverDraft(
+            String localId,
+            String channelId,
+            String title,
+            String body,
+            String sourceType,
+            String sourceId,
+            String sourceVersionId,
+            List<String> recipientIds,
+            String deviceId,
+            String authorId,
+            String idempotencyKey,
+            WorkSequenceSource source
+    ) {
         this.localId = FieldCommentDraft.nonEmpty(localId, UUID.randomUUID().toString());
         this.channelId = FieldCommentDraft.trimToNull(channelId);
         this.title = FieldCommentDraft.nonEmpty(title, "");
         this.body = FieldCommentDraft.nonEmpty(body, "");
-        this.sourceType = normalizeSourceType(sourceType);
-        this.sourceId = FieldCommentDraft.trimToNull(sourceId);
-        this.sourceVersionId = FieldCommentDraft.trimToNull(sourceVersionId);
+        this.sourceType = source == null ? normalizeSourceType(sourceType) : "WORK_SEQUENCE_ITEM";
+        this.sourceId = source == null ? FieldCommentDraft.trimToNull(sourceId) : source.itemId;
+        this.sourceVersionId = source == null ? FieldCommentDraft.trimToNull(sourceVersionId) : null;
         this.recipientIds = immutableRecipients(recipientIds);
         this.deviceId = FieldCommentDraft.trimToNull(deviceId);
         this.authorId = FieldCommentDraft.trimToNull(authorId);
-        this.idempotencyKey = FieldCommentDraft.nonEmpty(
-                idempotencyKey,
-                defaultIdempotencyKey(this.deviceId, this.localId)
+        this.sourceRevision = source == null ? null : source.revision;
+        this.relatedDocumentId = source == null ? null : source.documentId;
+        this.relatedDocumentVersionId = source == null ? null : source.documentVersionId;
+        this.serverScope = source == null ? null : source.serverScope;
+        this.intentHashSha256 = source == null ? null : source.handoverIntentHash(
+                this.channelId, this.recipientIds, this.title, this.body
         );
+        this.sourceCustomerScope = source == null ? null : source.customerScope;
+        this.sourceSiteScope = source == null ? null : source.siteScope;
+        this.sourceBoardId = source == null ? null : source.boardId;
+        this.idempotencyKey = FieldCommentDraft.nonEmpty(idempotencyKey, source == null
+                ? defaultIdempotencyKey(this.deviceId, this.localId)
+                : source.idempotencyKey("handover", this.localId));
     }
 
     public boolean canQueue() {

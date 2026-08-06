@@ -32,6 +32,7 @@ from app.db.models import (
     UserAccount,
 )
 from app.db.session import get_db_session
+from app.services.mutation_receipts import canonical_hash
 
 router = APIRouter(tags=["notification-channels"], dependencies=[Depends(get_current_user)])
 
@@ -720,6 +721,10 @@ def create_handover(
         source_type = _normalize_choice(request.source_type, HANDOVER_SOURCE_TYPES, "sourceType")
     source_id = _clean_optional(request.source_id)
     source_version_id = _clean_optional(request.source_version_id)
+    source_revision = request.source_revision
+    related_document_id = _clean_optional(request.related_document_id)
+    related_document_version_id = _clean_optional(request.related_document_version_id)
+    server_scope = _clean_optional(request.server_scope)
     entry_source = request.entry_source.strip().lower()
     if entry_source not in {"field_user", "android_field_terminal", "windows_client"}:
         raise HTTPException(
@@ -759,6 +764,37 @@ def create_handover(
 
     title = request.title.strip()
     body = request.body.strip()
+    intent_hash = None
+    if entry_source == "android_field_terminal" and source_type == "WORK_SEQUENCE_ITEM":
+        if source_revision is None or server_scope is None or request.intent_hash_sha256 is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Android work-sequence handover requires sourceRevision, serverScope, and intentHashSha256.",
+            )
+        intent_hash = canonical_hash({
+            "serverScope": server_scope,
+            "customerScope": current_user.customer_scope,
+            "siteScope": current_user.site_scope,
+            "userId": current_user.user_id,
+            "deviceId": device_id,
+            "sourceType": source_type,
+            "sourceId": source_id,
+            "sourceRevision": source_revision,
+            "relatedDocumentId": related_document_id,
+            "relatedDocumentVersionId": related_document_version_id,
+            "channelId": channel.channel_id,
+            "recipientIds": sorted(recipient_ids),
+            "title": title,
+            "body": body,
+        })
+        if request.intent_hash_sha256.lower() != intent_hash:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "INTENT_HASH_MISMATCH",
+                    "message": "단말에 고정한 작업순서 인수인계 hash가 서버 검증값과 다릅니다.",
+                },
+            )
     if idempotency_key is not None:
         existing = session.scalar(
             select(Handover).where(Handover.idempotency_key == idempotency_key)
@@ -773,6 +809,11 @@ def create_handover(
                 source_type=source_type,
                 source_id=source_id,
                 source_version_id=source_version_id,
+                source_revision=source_revision,
+                related_document_id=related_document_id,
+                related_document_version_id=related_document_version_id,
+                server_scope=server_scope,
+                intent_hash_sha256=intent_hash,
                 recipient_ids=recipient_ids,
                 entry_source=entry_source,
                 device_id=device_id,
@@ -793,12 +834,16 @@ def create_handover(
             detail="Notification channel is not active.",
         )
     if entry_source == "android_field_terminal":
-        ensure_android_handover_source(
+        related_document_id, related_document_version_id = ensure_android_handover_source(
             session,
+            current_user,
             channel.channel_id,
             source_type,
             source_id,
             source_version_id,
+            source_revision,
+            related_document_id,
+            related_document_version_id,
         )
     for recipient_id in recipient_ids:
         _validate_user_id(session, recipient_id, "recipientIds")
@@ -817,6 +862,11 @@ def create_handover(
         source_type=source_type,
         source_id=source_id,
         source_version_id=source_version_id,
+        source_revision=source_revision,
+        server_scope=server_scope,
+        intent_hash_sha256=intent_hash,
+        related_document_id=related_document_id,
+        related_document_version_id=related_document_version_id,
         status="SENT",
         created_by=current_user.user_id,
         entry_source=entry_source,
@@ -842,6 +892,8 @@ def create_handover(
             source_type="HANDOVER",
             source_id=handover.handover_id,
             source_version_id=None,
+            related_document_id=related_document_id,
+            related_document_version_id=related_document_version_id,
             title=handover.title,
             body=handover.body,
             created_by=current_user.user_id,
@@ -861,6 +913,12 @@ def create_handover(
                     "entry_source": entry_source,
                     "device_id": device_id,
                     "idempotency_key": idempotency_key,
+                    "source_type": source_type,
+                    "source_id": source_id,
+                    "source_revision": source_revision,
+                    "related_document_id": related_document_id,
+                    "related_document_version_id": related_document_version_id,
+                    "intent_hash_sha256": intent_hash,
                 },
                 sort_keys=True,
             ),

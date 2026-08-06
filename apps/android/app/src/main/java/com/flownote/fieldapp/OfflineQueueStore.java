@@ -404,6 +404,14 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
             payload.put("authorId", draft.authorId);
             payload.put("photoUri", draft.photoUri);
             payload.put("idempotencyKey", draft.idempotencyKey);
+            payload.put("sourceType", draft.sourceType);
+            payload.put("sourceId", draft.sourceId);
+            payload.put("sourceRevision", draft.sourceRevision);
+            payload.put("serverScope", draft.serverScope);
+            payload.put("sourceCustomerScope", draft.sourceCustomerScope);
+            payload.put("sourceSiteScope", draft.sourceSiteScope);
+            payload.put("sourceBoardId", draft.sourceBoardId);
+            payload.put("intentHashSha256", draft.intentHashSha256);
         } catch (JSONException exc) {
             throw new IllegalStateException(exc);
         }
@@ -424,6 +432,14 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
             payload.put("deviceId", draft.deviceId);
             payload.put("authorId", draft.authorId);
             payload.put("idempotencyKey", draft.idempotencyKey);
+            payload.put("sourceRevision", draft.sourceRevision);
+            payload.put("relatedDocumentId", draft.relatedDocumentId);
+            payload.put("relatedDocumentVersionId", draft.relatedDocumentVersionId);
+            payload.put("serverScope", draft.serverScope);
+            payload.put("sourceCustomerScope", draft.sourceCustomerScope);
+            payload.put("sourceSiteScope", draft.sourceSiteScope);
+            payload.put("sourceBoardId", draft.sourceBoardId);
+            payload.put("intentHashSha256", draft.intentHashSha256);
         } catch (JSONException exc) {
             throw new IllegalStateException(exc);
         }
@@ -563,7 +579,8 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
 
         FieldCommentDraft toFieldCommentDraft() throws JSONException {
             JSONObject json = new JSONObject(payload);
-            return new FieldCommentDraft(
+            WorkSequenceSource source = workSequenceSource(json);
+            FieldCommentDraft draft = new FieldCommentDraft(
                     json.optString("localId", localId),
                     json.optString("documentId", null),
                     json.optString("documentVersionId", null),
@@ -574,8 +591,11 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
                     json.optString("deviceId", null),
                     json.optString("authorId", null),
                     attachmentUri,
-                    idempotencyKey
+                    idempotencyKey,
+                    source
             );
+            verifyIntentHash(json, draft.intentHashSha256);
+            return draft;
         }
 
         HandoverDraft toHandoverDraft() throws JSONException {
@@ -590,7 +610,8 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
                     }
                 }
             }
-            return new HandoverDraft(
+            WorkSequenceSource source = workSequenceSource(json);
+            HandoverDraft draft = new HandoverDraft(
                     json.optString("localId", localId),
                     json.optString("channelId", null),
                     json.optString("title", ""),
@@ -601,8 +622,41 @@ public final class OfflineQueueStore extends SQLiteOpenHelper {
                     recipientIds,
                     json.optString("deviceId", null),
                     json.optString("authorId", null),
-                    idempotencyKey
+                    idempotencyKey,
+                    source
             );
+            verifyIntentHash(json, draft.intentHashSha256);
+            return draft;
+        }
+
+        private WorkSequenceSource workSequenceSource(JSONObject json) {
+            if (!"WORK_SEQUENCE_ITEM".equals(json.optString("sourceType", null))) {
+                return null;
+            }
+            return new WorkSequenceSource(
+                    json.optString("serverScope", null),
+                    json.optString("sourceCustomerScope", null),
+                    json.optString("sourceSiteScope", null),
+                    json.optString("authorId", null),
+                    json.optString("deviceId", null),
+                    json.optString("sourceBoardId", null),
+                    json.optString("sourceId", null),
+                    json.optInt("sourceRevision", 0),
+                    json.optString("documentId", json.optString("relatedDocumentId", null)),
+                    json.optString(
+                            "documentVersionId",
+                            json.optString("relatedDocumentVersionId", null)
+                    ),
+                    null,
+                    json.optString("workRecordId", null)
+            );
+        }
+
+        private void verifyIntentHash(JSONObject json, String recomputed) throws JSONException {
+            String stored = json.optString("intentHashSha256", null);
+            if (stored != null && !stored.equals(recomputed)) {
+                throw new JSONException("보존된 작업순서 intent hash가 payload와 다릅니다.");
+            }
         }
 
         HandoverReceiptDraft toHandoverReceiptDraft() throws JSONException {

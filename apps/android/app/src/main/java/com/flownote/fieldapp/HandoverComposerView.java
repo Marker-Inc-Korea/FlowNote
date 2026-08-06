@@ -50,6 +50,7 @@ final class HandoverComposerView extends LinearLayout {
     private String deviceId;
     private String authorId;
     private boolean bindingChannels;
+    private WorkSequenceSource workSequenceSource;
 
     HandoverComposerView(Context context, Listener listener) {
         super(context);
@@ -204,13 +205,33 @@ final class HandoverComposerView extends LinearLayout {
     }
 
     void setDocumentSource(String documentId, String versionId) {
+        workSequenceSource = null;
+        sourceSpinner.setEnabled(true);
+        sourceIdInput.setEnabled(true);
+        sourceVersionInput.setEnabled(true);
         sourceSpinner.setSelection(1);
         sourceIdInput.setText(documentId);
         sourceVersionInput.setText(versionId);
         formStatus.setText("선택한 문서를 인수인계 원천으로 연결했습니다.");
     }
 
+    void setWorkSequenceSource(WorkSequenceSource source, String itemTitle) {
+        workSequenceSource = source;
+        sourceSpinner.setSelection(0);
+        sourceSpinner.setEnabled(false);
+        sourceIdInput.setText(source.itemId);
+        sourceIdInput.setEnabled(false);
+        sourceVersionInput.setText("revision " + source.revision);
+        sourceVersionInput.setEnabled(false);
+        titleInput.setText("작업순서 인수인계: " + itemTitle);
+        formStatus.setText("작업순서 원천과 공개 문서 버전을 고정했습니다. 채널과 수신자를 확인하세요.");
+    }
+
     void resetAfterQueued() {
+        workSequenceSource = null;
+        sourceSpinner.setEnabled(true);
+        sourceIdInput.setEnabled(true);
+        sourceVersionInput.setEnabled(true);
         titleInput.setText("");
         bodyInput.setText("");
         sourceIdInput.setText("");
@@ -241,7 +262,9 @@ final class HandoverComposerView extends LinearLayout {
                 recipients,
                 deviceId,
                 authorId,
-                HandoverDraft.defaultIdempotencyKey(deviceId, localId)
+                workSequenceSource == null
+                        ? HandoverDraft.defaultIdempotencyKey(deviceId, localId) : null,
+                workSequenceSource
         );
     }
 

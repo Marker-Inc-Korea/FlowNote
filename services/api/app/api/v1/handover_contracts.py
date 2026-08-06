@@ -14,6 +14,13 @@ class HandoverCreateRequest(BaseModel):
     source_type: str | None = Field(default=None, alias="sourceType")
     source_id: str | None = Field(default=None, alias="sourceId")
     source_version_id: str | None = Field(default=None, alias="sourceVersionId")
+    source_revision: int | None = Field(default=None, alias="sourceRevision", ge=1)
+    related_document_id: str | None = Field(default=None, alias="relatedDocumentId")
+    related_document_version_id: str | None = Field(default=None, alias="relatedDocumentVersionId")
+    server_scope: str | None = Field(default=None, alias="serverScope", max_length=500)
+    intent_hash_sha256: str | None = Field(
+        default=None, alias="intentHashSha256", min_length=64, max_length=64
+    )
     recipient_ids: list[str] = Field(alias="recipientIds", min_length=1)
     entry_source: str = Field(default="field_user", alias="entrySource", max_length=30)
     device_id: str | None = Field(default=None, alias="deviceId", max_length=64)
@@ -52,6 +59,9 @@ class HandoverResponse(BaseModel):
     source_type: str | None
     source_id: str | None
     source_version_id: str | None
+    source_revision: int | None
+    server_scope: str | None
+    intent_hash_sha256: str | None
     related_document_id: str | None
     related_document_version_id: str | None
     status: str

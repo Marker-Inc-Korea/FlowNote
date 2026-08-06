@@ -264,6 +264,9 @@ def _ensure_handover_source_columns(database: Database) -> None:
     columns = {
         "entry_source": "VARCHAR(30) NOT NULL DEFAULT 'field_user'",
         "device_id": "VARCHAR(64)",
+        "source_revision": "INTEGER",
+        "server_scope": "VARCHAR(500)",
+        "intent_hash_sha256": "VARCHAR(64)",
     }
     with database.engine.begin() as connection:
         existing = {row[1] for row in connection.execute(text("PRAGMA table_info(handovers)"))}
@@ -285,6 +288,11 @@ def _ensure_field_comment_review_columns(database: Database) -> None:
         "conflict_basis": "TEXT",
         "selected_at": "DATETIME",
         "review_revision": "INTEGER NOT NULL DEFAULT 1",
+        "source_type": "VARCHAR(50)",
+        "source_id": "VARCHAR(64)",
+        "source_revision": "INTEGER",
+        "server_scope": "VARCHAR(500)",
+        "intent_hash_sha256": "VARCHAR(64)",
     }
     with database.engine.begin() as connection:
         existing = {row[1] for row in connection.execute(text("PRAGMA table_info(field_comments)"))}
@@ -293,6 +301,12 @@ def _ensure_field_comment_review_columns(database: Database) -> None:
         for name, definition in columns.items():
             if name not in existing:
                 connection.execute(text(f"ALTER TABLE field_comments ADD COLUMN {name} {definition}"))
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_field_comments_source_id "
+                "ON field_comments (source_id)"
+            )
+        )
 
 
 def _ensure_report_source_trace_columns(database: Database) -> None:

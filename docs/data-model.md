@@ -514,3 +514,11 @@ WPF 사용자 관리는 서버 로그인 세션이 있으면 서버 계정 운�
 준비도 상태는 `NORMAL`, `WARNING`, `BLOCKED`, `NO_DATA`다. 영역별 수치는 권한으로 평가한 대상 중 정상 대상 수와 주의/차단 조치 row 수이며, 한 대상에 여러 blocker code가 있어도 가장 높은 상태의 조치 row 한 건으로 묶는다. `NO_DATA`는 원천이 0건이라는 뜻이 아니라 집계 실패 또는 해당 영역 권한 부족으로 수치를 제공하지 않았다는 뜻이다. 활성 채널 제한 대상은 비회원의 평가 대상과 모든 합계에서 제외한다.
 
 조치 row의 안정 식별자는 영역·대상 유형·대상 ID의 결정적 hash다. `blockerCodes[]`, 현재 상태와 source revision, 담당 역할·담당자, 다음 행동, 기존 업무 화면 route, 가장 오래된 근거 시각, 선택적 최신 공통 event ID를 가진다. 해결 여부를 저장하는 열은 두지 않으며 현재 권위 상태에서 blocker가 다시 계산되지 않을 때 해결된 것으로 판정한다. AI 실제 현장 준비도는 `ANONYMOUS_FIELD` 계열 projection으로 별도 구획하고 `SYNTHETIC`, `TEST` 계열을 합산하지 않는다.
+
+## Android 작업순서 원천 필드
+
+`field_comments`에는 선택적인 `source_type`, `source_id`, `source_revision`, `server_scope`, `intent_hash_sha256`를 둔다. Android 작업순서에서 시작한 기록은 `source_type = WORK_SEQUENCE_ITEM`이며 `source_id`는 `work_sequence_items.item_id`, `source_revision`은 선택 당시 `work_sequence_boards.board_revision`이다. `document_id`와 `document_version_id`는 그 시점의 현재 공개 문서를 함께 고정한다. 이 필드들은 기존 FieldComment 원천 불변 필드와 같이 update할 수 없다.
+
+`handovers`에도 `source_revision`, `server_scope`, `intent_hash_sha256`를 추가한다. 작업순서 원천은 기존 `source_type`, `source_id`와 함께 저장하고 당시 공개 문서는 `related_document_id`, `related_document_version_id`에 둔다. 공개 문서가 없는 작업 항목의 인수인계는 두 related 필드를 `NULL`로 저장할 수 있다.
+
+Android 작업순서 snapshot은 서버 DB 엔티티가 아니다. 단말 SharedPreferences에 Keystore AES-GCM 암호문으로 저장하며 cache key는 정규화 서버 URL, customer scope, site scope, user ID, device ID의 SHA-256이다. 목록·상세 snapshot은 7일 보존하고 outbox SQLite transaction과 결합하지 않는다. 서버의 `ActivityHistory`에는 `work_sequence.android_read`와 `field_comment.work_sequence_source_linked`를 기록해 사용자·단말·board revision·item ID를 대조할 수 있게 한다.

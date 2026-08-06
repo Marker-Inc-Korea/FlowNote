@@ -39,6 +39,16 @@ class FieldCommentCreateRequest(BaseModel):
     document_version_id: str | None = Field(default=None, alias="documentVersionId")
     structure_item_id: str | None = Field(default=None, alias="structureItemId")
     work_record_id: str | None = Field(default=None, alias="workRecordId")
+    source_type: str | None = Field(default=None, alias="sourceType")
+    source_id: str | None = Field(default=None, alias="sourceId")
+    source_revision: int | None = Field(default=None, alias="sourceRevision", ge=1)
+    server_scope: str | None = Field(default=None, alias="serverScope", max_length=500)
+    intent_hash_sha256: str | None = Field(
+        default=None,
+        alias="intentHashSha256",
+        min_length=64,
+        max_length=64,
+    )
     comment_type: str = Field(default="issue", alias="commentType")
     input_mode: str = Field(default="free_text", alias="inputMode")
     signal_level: str | None = Field(default=None, alias="signalLevel")
@@ -148,6 +158,11 @@ class FieldCommentResponse(BaseModel):
     document_version_id: str | None
     structure_item_id: str | None
     work_record_id: str | None
+    source_type: str | None
+    source_id: str | None
+    source_revision: int | None
+    server_scope: str | None
+    intent_hash_sha256: str | None
     comment_type: str
     input_mode: str
     signal_level: str | None

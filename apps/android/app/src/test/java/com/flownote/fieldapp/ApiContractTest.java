@@ -30,6 +30,14 @@ public final class ApiContractTest {
         );
         assertEquals("/api/v1/notification-channels", ApiPaths.NOTIFICATION_CHANNELS);
         assertEquals(
+                "/api/v1/work-sequence-field-boards/board_1",
+                ApiPaths.workSequenceFieldBoard("board_1")
+        );
+        assertEquals(
+                "/api/v1/work-sequence-field-boards/by-item/item_1",
+                ApiPaths.workSequenceFieldItem("item_1")
+        );
+        assertEquals(
                 "/api/v1/notification-channels/channel_1/members",
                 ApiPaths.channelMembers("channel_1")
         );
