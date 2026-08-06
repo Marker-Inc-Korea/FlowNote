@@ -25,6 +25,8 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/audit-events` | Read common mutation envelopes and legacy activity history with explicit missing fields |
 | GET | `/api/v1/change-history` | Rebuildable, permission-filtered integrated change history and action items |
 | GET | `/api/v1/change-history/{event_id}` | Permission-filtered source audit and current target detail |
+| GET | `/api/v1/operational-readiness` | Permission-filtered current operational readiness areas and snapshot-cursor action list |
+| GET | `/api/v1/operational-readiness/{item_id}` | Recomputed readiness action detail with the same scope rules |
 | GET | `/api/v1/server-accounts` | Server account list |
 | POST | `/api/v1/server-accounts` | Create server account with one-time temporary password input |
 | PATCH | `/api/v1/server-accounts/{user_id}` | Change display name, role, or status |
@@ -171,6 +173,8 @@ Document write responses carry the server-authoritative aggregate `revision`. Ve
 Operation-key mutations for document authority, FieldComment review, report workflow transitions, and work sequences also write `sync_mutation_receipts` and `audit_event_envelopes` without replacing their domain receipts or audit rows. Optional `X-FlowNote-Run-Id` and `X-Correlation-Id` headers link a verification run; the server creates a correlation ID when it is omitted. `GET /api/v1/audit-events` is restricted to `admin` and `system-admin`, combines common envelopes with legacy `activity_history`, and marks unavailable legacy fields instead of inferring values.
 
 `GET /api/v1/change-history` derives a read model from `audit_event_envelopes`; it does not create a second authority table. Governance roles can filter by time, actor/role, device, target, version/revision, result, risk, run, and correlation ID. Channel-restricted targets are omitted for non-members in both list totals and detail. The first page fixes an event ID snapshot anchor so cursor pagination does not duplicate or omit rows when new audit events arrive.
+
+`GET /api/v1/operational-readiness` combines that audit anchor with current authority tables without storing another snapshot. Area failures remain isolated as `NO_DATA`; terminal-session and reconciliation counts are restricted to `admin`/`system-admin`. The AI field section accepts only `ANONYMOUS_FIELD` readiness and never adds synthetic or test regression counts to operational totals.
 
 Development defaults such as `admin / 1234` and the default token secret are local development values only.
 

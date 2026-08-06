@@ -8,12 +8,17 @@ public partial class ChannelInboxWindow : Window
 {
     private readonly FlowNoteServerChannelClient? channelClient;
     private readonly string currentUserId;
+    private readonly string? initialChannelId;
 
-    public ChannelInboxWindow(FlowNoteServerChannelClient? channelClient, string currentUserId)
+    public ChannelInboxWindow(
+        FlowNoteServerChannelClient? channelClient,
+        string currentUserId,
+        string? initialChannelId = null)
     {
         InitializeComponent();
         this.channelClient = channelClient;
         this.currentUserId = currentUserId;
+        this.initialChannelId = initialChannelId;
         Loaded += ChannelInboxWindow_Loaded;
     }
 
@@ -42,6 +47,15 @@ public partial class ChannelInboxWindow : Window
             ChannelGrid.ItemsSource = channels;
             NotificationGrid.ItemsSource = notifications;
             HandoverGrid.ItemsSource = handovers;
+            if (!string.IsNullOrWhiteSpace(initialChannelId))
+            {
+                var selected = channels.FirstOrDefault(item => item.ChannelId == initialChannelId);
+                if (selected is not null)
+                {
+                    ChannelGrid.SelectedItem = selected;
+                    ChannelGrid.ScrollIntoView(selected);
+                }
+            }
             StatusTextBlock.Text = $"내 채널 {channels.Count}개, 메시지 {notifications.Count}건, 인수인계 {handovers.Count}건을 조회했습니다.";
         }
         catch (Exception exception)

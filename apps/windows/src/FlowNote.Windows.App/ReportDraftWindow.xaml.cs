@@ -16,6 +16,8 @@ public partial class ReportDraftWindow : Window
     private readonly long targetFolderId;
     private readonly string actorName;
     private readonly IReadOnlySet<string> initialFieldCommentIds;
+    private readonly string? initialReportId;
+    private bool initialReportOpened;
     private readonly ReportDraftWorkspace workspace = new();
     private IReadOnlyList<ReportSourceCandidateRecord>? frozenSources;
     private ServerReportResponse? serverWorkflowReport;
@@ -26,7 +28,8 @@ public partial class ReportDraftWindow : Window
         long targetFolderId,
         string actorName,
         FlowNoteServerDocumentClient? serverReports = null,
-        IEnumerable<string>? initialFieldCommentIds = null)
+        IEnumerable<string>? initialFieldCommentIds = null,
+        string? initialReportId = null)
     {
         InitializeComponent();
         this.reports = reports;
@@ -35,6 +38,7 @@ public partial class ReportDraftWindow : Window
         this.actorName = actorName;
         this.initialFieldCommentIds = (initialFieldCommentIds ?? [])
             .ToHashSet(StringComparer.Ordinal);
+        this.initialReportId = initialReportId;
         DataContext = workspace;
         Loaded += ReportDraftWindow_Loaded;
     }
@@ -319,6 +323,26 @@ public partial class ReportDraftWindow : Window
                         source.SourceRevision,
                         source.SourceHashSha256,
                         source.TraceId));
+                }
+            }
+            if (!initialReportOpened && !string.IsNullOrWhiteSpace(initialReportId))
+            {
+                initialReportOpened = true;
+                var selected = workspace.ExistingReportSources.FirstOrDefault(item =>
+                    item.ReportId == initialReportId);
+                if (selected is not null)
+                {
+                    ExistingReportSourceGrid.SelectedItem = selected;
+                    ExistingReportSourceGrid.ScrollIntoView(selected);
+                }
+                var report = existingReports.FirstOrDefault(item =>
+                    item.ReportId == initialReportId);
+                if (report is not null)
+                {
+                    new ReportDetailWindow(report, serverReports, reports)
+                    {
+                        Owner = this
+                    }.ShowDialog();
                 }
             }
         }

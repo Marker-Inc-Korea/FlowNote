@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-08-06 현재 전역 FastAPI 앱에 등록된 158개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency·정정/대체 계약, 작업순서 후보 전달, 통합 변경 이력 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-08-06 현재 전역 FastAPI 앱에 등록된 160개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency·정정/대체 계약, 작업순서 후보 전달, 통합 변경 이력·운영 준비도 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -27,8 +27,10 @@ operation key가 있는 고위험 mutation은 선택 헤더 `X-FlowNote-Run-Id`�
 | GET | `/api/v1/audit-events` | 공통 event envelope와 기존 `activity_history`를 시간순 조회. 선택 `targetType`, `targetId`, `limit` 필터 |
 | GET | `/api/v1/change-history` | 공통 event envelope에서 재생성한 통합 변경 이력과 조치 필요 항목 조회 |
 | GET | `/api/v1/change-history/{event_id}` | 같은 권한 정책으로 현재 업무 상태와 원본 event envelope 상세 조회 |
+| GET | `/api/v1/operational-readiness` | 권한으로 볼 수 있는 현재 상태와 감사에서 영역별 정상·주의·차단 집계와 조치 목록 조회 |
+| GET | `/api/v1/operational-readiness/{item_id}` | 같은 권한 범위에서 준비도 조치 항목 상세 재계산·조회 |
 
-조회는 `admin`, `system-admin`만 허용한다. `limit`은 기본 100, 최소 1, 최대 500이며 응답은 `serverTime` 내림차순 배열이다. 각 행에는 `sourceId`, `formatStatus`, `schemaVersion`, `eventType`, actor·session·device, target·version·revision, 선택적 related target type/ID/revision, `reason`, approval, 전후 SHA-256, result·result code·HTTP status, run/correlation ID, `serverTime`, `missingFields`가 포함된다. 정정 생성·대체 확정은 related target에 기준 보고서와 revision을 기록한다. 공통 행은 `formatStatus = 공통 형식`, 이전 `activity_history` 행은 `formatStatus = 이전 형식·일부 필드 없음`으로 반환한다. 이전 행의 `actorRole`, session/device, target version/revision, related target, approval, hash, result, HTTP status, run/correlation ID는 추정하지 않고 `null`과 `missingFields`로 표시한다.
+`GET /api/v1/audit-events` 조회는 `admin`, `system-admin`만 허용한다. `limit`은 기본 100, 최소 1, 최대 500이며 응답은 `serverTime` 내림차순 배열이다. 각 행에는 `sourceId`, `formatStatus`, `schemaVersion`, `eventType`, actor·session·device, target·version·revision, 선택적 related target type/ID/revision, `reason`, approval, 전후 SHA-256, result·result code·HTTP status, run/correlation ID, `serverTime`, `missingFields`가 포함된다. 정정 생성·대체 확정은 related target에 기준 보고서와 revision을 기록한다. 공통 행은 `formatStatus = 공통 형식`, 이전 `activity_history` 행은 `formatStatus = 이전 형식·일부 필드 없음`으로 반환한다. 이전 행의 `actorRole`, session/device, target version/revision, related target, approval, hash, result, HTTP status, run/correlation ID는 추정하지 않고 `null`과 `missingFields`로 표시한다.
 
 operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 상태 전이, 작업순서 변경은 기존 도메인 receipt를 유지하면서 `sync_mutation_receipts`와 `audit_event_envelopes`를 같은 업무 transaction에 추가한다. 같은 key·같은 event/target/intent의 재시도는 최초 결과를 반환하고 업무 revision·도메인 감사·공통 행을 늘리지 않는다. 같은 key의 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`다. 문서 상태, FieldComment 검토, 보고서 상태 전이, 작업순서 항목 상태에서 발생한 업무 거부·충돌도 공통 receipt로 고정되며 같은 요청 재시도는 같은 HTTP 결과로 수렴한다.
 
@@ -39,6 +41,12 @@ operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 상
 목록은 `occurredFrom`, `occurredTo`, `actorId`, `actorRole`, `deviceId`, `targetType`, `targetId`, `targetQuery`, `targetVersionId`, `targetRevision`, `result`, `riskLevel`, `runId`, `correlationId`, `actionRequired` 필터를 지원한다. `targetQuery`는 권한 검사를 통과한 대상의 ID와 현재 제목에서 찾는다. 응답의 `totalCount`, `actionRequiredCount`, `totalsByResult`, `totalsByRisk`는 같은 권한·필터·snapshot 상한을 적용한 값이다.
 
 첫 페이지는 당시 `audit_event_envelopes.id` 최댓값을 `snapshotAnchorId`로 고정한다. 다음 커서는 이 상한과 마지막 event ID를 함께 전달하며 이후 추가된 event는 현재 페이지 묶음에 섞지 않는다. 정렬은 조치 필요 여부, 문제 유형 우선순위, 서버 시각, event ID 순으로 안정화한다. 필터를 바꾼 커서를 재사용하면 `422 CHANGE_HISTORY_CURSOR_INVALID`로 거부하므로 첫 페이지부터 다시 조회해야 한다. 충돌, 거부·실패, operation key와 공통 receipt의 미연결, 필수 감사 필드 누락, 권한 거부 뒤 현재 revision 변경을 조치 대상으로 분류하고 각 행에 영향, 현재 상태·revision, 담당자, 다음 행동과 WPF 이동 경로를 반환한다.
+
+운영 준비도도 별도 권위 snapshot을 저장하지 않는다. `audit_event_envelopes`의 snapshot anchor와 문서·FieldComment·보고서·작업순서·채널/인수인계·승인 단말·재결합 현재 테이블을 읽기 transaction에서 결합한다. `areaCode`, `severity`, `blockerCode`, `targetQuery`, `limit`, `cursor`를 지원한다. `targetQuery`는 권한 검사를 통과한 대상 ID·현재 제목·조치 대상 ID에서 찾는다. 커서는 anchor, `asOf`, 마지막 item ID, 필터 서명과 15분 만료 시각을 포함한다. `asOf` 뒤 생성된 업무 row와 anchor 뒤 감사 event는 기존 페이지 묶음에서 제외한다. 필터가 달라지거나 마지막 item의 현재 blocker가 해소되어 기준 행을 찾을 수 없으면 `422 OPERATIONAL_READINESS_CURSOR_INVALID`, 만료되면 `410 OPERATIONAL_READINESS_CURSOR_EXPIRED`다. snapshot 뒤 감사 event가 생기면 기존 페이지를 자동 교체하지 않고 `refreshRequired=true`, `refreshReason`을 반환한다.
+
+영역 집계는 서로 독립적으로 실행한다. 한 영역이 실패하면 해당 영역만 `NO_DATA/집계 없음`과 `AREA_AGGREGATION_FAILED`, 원천 보존, 담당 역할, 다음 행동을 반환하고 나머지 영역·조치 목록은 유지한다. 단말과 동기화 영역은 `admin`, `system-admin`이 아니면 수치와 대상 대신 `AREA_PERMISSION_REQUIRED`만 반환한다. 활성 채널로 제한된 업무 대상은 비회원의 목록·상세·영역/전체 합계에서 모두 제외하며 제한 대상이 몇 건인지도 따로 반환하지 않는다.
+
+상태 판정은 저장된 기한·만료·명시 상태·revision/hash·감사 필드만 사용한다. 현장별 목표 시간이 설정되지 않은 상태에서 임의의 시간 임계값을 만들지 않는다. 해결됨은 새로고침한 현재 상태에서 같은 blocker 조건이 더 이상 계산되지 않는 경우다. 문서 공개 포인터/상태/승인 불일치, FieldComment 명시 기한 초과·보고서 미연결·상충·미배정, 보고서 정정 대기·source revision 충돌, 미전달/만료 작업순서 후보, 채널 미확인·인수인계 후속 조치, 비활성 단말의 활성 세션, 미해결 재결합 충돌·재전송 대기, 최근 200개 감사 event의 실패·충돌·필수 필드/receipt 문제를 blocker code로 반환한다. 각 조치의 `actionRoute`와 `actionTargetId`는 WPF가 기존 업무 화면의 대상·필터를 정확히 선택하는 데 사용하며 mutation 권한을 대신하지 않는다. `aiFieldReadiness`는 `ANONYMOUS_FIELD` 계열만 별도 반환하고 `syntheticIncluded=false`를 고정해 합성·테스트 회귀 수치를 운영 합계와 섞지 않는다.
 
 `must_change_password = true`인 계정은 로그인 응답에서 같은 값을 받지만 `change-password` 이외의 보호 API와 refresh를 사용할 수 없다. 비밀번호 변경 성공 시 현재 세션을 포함한 모든 활성 세션을 폐기하므로 새 비밀번호로 다시 로그인해야 한다. 최소 비밀번호 길이는 8자이며 현재 비밀번호와 같은 값은 거부한다. 새 비밀번호와 임시 비밀번호 hash는 계정별 무작위 salt를 사용한 PBKDF2-SHA256으로 저장하고 기존 개발 계정 hash도 같은 검증기가 호환한다.
 

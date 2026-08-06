@@ -30,6 +30,25 @@ public sealed class FlowNoteServerAuditClient
         return await ReadAsync<ServerChangeHistoryDetail>(response, cancellationToken);
     }
 
+    public async Task<ServerOperationalReadinessPage> ListOperationalReadinessAsync(
+        ServerOperationalReadinessQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            BuildReadinessPath(query), cancellationToken);
+        return await ReadAsync<ServerOperationalReadinessPage>(response, cancellationToken);
+    }
+
+    public async Task<ServerOperationalReadinessDetail> GetOperationalReadinessDetailAsync(
+        string itemId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/operational-readiness/{Uri.EscapeDataString(itemId)}",
+            cancellationToken);
+        return await ReadAsync<ServerOperationalReadinessDetail>(response, cancellationToken);
+    }
+
     private static string BuildListPath(ServerChangeHistoryQuery query)
     {
         var values = new List<KeyValuePair<string, string>>();
@@ -53,6 +72,20 @@ public sealed class FlowNoteServerAuditClient
         var encoded = string.Join("&", values.Select(pair =>
             $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
         return $"api/v1/change-history?{encoded}";
+    }
+
+    private static string BuildReadinessPath(ServerOperationalReadinessQuery query)
+    {
+        var values = new List<KeyValuePair<string, string>>();
+        Add(values, "areaCode", query.AreaCode);
+        Add(values, "severity", query.Severity);
+        Add(values, "blockerCode", query.BlockerCode);
+        Add(values, "targetQuery", query.TargetQuery);
+        Add(values, "limit", Math.Clamp(query.Limit, 1, 200).ToString());
+        Add(values, "cursor", query.Cursor);
+        var encoded = string.Join("&", values.Select(pair =>
+            $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
+        return $"api/v1/operational-readiness?{encoded}";
     }
 
     private static void Add(
@@ -80,7 +113,7 @@ public sealed class FlowNoteServerAuditClient
                 throw ServerAccessDenialPolicy.CreateException(response.StatusCode, body);
             }
             throw new InvalidOperationException(
-                "변경 이력을 조회하지 못했습니다. 서버 연결과 필터 값을 확인한 뒤 다시 시도하세요.");
+                "서버 읽기 화면을 조회하지 못했습니다. 서버 연결과 필터 값을 확인한 뒤 다시 시도하세요.");
         }
         return await response.Content.ReadFromJsonAsync<T>(cancellationToken)
             ?? throw new InvalidOperationException("변경 이력 서버 응답이 비어 있습니다.");

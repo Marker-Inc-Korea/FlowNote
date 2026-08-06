@@ -9,12 +9,17 @@ public partial class HandoverStatusWindow : Window
 {
     private readonly FlowNoteServerChannelClient? channelClient;
     private readonly string currentUserId;
+    private readonly string? initialHandoverId;
 
-    public HandoverStatusWindow(FlowNoteServerChannelClient? channelClient, string currentUserId)
+    public HandoverStatusWindow(
+        FlowNoteServerChannelClient? channelClient,
+        string currentUserId,
+        string? initialHandoverId = null)
     {
         InitializeComponent();
         this.channelClient = channelClient;
         this.currentUserId = currentUserId;
+        this.initialHandoverId = initialHandoverId;
         Loaded += HandoverStatusWindow_Loaded;
     }
 
@@ -48,6 +53,16 @@ public partial class HandoverStatusWindow : Window
                 .ToList();
             HandoverGrid.ItemsSource = rows;
             ReceiptGrid.ItemsSource = Array.Empty<ServerHandoverReceiptResponse>();
+            if (!string.IsNullOrWhiteSpace(initialHandoverId))
+            {
+                var selected = rows.FirstOrDefault(item =>
+                    item.Handover.HandoverId == initialHandoverId);
+                if (selected is not null)
+                {
+                    HandoverGrid.SelectedItem = selected;
+                    HandoverGrid.ScrollIntoView(selected);
+                }
+            }
             var unconfirmed = rows.Sum(item => item.UnconfirmedRecipientCount);
             var followUp = rows.Sum(item => item.FollowUpRequiredCount);
             StatusTextBlock.Text =

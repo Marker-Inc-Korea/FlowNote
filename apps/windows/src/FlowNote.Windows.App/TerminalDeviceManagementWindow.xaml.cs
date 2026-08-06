@@ -8,13 +8,17 @@ namespace FlowNote.Windows.App;
 public partial class TerminalDeviceManagementWindow : Window
 {
     private readonly FlowNoteServerTerminalDeviceClient? client;
+    private readonly string? initialDeviceId;
     private ServerTerminalDeviceResponse? selectedDevice;
     private string? replacementForDeviceId;
 
-    public TerminalDeviceManagementWindow(FlowNoteServerTerminalDeviceClient? client)
+    public TerminalDeviceManagementWindow(
+        FlowNoteServerTerminalDeviceClient? client,
+        string? initialDeviceId = null)
     {
         InitializeComponent();
         this.client = client;
+        this.initialDeviceId = initialDeviceId;
         DeviceModeComboBox.SelectedIndex = 0;
         StatusComboBox.SelectedIndex = 0;
         Loaded += Window_Loaded;
@@ -22,7 +26,7 @@ public partial class TerminalDeviceManagementWindow : Window
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        await RefreshAsync();
+        await RefreshAsync(initialDeviceId);
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)

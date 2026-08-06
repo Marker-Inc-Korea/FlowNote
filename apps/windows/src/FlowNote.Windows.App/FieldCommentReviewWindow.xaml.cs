@@ -21,6 +21,8 @@ public partial class FieldCommentReviewWindow : Window
     private readonly long reportFolderId;
     private readonly string actorName;
     private readonly string? serverUserId;
+    private readonly string? initialWorkbenchFilter;
+    private readonly string? initialCommentId;
     private readonly ReviewWorkspace workspace = new();
     private IReadOnlyList<ServerFieldCommentQualityItemResponse> qualityIssues = [];
     private ServerFieldCommentBulkReviewRequest? lastBulkRequest;
@@ -35,7 +37,9 @@ public partial class FieldCommentReviewWindow : Window
         string? serverUserId,
         FlowNoteServerDocumentClient? serverClient,
         ReportDraftService reports,
-        long reportFolderId)
+        long reportFolderId,
+        string? initialWorkbenchFilter = null,
+        string? initialCommentId = null)
     {
         InitializeComponent();
         this.fieldComments = fieldComments;
@@ -45,6 +49,8 @@ public partial class FieldCommentReviewWindow : Window
         this.serverClient = serverClient;
         this.reports = reports;
         this.reportFolderId = reportFolderId;
+        this.initialWorkbenchFilter = initialWorkbenchFilter;
+        this.initialCommentId = initialCommentId;
         DataContext = workspace;
         Loaded += FieldCommentReviewWindow_Loaded;
     }
@@ -118,7 +124,11 @@ public partial class FieldCommentReviewWindow : Window
         }
         ReloadSavedViews();
         await Task.WhenAll(RefreshQualityIssuesAsync(), RefreshReviewDashboardAsync());
-        RefreshComments("FieldComment 검토 목록을 조회했습니다.");
+        if (!string.IsNullOrWhiteSpace(initialWorkbenchFilter))
+        {
+            WorkbenchFilterComboBox.SelectedValue = initialWorkbenchFilter;
+        }
+        RefreshComments("FieldComment 검토 목록을 조회했습니다.", initialCommentId);
     }
 
     private void SaveViewButton_Click(object sender, RoutedEventArgs e)
@@ -681,7 +691,9 @@ public partial class FieldCommentReviewWindow : Window
 
         if (!string.IsNullOrWhiteSpace(selectedCommentId))
         {
-            FieldCommentGrid.SelectedItem = workspace.FieldComments.FirstOrDefault(item => item.CommentId == selectedCommentId);
+            FieldCommentGrid.SelectedItem = workspace.FieldComments.FirstOrDefault(item =>
+                item.CommentId == selectedCommentId ||
+                fieldComments.GetServerCommentId(item.CommentId) == selectedCommentId);
         }
 
         if (FieldCommentGrid.SelectedItem is null)

@@ -443,3 +443,11 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 - 일반 문서 작성자는 자신이 요청한 승인만 조회한다. governance role은 현장 서버 경계의 승인 작업함을 조회한다. 권한 밖 승인 ID는 존재하지 않는 승인 ID와 같은 404로 처리한다.
 - 승인 audit에는 actor ID·role·session·device·correlation, version·revision·hash, 정제된 사유와 승인 ID를 남긴다. 비밀, 로컬 절대경로와 파일 본문은 저장하지 않는다.
 - 공개 취소는 새 열람과 아직 사용되지 않은 Android/controlled copy grant를 차단한다. 이미 전달된 복사본을 삭제·회수했다고 표시하지 않으며 해당 소비 이력을 감사 근거로 유지한다.
+
+## 운영 준비도 정보 노출 경계
+
+운영 준비도 목록과 상세는 통합 변경 이력과 같은 document governance role만 호출할 수 있다. `admin`, `system-admin`은 현재 서버 scope의 전체 업무 감사를 볼 수 있고, 그 밖의 허용 role은 활성 채널로 제한된 대상의 활성 멤버일 때만 해당 대상과 조치 수를 볼 수 있다. 비회원에게는 제한된 채널·대상의 존재, 숨긴 건수, 대상 ID를 반환하지 않으며 상세도 존재하지 않는 ID와 같은 `404 RESOURCE_NOT_FOUND`다.
+
+승인 단말 세션과 서버 재결합 영역은 `admin`, `system-admin` 전용이다. 다른 governance role에는 실제 건수 대신 필요한 역할, 문의 방법과 원천 보존 안내만 반환한다. 이 제한 때문에 전체 합계도 사용자가 볼 수 있는 조치만 의미하며 전사 절대 합계로 해석하지 않는다.
+
+대시보드는 읽기 전용이며 업무 row, SQLite, 동기화 큐, 감사 envelope와 receipt를 수정하지 않는다. 담당 역할·다음 행동은 안내이며 자동 승인, 자동 공개, 자동 전달, 세션 해지나 충돌 해결 권한을 부여하지 않는다. WPF 이동 뒤 기존 화면과 서버가 역할·채널 scope·base revision·mutation key를 다시 검증한다. 영역 집계 실패 응답에는 내부 예외, SQL, 로컬 경로, 비밀값이나 권한 밖 target 식별자를 넣지 않는다.

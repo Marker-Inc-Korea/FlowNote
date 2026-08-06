@@ -1400,3 +1400,18 @@ WPF Core 계약 검증은 관리 가능 채널만 요청하는 query, preview의
 | `./gradlew testDebugUnitTest assembleDebug` | PASS, Android 관련 공개 문서 바로 열기 포함 |
 
 첫 API 묶음 실행에서는 기존 누적 SQLite의 채널 쓰기에서 일시적인 `database is locked` 1건이 발생했고, 중단 없이 이어진 나머지 14건은 통과했다. 부분 성공 재시도 회귀까지 추가한 뒤 같은 명령을 단독으로 다시 실행한 결과 19건이 모두 통과했다. 누적 SQLite의 기존 데이터·WAL·로그·테스트 산출물은 삭제하거나 초기화하지 않았다.
+
+## 2026-08-06 변경 이력 기반 통합 운영 준비도 검증
+
+FastAPI 집중 검증은 FieldComment 명시 기한 초과를 현재 상태에서 계산하고, 영역 합계와 조치 blocker code를 대조했다. 첫 페이지 뒤 새 감사 event를 추가해도 다음 cursor가 같은 `snapshotAnchorId`와 `asOf`를 유지하고 앞 행을 중복하지 않으며 `refreshRequired=true`를 반환하는지 확인했다. 활성 제한 채널의 공개 불일치 문서는 비회원 manager의 목록·상세·합계에서 제외되고 상세는 `404 RESOURCE_NOT_FOUND`였다. 종합 fixture에서는 문서 공개, 보고서 정정, 작업순서 전달 후보, 채널 미확인, 비활성 단말의 활성 세션, 동기화 충돌과 감사 필드 누락 blocker를 원천 테이블과 대조했다. AI 카드는 실제 익명 현장 track만 반환하고 합성 자료를 합산하지 않는다. 필터를 바꾼 cursor는 `422 OPERATIONAL_READINESS_CURSOR_INVALID`로 거부됐다.
+
+WPF 계약 검증은 영역·상태·blocker·cursor 필터 직렬화, snapshot 새로고침 표시, 아이콘과 한글 상태명, AI 실제/합성 분리 필드를 확인했다. `운영 준비도` 창은 읽기 전용 표와 상세만 가지며 조치 버튼은 기존 업무 창을 연다. 실제 Windows에서의 200% 배율, 고대비, 화면 읽기 표 이름과 장시간 키보드 조작은 macOS 교차 빌드만으로 확인할 수 없어 추가 확인이 필요하다. 누적 SQLite와 테스트 산출물은 삭제하거나 초기화하지 않았다.
+
+| 명령 | 결과 |
+| --- | --- |
+| `.venv/bin/python -m pytest -q tests/test_change_history_api.py tests/test_field_comment_review_dashboard_api.py tests/test_terminal_devices_api.py tests/test_channels_api.py` | PASS, 17건 |
+| `.venv/bin/python -m ruff check app tests` | PASS |
+| `dotnet test ./apps/windows/src/FlowNote.Windows.Core.Tests/FlowNote.Windows.Core.Tests.csproj` | PASS, 117건 |
+| `dotnet build ./apps/windows/src/FlowNote.Windows.App/FlowNote.Windows.App.csproj -p:EnableWindowsTargeting=true` | PASS, 경고 0·오류 0 |
+
+첫 전체 실행에서는 cursor 보조 모듈 분리 뒤 이전 `_invalid_cursor` 이름이 필터 불일치 분기 한 곳에 남아 16/17건만 통과했다. 참조를 `invalid_cursor`로 바로잡은 뒤 해당 테스트를 단독 재실행했고, 최종 전체 실행에서 17/17건이 통과했다. 종합 fixture 작성 중 확인된 외래키 삽입 순서 실패는 부모 row를 먼저 flush하도록 수정해 재검증했다. 실패 기록과 누적 SQLite는 삭제하거나 초기화하지 않았다.

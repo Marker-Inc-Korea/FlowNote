@@ -283,3 +283,11 @@ provider 경계는 정제 질의, 최소 발췌, candidate/source/version/trace 
 ## 서버 복구 경계 흐름
 
 WPF는 문서 전송과 채널 polling보다 먼저 sync manifest를 조회한다. 명시적 복구 장애가 있거나 정규화 URL의 승인된 instance/epoch와 다르거나 서버 cursor가 역행하면 binding을 `RECONCILIATION_REQUIRED`로 바꾸고 두 흐름을 함께 중지한다. `이력 > 서버 재결합`은 서버 응답 확인과 안전 수렴 상태를 분리해 표시하고, 차단 원인, 보존 원천, 승인 전 금지 행동, 담당자, pilot run·backup set·복구 승인 ID, 다음 단계를 한 흐름에 둔다. 관리자가 inventory 판정을 생성해 `REBOUND/REQUEUE/CONFLICT` 전 항목을 감사·승인하면 mapping을 갱신하고 기존 처리 message_id를 유지한 채 cursor를 0으로 준비한다. 명시적 장애 표지가 있으면 binding은 `POST_APPROVAL_RESTART_REQUIRED`로 자동 전송·polling을 계속 막는다. 서버 정상 종료 → `FLOWNOTE_RESTORE_*` 표지 제거 → 서버 재시작 뒤 `업무 재개 확인`이 정상 manifest를 read-back해야 `POST_APPROVAL_VERIFICATION_REQUIRED`로 바꾸고 재추적·재전송·polling을 함께 시작한다. 연결 재개만으로 안전 수렴을 확정하지 않는다. DB·파일 책임 교차 검사, 비종결 큐, 중복 mutation, 권한 우회와 polling 추적 증거가 모두 통과한 뒤에만 실기 결과를 안전 수렴으로 승인한다.
+
+## 운영 준비도 조회 흐름
+
+WPF `운영 준비도` → `GET /api/v1/operational-readiness` → 공통 감사 snapshot anchor + 현재 도메인 권위 테이블 → 권한/활성 채널 scope 필터 → 영역별 정상·주의·차단과 조치 route 순서로 흐른다. 이 경로는 `change_history`의 감사 해석과 기존 FieldComment·보고서·작업순서·채널·단말·재결합 상태를 읽지만 새 snapshot 테이블이나 자동 조치 mutation을 만들지 않는다.
+
+영역 계산기는 실패 경계를 따로 가진다. 한 계산기가 실패하면 해당 영역만 `집계 없음`으로 내려가고 다른 영역은 계속 반환된다. WPF의 조치 버튼은 새 mutation key를 만들지 않고 문서 승인, FieldComment 검토, 보고서, 작업판, 채널함, 인수인계 현황, 승인 단말, 로컬 이력/서버 재결합 같은 기존 화면만 연다. 실제 업무 mutation과 권한 재검사는 열린 기존 화면과 서버 API가 계속 담당한다.
+
+AI 실제 현장 준비도는 운영 영역 합계의 하위 수치가 아니다. 기존 AI 준비도 service의 `FIELD_READINESS/ANONYMOUS_FIELD` 결과만 별도 카드에 전달하고 합성·테스트 회귀 track은 표시 합계에서 제외한다.

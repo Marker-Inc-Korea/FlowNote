@@ -150,6 +150,13 @@ HTTPS 클라이언트는 인증서 폐기 목록 확인을 사용한다. 인증�
 - 채널 관리/인수인계 확인 현황: 문서 등록 권한과 같은 관리자/반장/조장 계열
 - 다운로드 허용: 관리자 계열 중 `admin`, `system-admin`, `manager`, `document-admin`, `assistant-manager`, `department-manager`
 - FieldComment 작성: 모든 기본 현장 role
+- 변경 이력·운영 준비도: `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`
+
+## 운영 준비도
+
+`현장 운영 > 운영 준비도`는 서버의 통합 감사 snapshot과 현재 권위 상태를 읽는 별도 창이다. 영역별 `정상/주의/차단/집계 없음`, 오래된 조치, blocker code, 담당 역할·담당자와 다음 행동을 확인할 수 있다. 새 event가 생긴 기존 cursor에서는 기준 시각과 새로고침 필요를 표시하며, 필터를 바꾸면 첫 페이지부터 다시 조회한다.
+
+`기존 업무 화면 열기`는 문서 승인, 로컬 이력/재결합, FieldComment 검토, 보고서, 작업판, 채널함, 인수인계 확인, 승인 단말 관리 창만 연다. 서버가 반환한 `actionTargetId`로 문서·코멘트·보고서·작업판·채널·인수인계·단말·재결합 항목을 선택하고 FieldComment blocker는 기존 작업함 필터로 변환한다. 대시보드가 직접 mutation key를 만들거나 업무 row를 수정하지 않는다. 단말·재결합 수치는 관리자/시스템 관리자에게만 보이며 다른 허용 역할에는 필요한 역할과 문의 안내만 표시한다. AI 카드는 실제 익명 현장 준비도만 보여주고 합성·테스트 자료를 합산하지 않는다.
 
 `RolePermissionPolicy` 정합성 검증 기준:
 

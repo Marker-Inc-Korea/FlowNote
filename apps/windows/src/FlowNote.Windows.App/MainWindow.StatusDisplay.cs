@@ -243,6 +243,7 @@ public partial class MainWindow
         ChangeHistoryButton.IsEnabled =
             RolePermissionPolicy.CanReadChangeHistory(currentUser.Role) &&
             serverAuditClient is not null;
+        OperationalReadinessButton.IsEnabled = ChangeHistoryButton.IsEnabled;
         ChannelManagementButton.IsEnabled = canRegisterDocuments;
         HandoverStatusButton.IsEnabled = canRegisterDocuments;
         FieldCommentReviewButton.IsEnabled = canWriteReports;
@@ -266,6 +267,9 @@ public partial class MainWindow
         WorkSequenceAdminButton.ToolTip = noDocumentWritePermission;
         ChangeHistoryButton.ToolTip =
             "변경 이력은 관리자/문서관리/부서관리 권한과 서버 연결이 필요합니다." +
+            contact;
+        OperationalReadinessButton.ToolTip =
+            "운영 준비도는 관리자/문서관리/부서관리 권한과 서버 연결이 필요합니다." +
             contact;
         ChannelManagementButton.ToolTip =
             "채널 관리는 관리자/반장/조장 이상 권한에서 사용할 수 있습니다." +
