@@ -23,12 +23,20 @@ from app.db.models import (
     FieldCommentAttachment,
     FieldCommentReviewMutationReceipt,
     FileObject,
+    WorkSequenceBoard,
+    WorkSequenceItem,
 )
 from app.db.session import get_db_session
 from app.services.mutation_receipts import (
+    canonical_hash,
     mutation_trace,
     record_common_mutation_failure,
     sanitize_audit_text,
+)
+from app.api.v1.work_sequence_field_views import (
+    _approved_field_user,
+    _published_document,
+    _visible_items,
 )
 from app.api.v1.field_comment_contracts import (
     COMMENT_TYPES,
@@ -82,6 +90,110 @@ document_field_comments_router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 
+
+def _work_sequence_source_intent(
+    request: FieldCommentCreateRequest,
+    current_user: FieldCommentCreateUser,
+) -> dict[str, object]:
+    return {
+        "serverScope": request.server_scope,
+        "customerScope": current_user.customer_scope,
+        "siteScope": current_user.site_scope,
+        "userId": current_user.user_id,
+        "deviceId": request.device_id,
+        "sourceType": request.source_type,
+        "sourceId": request.source_id,
+        "sourceRevision": request.source_revision,
+        "documentId": request.document_id,
+        "documentVersionId": request.document_version_id,
+        "workRecordId": request.work_record_id,
+        "rawContent": request.raw_content,
+        "inputMode": request.input_mode,
+        "signalLevel": request.signal_level,
+    }
+
+
+def _validate_work_sequence_source(
+    session: Session,
+    request: FieldCommentCreateRequest,
+    current_user: FieldCommentCreateUser,
+) -> str | None:
+    if request.source_type is None:
+        return None
+    _approved_field_user(session, current_user)
+    if request.device_id != current_user.device_id:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "DEVICE_NOT_APPROVED", "message": "원천 기록 단말이 현재 승인 세션과 다릅니다."},
+        )
+    item = session.scalar(select(WorkSequenceItem).where(WorkSequenceItem.item_id == request.source_id))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Work sequence source item not found.")
+    board = session.scalar(select(WorkSequenceBoard).where(WorkSequenceBoard.board_id == item.board_id))
+    if board is None or board.board_revision != request.source_revision:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "WORK_SEQUENCE_REVISION_CHANGED",
+                "message": "기록을 시작한 뒤 작업순서가 바뀌었습니다. 현재 항목을 다시 확인하세요.",
+                "currentRevision": board.board_revision if board is not None else None,
+            },
+        )
+    if not any(row.item_id == item.item_id for row in _visible_items(session, current_user, board.board_id)):
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "WORK_SEQUENCE_NOT_VISIBLE", "message": "현재 역할·채널에서 원천 항목을 찾을 수 없습니다."},
+        )
+    document_access, published = _published_document(session, item.document_id)
+    if document_access != "AVAILABLE" or published is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "SOURCE_DOCUMENT_NOT_PUBLISHED",
+                "message": "연결 문서가 더 이상 공개 상태가 아닙니다. 입력은 단말에 보존하고 관리자에게 문의하세요.",
+            },
+        )
+    if request.document_id != published.document_id or request.document_version_id != published.version_id:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "SOURCE_DOCUMENT_CHANGED",
+                "message": "작업순서에 연결된 공개 문서가 바뀌었습니다. 현재 문서를 다시 확인하세요.",
+            },
+        )
+    return canonical_hash(_work_sequence_source_intent(request, current_user))
+
+
+def _requested_work_sequence_intent(
+    request: FieldCommentCreateRequest,
+    current_user: FieldCommentCreateUser,
+) -> str | None:
+    values = (request.source_type, request.source_id, request.source_revision)
+    if all(value is None for value in values):
+        return None
+    if request.source_type != "WORK_SEQUENCE_ITEM" or request.source_id is None or request.source_revision is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "WORK_SEQUENCE_SOURCE_INCOMPLETE",
+                "message": "작업순서 원천 종류, ID와 revision을 함께 보내야 합니다.",
+            },
+        )
+    if request.entry_source.strip() != "android_field_terminal":
+        raise HTTPException(status_code=422, detail="WORK_SEQUENCE_ITEM source requires Android field entry.")
+    if not request.server_scope:
+        raise HTTPException(status_code=422, detail="serverScope is required for Android work-sequence source.")
+    computed = canonical_hash(_work_sequence_source_intent(request, current_user))
+    if (request.intent_hash_sha256 or "").lower() != computed:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "INTENT_HASH_MISMATCH",
+                "message": "단말에 고정한 작업순서 원천 hash가 서버 검증값과 다릅니다.",
+            },
+        )
+    return computed
+
 @router.post("", response_model=FieldCommentResponse, status_code=status.HTTP_201_CREATED)
 def create_field_comment(
     request: FieldCommentCreateRequest,
@@ -92,11 +204,14 @@ def create_field_comment(
     request.document_version_id = _clean_optional(request.document_version_id)
     request.structure_item_id = _clean_optional(request.structure_item_id)
     request.work_record_id = _clean_optional(request.work_record_id)
+    request.source_type = _clean_optional(request.source_type)
+    request.source_id = _clean_optional(request.source_id)
+    request.server_scope = _clean_optional(request.server_scope)
     request.raw_content = request.raw_content.strip()
     request.idempotency_key = _clean_idempotency_key(request.idempotency_key)
     _validate_choice(request.comment_type, COMMENT_TYPES, "commentType")
     _validate_choice(request.input_mode, INPUT_MODES, "inputMode")
-    _validate_target(session, request)
+    intent_hash = _requested_work_sequence_intent(request, current_user)
     is_proxy_entry = request.input_mode == "admin_proxy" or request.entry_source.strip() == "admin_proxy"
     if is_proxy_entry and not (_clean_optional(request.reported_by) or _clean_optional(request.operator_id)):
         raise HTTPException(
@@ -109,7 +224,20 @@ def create_field_comment(
             select(FieldComment).where(FieldComment.idempotency_key == request.idempotency_key)
         )
         if existing is not None:
+            if intent_hash is not None and existing.intent_hash_sha256 != intent_hash:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "IDEMPOTENCY_KEY_REUSED",
+                        "message": "같은 FieldComment 멱등키가 다른 작업순서 원천에 사용되었습니다.",
+                    },
+                )
             return _field_comment_response(existing)
+
+    _validate_target(session, request)
+    validated_intent_hash = _validate_work_sequence_source(session, request, current_user)
+    if validated_intent_hash != intent_hash:
+        raise HTTPException(status_code=409, detail="Work-sequence source intent changed during validation.")
 
     note = FieldComment(
         comment_id=_new_public_id("comment"),
@@ -118,6 +246,11 @@ def create_field_comment(
         document_version_id=request.document_version_id,
         structure_item_id=request.structure_item_id,
         work_record_id=request.work_record_id,
+        source_type=request.source_type,
+        source_id=request.source_id,
+        source_revision=request.source_revision,
+        server_scope=request.server_scope,
+        intent_hash_sha256=intent_hash,
         comment_type=request.comment_type,
         input_mode=request.input_mode,
         signal_level=_clean_optional(request.signal_level),
@@ -135,6 +268,27 @@ def create_field_comment(
     )
     session.add(note)
     session.flush()
+    if note.source_type == "WORK_SEQUENCE_ITEM":
+        session.add(ActivityHistory(
+            history_id=_new_public_id("hist"),
+            event_type="field_comment.work_sequence_source_linked",
+            actor_id=current_user.user_id,
+            target_type="field_comment",
+            target_id=note.comment_id,
+            target_title=note.comment_id,
+            message="FieldComment를 Android 작업순서 원천과 고정 연결했습니다.",
+            after_value=json.dumps({
+                "source_type": note.source_type,
+                "source_id": note.source_id,
+                "source_revision": note.source_revision,
+                "document_id": note.document_id,
+                "document_version_id": note.document_version_id,
+                "server_scope": note.server_scope,
+                "intent_hash_sha256": note.intent_hash_sha256,
+                "device_id": note.device_id,
+            }, ensure_ascii=False, sort_keys=True),
+            change_reason="Android 작업순서에서 현장 기록 시작",
+        ))
     if is_proxy_entry:
         session.add(ActivityHistory(
             history_id=_new_public_id("hist"),

@@ -50,6 +50,16 @@ Windows 관리자가 확정한 작업순서 후보 전달은 기존 channel mess
 
 같은 candidate-channel 전달의 응답 유실 재시도는 새 message·handover·receipt를 만들지 않는다. Android는 기존 scope cursor와 처리한 `message_id` 원장을 유지한 채 새 message만 표시하고, 인수인계 확인·보류와 후속 FieldComment는 기존 source ID로 이어간다. 관리자 전달의 일부 수신자 실패는 성공 수신자 알림을 취소하지 않으며 실패 수신자 재시도가 끝나도 같은 message ID를 사용한다.
 
+### 작업순서 열람과 현장 기록 원천 연결
+
+`오늘의 작업순서`는 승인 단말 세션의 사용자에게 허용된 작업판과 항목만 보여준다. 관리자급 작업순서 열람 역할은 현장 전체를 읽을 수 있고 `viewer`·`team-member`는 본인 배정 항목 또는 현재 활성 채널에서 `WORK_SEQUENCE_ITEM` 원천으로 연결된 항목만 읽는다. 기본 필터는 오늘 날짜와 `ACTIVE` 작업판이며 라인은 선택값이다. 사용자가 저장한 날짜·라인·보관판 필터는 서버 URL·고객·현장·사용자·단말 scope 안에서만 다시 사용한다. `ARCHIVED` 작업판은 `보관 작업판 보기`를 직접 선택한 경우에만 조회한다. 항목 상태 변경과 순서 변경은 Android에 제공하지 않고 WPF 관리 권한에 둔다.
+
+목록은 한 번에 최대 100건을 받으며 앱 화면은 50건씩 다음 페이지를 이어 붙인다. 상세를 열 때 목록에서 본 `board_revision`을 보내 현재 revision을 다시 확인한다. 채널 알림의 `source_type = WORK_SEQUENCE_ITEM`을 누른 경우에도 item ID로 같은 상세 API를 호출해 현재 멤버십과 revision을 다시 확인한다. 항목에 연결된 문서는 현재 `PUBLISHED` 버전만 요약으로 받는다. 문서가 비공개로 바뀌면 문서 ID·버전을 응답과 화면에 남기지 않고 보안 뷰어 진입을 막는다.
+
+마지막 성공 목록과 상세는 Android Keystore AES-GCM으로 암호화해 7일 동안 보존한다. cache key에는 정규화한 서버 URL, 고객 scope, 현장 scope, 사용자 ID와 단말 ID를 모두 넣는다. 다른 서버·사용자·단말로 재로그인하거나 서버를 다시 연결하면 이전 scope snapshot을 읽지 않는다. 단절 중에는 `오프라인 읽기`와 마지막 갱신 시각을 표시하며, snapshot과 outbox는 서로 다른 저장 transaction을 사용한다.
+
+작업순서에서 FieldComment·사진 또는 인수인계를 시작하면 `WORK_SEQUENCE_ITEM` ID, board revision, 현재 공개 문서/version과 서버·고객·현장·사용자·단말 scope를 draft에 고정한다. FieldComment는 공개 문서가 있는 항목에서만 시작한다. 인수인계는 공개 문서가 없는 항목도 작업순서 원천으로 시작할 수 있다. 이 원천은 암호화 outbox payload와 intent hash에 포함되며 재시도 중 현재 revision이나 공개 문서가 바뀌면 자동 덮어쓰지 않는다. 서버가 원천 row를 이미 저장한 부분 성공은 같은 idempotency key와 intent hash로 기존 공개 ID를 반환하고 사진·알림 단계만 이어서 처리한다.
+
 ## 승인 단말 정책
 
 Android 로그인은 `/api/v1/auth/login`에 `deviceId`를 함께 보낸다. 서버는 `terminal_devices.device_id`가 존재하고 `status = ACTIVE`인 경우에만 로그인 세션을 발급한다. 승인되지 않은 단말 또는 비활성 단말은 403으로 거부된다.
@@ -69,6 +79,7 @@ Android가 자동으로 개인 휴대폰을 등록하지 않는다. 단말 등�
 재전송 정책:
 
 - FieldComment는 `idempotencyKey = android:{deviceId}:{localId}`로 중복 생성을 방지한다.
+- 작업순서에서 시작한 FieldComment·인수인계는 `android:wseq:{server/user/device/item/local intent digest}` 형식의 scope hash 키를 사용한다. 원천 ID·revision·공개 문서/version을 바꾼 요청은 같은 키로 재생할 수 없다.
 - 사진 첨부는 `idempotencyKey = android-photo:{localId}`를 사용한다. FieldComment 서버 저장 후 사진 첨부가 실패하면 같은 outbox row에 서버 `comment_id`를 보존하고 다음 재전송에서 첨부만 다시 시도한다.
 - 인수인계는 `idempotencyKey = android:{deviceId}:handover:{localId}`를 사용한다. 같은 키·같은 요청의 재전송은 기존 인수인계, 채널 메시지와 수신자 receipt를 반환하고 새 row를 만들지 않는다.
 - 받은 인수인계 확인·보류는 같은 receipt 공개 ID에 대한 멱등 갱신으로 재시도한다. 보류는 `FOLLOW_UP_REQUIRED`로 저장해 Windows 감독 화면의 후속 조치 대상에 포함한다.
@@ -125,4 +136,4 @@ Windows 배포 준비 PC의 통합 기준선은 x64 JDK 17, Android Platform 35�
 
 2026-07-22 macOS 보조 run `p0-baseline-144-macos-precheck-20260722-002`은 FastAPI 144건만 통과했고 JDK/Android SDK 부재로 Android `testDebugUnitTest`와 `assembleDebug`는 `NOT_RUN`이다. 이 결과는 Android 기준선이 아니며 Windows x64 표준 환경의 같은 `run_id` 통합 실행에서 Android JUnit과 debug build가 통과해야 한다.
 
-현재 단위 테스트 32건은 API 경로·로그인/FieldComment 계약, 인수인계 필수 원천·수신자·멱등키, 받은 인수인계 확인·보류 상태와 후속 FieldComment 원천·멱등키, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구, outbox 자동 재시도와 `FAILED` 전용 수동 재전송 정책, 대기·부분 성공·실패 상태 안내, 알림 401 refresh·재거부·비활성 단말·연결 단절 분기를 검증한다. outbox 일부 실패는 완료·부분 성공·실패·대기 건수와 실패 항목 전용 재전송 안내를 표시하고, Keystore/암호문 오류는 초기화하지 말고 관리자에게 단말 교체 점검을 요청하도록 안내한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리, 서로 다른 AES 키의 복호화 실패, 주요 버튼 56dp, 상태 live region과 전송 상태 아이콘의 한글 설명을 확인한다. 사진 선택·축소 미리보기·저장 후 초기화와 장갑·한 손 조건의 실제 성공률은 자동 테스트만으로 완료 판정하지 않는다. 실제 단말의 카메라·파일 선택기, 장갑·한 손 조작, 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절을 같은 수동 검증에서 확인한다.
+현재 단위 테스트 35건은 API 경로·로그인/FieldComment 계약, 작업순서 원천 intent hash와 scope별 멱등키, 인수인계 필수 원천·수신자·멱등키, 받은 인수인계 확인·보류 상태와 후속 FieldComment 원천·멱등키, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구, outbox 자동 재시도와 `FAILED` 전용 수동 재전송 정책, 대기·부분 성공·실패 상태 안내, 알림 401 refresh·재거부·비활성 단말·연결 단절 분기를 검증한다. outbox 일부 실패는 완료·부분 성공·실패·대기 건수와 실패 항목 전용 재전송 안내를 표시하고, Keystore/암호문 오류는 초기화하지 말고 관리자에게 단말 교체 점검을 요청하도록 안내한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리, 서로 다른 AES 키의 복호화 실패, 주요 버튼 56dp, 상태 live region과 전송 상태 아이콘의 한글 설명을 확인한다. 사진 선택·축소 미리보기·저장 후 초기화와 장갑·한 손 조건의 실제 성공률은 자동 테스트만으로 완료 판정하지 않는다. 실제 단말의 카메라·파일 선택기, 장갑·한 손 조작, 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절을 같은 수동 검증에서 확인한다.

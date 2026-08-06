@@ -291,3 +291,11 @@ WPF `운영 준비도` → `GET /api/v1/operational-readiness` → 공통 감사
 영역 계산기는 실패 경계를 따로 가진다. 한 계산기가 실패하면 해당 영역만 `집계 없음`으로 내려가고 다른 영역은 계속 반환된다. WPF의 조치 버튼은 새 mutation key를 만들지 않고 문서 승인, FieldComment 검토, 보고서, 작업판, 채널함, 인수인계 현황, 승인 단말, 로컬 이력/서버 재결합 같은 기존 화면만 연다. 실제 업무 mutation과 권한 재검사는 열린 기존 화면과 서버 API가 계속 담당한다.
 
 AI 실제 현장 준비도는 운영 영역 합계의 하위 수치가 아니다. 기존 AI 준비도 service의 `FIELD_READINESS/ANONYMOUS_FIELD` 결과만 별도 카드에 전달하고 합성·테스트 회귀 track은 표시 합계에서 제외한다.
+
+## Android 작업순서 읽기 경계
+
+Android `WorkSequenceController`는 `WorkSequenceView`, `WorkSequenceSnapshotStore`, `FlowNoteApiClient`를 조정하고 `MainActivity`에는 화면 진입과 기존 FieldComment·인수인계 작성기로 넘기는 callback만 둔다. 공개 문서 목록도 별도 `DocumentBrowserController`가 담당하므로 `MainActivity`에 화면별 네트워크·렌더링 로직을 누적하지 않는다.
+
+`work-sequence-field-boards` 읽기 API는 승인 단말과 역할을 먼저 확인한다. 관리자급 읽기 역할은 현장 작업판을 읽고, 일반 현장 역할은 `assigned_to` 또는 활성 채널의 `WORK_SEQUENCE_ITEM` 연결로 허용된 항목만 읽는다. 목록은 날짜·라인·ACTIVE/ARCHIVED 필터와 offset/limit을 적용하고, 상세와 알림 deep link는 현재 멤버십과 `board_revision`을 다시 확인한다. 공개 문서 요약은 현재 `PUBLISHED` document/version일 때만 작업 항목에 결합한다.
+
+읽기 snapshot 저장과 outbox mutation 저장은 분리한다. snapshot은 서버 URL·customer/site·user/device scope별 Keystore 암호문이며 7일 후 만료한다. FieldComment·사진·인수인계 outbox row는 선택 순간의 작업순서 source와 공개 문서/version, intent hash를 유지한다. 서버는 FieldComment와 Handover에 source ID/revision/scope/hash를 저장하고 감사 이력에 같은 연결을 남긴다. 이미 서버 source ID를 받은 부분 성공 row는 그 ID를 보존해 후속 첨부·채널 알림만 재시도한다.

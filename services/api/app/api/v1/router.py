@@ -27,6 +27,7 @@ from app.api.v1.sync_reconciliation import router as sync_reconciliation_router
 from app.api.v1.tags import router as tags_router
 from app.api.v1.terminal_devices import router as terminal_devices_router
 from app.api.v1.work_sequences import router as work_sequences_router
+from app.api.v1.work_sequence_field_views import router as work_sequence_field_views_router
 from app.api.v1.work_sequence_deliveries import router as work_sequence_deliveries_router
 from app.api.v1.work_sequence_deliveries import template_router as work_sequence_templates_router
 
@@ -49,6 +50,7 @@ api_v1_router.include_router(document_field_comments_router)
 api_v1_router.include_router(tags_router)
 api_v1_router.include_router(terminal_devices_router)
 api_v1_router.include_router(work_sequences_router)
+api_v1_router.include_router(work_sequence_field_views_router)
 api_v1_router.include_router(work_sequence_deliveries_router)
 api_v1_router.include_router(work_sequence_templates_router)
 api_v1_router.include_router(reports_router)

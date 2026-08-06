@@ -13,6 +13,7 @@ public final class ApiPaths {
     public static final String NOTIFICATION_CHANNELS = "/api/v1/notification-channels";
     public static final String LOGOUT = "/api/v1/auth/logout";
     public static final String REFRESH = "/api/v1/auth/refresh";
+    public static final String WORK_SEQUENCE_FIELD_BOARDS = "/api/v1/work-sequence-field-boards";
 
     public static String document(String documentId) {
         return DOCUMENTS + documentId;
@@ -40,5 +41,13 @@ public final class ApiPaths {
 
     public static String channelMessages(String channelId) {
         return NOTIFICATION_CHANNELS + "/" + channelId + "/messages";
+    }
+
+    public static String workSequenceFieldBoard(String boardId) {
+        return WORK_SEQUENCE_FIELD_BOARDS + "/" + boardId;
+    }
+
+    public static String workSequenceFieldItem(String itemId) {
+        return WORK_SEQUENCE_FIELD_BOARDS + "/by-item/" + itemId;
     }
 }

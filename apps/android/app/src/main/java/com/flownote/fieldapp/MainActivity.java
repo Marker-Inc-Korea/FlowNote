@@ -5,7 +5,6 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
@@ -31,7 +30,9 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity implements
         HandoverComposerView.Listener,
-        ReceivedHandoverView.Listener {
+        ReceivedHandoverView.Listener,
+        WorkSequenceController.Listener,
+        DocumentBrowserController.Listener {
     private static final int REQUEST_PICK_PHOTO = 1001;
     private static final long OUTBOX_REFRESH_MILLIS = 15_000L;
     private static final String OUTBOX_LOG_TAG = "FlowNoteOutbox";
@@ -55,11 +56,14 @@ public final class MainActivity extends Activity implements
     };
 
     private SharedPreferences preferences;
+    private MainUiFactory ui;
     private SecureSessionStore sessionStore;
     private HandoverSelectionCache handoverSelectionCache;
     private HandoverFollowUpDraftStore handoverFollowUpDraftStore;
     private OfflineQueueStore outbox;
     private FlowNoteApiClient apiClient;
+    private WorkSequenceController workSequenceController;
+    private DocumentBrowserController documentBrowserController;
 
     private EditText serverUrlInput;
     private EditText deviceIdInput;
@@ -80,12 +84,16 @@ public final class MainActivity extends Activity implements
     private String accessToken;
     private String refreshToken;
     private String currentUserId;
+    private String currentCustomerScope;
+    private String currentSiteScope;
+    private WorkSequenceSource selectedWorkSequenceSource;
     private String secureStorageError;
     private volatile boolean retryInProgress;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        ui = new MainUiFactory(this);
         preferences = getSharedPreferences("flownote-field-app", MODE_PRIVATE);
         SecureViewerFiles.clean(this);
         buildUi();
@@ -97,11 +105,13 @@ public final class MainActivity extends Activity implements
             handoverSelectionCache = new HandoverSelectionCache(this);
             handoverFollowUpDraftStore = new HandoverFollowUpDraftStore(this);
             outbox = new OfflineQueueStore(this);
+            workSequenceController = new WorkSequenceController(this, contentArea, this);
             restoreSettings();
         } catch (RuntimeException exc) {
             secureStorageError = UserErrorMessage.from(exc);
         }
         handoverComposer.setIdentity(deviceIdInput.getText().toString(), currentUserId);
+        documentBrowserController = new DocumentBrowserController(this, contentArea, this);
         if (!hasUsableSecureStorage()) {
             showSecureStorageError();
             return;
@@ -140,6 +150,12 @@ public final class MainActivity extends Activity implements
         executor.shutdownNow();
         if (outbox != null) {
             outbox.close();
+        }
+        if (workSequenceController != null) {
+            workSequenceController.close();
+        }
+        if (documentBrowserController != null) {
+            documentBrowserController.close();
         }
         super.onDestroy();
     }
@@ -185,6 +201,7 @@ public final class MainActivity extends Activity implements
         addRowButton(navRow, "알림", view -> loadNotifications());
         addRowButton(navRow, "인수인계", view -> loadHandovers());
         root.addView(navRow);
+        root.addView(button("오늘의 작업순서", view -> loadWorkSequences()));
 
         TextView formTitle = text("FieldComment / 사진 / 신호등 입력", 18, "#236C4A");
         formTitle.setPadding(0, 18, 0, 8);
@@ -231,72 +248,13 @@ public final class MainActivity extends Activity implements
         setContentView(scrollView);
     }
 
-    private TextView radioButton(String label, int id) {
-        android.widget.RadioButton button = new android.widget.RadioButton(this);
-        button.setId(id);
-        button.setText(label);
-        button.setTextSize(15);
-        button.setMinHeight(dp(56));
-        button.setPadding(dp(10), dp(8), dp(10), dp(8));
-        return button;
-    }
-
-    private EditText input(String hint, int inputType) {
-        EditText editText = new EditText(this);
-        editText.setHint(hint);
-        editText.setTextSize(15);
-        editText.setInputType(inputType);
-        editText.setSingleLine((inputType & InputType.TYPE_TEXT_FLAG_MULTI_LINE) == 0);
-        editText.setMinHeight(dp(56));
-        return editText;
-    }
-
-    private LinearLayout row() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, 6, 0, 6);
-        return row;
-    }
-
-    private TextView text(String value, int sp, String color) {
-        TextView textView = new TextView(this);
-        textView.setText(value);
-        textView.setTextSize(sp);
-        textView.setTextColor(Color.parseColor(color));
-        return textView;
-    }
-
-    private Button button(String label, View.OnClickListener listener) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setTextSize(15);
-        button.setAllCaps(false);
-        button.setMinHeight(dp(56));
-        button.setMinWidth(dp(72));
-        button.setPadding(dp(10), dp(8), dp(10), dp(8));
-        button.setOnClickListener(listener);
-        return button;
-    }
-
-    private void addRowButton(
-            LinearLayout target,
-            String label,
-            View.OnClickListener listener
-    ) {
-        Button button = button(label, listener);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-        );
-        params.setMarginStart(dp(2));
-        params.setMarginEnd(dp(2));
-        target.addView(button, params);
-    }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
+    private TextView radioButton(String label, int id) { return ui.radioButton(label, id); }
+    private EditText input(String hint, int type) { return ui.input(hint, type); }
+    private LinearLayout row() { return ui.row(); }
+    private TextView text(String value, int sp, String color) { return ui.text(value, sp, color); }
+    private Button button(String label, View.OnClickListener call) { return ui.button(label, call); }
+    private void addRowButton(LinearLayout row, String label, View.OnClickListener call) { ui.addRowButton(row, label, call); }
+    private int dp(int value) { return ui.dp(value); }
 
     private void restoreSettings() {
         serverUrlInput.setText(preferences.getString("server_url", ""));
@@ -308,6 +266,8 @@ public final class MainActivity extends Activity implements
         accessToken = sessionStore.accessToken();
         refreshToken = sessionStore.refreshToken();
         currentUserId = preferences.getString("user_id", null);
+        currentCustomerScope = preferences.getString("customer_scope", null);
+        currentSiteScope = preferences.getString("site_scope", null);
     }
 
     private void saveSettings() {
@@ -316,6 +276,8 @@ public final class MainActivity extends Activity implements
                 .putString("device_id", deviceIdInput.getText().toString().trim())
                 .putString("username", usernameInput.getText().toString().trim())
                 .putString("user_id", currentUserId)
+                .putString("customer_scope", currentCustomerScope)
+                .putString("site_scope", currentSiteScope)
                 .commit();
         sessionStore.save(accessToken, refreshToken, currentUserId);
     }
@@ -328,6 +290,12 @@ public final class MainActivity extends Activity implements
         apiClient = new FlowNoteApiClient(serverUrlInput.getText().toString(), getContentResolver());
         apiClient.setAccessToken(accessToken);
         apiClient.setAuthenticationFailureListener(this::clearRejectedSession);
+        apiClient.setRefreshSession(
+                refreshToken,
+                currentCustomerScope,
+                currentSiteScope,
+                this::saveRefreshedSession
+        );
     }
 
     private void login() {
@@ -346,6 +314,8 @@ public final class MainActivity extends Activity implements
                 accessToken = payload.getString("access_token");
                 refreshToken = payload.getString("refresh_token");
                 currentUserId = payload.getString("user_id");
+                currentCustomerScope = payload.getString("customer_scope");
+                currentSiteScope = payload.getString("site_scope");
                 saveSettings();
                 postStatus("로그인 완료: " + payload.optString("display_name"));
                 mainHandler.post(() -> {
@@ -371,9 +341,17 @@ public final class MainActivity extends Activity implements
         accessToken = null;
         refreshToken = null;
         currentUserId = null;
+        currentCustomerScope = null;
+        currentSiteScope = null;
+        selectedWorkSequenceSource = null;
         if (sessionStore != null) {
             sessionStore.clear();
         }
+        if (workSequenceController != null) {
+            workSequenceController.clearVisible();
+        }
+        contentArea.removeAllViews();
+        preferences.edit().remove("customer_scope").remove("site_scope").commit();
         stopService(new Intent(this, NotificationPollingService.class));
         mainHandler.post(this::refreshOutboxStatus);
     }
@@ -403,71 +381,7 @@ public final class MainActivity extends Activity implements
             return;
         }
         rebuildApiClient();
-        updateStatus("공개 문서 조회 중...");
-        executor.execute(() -> {
-            try {
-                JSONArray documents = apiClient.listPublishedDocuments();
-                mainHandler.post(() -> showDocuments(documents));
-                postStatus("공개 문서 " + documents.length() + "건");
-            } catch (Exception exc) {
-                postStatus("문서 조회 실패: " + UserErrorMessage.from(exc));
-            }
-        });
-    }
-
-    private void showDocuments(JSONArray documents) {
-        contentArea.removeAllViews();
-        for (int i = 0; i < documents.length(); i++) {
-            JSONObject item = documents.optJSONObject(i);
-            if (item == null) {
-                continue;
-            }
-            String documentId = item.optString("document_id");
-            Button button = button(
-                    item.optString("title") + "\n" + documentId,
-                    view -> loadDocumentDetail(documentId)
-            );
-            button.setTextAlignment(View.TEXT_ALIGNMENT_TEXT_START);
-            contentArea.addView(button);
-        }
-    }
-
-    private void loadDocumentDetail(String documentId) {
-        updateStatus("문서 상세 조회 중...");
-        executor.execute(() -> {
-            try {
-                JSONObject document = apiClient.getDocument(documentId);
-                mainHandler.post(() -> showDocumentDetail(document));
-                postStatus("문서 상세 조회 완료");
-            } catch (Exception exc) {
-                postStatus("문서 상세 실패: " + UserErrorMessage.from(exc));
-            }
-        });
-    }
-
-    private void showDocumentDetail(JSONObject document) {
-        contentArea.removeAllViews();
-        documentIdInput.setText(document.optString("document_id"));
-        JSONObject published = document.optJSONObject("published_version");
-        if (published != null) {
-            versionIdInput.setText(published.optString("version_id"));
-            handoverComposer.setDocumentSource(
-                    document.optString("document_id"),
-                    published.optString("version_id")
-            );
-        }
-        contentArea.addView(text("문서: " + document.optString("title"), 18, "#1F2A30"));
-        contentArea.addView(text("상태: " + document.optString("status"), 15, "#3D4852"));
-        contentArea.addView(text("설명: " + document.optString("description"), 15, "#3D4852"));
-        if (published != null) {
-            String documentId = document.optString("document_id");
-            String versionId = published.optString("version_id");
-            String title = document.optString("title");
-            contentArea.addView(button("본문 보안 열람", view -> openSecureViewer(
-                    documentId, versionId, title)));
-        } else {
-            contentArea.addView(text("현재 열람 가능한 공개 버전이 없습니다.", 15, "#8A3B12"));
-        }
+        documentBrowserController.show(apiClient);
     }
 
     private void openSecureViewer(String documentId, String versionId, String title) {
@@ -491,6 +405,72 @@ public final class MainActivity extends Activity implements
     @Override
     public void onOpenPublishedDocument(String documentId, String versionId, String title) {
         openSecureViewer(documentId, versionId, title);
+    }
+
+    @Override
+    public void onOpenDocument(String documentId, String versionId, String title) {
+        openSecureViewer(documentId, versionId, title);
+    }
+
+    @Override
+    public void onDocumentSelected(String documentId, String versionId) {
+        selectedWorkSequenceSource = null;
+        documentIdInput.setText(documentId);
+        versionIdInput.setText(versionId);
+        handoverComposer.setDocumentSource(documentId, versionId);
+    }
+
+    @Override
+    public void onStatus(String message) { postStatus(message); }
+
+    private void loadWorkSequences() {
+        if (!requireSecureStorage() || !sessionStore.hasSession()) {
+            updateStatus("승인 단말로 로그인한 뒤 작업순서를 열람하세요.");
+            return;
+        }
+        rebuildApiClient();
+        workSequenceController.show(apiClient, workSequenceScope());
+    }
+
+    @Override
+    public void onStartFieldComment(WorkSequenceSource source, String itemTitle) {
+        if (!source.canCreateFieldComment()) {
+            updateStatus("현재 공개 문서가 없어 이 작업순서에서 FieldComment를 시작할 수 없습니다.");
+            return;
+        }
+        selectedWorkSequenceSource = source;
+        documentIdInput.setText(source.documentId);
+        versionIdInput.setText(source.documentVersionId);
+        commentInput.requestFocus();
+        updateStatus("작업순서 원천과 공개 문서 버전을 고정했습니다. 내용만 확인해 제출하세요.");
+    }
+
+    @Override
+    public void onStartHandover(WorkSequenceSource source, String itemTitle) {
+        handoverComposer.setWorkSequenceSource(source, itemTitle);
+        updateStatus("작업순서 원천을 인수인계에 고정했습니다. 채널·수신자와 내용을 확인하세요.");
+    }
+
+    private WorkSequenceScope workSequenceScope() {
+        return new WorkSequenceScope(
+                serverUrlInput.getText().toString(),
+                currentCustomerScope,
+                currentSiteScope,
+                currentUserId,
+                deviceIdInput.getText().toString()
+        );
+    }
+
+    private void saveRefreshedSession(JSONObject payload) {
+        try {
+            accessToken = payload.getString("access_token");
+            refreshToken = payload.getString("refresh_token");
+            currentCustomerScope = payload.getString("customer_scope");
+            currentSiteScope = payload.getString("site_scope");
+            saveSettings();
+        } catch (Exception exc) {
+            clearRejectedSession();
+        }
     }
 
     private void loadNotifications() {
@@ -518,11 +498,21 @@ public final class MainActivity extends Activity implements
                 continue;
             }
             String messageId = item.optString("message_id");
+            String sourceType = item.optString("source_type");
+            String sourceId = item.optString("source_id");
             Button button = button(
                     item.optString("channel_name") + " / " + item.optString("title"),
-                    view -> markNotificationRead(messageId)
+                    view -> openNotification(messageId, sourceType, sourceId)
             );
             contentArea.addView(button);
+        }
+    }
+
+    private void openNotification(String messageId, String sourceType, String sourceId) {
+        markNotificationRead(messageId);
+        if ("WORK_SEQUENCE_ITEM".equals(sourceType) && !sourceId.isEmpty()) {
+            rebuildApiClient();
+            workSequenceController.openByItem(apiClient, workSequenceScope(), sourceId);
         }
     }
 
@@ -649,7 +639,10 @@ public final class MainActivity extends Activity implements
                 deviceIdInput.getText().toString(),
                 currentUserId,
                 selectedPhotoUri == null ? null : selectedPhotoUri.toString(),
-                FieldCommentDraft.defaultIdempotencyKey(deviceIdInput.getText().toString(), localId)
+                selectedWorkSequenceSource == null
+                        ? FieldCommentDraft.defaultIdempotencyKey(
+                                deviceIdInput.getText().toString(), localId) : null,
+                selectedWorkSequenceSource
         );
         if (!draft.canSend()) {
             updateStatus("문서 ID와 현장 기록 내용을 입력하세요.");
@@ -667,6 +660,7 @@ public final class MainActivity extends Activity implements
         photoStatusText.setText("사진 선택 안 됨");
         commentInput.setText("");
         signalGroup.clearCheck();
+        selectedWorkSequenceSource = null;
         commentInput.requestFocus();
         refreshOutboxStatus();
         updateStatus("기기에 암호화해 저장했습니다. 서버 전송을 시도합니다.");
@@ -952,7 +946,8 @@ public final class MainActivity extends Activity implements
                 && sessionStore != null
                 && handoverSelectionCache != null
                 && handoverFollowUpDraftStore != null
-                && outbox != null;
+                && outbox != null
+                && workSequenceController != null;
     }
 
     private boolean requireSecureStorage() {

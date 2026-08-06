@@ -14,6 +14,14 @@ public final class FieldCommentDraft {
     public final String authorId;
     public final String photoUri;
     public final String idempotencyKey;
+    public final String sourceType;
+    public final String sourceId;
+    public final Integer sourceRevision;
+    public final String serverScope;
+    public final String intentHashSha256;
+    public final String sourceCustomerScope;
+    public final String sourceSiteScope;
+    public final String sourceBoardId;
 
     public FieldCommentDraft(
             String localId,
@@ -28,17 +36,53 @@ public final class FieldCommentDraft {
             String photoUri,
             String idempotencyKey
     ) {
+        this(
+                localId, documentId, documentVersionId, workRecordId, rawContent,
+                inputMode, signalLevel, deviceId, authorId, photoUri, idempotencyKey, null
+        );
+    }
+
+    public FieldCommentDraft(
+            String localId,
+            String documentId,
+            String documentVersionId,
+            String workRecordId,
+            String rawContent,
+            String inputMode,
+            String signalLevel,
+            String deviceId,
+            String authorId,
+            String photoUri,
+            String idempotencyKey,
+            WorkSequenceSource source
+    ) {
         this.localId = nonEmpty(localId, UUID.randomUUID().toString());
-        this.documentId = trimToNull(documentId);
-        this.documentVersionId = trimToNull(documentVersionId);
-        this.workRecordId = trimToNull(workRecordId);
+        this.documentId = source == null ? trimToNull(documentId) : source.documentId;
+        this.documentVersionId = source == null
+                ? trimToNull(documentVersionId) : source.documentVersionId;
+        this.workRecordId = source == null ? trimToNull(workRecordId) : source.workRecordId;
         this.rawContent = nonEmpty(rawContent, "");
         this.inputMode = nonEmpty(inputMode, "free_text");
         this.signalLevel = trimToNull(signalLevel);
         this.deviceId = trimToNull(deviceId);
         this.authorId = trimToNull(authorId);
         this.photoUri = trimToNull(photoUri);
-        this.idempotencyKey = nonEmpty(idempotencyKey, defaultIdempotencyKey(this.deviceId, this.localId));
+        this.sourceType = source == null ? null : "WORK_SEQUENCE_ITEM";
+        this.sourceId = source == null ? null : source.itemId;
+        this.sourceRevision = source == null ? null : source.revision;
+        this.serverScope = source == null ? null : source.serverScope;
+        this.intentHashSha256 = source == null ? null : source.fieldCommentIntentHash(
+                this.rawContent, normalizedInputMode(), this.signalLevel
+        );
+        this.sourceCustomerScope = source == null ? null : source.customerScope;
+        this.sourceSiteScope = source == null ? null : source.siteScope;
+        this.sourceBoardId = source == null ? null : source.boardId;
+        this.idempotencyKey = nonEmpty(
+                idempotencyKey,
+                source == null
+                        ? defaultIdempotencyKey(this.deviceId, this.localId)
+                        : source.idempotencyKey("field-comment", this.localId)
+        );
     }
 
     public boolean hasTarget() {
