@@ -1,6 +1,6 @@
 # FlowNote 문서
 
-이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-08-04 현재 개발된 코드 기준을 우선하며 아직 구현되지 않은 기능은 후속 범위로 분리한다.
+이 폴더는 FlowNote의 제품 방향, 현재 구현, 데이터 모델, API, 보안, 배포 기준을 관리한다. 문서는 2026-08-06 현재 개발된 코드 기준을 우선하며 아직 구현되지 않은 기능은 후속 범위로 분리한다.
 
 전체 문서 갱신 범위는 Git이 추적하는 제품·구현 Markdown이다. `AGENTS.md`는 작업 정책 원문이고 `현장정리문서/`는 현장 의견 원문이므로 제품 코드 설명과 분리한다. 가상환경·빌드 캐시·테스트 산출물 안의 Markdown도 생성·보존 기록이므로 갱신 대상에서 제외한다.
 
@@ -58,7 +58,7 @@
 - AI 자동 조언과 운영 provider 연동은 후속 계층이다. 현재 서버는 `ai_search_candidates` 운영 점검, `ai_search_evaluation_runs`/`ai_search_evaluation_cases` 오프라인 회귀 평가, 외부 호출 전후 원천 권한·민감정보·최소 payload·근거 snapshot·인용·의미 검증과 감사 게이트, `system-admin` 전용 승인·프롬프트·운영 정책·감사·보존 제어면을 다룬다. generic 네트워크 adapter는 명시적 test scope까지만 허용한다. WPF는 근거 후보 점검 화면과 별도의 `AI 운영` 화면을 제공하지만 실제 외부 AI 질의 실행 화면은 없다.
 - MES/ERP 연동은 후속 계층이다. 서버 계정 관리 API와 Windows 운영 UI, 강제 비밀번호 변경, 세션 폐기는 현재 구현 범위다.
 - Windows와 Android의 업무 채널 알림과 인수인계 알림은 개인 메신저가 아니라 현장 기록 축적 흐름으로 다룬다.
-- 2026-08-04 현재 수집 결과는 FastAPI 192건·WPF Core 109건·Android 32건이다. 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 guard는 FastAPI 186건·WPF Core 102건·Android 32건이므로 현재 코드와 일치하지 않는다. guard를 맞춘 뒤 Windows에서 FastAPI 수집/JUnit과 WPF Core 수집 목록·TRX를 다시 대조하고, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 run을 같은 clean 소스 커밋에서 2회 연속 실행해야 한다. 두 실행 모두 `partial_run=false`, `verification-summary.json=PASSED`일 때 통합 기준선으로 인정한다.
+- 2026-08-06 현재 소스의 수집 대상은 FastAPI 209건·WPF Core 117건·Android 35건이다. 표준 스크립트 `scripts/verify-preserved-tests.ps1`의 guard는 FastAPI 186건·WPF Core 102건·Android 32건이므로 현재 코드와 일치하지 않는다. 최신 집중 검증은 보고서 정정, 작업순서 후보 전달, 운영 준비도, Android 작업순서 연결 범위를 통과했지만 FastAPI 전체 209건 단일 실행은 아직 기록되지 않았다. guard를 맞춘 뒤 Windows에서 FastAPI 수집/JUnit과 WPF Core 수집 목록·TRX를 다시 대조하고, 누적 공통 DB 스모크와 Git 전후 점검을 포함한 무생략 run을 같은 clean 소스 커밋에서 2회 연속 실행해야 한다. 두 실행 모두 `partial_run=false`, `verification-summary.json=PASSED`일 때 통합 기준선으로 인정한다.
 
 ## 일일 기록
 

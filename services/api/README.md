@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-08-04 현재 OpenAPI에 등록된 151개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-08-06 현재 OpenAPI에 등록된 163개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 ## Current API
 
@@ -90,6 +90,14 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/work-sequence-boards/{board_id}/history` | Change history with mutation key and applied revision |
 | GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | Notification candidates |
 | PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | Change notification candidate status |
+| GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}/delivery-preview` | Revalidate candidate revision, channel-manager role, active recipients, source, and current published document |
+| POST | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}/deliveries` | Persist a channel or handover delivery with candidate-channel and recipient receipts |
+| GET | `/api/v1/work-sequence-delivery-templates` | List active delivery templates in the current site scope |
+| POST | `/api/v1/work-sequence-delivery-templates` | Create a site-scoped delivery template |
+| PATCH | `/api/v1/work-sequence-delivery-templates/{template_id}` | Update or archive a same-site delivery template |
+| GET | `/api/v1/work-sequence-field-boards` | List work-sequence boards visible to the approved Android device session |
+| GET | `/api/v1/work-sequence-field-boards/by-item/{item_id}` | Read the visible board snapshot for a channel-linked item |
+| GET | `/api/v1/work-sequence-field-boards/{board_id}` | Read a visible board snapshot with published-document and allowed-channel references |
 | POST | `/api/v1/notification-channels` | Create notification channel |
 | GET | `/api/v1/notification-channels` | List channels visible to current user |
 | GET | `/api/v1/notification-channels/{channel_id}` | Channel detail |
@@ -108,7 +116,9 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | POST | `/api/v1/reports` | Advance report status and optionally generate a document while approving |
 | GET | `/api/v1/reports` | Report list |
 | GET | `/api/v1/reports/{report_id}` | Report detail |
+| GET | `/api/v1/reports/{report_id}/lineage` | Visible current and superseded reports in the same correction family |
 | GET | `/api/v1/reports/{report_id}/sources` | Frozen report source snapshot after current channel-permission revalidation |
+| POST | `/api/v1/reports/{report_id}/corrections` | Create an independently reviewed correction draft from the current effective approved report |
 | POST | `/api/v1/ai-search/candidates/rebuild` | Rebuild traceable AI search evidence candidates |
 | GET | `/api/v1/ai-search/candidates` | List AI search evidence candidates |
 | GET | `/api/v1/ai-search/quality` | Candidate counts, exclusion reasons, and FieldComment review readiness |
@@ -170,7 +180,7 @@ The pilot server is a single customer/site boundary. Optional `X-FlowNote-Custom
 
 Document write responses carry the server-authoritative aggregate `revision`. Version registration, status changes, publish, tag replacement, and soft delete compare the caller's base revision and relevant latest/published version before committing. Publish, status, and tag mutations store the normalized intent and first successful response in `document_mutation_receipts` within the same transaction. Replaying the same mutation key and intent returns that response without another revision or audit event; reusing the key for another intent returns a structured HTTP 409 conflict. WPF reads the document back after a successful response and marks the queue `SYNCED` only after the authoritative status, published version, tags, and revision agree.
 
-Operation-key mutations for document authority, FieldComment review, report workflow transitions, and work sequences also write `sync_mutation_receipts` and `audit_event_envelopes` without replacing their domain receipts or audit rows. Optional `X-FlowNote-Run-Id` and `X-Correlation-Id` headers link a verification run; the server creates a correlation ID when it is omitted. `GET /api/v1/audit-events` is restricted to `admin` and `system-admin`, combines common envelopes with legacy `activity_history`, and marks unavailable legacy fields instead of inferring values.
+Operation-key mutations for document authority, FieldComment review, report workflow transitions and corrections, and work-sequence changes and candidate deliveries also write `sync_mutation_receipts` and `audit_event_envelopes` without replacing their domain receipts or audit rows. Optional `X-FlowNote-Run-Id` and `X-Correlation-Id` headers link a verification run; the server creates a correlation ID when it is omitted. `GET /api/v1/audit-events` is restricted to `admin` and `system-admin`, combines common envelopes with legacy `activity_history`, and marks unavailable legacy fields instead of inferring values.
 
 `GET /api/v1/change-history` derives a read model from `audit_event_envelopes`; it does not create a second authority table. Governance roles can filter by time, actor/role, device, target, version/revision, result, risk, run, and correlation ID. Channel-restricted targets are omitted for non-members in both list totals and detail. The first page fixes an event ID snapshot anchor so cursor pagination does not duplicate or omit rows when new audit events arrive.
 
@@ -189,6 +199,8 @@ FieldComment review writes use the server-authoritative `review_revision`. A cal
 When `FLOWNOTE_FIELD_COMMENT_INDEPENDENT_REVIEW_REQUIRED=true`, a red-signal or conflicting FieldComment cannot move to `REVIEWED`, `SELECTED`, `EXCLUDED`, or `ARCHIVED` when the decision actor is the same user recorded in `analyzed_by`.
 
 Report workflow mutations use `DRAFT → REVIEWED → APPROVED → ARCHIVED`; omitted `reportStatus` remains backward-compatible as `APPROVED`, and direct `DRAFT → APPROVED` remains allowed. Every transition revalidates frozen source eligibility, version/revision/hash and channel permission, conditionally advances `report_revision`, and commits the report, sources, optional generated document/version, aggregate hashes, and `report_mutation_receipts` row in one transaction. Sources can only be supplied or replaced while the report is `DRAFT` or `AI_DRAFTED`. A document can only be generated while approving and keeps the explicit `documentStatus` instead of becoming published implicitly. Archiving also archives the linked generated document and its versions while preserving report sources and receipts. Historical report reads preserve the frozen source snapshot while rechecking current channel permission. Invalid transitions, document-generation status mismatches, duplicate generated documents, stale/orphan sources, stale report revision, client/server hash mismatch, and mutation-key reuse return structured conflicts.
+
+An effective approved report can create one correction draft through `/api/v1/reports/{report_id}/corrections`. The request either copies the complete frozen source snapshot or supplies a complete replacement set, and source or channel-access changes fail without silently dropping evidence. The correction repeats review before approval. Approval atomically makes it the effective family report, projects the previous report as `SUPERSEDED`, archives the previous generated document, and creates a new `IN_REVIEW` document that still requires the separate publication workflow.
 
 ## Local Development
 
@@ -259,7 +271,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-08-04, the latest recorded collections contain 192 FastAPI tests and 109 WPF Core tests. `scripts/verify-preserved-tests.ps1` still carries the earlier 186/102 fixed counts, while the Android count remains aligned at 32. The guards must be aligned with the current collections before the next complete Windows x64 integrated run. The script preserves raw collection output, duplicate lists, exit codes, JUnit/TRX totals, current step, expected and actual values, evidence paths, and the new-RunId recovery command. This does not claim a new integrated baseline because the Windows x64 collection/TRX comparison, shared-DB smoke, Android build, and two clean-source runs were not performed.
+As of 2026-08-06, the current source defines 209 FastAPI test cases after parameter expansion, 117 WPF Core cases, and 35 Android unit tests. `scripts/verify-preserved-tests.ps1` still carries the earlier 186/102/32 fixed counts. The latest focused runs cover report corrections, work-sequence candidate delivery, operational readiness, and Android work-sequence source binding, but no single FastAPI run of all 209 current cases is recorded. The guards must be aligned before the next complete Windows x64 integrated run. The script preserves raw collection output, duplicate lists, exit codes, JUnit/TRX totals, current step, expected and actual values, evidence paths, and the new-RunId recovery command. This does not claim a new integrated baseline because the full current collection/JUnit comparison, shared-DB smoke, Android build, and two clean-source runs were not performed together.
 
 The `system-admin` sensitive-data-policy API manages immutable customer/site versions through draft, independently reviewed, independently approved, active, superseded, approval-withdrawn, and retired states. List/detail/audit responses expose only sanitized metadata, content hashes, and item counts; raw terms, customer identifiers, endpoint values, and credentials are not returned. Mutations use stable operation keys, state tags, explicit confirmation values, and read-back. The provider boundary rechecks the active policy snapshot immediately before the call and after the response. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. Query and retention audit operations are restricted to the configured customer/site scope. The server lifespan runs expired-query retention on the configured interval, while `system-admin` can run scoped bulk retention, expire one query, or place and release a reasoned legal hold. An active hold blocks all three expiry paths. WPF mutations send a stable `operationKey` and the latest detail `stateTag`; duplicate/lost-response retries return the original result, while stale, already-expired, already-released, and concurrent operations return `409`. Legal-hold rows and linked audit history are never deleted by release or expiry.
 

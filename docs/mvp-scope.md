@@ -1,6 +1,6 @@
 # FlowNote MVP 범위
 
-이 문서는 2026-08-04 현재 코드 기준이다. 구현되지 않은 기능은 “현재 제외 범위”, “후속 계층 착수 기준”, “후속 MVP 후보”에만 둔다.
+이 문서는 2026-08-06 현재 코드 기준이다. 구현되지 않은 기능은 “현재 제외 범위”, “후속 계층 착수 기준”, “후속 MVP 후보”에만 둔다.
 
 ## 현재 MVP 구현
 
@@ -18,8 +18,8 @@
 - WPF 로컬 계정 추가/수정/역할 변경/비밀번호 변경
 - FastAPI 서버 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기 API와 WPF 운영 화면
 - 서버 임시 비밀번호 계정의 첫 로그인 비밀번호 변경 강제, 기존 세션 전체 폐기와 재로그인 흐름
-- 작업순서 보드, 항목, 순서 변경, 상태 변경, 이력, 알림 후보, 관리자·TV 화면. FastAPI `board_revision`·mutation receipt를 권위 원천으로 쓰고, WPF 로컬 row는 초안·읽기 캐시로만 보존하며 오프라인 확정 변경을 차단
-- 보고서 초안 생성 보조, 검토중·확정·보관 상태 전이, 확정 문서 저장, report revision·내용/source 집합 hash·mutation receipt와 source 재검증
+- 작업순서 보드, 항목, 순서 변경, 상태 변경, 이력, 알림 후보, 관리자·TV 화면. FastAPI `board_revision`·mutation receipt를 권위 원천으로 쓰고, WPF 로컬 row는 초안·읽기 캐시로만 보존하며 오프라인 확정 변경을 차단. WPF는 후보 전달 preview 뒤 채널 메시지 또는 인수인계를 만들고 채널별 delivery·수신자별 receipt와 재시도 결과를 보존
+- 보고서 초안 생성 보조, 검토중·확정·보관 상태 전이, 확정 문서 저장, report revision·내용/source 집합 hash·mutation receipt와 source 재검증. 확정 보고서는 별도 정정본으로 재검토하며 승인 시 이전 보고서와 생성 문서를 대체·보관하고 계보를 유지
 - 관리자 파일 감시 후보와 버전 확정
 - AI 자동 조언 전 단계의 `ai_search_candidates` 근거 후보 재생성, 목록, 품질 점검 API와 WPF 운영 점검 화면
 - 고객·현장·선택적 라인·DB fingerprint scope별 ground-truth 첫 승인과 서로 다른 사용자의 2차 승인, WPF 사례·원천 구성, 고정 원천 snapshot/provenance, 실제 현장/스모크 준비도 분리, 불변 dataset version의 작성·검토·독립 2단계 승인, dataset 결합 회귀 평가 API와 48건 비민감 스모크 검증 도구
@@ -27,9 +27,10 @@
 - FastAPI `system-admin` 전용 외부 AI 운영 API와 WPF `AI 운영` 화면: 전송 승인 생성·철회, 불변 프롬프트 수명주기, 고객·현장별 민감정보 정책 작성·분리 검토·승인·활성·대체·철회·폐기, 전역/현장 kill switch와 한도·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 일괄·단일 즉시 실행과 legal hold 설정·해제. 민감정보 정책과 hold 관련 고위험 조작은 이중 확인, 최신 상태 태그, 멱등 키와 서버 read-back을 사용하며 활성 hold는 주기·일괄·단일 만료에서 제외된다.
 - FastAPI 공통 채널, 채널 메시지, cursor 기반 사용자별 알림 증분 조회/읽음, 인수인계 수신 확인 API
 - Windows 채널함, 채널 관리, 인수인계 확인 현황 화면
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 업무 채널·수신자·원천을 고르는 인수인계 작성, 받은 인수인계 확인·보류와 같은 원천의 후속 FieldComment
+- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, 오늘의 작업순서 목록·상세와 공개 문서 연결, 작업순서 원천의 FieldComment·사진·인수인계 outbox, 신호등식 기록, 전경 채널 알림 polling/읽음, 업무 채널·수신자·원천을 고르는 인수인계 작성, 받은 인수인계 확인·보류와 같은 원천의 후속 FieldComment
 - Android 보안 본문 열람용 승인 단말·사용자·세션·현재 공개 버전 바인딩 1회 grant, 크기·SHA-256 검증, 내부 캐시 자동 정리와 화면 캡처 차단
 - FastAPI 승인 단말 등록·조회·정보/상태 변경·교체 API와 Windows WPF 승인 단말 관리 화면
+- 공통 감사 anchor와 현재 도메인 권위 테이블을 결합한 운영 준비도 목록·상세 API 및 WPF 읽기 전용 화면
 - WPF 로컬 저장 후 문서 최초 등록, 문서 버전, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 서버 저장 큐와 서버 ID 매핑. 현재 UI의 문서 공개는 서버 승인 작업함이 직접 처리하며 새 공개 큐를 만들지 않는다. 누적 구 공개 큐와 처리기는 보존한다.
 - 같은 소스와 버전에서 framework-dependent와 self-contained WPF MSI를 함께 만드는 패키징 스크립트, .NET Desktop Runtime 설치 차단 안내와 FastAPI 작업 스케줄러 등록·검증/관리 스크립트
 

@@ -2,7 +2,7 @@
 
 이 디렉터리는 FlowNote FastAPI 서버 테스트를 보관한다.
 
-범위와 수집 기준선은 2026-08-04 현재 테스트 코드와 보존된 최신 실행 기록 기준이다.
+범위와 수집 기준선은 2026-08-06 현재 테스트 코드와 보존된 최신 실행 기록 기준이다.
 
 ## 현재 테스트 범위
 
@@ -26,13 +26,13 @@
 - FieldComment 첨부 등록/목록과 허용 확장자, 크기, 부모 ID·요청/실파일 SHA-256 검증, 응답 유실 뒤 같은 key 재시도 시 첨부/file object 1건 유지
 - 문서 열람 로그 등록/목록
 - controlled copy 전체 role 정책, 1회성·만료·사용자/세션 바인딩, Range·경로·크기·해시·감사 검증
-- 작업순서 보드 생성, 항목 추가, 전체 순서 변경, 상태 변경, 이력, 알림 후보 기록
+- 작업순서 보드 생성, 항목 추가, 전체 순서 변경, 상태 변경, 이력, 알림 후보 기록. 후보 전달 preview와 채널/인수인계 전달, 수신자별 부분 성공 재시도, 채널·revision 충돌, 문구 템플릿 및 Android 작업순서 목록·상세 scope와 원천 intent 검증
 - 작업순서 mutation의 revision 증가·no-op 거부, 동일 key 재시도, key의 다른 intent 재사용 거부, 동일 revision 두 client 경쟁의 1건만 성공, API 재시작 후 receipt 재사용
 - 공통 채널 생성, 멤버 관리, 메시지 조회, 사용자별 알림 읽음 처리
 - 인수인계 등록과 수신자별 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 상태 기록
-- 보고서 초안 생성 보조, 보고서 등록, 목록, 상세 조회, report revision·내용/source 집합 hash·mutation receipt와 생성 문서 transaction
+- 보고서 초안 생성 보조, 보고서 등록, 목록, 상세·계보 조회, report revision·내용/source 집합 hash·mutation receipt와 생성 문서 transaction. 확정본 정정의 source 복사·전체 재선택, 재검토, 대체 보고서·생성 문서 상태와 멱등 재시도 검증
 - 선정 뒤 바뀌거나 사라진 보고서 source, 오래된 report revision, 내용/source 집합 hash 불일치와 다른 intent key 재사용 차단
-- 문서·FieldComment·보고서·작업순서 mutation의 공통 receipt와 감사 envelope, 통합 변경 이력의 필터·합계·snapshot cursor·권한 밖 대상 비노출
+- 문서·FieldComment·보고서·작업순서 mutation의 공통 receipt와 감사 envelope, 통합 변경 이력의 필터·합계·snapshot cursor·권한 밖 대상 비노출. 현재 권위 상태와 감사 anchor를 결합한 운영 준비도 영역·blocker·cursor·조치 route와 실제 현장 AI 준비도 분리
 - AI 검색 근거 후보 재생성, 목록 조회, 제외 사유, FieldComment 검토 준비도, 삭제 문서와 원천 누락 보고서 source 제외 품질 점검
 - AI 검색 ground-truth 회귀 평가의 기대/제외 근거, 권한 필터, 네 원천 커버와 후보 ID·내용 hash·순위 재현성
 - scope별 ground-truth 사례의 원천 provenance 고정·독립 2인 승인과 불변 dataset version 작성·검토·2단계 승인·대체·폐기·평가 결합
@@ -51,6 +51,6 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-08-04 보존 기록에서 FastAPI 테스트는 192개를 수집해 192/192가 통과했지만, 저장소 루트 `scripts/verify-preserved-tests.ps1`의 guard는 186개다. 최신 추가 범위에는 문서 승인·공개 집중 회귀와 transaction 예외 주입이 포함된다. WPF Core의 최신 보존 기록도 109/109이지만 스크립트 guard는 102개이며 Android 32개는 일치한다. 스크립트는 수집 원본, 중복 목록, 종료 코드와 JUnit을 같은 `run_id`에 보존하며 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 명령을 안내한다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략해 수행한다. FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존하고 무생략 실행 2회가 같은 clean 소스 커밋에서 모두 통과하기 전에는 유효한 기준선으로 판정하지 않는다.
+2026-08-06 현재 테스트 선언과 매개변수 기준 수집 대상은 FastAPI 209개, WPF Core 117개, Android 35개다. 보존된 최신 집중 실행은 보고서 정정 21건, 작업순서 후보 전달 19건, 운영 준비도 17건, Android 작업순서 연결 API 41건을 각각 통과했고 WPF Core 117/117과 Android 35/35도 기록했다. 다만 FastAPI 전체 209개를 한 번에 실행한 기록은 아직 없다. 저장소 루트 `scripts/verify-preserved-tests.ps1`의 guard도 FastAPI 186개·WPF Core 102개·Android 32개로 현재 소스보다 적다. 스크립트는 수집 원본, 중복 목록, 종료 코드와 JUnit을 같은 `run_id`에 보존하며 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 명령을 안내한다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략해 수행한다. FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존하고 무생략 실행 2회가 같은 clean 소스 커밋에서 모두 통과하기 전에는 유효한 기준선으로 판정하지 않는다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.

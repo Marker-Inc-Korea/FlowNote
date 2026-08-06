@@ -1,6 +1,6 @@
 # FlowNote 구현 로드맵
 
-이 문서는 2026-08-04 현재 코드에서 완료된 범위와, 아직 구현되지 않은 예외 작업을 분리한다. “완료된 기반”은 코드가 존재하는 항목이며 운영 실기 통과를 뜻하지 않는다.
+이 문서는 2026-08-06 현재 코드에서 완료된 범위와, 아직 구현되지 않은 예외 작업을 분리한다. “완료된 기반”은 코드가 존재하는 항목이며 운영 실기 통과를 뜻하지 않는다.
 
 ## 완료된 기반
 
@@ -10,10 +10,11 @@
 - 문서 폴더/문서/버전/태그
 - TXT/PDF/XLSX/이미지 미리보기, 구조화된 실패 안내와 열람 시작·종료·미리보기 실패·다운로드 차단 감사
 - FieldComment 원천 불변과 첨부, 단계형 상태 전이, 담당자·기한, WPF 다중 선택 개별 동기화, FastAPI 최대 200건 일괄 검토, 원천 hash 감사·품질 작업함·보고서와 최종 문서 통합 역추적, 개별 검토 revision·mutation receipt와 첨부 부모/파일 hash 검증
-- 보고서 source 고정 version/hash·저장 직전 재검증, report revision·내용/source 집합 hash·mutation receipt와 WPF read-back 보존
+- 보고서 source 고정 version/hash·저장 직전 재검증, report revision·내용/source 집합 hash·mutation receipt와 WPF read-back 보존. 확정본은 같은 계열의 독립 정정 초안으로 재검토하고 승인 시 이전 보고서·생성 문서를 대체·보관하며 계보를 조회
 - 문서 권위 변경, FieldComment 검토, 보고서 상태 전이와 작업순서 변경의 공통 mutation receipt·감사 event envelope, 권한을 재검사하는 통합 변경 이력 API와 WPF 조치 화면
 - 알림과 활동 이력
 - 작업순서 보드/항목/관리자·TV 화면의 서버 권위 운영. `board_revision`, mutation key·intent hash receipt, stale revision 조건부 갱신, 응답 유실 동일 key 1회 재시도와 오프라인 확정 변경 차단 포함
+- 작업순서 알림 후보의 채널·인수인계 전달. 현재 revision·change ID·채널 관리자 역할·활성 수신자 preview, 후보·채널별 delivery, 수신자별 receipt, 부분 성공 재시도와 현장별 문구 템플릿 포함
 - 보고서 초안 저장, 검토중·확정·보관 상태 전이와 확정 문서 생성
 - 관리자 파일 감시 후보
 - FastAPI SQLite 서버와 `/api/v1` API
@@ -40,7 +41,8 @@
 - FastAPI `system-admin` 전용 외부 AI 전송 승인·프롬프트·민감정보 정책·운영 정책·감사·보존 API와 WPF `AI 운영` 화면. 민감정보 정책의 작성·분리 검토·승인·활성·대체·철회·폐기, 고객·현장 scope별 질의 상세, 단일 만료와 legal hold 설정·해제, 이중 확인·멱등 재시도·서버 read-back 포함
 - FastAPI 공통 채널, 채널 메시지, 사용자별 알림 읽음, 인수인계 수신 확인 API
 - WPF 채널함, 채널 관리, 인수인계 확인 현황 화면과 서버 API 클라이언트
-- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, FieldComment, 사진 첨부·인수인계 outbox, 신호등식 기록, 채널 알림, 인수인계 작성·확인·보류와 같은 원천의 후속 FieldComment. 확인·보류·후속 FieldComment의 암호화 outbox와 알림 부분 성공 재시도 포함
+- WPF 통합 운영 준비도 화면. 공통 감사 anchor와 현재 권위 상태를 결합한 영역별 정상·주의·차단, blocker·담당 역할·다음 행동, snapshot cursor와 실제 현장 AI 준비도 분리 포함
+- Android 현장 단말 최소 앱: 승인 단말 로그인, 공개 문서 목록·상세, PDF/PNG/JPEG/WebP/UTF-8 TXT 앱 내부 보안 열람, 오늘의 작업순서 목록·상세와 공개 문서 연결, 작업순서 원천의 FieldComment·사진·인수인계 outbox, 신호등식 기록, 채널 알림, 인수인계 작성·확인·보류와 같은 원천의 후속 FieldComment. 확인·보류·후속 FieldComment의 암호화 outbox와 알림 부분 성공 재시도 포함
 - Android 전용 단기 1회 grant/stream, 현재 공개 버전·사용자·세션·승인 단말 바인딩, 파일 무결성 재검사와 접근 감사
 - Android 내부 난수 캐시, 수신 크기·SHA-256 검증, `FLAG_SECURE`, 외부 열기·공유 미제공, 종료·백그라운드 전환·오류·로그아웃·다음 시작 시 캐시 정리
 - Windows 창 활성 중 polling과 Android 로그인 세션 foreground service polling, cursor 기반 증분 조회·연결 실패 backoff·재부팅 복구
@@ -69,7 +71,7 @@
 
 ## 다음 우선순위
 
-1. 현재 수집 결과는 FastAPI 192건·WPF Core 109건·Android 32건이다. 표준 스크립트 guard는 FastAPI 186건·WPF Core 102건·Android 32건이므로 현재 코드와 일치하지 않는다. FastAPI 수집/JUnit·도구 부족 실패 안내와 의도적 불일치 단위 검증은 이미 보강했다. 다음에는 guard를 현재 수집값에 맞춘 뒤 Windows x64에서 FastAPI 수집 총 192건·고유 192건·중복 0건과 JUnit 192/192, WPF Core 수집 목록과 TRX `total/passed=109/109`, Android JUnit 32/32를 대조한다. 이어 누적 공통 DB 스모크 전후 무결성, Android debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, `PASSED` 실행 ID를 같은 clean 소스 커밋에서 2회 연속 남겨야 한다. 현재 최신 유효 기준선과 재현 실행은 모두 `대기`다.
+1. 현재 소스의 수집 대상은 FastAPI 209건·WPF Core 117건·Android 35건이다. 표준 스크립트 guard는 FastAPI 186건·WPF Core 102건·Android 32건이므로 현재 코드와 일치하지 않는다. FastAPI 수집/JUnit·도구 부족 실패 안내와 의도적 불일치 단위 검증은 이미 보강했다. 다음에는 guard를 현재 수집값에 맞춘 뒤 Windows x64에서 FastAPI 수집 총 209건·고유 209건·중복 0건과 JUnit 209/209, WPF Core 수집 목록과 TRX `total/passed=117/117`, Android JUnit 35/35를 대조한다. 이어 누적 공통 DB 스모크 전후 무결성, Android debug build와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, `PASSED` 실행 ID를 같은 clean 소스 커밋에서 2회 연속 남겨야 한다. 현재 최신 유효 기준선과 재현 실행은 모두 `대기`다.
 2. [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다. `PILOT-20260728-1501-FULLPILOT-001`은 이 승인과 장비가 없는 상태를 검증해 460개 미충족 조건으로 `FAIL`했으므로, 현재 상태는 구현 완료가 아니라 파일럿 착수 `대기`다. RPO/RTO, 비상 연락, 이전 승인 패키지와 운영·보안·현장 승인자를 먼저 확정한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
 4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다. APK 설치·rollback은 승인 ADB serial, 동일 signer와 더 낮은 이전 versionCode를 확인하고, AAB는 관리형 스토어가 전달한 서명 APK를 별도로 검증한다. `full_pilot`의 전달·무결성·보안·단말 수명주기·패키지 승인 원시 CSV와 같은 `run_id`의 실제 증거가 모두 PASS일 때만 완료한다.
@@ -77,8 +79,8 @@
 6. 관리자·반장·조장·작업자의 핵심 업무 성공률과 시간을 측정하고 단말 위치·장갑·입력 가능 순간·단절 UX 관찰을 개발 항목으로 변환한다.
 7. Android foreground service의 Doze·재부팅·강제 중지/MDM kiosk 복구와 Windows/Android 채널 polling 운영 UX를 승인 실단말·고객 유사망에서 검증한다. WPF 사용자별 cursor 보존과 창 활성 polling, Android 로그인 세션 polling·재부팅 복구, 읽음/수신 확인은 구현되어 있다.
 8. 구현된 사용자/역할 UI와 서버 계정 보호 규칙의 현장 운영 검증 및 오류 UX 보강
-9. 문서 버전/상태/공개 상태의 서버-WPF 동기화 정책 고도화
-10. FieldComment 관리자 검토/분석/선정 운영 화면 보강
+9. 구현된 문서 태그·버전·상태·공개본 수렴과 충돌 종결을 실제 Windows의 두 클라이언트, 응답 유실·503·timeout·재시작 조합에서 검증한다.
+10. 구현된 FieldComment 관리자 검토/분석/선정·운영 준비도 화면을 실제 현장 역할, 장시간 작업, 200% 확대·고대비·키보드 조건에서 검증하고 관찰 결과만 후속 UX 항목으로 전환한다.
 11. 고객 승인을 받은 익명 현장 원천으로 독립 2인 승인 ground-truth 48건을 구성하고 동일 snapshot 2회 전체 회귀와 24칸 독립 표본 검토·필요 시 제3 합의, provider 심사를 실제 현장 준비도 기준으로 통과시킨다. 원문은 저장소 밖 승인 환경에서 익명화하고 정보보호·현장 데이터 책임자가 provenance, 현재 공개 상태와 승인 취소·권한 변경 뒤 차단을 검토한다. 합성/시험 스모크와 `PILOT`은 별도 회귀·파일럿 기록으로만 유지한다.
 12. 현장 익명 샘플 기준에 맞춘 미리보기 예외 케이스 보강
 
