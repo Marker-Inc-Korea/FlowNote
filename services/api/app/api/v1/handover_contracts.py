@@ -52,6 +52,8 @@ class HandoverResponse(BaseModel):
     source_type: str | None
     source_id: str | None
     source_version_id: str | None
+    related_document_id: str | None
+    related_document_version_id: str | None
     status: str
     created_by: str | None
     entry_source: str

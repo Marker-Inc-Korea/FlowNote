@@ -248,6 +248,22 @@ Windows와 Android의 알림은 장기적으로 개인 메신저가 아니라 �
 
 목록·상세·계보는 각 보고서의 모든 source에 현재 채널 권한을 다시 적용한다. 권한을 통과하지 못한 계열 구성원과 related target은 반환하지 않는다. AI 후보 재생성은 유효본의 source만 사용하며 대체된 과거본은 추적·감사 조회에만 남긴다.
 
+## 작업순서 변경 전달 흐름
+
+```text
+작업순서 상태·순서 mutation
+  → change history + revision 고정 notification candidate
+  → WPF 후보/관리 가능 채널 선택
+  → preview에서 현재 revision·채널 역할·활성 수신자·source item·공개 문서 재확인
+  → CHANNEL: work-sequence message + recipient delivery receipts
+     또는 HANDOVER: handover + channel message + handover/recipient receipts
+  → candidate-channel delivery receipt + 공통 mutation receipt + 감사
+  → Windows 채널함/인수인계 현황, Android polling
+  → 읽음·확인·보류 → 같은 source의 후속 FieldComment
+```
+
+`CHANNEL` message와 handover 원문은 작업순서 항목 또는 변경 이력을 직접 source로 보존한다. `HANDOVER` message는 생성된 handover를 가리키며, handover가 작업순서 원천을 보존한다. 항목 후보는 관련 문서가 현재 공개 상태일 때만 공개 문서 ID와 정확한 version ID를 별도 이동 정보로 붙인다. 수신자는 작업순서 원천과 공개 문서 중 필요한 근거로 이동할 수 있고, 후속 FieldComment는 기존 handover/source ID를 유지한다. polling cursor와 처리한 message 원장은 후보 전달이나 재시도 때 초기화하지 않는다.
+
 ## 후속 연동
 
 MES/ERP는 후속 연동 대상이다. 현재 코드는 내부 작업순서와 문서/FieldComment 기록을 먼저 안정적으로 축적하는 단계다.

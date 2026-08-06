@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Protocol
 from uuid import uuid4
 
@@ -178,6 +178,8 @@ def _record_notification_candidate(
     event_type: str,
     actor_id: str | None,
     message: str,
+    board_revision: int,
+    change_id: str,
     recipient_hint: str | None = None,
 ) -> None:
     session.add(
@@ -189,6 +191,9 @@ def _record_notification_candidate(
             actor_id=actor_id,
             recipient_hint=recipient_hint,
             message=message,
+            board_revision=board_revision,
+            change_id=change_id,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
         )
     )
     session.add(

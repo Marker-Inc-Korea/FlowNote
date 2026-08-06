@@ -1384,3 +1384,19 @@ dotnet build ./apps/windows/src/FlowNote.Windows.App/FlowNote.Windows.App.csproj
 macOS 개발 환경에서 Ruff 검사와 책임 분리 집중 회귀 45/45, WPF Core 102/102가 통과했다. WPF 앱 빌드는 `EnableWindowsTargeting` 없이 처음 실행했을 때 `NETSDK1100`으로 실패했다. 위 교차 빌드 명령으로 다시 실행한 결과는 경고 0개·오류 0개다. FastAPI 최종 수집 수는 186개다.
 
 FastAPI 전체 회귀는 서로 다른 두 검증 프로세스가 같은 누적 SQLite를 사용한 상태에서 실행되어 각각 181/185와 182/185가 통과했다. 실패 항목에는 AI ground-truth·준비도 집계, AI 질의, Android 문서 보기, SQLite 잠금과 서버 epoch 동시 증가가 포함됐다. 이 항목들을 동시 실행 없이 다시 검사한 결과 모두 통과했지만, AI ground-truth 재현성은 한 차례 더 `FAILED`를 반환한 뒤 재실행에서 통과해 실행 순서에 따른 불안정성이 남아 있다. 따라서 FastAPI 전체 186건이 한 번에 통과했다고 보지는 않으며, 이번 FieldComment·보고서·작업순서 변경 범위는 집중 회귀 45건 통과를 기준으로 확인했다. 기존 SQLite, 최초 실패 기록과 실행 산출물은 삭제하거나 초기화하지 않았다.
+
+## 2026-08-06 작업순서 후보 채널·인수인계 전달 검증
+
+집중 API 검증은 후보 생성 뒤 preview가 candidate revision·change ID·관리 가능 채널·활성 수신자·작업 항목을 반환하는지 확인한다. `HANDOVER` 전달은 candidate-channel delivery, channel message, handover, handover receipt, 수신자 delivery receipt, activity audit와 공통 mutation receipt의 공개 ID와 개수를 대조한다. 같은 키·같은 intent 재전송은 같은 결과를 반환하고 본문을 바꾼 재전송은 거부한다. preview 뒤 수신자 멤버십 해제와 후보 뒤 board revision 변경은 각각 전송 전 충돌로 멈춘다.
+
+WPF Core 계약 검증은 관리 가능 채널만 요청하는 query, preview의 수신자·change ID·공개 문서 version 역직렬화, 전달 요청의 base revision·수신자 집합 직렬화를 확인한다. 또한 수신자 순서가 달라도 앱 재시작 전후 같은 intent가 같은 멱등키를 만들고 본문이 바뀌면 다른 키가 되는지 검증한다. Windows 앱 교차 빌드는 새 전달 창 XAML과 작업순서·채널 클라이언트 연결을 포함한다. 실제 Windows PC의 키보드 전용 조작, 화면 읽기 이름, 200% 확대, 고대비와 긴 문구 템플릿은 자동 교차 빌드로 완료 판정하지 않고 수동 확인 대상으로 남긴다.
+
+| 명령 | 결과 |
+| --- | --- |
+| `.venv/bin/python -m pytest -q tests/test_work_sequences_api.py tests/test_channels_api.py tests/test_common_mutation_receipts_api.py` | PASS, 19건 |
+| `.venv/bin/python -m ruff check app tests` | PASS |
+| `dotnet test ./apps/windows/src/FlowNote.Windows.Core.Tests/FlowNote.Windows.Core.Tests.csproj` | PASS, 116건 |
+| `dotnet build ./apps/windows/src/FlowNote.Windows.App/FlowNote.Windows.App.csproj -p:EnableWindowsTargeting=true` | PASS, 경고 0·오류 0 |
+| `./gradlew testDebugUnitTest assembleDebug` | PASS, Android 관련 공개 문서 바로 열기 포함 |
+
+첫 API 묶음 실행에서는 기존 누적 SQLite의 채널 쓰기에서 일시적인 `database is locked` 1건이 발생했고, 중단 없이 이어진 나머지 14건은 통과했다. 부분 성공 재시도 회귀까지 추가한 뒤 같은 명령을 단독으로 다시 실행한 결과 19건이 모두 통과했다. 누적 SQLite의 기존 데이터·WAL·로그·테스트 산출물은 삭제하거나 초기화하지 않았다.

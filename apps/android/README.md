@@ -44,6 +44,12 @@ service 실행마다 `ANDROID-DELIVERY-{uuid}` run ID를 만들고 Logcat에 서
 
 한 page는 100건이며 응답이 정확히 100건이면 같은 polling cycle에서 다음 page를 계속 받는다. 각 `page_ok` 로그는 `cursor_before`, `cursor_after`, `received`, `advanced`, `stale_or_duplicate`를 기록한다. 가득 찬 page에서 cursor가 전진하지 않으면 무한 반복하지 않고 연결 복구 실패로 남긴다. 최초 과거 알림 catch-up과 101건 이상 단절 backlog는 승인 실단말에서 마지막 message ID까지 별도로 검증한다.
 
+### 작업순서 변경 알림 수신
+
+Windows 관리자가 확정한 작업순서 후보 전달은 기존 channel message polling과 handover 목록으로 들어온다. `CHANNEL` 전달 메시지는 `WORK_SEQUENCE_ITEM` 또는 `WORK_SEQUENCE_HISTORY` 원천을 직접 유지한다. `HANDOVER` 전달 메시지는 생성된 인수인계를 가리키고, 인수인계 원문이 작업순서 원천을 유지한다. 항목에 현재 공개 문서가 있으면 `related_document_id`와 `related_document_version_id`도 받는다. 받은 인수인계의 `관련 공개 문서 바로 열기`는 해당 버전을 기존 보안 뷰어로 전달하며, 열람 시 Android view grant와 공개 상태를 다시 확인한다. 작업 항목·변경 이력 ID도 화면에 함께 표시해 후속 기록에서 같은 원천을 유지한다.
+
+같은 candidate-channel 전달의 응답 유실 재시도는 새 message·handover·receipt를 만들지 않는다. Android는 기존 scope cursor와 처리한 `message_id` 원장을 유지한 채 새 message만 표시하고, 인수인계 확인·보류와 후속 FieldComment는 기존 source ID로 이어간다. 관리자 전달의 일부 수신자 실패는 성공 수신자 알림을 취소하지 않으며 실패 수신자 재시도가 끝나도 같은 message ID를 사용한다.
+
 ## 승인 단말 정책
 
 Android 로그인은 `/api/v1/auth/login`에 `deviceId`를 함께 보낸다. 서버는 `terminal_devices.device_id`가 존재하고 `status = ACTIVE`인 경우에만 로그인 세션을 발급한다. 승인되지 않은 단말 또는 비활성 단말은 403으로 거부된다.

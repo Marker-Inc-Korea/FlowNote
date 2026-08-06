@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-08-06 현재 전역 FastAPI 앱에 등록된 153개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency·정정/대체 계약, 통합 변경 이력 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-08-06 현재 전역 FastAPI 앱에 등록된 158개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency·정정/대체 계약, 작업순서 후보 전달, 통합 변경 이력 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -293,7 +293,7 @@ FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revi
 | Method | Path | 설명 |
 | --- | --- | --- |
 | POST | `/api/v1/notification-channels` | 업무 채널 생성. 생성자는 `OWNER` 멤버로 자동 등록 |
-| GET | `/api/v1/notification-channels` | 현재 사용자가 속한 채널 목록. `admin`, `system-admin`은 전체 조회 |
+| GET | `/api/v1/notification-channels` | 현재 사용자가 속한 채널 목록. `admin`, `system-admin`은 전체 조회하며 `manageableOnly=true`이면 활성 `OWNER`, `MANAGER` 채널만 조회 |
 | GET | `/api/v1/notification-channels/{channel_id}` | 채널 상세 조회 |
 | POST | `/api/v1/notification-channels/{channel_id}/members` | 채널 멤버 추가 또는 재활성화 |
 | GET | `/api/v1/notification-channels/{channel_id}/members` | 채널 멤버 목록 |
@@ -307,7 +307,7 @@ FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revi
 | GET | `/api/v1/handovers/{handover_id}` | 인수인계 상세와 수신자별 receipt 조회 |
 | PATCH | `/api/v1/handovers/{handover_id}/receipts/{receipt_id}` | 수신자별 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 상태와 선택 `deliveryRunId`, `displayedAt` 기록 |
 | GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | 작업순서 변경으로 생성된 알림 후보 조회 |
-| PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | 작업순서 알림 후보 상태를 `CANDIDATE`, `SENT`, `DISMISSED` 중 하나로 변경 |
+| PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | 후보 검토 상태를 `CANDIDATE` 또는 `DISMISSED`로 변경. `SENT`는 완료 delivery receipt가 있을 때만 서버가 확정 |
 
 채널 유형은 `LINE`, `EQUIPMENT`, `PROCESS`, `WORK_GROUP`, `HANDOVER`, `WORK_RECORD`, `CUSTOM`이다. 채널 메시지 유형은 `NOTICE`, `DOCUMENT_EVENT`, `FIELD_COMMENT_EVENT`, `WORK_SEQUENCE_EVENT`, `HANDOVER`, `SYSTEM`이다. 같은 채널의 같은 FieldComment를 원천으로 하는 `FIELD_COMMENT_EVENT` 재요청은 기존 메시지를 반환해 응답 유실 뒤 알림 중복을 막는다. 인수인계 상태는 `DRAFT`, `SENT`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`, `ARCHIVED`이고, 수신 상태는 `UNREAD`, `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`이다.
 
@@ -366,6 +366,24 @@ Android 현장 입력은 아래 추가 계약을 사용한다.
 구현된 보고서 저장 계약은 `idempotencyKey`, `mutationKey`, `reportStatus`, 기존 초안의 선택적 `baseReportRevision`, 선택적 `contentHashSha256`, `sourceSetHashSha256`과 정정본의 `reportFamilyId`, `replacesReportId`, `replacesReportRevision`을 받는다. 각 source 요청은 `sourceType`, `sourceId`, 선택적 `sourceVersionId`, `sourceRevision`, `sourceHashSha256`, `relationType`을 보내며 서버가 현재 원천을 검증해 revision/hash를 고정한다. 내용 hash는 보고서 유형·제목·본문·작업/구조/기간·상태와 정정 계열·대체 대상·사유의 정규화 JSON, source 집합 hash는 source type/ID/version/revision/hash/relation의 정렬 canonical JSON을 SHA-256으로 계산한다.
 
 서버는 검토·확정·보관 전이와 문서/파일 생성 직전에 모든 source의 존재·상태·version·hash와 채널 권한을 다시 읽는다. 원천이 사라지거나 비공개·권한 밖 상태가 되면 `404 SOURCE_NOT_VISIBLE`, 여전히 적격이지만 고정 hash/revision이 달라지면 `409`로 중단한다. 허용되지 않은 상태 전이는 `REPORT_STATUS_TRANSITION_NOT_ALLOWED`, 확정 이외 단계의 문서 생성은 `REPORT_DOCUMENT_STATUS_MISMATCH`, 이미 생성 문서가 있는 보고서의 중복 생성은 `REPORT_DOCUMENT_ALREADY_CREATED`로 거부한다. 기존 초안 revision 경합은 `REPORT_STALE_REVISION`, 클라이언트가 보낸 두 hash와 서버 계산값 불일치는 각각 `REPORT_CONTENT_HASH_MISMATCH`, `REPORT_SOURCE_SET_HASH_MISMATCH`다. `mutationKey`가 없으면 `idempotencyKey`를 mutation key로 사용하며 같은 key·같은 intent는 `report_mutation_receipts`의 최초 응답을 반환하고 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`다. 각 상태 전이는 보고서, 고정 source, 선택적 생성 document/version, 두 hash와 mutation receipt를 한 transaction으로 확정한다. 응답은 `report_revision`, `content_hash_sha256`, `source_set_hash_sha256`, `generated_document`와 source별 확정 ID/version/hash를 반환한다. WPF는 서버 응답의 content/source 집합 hash를 다시 계산해 일치할 때만 report/document/version ID와 hash를 로컬에 보존하고 큐를 `SYNCED`로 종결한다. 최종 저장 요청 전 로컬 보고서와 `report_sources`를 먼저 보존하므로 서버 거부·통신 실패 때도 기존 동기화 화면에서 같은 큐의 실패·충돌 사유를 확인하고 재시도할 수 있다.
+
+## 작업순서 후보 전달
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}/delivery-preview?channelId=...` | 현재 revision, 후보·변경 이력, 채널 역할·활성 수신자, 작업 항목과 관련 공개 문서를 다시 확인한다. |
+| POST | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}/deliveries` | `CHANNEL` 메시지 또는 `HANDOVER`와 수신자 receipt, candidate-channel delivery receipt, 감사를 확정한다. |
+| GET | `/api/v1/work-sequence-delivery-templates` | 로그인 사용자의 서버 `site_scope`에 속한 활성 문구 템플릿을 조회한다. |
+| POST | `/api/v1/work-sequence-delivery-templates` | 현재 현장 범위에 제품 기본값이 아닌 사용자 문구 템플릿을 저장한다. |
+| PATCH | `/api/v1/work-sequence-delivery-templates/{template_id}` | 같은 현장의 작성자 또는 `admin`·`system-admin`이 문구를 수정하거나 보관한다. |
+
+후보는 생성 당시 `board_revision`, `change_id`, 24시간 만료 시각을 고정한다. preview와 최초 전달은 후보 revision과 현재 작업판 revision이 다르면 `409 WORK_SEQUENCE_DELIVERY_STALE_REVISION`, 만료되면 `409 CANDIDATE_EXPIRED`로 중단한다. 전달 사용자는 활성 채널 `OWNER` 또는 `MANAGER`이면서 작업순서 쓰기 role이어야 한다. 멤버가 아닌 사용자의 preview는 채널 이름을 밝히지 않는 `404 CHANNEL_NOT_VISIBLE`이고, preview 뒤 대상 수신자가 탈퇴하거나 비활성화되면 `409 CHANNEL_MEMBERSHIP_CHANGED`다.
+
+전달 요청은 `channelId`, `deliveryMode`, `recipientIds`, `title`, `body`, `reason`, `baseBoardRevision`, `idempotencyKey`와 선택적 `intentHashSha256`을 받는다. intent hash는 후보·채널·방식·정렬한 수신자·제목·본문·사유·revision의 canonical JSON SHA-256이다. 같은 키와 intent는 기존 message·handover·receipt를 반환하고, 같은 키의 채널·본문·수신자 또는 방식이 다르면 `409 IDEMPOTENCY_KEY_REUSED`다. candidate-channel 조합에는 불변 delivery receipt가 하나뿐이며 다른 키로 내용을 바꾸면 `409 CANDIDATE_CHANNEL_ALREADY_DELIVERED`다. 한 후보는 서로 다른 여러 채널에 각각 한 번 전달할 수 있다.
+
+`CHANNEL`은 `WORK_SEQUENCE_EVENT` 메시지와 수신자별 delivery receipt를, `HANDOVER`는 인수인계·`HANDOVER` 채널 메시지·`UNREAD` handover receipt와 delivery receipt를 한 transaction에서 만든다. `CHANNEL` 메시지와 인수인계 원문은 작업 항목 후보에 `WORK_SEQUENCE_ITEM`, 순서 변경 후보에 `WORK_SEQUENCE_HISTORY`를 원천으로 사용한다. `HANDOVER` 채널 메시지는 생성된 인수인계를 원천으로 가리킨다. message·handover `source_version_id`와 delivery receipt의 `change_id`에는 같은 변경 이력 ID를 담아 수신 화면에서도 원천 변경을 역추적한다. 작업 항목에 현재 공개 문서가 있으면 message와 handover의 `related_document_id`, `related_document_version_id`를 함께 반환한다.
+
+수신자별 결과는 `DELIVERED` 또는 `FAILED`, handover receipt ID, 오류 코드·안내, 시도 횟수를 반환한다. 일부 실패면 delivery와 handover는 각각 `PARTIAL`, `FOLLOW_UP_REQUIRED`이고 후보는 `CANDIDATE`로 남는다. 같은 키·intent를 다시 보내면 기존 성공 receipt는 유지하고 `FAILED` 수신자만 재시도한다. 전원이 완료되면 delivery와 후보를 각각 `COMPLETED`, `SENT`로 전환하고 공통 mutation receipt와 감사 envelope를 확정한다. `SENT`는 후보가 적어도 한 candidate-channel delivery에서 요청 수신자 전원에게 완료됐다는 뜻이며, 다른 채널로 전달할 가능성이 없다는 뜻은 아니다.
 
 ## AI 검색 근거 후보
 

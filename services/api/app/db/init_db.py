@@ -13,6 +13,7 @@ INITIAL_SCHEMA_VERSION = "0001_initial_mvp_schema"
 COMMON_MUTATION_RECEIPT_SCHEMA_VERSION = "0002_common_mutation_receipts"
 DOCUMENT_APPROVAL_SCHEMA_VERSION = "0003_document_approval_workflow"
 REPORT_CORRECTION_SCHEMA_VERSION = "0004_report_correction_lifecycle"
+WORK_SEQUENCE_DELIVERY_SCHEMA_VERSION = "0005_work_sequence_candidate_delivery"
 DEFAULT_ADMIN_USER_ID = "user-admin"
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "1234"
@@ -358,6 +359,57 @@ def _ensure_report_aggregate_columns(database: Database) -> None:
         for name, definition in columns.items():
             if name not in existing:
                 connection.execute(text(f"ALTER TABLE reports ADD COLUMN {name} {definition}"))
+
+
+def _ensure_work_sequence_delivery_columns(database: Database) -> None:
+    if not database.database_url.startswith("sqlite"):
+        return
+    additions = {
+        "work_sequence_notification_candidates": {
+            "board_revision": "INTEGER NOT NULL DEFAULT 1",
+            "change_id": "VARCHAR(64)",
+            "expires_at": "DATETIME",
+        },
+        "channel_messages": {
+            "related_document_id": "VARCHAR(64)",
+            "related_document_version_id": "VARCHAR(64)",
+        },
+        "handovers": {
+            "related_document_id": "VARCHAR(64)",
+            "related_document_version_id": "VARCHAR(64)",
+        },
+    }
+    with database.engine.begin() as connection:
+        for table_name, columns in additions.items():
+            existing = {
+                row[1] for row in connection.execute(text(f"PRAGMA table_info({table_name})"))
+            }
+            if not existing:
+                continue
+            for name, definition in columns.items():
+                if name not in existing:
+                    connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {name} {definition}"))
+        connection.execute(text(
+            "UPDATE work_sequence_notification_candidates AS candidate SET change_id = ("
+            "SELECT history.change_id FROM work_sequence_change_history AS history "
+            "WHERE history.board_id = candidate.board_id "
+            "AND (history.item_id = candidate.item_id OR "
+            "(history.item_id IS NULL AND candidate.item_id IS NULL)) "
+            "ORDER BY history.id DESC LIMIT 1) WHERE change_id IS NULL"
+        ))
+        connection.execute(text(
+            "UPDATE work_sequence_notification_candidates SET board_revision = COALESCE(("
+            "SELECT history.board_revision FROM work_sequence_change_history AS history "
+            "WHERE history.change_id = work_sequence_notification_candidates.change_id), board_revision)"
+        ))
+        connection.execute(text(
+            "UPDATE work_sequence_notification_candidates "
+            "SET expires_at = datetime(created_at, '+24 hours') WHERE expires_at IS NULL"
+        ))
+        connection.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_wseq_candidate_change_id "
+            "ON work_sequence_notification_candidates (change_id)"
+        ))
 
 
 def _ensure_auth_session_device_column(database: Database) -> None:
@@ -822,6 +874,7 @@ def initialize_database(database: Database) -> None:
     _ensure_report_source_trace_columns(database)
     _ensure_report_aggregate_columns(database)
     ensure_report_correction_schema(database)
+    _ensure_work_sequence_delivery_columns(database)
     _ensure_terminal_device_schema(database)
     _ensure_auth_session_device_column(database)
     _ensure_document_access_log_reason_column(database)
@@ -891,6 +944,18 @@ def initialize_database(database: Database) -> None:
                 SchemaMigration(
                     version=REPORT_CORRECTION_SCHEMA_VERSION,
                     description="Add immutable report correction and replacement lineage",
+                )
+            )
+        delivery_migration = session.scalar(
+            select(SchemaMigration).where(
+                SchemaMigration.version == WORK_SEQUENCE_DELIVERY_SCHEMA_VERSION
+            )
+        )
+        if delivery_migration is None:
+            session.add(
+                SchemaMigration(
+                    version=WORK_SEQUENCE_DELIVERY_SCHEMA_VERSION,
+                    description="Add idempotent work-sequence candidate channel delivery",
                 )
             )
         session.commit()

@@ -11,6 +11,7 @@ public partial class WorkSequenceAdminWindow : Window
 {
     private readonly WorkSequenceService localWorkSequences;
     private readonly FlowNoteServerDocumentClient? serverClient;
+    private readonly FlowNoteServerChannelClient? channelClient;
     private readonly string actorId;
     private readonly WorkSequenceWorkspace workspace = new();
     private bool hasAuthoritativeSnapshot;
@@ -19,11 +20,13 @@ public partial class WorkSequenceAdminWindow : Window
     public WorkSequenceAdminWindow(
         WorkSequenceService localWorkSequences,
         FlowNoteServerDocumentClient? serverClient,
+        FlowNoteServerChannelClient? channelClient,
         string actorId)
     {
         InitializeComponent();
         this.localWorkSequences = localWorkSequences;
         this.serverClient = serverClient;
+        this.channelClient = channelClient;
         this.actorId = actorId;
         DataContext = workspace;
         Loaded += WorkSequenceAdminWindow_Loaded;
@@ -125,6 +128,20 @@ public partial class WorkSequenceAdminWindow : Window
         }
 
         new WorkSequenceTvWindow(localWorkSequences, serverClient, board.BoardId) { Owner = this }.Show();
+    }
+
+    private void OpenDeliveryButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentBoard() is not { } board || serverClient is null || channelClient is null)
+        {
+            StatusTextBlock.Text = "알림 후보 전달은 작업판 선택과 서버 연결이 필요합니다.";
+            return;
+        }
+
+        new WorkSequenceDeliveryWindow(serverClient, channelClient, board, actorId)
+        {
+            Owner = this
+        }.ShowDialog();
     }
 
     private async void MoveSelectedItem(int direction)
