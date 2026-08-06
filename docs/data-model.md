@@ -506,3 +506,11 @@ WPF 사용자 관리는 서버 로그인 세션이 있으면 서버 계정 운�
 - `document_approval_mutation_receipts`와 공통 `sync_mutation_receipts`, `audit_event_envelopes`, `activity_history`는 요청·결정·취소와 같은 transaction에 포함된다. 같은 key와 intent는 기존 응답을 재생하고 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`다.
 - `documents.publication_approval_id`는 새 공개본의 승인 근거를 가리키며 `publication_origin = APPROVAL_WORKFLOW`를 사용한다. migration 전 공개본은 승인 근거를 추정하지 않고 `publication_origin = LEGACY_PUBLICATION`, null 승인 ID로 유지한다.
 - 승인 공개를 취소하면 아직 `ISSUED`인 Android 열람 grant와 controlled copy grant는 `FAILED`로 바뀐다. 이미 소비된 복사본은 회수됐다고 추정하지 않고 기존 소비·감사 이력을 유지한다.
+
+## 운영 준비도 읽기 모델
+
+`operational-readiness-v1`은 DB entity나 권위 snapshot이 아니다. 공통 `audit_event_envelopes` snapshot anchor와 현재 권위 테이블을 요청 시점에 결합하는 재생성 가능 projection이다. 따라서 대시보드 조회·페이지 이동·상세 조회는 문서, FieldComment, 보고서, 작업순서, 채널/인수인계, 단말, 세션, 재결합 item, 공통 receipt와 감사 row를 생성·수정·삭제하지 않는다.
+
+준비도 상태는 `NORMAL`, `WARNING`, `BLOCKED`, `NO_DATA`다. 영역별 수치는 권한으로 평가한 대상 중 정상 대상 수와 주의/차단 조치 row 수이며, 한 대상에 여러 blocker code가 있어도 가장 높은 상태의 조치 row 한 건으로 묶는다. `NO_DATA`는 원천이 0건이라는 뜻이 아니라 집계 실패 또는 해당 영역 권한 부족으로 수치를 제공하지 않았다는 뜻이다. 활성 채널 제한 대상은 비회원의 평가 대상과 모든 합계에서 제외한다.
+
+조치 row의 안정 식별자는 영역·대상 유형·대상 ID의 결정적 hash다. `blockerCodes[]`, 현재 상태와 source revision, 담당 역할·담당자, 다음 행동, 기존 업무 화면 route, 가장 오래된 근거 시각, 선택적 최신 공통 event ID를 가진다. 해결 여부를 저장하는 열은 두지 않으며 현재 권위 상태에서 blocker가 다시 계산되지 않을 때 해결된 것으로 판정한다. AI 실제 현장 준비도는 `ANONYMOUS_FIELD` 계열 projection으로 별도 구획하고 `SYNTHETIC`, `TEST` 계열을 합산하지 않는다.

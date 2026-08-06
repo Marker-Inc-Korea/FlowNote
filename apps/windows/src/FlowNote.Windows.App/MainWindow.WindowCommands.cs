@@ -88,6 +88,167 @@ public partial class MainWindow
         }.ShowDialog();
     }
 
+    private void OperationalReadinessButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (serverAuditClient is null ||
+            !RolePermissionPolicy.CanReadChangeHistory(currentUser.Role))
+        {
+            workspace.StatusText =
+                "운영 준비도는 관리자급 권한과 서버 연결이 필요합니다. 현장 관리자에게 로그인 ID와 필요한 업무를 전달하세요.";
+            return;
+        }
+
+        new OperationalReadinessWindow(serverAuditClient, OpenOperationalReadinessAction)
+        {
+            Owner = this
+        }.ShowDialog();
+    }
+
+    private void OpenOperationalReadinessAction(ServerOperationalReadinessItem item)
+    {
+        switch (item.ActionRoute)
+        {
+            case "DOCUMENT_APPROVAL":
+                OpenReadinessDocumentApproval(item.ActionTargetId);
+                break;
+            case "DOCUMENT_CONFLICT":
+                HistoryButton_Click(this, new RoutedEventArgs());
+                break;
+            case "SYNC_RECONCILIATION":
+                OpenReadinessReconciliation(item.ActionTargetId);
+                break;
+            case "FIELD_COMMENT_REVIEW":
+                OpenReadinessFieldComment(item);
+                break;
+            case "REPORT":
+                OpenReadinessReport(item.ActionTargetId);
+                break;
+            case "WORK_SEQUENCE":
+                OpenReadinessWorkSequence(item.ActionTargetId);
+                break;
+            case "CHANNEL":
+                new ChannelInboxWindow(
+                    serverChannelClient, GetCurrentUserId(), item.ActionTargetId)
+                {
+                    Owner = this
+                }.ShowDialog();
+                break;
+            case "HANDOVER":
+                if (!EnsureChannelManagementAllowed()) break;
+                new HandoverStatusWindow(
+                    serverChannelClient, GetCurrentUserId(), item.ActionTargetId)
+                {
+                    Owner = this
+                }.ShowDialog();
+                break;
+            case "TERMINAL_DEVICE":
+                if (!EnsureUserManagementAllowed()) break;
+                new TerminalDeviceManagementWindow(
+                    serverTerminalDeviceClient, item.ActionTargetId)
+                {
+                    Owner = this
+                }.ShowDialog();
+                break;
+            default:
+                workspace.StatusText =
+                    $"{item.TargetTitle} 항목은 변경 이력의 원본 감사 상세에서 확인하세요.";
+                break;
+        }
+    }
+
+    private void OpenReadinessDocumentApproval(string documentId)
+    {
+        if (!canRegisterDocuments || serverHttpClient is null)
+        {
+            workspace.StatusText =
+                "문서 승인 작업함은 문서 작성 권한과 서버 연결이 필요합니다.";
+            return;
+        }
+        new DocumentApprovalWindow(
+            new FlowNoteServerApprovalClient(serverHttpClient),
+            canRegisterDocuments,
+            canGovernDocuments,
+            documentId,
+            services.ServerSync)
+        {
+            Owner = this
+        }.ShowDialog();
+    }
+
+    private void OpenReadinessFieldComment(ServerOperationalReadinessItem item)
+    {
+        if (!EnsureReportWriteAllowed()) return;
+        var blocker = item.BlockerCodes.FirstOrDefault();
+        var workbench = blocker switch
+        {
+            "FIELD_COMMENT_REVIEW_OVERDUE" => "OVERDUE",
+            "FIELD_COMMENT_REPORT_UNLINKED" => "REPORT_UNLINKED",
+            "FIELD_COMMENT_SOURCE_CONFLICT" => "CONFLICT",
+            "FIELD_COMMENT_UNASSIGNED" => "UNASSIGNED",
+            _ => "ALL"
+        };
+        new FieldCommentReviewWindow(
+            services.FieldComments,
+            services.ServerSync,
+            GetCurrentActorName(),
+            currentUser.UserId,
+            serverDocumentClient,
+            services.Reports,
+            GetSelectedFolderOrDefault().Id,
+            workbench,
+            item.ActionTargetId)
+        {
+            Owner = this
+        }.ShowDialog();
+        RefreshSyncState();
+    }
+
+    private void OpenReadinessWorkSequence(string boardId)
+    {
+        if (!EnsureDocumentRegistrationAllowed()) return;
+        new WorkSequenceAdminWindow(
+            services.WorkSequences,
+            serverDocumentClient,
+            serverChannelClient,
+            GetCurrentUserId(),
+            boardId)
+        {
+            Owner = this
+        }.ShowDialog();
+    }
+
+    private void OpenReadinessReport(string reportId)
+    {
+        if (!EnsureReportWriteAllowed()) return;
+        var folder = GetSelectedFolderOrDefault();
+        new ReportDraftWindow(
+            services.Reports,
+            folder.Id,
+            GetCurrentActorName(),
+            serverDocumentClient,
+            initialReportId: reportId)
+        {
+            Owner = this
+        }.ShowDialog();
+    }
+
+    private void OpenReadinessReconciliation(string itemId)
+    {
+        new HistoryWindow(
+            services.History,
+            services.ServerSync,
+            services.ServerReconciliation,
+            serverDocumentClient,
+            currentUser.UserId,
+            currentUser.Role ?? string.Empty,
+            ResumeServerTrafficAfterReconciliationAsync,
+            itemId)
+        {
+            Owner = this
+        }.ShowDialog();
+        RefreshSyncState();
+    }
+
     private void OpenChangeHistoryAction(ServerChangeHistoryItem item)
     {
         switch (item.ActionRoute)

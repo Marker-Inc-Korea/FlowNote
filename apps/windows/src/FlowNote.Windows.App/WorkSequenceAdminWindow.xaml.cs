@@ -13,6 +13,7 @@ public partial class WorkSequenceAdminWindow : Window
     private readonly FlowNoteServerDocumentClient? serverClient;
     private readonly FlowNoteServerChannelClient? channelClient;
     private readonly string actorId;
+    private readonly string? initialBoardId;
     private readonly WorkSequenceWorkspace workspace = new();
     private bool hasAuthoritativeSnapshot;
     private bool refreshing;
@@ -21,19 +22,21 @@ public partial class WorkSequenceAdminWindow : Window
         WorkSequenceService localWorkSequences,
         FlowNoteServerDocumentClient? serverClient,
         FlowNoteServerChannelClient? channelClient,
-        string actorId)
+        string actorId,
+        string? initialBoardId = null)
     {
         InitializeComponent();
         this.localWorkSequences = localWorkSequences;
         this.serverClient = serverClient;
         this.channelClient = channelClient;
         this.actorId = actorId;
+        this.initialBoardId = initialBoardId;
         DataContext = workspace;
         Loaded += WorkSequenceAdminWindow_Loaded;
     }
 
     private async void WorkSequenceAdminWindow_Loaded(object sender, RoutedEventArgs e) =>
-        await RefreshBoardsAsync();
+        await RefreshBoardsAsync(initialBoardId);
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) =>
         await RefreshBoardsAsync(CurrentBoard()?.BoardId);

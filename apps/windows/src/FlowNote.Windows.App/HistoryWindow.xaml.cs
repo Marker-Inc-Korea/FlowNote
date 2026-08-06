@@ -16,6 +16,7 @@ public partial class HistoryWindow : Window
     private readonly string? serverUserId;
     private readonly string serverUserRole;
     private readonly Func<Task<string>>? resumeServerTraffic;
+    private readonly string? initialReconciliationItemId;
 
     public HistoryWindow(
         HistoryService history,
@@ -24,7 +25,8 @@ public partial class HistoryWindow : Window
         FlowNoteServerDocumentClient? serverDocumentClient,
         string? serverUserId,
         string serverUserRole,
-        Func<Task<string>>? resumeServerTraffic = null)
+        Func<Task<string>>? resumeServerTraffic = null,
+        string? initialReconciliationItemId = null)
     {
         InitializeComponent();
         this.history = history;
@@ -34,6 +36,7 @@ public partial class HistoryWindow : Window
         this.serverUserId = serverUserId;
         this.serverUserRole = serverUserRole;
         this.resumeServerTraffic = resumeServerTraffic;
+        this.initialReconciliationItemId = initialReconciliationItemId;
         ReconciliationReasonTextBox.TextChanged += (_, _) => UpdateApprovalButtonState();
         ReconciliationRiskAcknowledgementCheckBox.Checked += (_, _) => UpdateApprovalButtonState();
         ReconciliationRiskAcknowledgementCheckBox.Unchecked += (_, _) => UpdateApprovalButtonState();
@@ -53,6 +56,16 @@ public partial class HistoryWindow : Window
             .Select(ReconciliationRow.FromRecord)
             .ToList();
         ReconciliationGrid.ItemsSource = items;
+        if (!string.IsNullOrWhiteSpace(initialReconciliationItemId))
+        {
+            var selected = items.FirstOrDefault(item =>
+                item.ItemId == initialReconciliationItemId);
+            if (selected is not null)
+            {
+                ReconciliationGrid.SelectedItem = selected;
+                ReconciliationGrid.ScrollIntoView(selected);
+            }
+        }
         var reviewRun = serverReconciliation.GetLatestReviewRunId();
         var reviewItems = reviewRun is null
             ? []
@@ -705,6 +718,7 @@ public partial class HistoryWindow : Window
     }
 
     private sealed record ReconciliationRow(
+        string ItemId,
         string RunId,
         string VerdictText,
         string ActionText,
@@ -717,6 +731,7 @@ public partial class HistoryWindow : Window
         string Details)
     {
         public static ReconciliationRow FromRecord(LocalReconciliationItem item) => new(
+            item.ItemId,
             item.RunId,
             ReconciliationDecisionGuidance.VerdictText(item.Verdict),
             ReconciliationDecisionGuidance.ActionText(item.ProposedAction),

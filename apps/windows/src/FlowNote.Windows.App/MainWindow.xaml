@@ -123,6 +123,10 @@
                                   Header="변경 이력"
                                   Style="{StaticResource HeaderSubmenuItemStyle}"
                                   Click="ChangeHistoryButton_Click" />
+                        <MenuItem x:Name="OperationalReadinessButton"
+                                  Header="운영 준비도"
+                                  Style="{StaticResource HeaderSubmenuItemStyle}"
+                                  Click="OperationalReadinessButton_Click" />
                         <MenuItem Header="로컬 이력"
                                   Style="{StaticResource HeaderSubmenuItemStyle}"
                                   Click="HistoryButton_Click" />

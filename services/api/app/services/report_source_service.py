@@ -260,6 +260,33 @@ def _validate_source(
     return source_type, source_id, source_version_id, source_revision, relation_type, source_hash
 
 
+def frozen_report_source_matches_current(
+    session: Session,
+    source: ReportSource,
+    current_user: CurrentUser,
+) -> bool:
+    """Compare a frozen report source with the same authority rules used by mutations."""
+    try:
+        source_type, source_id, version_id, revision, _, source_hash = _validate_source(
+            session,
+            FrozenReportSourceInput(
+                source_type=source.source_type,
+                source_id=source.source_id,
+                source_version_id=source.source_version_id,
+                relation_type=source.relation_type,
+            ),
+            current_user,
+        )
+    except HTTPException:
+        return False
+    return (
+        (source_type, source_id, version_id)
+        == (source.source_type, source.source_id, source.source_version_id)
+        and source_hash == source.source_hash_sha256
+        and (source.source_revision is None or source.source_revision == revision)
+    )
+
+
 def _hash_payload(payload: dict) -> str:
     value = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
