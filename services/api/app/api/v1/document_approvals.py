@@ -10,7 +10,11 @@ from sqlalchemy import desc, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.v1.document_support import claim_revision, clean_idempotency_key
+from app.api.v1.document_support import (
+    claim_revision,
+    clean_idempotency_key,
+    conflict as document_conflict,
+)
 from app.core.auth import (
     DOCUMENT_GOVERNANCE_ROLES,
     DocumentReviewUser,
@@ -763,12 +767,26 @@ def validate_publication_approval(
     if not settings.document_approval_workflow_enforced:
         return None
     if not approval_id:
-        raise HTTPException(status_code=409, detail={"code": "APPROVAL_REQUIRED", "message": "승인된 검토 요청 ID가 있어야 공개할 수 있습니다."})
+        raise document_conflict(
+            "APPROVAL_REQUIRED",
+            "승인된 검토 요청 ID가 있어야 공개할 수 있습니다.",
+            document=document,
+        )
     approval = _require_approval(session, approval_id)
     if approval.status == "STALE":
-        raise HTTPException(status_code=409, detail={"code": "APPROVAL_STALE", "message": "승인 대상이 변경되어 공개할 수 없습니다. 새 검토 요청이 필요합니다."})
+        raise document_conflict(
+            "APPROVAL_STALE",
+            "승인 대상이 변경되어 공개할 수 없습니다. 새 검토 요청이 필요합니다.",
+            document=document,
+            expected_revision=approval.base_document_revision,
+        )
     if approval.status in {"REQUESTED", "REJECTED", "CANCELLED"}:
-        raise HTTPException(status_code=409, detail={"code": "APPROVAL_NOT_APPROVED", "message": "승인 완료된 정확한 버전만 공개할 수 있습니다."})
+        raise document_conflict(
+            "APPROVAL_NOT_APPROVED",
+            "승인 완료된 정확한 버전만 공개할 수 있습니다.",
+            document=document,
+            expected_revision=approval.base_document_revision,
+        )
     mismatch = (
         approval.document_id != document.document_id
         or approval.version_id != version.version_id
@@ -779,7 +797,12 @@ def validate_publication_approval(
     if mismatch:
         mark_approval_stale(session, approval, document, actor, "승인 뒤 version, revision 또는 file hash가 바뀌었습니다.")
         session.commit()
-        raise HTTPException(status_code=409, detail={"code": "APPROVAL_STALE", "message": "승인 대상이 변경되어 공개할 수 없습니다. 새 검토 요청이 필요합니다."})
+        raise document_conflict(
+            "APPROVAL_STALE",
+            "승인 대상이 변경되어 공개할 수 없습니다. 새 검토 요청이 필요합니다.",
+            document=document,
+            expected_revision=approval.base_document_revision,
+        )
     already_published = (
         approval.status == "PUBLISHED"
         and document.publication_approval_id == approval.approval_id
@@ -789,10 +812,20 @@ def validate_publication_approval(
     if not already_published and (
         approval.status != "APPROVED" or version.version_status != "APPROVED"
     ):
-        raise HTTPException(status_code=409, detail={"code": "APPROVAL_NOT_APPROVED", "message": "승인 완료된 정확한 버전만 공개할 수 있습니다."})
+        raise document_conflict(
+            "APPROVAL_NOT_APPROVED",
+            "승인 완료된 정확한 버전만 공개할 수 있습니다.",
+            document=document,
+            expected_revision=approval.base_document_revision,
+        )
     separation = settings.document_approval_requester_publisher_separation
     if approval.requester_id == actor.user_id and separation is None:
-        raise HTTPException(status_code=409, detail={"code": "APPROVAL_SEPARATION_POLICY_REQUIRED", "message": "요청자와 공개자의 분리 정책을 현장 설정에서 먼저 정해야 합니다."})
+        raise document_conflict(
+            "APPROVAL_SEPARATION_POLICY_REQUIRED",
+            "요청자와 공개자의 분리 정책을 현장 설정에서 먼저 정해야 합니다.",
+            document=document,
+            expected_revision=approval.base_document_revision,
+        )
     if approval.requester_id == actor.user_id and separation:
         raise HTTPException(status_code=403, detail={"code": "APPROVAL_SEPARATION_REQUIRED", "message": "현장 정책에 따라 요청자와 다른 공개 권한자가 공개해야 합니다."})
     return approval

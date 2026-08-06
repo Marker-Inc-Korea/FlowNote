@@ -9,7 +9,7 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.core.config import Settings
 from app.core.storage import resolve_storage_root, store_upload_file
@@ -67,6 +67,18 @@ class DocumentVersionResponse(BaseModel):
     file: FileObjectResponse
 
 
+class DocumentAuthoritySnapshot(BaseModel):
+    revision: int
+    status: str
+    deleted: bool
+    latest_version_id: str | None
+    latest_version_hash_sha256: str | None
+    published_version_id: str | None
+    published_version_hash_sha256: str | None
+    tags: list[str] = Field(default_factory=list)
+    allowed_actions: list[str] = Field(default_factory=list)
+
+
 class DocumentResponse(BaseModel):
     document_id: str
     title: str
@@ -78,6 +90,11 @@ class DocumentResponse(BaseModel):
     revision: int
     latest_version_id: str | None
     published_version_id: str | None
+    latest_version_hash_sha256: str | None = None
+    published_version_hash_sha256: str | None = None
+    deleted: bool = False
+    server_tag_snapshot: list[str] = Field(default_factory=list)
+    allowed_actions: list[str] = Field(default_factory=list)
     publication_approval_id: str | None = None
     publication_origin: str = "LEGACY_PUBLICATION"
     created_at: datetime
@@ -85,6 +102,7 @@ class DocumentResponse(BaseModel):
     tags: list[str] = Field(default_factory=list)
     latest_version: DocumentVersionResponse | None = None
     published_version: DocumentVersionResponse | None = None
+    authoritative_snapshot: DocumentAuthoritySnapshot | None = None
 
 
 class DocumentListItem(BaseModel):
@@ -241,13 +259,15 @@ def document_tag_intent_hash(
     added_tags: list[str],
     removed_tags: list[str],
 ) -> str:
+    added_codes = sorted({_normalize_tag_code(tag) for tag in added_tags})
+    removed_codes = sorted({_normalize_tag_code(tag) for tag in removed_tags})
     canonical = "\n".join(
         [
             "document-tags-v1",
             document_id,
             str(base_revision),
-            "add:" + ",".join(sorted(_normalize_tag_code(tag) for tag in added_tags)),
-            "remove:" + ",".join(sorted(_normalize_tag_code(tag) for tag in removed_tags)),
+            "add:" + ",".join(added_codes),
+            "remove:" + ",".join(removed_codes),
         ]
     )
     return sha256(canonical.encode("utf-8")).hexdigest()
@@ -263,30 +283,12 @@ def document_mutation_replay(
     if mutation_key is None:
         return None
     event_type = document_mutation_event_type(mutation_type)
-    common_receipt = check_common_mutation_replay(
-        session,
-        operation_key=mutation_key,
-        intent_hash=intent_hash,
-        event_type=event_type,
-        target_type="document",
-        target_id=document_id,
-    )
     receipt = session.scalar(
         select(DocumentMutationReceipt).where(
             DocumentMutationReceipt.mutation_key == mutation_key
         )
     )
-    if receipt is None:
-        if common_receipt is not None:
-            raise conflict(
-                "COMMON_RECEIPT_LINK_BROKEN",
-                "The common receipt has no matching document receipt.",
-                document=session.scalar(
-                    select(Document).where(Document.document_id == document_id)
-                ),
-            )
-        return None
-    if (
+    if receipt is not None and (
         receipt.mutation_type != mutation_type
         or receipt.document_id != document_id
         or receipt.intent_hash_sha256 != intent_hash
@@ -298,6 +300,39 @@ def document_mutation_replay(
                 select(Document).where(Document.document_id == document_id)
             ),
         )
+    try:
+        common_receipt = check_common_mutation_replay(
+            session,
+            operation_key=mutation_key,
+            intent_hash=intent_hash,
+            event_type=event_type,
+            target_type="document",
+            target_id=document_id,
+        )
+    except HTTPException as error:
+        if (
+            error.status_code == status.HTTP_409_CONFLICT
+            and isinstance(error.detail, dict)
+            and error.detail.get("code") == "IDEMPOTENCY_KEY_REUSED"
+        ):
+            raise conflict(
+                "IDEMPOTENCY_KEY_REUSED",
+                "The mutation key was retried with a different document mutation intent.",
+                document=session.scalar(
+                    select(Document).where(Document.document_id == document_id)
+                ),
+            ) from error
+        raise
+    if receipt is None:
+        if common_receipt is not None:
+            raise conflict(
+                "COMMON_RECEIPT_LINK_BROKEN",
+                "The common receipt has no matching document receipt.",
+                document=session.scalar(
+                    select(Document).where(Document.document_id == document_id)
+                ),
+            )
+        return None
     return DocumentResponse.model_validate_json(receipt.response_json)
 
 
@@ -398,17 +433,16 @@ def conflict(
     extra: dict[str, object | None] | None = None,
 ) -> HTTPException:
     conflict_kind, allowed_actions = document_conflict_policy(code)
+    snapshot = _conflict_authoritative_snapshot(document, allowed_actions)
     server_value = {
-        "revision": document.revision if document is not None else None,
-        "status": document.status if document is not None else None,
-        "latestVersionId": document.latest_version_id if document is not None else None,
-        "publishedVersionId": (
-            document.published_version_id if document is not None else None
-        ),
-        "deleted": bool(
-            document is not None
-            and (document.deleted_at is not None or document.status == "DELETED")
-        ),
+        "revision": snapshot.get("revision"),
+        "status": snapshot.get("status"),
+        "latestVersionId": snapshot.get("latestVersionId"),
+        "latestVersionHashSha256": snapshot.get("latestVersionHashSha256"),
+        "publishedVersionId": snapshot.get("publishedVersionId"),
+        "publishedVersionHashSha256": snapshot.get("publishedVersionHashSha256"),
+        "deleted": snapshot.get("deleted"),
+        "tags": snapshot.get("tags"),
     }
     detail: dict[str, object | None] = {
         "schemaVersion": "document-conflict-v1",
@@ -424,6 +458,7 @@ def conflict(
             document.published_version_id if document is not None else None
         ),
         "serverValue": server_value,
+        "authoritativeSnapshot": snapshot,
         "localRequest": {"baseRevision": expected_revision},
         "baseSnapshotHash": None,
         "allowedActions": allowed_actions,
@@ -435,13 +470,22 @@ def conflict(
         },
     }
     if extra:
-        detail.update(extra)
+        merged_extra = dict(extra)
+        extra_server_value = merged_extra.pop("serverValue", None)
+        if isinstance(extra_server_value, dict):
+            server_value.update(extra_server_value)
+        extra_allowed_actions = merged_extra.get("allowedActions")
+        if isinstance(extra_allowed_actions, list):
+            snapshot["allowedActions"] = extra_allowed_actions
+        detail.update(merged_extra)
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
 def document_conflict_policy(code: str) -> tuple[str, list[str]]:
     if code.startswith("TAG_"):
-        return "TAG_SET", ["KEEP_SERVER", "RETRY_WITH_LATEST"]
+        return "TAG_SET", ["KEEP_SERVER", "RETRY_WITH_LATEST", "REAPPLY_TAG_DELTA"]
+    if code.startswith("APPROVAL_"):
+        return "PUBLICATION_APPROVAL", ["KEEP_SERVER"]
     if code in {"STALE_BASE_VERSION", "FILE_HASH_MISMATCH"}:
         return "CONTENT_VERSION", ["KEEP_SERVER", "REGISTER_NEW_VERSION"]
     if code == "PUBLISHED_VERSION_CHANGED":
@@ -456,6 +500,41 @@ def document_conflict_policy(code: str) -> tuple[str, list[str]]:
     }:
         return "MUTATION_IDENTITY", ["KEEP_SERVER"]
     return "DOCUMENT_STATE", ["KEEP_SERVER", "RETRY_WITH_LATEST"]
+
+
+def _conflict_authoritative_snapshot(
+    document: Document | None,
+    allowed_actions: list[str],
+) -> dict[str, object | None]:
+    if document is None:
+        return {
+            "revision": None,
+            "status": None,
+            "deleted": False,
+            "latestVersionId": None,
+            "latestVersionHashSha256": None,
+            "publishedVersionId": None,
+            "publishedVersionHashSha256": None,
+            "tags": [],
+            "allowedActions": allowed_actions,
+        }
+    session = object_session(document)
+    latest = latest_version_for_document(session, document.document_id) if session else None
+    published = (
+        published_version_for_document(session, document.document_id) if session else None
+    )
+    tags = tag_response(session, document.document_id) if session else []
+    return {
+        "revision": document.revision,
+        "status": document.status,
+        "deleted": document.deleted_at is not None or document.status == "DELETED",
+        "latestVersionId": document.latest_version_id,
+        "latestVersionHashSha256": latest[1].hash_sha256 if latest else None,
+        "publishedVersionId": document.published_version_id,
+        "publishedVersionHashSha256": published[1].hash_sha256 if published else None,
+        "tags": tags,
+        "allowedActions": allowed_actions,
+    }
 
 
 def require_live_document(session: Session, document_id: str) -> Document:
@@ -597,6 +676,26 @@ def document_tags_at_revision(
         return None
     value = json.loads(snapshot.tags_json)
     return [str(tag) for tag in value] if isinstance(value, list) else None
+
+
+def document_revisions_since_are_tag_only(
+    session: Session,
+    document_id: str,
+    base_revision: int,
+    current_revision: int,
+) -> bool:
+    if base_revision >= current_revision:
+        return True
+    tag_revisions = set(
+        session.scalars(
+            select(DocumentTagRevision.document_revision).where(
+                DocumentTagRevision.document_id == document_id,
+                DocumentTagRevision.document_revision > base_revision,
+                DocumentTagRevision.document_revision <= current_revision,
+            )
+        ).all()
+    )
+    return tag_revisions == set(range(base_revision + 1, current_revision + 1))
 
 
 def _ensure_tag(session: Session, name: str, *, tag_type: str = "custom") -> TagDefinition:
@@ -771,6 +870,11 @@ def document_response(session: Session, document: Document) -> DocumentResponse:
         revision=document.revision,
         latest_version_id=document.latest_version_id,
         published_version_id=document.published_version_id,
+        latest_version_hash_sha256=latest[1].hash_sha256 if latest else None,
+        published_version_hash_sha256=published[1].hash_sha256 if published else None,
+        deleted=document.deleted_at is not None or document.status == "DELETED",
+        server_tag_snapshot=tags,
+        allowed_actions=[],
         publication_approval_id=document.publication_approval_id,
         publication_origin=document.publication_origin,
         created_at=document.created_at,
@@ -778,6 +882,17 @@ def document_response(session: Session, document: Document) -> DocumentResponse:
         tags=tags,
         latest_version=latest_response,
         published_version=published_response,
+        authoritative_snapshot=DocumentAuthoritySnapshot(
+            revision=document.revision,
+            status=document.status,
+            deleted=document.deleted_at is not None or document.status == "DELETED",
+            latest_version_id=document.latest_version_id,
+            latest_version_hash_sha256=latest[1].hash_sha256 if latest else None,
+            published_version_id=document.published_version_id,
+            published_version_hash_sha256=published[1].hash_sha256 if published else None,
+            tags=tags,
+            allowed_actions=[],
+        ),
     )
 
 

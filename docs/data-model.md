@@ -49,8 +49,9 @@ WPF DB에는 다음 수렴 필드가 additive 방식으로 구현되었다. 기�
 | `server_sync_queue.payload_json` | 상태·태그처럼 enqueue 시점의 변경 의도를 고정해야 하는 신규 action의 정규화 snapshot. 구 큐의 NULL은 보존 |
 | `server_sync_queue.server_conflict_hash_sha256` | 충돌 시 read-only 서버 상세에서 확인한 상대 파일 hash. 로컬 hash, 충돌 원문, 해결 감사와 함께 보존 |
 | `documents.server_tags_json` | WPF가 마지막으로 확인한 서버 권위 태그 집합. 다음 태그 큐의 추가/제거 delta 기준이며 로컬 편집 태그와 별도로 보존 |
+| `server_id_mappings.server_published_version_id` | 상세 read-back에서 확인한 서버 공개 버전 포인터. 문서·버전 mapping의 revision/hash와 함께 갱신 |
 
-현재 WPF UI의 문서 공개는 `server_sync_queue`에 새 항목을 만들지 않고 서버 승인 작업함에서 직접 처리한다. 로컬 DB의 `document_publish/publish_document_version` 큐와 처리 코드는 누적 이력·호환 목적으로 남아 있으며, 승인 강제 기본값에서는 승인 ID가 없어 자동 공개할 수 없다. 이 행들은 삭제하거나 현재 승인 이력으로 추정해 바꾸지 않는다.
+현재 WPF UI의 문서 공개는 서버 승인 작업함에서 직접 처리한다. 공개 API 응답과 상세 read-back이 일치하면 `documents`, `document_versions`, `document_tags`, `server_id_mappings`와 `apply_approval_publication_read_back` 성공 큐 receipt, `activity_history`를 한 로컬 transaction으로 반영한다. transaction이 실패하면 전부 rollback하고, 승인 작업함 새로고침에서 서버의 `PUBLISHED` 승인·공개 포인터·승인 ID를 다시 읽어 복구한다. 로컬 DB의 구 `document_publish/publish_document_version` 큐와 처리 코드는 누적 이력·호환 목적으로 남아 있으며 승인 강제 기본값에서는 승인 ID가 없어 자동 공개할 수 없다. 구 행은 삭제하거나 현재 승인 이력으로 추정해 바꾸지 않는다.
 
 `local_schema_versions`, `server_sync_scopes`, `server_id_mappings.server_epoch`은 아직 구현되지 않은 후속 수렴 모델이다. 현재 복구 binding과 판정 이력은 각각 `server_bindings`, `reconciliation_runs`, `reconciliation_items`에 구현되어 있다.
 
@@ -136,6 +137,10 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 `audit_event_envelopes`와 `sync_mutation_receipts`는 migration `0002_common_mutation_receipts`에서 additive 방식으로 추가한다. `0003_document_approval_workflow`는 승인 테이블 3개와 `documents.publication_approval_id`, `documents.publication_origin`을 추가한다. 기존 `activity_history`와 도메인 receipt를 이동·수정·백필하지 않으며, 이전 공개본은 승인 근거를 추정하지 않고 `LEGACY_PUBLICATION`으로 둔다. 공통 행이 없는 이전 감사는 조회 시 `이전 형식·일부 필드 없음`으로 표시하고 role·session·revision·result 같은 누락값을 추정하지 않는다.
 
 `sync_mutation_receipts.operation_key`는 서버 전체에서 UNIQUE다. 같은 key·같은 event/target/intent는 최초 성공 또는 거부·충돌 결과로 수렴하고 같은 key의 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`로 거부한다. 성공 행은 기존 `document_mutation_receipts`, `document_approval_mutation_receipts`, `field_comment_review_mutation_receipts`, `report_mutation_receipts`, `work_sequence_mutation_receipts`의 테이블명과 PK를 연결한다. 업무 변경, 도메인 receipt, 공통 envelope/receipt는 같은 transaction에서 commit한다. 문서 상태, FieldComment 검토, 보고서 상태 전이, 작업순서 항목 상태의 거부·충돌은 업무 transaction을 rollback한 뒤 공통 거부 receipt만 별도 transaction으로 확정하며 업무 row가 바뀌지 않았음을 revision으로 검증한다.
+
+문서 태그 intent의 canonical 문자열은 UTF-8, LF 구분의 `document-tags-v1`, 서버 문서 ID, 10진수 base revision, `add:` 행, `remove:` 행 순서다. 태그 코드는 trim·소문자화·공백 묶음의 `-` 치환 뒤 중복을 제거하고 ordinal 오름차순으로 정렬해 쉼표로 잇는다. SHA-256은 이 문자열의 바이트에 적용한다. base revision 뒤의 모든 aggregate revision에 정확한 `document_tag_revisions` 행이 있을 때만 태그끼리의 경쟁으로 보고 자동 병합한다. 상태·버전·승인·공개·삭제가 만든 revision이 하나라도 섞이면 `TAG_AGGREGATE_CHANGED` 409다.
+
+공개 승인을 취소해 현재 `documents.publication_approval_id`와 일치하던 공개본을 철회하면 문서와 해당 버전은 `WORKING`, 공개 포인터와 공개 flag는 NULL/false가 된다. 공개본을 교체하면 새 공개본의 승인 ID만 문서의 활성 `publication_approval_id`가 되며 이전 승인 projection과 이벤트는 `PUBLISHED` 역사 기록으로 보존한다. 서버에서 문서가 삭제된 뒤 남은 WPF 문서 큐는 모두 `DOCUMENT_DELETED`와 `KEEP_SERVER`만 허용하는 `CONFLICT`로 묶고, 관리자가 사유를 입력해야 `DISCARDED`로 종결한다. 원천 파일·로컬 문서·큐 행은 어느 단계에서도 삭제하지 않는다.
 
 공통 envelope의 필수 필드는 `event_type`, actor ID/role, session ID, target type/ID, result/result code/HTTP status, correlation ID, server time이다. operation key가 있는 mutation은 intent hash와 공통 receipt 연결도 필수다. device ID와 run ID는 요청 세션·헤더에 값이 있을 때만 저장하고 target version/revision·reason·approval·전후 hash는 아래 행위 계약을 따른다.
 

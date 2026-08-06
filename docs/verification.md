@@ -2,7 +2,7 @@
 
 ## 최신 유효 Windows x64 통합 기준선
 
-2026-08-04 현재 유효한 무생략 통합 기준선은 아직 없다. 아래 표는 기준선 확정 여부를 확인하는 단일 현황표다. `PASSED` 실행이 나온 뒤에도 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 재현 가능한 기준선으로 확정한다.
+2026-08-06 현재 유효한 무생략 통합 기준선은 아직 없다. 아래 표는 기준선 확정 여부를 확인하는 단일 현황표다. `PASSED` 실행이 나온 뒤에도 같은 커밋에서 새 `run_id`로 한 번 더 통과해야 재현 가능한 기준선으로 확정한다.
 
 | 항목 | 최신 유효 기준선 | 재현 실행 |
 | --- | --- | --- |
@@ -10,15 +10,29 @@
 | `run_id` | 없음 | 없음 |
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
-| FastAPI | 현재 수집 192건. 문서 승인·공개 집중 회귀와 transaction 예외 주입을 포함한다. 스크립트 guard 186건 | Windows x64 수집·JUnit 무생략 실행 대기 |
-| WPF Core | 현재 macOS 실행 109/109, 스크립트 guard 102건 | Windows 수집·TRX 무생략 실행 대기 |
+| FastAPI | 현재 macOS 실행 194/194. 문서 승인·공개, 태그 aggregate 충돌과 canonical intent 회귀를 포함한다. 스크립트 guard 186건 | Windows x64 수집·JUnit 무생략 실행 대기 |
+| WPF Core | 현재 macOS 실행 110/110, 스크립트 guard 102건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 현재 macOS 교차 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
 | Android | 현재 단위 테스트 32/32, debug build·lint PASS, 스크립트 고정값 32건 | Windows 무생략 실행 대기 |
 | SQLite | FastAPI 누적 시험 DB `journal_mode=wal`, `quick_check=ok`, FK 위반 0. Windows 공통 DB 전후 검증 대기 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
-보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했다. 로그인 복구 안내 회귀 2건을 더한 2026-08-01 직접 실행은 89/89가 통과했다. 인수인계 감독 집계 테스트까지 포함한 98건이 통과한 뒤 문서 미리보기 회귀 3건을 추가한 시점에는 101/101이었다. 책임 분리 회귀 1건과 문서 충돌 회귀 5건을 더한 시점에는 107/107이었다. 문서 승인 서버 클라이언트 회귀 2건을 추가한 현재 macOS 실행은 109/109이다. Windows x64의 새 수집 목록과 TRX가 109/109인지 별도로 확인하고 스크립트 guard도 현재 수치에 맞춰야 한다.
+보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했다. 로그인 복구 안내 회귀 2건을 더한 2026-08-01 직접 실행은 89/89가 통과했다. 인수인계 감독 집계 테스트까지 포함한 98건이 통과한 뒤 문서 미리보기 회귀 3건을 추가한 시점에는 101/101이었다. 책임 분리 회귀 1건과 문서 충돌 회귀 5건을 더한 시점에는 107/107이었다. 문서 승인 서버 클라이언트 회귀 2건을 추가한 시점에는 109/109였고, 승인 공개 read-back 로컬 수렴 회귀 1건을 더한 현재 macOS 실행은 110/110이다. Windows x64의 새 수집 목록과 TRX가 110/110인지 별도로 확인하고 스크립트 guard도 현재 수치에 맞춰야 한다.
+
+## 2026-08-06 서버-WPF 태그·버전·상태·공개본 동기화 정책 고도화
+
+- 두 WPF client가 같은 base에서 서로 다른 태그를 추가하면 두 요청이 수렴하고, 같은 태그의 반대 변경·비활성·삭제 태그는 전체 요청 409로 남는지 확인한다.
+- base 뒤 태그 revision만 있으면 비경합 delta를 병합하고, 상태·새 버전·승인·공개·삭제 revision이 하나라도 섞이면 `TAG_AGGREGATE_CHANGED`와 authoritative snapshot을 반환하는지 확인한다.
+- 성공 응답과 모든 문서 409에 revision, 상태, 삭제 여부, latest/published ID와 hash, 서버 태그 snapshot, 허용 행동이 있는지 대조한다.
+- 같은 mutation key·같은 canonical intent 재전송은 document/domain/common receipt, audit, 공개 이벤트와 revision 수를 늘리지 않고 최초 결과를 재생하며, 같은 key·다른 intent는 `IDEMPOTENCY_KEY_REUSED` 409인지 확인한다.
+- WPF 직접 공개 뒤 `documents.status/published_version_no/server_revision/server_published_version_id/server_tags_json`, `document_versions.is_published/version_status`, `server_id_mappings`, 성공 큐 receipt와 이력이 한 transaction으로 바뀌는지 확인한다. 같은 read-back 재적용과 앱 재시작은 성공 큐·이력을 늘리지 않아야 한다.
+- 공개 응답 유실, 로컬 transaction 실패, 503, timeout 뒤 승인 작업함 새로고침이 서버 `PUBLISHED` 승인 ID와 문서 상세를 읽어 복구하거나 “서버 공개 여부 미확인 / 로컬 원천·큐 보존”을 분리해 안내하는지 확인한다.
+- 공개 취소 뒤 문서·대상 버전이 `WORKING`이고 공개 포인터/flag가 제거되는지, 공개 교체 뒤 활성 승인 ID가 새 공개본과 일치하며 이전 승인 이벤트가 보존되는지 확인한다.
+- `DOCUMENT_DELETED`를 받은 문서의 미처리 큐가 모두 자동 재전송 금지 `CONFLICT`가 되고 `KEEP_SERVER`만 허용하는지, 관리자 사유 뒤 `DISCARDED`로 종결해도 파일·문서·큐·누적 이력이 남는지 확인한다.
+- 충돌 화면을 키보드만으로 탐색해 `서버본 유지`, `새 revision으로 다시 요청`, `로컬 태그 delta만 재적용`, 취소를 수행한다. 공개본·삭제에는 태그 재적용 행동이 없고 상태를 아이콘·문구로도 구분하는지 200% 확대에서 확인한다.
+
+`services/api`에서 변경 파일 Ruff 검사와 문서 태그·승인·문서 API 집중 회귀 25/25가 통과했다. 이어 `.venv/bin/python -m pytest -q`로 FastAPI 전체 194/194를 확인했다. WPF Core 전체 회귀는 110/110이 통과했고, WPF 앱은 `EnableWindowsTargeting=true`를 사용한 macOS 교차 빌드에서 경고·오류 0건이었다. 두 실제 WPF 프로세스, Windows 200% 확대/키보드 실기, 실제 503·timeout·프로세스 재시작 조합은 수행하지 않았으므로 추가 확인이 필요하다.
 
 ## 2026-08-04 작업 201 전체 Markdown 현재 코드 재대조
 

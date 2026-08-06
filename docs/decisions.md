@@ -1,6 +1,6 @@
 # FlowNote 설계 결정
 
-이 문서는 2026-08-04 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
+이 문서는 2026-08-06 현재 코드와 유효한 결정을 함께 기록한다. 대체된 결정은 현재 동작으로 오해되지 않도록 대체 사실만 남긴다.
 
 ## 2026-08-03. 보고서 작성은 FieldComment 정제에서 시작해 단계형 상태와 고정 원천으로 끝낸다
 
@@ -25,10 +25,14 @@
 
 - WPF 태그 큐는 마지막 서버 `revision`과 `server_tags_json`을 기준으로 추가 태그, 제거 태그, canonical `intentHash`, 안정된 `mutationKey`를 보존한다. 문서 최초 등록 전 만든 큐는 등록 응답의 revision과 태그 집합으로 delta를 한 번 확정한 뒤 같은 큐 row를 전송한다.
 - 서버는 `document_tag_revisions`에서 기준 태그 집합을 복원한다. 기준 이후 서버 변경과 겹치지 않는 태그 delta만 현재 집합에 병합하며 같은 태그의 반대 방향 변경, 비활성·삭제 태그, 기준 snapshot 부재는 구조화된 409로 남긴다.
+- 기준 revision 이후 모든 aggregate revision 번호에 태그 snapshot이 있을 때만 태그끼리의 변경으로 인정한다. 상태·버전·승인·공개·삭제 revision이 섞이면 `TAG_AGGREGATE_CHANGED`로 전체 요청을 거부한다.
 - 태그 병합은 파일 내용과 version hash, 문서·버전 상태, `published_version_id`, 삭제를 바꾸지 않는다. 이 값의 경쟁은 기존 stale/base/hash/공개본/삭제 충돌로 보존하고 관리자가 로컬 재시도 또는 서버본 유지 사유를 선택한다.
 - 태그 mutation과 receipt, revision snapshot, 감사 이력은 한 서버 transaction에 저장한다. WPF는 응답과 상세 read-back의 revision·태그·공개 포인터·최신 version ID/hash를 로컬 문서, 태그 관계, mapping, 큐 종결, 이력에 한 SQLite transaction으로 반영한다.
 - 응답 유실과 앱 재시작 뒤에는 같은 mutation key와 같은 delta/hash를 재전송한다. 서버 receipt 재생은 revision과 감사 이력을 늘리지 않으며 WPF는 로컬 transaction이 끝나기 전 큐를 `SYNCED`로 표시하지 않는다.
-- 충돌 작업함은 `서버 값`, `보존된 로컬 요청`, `자동 병합 가능`, `사용자 선택 필요`를 분리한다. 태그 충돌에서 관리자가 최신 서버본 기준 로컬 재시도를 선택하면 base revision과 intent hash를 명시적으로 다시 계산하고 해결자·사유·시각을 남긴다.
+- 충돌 작업함은 `서버 값`, `보존된 로컬 요청`, `자동 병합 가능`, `사용자 선택 필요`를 분리한다. 태그 충돌에서 관리자가 로컬 태그 delta 재적용을 선택하면 최신 base revision으로 intent hash를 다시 계산하고 해결자·사유·시각을 남긴다.
+- 태그 재적용은 `REAPPLY_TAG_DELTA`, 다른 명시적 재요청은 `RETRY_AS_NEW_REVISION`, 서버본 유지는 `KEEP_SERVER`로 구분한다. 공개본과 삭제에는 태그 재적용이나 자동 적용을 제공하지 않는다.
+- 공개 성공 응답은 상세 read-back 뒤 WPF 문서·버전 flag·mapping·태그·로컬 성공 큐 receipt·이력에 한 transaction으로 반영한다. 응답 유실이나 로컬 rollback은 승인 작업함 새로고침의 `PUBLISHED` 승인/문서 read-back으로 복구한다.
+- 공개 승인 취소 뒤 상태는 `WORKING`으로 고정한다. 공개 교체 시 문서가 가리키는 활성 승인 ID만 새 ID로 바꾸고 과거 승인·이벤트는 역사 기록으로 보존한다. 서버 삭제 뒤 미처리 로컬 큐는 `KEEP_SERVER`만 가능한 충돌로 바꿔 관리자 사유가 있어야 `DISCARDED`로 종결한다.
 
 ## 2026-08-01. FieldComment 검토 현황은 서버 집계와 실제 현장 준비도를 분리해 표시
 

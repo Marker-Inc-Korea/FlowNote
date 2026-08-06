@@ -655,9 +655,11 @@ FieldComment `/bulk-review/execute`는 항목별 transaction을 유지한다. `s
 
 ## 문서 충돌 detail 공통 계약
 
-문서 mutation의 HTTP 409는 기존 `code`를 유지하면서 선택 필드인 `schemaVersion=document-conflict-v1`, `conflictKind`, `serverValue`, `localRequest`, `baseSnapshotHash`, `allowedActions`, `autoMergeAllowed`, `sourcePreserved`, `retryPolicy`를 함께 반환한다. 기존 `expectedRevision`, `currentRevision`, `currentStatus`, `currentLatestVersionId`, `currentPublishedVersionId`도 그대로 유지한다. `allowedActions`는 `KEEP_SERVER`, `RETRY_WITH_LATEST`, `REGISTER_NEW_VERSION` 중 해당 충돌에 허용된 값만 포함한다.
+문서 mutation 성공 응답은 기존 문서 필드와 함께 현재 `revision`, `status`, `deleted`, latest/published version ID와 SHA-256, `server_tag_snapshot`, 빈 `allowed_actions`, 같은 값을 묶은 `authoritative_snapshot`을 반환한다. HTTP 409는 기존 `code`, `expectedRevision`, `currentRevision`, `currentStatus`, `currentLatestVersionId`, `currentPublishedVersionId`를 유지하면서 `schemaVersion=document-conflict-v1`, `conflictKind`, `serverValue`, `authoritativeSnapshot`, `localRequest`, `baseSnapshotHash`, `allowedActions`, `autoMergeAllowed`, `sourcePreserved`, `retryPolicy`를 함께 반환한다. 두 snapshot에는 revision, 상태, 삭제 여부, latest/published ID와 hash, 활성 서버 태그 전체 집합이 들어간다.
 
-태그 JSON delta는 `baseRevision`, `addedTags`, `removedTags`, canonical `intentHash`, `mutationKey`를 사용한다. 서버가 기준 snapshot을 복원하고 같은 태그의 반대 변경, 비활성·삭제 태그, 기준 snapshot 부재, intent hash 불일치가 없을 때만 mutation 전체를 현재 집합에 병합한다. 일부 안전 delta가 있더라도 나머지 delta가 충돌하면 부분 적용하지 않고 전체 요청을 409로 보존한다. 파일 내용/hash·최신 버전·문서/버전 상태·`published_version_id`·soft delete는 `autoMergeAllowed=false`이며 자동 병합하지 않는다.
+`allowedActions`는 `KEEP_SERVER`, `RETRY_WITH_LATEST`, `REAPPLY_TAG_DELTA`, `REGISTER_NEW_VERSION` 중 해당 충돌에 허용된 값만 포함한다. `RETRY_WITH_LATEST`는 관리자가 서버 snapshot을 확인한 뒤 새 revision으로 다시 요청한다는 뜻이다. 태그 409에는 호환 행동인 `RETRY_WITH_LATEST`와 태그 전용 `REAPPLY_TAG_DELTA`가 함께 들어가며, WPF는 일반 재요청 대신 태그 전용 행동만 실행한다. 공개본·삭제 충돌에는 `REAPPLY_TAG_DELTA`와 자동 적용 행동을 넣지 않는다. 삭제는 `KEEP_SERVER`만 허용한다.
+
+태그 JSON delta는 `baseRevision`, `addedTags`, `removedTags`, canonical `intentHash`, `mutationKey`를 사용한다. canonical 입력은 UTF-8/LF의 `document-tags-v1 → documentId → baseRevision → add:<codes> → remove:<codes>` 순서이며, code는 정규화·중복 제거 뒤 ordinal 정렬한다. 서버가 기준 snapshot을 복원하고 base 뒤의 모든 revision이 태그 revision이며 같은 태그의 반대 변경, 비활성·삭제 태그, 기준 snapshot 부재, intent hash 불일치가 없을 때만 mutation 전체를 현재 집합에 병합한다. 태그 외 revision이 있으면 `TAG_AGGREGATE_CHANGED`다. 일부 안전 delta가 있더라도 나머지 delta가 충돌하면 부분 적용하지 않고 전체 요청을 409로 보존한다. 파일 내용/hash·최신 버전·문서/버전 상태·`published_version_id`·soft delete는 `autoMergeAllowed=false`이며 hash가 같아도 자동 병합하지 않는다.
 
 같은 mutation key와 같은 canonical intent를 재전송하면 성공 응답은 기존 document receipt에서, 기록된 409·422 응답은 공통 mutation receipt에서 재생한다. 구조화된 409는 첫 응답과 재생 응답의 detail을 같게 유지하며 새 revision, 알림, receipt 또는 감사 행을 만들지 않는다. 공통 receipt에는 허용된 충돌 필드만 저장하고 중첩 문자열의 비밀값·개인 로컬 경로 패턴을 정제한다. 같은 key의 다른 intent는 `IDEMPOTENCY_KEY_REUSED`이며 `KEEP_SERVER`만 허용한다.
 
@@ -675,3 +677,5 @@ FieldComment `/bulk-review/execute`는 항목별 transaction을 유지한다. `s
 요청 생성은 `documentId`, `versionId`, `baseDocumentRevision`, `sourceFileHashSha256`, `reviewerUserId` 또는 `reviewerRole` 하나, `reason`, 선택 `dueAt`, 필수 `mutationKey`를 받는다. 결정과 취소도 사유와 mutation key가 필수다. 공개 요청은 새 계약에서 `approvalId`가 필수이며, 배포 전환용 `FLOWNOTE_DOCUMENT_APPROVAL_WORKFLOW_ENFORCED=false`를 명시한 호환 환경에서만 생략할 수 있다.
 
 승인되지 않은 공개는 `APPROVAL_REQUIRED` 또는 `APPROVAL_NOT_APPROVED`, 승인 뒤 version/revision/hash가 바뀐 공개는 `APPROVAL_STALE` 409다. 작성자와 검토자·공개자의 동일인 여부가 현장 설정에서 정해지지 않은 채 같은 actor가 처리하면 `APPROVAL_REVIEWER_SEPARATION_POLICY_REQUIRED` 또는 `APPROVAL_SEPARATION_POLICY_REQUIRED`로 차단한다. 분리 강제 설정에서 같은 actor이면 403이다. 반려·stale 응답과 WPF 화면은 원본과 승인 기록 보존, 담당 검토자와 새 요청 행동을 함께 표시한다.
+
+현재 공개 승인을 취소하면 공개 포인터와 flag를 철회하고 문서·대상 버전을 `WORKING`으로 되돌린다. 새 공개본은 자신을 승인한 ID를 `publication_approval_id`로 대체하며 이전 승인과 이벤트는 수정·삭제하지 않는다. 따라서 활성 공개 승인 관계는 문서 포인터 기준 1:1이고 승인 이력은 여러 건일 수 있다.

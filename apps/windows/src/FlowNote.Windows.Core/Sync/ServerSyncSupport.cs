@@ -132,6 +132,7 @@ public sealed partial class ServerSyncService
         string? serverReportId = null,
         int? serverRevision = null,
         string? serverFileHashSha256 = null,
+        string? serverPublishedVersionId = null,
         SqliteTransaction? transaction = null)
     {
         using var command = connection.CreateCommand();
@@ -149,6 +150,7 @@ public sealed partial class ServerSyncService
                 server_log_id,
                 server_revision,
                 server_file_hash_sha256,
+                server_published_version_id,
                 synced_at
             )
             VALUES (
@@ -163,6 +165,7 @@ public sealed partial class ServerSyncService
                 $server_log_id,
                 $server_revision,
                 $server_file_hash_sha256,
+                $server_published_version_id,
                 $synced_at
             )
             ON CONFLICT(entity_type, local_id, local_version_no) DO UPDATE SET
@@ -176,6 +179,9 @@ public sealed partial class ServerSyncService
                 server_file_hash_sha256 = COALESCE(
                     excluded.server_file_hash_sha256,
                     server_id_mappings.server_file_hash_sha256),
+                server_published_version_id = COALESCE(
+                    excluded.server_published_version_id,
+                    server_id_mappings.server_published_version_id),
                 synced_at = excluded.synced_at;
             """;
         command.Parameters.AddWithValue("$entity_type", entityType);
@@ -189,6 +195,7 @@ public sealed partial class ServerSyncService
         command.Parameters.AddWithValue("$server_log_id", string.IsNullOrWhiteSpace(serverLogId) ? DBNull.Value : serverLogId);
         command.Parameters.AddWithValue("$server_revision", serverRevision is null ? DBNull.Value : serverRevision.Value);
         command.Parameters.AddWithValue("$server_file_hash_sha256", string.IsNullOrWhiteSpace(serverFileHashSha256) ? DBNull.Value : serverFileHashSha256);
+        command.Parameters.AddWithValue("$server_published_version_id", string.IsNullOrWhiteSpace(serverPublishedVersionId) ? DBNull.Value : serverPublishedVersionId);
         command.Parameters.AddWithValue("$synced_at", syncedAt.ToString("O"));
         command.ExecuteNonQuery();
     }

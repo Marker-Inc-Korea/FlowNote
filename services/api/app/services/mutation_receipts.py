@@ -424,6 +424,7 @@ def _safe_response_detail(detail: Any) -> Any:
         "currentLatestVersionId",
         "currentPublishedVersionId",
         "serverValue",
+        "authoritativeSnapshot",
         "localRequest",
         "baseSnapshotHash",
         "allowedActions",

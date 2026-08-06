@@ -117,7 +117,8 @@ public partial class DocumentViewWindow : Window
             serverDocumentClient.CreateApprovalClient(),
             RolePermissionPolicy.CanRegisterDocuments(userRole),
             RolePermissionPolicy.CanGovernDocuments(userRole),
-            mapping?.ServerDocumentId)
+            mapping?.ServerDocumentId,
+            serverSyncService)
         {
             Owner = this
         };

@@ -56,6 +56,7 @@ public sealed class DocumentSyncConflictPersistenceTests
         Assert.True(ColumnExists(verify, "server_sync_queue", "retry_not_before"));
         Assert.True(ColumnExists(verify, "field_comments", "review_revision"));
         Assert.True(ColumnExists(verify, "server_id_mappings", "server_file_hash_sha256"));
+        Assert.True(ColumnExists(verify, "server_id_mappings", "server_published_version_id"));
     }
 
     [Fact]
@@ -331,20 +332,22 @@ public sealed class DocumentSyncConflictPersistenceTests
     }
 
     [Theory]
-    [InlineData("replace_document_tags", "TAG_MERGE_CONFLICT", true, false)]
-    [InlineData("publish_document_version", "PUBLISHED_VERSION_CHANGED", true, false)]
-    [InlineData("register_document_version", "STALE_BASE_VERSION", false, true)]
-    [InlineData("register_document_version", "DOCUMENT_DELETED", false, false)]
+    [InlineData("replace_document_tags", "TAG_MERGE_CONFLICT", true, true, false)]
+    [InlineData("publish_document_version", "PUBLISHED_VERSION_CHANGED", true, false, false)]
+    [InlineData("register_document_version", "STALE_BASE_VERSION", false, false, true)]
+    [InlineData("register_document_version", "DOCUMENT_DELETED", false, false, false)]
     public void ConflictPolicyAllowsOnlyExplicitDocumentResolutionActions(
         string action,
         string code,
         bool retryLatest,
+        bool reapplyTagDelta,
         bool newVersion)
     {
         var allowed = DocumentConflictResolutionPolicy.AllowedActions(action, code);
 
         Assert.Contains(DocumentConflictResolutionPolicy.KeepServer, allowed);
         Assert.Equal(retryLatest, allowed.Contains(DocumentConflictResolutionPolicy.RetryWithLatest));
+        Assert.Equal(reapplyTagDelta, allowed.Contains(DocumentConflictResolutionPolicy.ReapplyTagDelta));
         Assert.Equal(newVersion, allowed.Contains(DocumentConflictResolutionPolicy.RegisterNewVersion));
     }
 
@@ -527,6 +530,86 @@ public sealed class DocumentSyncConflictPersistenceTests
                 converged,
                 "SELECT COUNT(*) FROM server_sync_queue WHERE entity_id = $value AND status = 'SYNCED';",
                 documentId));
+    }
+
+    [Fact]
+    public void ApprovalPublicationReadBackAtomicallyUpdatesLocalPointersMappingsTagsQueueAndHistory()
+    {
+        var database = CreateDatabase();
+        var suffix = Guid.NewGuid().ToString("N");
+        var localDocumentId = $"doc-approval-publish-{suffix}";
+        var serverDocumentId = $"server-approval-publish-{suffix}";
+        var serverVersionId = $"version-approval-publish-{suffix}";
+        InsertPendingDocument(database, localDocumentId, Path.Combine("Files", $"{suffix}.txt"));
+        using (var connection = database.OpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE documents
+                SET server_document_id = $server_document_id,
+                    server_version_id = $server_version_id,
+                    server_revision = 4,
+                    synced_at = $now
+                WHERE document_id = $document_id;
+                UPDATE document_versions
+                SET server_version_id = $server_version_id,
+                    synced_at = $now
+                WHERE document_id = $document_id AND version_no = 1;
+                """;
+            command.Parameters.AddWithValue("$document_id", localDocumentId);
+            command.Parameters.AddWithValue("$server_document_id", serverDocumentId);
+            command.Parameters.AddWithValue("$server_version_id", serverVersionId);
+            command.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
+            command.ExecuteNonQuery();
+        }
+
+        var file = new ServerApprovalFileResponse(new string('a', 64));
+        var version = new ServerApprovalVersionResponse(serverVersionId, file)
+        {
+            VersionNo = 1,
+            VersionStatus = "PUBLISHED",
+            IsLatest = true,
+            IsPublished = true
+        };
+        var approvalId = $"approval-{suffix}";
+        var authority = new ServerApprovalDocumentResponse(
+            serverDocumentId, "승인 공개 문서", 5, serverVersionId, version)
+        {
+            Status = "PUBLISHED",
+            PublishedVersionId = serverVersionId,
+            PublicationApprovalId = approvalId,
+            PublishedVersion = version,
+            Tags = ["line-a", "press-a"]
+        };
+        var first = new ServerSyncService(database).ApplyApprovalPublicationReadBack(
+            authority, approvalId, $"server-mutation-{suffix}");
+        var replay = new ServerSyncService(database).ApplyApprovalPublicationReadBack(
+            authority, approvalId, $"server-recovery-{suffix}");
+
+        Assert.True(first.Applied);
+        Assert.False(replay.Applied);
+        using var verify = database.OpenConnection();
+        Assert.Equal(
+            "PUBLISHED",
+            ScalarString(verify, "SELECT status FROM documents WHERE document_id = $value;", localDocumentId));
+        Assert.Equal(
+            serverVersionId,
+            ScalarString(verify, "SELECT server_published_version_id FROM documents WHERE document_id = $value;", localDocumentId));
+        Assert.Equal(
+            1L,
+            ScalarLong(verify, "SELECT is_published FROM document_versions WHERE document_id = $value AND version_no = 1;", localDocumentId));
+        Assert.Equal(
+            2L,
+            ScalarLong(verify, "SELECT COUNT(*) FROM server_id_mappings WHERE local_id = $value AND server_published_version_id IS NOT NULL;", localDocumentId));
+        Assert.Equal(
+            1L,
+            ScalarLong(verify, "SELECT COUNT(*) FROM server_sync_queue WHERE entity_id = $value AND action = 'apply_approval_publication_read_back';", localDocumentId));
+        Assert.Equal(
+            1L,
+            ScalarLong(verify, "SELECT COUNT(*) FROM activity_history WHERE target_id = $value AND event_type = 'server_sync.approval_publication_read_back_applied';", localDocumentId));
+        Assert.Equal(
+            2L,
+            ScalarLong(verify, "SELECT COUNT(*) FROM document_tags WHERE document_id = $value;", localDocumentId));
     }
 
     private static FlowNoteLocalDatabase CreateDatabase()

@@ -258,7 +258,7 @@ public partial class HistoryWindow : Window
     {
         if (SyncQueueGrid.SelectedItem is not SyncQueueRow { Status: "CONFLICT" } selected)
         {
-            SyncQueueSummaryTextBlock.Text = "로컬 변경을 다시 보낼 충돌 항목을 선택하세요.";
+            SyncQueueSummaryTextBlock.Text = "새 revision으로 다시 요청할 충돌 항목을 선택하세요.";
             return;
         }
         if (serverDocumentClient is null)
@@ -277,7 +277,7 @@ public partial class HistoryWindow : Window
         {
             if (!selected.CanRetryWithLatest)
             {
-                SyncQueueSummaryTextBlock.Text = "이 충돌은 최신 서버값 기준 재요청이 허용되지 않습니다.";
+                SyncQueueSummaryTextBlock.Text = "이 충돌은 새 revision 기준 재요청이 허용되지 않습니다.";
                 return;
             }
             if (!ConfirmDangerousResolution(selected, "최신 서버값 기준으로 명시적 재요청"))
@@ -289,6 +289,39 @@ public partial class HistoryWindow : Window
                 selected.Id,
                 serverDocumentClient,
                 actor!,
+                reason,
+                serverUserRole,
+                serverUserId);
+            RefreshAll();
+            SyncQueueSummaryTextBlock.Text = result.Message;
+        }
+        catch (InvalidOperationException exception)
+        {
+            RefreshAll();
+            SyncQueueSummaryTextBlock.Text = exception.Message;
+        }
+    }
+
+    private async void ReapplyTagDeltaButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SyncQueueGrid.SelectedItem is not SyncQueueRow { Status: "CONFLICT" } selected ||
+            !selected.CanReapplyTagDelta)
+        {
+            SyncQueueSummaryTextBlock.Text = "로컬 태그 delta 재적용이 허용된 태그 충돌을 선택하세요.";
+            return;
+        }
+        if (serverDocumentClient is null)
+        {
+            SyncQueueSummaryTextBlock.Text = "서버 연결과 로그인이 필요합니다. 태그 intent와 충돌 기록은 보존됩니다.";
+            return;
+        }
+        var reason = ConflictReasonTextBox.Text.Trim();
+        try
+        {
+            var result = await serverSync.ReapplyTagDeltaAsync(
+                selected.Id,
+                serverDocumentClient,
+                string.IsNullOrWhiteSpace(serverUserId) ? "관리자" : serverUserId!,
                 reason,
                 serverUserRole,
                 serverUserId);
@@ -427,6 +460,7 @@ public partial class HistoryWindow : Window
         string AutoMerge,
         string UserChoice,
         bool CanRetryWithLatest,
+        bool CanReapplyTagDelta,
         bool CanRegisterNewVersion)
     {
         public static SyncQueueRow FromRecord(ServerSyncQueueRecord record)
@@ -463,6 +497,9 @@ public partial class HistoryWindow : Window
                 DocumentConflictResolutionPolicy.Contains(
                     record.AllowedActionsJson,
                     DocumentConflictResolutionPolicy.RetryWithLatest),
+                DocumentConflictResolutionPolicy.Contains(
+                    record.AllowedActionsJson,
+                    DocumentConflictResolutionPolicy.ReapplyTagDelta),
                 DocumentConflictResolutionPolicy.Contains(
                     record.AllowedActionsJson,
                     DocumentConflictResolutionPolicy.RegisterNewVersion));
@@ -551,7 +588,11 @@ public partial class HistoryWindow : Window
             }
             if (DocumentConflictResolutionPolicy.Contains(actionsJson, DocumentConflictResolutionPolicy.RetryWithLatest))
             {
-                actions.Add("최신값 확인 후 명시적 재요청");
+                actions.Add("새 revision으로 명시적 재요청");
+            }
+            if (DocumentConflictResolutionPolicy.Contains(actionsJson, DocumentConflictResolutionPolicy.ReapplyTagDelta))
+            {
+                actions.Add("로컬 태그 delta만 재적용");
             }
             return actions.Count == 0 ? "허용 행동 확인 필요" : string.Join(" · ", actions);
         }
