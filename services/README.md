@@ -1,6 +1,6 @@
 # Services
 
-이 문서는 2026-08-04 현재 `services/api` 코드 기준이다. 구현되지 않은 서비스는 마지막 후속 범위에서만 예외로 다룬다.
+이 문서는 2026-08-06 현재 `services/api` 코드 기준이다. 구현되지 않은 서비스는 마지막 후속 범위에서만 예외로 다룬다.
 
 FlowNote 서버 구성 요소를 보관하는 영역이다.
 
@@ -29,12 +29,12 @@ FlowNote 서버 구성 요소를 보관하는 영역이다.
 - 문서 열람 시작·종료, 미리보기 실패, 다운로드 차단 로그 등록과 목록 및 공통 감사 event envelope
 - 공개 문서 버전의 만료·1회성 controlled copy 다운로드와 요청/허용/완료/실패/차단 감사
 - 작업순서 보드, 항목 추가, 순서 변경, 상태 변경, 이력 조회. 쓰기는 `board_revision`, mutation key·intent hash receipt, stale revision 조건부 갱신을 적용
-- 작업순서 알림 후보 조회와 상태 변경
+- 작업순서 알림 후보 조회와 상태 변경, 현재 revision·change ID·채널 관리자 역할·활성 수신자 preview, 채널 메시지/인수인계 전달과 후보·채널·수신자별 receipt 및 현장별 문구 템플릿
 - 공통 채널 생성/조회, 채널 멤버 관리, 채널 메시지, 사용자별 알림 읽음 처리
 - 인수인계 등록/조회와 수신자별 읽음/확인/후속 필요 상태 기록
 - 서버 계정 생성·변경·임시 비밀번호 재설정, 강제 비밀번호 변경, 활성 세션 조회·폐기와 감사 기록
-- 보고서 초안 생성 보조, 초안→검토중→확정→보관 상태 전이, 목록·상세·고정 원천 조회. `report_revision`, 내용/source 집합 hash와 mutation receipt를 보고서·근거·선택적 생성 문서와 한 transaction에 저장
-- 문서 권위 변경과 문서 승인, FieldComment 검토, 보고서 상태 전이와 작업순서 변경의 공통 mutation receipt·감사 event envelope 조회 및 현재 업무 상태와 결합한 권한 기반 통합 변경 이력
+- 보고서 초안 생성 보조, 초안→검토중→확정→보관 상태 전이, 목록·상세·고정 원천·정정 계보 조회. 확정본의 독립 정정 초안은 재검토·승인 뒤 이전 보고서와 생성 문서를 대체·보관한다. `report_revision`, 내용/source 집합 hash와 mutation receipt를 보고서·근거·선택적 생성 문서와 한 transaction에 저장
+- 문서 권위 변경과 문서 승인, FieldComment 검토, 보고서 상태 전이·정정과 작업순서 변경·후보 전달의 공통 mutation receipt·감사 event envelope 조회 및 현재 업무 상태와 결합한 권한 기반 통합 변경 이력·운영 준비도 read model
 - AI 검색 전 단계의 근거 후보 재생성·목록·품질 점검, 독립 승인 ground-truth 사례, 불변 dataset version과 결합 오프라인 회귀 평가, 실제 익명 현장 24칸 독립 표본 검토·제3 합의 API
 - 외부 AI 질의 생성·조회, 기본 비활성, 보고서 작성 role, 허용 목적, 전송 승인, 프롬프트, 원천 권한·민감정보·최소 payload, 근거 snapshot, 인용 검증과 호출 감사 게이트
 - `system-admin` 전용 외부 AI 운영 API: 전송 승인 생성·철회, 불변 프롬프트 검토·승인·활성화·폐기, 고객·현장별 민감정보 정책 작성·분리 검토·승인·활성·대체·철회·폐기, 전역/현장 kill switch와 요청·동시성·timeout·비용·보존 정책, 고객·현장 scope별 정제 감사 조회/내보내기, 만료 보존 일괄·단일 즉시 실행, legal hold 설정·해제
@@ -43,7 +43,7 @@ FlowNote 서버 구성 요소를 보관하는 영역이다.
 - 서버 instance/epoch/API contract와 알림 high-water cursor manifest, 관리자용 WPF 큐 reconciliation 판정·승인·감사 API
 - 초기·비상 운영용 서버 계정 생성, 비밀번호 재설정, 상태 변경, role 변경 스크립트
 
-Android는 공개 문서 목록·상세 API와 승인 단말 전용 1회성 secure view grant/stream API를 사용한다. PDF/이미지/TXT는 앱 내부에서만 열고 controlled copy는 별도의 허용 role을 사용하는 Windows WPF 흐름으로 유지한다.
+Android는 공개 문서 목록·상세 API, 승인 단말 전용 1회성 secure view grant/stream API와 역할·배정·채널 범위로 제한된 작업순서 목록·상세 API를 사용한다. 작업순서에서 시작한 FieldComment와 인수인계는 항목 ID, board revision, 당시 공개 문서/version과 사용자·단말 scope를 intent에 고정한다. PDF/이미지/TXT는 앱 내부에서만 열고 controlled copy는 별도의 허용 role을 사용하는 Windows WPF 흐름으로 유지한다.
 
 ## 개발 기준
 

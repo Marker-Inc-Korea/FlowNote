@@ -10,15 +10,25 @@
 | `run_id` | 없음 | 없음 |
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
-| FastAPI | 현재 macOS 실행 194/194. 문서 승인·공개, 태그 aggregate 충돌과 canonical intent 회귀를 포함한다. 스크립트 guard 186건 | Windows x64 수집·JUnit 무생략 실행 대기 |
-| WPF Core | 현재 macOS 실행 110/110, 스크립트 guard 102건 | Windows 수집·TRX 무생략 실행 대기 |
+| FastAPI | 현재 소스 수집 대상 209건. 2026-08-06 추가 범위의 집중 실행은 통과했지만 전체 209건 단일 실행 기록은 없다. 스크립트 guard 186건 | Windows x64 수집·JUnit 무생략 실행 대기 |
+| WPF Core | 현재 macOS 실행 117/117, 스크립트 guard 102건 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | 현재 macOS 교차 build PASS, compiler warning 0 | 동일 |
 | Windows 누적 공통 DB 스모크 | 목표 PASS | 동일 |
-| Android | 현재 단위 테스트 32/32, debug build·lint PASS, 스크립트 고정값 32건 | Windows 무생략 실행 대기 |
+| Android | 현재 단위 테스트 35/35, debug build·lint PASS, 스크립트 고정값 32건 | Windows 무생략 실행 대기 |
 | SQLite | FastAPI 누적 시험 DB `journal_mode=wal`, `quick_check=ok`, FK 위반 0. Windows 공통 DB 전후 검증 대기 | 동일 |
 | Git | 목표 전후 clean, 금지 추적·스테이징·개인 경로 0 | 동일 |
 
-보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했다. 로그인 복구 안내 회귀 2건을 더한 2026-08-01 직접 실행은 89/89가 통과했다. 인수인계 감독 집계 테스트까지 포함한 98건이 통과한 뒤 문서 미리보기 회귀 3건을 추가한 시점에는 101/101이었다. 책임 분리 회귀 1건과 문서 충돌 회귀 5건을 더한 시점에는 107/107이었다. 문서 승인 서버 클라이언트 회귀 2건을 추가한 시점에는 109/109였고, 승인 공개 read-back 로컬 수렴 회귀 1건을 더한 현재 macOS 실행은 110/110이다. Windows x64의 새 수집 목록과 TRX가 110/110인지 별도로 확인하고 스크립트 guard도 현재 수치에 맞춰야 한다.
+보존된 최신 Windows 시도 `integrated-smoke-20260724-094348`은 FastAPI 실행 중 중단되어 JUnit이 없고 요약도 `RUNNING`에 머물렀으므로 기준선이 아니다. 기존 71건 수집·TRX 근거는 `data/local/wpf-core-guard-20260728-080139/`에 보존했다. 시작 실패 안내 1건과 인수인계 후속 코멘트 멱등·부분 성공 2건을 추가한 시점에는 74/74와 guard 74건이 일치했다. 이후 커밋 `4c55f96`에서 AI 현장 표본 검토 클라이언트 테스트 2건만 추가되고 기존 WPF Core 테스트는 삭제되지 않았다. 당시 macOS 수집 목록과 새 TRX 76/76은 `data/local/wpf-core-guard-20260730-76-current/`에 보존했다. 후보 3에서 사용자 오류 문구 순서, 부분 성공 재시도 대상과 stale revision 원문 보존 테스트 8건을 추가해 macOS 직접 실행 84/84가 통과했고 스크립트 guard도 84건으로 맞췄다. 이후 민감정보 정책 응답 유실 재시도·정제 read-back을 포함한 회귀가 추가되어 2026-07-31 직접 실행은 87/87이 통과했다. 로그인 복구 안내 회귀 2건을 더한 2026-08-01 직접 실행은 89/89가 통과했다. 인수인계 감독 집계 테스트까지 포함한 98건이 통과한 뒤 문서 미리보기 회귀 3건을 추가한 시점에는 101/101이었다. 책임 분리 회귀 1건과 문서 충돌 회귀 5건을 더한 시점에는 107/107이었다. 문서 승인 서버 클라이언트 회귀 2건을 추가한 시점에는 109/109였고, 승인 공개 read-back 로컬 수렴 회귀를 포함한 시점에는 110/110이었다. 이후 보고서 정정, 작업순서 후보 전달과 운영 준비도 계약이 추가되어 현재 macOS 보조 실행은 117/117이다. Windows x64의 새 수집 목록과 TRX가 117/117인지 별도로 확인하고 스크립트 guard도 현재 수치에 맞춰야 한다.
+
+## 2026-08-06 작업 201 전체 Markdown 현재 코드 재대조
+
+Git이 추적하는 Markdown 46개를 조사했다. `AGENTS.md`, `docs/daily/`, 현장 의견 원문, 과거 결정과 0001~0003 마이그레이션 기록은 현재 구현 설명과 구분해 보존했다. 생성 파일, 외부 의존성 문서, 빌드 산출물과 테스트 결과 산출물은 갱신 대상에서 제외했다.
+
+FastAPI 라우터와 서버 README의 method/path 조합은 루트 `GET /`을 포함해 163개로 일치한다. 보고서 정정·계보, 작업순서 후보 preview·전달·템플릿, 운영 준비도, Android 작업순서 목록·상세 계약을 현재 API 문서에 반영했다. SQLAlchemy ORM의 70개 테이블은 `docs/data-model.md`와 `services/api/db/README.md`에서 누락 없이 확인했다. 스키마 기록은 `0004_report_correction_lifecycle`, `0005_work_sequence_candidate_delivery`까지 현재 초기화 코드와 맞췄다. `Settings`의 48개 필드와 `FLOWNOTE_ENVIRONMENT`·`FLOWNOTE_ENV` 별칭을 합친 환경 변수 이름 49개는 API·배포·서버 README에 모두 들어 있다.
+
+현재 테스트 선언과 매개변수를 정적으로 계산한 수집 대상은 FastAPI 209건·WPF Core 117건·Android 35건이다. 표준 스크립트 guard 186·102·32는 현재 소스보다 적다. 보존된 2026-08-06 집중 실행 결과는 최신 기능 범위를 통과했지만 FastAPI 전체 209건 단일 실행과 Windows x64 무생략 통합 실행은 기록되지 않았으므로 기준선은 `대기`로 유지했다.
+
+상대 Markdown 링크 72개와 문서에 적은 저장소 스크립트 17개는 실제 경로와 대조해 누락이 없었다. 실행 명령은 `services/api/pyproject.toml`, WPF 프로젝트 파일, Android Gradle 설정·wrapper와 저장소 스크립트에서 정적으로 확인했다. `git diff --check`도 통과했다. 이번 작업에서는 코드·설정·테스트를 수정하지 않았고 테스트·빌드·정적 검사·앱 실행도 수행하지 않았다. 기존 SQLite, 로그와 테스트 산출물은 삭제하거나 초기화하지 않았다.
 
 ## 2026-08-06 서버-WPF 태그·버전·상태·공개본 동기화 정책 고도화
 
@@ -1384,6 +1394,23 @@ dotnet build ./apps/windows/src/FlowNote.Windows.App/FlowNote.Windows.App.csproj
 macOS 개발 환경에서 Ruff 검사와 책임 분리 집중 회귀 45/45, WPF Core 102/102가 통과했다. WPF 앱 빌드는 `EnableWindowsTargeting` 없이 처음 실행했을 때 `NETSDK1100`으로 실패했다. 위 교차 빌드 명령으로 다시 실행한 결과는 경고 0개·오류 0개다. FastAPI 최종 수집 수는 186개다.
 
 FastAPI 전체 회귀는 서로 다른 두 검증 프로세스가 같은 누적 SQLite를 사용한 상태에서 실행되어 각각 181/185와 182/185가 통과했다. 실패 항목에는 AI ground-truth·준비도 집계, AI 질의, Android 문서 보기, SQLite 잠금과 서버 epoch 동시 증가가 포함됐다. 이 항목들을 동시 실행 없이 다시 검사한 결과 모두 통과했지만, AI ground-truth 재현성은 한 차례 더 `FAILED`를 반환한 뒤 재실행에서 통과해 실행 순서에 따른 불안정성이 남아 있다. 따라서 FastAPI 전체 186건이 한 번에 통과했다고 보지는 않으며, 이번 FieldComment·보고서·작업순서 변경 범위는 집중 회귀 45건 통과를 기준으로 확인했다. 기존 SQLite, 최초 실패 기록과 실행 산출물은 삭제하거나 초기화하지 않았다.
+
+## 2026-08-06 보고서 정정·대체 수명주기 검증
+
+정정 전용 API 6건은 모두 통과했다. 기본 source snapshot 복사와 명시적 전체 source 재선택, 동일 mutation key 재전송, 다른 intent의 key 재사용 거부, 원천 변경·채널 탈퇴 충돌, 같은 확정본의 두 정정 생성 차단, 재검토 뒤 내용 변경, 승인 응답 재전송, 앱 재시작 뒤 계보 read-back을 확인했다. 승인 transaction 뒤에는 새 유효본 1건, 이전 보고서의 `SUPERSEDED` projection, 이전 생성 문서 `ARCHIVED`, 새 생성 문서 `IN_REVIEW`, 두 보고서의 source/trace, report/common receipt와 related-target 감사 envelope가 함께 남았다. AI 보고서 source 조회 기준에서는 새 유효본만 후보이고 이전 보고서는 제외됨을 확인했다.
+
+실행 결과는 다음과 같다.
+
+| 명령 | 결과 |
+| --- | --- |
+| `.venv/bin/python -m pytest -q tests/test_report_corrections_api.py tests/test_reports_api.py tests/test_change_history_api.py` | PASS, 21건 |
+| 사용자가 지정한 보고서·변경 이력·AI 3개 파일 | 19/20 통과 뒤 기존 누적 SQLite startup backfill에서 일시적 `database is locked` 1건. 같은 실패 테스트 단독 재실행 PASS |
+| 정정 테스트까지 포함한 4개 파일 | 25/26 통과 뒤 기존 누적 SQLite 쓰기에서 일시적 `database is locked` 1건. 같은 실패 테스트 단독 재실행 PASS |
+| `.venv/bin/python -m ruff check app tests` | PASS |
+| `dotnet test ./apps/windows/src/FlowNote.Windows.Core.Tests/FlowNote.Windows.Core.Tests.csproj` | PASS, 112건 |
+| `dotnet build ./apps/windows/src/FlowNote.Windows.App/FlowNote.Windows.App.csproj -p:EnableWindowsTargeting=true` | PASS, 경고 0·오류 0 |
+
+누적 SQLite 잠금은 기능 assertion 실패가 아니다. 단독 재실행에서는 모두 통과했다. 다만 지정 API 묶음이 한 번에 전부 통과했다고 기록하지 않는다. 실제 Windows에서 정정 창의 키보드·200% 배율·아이콘 식별·다중 원천 선택을 조작하는 UI 시험은 이번 macOS 교차 빌드에서 실행하지 못했다. 테스트 SQLite, 로그, 생성 문서와 기존 산출물은 삭제하거나 초기화하지 않았다.
 
 ## 2026-08-06 작업순서 후보 채널·인수인계 전달 검증
 

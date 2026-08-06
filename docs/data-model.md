@@ -1,6 +1,6 @@
 # FlowNote 데이터 모델
 
-이 문서는 2026-08-04 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·검토·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
+이 문서는 2026-08-06 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·검토·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
 
 ## WPF 로컬 SQLite
 
@@ -75,7 +75,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-08-04 현재 ORM은 공통 감사 event envelope와 mutation receipt, 문서·FieldComment 검토·보고서·작업순서의 도메인 receipt, 문서 태그 revision snapshot, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 67개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드는 새 테이블이나 저장 snapshot을 만들지 않고 `field_comments`와 `report_sources`의 현재 상태를 요청 시점에 집계한다.
+2026-08-06 현재 ORM은 공통 감사 event envelope와 mutation receipt, 문서·FieldComment 검토·보고서·작업순서의 도메인 receipt, 문서 태그 revision snapshot, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 70개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드와 운영 준비도는 새 권위 테이블이나 저장 snapshot을 만들지 않고 현재 도메인 테이블과 감사 anchor를 요청 시점에 집계한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -108,6 +108,9 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `work_sequence_change_history` | mutation key와 적용 board revision이 유일하게 연결된 작업순서 변경 이력 |
 | `work_sequence_mutation_receipts` | mutation key, intent hash, 결과 revision·change ID·최초 응답 snapshot을 보존하는 작업순서 멱등 receipt |
 | `work_sequence_notification_candidates` | 작업순서 알림 후보 |
+| `work_sequence_candidate_deliveries` | 후보·채널 조합별 전달 mode, intent hash, 메시지·인수인계·작업순서 원천과 완료/부분 성공 상태 |
+| `work_sequence_delivery_recipients` | 후보 전달의 수신자별 성공·실패, handover receipt, 오류와 재시도 횟수 |
+| `work_sequence_delivery_templates` | 현장 scope별 작업순서 전달 제목·본문 템플릿과 활성 상태 |
 | `notification_channels` | 라인, 설비, 공정, 작업조, 작업내역 단위 업무 채널 |
 | `notification_channel_members` | 채널별 사용자 멤버십, 역할, 마지막 읽음 위치 |
 | `channel_messages` | 문서, FieldComment, 작업순서, 보고서, 인수인계 원천 이벤트 메시지 |
@@ -134,7 +137,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `android_document_view_grants` | Android 앱 내부 열람용 token hash, 사용자·세션·필수 승인 단말·공개 버전·미디어 종류·크기·SHA-256, 만료·소비·실패 상태 |
 | `activity_history` | 서버 활동 이력 |
 
-`audit_event_envelopes`와 `sync_mutation_receipts`는 migration `0002_common_mutation_receipts`에서 additive 방식으로 추가한다. `0003_document_approval_workflow`는 승인 테이블 3개와 `documents.publication_approval_id`, `documents.publication_origin`을 추가한다. `0004_report_correction_lifecycle`은 보고서 계열·대체 열, report receipt의 대체 target, 공통 감사 envelope의 related target을 nullable 열과 인덱스로 추가하고 기존 보고서는 `report_family_id = report_id`로만 보완한다. 기존 보고서/source/document/file/receipt 행은 삭제하거나 내용을 다시 만들지 않는다. 기존 `activity_history`와 도메인 receipt도 이동·수정·백필하지 않으며, 이전 공개본은 승인 근거를 추정하지 않고 `LEGACY_PUBLICATION`으로 둔다. 공통 행이 없는 이전 감사는 조회 시 `이전 형식·일부 필드 없음`으로 표시하고 role·session·revision·result 같은 누락값을 추정하지 않는다.
+`audit_event_envelopes`와 `sync_mutation_receipts`는 migration `0002_common_mutation_receipts`에서 additive 방식으로 추가한다. `0003_document_approval_workflow`는 승인 테이블 3개와 `documents.publication_approval_id`, `documents.publication_origin`을 추가한다. `0004_report_correction_lifecycle`은 보고서 계열·대체 열, report receipt의 대체 target, 공통 감사 envelope의 related target을 nullable 열과 인덱스로 추가하고 기존 보고서는 `report_family_id = report_id`로만 보완한다. `0005_work_sequence_candidate_delivery`는 후보의 revision·change ID·만료 시각과 채널별 전달·수신자·템플릿 테이블을 추가하고 기존 후보는 당시 board revision과 연결 가능한 change ID만 보완한다. 기존 보고서/source/document/file/receipt와 작업순서 이력·후보 행은 삭제하지 않는다. 기존 `activity_history`와 도메인 receipt도 이동·수정·백필하지 않으며, 이전 공개본은 승인 근거를 추정하지 않고 `LEGACY_PUBLICATION`으로 둔다. 공통 행이 없는 이전 감사는 조회 시 `이전 형식·일부 필드 없음`으로 표시하고 role·session·revision·result 같은 누락값을 추정하지 않는다.
 
 `sync_mutation_receipts.operation_key`는 서버 전체에서 UNIQUE다. 같은 key·같은 event/target/intent는 최초 성공 또는 거부·충돌 결과로 수렴하고 같은 key의 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`로 거부한다. 성공 행은 기존 `document_mutation_receipts`, `document_approval_mutation_receipts`, `field_comment_review_mutation_receipts`, `report_mutation_receipts`, `work_sequence_mutation_receipts`의 테이블명과 PK를 연결한다. 업무 변경, 도메인 receipt, 공통 envelope/receipt는 같은 transaction에서 commit한다. 문서 상태, FieldComment 검토, 보고서 상태 전이, 작업순서 항목 상태의 거부·충돌은 업무 transaction을 rollback한 뒤 공통 거부 receipt만 별도 transaction으로 확정하며 업무 row가 바뀌지 않았음을 revision으로 검증한다.
 
@@ -151,6 +154,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | FieldComment 검토 | document version이 있으면 기록, review revision 필수 | 상태 전이 시 필수, 해석 필드만 바꾸면 선택 | 별도 승인 모델이 없어 `NOT_REQUIRED` | 성공 필수, 거부·충돌은 선택 |
 | 보고서 상태 전이·정정 대체 | 생성 version이 있으면 기록, report revision 필수. 정정은 related report ID/revision 필수 | 정정 생성은 필수, 일반 전이는 선택 | `REVIEWED`는 `PENDING`/승인자 없음, `APPROVED`·`ARCHIVED`는 `APPROVED`/전이 actor 필수 | 성공 필수, 거부·충돌은 선택 |
 | 작업순서 변경 | board revision 필수 | 생성은 서버 고정 사유, 순서·상태는 현재 API 계약상 선택 | 별도 승인 모델이 없어 `NOT_REQUIRED` | 성공 필수, 거부·충돌은 선택 |
+| 작업순서 후보 전달 | 후보의 board revision 필수, 관련 change ID는 related target으로 기록 | 전달 사유 필수 | 별도 승인 모델이 없어 `NOT_REQUIRED` | 성공 또는 부분 성공 결과 hash 필수 |
 
 공통 `safe_payload_json`과 실패 응답 snapshot에는 operation key, schema 이름, 정제 코드와 식별자/revision만 저장한다. token, 비밀번호, 고객 문서·FieldComment·보고서 원문, 로컬 절대경로, 불필요한 개인정보는 저장하지 않는다. 전후 상태는 원문 대신 canonical SHA-256으로 기록한다.
 
