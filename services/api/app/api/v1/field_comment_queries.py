@@ -590,7 +590,7 @@ def get_field_comment_traceability(
             report_id=report.report_id,
             report_type=report.report_type,
             title=report.title,
-            status=report.status,
+            status="SUPERSEDED" if report.superseded_by_report_id else report.status,
             relation_type=source.relation_type,
             source_version_id=source.source_version_id,
             source_revision=source.source_revision,

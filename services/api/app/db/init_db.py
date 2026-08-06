@@ -6,11 +6,13 @@ from sqlalchemy import inspect, or_, select, text
 
 from app.db.base import Base
 from app.db.models import SchemaMigration, ServerIdentity, UserAccount
+from app.db.report_correction_migration import ensure_report_correction_schema
 from app.db.session import Database
 
 INITIAL_SCHEMA_VERSION = "0001_initial_mvp_schema"
 COMMON_MUTATION_RECEIPT_SCHEMA_VERSION = "0002_common_mutation_receipts"
 DOCUMENT_APPROVAL_SCHEMA_VERSION = "0003_document_approval_workflow"
+REPORT_CORRECTION_SCHEMA_VERSION = "0004_report_correction_lifecycle"
 DEFAULT_ADMIN_USER_ID = "user-admin"
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "1234"
@@ -819,6 +821,7 @@ def initialize_database(database: Database) -> None:
     _ensure_field_comment_review_columns(database)
     _ensure_report_source_trace_columns(database)
     _ensure_report_aggregate_columns(database)
+    ensure_report_correction_schema(database)
     _ensure_terminal_device_schema(database)
     _ensure_auth_session_device_column(database)
     _ensure_document_access_log_reason_column(database)
@@ -876,6 +879,18 @@ def initialize_database(database: Database) -> None:
                 SchemaMigration(
                     version=DOCUMENT_APPROVAL_SCHEMA_VERSION,
                     description="Add document review and publication approval workflow",
+                )
+            )
+        correction_migration = session.scalar(
+            select(SchemaMigration).where(
+                SchemaMigration.version == REPORT_CORRECTION_SCHEMA_VERSION
+            )
+        )
+        if correction_migration is None:
+            session.add(
+                SchemaMigration(
+                    version=REPORT_CORRECTION_SCHEMA_VERSION,
+                    description="Add immutable report correction and replacement lineage",
                 )
             )
         session.commit()

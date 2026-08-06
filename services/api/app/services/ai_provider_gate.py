@@ -268,6 +268,7 @@ class AISourceAccessPolicy:
                 source
                 and report
                 and report.status != "ARCHIVED"
+                and report.superseded_by_report_id is None
                 and self._report_origin_allowed(source)
             )
             text = _clean_text(

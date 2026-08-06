@@ -34,6 +34,9 @@ class AuditEventResponse(BaseModel):
     target_id: str | None = Field(alias="targetId")
     target_version_id: str | None = Field(alias="targetVersionId")
     target_revision: int | None = Field(alias="targetRevision")
+    related_target_type: str | None = Field(alias="relatedTargetType")
+    related_target_id: str | None = Field(alias="relatedTargetId")
+    related_target_revision: int | None = Field(alias="relatedTargetRevision")
     reason: str | None
     approval_status: str | None = Field(alias="approvalStatus")
     approved_by: str | None = Field(alias="approvedBy")
@@ -94,6 +97,9 @@ def _common_response(row: AuditEventEnvelope) -> AuditEventResponse:
         target_id=row.target_id,
         target_version_id=row.target_version_id,
         target_revision=row.target_revision,
+        related_target_type=row.related_target_type,
+        related_target_id=row.related_target_id,
+        related_target_revision=row.related_target_revision,
         reason=row.reason,
         approval_status=row.approval_status,
         approved_by=row.approved_by,
@@ -124,6 +130,9 @@ def _legacy_response(row: ActivityHistory) -> AuditEventResponse:
         target_id=row.target_id,
         target_version_id=None,
         target_revision=None,
+        related_target_type=None,
+        related_target_id=None,
+        related_target_revision=None,
         reason=row.change_reason,
         approval_status=None,
         approved_by=None,
@@ -142,6 +151,9 @@ def _legacy_response(row: ActivityHistory) -> AuditEventResponse:
             "deviceId",
             "targetVersionId",
             "targetRevision",
+            "relatedTargetType",
+            "relatedTargetId",
+            "relatedTargetRevision",
             "approvalStatus",
             "beforeHashSha256",
             "afterHashSha256",

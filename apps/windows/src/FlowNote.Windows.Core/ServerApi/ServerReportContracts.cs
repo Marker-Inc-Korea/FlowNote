@@ -123,6 +123,33 @@ public sealed record ServerReportSaveRequest
 
     [JsonPropertyName("reportStatus")]
     public string ReportStatus { get; init; } = "APPROVED";
+
+    [JsonPropertyName("reportFamilyId")]
+    public string? ReportFamilyId { get; init; }
+
+    [JsonPropertyName("replacesReportId")]
+    public string? ReplacesReportId { get; init; }
+
+    [JsonPropertyName("replacesReportRevision")]
+    public int? ReplacesReportRevision { get; init; }
+}
+
+public sealed record ServerReportCorrectionCreateRequest
+{
+    [JsonPropertyName("correctionReason")]
+    public string CorrectionReason { get; init; } = string.Empty;
+
+    [JsonPropertyName("baseReportRevision")]
+    public int BaseReportRevision { get; init; }
+
+    [JsonPropertyName("mutationKey")]
+    public string MutationKey { get; init; } = string.Empty;
+
+    [JsonPropertyName("sourceSetHashSha256")]
+    public string? SourceSetHashSha256 { get; init; }
+
+    [JsonPropertyName("sources")]
+    public IReadOnlyList<ServerReportSourceRequest>? Sources { get; init; }
 }
 
 public sealed record ServerReportSourceResponse
@@ -252,4 +279,67 @@ public sealed record ServerReportResponse
 
     [JsonPropertyName("source_set_hash_sha256")]
     public string? SourceSetHashSha256 { get; init; }
+
+    [JsonPropertyName("report_family_id")]
+    public string ReportFamilyId { get; init; } = string.Empty;
+
+    [JsonPropertyName("replaces_report_id")]
+    public string? ReplacesReportId { get; init; }
+
+    [JsonPropertyName("replaces_report_revision")]
+    public int? ReplacesReportRevision { get; init; }
+
+    [JsonPropertyName("correction_reason")]
+    public string? CorrectionReason { get; init; }
+
+    [JsonPropertyName("superseded_by_report_id")]
+    public string? SupersededByReportId { get; init; }
+
+    [JsonPropertyName("superseded_at")]
+    public DateTime? SupersededAt { get; init; }
+
+    [JsonPropertyName("current_effective_report_id")]
+    public string? CurrentEffectiveReportId { get; init; }
+
+    [JsonPropertyName("is_current_effective")]
+    public bool IsCurrentEffective { get; init; }
+
+    [JsonPropertyName("requires_re_review")]
+    public bool RequiresReReview { get; init; }
+
+    [JsonPropertyName("replacement_state")]
+    public string ReplacementState { get; init; } = "NONE";
+}
+
+public sealed record ServerReportLineageItemResponse
+{
+    [JsonPropertyName("report_id")]
+    public string ReportId { get; init; } = string.Empty;
+
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = string.Empty;
+
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("report_revision")]
+    public int ReportRevision { get; init; }
+
+    [JsonPropertyName("replaces_report_id")]
+    public string? ReplacesReportId { get; init; }
+
+    [JsonPropertyName("correction_reason")]
+    public string? CorrectionReason { get; init; }
+
+    [JsonPropertyName("generated_document_id")]
+    public string? GeneratedDocumentId { get; init; }
+
+    [JsonPropertyName("approved_at")]
+    public DateTime? ApprovedAt { get; init; }
+
+    [JsonPropertyName("superseded_at")]
+    public DateTime? SupersededAt { get; init; }
+
+    [JsonPropertyName("is_current_effective")]
+    public bool IsCurrentEffective { get; init; }
 }

@@ -322,6 +322,16 @@ class Report(TimestampMixin, Base):
     report_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     content_hash_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
     source_set_hash_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    report_family_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    replaces_report_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("reports.report_id"), unique=True, index=True
+    )
+    replaces_report_revision: Mapped[int | None] = mapped_column(Integer)
+    correction_reason: Mapped[str | None] = mapped_column(Text)
+    superseded_by_report_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("reports.report_id"), unique=True, index=True
+    )
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ReportMutationReceipt(Base):
@@ -342,6 +352,9 @@ class ReportMutationReceipt(Base):
     source_set_hash_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     generated_document_id: Mapped[str | None] = mapped_column(String(64))
     generated_version_id: Mapped[str | None] = mapped_column(String(64))
+    report_family_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    replaces_report_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    replaces_report_revision: Mapped[int | None] = mapped_column(Integer)
     response_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -444,6 +444,20 @@ public sealed class ReportDraftService(
         return new ReportSourceFreezeResult(frozen, verifications);
     }
 
+    public IReadOnlyList<ServerReportSourceRequest> BuildServerSourceRequests(
+        IEnumerable<ReportSourceCandidateRecord> selectedSources)
+    {
+        var selected = selectedSources.ToList();
+        ValidateSourceSet(selected);
+        var mapped = MapServerReportSources(selected);
+        if (mapped.SkippedSources.Count > 0 || mapped.Sources.Count != selected.Count)
+        {
+            throw new InvalidOperationException(
+                "보고서 근거 중 서버 ID가 확인되지 않은 항목이 있습니다. 원천 동기화 상태를 확인하세요.");
+        }
+        return mapped.Sources;
+    }
+
     private static async Task<ServerWorkSequenceEvidence> LoadServerWorkSequenceEvidenceAsync(
         FlowNoteServerDocumentClient serverClient,
         IReadOnlySet<string> sourceIds,

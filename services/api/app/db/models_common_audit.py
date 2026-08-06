@@ -46,6 +46,9 @@ class AuditEventEnvelope(Base):
     target_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     target_version_id: Mapped[str | None] = mapped_column(String(64))
     target_revision: Mapped[int | None] = mapped_column(Integer)
+    related_target_type: Mapped[str | None] = mapped_column(String(50))
+    related_target_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    related_target_revision: Mapped[int | None] = mapped_column(Integer)
     reason: Mapped[str | None] = mapped_column(Text)
     approval_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="NOT_REQUIRED"

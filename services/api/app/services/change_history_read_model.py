@@ -164,6 +164,9 @@ def get_change_history_detail(
             "targetId": row.target_id,
             "targetVersionId": row.target_version_id,
             "targetRevision": row.target_revision,
+            "relatedTargetType": row.related_target_type,
+            "relatedTargetId": row.related_target_id,
+            "relatedTargetRevision": row.related_target_revision,
             "reason": row.reason,
             "approvalStatus": row.approval_status,
             "approvedBy": row.approved_by,
@@ -300,7 +303,9 @@ def _target_state(session: Session, row: AuditEventEnvelope) -> TargetState:
         if report is None:
             return _missing_target(row)
         return TargetState(
-            target_type, row.target_id, report.title, report.status, report.report_revision,
+            target_type, row.target_id, report.title,
+            "SUPERSEDED" if report.superseded_by_report_id else report.status,
+            report.report_revision,
             report.reviewed_by or report.created_by, "REPORT", report.report_id, "REPORT",
         )
     if target_type == "work_sequence_board":

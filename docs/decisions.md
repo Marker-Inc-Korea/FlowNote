@@ -658,3 +658,13 @@
 - `dueAt`은 작업함 기한과 지연 표시 기준이며 자동 만료가 아니다. 재지정은 기존 요청 취소 후 새 요청으로 처리한다. 반려 요청은 재사용하지 않고 수정된 정확한 version/hash로 새 요청을 만든다.
 - 승인 취소가 현재 공개 승인과 연결돼 있으면 공개 포인터를 철회하고 미사용 Android/controlled copy grant를 무효화한다. 소비된 controlled copy와 과거 열람·감사 이력은 삭제하지 않는다.
 - migration 전 공개본은 `LEGACY_PUBLICATION`으로 계속 열람한다. 승인 ID를 소급 생성하거나 actor·hash를 추정하지 않으며, migration 뒤 새 공개부터 승인 계약을 적용한다.
+
+## 2026-08-06. 확정 보고서 정정은 독립 계열과 재검토로 처리한다
+
+- 승인 보고서 본문과 source snapshot은 제자리에서 수정하지 않는다. 정정은 같은 `report_family_id`의 새 `DRAFT`가 기준 확정본 ID·revision을 참조하는 방식으로 시작한다.
+- 정정본이 확정되기 전까지 기준 보고서가 유효하다. 정정 승인 transaction에서 새 보고서를 유효본으로 확정하고 기준 보고서는 논리 `SUPERSEDED`로 표시한다. 일반 보관 `ARCHIVED`와 대체 이력을 섞지 않는다.
+- 기준 source는 기본적으로 전체를 복사한다. 새 source를 고르면 일부 자동 교체가 아니라 전체 source 집합을 다시 고정한다. 생성·검토·확정 직전의 version/revision/hash 또는 채널 권한 불일치는 명시적 충돌이며 원천을 자동 제외하지 않는다.
+- 같은 기준 확정본의 정정본은 하나만 허용한다. operation key의 intent hash는 보고서 계열, 기준 보고서와 revision, source-set hash, 정정 사유를 포함한다.
+- 정정 생성과 대체 확정은 서로 다른 transaction이다. 생성 성공 뒤 승인 실패는 기존 유효본과 독립 정정 초안이 함께 남는 명시적 부분 진행 상태다. 대체 확정, 이전 생성 문서 보관, 새 생성 문서, report/domain receipt와 공통 감사는 한 transaction으로 수렴한다.
+- 이전 생성 문서는 삭제하지 않고 보관하며 공개 포인터를 해제한다. 새 정정 생성 문서는 `IN_REVIEW`로 만들고 자동 공개하지 않으며 exact-version 공개 승인을 다시 요청한다.
+- AI 후보 재생성은 현재 유효한 보고서 계열만 사용한다. `SUPERSEDED` 보고서와 source는 계보·감사·과거 질의 snapshot 조회에는 남지만 새 후보에서는 `report_source_superseded_report`로 제외한다.

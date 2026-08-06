@@ -113,8 +113,8 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `channel_messages` | 문서, FieldComment, 작업순서, 보고서, 인수인계 원천 이벤트 메시지 |
 | `handovers` | 인수인계 원문, 원천·채널 연결, 전체 상태, 생성 멱등키, Android 입력 출처와 승인 단말 ID |
 | `handover_receipts` | 수신자별 인수인계 읽음, 확인, 후속조치 필요 상태 |
-| `reports`, `report_sources` | 단계형 보고서와 고정 근거 연결. 보고서는 상태, 검토·승인 사용자/시각, `report_revision`, 내용 hash, source 집합 hash와 선택적 생성 문서 ID를 보존 |
-| `report_mutation_receipts` | 보고서 mutation key와 intent hash, report/revision, 두 hash, 생성 document/version, 최초 응답 JSON snapshot |
+| `reports`, `report_sources` | 단계형 보고서와 고정 근거 연결. 보고서는 상태, 검토·승인 사용자/시각, `report_revision`, 내용/source 집합 hash, 선택적 생성 문서 ID와 `report_family_id`, 대체 전후 ID·revision·시각, 정정 사유를 보존 |
+| `report_mutation_receipts` | 보고서 mutation key와 intent hash, report 계열·revision, 대체 대상 ID·revision, 두 hash, 생성 document/version, 최초 응답 JSON snapshot |
 | `ai_search_candidates` | 안정된 candidate ID와 content hash를 가진 AI 자동 조언 전 단계의 근거 검색 후보 read model |
 | `ai_search_evaluation_runs` | 외부 AI 없는 ground-truth 회귀 실행과 provider 착수 판단 지표 |
 | `ai_search_evaluation_cases` | 질문별 기대/실제 근거, 제외 사유, 순위 hash와 통과 여부 |
@@ -134,7 +134,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | `android_document_view_grants` | Android 앱 내부 열람용 token hash, 사용자·세션·필수 승인 단말·공개 버전·미디어 종류·크기·SHA-256, 만료·소비·실패 상태 |
 | `activity_history` | 서버 활동 이력 |
 
-`audit_event_envelopes`와 `sync_mutation_receipts`는 migration `0002_common_mutation_receipts`에서 additive 방식으로 추가한다. `0003_document_approval_workflow`는 승인 테이블 3개와 `documents.publication_approval_id`, `documents.publication_origin`을 추가한다. 기존 `activity_history`와 도메인 receipt를 이동·수정·백필하지 않으며, 이전 공개본은 승인 근거를 추정하지 않고 `LEGACY_PUBLICATION`으로 둔다. 공통 행이 없는 이전 감사는 조회 시 `이전 형식·일부 필드 없음`으로 표시하고 role·session·revision·result 같은 누락값을 추정하지 않는다.
+`audit_event_envelopes`와 `sync_mutation_receipts`는 migration `0002_common_mutation_receipts`에서 additive 방식으로 추가한다. `0003_document_approval_workflow`는 승인 테이블 3개와 `documents.publication_approval_id`, `documents.publication_origin`을 추가한다. `0004_report_correction_lifecycle`은 보고서 계열·대체 열, report receipt의 대체 target, 공통 감사 envelope의 related target을 nullable 열과 인덱스로 추가하고 기존 보고서는 `report_family_id = report_id`로만 보완한다. 기존 보고서/source/document/file/receipt 행은 삭제하거나 내용을 다시 만들지 않는다. 기존 `activity_history`와 도메인 receipt도 이동·수정·백필하지 않으며, 이전 공개본은 승인 근거를 추정하지 않고 `LEGACY_PUBLICATION`으로 둔다. 공통 행이 없는 이전 감사는 조회 시 `이전 형식·일부 필드 없음`으로 표시하고 role·session·revision·result 같은 누락값을 추정하지 않는다.
 
 `sync_mutation_receipts.operation_key`는 서버 전체에서 UNIQUE다. 같은 key·같은 event/target/intent는 최초 성공 또는 거부·충돌 결과로 수렴하고 같은 key의 다른 intent는 `409 IDEMPOTENCY_KEY_REUSED`로 거부한다. 성공 행은 기존 `document_mutation_receipts`, `document_approval_mutation_receipts`, `field_comment_review_mutation_receipts`, `report_mutation_receipts`, `work_sequence_mutation_receipts`의 테이블명과 PK를 연결한다. 업무 변경, 도메인 receipt, 공통 envelope/receipt는 같은 transaction에서 commit한다. 문서 상태, FieldComment 검토, 보고서 상태 전이, 작업순서 항목 상태의 거부·충돌은 업무 transaction을 rollback한 뒤 공통 거부 receipt만 별도 transaction으로 확정하며 업무 row가 바뀌지 않았음을 revision으로 검증한다.
 
@@ -149,7 +149,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 | 문서 상태·삭제·태그 | 문서 revision 필수 | 삭제 필수, 나머지는 현재 API 계약상 선택 | `NOT_REQUIRED` | 성공 필수, 거부·충돌은 선택 |
 | 문서 검토 요청·결정·취소·공개 | 문서 revision과 version ID 필수 | 요청·결정·취소는 필수, 공개는 현재 API 계약상 선택 | 요청은 `PENDING`, 승인·공개는 `APPROVED`, 반려·취소·stale은 `REJECTED`와 승인 ID 기록 | 성공 필수, 거부·충돌은 선택 |
 | FieldComment 검토 | document version이 있으면 기록, review revision 필수 | 상태 전이 시 필수, 해석 필드만 바꾸면 선택 | 별도 승인 모델이 없어 `NOT_REQUIRED` | 성공 필수, 거부·충돌은 선택 |
-| 보고서 상태 전이 | 생성 version이 있으면 기록, report revision 필수 | 현재 API 계약상 선택 | `REVIEWED`는 `PENDING`/승인자 없음, `APPROVED`·`ARCHIVED`는 `APPROVED`/전이 actor 필수 | 성공 필수, 거부·충돌은 선택 |
+| 보고서 상태 전이·정정 대체 | 생성 version이 있으면 기록, report revision 필수. 정정은 related report ID/revision 필수 | 정정 생성은 필수, 일반 전이는 선택 | `REVIEWED`는 `PENDING`/승인자 없음, `APPROVED`·`ARCHIVED`는 `APPROVED`/전이 actor 필수 | 성공 필수, 거부·충돌은 선택 |
 | 작업순서 변경 | board revision 필수 | 생성은 서버 고정 사유, 순서·상태는 현재 API 계약상 선택 | 별도 승인 모델이 없어 `NOT_REQUIRED` | 성공 필수, 거부·충돌은 선택 |
 
 공통 `safe_payload_json`과 실패 응답 snapshot에는 operation key, schema 이름, 정제 코드와 식별자/revision만 저장한다. token, 비밀번호, 고객 문서·FieldComment·보고서 원문, 로컬 절대경로, 불필요한 개인정보는 저장하지 않는다. 전후 상태는 원문 대신 canonical SHA-256으로 기록한다.
@@ -170,7 +170,11 @@ Android 로컬 DB `flownote_android_notifications.db`는 표시한 알림의 공
 
 `field_comments`의 원천 핵심 필드는 생성 후 ORM 수준에서 불변이며, 원천 row 자체의 ORM 삭제도 거부한다. 관리자 영역은 `assigned_to`, `review_due_at`, `review_revision`, `conflict_flag`, `conflict_basis`, 정리·분석·결정 사유를 별도로 가진다. 논리 `ASSIGNED`는 기존 DB 제약을 바꾸지 않고 `status = NEW AND assigned_to IS NOT NULL`로 표현한다. 관리자 대리 입력은 인증 입력자, `reported_by`, `operator_id`를 분리해 `field_comment.proxy_created` 감사에 보존한다.
 
-보고서 `FIELD_COMMENT` source는 `SELECTED` 상태만 저장하며 `source_version_id`에 관찰 문서 버전, `source_revision`에 선정 시점 `review_revision`, `source_hash_sha256`에 원천 hash를 고정한다. 최초 source 집합은 distinct source type 2종 이상을 요구한다. 보고서는 `DRAFT` 또는 `AI_DRAFTED`에서 `REVIEWED`나 `APPROVED`로, `REVIEWED`에서 `APPROVED`로, `APPROVED`에서 `ARCHIVED`로만 전이한다. 검토 이후에는 source를 교체하지 않으며 각 전이와 최종 파일 생성 직전에 상태·version·revision·hash·채널 권한을 재검증하고 변경 시 409로 중단한다. 최종 보고서 본문에도 type/ID/version/revision/trace/hash를 기록해 `generated DocumentVersion → ReportSource → FieldComment → attachment/document version` 역추적을 유지한다.
+보고서 `FIELD_COMMENT` source는 `SELECTED` 상태만 저장하며 `source_version_id`에 관찰 문서 버전, `source_revision`에 선정 시점 `review_revision`, `source_hash_sha256`에 원천 hash를 고정한다. 최초 source 집합은 distinct source type 2종 이상을 요구한다. 일반 보고서는 `DRAFT` 또는 `AI_DRAFTED`에서 `REVIEWED`나 `APPROVED`로, `REVIEWED`에서 `APPROVED`로, `APPROVED`에서 `ARCHIVED`로 전이한다. 정정본만 내용 변경에 따른 재검토를 위해 `REVIEWED → DRAFT → REVIEWED`를 허용한다. 검토 이후에는 source를 교체하지 않으며 각 전이와 최종 파일 생성 직전에 상태·version·revision·hash·채널 권한을 재검증하고 변경 시 409로 중단한다. 최종 보고서 본문에도 type/ID/version/revision/trace/hash를 기록해 `generated DocumentVersion → ReportSource → FieldComment → attachment/document version` 역추적을 유지한다.
+
+정정본은 새 `reports` 행과 새 `report_sources` snapshot으로 만든다. `report_family_id`는 최초 보고서 ID, `replaces_report_id`와 `replaces_report_revision`은 정정 기준 확정본, `correction_reason`은 필수 변경 사유다. 같은 `replaces_report_id`는 한 정정본만 참조할 수 있다. 정정 생성 시 기본값은 기준 보고서의 전체 source snapshot 복사이며, 선택한 새 source 전체 집합을 요청하면 그 집합으로 새 snapshot을 고정한다. 두 경우 모두 생성 직전 현재 version/revision/hash와 채널 권한을 재검사하고 자동 제외하지 않는다.
+
+정정본이 `DRAFT` 또는 `REVIEWED`인 동안 기준 `APPROVED` 보고서가 현재 유효본이다. 정정 승인 transaction은 새 보고서·새 `IN_REVIEW` 생성 문서·receipt·감사와 기준 보고서의 `superseded_by_report_id`, `superseded_at`, revision 증가를 함께 확정한다. DB의 기존 `status = APPROVED` 제약과 과거 row를 재작성하지 않기 위해 대체된 보고서의 읽기 상태는 `superseded_by_report_id IS NOT NULL`일 때 논리 `SUPERSEDED`로 투영한다. 이전 생성 문서는 삭제하지 않고 `ARCHIVED`로 전환해 공개 포인터를 해제하며, 새 생성 문서는 자동 공개하지 않고 exact-version 공개 승인을 다시 받는다. 계열에서 `status = APPROVED AND superseded_by_report_id IS NULL`인 보고서만 현재 유효본이다.
 
 WPF 로컬 `report_sources`도 `source_version_id`, `source_revision`, `source_hash_sha256`, `snapshot_verified`를 저장한다. 서버 초안 생성 때 검증해 고정한 source만 `snapshot_verified = 1`로 기록하며, 동기화 큐의 source 집합 hash에도 이 네 값을 포함한다. 최종 서버 저장에 실패하거나 원천 재검증에서 충돌해도 로컬 보고서와 source row를 삭제하지 않는다. 재시도 요청은 같은 고정 revision/hash와 mutation key를 사용하고, 검증하지 못한 구 row는 기존 값과 이력을 지운 채 보정하지 않는다.
 
@@ -397,6 +401,7 @@ FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관�
 - `REVIEWED`
 - `APPROVED`
 - `ARCHIVED`
+- `SUPERSEDED`(읽기 projection. 저장 기준은 `superseded_by_report_id IS NOT NULL`)
 
 서버 인증 세션 상태:
 
