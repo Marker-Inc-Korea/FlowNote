@@ -134,6 +134,8 @@ class ChannelMessageResponse(BaseModel):
     source_type: str
     source_id: str
     source_version_id: str | None
+    related_document_id: str | None
+    related_document_version_id: str | None
     title: str
     body: str | None
     created_by: str | None
@@ -302,6 +304,8 @@ def _message_response(message: ChannelMessage) -> ChannelMessageResponse:
         source_type=message.source_type,
         source_id=message.source_id,
         source_version_id=message.source_version_id,
+        related_document_id=message.related_document_id,
+        related_document_version_id=message.related_document_version_id,
         title=message.title,
         body=message.body,
         created_by=message.created_by,
@@ -381,9 +385,10 @@ def list_channels(
     session: Annotated[Session, Depends(get_db_session)],
     channel_type: Annotated[str | None, Query(alias="channelType")] = None,
     channel_status: Annotated[str | None, Query(alias="status")] = None,
+    manageable_only: Annotated[bool, Query(alias="manageableOnly")] = False,
 ) -> list[NotificationChannelResponse]:
     statement = select(NotificationChannel).order_by(desc(NotificationChannel.updated_at), desc(NotificationChannel.id))
-    if current_user.role not in CHANNEL_ADMIN_ROLES:
+    if current_user.role not in CHANNEL_ADMIN_ROLES or manageable_only:
         statement = statement.join(
             NotificationChannelMember,
             NotificationChannelMember.channel_id == NotificationChannel.channel_id,
@@ -391,6 +396,10 @@ def list_channels(
             NotificationChannelMember.user_id == current_user.user_id,
             NotificationChannelMember.status == "ACTIVE",
         )
+        if manageable_only:
+            statement = statement.where(
+                NotificationChannelMember.member_role.in_(["OWNER", "MANAGER"])
+            )
     if channel_type is not None:
         statement = statement.where(
             NotificationChannel.channel_type == _normalize_choice(channel_type, CHANNEL_TYPES, "channelType")

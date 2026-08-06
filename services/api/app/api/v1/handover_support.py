@@ -33,6 +33,8 @@ def handover_response(session: Session, handover: Handover) -> HandoverResponse:
         source_type=handover.source_type,
         source_id=handover.source_id,
         source_version_id=handover.source_version_id,
+        related_document_id=handover.related_document_id,
+        related_document_version_id=handover.related_document_version_id,
         status=handover.status,
         created_by=handover.created_by,
         entry_source=handover.entry_source,

@@ -10,13 +10,25 @@ from sqlalchemy import func, select
 from app.core.config import Settings
 from app.db.models import (
     ActivityHistory,
+    ChannelMessage,
+    Document,
+    DocumentVersion,
+    FileObject,
+    Handover,
+    HandoverReceipt,
+    SyncMutationReceipt,
+    UserAccount,
     WorkSequenceBoard,
+    WorkSequenceCandidateDelivery,
     WorkSequenceChangeHistory,
+    WorkSequenceDeliveryRecipient,
     WorkSequenceItem,
     WorkSequenceMutationReceipt,
     WorkSequenceNotificationCandidate,
 )
+from app.db.init_db import hash_password_for_dev
 from app.main import create_app
+from app.services.mutation_receipts import canonical_hash
 
 
 API_ROOT = Path(__file__).resolve().parents[1]
@@ -161,13 +173,20 @@ def test_work_sequence_board_item_reorder_status_and_history() -> None:
             item for item in candidates_json if item["event_type"] == "work_sequence.status_changed"
         )
         assert status_candidate["status"] == "CANDIDATE"
-        sent_response = client.patch(
+        direct_sent = client.patch(
             f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates/{status_candidate['candidate_id']}",
             headers=headers,
             json={"status": "SENT"},
         )
+        assert direct_sent.status_code == 409, direct_sent.text
+        assert direct_sent.json()["detail"]["code"] == "CANDIDATE_DELIVERY_REQUIRED"
+        sent_response = client.patch(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates/{status_candidate['candidate_id']}",
+            headers=headers,
+            json={"status": "DISMISSED"},
+        )
         assert sent_response.status_code == 200, sent_response.text
-        assert sent_response.json()["status"] == "SENT"
+        assert sent_response.json()["status"] == "DISMISSED"
 
         list_response = client.get("/api/v1/work-sequence-boards", headers=headers)
         assert list_response.status_code == 200
@@ -196,7 +215,7 @@ def test_work_sequence_board_item_reorder_status_and_history() -> None:
             ).all()
             assert any(item.event_type == "work_sequence.reordered" for item in candidates)
             assert any(item.event_type == "work_sequence.status_changed" for item in candidates)
-            assert any(item.status == "SENT" for item in candidates)
+            assert any(item.status == "DISMISSED" for item in candidates)
             status_history = session.scalars(
                 select(ActivityHistory).where(
                     ActivityHistory.target_id == status_candidate["candidate_id"],
@@ -442,3 +461,473 @@ def test_duplicate_key_after_api_restart_returns_original_result() -> None:
                     WorkSequenceMutationReceipt.mutation_key == payload["idempotencyKey"]
                 )
             ) == 1
+
+
+def test_candidate_preview_channel_and_handover_delivery_are_idempotent_and_scoped() -> None:
+    suffix = uuid4().hex
+    password = "candidate-delivery-password"
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        recipient = UserAccount(
+            user_id=f"user-delivery-{suffix}",
+            username=f"delivery-{suffix}",
+            login_id=f"delivery-{suffix}",
+            display_name="전달 수신자",
+            role="team-member",
+            password_hash=hash_password_for_dev(password),
+            is_active=True,
+            status="ACTIVE",
+        )
+        with client.app.state.database.session() as session:
+            session.add(recipient)
+            file_object = FileObject(
+                storage_key=f"work-sequence-delivery/{suffix}.pdf",
+                original_filename=f"{suffix}.pdf",
+                extension="pdf",
+                mime_type="application/pdf",
+                file_family="pdf",
+                size_bytes=10,
+                hash_sha256="a" * 64,
+            )
+            session.add(file_object)
+            session.flush()
+            document_id = f"document-delivery-{suffix}"
+            version_id = f"version-delivery-{suffix}"
+            session.add(Document(
+                document_id=document_id,
+                title="포장 작업표준",
+                document_type="work_instruction",
+                status="PUBLISHED",
+                latest_version_id=version_id,
+                published_version_id=version_id,
+                owner_id="user-admin",
+            ))
+            session.add(DocumentVersion(
+                version_id=version_id,
+                document_id=document_id,
+                file_object_id=file_object.id,
+                version_no=1,
+                change_reason="후보 전달 공개 문서 검증",
+                version_status="PUBLISHED",
+                is_latest=True,
+                is_published=True,
+                created_by="user-admin",
+            ))
+            session.commit()
+
+        channel_response = client.post(
+            "/api/v1/notification-channels",
+            headers=headers,
+            json={"name": f"작업순서 전달 {suffix}", "channelType": "LINE"},
+        )
+        assert channel_response.status_code == 201, channel_response.text
+        channel = channel_response.json()
+        member_response = client.post(
+            f"/api/v1/notification-channels/{channel['channel_id']}/members",
+            headers=headers,
+            json={"userId": recipient.user_id, "memberRole": "MEMBER"},
+        )
+        assert member_response.status_code == 201, member_response.text
+
+        board = client.post(
+            "/api/v1/work-sequence-boards",
+            headers=headers,
+            json={"title": f"전달 작업판 {suffix}", "idempotencyKey": f"delivery-board:{suffix}"},
+        ).json()
+        board = client.post(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/items",
+            headers=headers,
+            json={
+                "title": "포장 공정 시작",
+                "documentId": document_id,
+                "idempotencyKey": f"delivery-item:{suffix}",
+                "baseBoardRevision": board["board_revision"],
+            },
+        ).json()
+        item_id = board["items"][0]["item_id"]
+        board = client.patch(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/items/{item_id}/status",
+            headers=headers,
+            json={
+                "status": "IN_PROGRESS",
+                "changeReason": "포장 우선 진행",
+                "idempotencyKey": f"delivery-status:{suffix}",
+                "baseBoardRevision": board["board_revision"],
+            },
+        ).json()
+        candidate = client.get(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates",
+            headers=headers,
+        ).json()[0]
+        preview = client.get(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates/"
+            f"{candidate['candidate_id']}/delivery-preview",
+            headers=headers,
+            params={"channelId": channel["channel_id"]},
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["can_deliver"] is True
+        assert preview.json()["current_board_revision"] == board["board_revision"]
+        assert {row["user_id"] for row in preview.json()["recipients"]} >= {
+            "user-admin",
+            recipient.user_id,
+        }
+        assert preview.json()["source"]["source_id"] == item_id
+        assert preview.json()["source"]["change_id"] == candidate["change_id"]
+        assert preview.json()["source"]["published_document_id"] == document_id
+        assert preview.json()["source"]["published_document_version_id"] == version_id
+
+        payload = {
+            "channelId": channel["channel_id"],
+            "deliveryMode": "HANDOVER",
+            "recipientIds": [recipient.user_id],
+            "title": "포장 공정 작업순서 변경",
+            "body": "포장 공정을 먼저 진행합니다.",
+            "reason": "현장 우선순위 공유",
+            "baseBoardRevision": board["board_revision"],
+            "idempotencyKey": f"candidate-delivery:{suffix}",
+        }
+        delivered = client.post(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates/"
+            f"{candidate['candidate_id']}/deliveries",
+            headers=headers,
+            json=payload,
+        )
+        replay = client.post(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates/"
+            f"{candidate['candidate_id']}/deliveries",
+            headers=headers,
+            json=payload,
+        )
+        assert delivered.status_code == replay.status_code == 201, delivered.text
+        assert delivered.json() == replay.json()
+        result = delivered.json()
+        assert result["status"] == "COMPLETED"
+        assert result["candidate_status"] == "SENT"
+        assert result["success_count"] == 1 and result["failure_count"] == 0
+        assert result["message_id"] and result["handover_id"]
+        assert result["source_version_id"] == candidate["change_id"]
+        assert result["related_document_id"] == document_id
+        assert result["related_document_version_id"] == version_id
+        assert result["recipients"][0]["handover_receipt_id"]
+
+        reused = client.post(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates/"
+            f"{candidate['candidate_id']}/deliveries",
+            headers=headers,
+            json={**payload, "body": "다른 본문"},
+        )
+        assert reused.status_code == 409, reused.text
+        assert reused.json()["detail"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+        with client.app.state.database.session() as session:
+            assert len(session.scalars(select(WorkSequenceCandidateDelivery).where(
+                WorkSequenceCandidateDelivery.candidate_id == candidate["candidate_id"]
+            )).all()) == 1
+            assert len(session.scalars(select(WorkSequenceDeliveryRecipient).where(
+                WorkSequenceDeliveryRecipient.delivery_id == result["delivery_id"]
+            )).all()) == 1
+            assert len(session.scalars(select(ChannelMessage).where(
+                ChannelMessage.message_id == result["message_id"]
+            )).all()) == 1
+            assert len(session.scalars(select(Handover).where(
+                Handover.handover_id == result["handover_id"]
+            )).all()) == 1
+            saved_message = session.scalar(select(ChannelMessage).where(
+                ChannelMessage.message_id == result["message_id"]
+            ))
+            saved_handover = session.scalar(select(Handover).where(
+                Handover.handover_id == result["handover_id"]
+            ))
+            assert saved_message is not None and saved_message.related_document_id == document_id
+            assert saved_handover is not None and saved_handover.related_document_id == document_id
+            assert saved_message.source_version_id == candidate["change_id"]
+            assert saved_handover.source_version_id == candidate["change_id"]
+            assert len(session.scalars(select(HandoverReceipt).where(
+                HandoverReceipt.handover_id == result["handover_id"]
+            )).all()) == 1
+            common = session.scalar(select(SyncMutationReceipt).where(
+                SyncMutationReceipt.operation_key == payload["idempotencyKey"]
+            ))
+            assert common is not None
+            assert common.domain_receipt_type == "work_sequence_candidate_deliveries"
+
+
+def test_candidate_delivery_stops_for_revision_or_membership_change() -> None:
+    suffix = uuid4().hex
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        recipient = UserAccount(
+            user_id=f"user-delivery-conflict-{suffix}",
+            username=f"delivery-conflict-{suffix}",
+            login_id=f"delivery-conflict-{suffix}",
+            display_name="충돌 수신자",
+            role="team-member",
+            password_hash=hash_password_for_dev("candidate-delivery-password"),
+            is_active=True,
+            status="ACTIVE",
+        )
+        with client.app.state.database.session() as session:
+            session.add(recipient)
+            session.commit()
+        channel = client.post(
+            "/api/v1/notification-channels",
+            headers=headers,
+            json={"name": f"전달 충돌 {suffix}", "channelType": "LINE"},
+        ).json()
+        member = client.post(
+            f"/api/v1/notification-channels/{channel['channel_id']}/members",
+            headers=headers,
+            json={"userId": recipient.user_id, "memberRole": "MEMBER"},
+        ).json()
+        board = client.post(
+            "/api/v1/work-sequence-boards",
+            headers=headers,
+            json={"title": f"충돌 작업판 {suffix}", "idempotencyKey": f"conflict-board:{suffix}"},
+        ).json()
+        for index in range(2):
+            board = client.post(
+                f"/api/v1/work-sequence-boards/{board['board_id']}/items",
+                headers=headers,
+                json={
+                    "title": f"충돌 항목 {index}",
+                    "idempotencyKey": f"conflict-item:{suffix}:{index}",
+                    "baseBoardRevision": board["board_revision"],
+                },
+            ).json()
+        board = client.put(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/items/order",
+            headers=headers,
+            json={
+                "itemIds": [board["items"][1]["item_id"], board["items"][0]["item_id"]],
+                "idempotencyKey": f"conflict-order:{suffix}",
+                "baseBoardRevision": board["board_revision"],
+            },
+        ).json()
+        candidate = client.get(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates",
+            headers=headers,
+        ).json()[0]
+
+        removed = client.patch(
+            f"/api/v1/notification-channels/{channel['channel_id']}/members/{member['member_id']}",
+            headers=headers,
+            json={"status": "REMOVED"},
+        )
+        assert removed.status_code == 200
+        membership_conflict = client.post(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates/"
+            f"{candidate['candidate_id']}/deliveries",
+            headers=headers,
+            json={
+                "channelId": channel["channel_id"],
+                "deliveryMode": "CHANNEL",
+                "recipientIds": [recipient.user_id],
+                "title": "전달 충돌",
+                "body": "전달 충돌",
+                "reason": "멤버십 경합 검증",
+                "baseBoardRevision": board["board_revision"],
+                "idempotencyKey": f"membership-conflict:{suffix}",
+            },
+        )
+        assert membership_conflict.status_code == 409, membership_conflict.text
+        assert membership_conflict.json()["detail"]["code"] == "CHANNEL_MEMBERSHIP_CHANGED"
+
+        advanced = client.patch(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/items/{board['items'][0]['item_id']}/status",
+            headers=headers,
+            json={
+                "status": "IN_PROGRESS",
+                "idempotencyKey": f"advance-revision:{suffix}",
+                "baseBoardRevision": board["board_revision"],
+            },
+        )
+        assert advanced.status_code == 200, advanced.text
+        stale = client.get(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates/"
+            f"{candidate['candidate_id']}/delivery-preview",
+            headers=headers,
+            params={"channelId": channel["channel_id"]},
+        )
+        assert stale.status_code == 409, stale.text
+        assert stale.json()["detail"]["code"] == "WORK_SEQUENCE_DELIVERY_STALE_REVISION"
+
+
+def test_work_sequence_delivery_templates_are_site_scoped_without_product_default() -> None:
+    suffix = uuid4().hex
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        before = client.get("/api/v1/work-sequence-delivery-templates", headers=headers)
+        assert before.status_code == 200, before.text
+        assert all(row["site_scope"] == "DEFAULT" for row in before.json())
+
+        created = client.post(
+            "/api/v1/work-sequence-delivery-templates",
+            headers=headers,
+            json={
+                "name": f"포장 우선 안내 {suffix}",
+                "title": "포장 작업순서 변경",
+                "body": "포장 공정을 먼저 진행해 주세요.",
+            },
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["site_scope"] == "DEFAULT"
+        listed = client.get("/api/v1/work-sequence-delivery-templates", headers=headers)
+        assert any(row["template_id"] == created.json()["template_id"] for row in listed.json())
+
+        archived = client.patch(
+            f"/api/v1/work-sequence-delivery-templates/{created.json()['template_id']}",
+            headers=headers,
+            json={"status": "ARCHIVED"},
+        )
+        assert archived.status_code == 200, archived.text
+        listed_after = client.get("/api/v1/work-sequence-delivery-templates", headers=headers)
+        assert all(row["template_id"] != created.json()["template_id"] for row in listed_after.json())
+
+
+def test_partial_delivery_retry_keeps_successes_and_retries_only_failed_recipient() -> None:
+    suffix = uuid4().hex
+    with create_test_client() as client:
+        headers = auth_headers(client)
+        recipient = UserAccount(
+            user_id=f"user-partial-{suffix}",
+            username=f"partial-{suffix}",
+            login_id=f"partial-{suffix}",
+            display_name="부분 실패 수신자",
+            role="team-member",
+            password_hash=hash_password_for_dev("partial-password"),
+            is_active=True,
+            status="ACTIVE",
+        )
+        with client.app.state.database.session() as session:
+            session.add(recipient)
+            session.commit()
+        channel = client.post(
+            "/api/v1/notification-channels",
+            headers=headers,
+            json={"name": f"부분 재시도 {suffix}", "channelType": "LINE"},
+        ).json()
+        client.post(
+            f"/api/v1/notification-channels/{channel['channel_id']}/members",
+            headers=headers,
+            json={"userId": recipient.user_id, "memberRole": "MEMBER"},
+        )
+        board = client.post(
+            "/api/v1/work-sequence-boards",
+            headers=headers,
+            json={"title": f"부분 재시도 {suffix}", "idempotencyKey": f"partial-board:{suffix}"},
+        ).json()
+        board = client.post(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/items",
+            headers=headers,
+            json={
+                "title": "부분 재시도 항목",
+                "idempotencyKey": f"partial-item:{suffix}",
+                "baseBoardRevision": board["board_revision"],
+            },
+        ).json()
+        item_id = board["items"][0]["item_id"]
+        board = client.patch(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/items/{item_id}/status",
+            headers=headers,
+            json={
+                "status": "IN_PROGRESS",
+                "idempotencyKey": f"partial-status:{suffix}",
+                "baseBoardRevision": board["board_revision"],
+            },
+        ).json()
+        candidate = client.get(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates",
+            headers=headers,
+        ).json()[0]
+        key = f"partial-delivery:{suffix}"
+        payload = {
+            "channelId": channel["channel_id"],
+            "deliveryMode": "HANDOVER",
+            "recipientIds": [recipient.user_id],
+            "title": "부분 실패 재시도",
+            "body": "실패 수신자만 다시 처리합니다.",
+            "reason": "부분 성공 경계 검증",
+            "baseBoardRevision": board["board_revision"],
+            "idempotencyKey": key,
+        }
+        intent_hash = canonical_hash({
+            "boardId": board["board_id"],
+            "candidateId": candidate["candidate_id"],
+            "channelId": channel["channel_id"],
+            "deliveryMode": "HANDOVER",
+            "recipientIds": [recipient.user_id],
+            "title": payload["title"],
+            "body": payload["body"],
+            "reason": payload["reason"],
+            "baseBoardRevision": board["board_revision"],
+        })
+        delivery_id = f"wseqdelivery_seed_{suffix}"
+        handover_id = f"handover_seed_{suffix}"
+        message_id = f"chmsg_seed_{suffix}"
+        with client.app.state.database.session() as session:
+            session.add(Handover(
+                handover_id=handover_id,
+                idempotency_key=f"wseq:{intent_hash}",
+                channel_id=channel["channel_id"],
+                title=payload["title"],
+                body=payload["body"],
+                source_type="WORK_SEQUENCE_ITEM",
+                source_id=item_id,
+                status="FOLLOW_UP_REQUIRED",
+                created_by="user-admin",
+                entry_source="windows_client",
+            ))
+            session.add(ChannelMessage(
+                message_id=message_id,
+                channel_id=channel["channel_id"],
+                message_type="HANDOVER",
+                source_type="HANDOVER",
+                source_id=handover_id,
+                title=payload["title"],
+                body=payload["body"],
+                created_by="user-admin",
+            ))
+            session.add(WorkSequenceCandidateDelivery(
+                delivery_id=delivery_id,
+                idempotency_key=key,
+                intent_hash_sha256=intent_hash,
+                candidate_id=candidate["candidate_id"],
+                board_id=board["board_id"],
+                board_revision=board["board_revision"],
+                change_id=candidate["change_id"],
+                channel_id=channel["channel_id"],
+                delivery_mode="HANDOVER",
+                title=payload["title"],
+                body=payload["body"],
+                reason=payload["reason"],
+                source_type="WORK_SEQUENCE_ITEM",
+                source_id=item_id,
+                requested_recipient_ids_json=f'["{recipient.user_id}"]',
+                message_id=message_id,
+                handover_id=handover_id,
+                status="PARTIAL",
+                created_by="user-admin",
+            ))
+            session.add(WorkSequenceDeliveryRecipient(
+                delivery_recipient_id=f"wseqrecipient_seed_{suffix}",
+                delivery_id=delivery_id,
+                recipient_id=recipient.user_id,
+                delivery_status="FAILED",
+                error_code="RECEIPT_WRITE_FAILED",
+                error_message="seeded failure",
+                attempt_count=1,
+            ))
+            session.commit()
+
+        retried = client.post(
+            f"/api/v1/work-sequence-boards/{board['board_id']}/notification-candidates/"
+            f"{candidate['candidate_id']}/deliveries",
+            headers=headers,
+            json=payload,
+        )
+        assert retried.status_code == 201, retried.text
+        assert retried.json()["delivery_id"] == delivery_id
+        assert retried.json()["status"] == "COMPLETED"
+        assert retried.json()["recipients"][0]["attempt_count"] == 2
+        assert retried.json()["recipients"][0]["handover_receipt_id"]

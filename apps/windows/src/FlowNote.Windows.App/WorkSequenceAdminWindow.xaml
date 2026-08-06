@@ -82,6 +82,12 @@
                                 Click="RefreshButton_Click" />
                         <Button Width="118"
                                 Height="30"
+                                Margin="0,0,8,0"
+                                Content="알림 후보 전달"
+                                AutomationProperties.Name="작업순서 알림 후보 전달 화면 열기"
+                                Click="OpenDeliveryButton_Click" />
+                        <Button Width="118"
+                                Height="30"
                                 Content="현황판 열기"
                                 Click="OpenTvViewButton_Click" />
                     </StackPanel>

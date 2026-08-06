@@ -668,3 +668,12 @@
 - 정정 생성과 대체 확정은 서로 다른 transaction이다. 생성 성공 뒤 승인 실패는 기존 유효본과 독립 정정 초안이 함께 남는 명시적 부분 진행 상태다. 대체 확정, 이전 생성 문서 보관, 새 생성 문서, report/domain receipt와 공통 감사는 한 transaction으로 수렴한다.
 - 이전 생성 문서는 삭제하지 않고 보관하며 공개 포인터를 해제한다. 새 정정 생성 문서는 `IN_REVIEW`로 만들고 자동 공개하지 않으며 exact-version 공개 승인을 다시 요청한다.
 - AI 후보 재생성은 현재 유효한 보고서 계열만 사용한다. `SUPERSEDED` 보고서와 source는 계보·감사·과거 질의 snapshot 조회에는 남지만 새 후보에서는 `report_source_superseded_report`로 제외한다.
+
+## 2026-08-06. 작업순서 후보 전달은 candidate-channel 불변 receipt로 확정한다
+
+- 한 후보는 여러 채널에 전달할 수 있지만 같은 `candidate_id + channel_id` 조합은 한 번만 확정한다. 기존 candidate row를 덮어쓰지 않고 채널별 delivery row를 남긴다.
+- 후보는 생성 당시 board revision과 change ID를 고정하고 24시간 뒤 만료한다. 최초 전송 전 revision·후보 원천·보낸 사람의 채널 관리 역할·대상 수신자의 활성 멤버십을 다시 검사한다.
+- 채널 메시지, 선택적 handover, handover receipt, 수신자별 delivery receipt와 감사는 한 transaction 경계에 둔다. 수신자 receipt 저장만 실패한 경우 delivery는 `PARTIAL`, handover는 `FOLLOW_UP_REQUIRED`, candidate는 `CANDIDATE`를 유지한다.
+- 같은 멱등키와 intent hash의 완료 요청은 기존 공개 ID를 반환한다. 부분 성공 요청은 실패 수신자만 다시 시도하고 기존 성공 receipt를 수정하지 않는다. 같은 키로 채널·방식·수신자·제목·본문·사유·revision이 달라지면 거부한다.
+- candidate `SENT`는 적어도 하나의 채널 전달이 요청 수신자 전원에게 완료됐다는 뜻이다. 후보가 앞으로 다른 채널에 전달되지 않는다는 전역 완료 의미로 사용하지 않는다.
+- 현장 문구 템플릿은 인증된 서버 `site_scope`에 저장한다. 제품 공통 기본 문구는 강제하지 않으며 작성자 또는 시스템 관리자만 같은 현장 안에서 수정한다.

@@ -159,6 +159,12 @@ public record ServerChannelMessageResponse
     [JsonPropertyName("source_version_id")]
     public string? SourceVersionId { get; init; }
 
+    [JsonPropertyName("related_document_id")]
+    public string? RelatedDocumentId { get; init; }
+
+    [JsonPropertyName("related_document_version_id")]
+    public string? RelatedDocumentVersionId { get; init; }
+
     [JsonPropertyName("title")]
     public string Title { get; init; } = string.Empty;
 
@@ -175,9 +181,18 @@ public record ServerChannelMessageResponse
 
     public string SourceTypeLabel => ChannelLabelFormatter.FormatSourceType(SourceType);
 
-    public string SourceLinkText => string.IsNullOrWhiteSpace(SourceVersionId)
-        ? $"{SourceTypeLabel}: {SourceId}"
-        : $"{SourceTypeLabel}: {SourceId} / {SourceVersionId}";
+    public string SourceLinkText
+    {
+        get
+        {
+            var source = string.IsNullOrWhiteSpace(SourceVersionId)
+                ? $"{SourceTypeLabel}: {SourceId}"
+                : $"{SourceTypeLabel}: {SourceId} / {SourceVersionId}";
+            return string.IsNullOrWhiteSpace(RelatedDocumentId)
+                ? source
+                : $"{source} · 공개 문서: {RelatedDocumentId} / {RelatedDocumentVersionId}";
+        }
+    }
 }
 
 public sealed record ServerUserNotificationResponse : ServerChannelMessageResponse
@@ -295,6 +310,12 @@ public sealed record ServerHandoverResponse
     [JsonPropertyName("source_version_id")]
     public string? SourceVersionId { get; init; }
 
+    [JsonPropertyName("related_document_id")]
+    public string? RelatedDocumentId { get; init; }
+
+    [JsonPropertyName("related_document_version_id")]
+    public string? RelatedDocumentVersionId { get; init; }
+
     [JsonPropertyName("status")]
     public string Status { get; init; } = string.Empty;
 
@@ -334,9 +355,12 @@ public sealed record ServerHandoverResponse
             }
 
             var sourceTypeLabel = ChannelLabelFormatter.FormatSourceType(SourceType);
-            return string.IsNullOrWhiteSpace(SourceVersionId)
+            var source = string.IsNullOrWhiteSpace(SourceVersionId)
                 ? $"{sourceTypeLabel}: {SourceId}"
                 : $"{sourceTypeLabel}: {SourceId} / {SourceVersionId}";
+            return string.IsNullOrWhiteSpace(RelatedDocumentId)
+                ? source
+                : $"{source} · 공개 문서: {RelatedDocumentId} / {RelatedDocumentVersionId}";
         }
     }
 }

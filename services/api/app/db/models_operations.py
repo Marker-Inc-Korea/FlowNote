@@ -118,6 +118,11 @@ class WorkSequenceNotificationCandidate(Base):
     actor_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
     recipient_hint: Mapped[str | None] = mapped_column(String(120))
     message: Mapped[str] = mapped_column(Text, nullable=False)
+    board_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    change_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("work_sequence_change_history.change_id"), index=True
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="CANDIDATE")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -210,6 +215,8 @@ class ChannelMessage(Base):
     source_type: Mapped[str] = mapped_column(String(50), nullable=False)
     source_id: Mapped[str] = mapped_column(String(64), nullable=False)
     source_version_id: Mapped[str | None] = mapped_column(String(64))
+    related_document_id: Mapped[str | None] = mapped_column(String(64))
+    related_document_version_id: Mapped[str | None] = mapped_column(String(64))
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     body: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
@@ -247,6 +254,8 @@ class Handover(TimestampMixin, Base):
     source_type: Mapped[str | None] = mapped_column(String(50))
     source_id: Mapped[str | None] = mapped_column(String(64))
     source_version_id: Mapped[str | None] = mapped_column(String(64))
+    related_document_id: Mapped[str | None] = mapped_column(String(64))
+    related_document_version_id: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="SENT")
     created_by: Mapped[str | None] = mapped_column(String(64), ForeignKey("user_accounts.user_id"))
     entry_source: Mapped[str] = mapped_column(String(30), nullable=False, default="field_user")

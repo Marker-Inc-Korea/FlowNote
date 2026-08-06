@@ -18,6 +18,7 @@ from app.db.models import (
     Document,
     UserAccount,
     WorkSequenceBoard,
+    WorkSequenceCandidateDelivery,
     WorkSequenceChangeHistory,
     WorkSequenceItem,
     WorkSequenceMutationReceipt,
@@ -159,6 +160,9 @@ class WorkSequenceNotificationCandidateResponse(BaseModel):
     recipient_hint: str | None
     message: str
     status: str
+    board_revision: int
+    change_id: str | None
+    expires_at: datetime | None
     created_at: datetime
 
 
@@ -590,6 +594,8 @@ def reorder_items(
         actor_id=actor_id,
         recipient_hint=board.line_code,
         message=f"Work sequence board order changed: {board.title}.",
+        board_revision=next_revision,
+        change_id=change_id,
     )
     try:
         return _save_receipt(
@@ -746,6 +752,8 @@ def _update_item_status_mutation(
         actor_id=actor_id,
         recipient_hint=item.assigned_to or board.line_code,
         message=f"Work sequence item status changed: {item.title} {before} -> {target_status}.",
+        board_revision=next_revision,
+        change_id=change_id,
     )
     return _save_receipt(
         session,
@@ -834,6 +842,9 @@ def list_notification_candidates(
             recipient_hint=row.recipient_hint,
             message=row.message,
             status=row.status,
+            board_revision=row.board_revision,
+            change_id=row.change_id,
+            expires_at=row.expires_at,
             created_at=row.created_at,
         )
         for row in rows
@@ -865,6 +876,29 @@ def update_notification_candidate_status(
 
     target_status = _validate_choice(request.status, {"CANDIDATE", "SENT", "DISMISSED"}, "status")
     before = candidate.status
+    if target_status == "SENT":
+        completed_delivery = session.scalar(
+            select(WorkSequenceCandidateDelivery.id).where(
+                WorkSequenceCandidateDelivery.candidate_id == candidate.candidate_id,
+                WorkSequenceCandidateDelivery.status == "COMPLETED",
+            )
+        )
+        if completed_delivery is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "CANDIDATE_DELIVERY_REQUIRED",
+                    "message": "SENT는 완료된 채널 전달 receipt가 있을 때만 확정됩니다.",
+                },
+            )
+    if before == "SENT" and target_status != "SENT":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "CANDIDATE_DELIVERY_IMMUTABLE",
+                "message": "완료된 후보 전달 상태는 되돌릴 수 없습니다. 채널별 delivery 이력을 확인하세요.",
+            },
+        )
     if before != target_status:
         candidate.status = target_status
         session.add(
@@ -892,5 +926,8 @@ def update_notification_candidate_status(
         recipient_hint=candidate.recipient_hint,
         message=candidate.message,
         status=candidate.status,
+        board_revision=candidate.board_revision,
+        change_id=candidate.change_id,
+        expires_at=candidate.expires_at,
         created_at=candidate.created_at,
     )

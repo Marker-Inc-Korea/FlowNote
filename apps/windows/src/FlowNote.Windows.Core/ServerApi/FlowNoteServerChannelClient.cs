@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace FlowNote.Windows.Core.ServerApi;
 
@@ -18,7 +19,8 @@ public sealed class FlowNoteServerChannelClient
     public async Task<IReadOnlyList<ServerNotificationChannelResponse>> ListChannelsAsync(
         string? channelType = null,
         string? status = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool manageableOnly = false)
     {
         var query = new List<string>();
         if (!string.IsNullOrWhiteSpace(channelType))
@@ -30,12 +32,63 @@ public sealed class FlowNoteServerChannelClient
         {
             query.Add($"status={Uri.EscapeDataString(status.Trim())}");
         }
+        if (manageableOnly)
+        {
+            query.Add("manageableOnly=true");
+        }
 
         using var response = await httpClient.GetAsync(
             query.Count == 0 ? "api/v1/notification-channels" : $"api/v1/notification-channels?{string.Join("&", query)}",
             cancellationToken);
         var channels = await ReadJsonResponse<List<ServerNotificationChannelResponse>>(response, cancellationToken);
         return channels;
+    }
+
+    public async Task<ServerWorkSequenceDeliveryPreviewResponse> PreviewWorkSequenceDeliveryAsync(
+        string boardId,
+        string candidateId,
+        string channelId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/v1/work-sequence-boards/{Uri.EscapeDataString(boardId)}/notification-candidates/" +
+            $"{Uri.EscapeDataString(candidateId)}/delivery-preview?channelId={Uri.EscapeDataString(channelId)}",
+            cancellationToken);
+        return await ReadJsonResponse<ServerWorkSequenceDeliveryPreviewResponse>(response, cancellationToken);
+    }
+
+    public async Task<ServerWorkSequenceDeliveryResponse> DeliverWorkSequenceCandidateAsync(
+        string boardId,
+        string candidateId,
+        ServerWorkSequenceDeliveryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            $"api/v1/work-sequence-boards/{Uri.EscapeDataString(boardId)}/notification-candidates/" +
+            $"{Uri.EscapeDataString(candidateId)}/deliveries",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerWorkSequenceDeliveryResponse>(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ServerWorkSequenceDeliveryTemplateResponse>> ListWorkSequenceDeliveryTemplatesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            "api/v1/work-sequence-delivery-templates",
+            cancellationToken);
+        return await ReadJsonResponse<List<ServerWorkSequenceDeliveryTemplateResponse>>(response, cancellationToken);
+    }
+
+    public async Task<ServerWorkSequenceDeliveryTemplateResponse> CreateWorkSequenceDeliveryTemplateAsync(
+        ServerWorkSequenceDeliveryTemplateCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync(
+            "api/v1/work-sequence-delivery-templates",
+            request,
+            cancellationToken);
+        return await ReadJsonResponse<ServerWorkSequenceDeliveryTemplateResponse>(response, cancellationToken);
     }
 
     public async Task<ServerNotificationChannelResponse> CreateChannelAsync(
@@ -304,6 +357,42 @@ public sealed class FlowNoteServerChannelClient
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                try
+                {
+                    using var document = JsonDocument.Parse(errorBody);
+                    if (!document.RootElement.TryGetProperty("detail", out var detail) ||
+                        detail.ValueKind != JsonValueKind.Object)
+                    {
+                        throw new JsonException("Conflict detail is not an object.");
+                    }
+                    string? ReadString(string name) =>
+                        detail.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+                            ? value.GetString()
+                            : null;
+                    int? ReadInt(string name) =>
+                        detail.TryGetProperty(name, out var value) && value.TryGetInt32(out var number)
+                            ? number
+                            : null;
+                    throw new FlowNoteServerConflictException(
+                        ReadString("code") ?? "SERVER_CONFLICT",
+                        ReadString("message") ?? "서버 전달 요청이 충돌했습니다.",
+                        ReadInt("expectedRevision"),
+                        ReadInt("currentRevision"),
+                        null,
+                        null,
+                        null,
+                        errorBody);
+                }
+                catch (JsonException)
+                {
+                    throw new FlowNoteServerConflictException(
+                        "SERVER_CONFLICT",
+                        "서버 전달 요청이 충돌했습니다. 후보와 채널을 새로고침하세요.",
+                        null, null, null, null, null, errorBody);
+                }
+            }
             if (response.StatusCode is HttpStatusCode.Unauthorized
                 or HttpStatusCode.Forbidden
                 or HttpStatusCode.NotFound)

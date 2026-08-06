@@ -409,6 +409,18 @@ FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관�
 - `REVOKED`
 - `EXPIRED`
 
+## 작업순서 후보 전달 모델
+
+`work_sequence_notification_candidates`는 후보가 만들어진 `board_revision`, 직접 원천인 `change_id`, 생성 후 24시간인 `expires_at`을 보존한다. 이후 작업판 revision이 바뀌면 기존 후보를 새 상태의 알림으로 해석하지 않고 stale 충돌로 막는다.
+
+`work_sequence_candidate_deliveries`는 `candidate_id + channel_id` 유일 제약으로 한 후보의 채널별 전달 의도를 불변으로 보존한다. 한 후보는 채널마다 독립 row를 가질 수 있다. row에는 멱등키와 intent hash, 전달 당시 board revision·change ID, `CHANNEL|HANDOVER`, 제목·본문·사유, 작업순서 source, 관련 공개 문서·버전, 요청 수신자 snapshot, message·handover ID, `PARTIAL|COMPLETED` 상태가 남는다. 기존 candidate row를 덮어써 다중 채널 이력을 잃지 않는다.
+
+`work_sequence_delivery_recipients`는 delivery와 수신자 조합별 유일 receipt다. `DELIVERED|FAILED`, 선택적 handover receipt ID, 실패 코드·안내와 시도 횟수를 보존한다. 부분 성공 재시도는 `FAILED` row만 갱신하며 성공 row와 공개 ID를 바꾸지 않는다. candidate `SENT`는 하나 이상의 delivery가 `COMPLETED`일 때의 projection이다. 일부 실패만 있는 delivery는 `PARTIAL`, 함께 만든 handover는 `FOLLOW_UP_REQUIRED`, candidate는 `CANDIDATE`를 유지한다.
+
+`work_sequence_delivery_templates`는 서버 인증의 `site_scope + name`으로 유일한 현장별 문구다. 제품 공통 기본 문구는 저장하지 않는다. 작업순서 쓰기 role이 만들 수 있고 같은 현장의 작성자 또는 `admin`·`system-admin`만 수정·보관한다.
+
+`channel_messages`와 `handovers`의 `related_document_id`, `related_document_version_id`는 작업순서 원천과 별개로 현재 공개 문서 이동 정보를 제공한다. `CHANNEL` 메시지와 인수인계 원문이 작업순서 항목을 원천으로 삼을 때는 `source_id = item_id`, `source_version_id = change_id`로 고정하고 delivery receipt에도 같은 `change_id`를 남긴다. `HANDOVER` 채널 메시지는 `source_type = HANDOVER`, `source_id = handover_id`로 인수인계를 가리키면서 `source_version_id = change_id`를 유지한다. 따라서 문서 연결이 바뀌어도 전달 당시 작업 항목과 변경 근거가 사라지지 않는다.
+
 ## 외부 AI 운영·보존 모델
 
 - `ai_transfer_approvals`: 고객/현장/provider/model/목적/source type, 처리정책 버전, 승인·만료·폐기 시각을 보존한다. 다른 고객/현장에는 재사용하지 않는다.

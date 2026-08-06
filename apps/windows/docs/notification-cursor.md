@@ -24,6 +24,12 @@ WPF의 서버 채널 알림 polling 위치는 공통 로컬 SQLite의 `server_no
 
 첫 동기화가 100건 page를 넘으면 100ms 간격으로 다음 page를 이어 받고 `진행 위치: 현재/서버`를 표시한다. 따라잡기가 끝나면 기본 15초 polling으로 돌아간다. 연결 실패는 기존 정책대로 최대 120초까지 backoff한다.
 
+## 작업순서 후보 전달과 cursor
+
+작업순서 후보의 channel message 또는 handover 생성은 새 서버 message를 추가할 뿐 WPF의 사용자별 cursor와 처리한 `message_id` 원장을 초기화하지 않는다. WPF는 후보·채널·전달 방식·수신자·문구·사유·board revision으로 안정적인 멱등키를 만들어 응답 유실이나 앱 재시작 뒤 같은 의도를 다시 보내도 기존 message ID를 반환한다. 따라서 polling에는 새 message가 하나만 나타난다. 일부 수신자 실패 재시도는 기존 message ID와 성공 receipt를 유지하고 실패 receipt만 처리하므로 cursor를 되돌리지 않는다.
+
+앱 재시작이나 서버 재연결 뒤에는 기존 cursor 다음 message부터 이어 받는다. 서버 instance/epoch 변경 또는 cursor 역행이 함께 발견되면 후보 전달 재시도도 자동 진행하지 않고 기존 재결합 정책에 따라 polling과 자동 전송을 함께 멈춘다.
+
 ## 검증 기준
 
 - Core 단위 테스트는 두 사용자·두 서버 scope, 정상 처리, 처리 예외 rollback, 앱 재시작에 해당하는 서비스 재생성, 로그아웃/재로그인 보존, 로컬 DB 복구의 row 부재, 서버 cursor 역행, 일반 사용자 초기화 거부, 관리자 초기화 뒤 기존 `message_id` 멱등 보존과 401 불변 조건을 검증한다. instance/epoch 변경과 다른 정규화 URL 차단, 차단 중 큐 보존도 별도 guard 회귀 테스트로 검증한다.

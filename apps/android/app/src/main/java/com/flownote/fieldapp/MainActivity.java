@@ -488,6 +488,11 @@ public final class MainActivity extends Activity implements
         startActivity(intent);
     }
 
+    @Override
+    public void onOpenPublishedDocument(String documentId, String versionId, String title) {
+        openSecureViewer(documentId, versionId, title);
+    }
+
     private void loadNotifications() {
         if (!requireSecureStorage()) {
             return;

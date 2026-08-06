@@ -21,6 +21,8 @@ final class ReceivedHandoverView extends LinearLayout {
         boolean onQueueReceipt(HandoverReceiptDraft draft);
 
         boolean onQueueFollowUp(HandoverFollowUpDraft draft);
+
+        void onOpenPublishedDocument(String documentId, String versionId, String title);
     }
 
     private final Listener listener;
@@ -73,6 +75,8 @@ final class ReceivedHandoverView extends LinearLayout {
         String sourceType = handover.optString("source_type");
         String sourceId = handover.optString("source_id");
         String sourceVersionId = handover.optString("source_version_id", null);
+        String relatedDocumentId = handover.optString("related_document_id", null);
+        String relatedDocumentVersionId = handover.optString("related_document_version_id", null);
 
         LinearLayout card = new LinearLayout(getContext());
         card.setOrientation(VERTICAL);
@@ -83,10 +87,26 @@ final class ReceivedHandoverView extends LinearLayout {
         card.addView(text(handover.optString("body"), 15, "#3D4852"));
         card.addView(text(
                 "상태: " + receiptLabel(receipt.optString("receipt_status"))
-                        + " · 원천: " + sourceLabel(sourceType) + " " + sourceId,
+                        + " · 원천: " + sourceLabel(sourceType) + " " + sourceId
+                        + (FieldCommentDraft.trimToNull(sourceVersionId) == null
+                        ? "" : " · 변경 이력 " + sourceVersionId),
                 14,
                 "#3D4852"
         ));
+
+        if (FieldCommentDraft.trimToNull(relatedDocumentId) != null
+                && FieldCommentDraft.trimToNull(relatedDocumentVersionId) != null) {
+            Button documentButton = button("관련 공개 문서 바로 열기");
+            documentButton.setContentDescription(
+                    "인수인계와 연결된 공개 문서의 정확한 버전을 보안 뷰어로 열기"
+            );
+            documentButton.setOnClickListener(view -> listener.onOpenPublishedDocument(
+                    relatedDocumentId,
+                    relatedDocumentVersionId,
+                    title + " · 관련 공개 문서"
+            ));
+            card.addView(documentButton, fullWidth());
+        }
 
         EditText followUpInput = new EditText(getContext());
         followUpInput.setHint("보류 사유 또는 후속 FieldComment 내용");

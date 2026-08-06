@@ -559,6 +559,17 @@ public sealed record ServerWorkSequenceNotificationCandidateResponse
     [JsonPropertyName("status")]
     public string Status { get; init; } = string.Empty;
 
+    [JsonPropertyName("board_revision")]
+    public int BoardRevision { get; init; }
+
+    [JsonPropertyName("change_id")]
+    public string? ChangeId { get; init; }
+
+    [JsonPropertyName("expires_at")]
+    public DateTime? ExpiresAt { get; init; }
+
     [JsonPropertyName("created_at")]
     public DateTime CreatedAt { get; init; }
+
+    public string DisplayText => $"{Message} · {Status} · revision {BoardRevision}";
 }

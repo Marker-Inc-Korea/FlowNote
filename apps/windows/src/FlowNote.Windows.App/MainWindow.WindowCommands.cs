@@ -171,6 +171,7 @@ public partial class MainWindow
         var window = new WorkSequenceAdminWindow(
             services.WorkSequences,
             serverDocumentClient,
+            serverChannelClient,
             GetCurrentUserId())
         {
             Owner = this
