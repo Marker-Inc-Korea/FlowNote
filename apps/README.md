@@ -2,7 +2,9 @@
 
 FlowNote 클라이언트를 보관하는 영역이다.
 
-아래 역할 구분은 2026-08-06 현재 실제 Windows·Android 코드 기준이다.
+아래 역할 구분은 2026-08-09 현재 실제 Windows·Android 코드 기준이다.
+
+실제 화면 사용 순서는 [Windows 사용 매뉴얼](../docs/manuals/windows-user-guide.md)과 [Android 현장 사용 매뉴얼](../docs/manuals/android-field-guide.md)을 따른다.
 
 클라이언트 UI는 승인된 설치형 네이티브 앱을 기본으로 한다. Windows WPF는 관리자/현장 PC용이고, Android는 현장 태블릿 또는 러기드 단말용이다. 로컬 제어가 필요한 기능은 각 클라이언트 앱에서 직접 처리한다.
 

@@ -109,7 +109,8 @@ public final class NotificationPollingService extends Service {
     }
 
     private void pollWithCurrentSession(boolean allowRefresh) throws Exception {
-        String serverUrl = preferences.getString("server_url", "");
+        String serverUrl = ServerConfiguration.resolve(
+                preferences.getString("server_url", null));
         String userId = preferences.getString("user_id", "anonymous");
         String scope = sha256(serverUrl + "\n" + userId).substring(0, 16);
         String cursorKey = "notification_cursor_v2_" + scope;

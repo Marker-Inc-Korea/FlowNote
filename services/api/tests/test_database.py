@@ -9,11 +9,10 @@ from sqlalchemy import func, inspect, select, text
 from app.core.config import Settings
 from app.db.init_db import (
     COMMON_MUTATION_RECEIPT_SCHEMA_VERSION,
-    DEFAULT_ADMIN_PASSWORD,
     DEFAULT_ADMIN_USERNAME,
     initialize_database,
 )
-from app.db.init_db import INITIAL_SCHEMA_VERSION, hash_password_for_dev
+from app.db.init_db import INITIAL_SCHEMA_VERSION, verify_password
 from app.db.models import ActivityHistory, Document, DocumentVersion, FieldComment, FileObject, Role
 from app.db.models import SchemaMigration, UserAccount, UserRole
 from app.main import create_app
@@ -37,6 +36,15 @@ def create_test_client() -> TestClient:
 
 
 def test_app_startup_creates_mvp_schema(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="FLOWNOTE_ACCESS_TOKEN_SECRET"):
+        Settings(_env_file=None, environment="production")
+    production_settings = Settings(
+        _env_file=None,
+        environment="production",
+        access_token_secret="production-specific-secret-with-32-chars",
+    )
+    assert production_settings.environment == "production"
+
     expected_tables = {
         "ai_search_candidates",
         "ai_search_evaluation_runs",
@@ -120,8 +128,23 @@ def test_app_startup_creates_mvp_schema(tmp_path: Path) -> None:
             assert admin_account.user_id == "user-admin"
             assert admin_account.display_name == "FlowNote Admin"
             assert admin_account.role == "admin"
-            assert admin_account.password_hash == hash_password_for_dev(DEFAULT_ADMIN_PASSWORD)
+            assert verify_password("1234", admin_account.password_hash)
             assert admin_account.is_active is True
+
+    fresh_server_path = tmp_path / "fresh-server.sqlite3"
+    fresh_server = Database(f"sqlite:///{fresh_server_path.as_posix()}")
+    try:
+        with pytest.raises(RuntimeError, match="FLOWNOTE_INITIAL_ADMIN_PASSWORD"):
+            initialize_database(fresh_server)
+        initialize_database(fresh_server, "initial-admin-password")
+        with fresh_server.session() as session:
+            fresh_admin = session.scalar(
+                select(UserAccount).where(UserAccount.username == DEFAULT_ADMIN_USERNAME)
+            )
+            assert fresh_admin is not None
+            assert verify_password("initial-admin-password", fresh_admin.password_hash)
+    finally:
+        fresh_server.dispose()
 
     wpf_database_path = tmp_path / "flownote.local.sqlite"
     with sqlite3.connect(wpf_database_path) as connection:
@@ -219,7 +242,11 @@ def test_common_receipt_migration_preserves_legacy_audit_and_separate_wpf_queue(
                 """
             )
 
-        initialize_database(database)
+        initialize_database(
+            database,
+            "1234",
+            allow_insecure_test_password=True,
+        )
 
         with database.session() as session:
             legacy = session.scalar(

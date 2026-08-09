@@ -30,9 +30,9 @@ if ((Test-Path $runArtifactDir -PathType Container) -and
 New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
 $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
-$expectedFastApiTestCount = 186
-$expectedWpfCoreTestCount = 102
-$expectedAndroidUnitTestCount = 32
+$expectedFastApiTestCount = 209
+$expectedWpfCoreTestCount = 120
+$expectedAndroidUnitTestCount = 39
 $stepDisplayNames = @{
     "Check Windows baseline toolchain versions" = "Windows x64 표준 도구 확인"
     "Check .gitignore coverage for known test/build artifact paths" = "테스트·빌드 산출물 Git 제외 규칙 확인"
@@ -42,7 +42,7 @@ $stepDisplayNames = @{
     "Run WPF Core tests" = "WPF Core 테스트 실행"
     "Build WPF app" = "WPF 앱 빌드"
     "Check shared WPF SQLite integrity before smoke" = "스모크 전 공통 WPF SQLite 무결성 확인"
-    "Run integrated WPF smoke against shared SQLite and preserved FastAPI" = "공통 SQLite·보존 FastAPI 연동 WPF 스모크 실행"
+    "Run integrated WPF smoke against shared SQLite and production HTTPS API" = "공통 SQLite·운영 HTTPS API 연동 WPF 스모크 실행"
     "Check shared WPF SQLite integrity after smoke" = "스모크 후 공통 WPF SQLite 무결성 확인"
     "Run Android unit tests and debug build" = "Android 단위 테스트·debug 빌드"
     "Run approved Android physical-device instrumentation smoke" = "승인 Android 실단말 계측 스모크"
@@ -669,77 +669,40 @@ if (-not $SkipWpfSmoke) {
         }
     }
 
-    Invoke-Step "Run integrated WPF smoke against shared SQLite and preserved FastAPI" {
+    Invoke-Step "Run integrated WPF smoke against shared SQLite and production HTTPS API" {
         $expectedDatabasePath = Join-Path $repoRoot "data/local/flownote.local.sqlite"
         $previousLocalDataDir = $env:FLOWNOTE_LOCAL_DATA_DIR
         $previousLocalDatabasePath = $env:FLOWNOTE_LOCAL_DATABASE_PATH
         $previousApiBaseUrl = $env:FLOWNOTE_API_BASE_URL
-        $previousEnvironment = $env:FLOWNOTE_ENVIRONMENT
-        $previousDatabaseUrl = $env:FLOWNOTE_DATABASE_URL
-        $previousStorageRoot = $env:FLOWNOTE_STORAGE_ROOT
-        $previousSmokeServerDatabasePath = $env:FLOWNOTE_SMOKE_SERVER_DATABASE_PATH
-        $previousAiEnabled = $env:FLOWNOTE_AI_EXTERNAL_CALL_ENABLED
         $previousSmokeArtifactDir = $env:FLOWNOTE_SMOKE_ARTIFACT_DIR
-        $managedApiProcess = $null
 
         try {
             $env:FLOWNOTE_LOCAL_DATA_DIR = $null
             $env:FLOWNOTE_LOCAL_DATABASE_PATH = $null
-            $env:FLOWNOTE_API_BASE_URL = "http://127.0.0.1:5184"
+            if ([string]::IsNullOrWhiteSpace($env:FLOWNOTE_API_BASE_URL) -or
+                $env:FLOWNOTE_API_BASE_URL.TrimEnd('/') -eq "https://flownote.example") {
+                throw "FLOWNOTE_API_BASE_URL must be set to an approved HTTPS server before WPF smoke testing."
+            }
             $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
 
-            $apiAlreadyRunning = $false
-            try {
-                $health = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:5184/api/v1/health" -TimeoutSec 2
-                $apiAlreadyRunning = $health.StatusCode -eq 200
+            $apiUri = $null
+            if (-not [Uri]::TryCreate($env:FLOWNOTE_API_BASE_URL, [UriKind]::Absolute, [ref]$apiUri) -or
+                $apiUri.Scheme -ne "https") {
+                throw "WPF 서버 연동 스모크에는 HTTPS FLOWNOTE_API_BASE_URL이 필요합니다. 로컬 FastAPI와 HTTP 주소는 허용하지 않습니다."
             }
-            catch {
-                $apiAlreadyRunning = $false
+            if ([string]::IsNullOrWhiteSpace($env:FLOWNOTE_SMOKE_ADMIN_USERNAME) -or
+                [string]::IsNullOrWhiteSpace($env:FLOWNOTE_SMOKE_ADMIN_PASSWORD)) {
+                throw "운영 서버 연동 스모크 전용 계정은 실행 환경에 주입해야 합니다. 자격 증명은 파일이나 저장소에 기록하지 마세요."
             }
 
-            if (-not $apiAlreadyRunning) {
-                $apiDir = Join-Path $repoRoot "services/api"
-                $python = Join-Path $apiDir ".venv/Scripts/python.exe"
-                if (-not (Test-Path $python)) {
-                    throw "FastAPI virtualenv python not found: $python"
-                }
-                $env:FLOWNOTE_ENVIRONMENT = "test"
-                $env:FLOWNOTE_DATABASE_URL = "sqlite:///./data/flownote.windows-smoke.sqlite3"
-                $env:FLOWNOTE_STORAGE_ROOT = "./storage/windows-smoke"
-                $env:FLOWNOTE_SMOKE_SERVER_DATABASE_PATH = Join-Path $apiDir "data/flownote.windows-smoke.sqlite3"
-                $env:FLOWNOTE_AI_EXTERNAL_CALL_ENABLED = "false"
-                $apiOutLog = Join-Path $runArtifactDir "fastapi-server.out.log"
-                $apiErrLog = Join-Path $runArtifactDir "fastapi-server.err.log"
-                $managedApiProcess = Start-Process -FilePath $python `
-                    -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "5184") `
-                    -WorkingDirectory $apiDir -PassThru `
-                    -RedirectStandardOutput $apiOutLog -RedirectStandardError $apiErrLog
-
-                $started = $false
-                for ($attempt = 0; $attempt -lt 30; $attempt++) {
-                    Start-Sleep -Seconds 1
-                    if ($managedApiProcess.HasExited) {
-                        throw "Managed FastAPI exited before health check. Preserve and inspect: $apiErrLog"
-                    }
-                    try {
-                        $health = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:5184/api/v1/health" -TimeoutSec 2
-                        if ($health.StatusCode -eq 200) {
-                            $started = $true
-                            break
-                        }
-                    }
-                    catch {
-                    }
-                }
-                if (-not $started) {
-                    throw "Managed FastAPI did not become healthy. Preserve and inspect: $apiErrLog"
-                }
-            }
-            else {
-                throw "Port 5184 already has a healthy FastAPI process. Stop it so this run can start and preserve its own managed test server."
+            $healthUri = [Uri]::new($apiUri, "api/v1/health")
+            $health = Invoke-WebRequest -UseBasicParsing -Uri $healthUri -TimeoutSec 10
+            if ($health.StatusCode -ne 200) {
+                throw "운영 HTTPS API health 확인에 실패했습니다: status=$($health.StatusCode)"
             }
 
             Write-Host "Expected WPF smoke SQLite DB: $expectedDatabasePath"
+            Write-Host "운영 서버 테스트로 이관: $($apiUri.GetLeftPart([UriPartial]::Authority))"
             $wpfLog = Join-Path $runArtifactDir "wpf-smoke.log"
             & dotnet run --project ".\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Windows.SmokeTests.csproj" *>&1 |
                 Tee-Object -FilePath $wpfLog
@@ -780,18 +743,9 @@ if (-not $SkipWpfSmoke) {
             $script:wpfEvidence.smoke.status = "PASSED"
         }
         finally {
-            if ($null -ne $managedApiProcess -and -not $managedApiProcess.HasExited) {
-                Stop-Process -Id $managedApiProcess.Id
-                $managedApiProcess.WaitForExit()
-            }
             $env:FLOWNOTE_LOCAL_DATA_DIR = $previousLocalDataDir
             $env:FLOWNOTE_LOCAL_DATABASE_PATH = $previousLocalDatabasePath
             $env:FLOWNOTE_API_BASE_URL = $previousApiBaseUrl
-            $env:FLOWNOTE_ENVIRONMENT = $previousEnvironment
-            $env:FLOWNOTE_DATABASE_URL = $previousDatabaseUrl
-            $env:FLOWNOTE_STORAGE_ROOT = $previousStorageRoot
-            $env:FLOWNOTE_SMOKE_SERVER_DATABASE_PATH = $previousSmokeServerDatabasePath
-            $env:FLOWNOTE_AI_EXTERNAL_CALL_ENABLED = $previousAiEnabled
             $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $previousSmokeArtifactDir
         }
     }

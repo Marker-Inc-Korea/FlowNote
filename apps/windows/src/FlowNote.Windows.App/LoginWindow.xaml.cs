@@ -26,8 +26,8 @@ public partial class LoginWindow : Window
 
         var loginId = LoginIdTextBox.Text.Trim();
         var password = PasswordBox.Password;
-        var configuredServer = Environment.GetEnvironmentVariable(
-            FlowNoteServerApiEnvironment.ApiBaseUrlEnvironmentVariable);
+        var configuredServer =
+            FlowNoteServerApiEnvironment.ResolveApiBaseUrlFromEnvironment();
         using var httpClient = FlowNoteServerApiEnvironment.CreateHttpClientFromEnvironment(TimeSpan.FromSeconds(5));
         if (!string.IsNullOrWhiteSpace(configuredServer) && httpClient is null)
         {
@@ -112,12 +112,8 @@ public partial class LoginWindow : Window
 
     private static string BuildServerTargetMessage()
     {
-        var configuredServer = Environment.GetEnvironmentVariable(
-            FlowNoteServerApiEnvironment.ApiBaseUrlEnvironmentVariable);
-        if (string.IsNullOrWhiteSpace(configuredServer))
-        {
-            return "서버 주소 미설정: 승인된 로컬 운영 계정으로만 로그인합니다.";
-        }
+        var configuredServer =
+            FlowNoteServerApiEnvironment.ResolveApiBaseUrlFromEnvironment();
 
         var normalized = configuredServer.EndsWith('/')
             ? configuredServer

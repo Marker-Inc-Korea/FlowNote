@@ -24,6 +24,7 @@ from app.db.models import (
     WorkSequenceChangeHistory,
     WorkSequenceItem,
 )
+from app.services.field_comment_support import _source_hash
 
 REPORT_SOURCE_TYPES = {
     "FIELD_COMMENT",
@@ -172,7 +173,7 @@ def _validate_source(
                 detail=SOURCE_NOT_VISIBLE_DETAIL,
             )
         source_version_id = field_comment.document_version_id
-        source_hash = _field_comment_source_hash(field_comment)
+        source_hash = _source_hash(field_comment)
         source_revision = field_comment.review_revision
     elif source_type == "DOCUMENT":
         document = session.scalar(
@@ -311,28 +312,6 @@ def _validate_report_transition(current_status: str, target_status: str) -> None
                 "targetStatus": target_status,
             },
         )
-
-
-def _field_comment_source_hash(note: FieldComment) -> str:
-    return _hash_payload({
-        "comment_id": note.comment_id,
-        "document_id": note.document_id,
-        "document_version_id": note.document_version_id,
-        "structure_item_id": note.structure_item_id,
-        "work_record_id": note.work_record_id,
-        "comment_type": note.comment_type,
-        "input_mode": note.input_mode,
-        "signal_level": note.signal_level,
-        "template_id": note.template_id,
-        "raw_content": note.raw_content,
-        "author_id": note.author_id,
-        "reported_by": note.reported_by,
-        "operator_id": note.operator_id,
-        "entry_source": note.entry_source,
-        "device_id": note.device_id,
-        "location_code": note.location_code,
-        "created_at": note.created_at.isoformat() if note.created_at else None,
-    })
 
 
 def _work_sequence_item_snapshot(item: WorkSequenceItem) -> dict:

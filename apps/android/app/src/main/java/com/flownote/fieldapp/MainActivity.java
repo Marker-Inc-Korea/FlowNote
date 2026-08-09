@@ -97,7 +97,8 @@ public final class MainActivity extends Activity implements
         preferences = getSharedPreferences("flownote-field-app", MODE_PRIVATE);
         SecureViewerFiles.clean(this);
         buildUi();
-        serverUrlInput.setText(preferences.getString("server_url", ""));
+        serverUrlInput.setText(ServerConfiguration.resolve(
+                preferences.getString("server_url", null)));
         deviceIdInput.setText(preferences.getString("device_id", ""));
         usernameInput.setText(preferences.getString("username", ""));
         try {
@@ -179,7 +180,7 @@ public final class MainActivity extends Activity implements
         statusText.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         root.addView(statusText);
 
-        serverUrlInput = input("서버 주소 예: http://10.0.0.10:8000", InputType.TYPE_CLASS_TEXT);
+        serverUrlInput = input("서버 주소 예시: " + ServerConfiguration.DEFAULT_SERVER_EXAMPLE_URL, InputType.TYPE_CLASS_TEXT);
         deviceIdInput = input("승인 단말 ID", InputType.TYPE_CLASS_TEXT);
         usernameInput = input("사용자 ID", InputType.TYPE_CLASS_TEXT);
         passwordInput = input("비밀번호", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -257,7 +258,8 @@ public final class MainActivity extends Activity implements
     private int dp(int value) { return ui.dp(value); }
 
     private void restoreSettings() {
-        serverUrlInput.setText(preferences.getString("server_url", ""));
+        serverUrlInput.setText(ServerConfiguration.resolve(
+                preferences.getString("server_url", null)));
         deviceIdInput.setText(preferences.getString("device_id", ""));
         usernameInput.setText(preferences.getString("username", ""));
         if (sessionStore == null) {
@@ -271,8 +273,10 @@ public final class MainActivity extends Activity implements
     }
 
     private void saveSettings() {
+        String serverUrl = ServerConfiguration.resolve(serverUrlInput.getText().toString());
+        serverUrlInput.setText(serverUrl);
         preferences.edit()
-                .putString("server_url", serverUrlInput.getText().toString().trim())
+                .putString("server_url", serverUrl)
                 .putString("device_id", deviceIdInput.getText().toString().trim())
                 .putString("username", usernameInput.getText().toString().trim())
                 .putString("user_id", currentUserId)

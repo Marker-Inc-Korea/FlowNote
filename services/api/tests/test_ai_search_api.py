@@ -305,6 +305,8 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 source_type="FIELD_COMMENT",
                 source_id=analyzed_comment_id,
                 source_version_id=None,
+                trace_id=f"trace-ai-active-{suffix}",
+                source_hash_sha256="1" * 64,
                 relation_type="primary",
             )
         )
@@ -324,6 +326,8 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 source_type="DOCUMENT",
                 source_id=published_document_id,
                 source_version_id=published_version_id,
+                trace_id=f"trace-ai-archived-{suffix}",
+                source_hash_sha256="2" * 64,
                 relation_type="archived-report-source",
             )
         )
@@ -343,6 +347,8 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 source_type="FIELD_COMMENT",
                 source_id="",
                 source_version_id=None,
+                trace_id=f"trace-ai-blank-{suffix}",
+                source_hash_sha256="3" * 64,
                 relation_type="blank-source-id",
             )
         )
@@ -362,6 +368,8 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 source_type="FIELD_COMMENT",
                 source_id=f"comment-ai-missing-origin-{suffix}",
                 source_version_id=None,
+                trace_id=f"trace-ai-missing-{suffix}",
+                source_hash_sha256="4" * 64,
                 relation_type="missing-origin",
             )
         )
@@ -381,6 +389,8 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 source_type="DOCUMENT",
                 source_id=deleted_document_id,
                 source_version_id=None,
+                trace_id=f"trace-ai-deleted-{suffix}",
+                source_hash_sha256="5" * 64,
                 relation_type="deleted-origin",
             )
         )
@@ -400,6 +410,8 @@ def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
                 source_type="FIELD_COMMENT",
                 source_id=archived_comment_id,
                 source_version_id=None,
+                trace_id=f"trace-ai-excluded-{suffix}",
+                source_hash_sha256="6" * 64,
                 relation_type="archived-field-comment-source",
             )
         )

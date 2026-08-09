@@ -2,7 +2,9 @@
 
 `apps/android/`는 FlowNote Android 현장 단말 클라이언트이다. 승인된 현장 태블릿 또는 러기드 단말에서 공개 문서 목록·상세와 PDF/이미지/TXT 앱 내부 보안 열람, FieldComment, 사진 기록, 신호등식 기록, 채널 알림 확인, 인수인계 작성·확인·보류와 같은 원천의 후속 FieldComment 작성을 수행한다.
 
-기능 목록은 2026-08-06 현재 `app/src/main` 코드 기준이며 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
+기능 목록은 2026-08-09 현재 `app/src/main` 코드 기준이며 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
+
+현장 작업자의 실제 사용 순서는 [Android 현장 사용 매뉴얼](../../docs/manuals/android-field-guide.md), 단말·전송 장애는 [공통 장애 대응](../../docs/manuals/troubleshooting.md)을 따른다.
 
 ## 기술 기준
 
@@ -17,7 +19,8 @@
 ## 현재 화면 골격
 
 - 화면 상단에 전송 대기 건수, 단말 보존 상태, 다음 자동 재시도 시점, 자동 재시도 한도와 승인 단말 ID를 계속 표시
-- 서버 주소, 승인 단말 ID, 사용자 ID, 비밀번호 설정
+- 서버 주소, 승인 단말 ID, 사용자 ID, 비밀번호 설정. 저장된 주소가 없으면 승인 운영 주소
+  공개 저장소 기본값인 `https://flownote.example`을 사용한다. 실제 연결에는 승인된 HTTPS 주소를 앱 설정에 저장한다.
 - `deviceId` 포함 서버 로그인
 - 공개 문서 목록과 문서 상세 메타데이터 조회. 상세 선택 시 문서/공개 버전 ID를 FieldComment 입력란에 연결
 - 공개 버전의 PDF, PNG/JPEG/WebP, UTF-8 TXT 본문 보안 열람
@@ -94,7 +97,7 @@ Android가 자동으로 개인 휴대폰을 등록하지 않는다. 단말 등�
 
 기본 운영 산출물은 MDM 또는 사내 배포용 서명 APK다. AAB는 관리형 스토어를 실제로 선택하고 앱 서명 책임을 별도 승인할 때만 사용한다. `assembleRelease`는 아래 네 환경변수가 모두 없으면 실패하며 keystore·암호는 저장소나 Gradle 파일에 쓰지 않는다.
 
-release manifest는 cleartext HTTP를 금지한다. debug build만 개발용 사내 HTTP 접속을 허용하므로 debug APK를 운영 MDM allowlist에 올리지 않는다.
+debug와 release manifest는 모두 cleartext HTTP를 금지한다. 저장된 HTTP·잘못된 주소는 앱 시작 시 승인 운영 HTTPS 주소로 교체되며, debug APK도 로컬 FastAPI로 연결하지 않는다. debug APK는 서명·배포 정책이 다른 개발 산출물이므로 운영 MDM allowlist에 올리지 않는다.
 
 ```bash
 export FLOWNOTE_ANDROID_KEYSTORE=/secure/path/flownote-release.jks
@@ -136,4 +139,4 @@ Windows 배포 준비 PC의 통합 기준선은 x64 JDK 17, Android Platform 35�
 
 2026-07-22 macOS 보조 run `p0-baseline-144-macos-precheck-20260722-002`은 FastAPI 144건만 통과했고 JDK/Android SDK 부재로 Android `testDebugUnitTest`와 `assembleDebug`는 `NOT_RUN`이다. 이 결과는 Android 기준선이 아니며 Windows x64 표준 환경의 같은 `run_id` 통합 실행에서 Android JUnit과 debug build가 통과해야 한다.
 
-현재 단위 테스트 35건은 API 경로·로그인/FieldComment 계약, 작업순서 원천 intent hash와 scope별 멱등키, 인수인계 필수 원천·수신자·멱등키, 받은 인수인계 확인·보류 상태와 후속 FieldComment 원천·멱등키, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구, outbox 자동 재시도와 `FAILED` 전용 수동 재전송 정책, 대기·부분 성공·실패 상태 안내, 알림 401 refresh·재거부·비활성 단말·연결 단절 분기를 검증한다. outbox 일부 실패는 완료·부분 성공·실패·대기 건수와 실패 항목 전용 재전송 안내를 표시하고, Keystore/암호문 오류는 초기화하지 말고 관리자에게 단말 교체 점검을 요청하도록 안내한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리, 서로 다른 AES 키의 복호화 실패, 주요 버튼 56dp, 상태 live region과 전송 상태 아이콘의 한글 설명을 확인한다. 사진 선택·축소 미리보기·저장 후 초기화와 장갑·한 손 조건의 실제 성공률은 자동 테스트만으로 완료 판정하지 않는다. 실제 단말의 카메라·파일 선택기, 장갑·한 손 조작, 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절을 같은 수동 검증에서 확인한다.
+현재 단위 테스트 39건은 운영 서버 기본값과 명시적 HTTPS override, HTTP·잘못된 주소의 운영 서버 복구, API 경로·로그인/FieldComment 계약, 작업순서 원천 intent hash와 scope별 멱등키, 인수인계 필수 원천·수신자·멱등키, 받은 인수인계 확인·보류 상태와 후속 FieldComment 원천·멱등키, Android view grant 경로와 SHA-256 계약, 사용자 오류 문구, outbox 자동 재시도와 `FAILED` 전용 수동 재전송 정책, 대기·부분 성공·실패 상태 안내, 알림 401 refresh·재거부·비활성 단말·연결 단절 분기를 검증한다. outbox 일부 실패는 완료·부분 성공·실패·대기 건수와 실패 항목 전용 재전송 안내를 표시하고, Keystore/암호문 오류는 초기화하지 말고 관리자에게 단말 교체 점검을 요청하도록 안내한다. 계측 테스트는 보안 뷰어가 exported가 아닌지, `FLAG_SECURE`가 적용되는지, 내부 캐시 시작 정리, 서로 다른 AES 키의 복호화 실패, 주요 버튼 56dp, 상태 live region과 전송 상태 아이콘의 한글 설명을 확인한다. 사진 선택·축소 미리보기·저장 후 초기화와 장갑·한 손 조건의 실제 성공률은 자동 테스트만으로 완료 판정하지 않는다. 실제 단말의 카메라·파일 선택기, 장갑·한 손 조작, 파일 앱·최근 항목·공유 메뉴·캐시 디렉터리·캡처 차단과 PDF/이미지/TXT·손상/대용량·네트워크 단절을 같은 수동 검증에서 확인한다.

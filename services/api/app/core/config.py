@@ -1,4 +1,4 @@
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from fastapi import Request
 
@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     android_view_max_text_bytes: int = 5 * 1024 * 1024
     android_view_max_pdf_pages: int = 200
     session_cookie_name: str = "flownote_session"
+    initial_admin_password: str = ""
     access_token_secret: str = "flownote-local-dev-token-secret-change-before-operation"
     access_token_expires_minutes: int = 480
     refresh_token_expires_days: int = 14
@@ -59,6 +60,21 @@ class Settings(BaseSettings):
     restore_backup_set_id: str = ""
     restore_approval_id: str = ""
     restore_responsible_owner: str = ""
+
+    @model_validator(mode="after")
+    def reject_public_example_secrets_outside_development(self) -> "Settings":
+        environment = self.environment.strip().lower()
+        if environment not in {"local", "test"}:
+            forbidden_secrets = {
+                "flownote-local-dev-token-secret-change-before-operation",
+                "replace-with-a-long-site-specific-secret",
+            }
+            if self.access_token_secret in forbidden_secrets or len(self.access_token_secret) < 32:
+                raise ValueError(
+                    "FLOWNOTE_ACCESS_TOKEN_SECRET must be a site-specific secret of at least "
+                    "32 characters outside local and test environments."
+                )
+        return self
 
     @property
     def effective_customer_scope(self) -> str:

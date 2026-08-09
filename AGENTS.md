@@ -12,6 +12,15 @@
 - 커밋 지시 없이 push만 명시된 경우에는 먼저 현재 커밋 대상과 브랜치를 확인한다.
 - Before any push, confirm the target remote and branch if they are not already clear from the current task.
 
+## Production Server Development Policy
+
+- 별도 지시가 없으면 Windows·Android 앱 개발과 서버 연동 스모크 테스트는 승인된 운영 HTTPS 서버를 기준으로 한다.
+- 개발 PC에서 로컬 FastAPI를 시작하거나 로컬 FastAPI용 SQLite·storage를 만들어 서버 연동을 우회하지 않는다.
+- 서버 코드 변경이 운영 서버 테스트에 필요하면 현재 승인된 개발 PC에 이미 구성된 외부 SSH 권한으로만 자동 배포하고, 테스트 시작 전에 운영 서버 테스트로 이관한다고 명시한다.
+- SSH 대상, 개인키 경로, 비밀번호, 토큰, 운영 환경 파일과 실제 운영 데이터는 저장소에 기록하거나 복사하지 않는다.
+- 운영 서버 DB와 storage는 개발 PC로 내려받지 않는다. 운영 스모크 기록은 운영 서버에 누적하고 로컬에는 운영 데이터 사본을 남기지 않는다.
+- 서버를 사용하지 않는 순수 단위 테스트와 클라이언트 로컬 저장소 검증은 보조 검증으로 실행할 수 있지만, 이를 운영 서버 연동 스모크 통과로 보고하지 않는다.
+
 ## Project
 
 FlowNote는 생산공장 현장의 문서와 현장 지식을 함께 관리하는 독립형 서버이다.

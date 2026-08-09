@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import runpy
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -14,14 +15,21 @@ from app.main import create_app
 
 API_ROOT = Path(__file__).resolve().parents[1]
 TEST_DB_PATH = API_ROOT / "data" / "flownote.test.sqlite3"
+TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH.as_posix()}"
+
+
+def _ensure_smoke48_cases() -> None:
+    seed_script = API_ROOT.parents[1] / "scripts" / "seed-ai-ground-truth-48.py"
+    seed = runpy.run_path(str(seed_script), run_name="flownote_seed_smoke48")["seed"]
+    seed(TEST_DATABASE_URL)
 
 
 def _client() -> TestClient:
     settings = Settings(
         _env_file=None,
         environment="test",
-        database_url=f"sqlite:///{TEST_DB_PATH.as_posix()}",
-        test_database_url=f"sqlite:///{TEST_DB_PATH.as_posix()}",
+        database_url=TEST_DATABASE_URL,
+        test_database_url=TEST_DATABASE_URL,
         storage_root=str(API_ROOT / "storage" / "ai-search-tests"),
     )
     return TestClient(create_app(settings))
@@ -53,6 +61,7 @@ def _add_user(client: TestClient, role: str) -> tuple[str, dict[str, str]]:
 
 
 def test_dataset_48_lifecycle_immutable_evaluation_and_restart_persistence() -> None:
+    _ensure_smoke48_cases()
     with _client() as client:
         author_headers = _login(client, "admin")
         reviewer_id, reviewer_headers = _add_user(client, "manager")

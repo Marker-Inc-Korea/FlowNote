@@ -16,7 +16,6 @@ REPORT_CORRECTION_SCHEMA_VERSION = "0004_report_correction_lifecycle"
 WORK_SEQUENCE_DELIVERY_SCHEMA_VERSION = "0005_work_sequence_candidate_delivery"
 DEFAULT_ADMIN_USER_ID = "user-admin"
 DEFAULT_ADMIN_USERNAME = "admin"
-DEFAULT_ADMIN_PASSWORD = "1234"
 DEFAULT_ADMIN_DISPLAY_NAME = "FlowNote Admin"
 DEFAULT_ADMIN_ROLE = "admin"
 DEFAULT_ADMIN_PASSWORD_SALT = "flownote-dev-admin-v1"
@@ -735,7 +734,12 @@ def _ensure_ai_field_readiness_sample_review_columns(database: Database) -> None
             )
 
 
-def _seed_default_admin_account(database: Database) -> None:
+def _seed_default_admin_account(
+    database: Database,
+    initial_admin_password: str,
+    *,
+    allow_insecure_test_password: bool,
+) -> None:
     with database.session() as session:
         existing = session.scalar(
             select(UserAccount).where(
@@ -749,6 +753,16 @@ def _seed_default_admin_account(database: Database) -> None:
         if existing is not None:
             return
 
+        if not initial_admin_password:
+            raise RuntimeError(
+                "FLOWNOTE_INITIAL_ADMIN_PASSWORD is required when creating the first "
+                "server administrator account."
+            )
+        if len(initial_admin_password) < 8 and not allow_insecure_test_password:
+            raise RuntimeError(
+                "FLOWNOTE_INITIAL_ADMIN_PASSWORD must contain at least 8 characters."
+            )
+
         session.add(
             UserAccount(
                 user_id=DEFAULT_ADMIN_USER_ID,
@@ -756,7 +770,7 @@ def _seed_default_admin_account(database: Database) -> None:
                 login_id=DEFAULT_ADMIN_USERNAME,
                 display_name=DEFAULT_ADMIN_DISPLAY_NAME,
                 role=DEFAULT_ADMIN_ROLE,
-                password_hash=hash_password_for_dev(DEFAULT_ADMIN_PASSWORD),
+                password_hash=hash_password(initial_admin_password),
                 is_active=True,
                 status="ACTIVE",
             )
@@ -877,7 +891,12 @@ def _assert_database_schema_ownership(database: Database) -> None:
         )
 
 
-def initialize_database(database: Database) -> None:
+def initialize_database(
+    database: Database,
+    initial_admin_password: str = "",
+    *,
+    allow_insecure_test_password: bool = False,
+) -> None:
     _assert_database_schema_ownership(database)
     Base.metadata.create_all(bind=database.engine)
     _ensure_user_account_columns(database)
@@ -973,4 +992,8 @@ def initialize_database(database: Database) -> None:
                 )
             )
         session.commit()
-    _seed_default_admin_account(database)
+    _seed_default_admin_account(
+        database,
+        initial_admin_password,
+        allow_insecure_test_password=allow_insecure_test_password,
+    )
