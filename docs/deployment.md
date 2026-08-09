@@ -1,6 +1,8 @@
 # FlowNote 배포
 
-이 문서는 2026-08-06 현재 저장소의 실행 코드와 배포 스크립트 기준이다. 서명, MDM, 현장 인증서처럼 실제 운영 환경에서만 확정 가능한 내용은 후속 점검 항목으로 구분한다.
+이 문서는 2026-08-13 현재 저장소의 실행 코드와 배포 스크립트를 바탕으로 실제 도입 방법을 기록한 참고 절차다. 운영 배포 수행이나 승인은 FlowNote 연구개발 완료 조건이 아니다. 서명, MDM, 현장 인증서처럼 실제 환경에서만 정할 수 있는 값과 증거는 공개 저장소에 넣지 않고 도입 조직이 별도로 관리한다.
+
+문서의 호스트명, 경로, 계정과 식별자는 모두 예시다. 특히 `flownote.example`은 예약 도메인이므로 실제 연결 전에 승인된 HTTPS 주소로 반드시 바꾼다.
 
 ## 기준
 
@@ -15,15 +17,16 @@ Server PC
 Client PCs
   -> Windows WPF installed app
   -> local SQLite DB and local Files/ folder
-  -> API connection to Server PC when FLOWNOTE_API_BASE_URL is set
+  -> API connection to an approved HTTPS server configured by FLOWNOTE_API_BASE_URL
+  -> FLOWNOTE_API_BASE_URL overrides the default server when needed
 
 Approved Android field devices
   -> Android installed app
   -> published document metadata/body, FieldComment, photos, handover creation/receipts, channel notifications
-  -> API connection to Server PC through configured server URL
+  -> API connection to a saved approved HTTPS server URL
 ```
 
-WPF 앱은 문서·FieldComment·첨부·접근 로그·보고서 원천을 로컬 SQLite에 먼저 기록하고 서버 URL이 설정되어 있으면 서버 동기화를 시도한다. 이 도메인의 서버 호출 실패는 로컬 저장을 되돌리지 않고 동기화 큐와 이력으로 남긴다. 작업순서는 예외로 FastAPI snapshot을 권위 원천으로 직접 사용하고 로컬 큐에 넣지 않으며, 서버 미연결·조회 실패에서는 확정 변경을 차단한다.
+WPF 앱은 문서·FieldComment·첨부·접근 로그·보고서 원천을 로컬 SQLite에 먼저 기록하고 운영 기본 URL 또는 명시적 override로 서버 동기화를 시도한다. 이 도메인의 서버 호출 실패는 로컬 저장을 되돌리지 않고 동기화 큐와 이력으로 남긴다. 작업순서는 예외로 FastAPI snapshot을 권위 원천으로 직접 사용하고 로컬 큐에 넣지 않으며, 서버 미연결·조회 실패에서는 확정 변경을 차단한다.
 
 Android 앱은 현장 입력과 알림 확인을 서버 기준으로 처리한다. 네트워크가 불안정할 때 FieldComment, 사진 첨부와 신규 인수인계를 Keystore AES-GCM 보호 outbox에 임시 저장하며, 채널 메시지와 문서 메타데이터는 outbox 대상이 아니다. 마지막으로 확인한 활성 채널·수신자 목록도 서버 URL+사용자 범위별 암호문으로 보존하고 실제 전송 시 서버가 멤버십과 원천을 다시 검사한다. 장기 원천 데이터는 서버 SQLite와 `storage/`에 남긴다. 개인 휴대폰은 제외하고 MDM 등록 승인 단말만 배포하며, 채널 알림은 로그인 동안 15초 foreground service가 사내 HTTPS polling으로 복구한다.
 
@@ -269,6 +272,7 @@ FLOWNOTE_STORAGE_ROOT=C:/FlowNote/Server/storage
 FLOWNOTE_FIELD_COMMENT_ATTACHMENT_MAX_BYTES=20971520
 FLOWNOTE_CONTROLLED_COPY_MAX_BYTES=524288000
 FLOWNOTE_CONTROLLED_COPY_TICKET_EXPIRES_SECONDS=60
+FLOWNOTE_INITIAL_ADMIN_PASSWORD=<최초 실행에만 사용할 8자 이상 임시 비밀번호>
 FLOWNOTE_ACCESS_TOKEN_SECRET=<현장별 긴 비밀값>
 FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES=480
 FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS=14
@@ -285,6 +289,10 @@ FLOWNOTE_AI_RETENTION_SCHEDULER_INTERVAL_SECONDS=3600
 ```
 
 AI 항목은 provider adapter 안전장치와 운영 제어면의 scope 설정이다. 운영 `.env`에서는 `FLOWNOTE_AI_EXTERNAL_CALL_ENABLED=false`, `FLOWNOTE_AI_PROVIDER_ADAPTER_MODE=DISABLED`, `FLOWNOTE_AI_NETWORK_TEST_SCOPE_ENABLED=false`를 유지한다. generic 네트워크 adapter는 `environment=test`와 `NETWORK_TEST`, 명시 시험 scope, HTTPS endpoint, 환경 변수 자격증명을 모두 요구하므로 운영 배포에서 활성화할 수 없다. provider/model/scope 값이나 provider 자격증명 설정 여부는 기능 활성 허가가 아니다. 후보 read model API와 `system-admin` 전용 운영 제어 API는 호출 플래그와 무관하게 동작한다. provider 자격증명은 `FLOWNOTE_AI_<PROVIDER>_API_KEY` 형식의 서버 환경/비밀 저장소에만 두고 DB·문서·클라이언트 설정에 기록하지 않는다.
+
+`FLOWNOTE_INITIAL_ADMIN_PASSWORD`는 비어 있는 서버 DB에 첫 `admin`을 만들 때만 사용한다. 첫 실행 뒤 서버 계정 비밀번호 변경 절차로 즉시 교체하고 `.env`에서 값을 제거한다. 값이 없으면 새 서버 DB 초기화가 실패하며, 공개 소스에는 기본 운영 비밀번호가 없다.
+
+`production` 등 `local`, `test`가 아닌 환경은 공개 예시 `FLOWNOTE_ACCESS_TOKEN_SECRET`과 32자 미만 값을 거부한다. 예시 설정을 복사한 뒤 현장별 난수로 바꾸지 않으면 서버 설정이 완료되지 않는다.
 
 ### Provider 증거 대장과 운영 책임
 
@@ -308,7 +316,7 @@ provider별 실제 값은 고객 승인 ground-truth dataset, 동일 snapshot 2�
 .\scripts\install-flownote-server-task.ps1 -ServerRoot C:\FlowNote\Server -StartNow
 ```
 
-등록 스크립트는 `run-flownote-server.ps1`을 `C:\FlowNote\Server\scripts`로 복사하고, `C:\FlowNote\Server\.env`를 프로세스 환경변수로 읽은 뒤 `C:\FlowNote\Server\api`에서 uvicorn을 실행한다. `.env`에 값이 없으면 로컬 서버 테스트 기준으로 `FLOWNOTE_API_HOST=127.0.0.1`, `FLOWNOTE_API_PORT=5184`, `FLOWNOTE_DATABASE_URL=sqlite:///C:/FlowNote/Server/data/flownote.sqlite3`, `FLOWNOTE_STORAGE_ROOT=C:\FlowNote\Server\storage`를 기본값으로 둔다. 현장 클라이언트 PC에서 서버 PC로 접속해야 하는 운영 구성은 `.env`에 `FLOWNOTE_API_HOST=0.0.0.0`을 명시한다.
+등록 스크립트는 `run-flownote-server.ps1`을 `C:\FlowNote\Server\scripts`로 복사하고, `C:\FlowNote\Server\.env`를 프로세스 환경변수로 읽은 뒤 `C:\FlowNote\Server\api`에서 uvicorn을 실행한다. `.env`에 값이 없으면 서버 PC 내부 reverse proxy 연결 기준으로 `FLOWNOTE_API_HOST=127.0.0.1`, `FLOWNOTE_API_PORT=5184`, `FLOWNOTE_DATABASE_URL=sqlite:///C:/FlowNote/Server/data/flownote.sqlite3`, `FLOWNOTE_STORAGE_ROOT=C:\FlowNote\Server\storage`를 기본값으로 둔다. 이 loopback 바인딩은 운영 서버 내부 구성이지 개발 PC의 로컬 FastAPI 실행이 아니다. 현재 클라이언트는 HTTPS만 허용하므로 FastAPI를 `0.0.0.0:5184`로 직접 노출하지 않고 reverse proxy의 승인된 HTTPS 주소를 사용한다.
 
 6. 서버 작업을 시작, 중지, 재시작하거나 상태를 확인한다.
 
@@ -326,30 +334,30 @@ C:\FlowNote\Server\logs\flownote-api.out.log
 C:\FlowNote\Server\logs\flownote-api.err.log
 ```
 
-8. 서버 PC에서 상태 URL을 확인한다.
+8. 서버 PC 안에서만 reverse proxy 뒤 loopback 상태 URL을 확인한다. 다음 HTTP 주소는 외부 클라이언트나 개발 PC에서 사용하지 않는다.
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:5184/api/v1/health
 Invoke-RestMethod http://127.0.0.1:5184/api/v1/health/db
 ```
 
-9. 클라이언트 PC에서 서버 PC 주소로 같은 URL을 확인한다.
+9. 클라이언트 PC에서는 승인된 운영 HTTPS 주소로 상태를 확인한다.
 
 ```powershell
-Invoke-RestMethod http://<서버IP>:5184/api/v1/health
-Invoke-RestMethod http://<서버IP>:5184/api/v1/health/db
+Invoke-RestMethod https://flownote.example/api/v1/health
+Invoke-RestMethod https://flownote.example/api/v1/health/db
 ```
 
-클라이언트 PC에서 URL 확인이 실패하면 서버 실행 여부, Windows 방화벽 인바운드 규칙, 서버 IP, 포트 `5184` 접근 가능 여부를 먼저 확인한다.
+클라이언트 PC에서 URL 확인이 실패하면 reverse proxy, 운영 인증서, DNS, 방화벽과 서버 내부 `5184` health를 순서대로 확인한다. 클라이언트에 내부 포트를 직접 노출하거나 HTTP로 우회하지 않는다.
 
 ## 운영 계정 발급과 변경 절차
 
-서버 계정과 WPF 로컬 계정은 같은 로그인 ID를 쓸 수 있지만 관리 위치가 다르다. 서버 URL이 설정된 WPF는 서버 계정으로 로그인하며 401·403, 인증서 오류, 주소 오류, 연결 거부와 timeout에서 로컬 계정으로 자동 우회하지 않는다. 서버 URL이 없는 승인된 로컬 운영 PC에서만 WPF 로컬 계정을 사용한다.
+서버 계정과 기존 WPF 로컬 계정은 같은 로그인 ID를 쓸 수 있지만 관리 위치가 다르다. WPF 표준 실행은 설정한 승인 HTTPS 주소의 서버 계정으로 로그인하며 401·403, 인증서 오류, 주소 오류, 연결 거부와 timeout에서 HTTP나 로컬 계정으로 자동 우회하지 않는다. 로컬 계정 모델과 화면은 기존 데이터·단위 테스트 호환용으로만 보존한다.
 
 ### 최초 서버 관리자 계정
 
-1. 서버 DB 최초 생성 시 FastAPI는 서버 `user_accounts`에 `admin` 계정을 만든다. 이 계정은 최초 서버 관리자 계정이다. 최초 비밀번호 변경 전에는 서버 PC 운영 스크립트를 사용하고, 이후 계정 운영은 서버 로그인한 WPF 사용자 관리 화면을 사용한다.
-2. 개발/스모크 테스트용 기본 비밀번호 `1234`는 운영 로그인 전에 반드시 변경한다. 현장 운영자는 서버 PC의 관리자 PowerShell에서 운영 스크립트를 실행해 새 비밀번호를 대화식으로 입력한다. 현재 스크립트는 8자 미만 비밀번호를 거부한다. 새 비밀번호를 명령줄 인자, PowerShell 기록, 서버 로그에 남기지 않는다.
+1. 빈 서버 DB의 최초 실행 전에 `FLOWNOTE_INITIAL_ADMIN_PASSWORD`에 8자 이상의 임시 비밀번호를 주입한다. 값이 없거나 짧으면 FastAPI는 첫 `admin` 생성을 거부한다.
+2. 최초 실행 뒤 환경 설정에서 이 값을 제거한다. 현장 운영자는 서버 PC의 관리자 PowerShell에서 운영 스크립트를 실행해 새 비밀번호를 대화식으로 입력한다. 새 비밀번호를 명령줄 인자, PowerShell 기록, 서버 로그에 남기지 않는다.
 
 ```powershell
 cd C:\FlowNote\Server\api
@@ -363,13 +371,13 @@ cd C:\FlowNote\Server\api
 ```
 
 3. 최초 운영 로그인은 변경된 서버 비밀번호로 WPF에서 수행한다. 초기 `admin`의 스크립트 변경은 `must_change_password`를 설정하지 않으므로 첫 운영 로그인 전에 변경 완료 여부, 변경 수행자, 확인자를 운영 기록에 남긴다. 이후 WPF/API에서 생성하거나 재설정한 임시 비밀번호 계정은 `must_change_password = true`가 되고 로그인 직후 비밀번호 변경 화면으로 이동한다.
-4. 변경 완료 후 기본 비밀번호 `1234`로 WPF 서버 로그인이 실패하는지 확인한다. 이 실패가 서버 401이면 WPF가 로컬 `admin / 1234`로 우회해 성공하면 안 된다.
+4. 최초 임시 비밀번호로 WPF 서버 로그인이 실패하는지 확인한다. 이 실패가 서버 401이면 WPF가 기존 로컬 호환 계정으로 우회해 성공하면 안 된다.
 
 ### 서버 계정과 WPF 로컬 계정
 
 - 서버 계정은 서버 DB의 `user_accounts`에서 관리한다. 서버 로그인, 서버 API 권한, 서버 문서 등록자, 서버 FieldComment 작성자, 서버 감사 이력은 서버 계정을 기준으로 남긴다.
 - 서버 로그인한 `admin`, `system-admin`이 여는 사용자 관리 화면은 FastAPI 서버 계정 전용이다. 계정 생성, 표시 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·전체 폐기를 제공한다.
-- 서버 미연결 로컬 로그인에서 여는 사용자 관리 화면은 로컬 SQLite 전용이다. 화면 제목, 사용자 목록, 상세 문구는 “로컬” 계정임을 표시하며 서버 계정을 만들거나 수정하지 않는다.
+- 로컬 SQLite 사용자 관리 화면은 기존 데이터·단위 테스트 호환 전용이며 표준 로그인에서는 열지 않는다. 서버 계정을 만들거나 수정하지 않는다.
 - 서버 URL을 쓰는 운영 PC에서는 서버 계정 권한을 우선한다. 같은 로그인 ID의 로컬 계정 role이 다르더라도 서버 로그인 성공 후 화면 권한과 서버 동기화 작성자 기준은 서버 응답의 role과 사용자 ID다.
 - 서버 계정 화면에서 서버 연결이 끊기거나 401/403이 발생해도 로컬 계정 화면으로 자동 전환하지 않는다. 연결 또는 권한을 복구한 뒤 다시 로그인한다.
 
@@ -406,7 +414,7 @@ WPF/API를 사용할 수 없는 비상 상황에서는 아래 운영 스크립�
 - 장기 미사용, 퇴사, 권한 회수 계정은 WPF 서버 계정 화면에서 `DISABLED`로 변경한다. 일시 잠금은 `LOCKED`, 승인된 재개는 `ACTIVE`로 구분하며 변경 사유를 필수로 남긴다.
 - role 변경, 잠금·비활성화는 기존 활성 세션을 같은 트랜잭션에서 폐기한다. 자기 자신 잠금/비활성화, 마지막 활성 `system-admin` 제거, 일반 `admin`의 `system-admin` 계정 운영은 서버가 거부한다.
 - WPF/API를 사용할 수 없는 비상 상황에서는 아래 `set-status`, `set-role` 스크립트를 사용할 수 있다. WPF 로컬 계정이 별도로 필요한 PC라면 로컬 사용자 관리 화면에서도 같은 사용자의 로컬 권한을 별도로 점검한다.
-- 퇴사자는 서버 계정과 WPF 로컬 계정을 각각 비활성화한다. 서버 계정 비활성화만으로 오프라인 로컬 로그인 가능성을 제거할 수 없으므로, 로컬 계정 사용 PC 목록을 함께 확인한다.
+- 퇴사자는 서버 계정을 비활성화하고 활성 세션을 폐기한다. 기존 설치에 남은 WPF 로컬 계정 row는 표준 로그인에 사용되지 않지만 감사·호환 데이터로 별도 관리한다.
 
 ```powershell
 .\.venv\Scripts\python.exe -m app.ops.server_accounts set-status --username line-a-admin --status LOCKED
@@ -589,6 +597,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | 서버 | `FLOWNOTE_ENVIRONMENT` 또는 `FLOWNOTE_ENV` | 실행 환경 이름. 현재 `.env.example`은 `FLOWNOTE_ENV`를 사용 |
 | 서버 | `FLOWNOTE_DATABASE_URL` | `sqlite:///C:/FlowNote/Server/data/flownote.sqlite3` |
 | 서버 | `FLOWNOTE_STORAGE_ROOT` | `C:\FlowNote\Server\storage` |
+| 서버 | `FLOWNOTE_INITIAL_ADMIN_PASSWORD` | 빈 서버 DB의 최초 `admin` 생성에만 주입. 첫 로그인·변경 뒤 설정에서 제거 |
 | 서버 | `FLOWNOTE_ACCESS_TOKEN_SECRET` | 현장별 긴 비밀값. 기본값 사용 금지 |
 | 서버 | `FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES` | 기본 480분. 현장 보안 정책에 따라 조정 |
 | 서버 | `FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS` | 기본 14일. 현장 보안 정책에 따라 조정 |
@@ -628,7 +637,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | 서버 | `FLOWNOTE_ANDROID_VIEW_MAX_PDF_PAGES` | Android PDF 열람 페이지 한도. 기본 200쪽 |
 | WPF | `FLOWNOTE_LOCAL_DATA_DIR` | `C:\FlowNote\LocalData`처럼 DB와 `Files\`를 함께 둘 폴더 |
 | WPF | `FLOWNOTE_LOCAL_DATABASE_PATH` | 특정 DB 파일을 직접 지정할 때만 사용. 지정 시 `FLOWNOTE_LOCAL_DATA_DIR`보다 DB 경로 우선 |
-| WPF | `FLOWNOTE_API_BASE_URL` | 서버 PC 주소. 예: `http://192.168.0.10:5184` |
+| WPF | `FLOWNOTE_API_BASE_URL` | 공개 예시 주소를 실제 승인된 HTTPS 서버 주소로 바꾸는 필수 설정 |
 
 `services/api/.env.example`은 `FLOWNOTE_DOCUMENT_APPROVAL_REQUESTER_REVIEWER_SEPARATION`과 `FLOWNOTE_DOCUMENT_APPROVAL_REQUESTER_PUBLISHER_SEPARATION`을 주석 예시로 제공한다. 같은 사용자가 요청·검토하거나 요청·공개할 수 있는 현장은 배포 전용 환경 또는 Git에 포함하지 않는 `.env`에서 정책값을 명시해야 한다. 주석을 그대로 둔 기본 미설정 상태에서는 같은 사용자의 해당 작업을 서버가 차단한다.
 
@@ -652,7 +661,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - 전송 승인과 활성 프롬프트가 시험 범위·만료일·목적·원천 유형에 맞는지 확인하고, 감사 CSV 내보내기는 현장 정책상 필요한 경우에만 허용한다.
 - 만료 보존 스케줄러는 서버가 시작된 뒤 설정한 첫 주기를 기다리고 실행하며 기본 간격은 1시간이다. 운영 주기와 담당자를 정하고, 즉시 처리가 필요하면 `system-admin`의 API/WPF 실행 기능을 사용한다.
 - 고객·현장 scope의 단일 AI 질의 즉시 만료와 legal hold 설정·해제는 `system-admin`의 WPF `AI 운영 > 감사·보존` 또는 서버 API로 수행한다. hold에는 승인된 근거 번호와 사유를 기록하고, 해제 전에는 주기·일괄·단일 만료가 해당 질의를 처리하지 않는지 확인한다.
-- Windows 방화벽에서 클라이언트 PC가 접근할 포트 `5184`만 허용한다.
+- 클라이언트에는 reverse proxy의 승인된 HTTPS `443`만 노출한다. FastAPI `5184`는 서버 loopback 또는 서버 내부 proxy 연결로 제한하고 클라이언트 인바운드 규칙으로 열지 않는다.
 - 실제 고객 파일, 운영 DB, 운영 비밀값을 Git 저장소 또는 배포 준비 폴더에 섞어 두지 않는다.
 
 ### 클라이언트
@@ -660,7 +669,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - .NET Windows Desktop Runtime과 WebView2 Runtime 설치 여부를 확인한다.
 - `C:\Program Files\FlowNote\Client\FlowNote.Windows.App`에 WPF 실행 파일, .NET 실행 메타데이터, 의존 DLL이 있는지 확인한다.
 - `C:\FlowNote\LocalData`와 `C:\FlowNote\LocalData\Files`를 만들고 앱 실행 사용자에게 읽기/쓰기 권한을 부여한다.
-- `FLOWNOTE_LOCAL_DATA_DIR`, `FLOWNOTE_API_BASE_URL` 설정 방식을 시스템 환경 변수 또는 실행 스크립트 중 하나로 정한다.
+- `FLOWNOTE_LOCAL_DATA_DIR`을 설정하고, 기본 운영 주소가 아닌 서버를 써야 할 때만 `FLOWNOTE_API_BASE_URL`을 시스템 환경 변수 또는 실행 스크립트에 지정한다.
 - 서버 PC의 `/api/v1/health`, `/api/v1/health/db`를 클라이언트 PC에서 호출할 수 있는지 확인한다.
 
 ### 백업
@@ -682,17 +691,15 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 ### 서버
 
 - 작업 스케줄러의 `\FlowNote\FlowNoteApi` 작업이 실행 중인지 확인한다.
-- `http://127.0.0.1:5184/api/v1/health`가 서버 PC에서 성공하는지 확인한다.
-- `http://127.0.0.1:5184/api/v1/health/db`가 서버 PC에서 성공하는지 확인한다.
-- `http://127.0.0.1:5184/api/v1/health/sync-manifest`가 서버 instance/epoch와 contract, cursor를 반환하는지 확인한다.
-- `http://<서버IP>:5184/api/v1/health`와 `http://<서버IP>:5184/api/v1/health/db`가 클라이언트 PC에서 성공하는지 확인한다.
+- 서버 PC 내부에서만 `http://127.0.0.1:5184/api/v1/health`, `/api/v1/health/db`, `/api/v1/health/sync-manifest`가 성공하는지 확인한다. 이 loopback 점검은 운영 서버 내부 프로세스 확인용이다.
+- 클라이언트 PC에서는 `https://flownote.example/api/v1/health`와 `/api/v1/health/db`의 예시 호스트를 실제 승인 주소로 바꿔 성공 여부를 확인한다. HTTP와 내부 포트로 우회하지 않는다.
 - `C:\FlowNote\Server\data\flownote.sqlite3`가 생성되었고 서버 실행 계정이 계속 쓸 수 있는지 확인한다.
 - `C:\FlowNote\Server\storage`에 테스트 문서 등록 시 파일이 저장되는지 확인한다.
 - `C:\FlowNote\Server\logs`에 실행 로그 또는 오류 로그가 남는지 확인한다.
 - AI 보존을 사용하는 설치는 현재 고객·현장 scope의 질의/보존 감사만 조회되는지 확인하고, 승인된 비민감 시험 질의의 legal hold가 일괄 만료를 차단하며 해제 뒤 단일 만료되는지 WPF `AI 운영` 화면과 서버 read-back으로 검증한다.
-- 최초 서버 관리자 `admin`의 기본 비밀번호 `1234`를 현장 비밀번호로 변경한다.
+- 최초 서버 관리자 `admin`의 일회성 초기 비밀번호를 현장 비밀번호로 변경하고 초기 설정값을 제거한다.
 - WPF 첫 서버 로그인 전에 서버 관리자 비밀번호 변경 완료 여부와 확인자를 운영 기록에 남긴다.
-- 기본 비밀번호 `1234`로 서버 로그인이 401로 실패하고, WPF가 같은 ID의 로컬 계정으로 우회해 성공하지 않는지 확인한다.
+- 일회성 초기 비밀번호로 서버 로그인이 401로 실패하고, WPF가 같은 ID의 로컬 호환 계정으로 우회해 성공하지 않는지 확인한다.
 - 비활성 서버 계정 로그인이 403으로 실패하고, WPF가 로컬 계정으로 우회하지 않는지 확인한다.
 
 ### 클라이언트
@@ -703,7 +710,7 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 - 서버 URL이 설정된 상태의 인증서 오류·주소 오류·연결 거부·시간 초과에서도 로컬 계정으로 자동 전환되지 않고, 로컬 데이터와 동기화 대기 기록 보존 및 다음 조치가 한글로 표시되는지 확인한다.
 - 같은 로그인 ID가 로컬 SQLite에도 있을 때 서버 로그인 성공 후 화면 버튼 권한이 서버 응답 role 기준으로 계산되는지 확인한다.
 - 서버 로그인한 `admin`, `system-admin`의 사용자 관리 화면이 서버 계정 생성·role/상태 변경·임시 비밀번호 재설정·활성 세션 폐기를 수행하는지 확인한다.
-- 로컬 로그인 사용자 관리 화면의 창 제목, 목록, 상세 안내가 로컬 SQLite 계정 전용임을 표시하는지 확인한다.
+- 표준 로그인에서 로컬 SQLite 사용자 관리 화면으로 진입할 수 없고 서버 계정 화면만 열리는지 확인한다.
 - 임시 비밀번호 계정이 메인 화면 전에 비밀번호 변경을 강제하고 변경 후 새 비밀번호 재로그인을 요구하는지 확인한다.
 - 문서 목록이 열리고 서버에 등록된 문서가 조회되는지 확인한다.
 - 문서를 열어 뷰어가 표시되고 다운로드 차단 정책과 열람 로그가 동작하는지 확인한다.
@@ -734,22 +741,18 @@ self-contained MSI를 설치한 PC는 `-SelfContained`를 추가한다. 코드 �
 | 구분 | 변수 | 테스트 기준 |
 | --- | --- | --- |
 | FastAPI pytest | `FLOWNOTE_TEST_DATABASE_URL` | 테스트 코드의 전용 SQLite URL. 기본값은 `sqlite:///./data/flownote.test.sqlite3` |
-| FastAPI pytest | `FLOWNOTE_DATABASE_URL` | 일반 개발 실행 기본값은 `sqlite:///./data/flownote.sqlite3` |
-| FastAPI pytest | `FLOWNOTE_STORAGE_ROOT` | 일반 개발 실행 기본값은 `./storage`; 테스트별 하위 폴더 사용 |
+| FastAPI pytest | `FLOWNOTE_DATABASE_URL` | 단위 테스트 프로세스의 격리된 시험 DB만 사용. 운영 DB 사본이나 개발 서버 DB로 사용하지 않음 |
+| FastAPI pytest | `FLOWNOTE_STORAGE_ROOT` | 단위 테스트별 격리 저장 경로만 사용. 운영 `storage` 사본을 만들지 않음 |
 | WPF 개발/스모크 | `FLOWNOTE_LOCAL_DATA_DIR` | 지정하지 않으면 저장소 루트 `data/local` 자동 사용 |
 | WPF 개발/스모크 | `FLOWNOTE_LOCAL_DATABASE_PATH` | 지정하지 않으면 `data/local/flownote.local.sqlite` 자동 사용 |
-| WPF 서버 연동 스모크 | `FLOWNOTE_API_BASE_URL` | 지정하지 않으면 `http://127.0.0.1:5184` 로컬 서버가 실행 중일 때 서버 연동 블록 검증 |
+| WPF 서버 연동 스모크 | `FLOWNOTE_API_BASE_URL` | 승인된 운영 HTTPS 주소. 로컬 FastAPI 또는 HTTP 주소는 허용하지 않음 |
+| WPF 서버 연동 스모크 | `FLOWNOTE_SMOKE_ADMIN_USERNAME`, `FLOWNOTE_SMOKE_ADMIN_PASSWORD` | 실행 시에만 주입하는 운영 스모크 전용 관리자 자격 증명. 파일과 저장소에 기록하지 않음 |
 
 Windows 앱과 Windows 스모크 테스트는 기본적으로 저장소 루트의 `data/local/flownote.local.sqlite`를 함께 사용한다. 매 테스트마다 임시 SQLite를 새로 만들지 않고 누적된 로컬 DB를 기능 검증의 근거로 사용한다.
 
 ## 현재 개발 실행
 
-FastAPI:
-
-```powershell
-cd services\api
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 5184 --reload
-```
+서버 개발 결과는 현재 승인된 개발 PC에서 운영 서버에 배포한 뒤 운영 HTTPS health와 스모크로 확인한다. 개발 PC에서는 FastAPI를 직접 시작하거나 서버 DB·storage 사본을 만들지 않는다. 배포 권한과 비밀값은 저장소 밖의 기존 운영 환경만 사용한다.
 
 Windows WPF:
 
@@ -758,7 +761,7 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet run --project .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 ```
 
-WPF에서 서버를 사용하려면 `FLOWNOTE_API_BASE_URL`을 설정한다.
+공개 소스의 WPF·Android 기본 주소 `https://flownote.example`은 연결되지 않는 예약 예시값이다. WPF는 `FLOWNOTE_API_BASE_URL`, Android는 앱의 서버 설정에 실제 승인된 HTTPS 주소를 지정한다. 저장된 HTTP·localhost·잘못된 주소는 허용하지 않는다. 개발 PC에서 서버 연동 검증을 위해 HTTP 또는 로컬 FastAPI 주소로 우회하지 않는다.
 
 ## 운영 백업 점검표
 
@@ -903,9 +906,9 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 2026-08-06 현재 소스의 수집 대상은 FastAPI 209건, WPF Core 117건, Android 35건이다. 스크립트 guard는 FastAPI 186건, WPF Core 102건, Android 32건이므로 현재 코드와 일치하지 않는다. 스크립트는 수집 원본·중복 목록·JUnit과 종료 코드를 보존하고 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터·새 `RunId` 실행 명령을 안내한다. Windows 수집 목록과 WPF Core TRX를 대조하고 guard를 맞춘 뒤, 같은 clean 소스 커밋에서 Windows x64 무생략 실행을 2회 연속 통과해야 유효 기준선으로 확정한다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·운영 HTTPS 통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 현재 소스의 수집 대상과 스크립트 guard는 FastAPI 209건, WPF Core 120건, Android 39건으로 일치한다. 2026-08-09 보조 실행은 세 테스트 묶음과 앱 빌드, 운영 HTTPS 스모크를 통과했다. 스크립트는 수집 원본·중복 목록·JUnit과 종료 코드를 보존하고 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터·새 `RunId` 실행 명령을 안내한다. 같은 clean 소스 커밋에서 Windows x64 무생략 실행을 2회 연속 통과해야 유효 Windows 통합 기준선으로 확정한다.
 
-각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF SQLite 실행 전후 통계·오늘/과거 문서 SQL 증거와 `verification-summary.json`을 보존한다. 통제된 WPF smoke는 `5184` 포트를 점유한 기존 서버를 재사용하지 않으므로 시작 전에 포트를 비운다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
+각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF 클라이언트 SQLite 실행 전후 통계·오늘/과거 문서 식별 증거와 `verification-summary.json`을 보존한다. 운영 서버 DB·storage·로그는 이 로컬 폴더로 복사하지 않는다. WPF smoke는 승인된 운영 HTTPS 서버를 사용하며 개발 PC의 `5184` 포트를 확인·점유·종료하지 않는다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 
 2026-07-20 WPF 공통 DB의 서버형 `controlled_copy_grants` FK 충돌은 `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·row 수·hash를 먼저 보존한 뒤 복구했다. 실제 복구 run `WPF-P0-20260720-0840`은 `quick_check=ok`, FK 위반 0건이며 문서 버전 3,384행의 원천 hash를 유지한다. FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하려는 경우도 `create_all` 전에 거부한다. 2026-07-22 macOS 보조 run `p0-baseline-144-macos-precheck-20260722-002`은 FastAPI 수집 144·고유 144·통과 144, failure/error/skipped 0과 Git 신규 추적/staged 0을 확인했다. 그러나 WPF/Android/공통 DB 스모크는 도구 부재로 `NOT_RUN`이므로 `partial_run=true`, `FAILED_ENVIRONMENT`이며 배포 기준선이 아니다. 새 Windows 무생략 실행이 `partial_run=false`, `verification-summary.json=PASSED`가 되기 전까지 배포 통합 기준선은 `대기`다.
 ## DB 복구·초기화 후 운영 절차

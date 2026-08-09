@@ -1,6 +1,6 @@
 # FlowNote 시스템 맵
 
-이 시스템 맵은 2026-08-06 현재 실행 코드와 저장소 경계를 기준으로 한다. 서버 복구 경계 manifest/reconciliation은 구현되었고 수렴 경계의 나머지 미구현 항목은 `목표 계약`으로, 후속 외부 연동은 마지막 절에서 구분한다.
+이 시스템 맵은 2026-08-09 현재 실행 코드와 저장소 경계를 기준으로 한다. 서버 복구 경계 manifest/reconciliation은 구현되었고 수렴 경계의 나머지 미구현 항목은 `목표 계약`으로, 후속 외부 연동은 마지막 절에서 구분한다.
 
 ## 실행 구성
 
@@ -11,8 +11,8 @@ Windows WPF App
   -> role-priority first tasks, document search/status filter
   -> permission guidance and local-preservation sync status
   -> local notification review
-  -> server account lifecycle/session management when server-authenticated
-  -> optional FastAPI sync through FLOWNOTE_API_BASE_URL
+  -> production HTTPS server account lifecycle/session management
+  -> required FastAPI sync through the production default or approved HTTPS override
 
 Android Field App
   -> approved shop-floor tablet or rugged device
@@ -31,7 +31,7 @@ FastAPI Server
 
 FastAPI 서버 SQLite와 WPF 로컬 SQLite는 서로 대체하거나 공유하는 파일이 아니다. 같은 이름의 문서 테이블도 서버는 `document_versions.version_id`, WPF는 로컬 `id`와 문서별 `version_no`를 기준으로 하므로 각 프로세스가 자기 DB만 초기화해야 한다. FastAPI는 기존 WPF 테이블 형태를 감지하면 `Base.metadata.create_all()` 전에 시작을 거부한다.
 
-WPF 앱은 로컬 저장을 우선한다. 서버 URL과 Bearer token이 있으면 문서, 문서 버전/상태/태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도하고 실패하면 `server_sync_queue`와 `activity_history`에 실패 상태를 남긴다. 새 문서 공개는 예외다. 현재 UI는 서버 승인 작업함에서 최신 version·revision·file hash를 고정해 검토를 요청하고 승인 ID로 직접 공개하며 로컬 선공개나 새 공개 큐를 만들지 않는다. 누적된 구 공개 큐와 처리기는 삭제하지 않지만 승인 강제 기본값에서는 승인 ID가 없어 자동 공개할 수 없다. 태그 큐는 마지막 서버 revision·태그 집합 대비 추가/제거와 canonical intent hash를 보내고 서버는 revision별 태그 snapshot으로 비경합 delta만 병합한다. 같은 태그의 반대 방향 변경과 비활성·삭제 태그는 자동으로 덮어쓰지 않는다. FieldComment 검토 큐는 base review revision과 mutation key를, 첨부는 부모 comment ID와 파일 SHA-256을 보낸다. 보고서는 초안 생성 때 서버에서 선택 원천의 상태와 version/revision/hash를 검증해 snapshot을 먼저 고정한다. 이 검증을 통과한 뒤 로컬 보고서 문서와 `report_sources`를 남기고 source 집합 hash를 큐에 고정하며 이후 서버 저장이 실패하면 `register_report` 항목으로 `/api/v1/reports` 저장을 재시도한다. 성공 응답의 source 집합을 다시 hash하고 report revision·내용/source 집합 hash를 로컬에 보존한 경우에만 종결한다. 큐 재시도는 같은 문서 또는 보고서 근거 단위로 묶고 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다. 재전송 가능한 mutation은 같은 key와 의도를 유지해 응답 유실 뒤에도 중복 버전, revision 또는 감사 이력을 만들지 않는다.
+WPF 앱은 로컬 작업 원장을 보존하면서 기본 운영 HTTPS 주소 또는 승인된 HTTPS override로 문서, 문서 버전/상태/태그, FieldComment, FieldComment 검토, 첨부, 접근 로그, 보고서 저장 전송을 시도한다. Bearer token이나 연결이 없으면 `server_sync_queue`와 `activity_history`에 실패 상태를 남기며 HTTP·localhost·로컬 계정으로 우회하지 않는다. 새 문서 공개는 예외다. 현재 UI는 서버 승인 작업함에서 최신 version·revision·file hash를 고정해 검토를 요청하고 승인 ID로 직접 공개하며 로컬 선공개나 새 공개 큐를 만들지 않는다. 누적된 구 공개 큐와 처리기는 삭제하지 않지만 승인 강제 기본값에서는 승인 ID가 없어 자동 공개할 수 없다. 태그 큐는 마지막 서버 revision·태그 집합 대비 추가/제거와 canonical intent hash를 보내고 서버는 revision별 태그 snapshot으로 비경합 delta만 병합한다. 같은 태그의 반대 방향 변경과 비활성·삭제 태그는 자동으로 덮어쓰지 않는다. FieldComment 검토 큐는 base review revision과 mutation key를, 첨부는 부모 comment ID와 파일 SHA-256을 보낸다. 보고서는 초안 생성 때 서버에서 선택 원천의 상태와 version/revision/hash를 검증해 snapshot을 먼저 고정한다. 이 검증을 통과한 뒤 로컬 보고서 문서와 `report_sources`를 남기고 source 집합 hash를 큐에 고정하며 이후 서버 저장이 실패하면 `register_report` 항목으로 `/api/v1/reports` 저장을 재시도한다. 성공 응답의 source 집합을 다시 hash하고 report revision·내용/source 집합 hash를 로컬에 보존한 경우에만 종결한다. 큐 재시도는 같은 문서 또는 보고서 근거 단위로 묶고 선행 서버 ID가 필요한 항목은 보류로 분류해 서버 호출과 `attempt_count` 증가를 건너뛴다. 재전송 가능한 mutation은 같은 key와 의도를 유지해 응답 유실 뒤에도 중복 버전, revision 또는 감사 이력을 만들지 않는다.
 
 WPF 메인 화면은 로그인 역할에 맞춘 첫 업무 3개를 기존 메뉴·창과 같은 권한 검사 경로로 연결한다. 현재 역할 구분은 관리자, 반장, 조장, 작업자이며 문서 찾기, 인수인계, 작업판, 채널·알림, 코멘트 검토, 보고서 근거 선정, 동기화·충돌 확인을 우선순위에 맞춰 보여준다. 문서 검색은 현재 폴더의 파일명·제목·태그·사용자·최근 코멘트를 대상으로 하고, 상태 필터와 함께 폴더 이동이나 목록 갱신 뒤에도 유지된다. 권한이 없는 기능은 필요한 역할과 현장 관리자 문의 방법을 안내한다. 하단 동기화 상태는 대기·실패/충돌·보류 건수, 로컬 데이터와 원본 파일의 보존 여부, `이력 > 동기화 큐`에서 확인할 다음 조치를 색상에 의존하지 않고 표시한다.
 
@@ -110,7 +110,7 @@ WPF `변경 이력`은 `/api/v1/change-history` read model을 사용해 문서, 
 
 각 경계에서 WPF 2개와 서버 DB의 row count, revision, `published_version_id`, report source ID/version/hash, file hash, idempotency key를 정렬 CSV/JSON과 SHA-256으로 남긴다. 최종 판정 SQL은 `PRAGMA quick_check = ok`, 빈 `foreign_key_check`, idempotency/mutation key 중복 0건, published pointer orphan 0건, report source orphan 0건, mapping orphan 0건을 요구한다. migration 검증은 같은 검사에 구/신규 DB의 보호 원천 count/hash와 모든 상태의 큐 count/hash 비교를 추가한다. 단일 run에서 하나라도 다르면 수렴 계약 구현은 미완료다.
 
-WPF 앱은 로컬 `notifications` 테이블과 알림 창으로 문서, FieldComment, 작업순서 이벤트 알림을 확인하고 읽음 처리한다. 서버 URL과 로그인이 있으면 `채널함`, `채널 관리`, `인수인계 확인 현황` 화면에서 FastAPI 채널/인수인계 API를 직접 호출한다. 채널함은 내 채널, 사용자별 알림, 인수인계 목록을 조회하고 메시지 읽음, 내 receipt 상태 변경, 원천 링크 복사, 후속 FieldComment 생성을 수행한다. 후속 FieldComment는 인수인계 ID·작성자·정리한 내용을 hash한 안정 idempotency key를 사용한다. 코멘트 저장 뒤 채널 이벤트 응답이 유실되면 같은 코멘트를 다시 읽고 기존 채널 메시지를 확인한 뒤 누락된 메시지만 재시도하므로, 화면은 전체 실패가 아니라 코멘트 보존과 채널 알림 대기를 구분한다. 주 창이 열려 있는 동안 `server_notification_cursors`의 서버 scope·사용자별 마지막 성공 cursor 다음 알림을 기본 15초 간격으로 조회하고, `server_notification_messages`의 `message_id`로 멱등 처리한 뒤 같은 트랜잭션에서 cursor를 전진시킨다. 연결 실패 시 최대 120초까지 backoff하며 401이면 cursor를 유지한 채 중단한다. 저장 row가 없는 사용자는 cursor 0부터 최대 100건씩 빠르게 따라잡고 한글 진행 상태를 표시한다. 서버 cursor 역행은 자동 복구하지 않고 polling을 중지하며 Core 서비스가 `admin`, `system-admin` role을 다시 확인한 경우에만 현재 scope·사용자의 cursor 초기화를 허용한다. 초기화 뒤에도 기존 처리 `message_id`는 보존해 재조회 부작용을 막는다. 채널 관리는 채널 생성, 멤버 추가/제외를 제공한다. 인수인계 확인 현황은 활성 채널 정보를 함께 읽어 운영 단위·채널별 목록과 미확인·후속 조치 인원 합계를 표시하고, 수신자별 receipt 상태 변경과 후속 FieldComment 생성을 제공한다. 서버 로그인한 `admin`, `system-admin`은 `사용자 관리` 화면에서 서버 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기를 수행한다. 로컬 로그인은 별도 로컬 계정 화면을 사용한다. `admin`, `system-admin`은 `승인 단말` 화면에서 서버 단말 목록·상세·마지막 접속을 조회하고 등록, 정보/상태 변경, 교체를 수행한다.
+WPF 앱은 로컬 `notifications` 테이블과 알림 창으로 문서, FieldComment, 작업순서 이벤트 알림을 확인하고 읽음 처리한다. 운영 HTTPS 서버 로그인 후 `채널함`, `채널 관리`, `인수인계 확인 현황` 화면에서 FastAPI 채널/인수인계 API를 직접 호출한다. 채널함은 내 채널, 사용자별 알림, 인수인계 목록을 조회하고 메시지 읽음, 내 receipt 상태 변경, 원천 링크 복사, 후속 FieldComment 생성을 수행한다. 후속 FieldComment는 인수인계 ID·작성자·정리한 내용을 hash한 안정 idempotency key를 사용한다. 코멘트 저장 뒤 채널 이벤트 응답이 유실되면 같은 코멘트를 다시 읽고 기존 채널 메시지를 확인한 뒤 누락된 메시지만 재시도하므로, 화면은 전체 실패가 아니라 코멘트 보존과 채널 알림 대기를 구분한다. 주 창이 열려 있는 동안 `server_notification_cursors`의 서버 scope·사용자별 마지막 성공 cursor 다음 알림을 기본 15초 간격으로 조회하고, `server_notification_messages`의 `message_id`로 멱등 처리한 뒤 같은 트랜잭션에서 cursor를 전진시킨다. 연결 실패 시 최대 120초까지 backoff하며 401이면 cursor를 유지한 채 중단한다. 저장 row가 없는 사용자는 cursor 0부터 최대 100건씩 빠르게 따라잡고 한글 진행 상태를 표시한다. 서버 cursor 역행은 자동 복구하지 않고 polling을 중지하며 Core 서비스가 `admin`, `system-admin` role을 다시 확인한 경우에만 현재 scope·사용자의 cursor 초기화를 허용한다. 초기화 뒤에도 기존 처리 `message_id`는 보존해 재조회 부작용을 막는다. 채널 관리는 채널 생성, 멤버 추가/제외를 제공한다. 인수인계 확인 현황은 활성 채널 정보를 함께 읽어 운영 단위·채널별 목록과 미확인·후속 조치 인원 합계를 표시하고, 수신자별 receipt 상태 변경과 후속 FieldComment 생성을 제공한다. 서버 로그인한 `admin`, `system-admin`은 `사용자 관리` 화면에서 서버 계정 생성, 이름·role·상태 변경, 임시 비밀번호 재설정, 활성 세션 조회·폐기를 수행한다. 로컬 계정 화면은 기존 데이터·단위 테스트 호환용이며 표준 로그인에서 열지 않는다. `admin`, `system-admin`은 `승인 단말` 화면에서 서버 단말 목록·상세·마지막 접속을 조회하고 등록, 정보/상태 변경, 교체를 수행한다.
 
 Android 앱은 현장 단말 입력과 작업 중 문서 열람을 우선한다. 현장 작업자는 승인된 `deviceId`로 로그인하고 공개 문서 목록/상세 조회, PDF·이미지·TXT 앱 내부 보안 열람, FieldComment와 사진 기록, 신호등식 상태 기록을 수행한다. 인수인계 작성 화면에서는 현재 사용자의 활성 업무 채널과 수신자를 고르고 작업순서 항목, 공개 문서, 보관되지 않은 FieldComment 또는 작업내역을 원천으로 연결한다.
 

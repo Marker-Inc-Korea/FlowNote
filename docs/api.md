@@ -2,7 +2,7 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-08-06 현재 전역 FastAPI 앱에 등록된 163개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency·정정/대체 계약, 작업순서 후보 전달·Android 현장 열람, 통합 변경 이력·운영 준비도 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
+이 문서는 2026-08-09 현재 전역 FastAPI 앱에 등록된 163개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency·정정/대체 계약, 작업순서 후보 전달·Android 현장 열람, 통합 변경 이력·운영 준비도 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -73,8 +73,8 @@ operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 상
 - 서버 로그인은 서버 `user_accounts`의 `is_active`와 `status = ACTIVE`를 모두 만족해야 한다.
 - Android 현장 단말 로그인은 `deviceId`가 `terminal_devices.device_id`에 존재하고 `status = ACTIVE`여야 한다. 승인되지 않았거나 비활성 단말이면 403을 반환한다.
 - 서버 로그인 성공 시 WPF는 서버 응답의 사용자 ID, 표시 이름, role을 현재 세션 기준으로 사용한다.
-- 서버 URL이 설정된 경우 WPF는 401·403뿐 아니라 인증서·주소·방화벽·시간 초과 오류에서도 로컬 계정 로그인으로 자동 우회하지 않는다.
-- 서버 URL이 없는 승인된 로컬 운영 PC에서만 WPF 로컬 계정 로그인을 사용한다.
+- WPF는 `FLOWNOTE_API_BASE_URL`에 설정한 승인 HTTPS 주소를 사용하며, 401·403뿐 아니라 인증서·주소·방화벽·시간 초과 오류에서도 HTTP나 로컬 계정 로그인으로 자동 우회하지 않는다.
+- 현재 표준 실행에는 서버 URL 미설정 로컬 로그인 경로가 없다. 로컬 계정 모델은 기존 데이터·단위 테스트 호환 범위로만 남긴다.
 - 서버 PC 운영 스크립트는 비상/초기 운영 경로로 유지하고, 설치형 WPF 운영은 서버 계정 API를 사용한다.
 - refresh는 같은 `auth_sessions` row에서 access token ID와 refresh token hash를 회전한다. 이전 access token과 이전 refresh token은 거부된다.
 - Android가 `deviceId`로 로그인한 세션은 `auth_sessions.device_id`에 승인 단말 ID를 보존한다. refresh는 같은 세션의 단말 ID를 유지한다.
@@ -379,7 +379,7 @@ Android 현장 입력은 아래 추가 계약을 사용한다.
 
 | Method | Path | 설명 |
 | --- | --- | --- |
-| GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}/delivery-preview?channelId=...` | 현재 revision, 후보·변경 이력, 채널 역할·활성 수신자, 작업 항목과 관련 공개 문서를 다시 확인한다. |
+| GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}/delivery-preview` | `channelId` query를 받아 현재 revision, 후보·변경 이력, 채널 역할·활성 수신자, 작업 항목과 관련 공개 문서를 다시 확인한다. |
 | POST | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}/deliveries` | `CHANNEL` 메시지 또는 `HANDOVER`와 수신자 receipt, candidate-channel delivery receipt, 감사를 확정한다. |
 | GET | `/api/v1/work-sequence-delivery-templates` | 로그인 사용자의 서버 `site_scope`에 속한 활성 문구 템플릿을 조회한다. |
 | POST | `/api/v1/work-sequence-delivery-templates` | 현재 현장 범위에 제품 기본값이 아닌 사용자 문구 템플릿을 저장한다. |
@@ -713,6 +713,12 @@ FieldComment `/bulk-review/execute`는 항목별 transaction을 유지한다. `s
 현재 공개 승인을 취소하면 공개 포인터와 flag를 철회하고 문서·대상 버전을 `WORKING`으로 되돌린다. 새 공개본은 자신을 승인한 ID를 `publication_approval_id`로 대체하며 이전 승인과 이벤트는 수정·삭제하지 않는다. 따라서 활성 공개 승인 관계는 문서 포인터 기준 1:1이고 승인 이력은 여러 건일 수 있다.
 
 ## Android 작업순서 읽기 API
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/api/v1/work-sequence-field-boards` | 승인 단말과 사용자에게 보이는 작업판 목록 |
+| GET | `/api/v1/work-sequence-field-boards/by-item/{item_id}` | 채널 원천 작업 항목으로 작업판 상세 조회 |
+| GET | `/api/v1/work-sequence-field-boards/{board_id}` | 공개 문서와 허용 채널을 포함한 작업판 상세 조회 |
 
 `GET /api/v1/work-sequence-field-boards`는 승인된 활성 단말의 읽기 전용 목록이다. query는 `boardDate`(기본 오늘), `lineCode`(선택), `status`(`ACTIVE` 기본, 사용자가 보관판을 선택하면 `ARCHIVED`), `offset`(0 이상), `limit`(1~100, 기본 50)을 받는다. 응답은 `items`, `offset`, `limit`, `total`, `has_more`, `refreshed_at`, `customer_scope`, `site_scope`, `user_id`, `device_id`를 반환한다.
 

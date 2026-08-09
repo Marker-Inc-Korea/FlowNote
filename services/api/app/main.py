@@ -22,7 +22,15 @@ async def _retention_loop(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    initialize_database(app.state.database)
+    is_test_environment = app.state.settings.environment.strip().lower() == "test"
+    initial_admin_password = app.state.settings.initial_admin_password
+    if is_test_environment and not initial_admin_password:
+        initial_admin_password = "1234"
+    initialize_database(
+        app.state.database,
+        initial_admin_password,
+        allow_insecure_test_password=is_test_environment,
+    )
     retention_task = None
     if app.state.settings.ai_retention_scheduler_enabled:
         retention_task = asyncio.create_task(_retention_loop(app))

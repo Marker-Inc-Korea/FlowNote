@@ -4,13 +4,15 @@
 
 현재 프로젝트는 WPF UI `net10.0-windows`, Core와 스모크 테스트 `net10.0`을 대상으로 한다. 현재 기능 목록은 `FlowNote.Windows.App`, `FlowNote.Windows.Core`, `FlowNote.Windows.SmokeTests` 코드에 실제 연결된 범위만 포함한다.
 
-이 문서는 2026-08-06 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
+이 문서는 2026-08-09 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
+
+현재 화면의 역할별 사용 순서는 [Windows 사용 매뉴얼](../../docs/manuals/windows-user-guide.md), 설치·연결 장애는 [공통 장애 대응](../../docs/manuals/troubleshooting.md)을 따른다.
 
 ## 현재 구현
 
 - 로그인 화면과 메인 탐색기 화면. 로그인 역할에 맞춘 첫 업무 3개와 기존 업무 창 바로 가기, 파일명·제목·태그·사용자·최근 코멘트 검색, 문서 상태 필터, 권한 문의 안내, 동기화 미완료 건수·로컬 보존·다음 조치 표시를 포함한다.
 - 로컬 SQLite 초기화와 기본 계정/그룹/폴더 시드
-- 사용자 관리: 서버 로그인 시 서버 계정 생성, 이름/역할/상태 변경, 임시 비밀번호 재설정, 활성 세션 조회/폐기. 서버 미연결 로컬 로그인 시 로컬 계정 관리
+- 사용자 관리: 운영 HTTPS 서버 로그인 후 서버 계정 생성, 이름/역할/상태 변경, 임시 비밀번호 재설정, 활성 세션 조회/폐기. 로컬 계정 모델과 화면은 기존 데이터·단위 테스트 호환용이며 표준 로그인에서는 사용하지 않음
 - 승인 단말 관리: 서버 단말 목록·상세·마지막 접속 조회, 등록, 정보/상태 변경, 교체
 - 시작 실패 안내: 로컬 저장소, WebView2 Runtime, 서버 주소·인증서·연결 오류를 `실패 내용`, `누락 항목`, `보존된 로컬 상태`, `처리 담당자`, `가능한 다음 행동`으로 나누어 표시한다. 읽기 전용 스크롤 안내, 키보드 접근 키와 크기 조절 창을 제공하며 로컬 계정으로 자동 전환하지 않는다.
 - 폴더 트리와 문서 목록. 기본 폴더는 `문서`, `인수인계`, `작업순서`, `사진`이다.
@@ -133,7 +135,8 @@ HTTPS 클라이언트는 인증서 폐기 목록 확인을 사용한다. 인증�
 
 - `FLOWNOTE_LOCAL_DATA_DIR`: 로컬 데이터 폴더 override
 - `FLOWNOTE_LOCAL_DATABASE_PATH`: SQLite 파일 경로 override
-- `FLOWNOTE_API_BASE_URL`: FastAPI 서버 URL
+- `FLOWNOTE_API_BASE_URL`: FastAPI 서버 URL override. 미설정 시 승인 운영 주소
+  공개 저장소 기본값인 `https://flownote.example`을 사용한다. 실제 연결에는 `FLOWNOTE_API_BASE_URL`로 승인된 HTTPS 주소를 지정한다.
 
 업로드 파일과 FieldComment 첨부는 로컬 데이터 폴더의 `Files/` 아래 보존한다.
 
@@ -165,7 +168,7 @@ HTTPS 클라이언트는 인증서 폐기 목록 확인을 사용한다. 인증�
 - `CanWriteReports`, `CanDownloadDocuments`: `admin`, `manager`, `system-admin`, `document-admin`, `assistant-manager`, `department-manager`
 - `CanReadAccessLogs`, `CanManageUsers`: `admin`, `system-admin`
 
-서버 URL이 설정된 상태에서는 서버가 401 또는 403을 반환하거나 인증서·주소·방화벽·시간 초과로 연결에 실패해도 로컬 계정으로 자동 우회하지 않는다. 로그인 화면은 인증서와 PC 시간, 현재 서버 주소, 방화벽을 순서대로 확인하도록 안내한다. 서버 URL이 없는 승인된 로컬 운영 PC에서만 로컬 계정 로그인을 사용한다.
+표준 실행은 `FLOWNOTE_API_BASE_URL`에 설정한 승인 HTTPS 주소를 항상 사용한다. 서버가 401 또는 403을 반환하거나 인증서·주소·방화벽·시간 초과로 연결에 실패해도 HTTP나 로컬 계정으로 우회하지 않는다. 로그인 화면은 인증서와 PC 시간, 현재 서버 주소, 방화벽을 순서대로 확인하도록 안내한다.
 서버 로그인 성공 시에는 같은 로그인 ID의 로컬 role과 다르더라도 서버 응답 role이 화면 버튼과 정책 결과의 기준이다.
 임시 비밀번호 서버 로그인은 메인 화면보다 비밀번호 변경 창을 먼저 표시하며, 변경 성공 후 새 비밀번호 재로그인을 요구한다. 서버 계정 화면의 401은 재로그인, 403은 권한 부족으로 안내하고 작업 버튼을 비활성화한다. 서버 연결이 끊겨도 열린 서버 계정 화면을 로컬 계정 화면으로 자동 전환하지 않는다.
 
@@ -176,9 +179,9 @@ dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
 dotnet run --project .\apps\windows\src\FlowNote.Windows.SmokeTests\FlowNote.Windows.SmokeTests.csproj
 ```
 
-스모크 테스트는 `FLOWNOTE_API_BASE_URL`이 없으면 `http://127.0.0.1:5184`의 로컬 FastAPI 서버를 자동 확인한다. 해당 서버가 실행 중이면 서버 로그인, 문서 등록, 버전, 공개 조회까지 서버 연동 블록을 검증하고, 실행 중이 아니면 기존 로컬 SQLite 검증만 계속한다.
+서버 연동 스모크는 승인된 운영 HTTPS 서버만 사용한다. `FLOWNOTE_API_BASE_URL`에는 운영 주소를, `FLOWNOTE_SMOKE_ADMIN_USERNAME`과 `FLOWNOTE_SMOKE_ADMIN_PASSWORD`에는 실행 시 발급한 전용 관리자 자격 증명을 주입한다. 주소나 자격 증명이 없으면 로컬 FastAPI로 우회하지 않는다. `system-admin` 전용 AI 보존 블록은 별도의 `FLOWNOTE_SMOKE_SYSTEM_ADMIN_USERNAME`과 `FLOWNOTE_SMOKE_SYSTEM_ADMIN_PASSWORD`가 있을 때만 실행한다. 모든 비밀값은 실행 환경에만 두고 파일이나 저장소에 기록하지 않는다.
 
-표준 통합 실행은 저장소 루트의 `scripts/verify-preserved-tests.ps1`을 사용한다. 스크립트가 새 `FLOWNOTE_SMOKE_RUN_ID`와 증거 폴더를 주입하고 비어 있는 `5184` 포트에 누적 Windows 스모크 FastAPI를 직접 시작한다. 이미 건강한 서버가 있으면 그 설정을 추정해 재사용하지 않고 환경 실패로 중단한다. AI 보존 검증에 필요한 `system-admin` 계정은 일반 관리자 API로 만들지 않는다. 스크립트가 `FLOWNOTE_ENVIRONMENT=test`와 `FLOWNOTE_SMOKE_SERVER_DATABASE_PATH`를 설정하고, 파일명이 `flownote.windows-smoke.sqlite3`인 기존 시험 DB에서만 전용 계정을 준비한다. 환경, 경로 또는 파일 조건이 하나라도 맞지 않으면 계정을 만들지 않고 즉시 중단한다. 구 FAILED 큐 dry-run·승인 재실행 멱등성, 서버 viewer 비밀번호 변경·Windows/승인 Android 세션·비활성화 차단, AI ground-truth 평가와 provider 차단, AI 보존 설정→재조회→일괄 만료 차단→해제→단일 만료→감사 조회, cursor 재시작 복구, SQLite 무결성·매핑/idempotency 중복을 같은 실행 ID로 검증한다.
+표준 통합 실행은 저장소 루트의 `scripts/verify-preserved-tests.ps1`을 사용한다. 스크립트는 새 `FLOWNOTE_SMOKE_RUN_ID`와 로컬 클라이언트 증거 폴더를 주입하지만 FastAPI 프로세스나 서버용 SQLite·storage를 만들지 않는다. 서버 연동 단계에 들어가기 전 운영 HTTPS health와 전용 계정을 확인하고 `운영 서버 테스트로 이관`을 출력한다. 구 FAILED 큐 dry-run·승인 재실행 멱등성, 서버 viewer 비밀번호 변경·Windows/승인 Android 세션·비활성화 차단, AI ground-truth 평가와 provider 차단, 선택적 AI 보존 검증, cursor 재시작 복구, SQLite 무결성·매핑/idempotency 중복을 같은 실행 ID로 검증한다.
 
 WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 사진/인수인계 문서 2건과 기존 과거 문서의 신규 버전을 SQL로 다시 확인한다. 결과는 `wpf-smoke-database-evidence.json`에 문서 ID, 이전·신규 버전, 무결성 값과 함께 보존하며 표준 스크립트의 단계별 로그·WPF Core TRX·최종 요약과 한 run ID를 공유한다.
 
@@ -186,7 +189,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-2026-08-06 현재 소스의 수집 대상은 FastAPI 209건·WPF Core 117건이다. 표준 스크립트 guard는 FastAPI 186건·WPF Core 102건으로 현재 코드와 일치하지 않는다. WPF Core 117/117은 macOS 보조 실행에서 통과했지만 FastAPI 전체 209건 단일 실행은 아직 기록되지 않았다. Windows에서 수집 목록·JUnit·원시 TRX를 현재 코드와 대조하고 guard를 맞춘 뒤, 누적 공통 DB 스모크와 Android build를 같은 clean 소스 커밋에서 새 run ID로 2회 완료해야 한다. 두 실행에서 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 통합 기준선 재확립은 `대기`다.
+2026-08-09 현재 소스의 수집 대상과 표준 스크립트 guard는 FastAPI 209건·WPF Core 120건·Android 39건으로 일치한다. 보조 실행에서 FastAPI 209/209, WPF Core 120/120, Android 39/39와 WPF·Android 빌드가 통과했고 운영 HTTPS 스모크도 통과했다. Windows에서 수집 목록·JUnit·원시 TRX와 운영 HTTPS 스모크를 같은 clean 소스 커밋으로 새 run ID에서 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 Windows 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

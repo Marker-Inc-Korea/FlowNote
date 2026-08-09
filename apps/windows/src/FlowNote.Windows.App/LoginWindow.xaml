@@ -40,7 +40,6 @@
                 <PasswordBox x:Name="PasswordBox"
                              Height="34"
                              Margin="0,4,0,12"
-                             Password="1234"
                              AutomationProperties.Name="비밀번호"
                              VerticalContentAlignment="Center" />
 

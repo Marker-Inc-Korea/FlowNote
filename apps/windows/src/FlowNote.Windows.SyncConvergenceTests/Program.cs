@@ -13,7 +13,7 @@ var outputPath = Environment.GetEnvironmentVariable("FLOWNOTE_SYNC_CONVERGENCE_O
 var serverDatabasePath = Environment.GetEnvironmentVariable("FLOWNOTE_SERVER_DATABASE_PATH")
     ?? Path.GetFullPath(Path.Combine("services", "api", "data", "flownote.sqlite3"));
 var serverBaseUrl = Environment.GetEnvironmentVariable(FlowNoteServerApiEnvironment.ApiBaseUrlEnvironmentVariable)
-    ?? FlowNoteServerApiEnvironment.LocalLoopbackApiBaseUrl;
+    ?? FlowNoteServerApiEnvironment.DefaultServerExampleUrl;
 var databasePath = FlowNoteLocalDatabase.DefaultDatabasePath;
 var actor = $"동기화 수렴 검증 {runId}";
 

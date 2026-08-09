@@ -1869,23 +1869,32 @@ try
 
     var configuredServerBaseUrl = Environment.GetEnvironmentVariable(
         FlowNoteServerApiEnvironment.ApiBaseUrlEnvironmentVariable);
-    var serverSmokeBaseUrl = string.IsNullOrWhiteSpace(configuredServerBaseUrl)
-        ? FlowNoteServerApiEnvironment.LocalLoopbackApiBaseUrl
-        : configuredServerBaseUrl;
+    var serverSmokeBaseUrl = configuredServerBaseUrl?.Trim();
     using var serverHttpClient = FlowNoteServerApiEnvironment.CreateHttpClient(
         serverSmokeBaseUrl,
         TimeSpan.FromSeconds(20));
-    if (serverHttpClient is null)
+    if (string.IsNullOrWhiteSpace(serverSmokeBaseUrl))
     {
-        Console.WriteLine("FLOWNOTE_API_BASE_URL is not set or invalid; server integration smoke blocks skipped.");
+        Console.WriteLine("FLOWNOTE_API_BASE_URL이 없어 운영 서버 연동 스모크를 실행하지 않습니다.");
     }
-    else if (string.IsNullOrWhiteSpace(configuredServerBaseUrl) && !await IsServerAvailableAsync(serverHttpClient))
+    else if (serverHttpClient is null ||
+             !Uri.TryCreate(serverSmokeBaseUrl, UriKind.Absolute, out var serverSmokeUri) ||
+             serverSmokeUri.Scheme != Uri.UriSchemeHttps)
     {
-        Console.WriteLine(
-            "FLOWNOTE_API_BASE_URL is not set and http://127.0.0.1:5184 is not reachable; server integration smoke blocks skipped.");
+        throw new InvalidOperationException(
+            "운영 서버 연동 스모크에는 유효한 HTTPS FLOWNOTE_API_BASE_URL이 필요합니다.");
     }
     else
     {
+        var smokeAdminUsername = Environment.GetEnvironmentVariable("FLOWNOTE_SMOKE_ADMIN_USERNAME");
+        var smokeAdminPassword = Environment.GetEnvironmentVariable("FLOWNOTE_SMOKE_ADMIN_PASSWORD");
+        if (string.IsNullOrWhiteSpace(smokeAdminUsername) ||
+            string.IsNullOrWhiteSpace(smokeAdminPassword))
+        {
+            throw new InvalidOperationException(
+                "운영 서버 연동 스모크에는 실행 시 주입하는 FLOWNOTE_SMOKE_ADMIN_USERNAME과 FLOWNOTE_SMOKE_ADMIN_PASSWORD가 필요합니다.");
+        }
+
         var serverAuth = new FlowNoteServerAuthClient(serverHttpClient);
         var serverDocuments = new FlowNoteServerDocumentClient(serverHttpClient);
         var serverChannels = new FlowNoteServerChannelClient(serverHttpClient);
@@ -1894,17 +1903,18 @@ try
 
         ServerLoginResponse serverLogin;
         {
-            serverLogin = await serverAuth.TryLoginAsync("admin", "1234")
-                ?? throw new InvalidOperationException("server login API should accept seeded admin / 1234");
-            Require(serverLogin.Username == "admin", "server login API should return the admin username");
-            Require(serverLogin.UserId == "user-admin", "server login API should return the seeded admin user id");
-            Require(serverLogin.Role == "admin", "server login API should return the admin role");
+            serverLogin = await serverAuth.TryLoginAsync(smokeAdminUsername, smokeAdminPassword)
+                ?? throw new InvalidOperationException("운영 스모크 전용 관리자 로그인에 실패했습니다.");
+            Require(serverLogin.Username == smokeAdminUsername, "server login API should return the smoke admin username");
+            Require(
+                serverLogin.Role is "admin" or "system-admin",
+                "server login API should return an administrative smoke role");
             Require(!string.IsNullOrWhiteSpace(serverLogin.AccessToken), "server login API should return an access token");
             Require(
                 serverLogin.ExpiresAt > DateTimeOffset.UtcNow,
                 "server login API should return a future token expiration time");
 
-            var rejectedLogin = await serverAuth.TryLoginAsync("admin", "wrong-password");
+            var rejectedLogin = await serverAuth.TryLoginAsync(smokeAdminUsername, $"invalid-{runId}");
             Require(rejectedLogin is null, "server login API should reject a wrong password");
         }
 
@@ -2001,13 +2011,16 @@ try
             Console.WriteLine(
                 $"Server account/device lifecycle smoke: run={runId}, actor={serverLogin.UserId}, viewer={createdViewer.Account.UserId}, device={androidDeviceId}, revoked={disabledViewer.SessionsRevoked}");
 
-            var aiOperatorUsername = $"smoke-ai-system-{accountSuffix}";
-            var aiOperatorPassword = $"AI-System-{accountSuffix}!";
-            var aiOperatorChangedPassword = $"AI-System-Changed-{accountSuffix}!";
-            ServerSmokeSystemAdmin.EnsureAccount(
-                aiOperatorUsername,
-                $"AI 보존 운영 스모크 {runId}",
-                aiOperatorPassword);
+            var aiOperatorUsername = Environment.GetEnvironmentVariable("FLOWNOTE_SMOKE_SYSTEM_ADMIN_USERNAME");
+            var aiOperatorPassword = Environment.GetEnvironmentVariable("FLOWNOTE_SMOKE_SYSTEM_ADMIN_PASSWORD");
+            if (string.IsNullOrWhiteSpace(aiOperatorUsername) ||
+                string.IsNullOrWhiteSpace(aiOperatorPassword))
+            {
+                Console.WriteLine(
+                    "운영 system-admin 자격 증명이 없어 AI 보존 운영 스모크 블록을 실행하지 않습니다.");
+            }
+            else
+            {
             using var aiOperationsHttpClient = FlowNoteServerApiEnvironment.CreateHttpClient(
                 serverSmokeBaseUrl, TimeSpan.FromSeconds(20))
                 ?? throw new InvalidOperationException("AI 보존 운영 스모크에는 서버 URL이 필요합니다.");
@@ -2016,15 +2029,9 @@ try
                 ?? throw new InvalidOperationException("AI 보존 운영 system-admin 로그인이 필요합니다.");
             aiOperationsHttpClient.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", aiOperatorLogin.AccessToken);
-            if (aiOperatorLogin.MustChangePassword)
-            {
-                Require(
-                    await aiOperatorAuth.TryChangePasswordAsync(aiOperatorPassword, aiOperatorChangedPassword),
-                    "AI 보존 운영 system-admin은 임시 비밀번호를 변경해야 합니다.");
-                aiOperationsHttpClient.DefaultRequestHeaders.Authorization = null;
-                aiOperatorLogin = await aiOperatorAuth.TryLoginAsync(aiOperatorUsername, aiOperatorChangedPassword)
-                    ?? throw new InvalidOperationException("비밀번호 변경 뒤 AI 보존 운영 재로그인이 필요합니다.");
-            }
+            Require(
+                !aiOperatorLogin.MustChangePassword,
+                "운영 AI 보존 스모크 계정은 사전에 비밀번호 변경을 완료해야 합니다.");
             aiOperationsHttpClient.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", aiOperatorLogin.AccessToken);
             using var aiQueryResponse = await aiOperationsHttpClient.PostAsJsonAsync(
@@ -2066,12 +2073,14 @@ try
                 "hold placement read-back should include ACTIVE row and placement audit");
             await aiOperations.RunRetentionAsync();
             var retainedByHold = await aiOperations.GetQueryDetailAsync(aiRetentionQueryId);
+            var activeHold = retainedByHold.ActiveHold
+                ?? throw new InvalidOperationException("보존 실행 뒤 활성 legal hold가 유지되어야 합니다.");
             Require(
-                !retainedByHold.QueryPayloadExpired && retainedByHold.ActiveHold is not null,
+                !retainedByHold.QueryPayloadExpired,
                 "active hold should block manual bulk retention");
             var releasedHold = await aiOperations.ReleaseLegalHoldAndReadBackAsync(
                 aiRetentionQueryId,
-                retainedByHold.ActiveHold.HoldId,
+                activeHold.HoldId,
                 new ServerAIQueryMutationRequest
                 {
                     Reason = $"보존 의무 종료 사람형 스모크 run={runId}",
@@ -2099,6 +2108,7 @@ try
                 "single expiry read-back should include expired query, retained hold history, retention and operation audits");
             Console.WriteLine(
                 $"WPF AI retention human-like smoke: run={runId}, query={aiRetentionQueryId}, hold={placedHold.Holds[0].HoldId}, flow=place-readback-block-release-expire-audit");
+            }
         }
 
         var authExpiredDocument = services.Documents.RegisterDocument(
@@ -4739,23 +4749,6 @@ static Task SimulateHumanPauseAsync()
     return Task.Delay(Random.Shared.Next(450, 1150));
 }
 
-static async Task<bool> IsServerAvailableAsync(HttpClient httpClient)
-{
-    try
-    {
-        using var response = await httpClient.GetAsync("api/v1/health");
-        return response.IsSuccessStatusCode;
-    }
-    catch (HttpRequestException)
-    {
-        return false;
-    }
-    catch (TaskCanceledException)
-    {
-        return false;
-    }
-}
-
 static string NormalizeRunId(string? requestedRunId, string fallback)
 {
     if (string.IsNullOrWhiteSpace(requestedRunId))
@@ -5331,15 +5324,28 @@ static async Task RunWorkSequenceConcurrencySmokeAsync(string runId)
 {
     var configuredBaseUrl = Environment.GetEnvironmentVariable(
         FlowNoteServerApiEnvironment.ApiBaseUrlEnvironmentVariable);
-    var baseUrl = string.IsNullOrWhiteSpace(configuredBaseUrl)
-        ? FlowNoteServerApiEnvironment.LocalLoopbackApiBaseUrl
-        : configuredBaseUrl;
+    var baseUrl = configuredBaseUrl?.Trim();
+    if (string.IsNullOrWhiteSpace(baseUrl) ||
+        !Uri.TryCreate(baseUrl, UriKind.Absolute, out var smokeUri) ||
+        smokeUri.Scheme != Uri.UriSchemeHttps)
+    {
+        throw new InvalidOperationException(
+            "작업순서 경쟁 스모크에는 유효한 HTTPS FLOWNOTE_API_BASE_URL이 필요합니다.");
+    }
+    var smokeAdminUsername = Environment.GetEnvironmentVariable("FLOWNOTE_SMOKE_ADMIN_USERNAME");
+    var smokeAdminPassword = Environment.GetEnvironmentVariable("FLOWNOTE_SMOKE_ADMIN_PASSWORD");
+    if (string.IsNullOrWhiteSpace(smokeAdminUsername) ||
+        string.IsNullOrWhiteSpace(smokeAdminPassword))
+    {
+        throw new InvalidOperationException(
+            "작업순서 경쟁 스모크에는 실행 시 주입하는 운영 스모크 관리자 자격 증명이 필요합니다.");
+    }
     using var firstHttp = FlowNoteServerApiEnvironment.CreateHttpClient(baseUrl, TimeSpan.FromSeconds(20))
         ?? throw new InvalidOperationException("작업순서 경쟁 스모크에 유효한 서버 URL이 필요합니다.");
     using var secondHttp = FlowNoteServerApiEnvironment.CreateHttpClient(baseUrl, TimeSpan.FromSeconds(20))
         ?? throw new InvalidOperationException("작업순서 경쟁 스모크에 두 번째 서버 클라이언트가 필요합니다.");
     var auth = new FlowNoteServerAuthClient(firstHttp);
-    var login = await auth.TryLoginAsync("admin", "1234")
+    var login = await auth.TryLoginAsync(smokeAdminUsername, smokeAdminPassword)
         ?? throw new InvalidOperationException("작업순서 경쟁 스모크 서버 로그인에 실패했습니다.");
     firstHttp.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken);
     secondHttp.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken);

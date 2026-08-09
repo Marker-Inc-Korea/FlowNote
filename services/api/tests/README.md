@@ -2,7 +2,7 @@
 
 이 디렉터리는 FlowNote FastAPI 서버 테스트를 보관한다.
 
-범위와 수집 기준선은 2026-08-06 현재 테스트 코드와 보존된 최신 실행 기록 기준이다.
+범위와 수집 기준선은 2026-08-13 현재 테스트 코드와 보존된 최신 실행 기록 기준이다.
 
 ## 현재 테스트 범위
 
@@ -51,6 +51,8 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-2026-08-06 현재 테스트 선언과 매개변수 기준 수집 대상은 FastAPI 209개, WPF Core 117개, Android 35개다. 보존된 최신 집중 실행은 보고서 정정 21건, 작업순서 후보 전달 19건, 운영 준비도 17건, Android 작업순서 연결 API 41건을 각각 통과했고 WPF Core 117/117과 Android 35/35도 기록했다. 다만 FastAPI 전체 209개를 한 번에 실행한 기록은 아직 없다. 저장소 루트 `scripts/verify-preserved-tests.ps1`의 guard도 FastAPI 186개·WPF Core 102개·Android 32개로 현재 소스보다 적다. 스크립트는 수집 원본, 중복 목록, 종료 코드와 JUnit을 같은 `run_id`에 보존하며 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 명령을 안내한다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략해 수행한다. FastAPI, WPF Core 테스트·앱 빌드·통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존하고 무생략 실행 2회가 같은 clean 소스 커밋에서 모두 통과하기 전에는 유효한 기준선으로 판정하지 않는다.
+2026-08-13 개발 PC 재검증에서 FastAPI 209/209와 `app`, `tests` Ruff 검사가 통과했다. AI ground-truth 수명주기 테스트는 누적 테스트 DB에 필요한 48개 사례를 기존 seed 스크립트로 멱등 보장하며, 기존 DB와 시험 기록을 초기화하지 않는다. 같은 날 WPF Core 120/120과 앱 교차 빌드, Android 39/39와 debug build·lint도 통과했다.
+
+2026-08-09 운영 기록에서 테스트 선언과 매개변수 기준 수집 대상과 저장소 루트 `scripts/verify-preserved-tests.ps1`의 guard는 FastAPI 209개, WPF Core 120개, Android 39개로 일치한다. 보조 실행에서 FastAPI 209/209, WPF Core 120/120, Android 39/39와 WPF·Android 빌드가 통과했다. 운영 HTTPS 스모크에서는 health/DB, Windows 세션, 승인 Android 단말, 오늘 사진·인수인계 문서, 과거 문서 버전 증가, 계정·단말 비활성화와 SQLite 무결성을 확인했다. 스크립트는 수집 원본, 중복 목록, 종료 코드와 JUnit을 같은 `run_id`에 보존하며 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터와 `.\scripts\verify-preserved-tests.ps1 -RunId <새-run-id>` 명령을 안내한다. 전체 표준 검증은 Windows x64 기준 환경에서 옵션을 생략해 수행한다. FastAPI, WPF Core 테스트·앱 빌드·운영 HTTPS 통합 스모크, Android 단위 테스트·debug build와 실행 전후 Git 산출물 점검을 같은 `run_id`에 보존하고 무생략 실행 2회가 같은 clean 소스 커밋에서 모두 통과하기 전에는 유효한 Windows 통합 기준선으로 판정하지 않는다.
 
 테스트 SQLite DB, 로그, 테스트 업로드 파일, 생성 샘플 파일은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.

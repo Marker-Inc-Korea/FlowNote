@@ -9,6 +9,30 @@ namespace FlowNote.Windows.Core.Tests;
 public sealed class ServerConnectionGuidanceTests
 {
     [Fact]
+    public void MissingServerOverrideUsesPublicExampleServer()
+    {
+        Assert.Equal(
+            "https://flownote.example",
+            FlowNoteServerApiEnvironment.ResolveApiBaseUrl(null));
+    }
+
+    [Fact]
+    public void ExplicitServerOverrideRemainsAvailableForApprovedTesting()
+    {
+        Assert.Equal(
+            "https://test.flownote.example",
+            FlowNoteServerApiEnvironment.ResolveApiBaseUrl(
+                "  https://test.flownote.example  "));
+    }
+
+    [Fact]
+    public void HttpServerOverrideIsRejected()
+    {
+        Assert.Null(FlowNoteServerApiEnvironment.CreateHttpClient(
+            "http://127.0.0.1:5184"));
+    }
+
+    [Fact]
     public async Task CertificateFailureDoesNotFallBackAndShowsRecoverySteps()
     {
         using var httpClient = CreateThrowingClient(

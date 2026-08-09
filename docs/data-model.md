@@ -1,6 +1,6 @@
 # FlowNote 데이터 모델
 
-이 문서는 2026-08-06 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·검토·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
+이 문서는 2026-08-09 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·검토·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
 
 ## WPF 로컬 SQLite
 
@@ -75,7 +75,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-08-06 현재 ORM은 공통 감사 event envelope와 mutation receipt, 문서·FieldComment 검토·보고서·작업순서의 도메인 receipt, 문서 태그 revision snapshot, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 70개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드와 운영 준비도는 새 권위 테이블이나 저장 snapshot을 만들지 않고 현재 도메인 테이블과 감사 anchor를 요청 시점에 집계한다.
+2026-08-09 현재 ORM은 공통 감사 event envelope와 mutation receipt, 문서·FieldComment 검토·보고서·작업순서의 도메인 receipt, 문서 태그 revision snapshot, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 70개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드와 운영 준비도는 새 권위 테이블이나 저장 snapshot을 만들지 않고 현재 도메인 테이블과 감사 anchor를 요청 시점에 집계한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -483,11 +483,11 @@ WPF 사용자 관리는 위 role 중 하나만 선택할 수 있다. 새 사용�
 
 `user_accounts.must_change_password`는 임시 비밀번호 로그인 후 정상 API 사용을 막는 서버 기준 값이고 `password_changed_at`은 본인 비밀번호 변경 완료 시각이다. 계정 생성과 관리자 비밀번호 재설정은 `must_change_password = true`, 본인 변경 성공은 `false`로 바꾸며 모든 기존 세션을 폐기한다. `auth_sessions`에는 원문 refresh token이 아니라 hash만 저장하고, 계정 잠금·비활성화·role 변경·비밀번호 변경/재설정·관리자 폐기 시 즉시 `REVOKED`로 전환한다.
 
-WPF 사용자 관리는 서버 로그인 세션이 있으면 서버 계정 운영 화면, 서버 URL이 없는 승인된 로컬 운영 PC에서 로그인한 경우에는 로컬 SQLite 계정 화면으로 분리한다. 두 계정 저장소를 자동 병합하거나 같은 ID의 row를 서로 덮어쓰지 않는다.
+WPF 표준 로그인과 사용자 관리는 운영 HTTPS 서버 세션과 서버 계정 운영 화면을 사용한다. 로컬 SQLite 계정 row와 화면은 기존 데이터·단위 테스트 호환을 위해 보존하며 서버 계정과 자동 병합하거나 같은 ID의 row를 서로 덮어쓰지 않는다.
 
-`FLOWNOTE_API_BASE_URL`이 설정되어 있고 서버 로그인이 성공하면 WPF 현재 세션의 사용자 ID, 로그인 ID, 표시 이름, role은 서버 응답을 우선한다. 같은 로그인 ID의 로컬 계정 정보가 다르더라도 서버 사용자 정보를 화면 표시, 버튼 권한, 서버 동기화 작성자 ID에 사용하고 로컬 계정 row는 자동 덮어쓰지 않는다.
+설정한 승인 `FLOWNOTE_API_BASE_URL`에서 서버 로그인이 성공하면 WPF 현재 세션의 사용자 ID, 로그인 ID, 표시 이름, role은 서버 응답을 우선한다. 같은 로그인 ID의 로컬 계정 정보가 다르더라도 서버 사용자 정보를 화면 표시, 버튼 권한, 서버 동기화 작성자 ID에 사용하고 로컬 계정 row는 자동 덮어쓰지 않는다.
 
-서버 URL이 설정된 경우에는 401·403뿐 아니라 인증서·주소·방화벽·시간 초과 오류에서도 로컬 계정 fallback으로 우회하지 않는다. 서버 URL이 없는 승인된 로컬 운영 PC에서만 로컬 계정 로그인을 사용한다.
+설정한 승인 HTTPS 주소의 401·403뿐 아니라 인증서·주소·방화벽·시간 초과 오류에서도 HTTP나 로컬 계정 fallback으로 우회하지 않는다. 현재 표준 실행에는 서버 URL 미설정 로컬 로그인 경로가 없다.
 ## 서버 복구 경계와 재결합 이력
 
 - 서버 `server_identity`는 단일 행이며 불변 `server_instance_id`, 단조 증가시키는 `server_epoch`, schema/API contract 범위를 가진다. DB 백업에는 instance ID가 포함되며 복구 직후 epoch 증가 절차로 복구 경계를 만든다.
