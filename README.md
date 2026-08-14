@@ -8,7 +8,7 @@ FlowNote는 공장 내부 서버에서 문서 버전, 현장 공개본, 작업�
 
 ## 현재 기준
 
-- 문서 기준일: **2026-08-13**
+- 문서 기준일: **2026-08-15**
 - 제품 단계: 현재 구현과 검증 결과를 공개 가능한 형태로 정리한 **연구개발 프로토타입**
 - 연구개발 범위: **현재 기준선 정리 완료** — 소스, 설계, 매뉴얼과 서버 비의존 회귀 검증을 포함한다.
 - 운영 배포: 연구 완료 조건이 아니다. 실제 도입에 필요한 설치·서명·MDM·복구 방법과 확인 항목만 문서로 제공한다.
@@ -124,10 +124,11 @@ flowchart LR
 | FastAPI 업무 API와 SQLite 모델 | 구현됨 |
 | Windows WPF 문서·검토·운영 화면 | 구현됨 |
 | Android 현장 단말 최소 업무 흐름 | 구현됨 |
-| FastAPI 단위·회귀·정적 검사 | 2026-08-13 기준 209/209, Ruff 통과 |
-| WPF Core 단위 테스트 | 2026-08-13 기준 120/120 통과 |
-| WPF 앱 macOS 교차 빌드 | 2026-08-13 기준 경고 0, 오류 0 |
-| Android 단위 테스트·개발 빌드·lint | 2026-08-13 강제 재실행 기준 39/39, build·lint 통과 |
+| FastAPI 단위·회귀·정적 검사 | 2026-08-15 누적 DB·새 DB 기준 각각 209/209, Ruff 통과 |
+| WPF Core 단위 테스트 | 2026-08-15 기준 120/120 통과 |
+| WPF 앱 macOS 교차 빌드 | 2026-08-15 기준 경고 0, 오류 0 |
+| Android 단위 테스트·개발 빌드·lint | 2026-08-15 강제 재실행 기준 39/39, build·lint 통과 |
+| GitHub 자동 검증 | 공개 파일·문서, FastAPI, Windows WPF, Android 4개 job 구성 |
 | 운영 HTTPS 서버 연동 스모크 | 2026-08-09 보존 기록 기준 통과 |
 | Windows x64 무생략 통합 기준선 2회 | 실제 도입 시 선택 검증 |
 | 승인 Android 실단말·MDM·코드 서명 | 실제 도입 시 선택 검증 |
@@ -139,9 +140,11 @@ flowchart LR
 
 ## 빠르게 확인하기
 
+처음 저장소를 받은 경우 [처음 실행하기](./docs/getting-started.md)에서 Git 제외 로컬 설정 생성, API 기동, health 확인과 클라이언트 연결 조건을 순서대로 확인한다. 자동 초기화 도구는 무작위 관리자 비밀번호와 토큰 비밀값을 만들며 기존 `.env`를 덮어쓰지 않는다.
+
 ### FastAPI 단위·회귀 검증
 
-Python 3.11 이상이 필요하다. 개발 PC에서는 FastAPI 서버를 시작하지 않는다.
+Python 3.11 이상이 필요하다. 아래 명령은 서버를 시작하지 않는 소스 회귀 검증이다.
 
 ```powershell
 cd services\api
@@ -151,7 +154,7 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m ruff check app tests
 ```
 
-서버 연동 확인은 승인된 운영 HTTPS 서버를 사용한다. 운영 DB·storage·로그와 자격 증명을 개발 PC로 복사하지 않는다.
+공개 소스의 로컬 API 평가는 [처음 실행하기](./docs/getting-started.md)에 따라 loopback에서 별도로 수행한다. 프로젝트의 운영 연동 확인은 승인된 HTTPS 서버를 사용하며 운영 DB·storage·로그와 자격 증명을 개발 PC로 복사하지 않는다.
 
 ### Windows WPF
 
@@ -181,6 +184,7 @@ cd apps/android
 
 | 독자 | 먼저 읽을 문서 |
 | --- | --- |
+| 처음 실행하는 개발자 | [처음 실행하기](./docs/getting-started.md) |
 | 연구 책임자·검토자 | [연구 결과 정리](./docs/research-summary.md) |
 | 제품·설계 검토자 | [제품 개요](./docs/product-overview.md), [시스템 맵](./docs/system-map.md) |
 | 서버 운영자 | [서버 설치·운영 매뉴얼](./docs/manuals/server-operations.md) |

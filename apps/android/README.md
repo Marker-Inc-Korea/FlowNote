@@ -11,6 +11,7 @@
 - 언어/UI: Java, Android 네이티브 View
 - Java 소스/타깃: 17
 - 빌드: Gradle Android plugin, `./gradlew assembleDebug`
+- Gradle 실행기: 8.10.2 binary ZIP을 [Gradle 공식 체크섬](https://gradle.org/release-checksums/)과 대조한 뒤 사용
 - 패키지: `com.flownote.fieldapp`
 - SDK: `minSdk 26`, `targetSdk 35`, `compileSdk 35`
 - 서버 통신: FastAPI `/api/v1` REST API, Bearer token, `HttpURLConnection`

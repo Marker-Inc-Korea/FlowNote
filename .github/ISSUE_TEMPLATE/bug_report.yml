@@ -1,0 +1,69 @@
+name: 버그 제보
+description: 재현 가능한 공개 소스 문제를 제보합니다.
+title: "[버그] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        보안 취약점은 공개 Issue에 쓰지 말고 저장소의 `SECURITY.md`를 따라 비공개로 제보해 주세요.
+        실제 고객명·문서·사진·서버 주소·계정·토큰·인증서·개인 로컬 경로는 첨부하지 마세요.
+  - type: textarea
+    id: summary
+    attributes:
+      label: 문제 요약
+      description: 기대한 동작과 실제 동작을 간단히 적어 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 재현 순서
+      description: 합성 데이터와 공개 예시값만 사용한 최소 재현 순서를 적어 주세요.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: 구성요소
+      options:
+        - FastAPI 서버
+        - Windows WPF
+        - Android
+        - 문서·빌드·자동화
+        - 여러 구성요소
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: 소스 기준
+      description: commit SHA 또는 공개 release 식별자를 적어 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 실행 환경
+      description: OS, Python/.NET/JDK/Android SDK 버전과 실행한 명령을 적어 주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: sanitized_evidence
+    attributes:
+      label: 정제한 오류 정보
+      description: 비밀값·실제 주소·고객 데이터·개인 경로를 제거한 오류 문구만 붙여 주세요.
+  - type: checkboxes
+    id: public_data_check
+    attributes:
+      label: 공개 정보 확인
+      options:
+        - label: 실제 고객 데이터, 자격 증명, 운영 주소와 개인 로컬 경로를 포함하지 않았습니다.
+          required: true
+        - label: 보안 취약점 제보가 아님을 확인했습니다.
+          required: true

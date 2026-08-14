@@ -6,6 +6,8 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 
 운영 설치와 점검은 [서버 설치·운영 매뉴얼](../../docs/manuals/server-operations.md), 장애 대응은 [공통 장애 대응](../../docs/manuals/troubleshooting.md)을 따른다.
 
+공개 소스를 처음 실행할 때는 [처음 실행하기](../../docs/getting-started.md)에 따라 Git 제외 `.env`와 무작위 비밀값을 만든다. 예제 설정만 복사한 빈 DB는 초기 관리자 비밀번호가 없어 시작을 거부한다.
+
 ## Current API
 
 | Method | Path | Purpose |
@@ -188,7 +190,7 @@ Operation-key mutations for document authority, FieldComment review, report work
 
 `GET /api/v1/operational-readiness` combines that audit anchor with current authority tables without storing another snapshot. Area failures remain isolated as `NO_DATA`; terminal-session and reconciliation counts are restricted to `admin`/`system-admin`. The AI field section accepts only `ANONYMOUS_FIELD` readiness and never adds synthetic or test regression counts to operational totals.
 
-The first server administrator is created only when `FLOWNOTE_INITIAL_ADMIN_PASSWORD` is supplied. The short `admin / 1234` credential exists only in the isolated test environment and legacy WPF local compatibility data; the server does not seed it in local or production environments.
+The first server administrator is created only when `FLOWNOTE_INITIAL_ADMIN_PASSWORD` is supplied and must change that temporary password before using protected APIs. The short `admin / 1234` credential exists only in the isolated test environment and legacy WPF local compatibility data; the server does not seed it in local or production environments.
 
 Server account lifecycle APIs require `admin` or `system-admin`. Temporary passwords are request-only sensitive values, force a password change after first login, and are never returned. The `python -m app.ops.server_accounts` command remains an emergency/server-console path.
 
@@ -206,7 +208,9 @@ An effective approved report can create one correction draft through `/api/v1/re
 
 ## Server Development
 
-서버 변경은 현재 승인된 개발 PC에서 기존 외부 배포 권한으로 운영 서버에 반영한 뒤 운영 HTTPS health와 스모크로 확인한다. 개발 PC에서는 FastAPI를 직접 실행하거나 운영 서버 DB·storage를 복사하지 않는다. SSH 대상, 개인키, 비밀번호, 토큰과 운영 환경 파일은 저장소에 기록하지 않는다.
+공개 소스의 기능 탐색은 [처음 실행하기](../../docs/getting-started.md)의 격리된 loopback API 평가 절차를 사용할 수 있다. 이 결과를 운영 연동 스모크나 고객 현장 승인으로 기록하지 않는다.
+
+프로젝트의 서버 변경 연동 검증은 승인된 개발 PC에서 기존 외부 배포 권한으로 운영 서버에 반영한 뒤 운영 HTTPS health와 스모크로 확인한다. 운영 서버 DB·storage를 개발 PC로 복사하지 않는다. SSH 대상, 개인키, 비밀번호, 토큰과 운영 환경 파일은 저장소에 기록하지 않는다.
 
 Useful settings:
 

@@ -1,5 +1,27 @@
 # 검증 자동화
 
+## 2026-08-15 공개 소스 첫 실행 경로 검증
+
+Git 제외 `.env`를 자동으로 만드는 `scripts/bootstrap_local_evaluation.py`와 순수 변환 단위 시험 3건을 추가했다. 도구는 `services/api/.env.example`의 필수 키가 정확히 하나씩 있는지 확인하고, 무작위 초기 관리자 비밀번호와 32자보다 긴 token secret을 넣으며 외부 AI 호출 비활성 설정을 유지한다. 기존 출력 파일은 덮어쓰지 않고 POSIX 환경에서는 파일 권한을 `0600`으로 제한한다.
+
+격리된 `/private/tmp/flownote-local-evaluation-20260815/`에 설정을 생성해 비밀값 존재, 공개 placeholder 제거, AI 비활성과 파일 권한을 확인했다. 같은 출력 경로의 두 번째 실행은 예상대로 기존 파일을 변경하지 않고 종료 코드 2를 반환했다. 생성 설정으로 FastAPI를 `127.0.0.1:5194`에서 시작해 최초 관리자와 SQLite 초기화, `/api/v1/health`, `/api/v1/health/db`, `/openapi.json`의 HTTP 200 응답을 확인한 뒤 `Ctrl+C`로 정상 종료했다. 임시 DB·storage와 설정은 검증 기록으로 보존했다. 이 실행은 공개 소스의 로컬 평가 재현성 확인이며 운영 HTTPS 스모크나 고객 현장 승인 증거가 아니다.
+
+처음 실행 절차를 `docs/getting-started.md`에 분리하고 README, 문서 안내, API README, 기여 안내, 서버 운영 매뉴얼과 공개 기준에서 같은 경계를 참조하도록 맞췄다. 배포 문서에서 운영 `.env`의 제외 대상을 반대로 적은 표 오류도 수정했다.
+
+추가 공개 점검에서 비어 있던 GitHub Actions에 공개 tree·문서, FastAPI, Windows WPF와 Android job을 구성했다. `scripts/check_public_tree.py`는 Git 추적 파일과 Git에서 제외되지 않은 새 파일에서 DB·키·인증서·빌드 산출물·환경 파일·runtime data, private key marker, 예약 도메인이 아닌 `flownote.*` HTTPS host와 깨진 상대 Markdown 링크를 검사한다. Android의 맞춤 Gradle 8.10.2 실행기에는 공식 binary ZIP SHA-256 `31c55713e40233a8303827ceb42ca48a47267a0ad4bab9177123121e71524c26` 검증을 Linux/macOS와 Windows 경로에 모두 추가했다.
+
+초기 계정 계약을 다시 대조해 새 로컬·운영 DB의 첫 `admin`에 `must_change_password = true`를 설정했다. 로그인과 비밀번호 변경 세션은 허용하지만 변경 전 다른 보호 API는 기존 인증 정책이 차단한다. 격리 `test` 환경의 짧은 호환 fixture만 기존 값과 회귀 테스트를 유지한다.
+
+누적 SQLite가 없는 별도 소스 복사본에서 FastAPI 전체 회귀를 처음 실행한 결과 172/209 통과, 37건 실패였다. 36건은 Git 제외 WPF 로컬 XLSX 샘플을 API 테스트가 참조한 문제였고, 1건은 앞선 테스트가 만든 FieldComment 수와 누적 DB에 따라 AI 준비도 결괏값이 달라지는 순서 의존 assertion이었다. 실패 DB와 산출물은 `/private/tmp/flownote-clean-source-20260815/`에 보존했다. 실제 고객·로컬 샘플을 공개하는 대신 테스트가 최소 유효 XLSX를 직접 생성하게 바꾸고, AI 평가는 같은 응답의 준비도 snapshot과 값을 대조하도록 수정했다.
+
+두 번째 깨끗한 전체 실행은 208/209였고, 남은 1건은 무작위 합성 UUID가 우연히 숫자 13자리로 이어져 주민등록번호 차단식에 걸리면서 방금 만든 공개 문서 후보가 제외된 비결정적 실패였다. 이후 누적 DB 전체 재실행에서도 보고서 `source_id`의 다른 무작위 숫자 구간이 같은 차단식에 걸린 208/209 실행을 확인했다. 민감정보 차단식은 유지하고 fixture UUID의 숫자 0~9를 길이가 같은 문자 g~p로 일대일 변환해 모든 합성 ID와 ground-truth 토큰이 개인정보 숫자 형식과 겹치지 않도록 수정했다. 깨끗한 실행의 DB와 실패 산출물은 각각 `/private/tmp/flownote-clean-source-20260815-02/`, `-03/`, `-04/`에 보존했고 누적 DB 실패도 삭제하지 않았다.
+
+세 번째 새 소스·빈 DB 실행 `/private/tmp/flownote-clean-source-20260815-05/`에서는 FastAPI 전체 209/209가 통과했다. 합성 ID 전체를 문자형으로 보강한 최종 상태도 누적 DB 209/209와 새 소스·빈 DB `/private/tmp/flownote-clean-source-20260815-06/` 209/209를 각각 통과했다. 공개 유지보수 진입점으로 실제 고객·비밀정보 제외 확인을 요구하는 버그·개선 Issue 양식과 Python·NuGet·Gradle·GitHub Actions 월간 Dependabot 설정도 추가했다. Dependabot 변경은 자동 병합하지 않는다.
+
+최종 정적·플랫폼 검증에서 새 공개 tree 검사기는 추적 또는 Git 비제외 파일 496개와 Markdown 56개를 확인해 금지 산출물·private key marker·예약 외 FlowNote host·깨진 상대 링크 0건으로 통과했다. bootstrap 단위 시험 4/4, Python Ruff, shell 구문, GitHub/Issue/Dependabot YAML 구문과 `git diff --check`도 통과했다. bootstrap의 사용자 지정 출력도 Git 제외 환경 파일 이름으로 제한했다. 손상 Gradle ZIP은 기대·실제 SHA-256을 표시하고 압축을 풀지 않았으며 원본을 보존했고 Windows hash 변수는 외부 값을 상속하지 않게 초기화했다. 새 관리자 실제 흐름은 임시 비밀번호 로그인, 보호 API 403, 비밀번호 변경과 재로그인을 통과했다.
+
+WPF Core는 120/120이 통과했고 WPF 앱 교차 빌드는 경고 0·오류 0이었다. WPF 테스트의 NuGet 취약성 feed 조회는 로컬 네트워크 오류 `NU1900`이 있었지만 테스트 자체는 실패·건너뜀 없이 통과했다. Android는 체크섬 검증 뒤 47개 task를 강제 재실행해 단위 시험 39/39, 실패·오류·건너뜀 0건, debug build와 lint를 통과했다. 이번 작업에서는 운영 HTTPS 스모크, 실제 Windows UI와 승인 Android 실단말을 실행하지 않았으며 최신 운영 연동 기록은 2026-08-09 결과를 유지한다.
+
 ## 2026-08-13 연구 문서·역할별 매뉴얼·공개 기준선 정리
 
 현재 소스와 화면 문구를 다시 대조해 GitHub README, 문서 안내, 연구 결과 정리와 서버·Windows·Android·장애 대응 매뉴얼을 현재 기준선으로 정리했다. API·앱별 README에는 역할별 매뉴얼 진입점을 연결했다. UX는 향후 현장 관찰에 따라 바뀔 수 있으므로 정리 시작 커밋과 기준일을 표시하고, 구현 완료·검증 통과·운영 대기·후속 범위를 분리했다.

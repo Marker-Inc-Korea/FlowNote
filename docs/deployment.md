@@ -60,7 +60,7 @@ C:\Program Files\FlowNote\Client\FlowNote.Windows.App\
 | 위치 | 포함 | 포함하지 않음 |
 | --- | --- | --- |
 | `C:\FlowNote\Server\api` | `services/api/app`, `pyproject.toml`, 운영 Python `.venv` | 테스트 폴더, 개발 DB, 개발 `storage`, `.pytest_cache`, `.ruff_cache`, `__pycache__`, 실제 고객 파일 |
-| `C:\FlowNote\Server\.env` | 서버 운영 환경 변수 | Git 추적 대상, 기본 개발 비밀값 |
+| `C:\FlowNote\Server\.env` | 서버 운영 환경 변수 | Git 추적 파일, 공개 예시 비밀값 |
 | `C:\FlowNote\Server\data` | 운영 서버 SQLite와 WAL/SHM 파일 | 클라이언트 로컬 DB |
 | `C:\FlowNote\Server\storage` | 서버가 소유하는 문서 원본, 첨부, 보고서 파일 | WPF 로컬 캐시 파일 |
 | `C:\FlowNote\Server\logs` | FastAPI 실행 로그, 장애 분석 로그 | 빌드 산출물 |

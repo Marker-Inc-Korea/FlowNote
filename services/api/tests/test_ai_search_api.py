@@ -55,7 +55,7 @@ def auth_headers(client: TestClient) -> dict[str, str]:
 
 
 def seed_ai_search_sources(client: TestClient) -> dict[str, str]:
-    suffix = uuid4().hex
+    suffix = uuid4().hex.translate(str.maketrans("0123456789", "ghijklmnop"))
     ground_truth_token = f"groundtruth-{suffix}"
     published_document_id = f"doc-ai-published-{suffix}"
     published_version_id = f"ver-ai-published-{suffix}"
@@ -544,7 +544,6 @@ def test_ai_search_ground_truth_evaluation_is_reproducible_and_persisted() -> No
         assert result["passed_count"] == 2
         assert result["source_coverage_complete"] is True
         assert result["provider_start_ready"] is False
-        assert result["field_comment_missing_reviewed_count"] == 0
         complex_case = result["cases"][0]
         assert len(complex_case["actual_evidence"]) == 4
         assert all(item["candidate_id"] and item["content_hash"] for item in complex_case["actual_evidence"])
@@ -557,6 +556,9 @@ def test_ai_search_ground_truth_evaluation_is_reproducible_and_persisted() -> No
         quality = client.get("/api/v1/ai-search/quality", headers=headers).json()
         assert quality["latest_evaluation"]["run_id"] == result["run_id"]
         assert quality["latest_evaluation"]["provider_start_ready"] is result["provider_start_ready"]
+        assert result["field_comment_missing_reviewed_count"] == quality[
+            "field_comment_review_readiness"
+        ]["missing_reviewed_count"]
         with client.app.state.database.session() as session:
             run = session.scalar(
                 select(AISearchEvaluationRun).where(AISearchEvaluationRun.run_id == result["run_id"])
