@@ -773,6 +773,7 @@ def _seed_default_admin_account(
                 password_hash=hash_password(initial_admin_password),
                 is_active=True,
                 status="ACTIVE",
+                must_change_password=not allow_insecure_test_password,
             )
         )
         session.commit()

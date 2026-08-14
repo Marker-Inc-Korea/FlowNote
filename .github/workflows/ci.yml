@@ -1,0 +1,71 @@
+name: Source validation
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-tree:
+    name: Public tree and docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python scripts/check_public_tree.py
+      - run: python -m unittest scripts/test_bootstrap_local_evaluation.py
+
+  fastapi:
+    name: FastAPI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/api/pyproject.toml
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e '.[dev]'
+      - run: python -m ruff check app tests ../../scripts/bootstrap_local_evaluation.py ../../scripts/test_bootstrap_local_evaluation.py ../../scripts/check_public_tree.py
+      - run: python -m pytest
+
+  windows-wpf:
+    name: Windows WPF
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: dotnet test .\apps\windows\src\FlowNote.Windows.Core.Tests\FlowNote.Windows.Core.Tests.csproj
+      - run: dotnet build .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.App.csproj
+
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: ./gradlew testDebugUnitTest assembleDebug lintDebug --warning-mode=fail

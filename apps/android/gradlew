@@ -3,11 +3,30 @@ set -eu
 
 APP_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 GRADLE_VERSION=8.10.2
+GRADLE_SHA256=31c55713e40233a8303827ceb42ca48a47267a0ad4bab9177123121e71524c26
 GRADLE_USER_HOME=${GRADLE_USER_HOME:-"$APP_HOME/.gradle"}
 DIST_ROOT="$GRADLE_USER_HOME/wrapper/dists/gradle-$GRADLE_VERSION-bin"
 DIST_DIR="$DIST_ROOT/gradle-$GRADLE_VERSION"
 DIST_ZIP="$DIST_ROOT/gradle-$GRADLE_VERSION-bin.zip"
 DIST_URL="https://services.gradle.org/distributions/gradle-$GRADLE_VERSION-bin.zip"
+
+verify_distribution() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual_sha256=$(sha256sum "$DIST_ZIP" | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    actual_sha256=$(shasum -a 256 "$DIST_ZIP" | awk '{print $1}')
+  else
+    echo "sha256sum or shasum is required to verify the Gradle distribution." >&2
+    exit 1
+  fi
+
+  if [ "$actual_sha256" != "$GRADLE_SHA256" ]; then
+    echo "Gradle distribution SHA-256 verification failed: $DIST_ZIP" >&2
+    echo "Expected: $GRADLE_SHA256" >&2
+    echo "Actual:   $actual_sha256" >&2
+    exit 1
+  fi
+}
 
 if [ -z "${ANDROID_HOME:-}" ] && [ -d "$HOME/Library/Android/sdk" ]; then
   export ANDROID_HOME="$HOME/Library/Android/sdk"
@@ -37,7 +56,10 @@ if [ ! -x "$DIST_DIR/bin/gradle" ]; then
       exit 1
     fi
   fi
+  verify_distribution
   unzip -q "$DIST_ZIP" -d "$DIST_ROOT"
+elif [ -f "$DIST_ZIP" ]; then
+  verify_distribution
 fi
 
 exec "$DIST_DIR/bin/gradle" "$@"

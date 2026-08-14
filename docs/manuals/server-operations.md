@@ -4,7 +4,7 @@
 
 이 문서는 승인된 Windows 서버 또는 Windows Pro x64 PC에 FlowNote FastAPI 서버를 배치하고 운영 상태를 확인하는 순서를 정리한다. 실제 운영 설치는 현장 승인, HTTPS 인증서, DNS, 방화벽, 백업 위치와 책임자가 확정된 뒤 수행한다.
 
-기준일은 2026-08-13이며, 상세 환경 변수와 파일럿 증거 계약은 [배포 기준](../deployment.md)과 [파일럿 기준](../pilot-rehearsal.md)을 우선한다.
+기준일은 2026-08-15이며, 상세 환경 변수와 파일럿 증거 계약은 [배포 기준](../deployment.md)과 [파일럿 기준](../pilot-rehearsal.md)을 우선한다. 공개 소스의 loopback 평가 절차는 [처음 실행하기](../getting-started.md)에 분리해 두며 운영 설치 증거로 사용하지 않는다.
 
 ## 2. 운영 전제조건
 
@@ -150,7 +150,7 @@ Invoke-RestMethod https://<승인된 서버 DNS 이름>/api/v1/health/db
 
 ## 9. 최초 관리자와 계정 운영
 
-빈 서버 DB를 처음 실행하기 전에 `FLOWNOTE_INITIAL_ADMIN_PASSWORD`에 8자 이상의 임시 비밀번호를 주입한다. 값이 없으면 첫 `admin` 생성을 거부한다. 초기화가 끝나면 설정에서 이 값을 제거하고, 운영 로그인 전에 서버 PC에서 비밀번호를 다시 변경한다. 비밀번호는 명령줄 인자로 전달하지 않고 대화식 프롬프트에 입력한다.
+빈 서버 DB를 처음 실행하기 전에 `FLOWNOTE_INITIAL_ADMIN_PASSWORD`에 8자 이상의 임시 비밀번호를 주입한다. 값이 없으면 첫 `admin` 생성을 거부한다. 새 `admin`은 비밀번호 변경 필요 상태이므로 변경 API 이외의 보호 API를 사용할 수 없다. 초기화가 끝나면 설정에서 이 값을 제거하고, 운영 로그인 전에 서버 PC에서 비밀번호를 다시 변경한다. 비밀번호는 명령줄 인자로 전달하지 않고 대화식 프롬프트에 입력한다.
 
 ```powershell
 cd C:\FlowNote\Server\api

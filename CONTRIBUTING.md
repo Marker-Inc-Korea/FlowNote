@@ -2,6 +2,8 @@
 
 FlowNote는 현재 연구개발 프로토타입의 공개 후보를 정리하는 단계다. 외부 기여 접수와 권리 정책은 저장소 소유자가 별도로 정한다. 공개 Issue를 사용하기 전에도 실제 고객 정보, 운영 주소와 비밀값이 포함되지 않았는지 확인한다.
 
+버그와 개선 제안은 저장소의 Issue 양식을 사용한다. 보안 취약점은 Issue에 올리지 않고 [보안 정책](./SECURITY.md)의 비공개 제보 절차를 따른다. Dependabot은 Python, NuGet, Gradle과 GitHub Actions 의존성을 매월 점검하지만 자동 병합하지 않는다.
+
 ## 변경 원칙
 
 - 제품 방향은 `docs/product-overview.md`, 전체 관계는 `docs/system-map.md`를 따른다.
@@ -13,12 +15,20 @@ FlowNote는 현재 연구개발 프로토타입의 공개 후보를 정리하는
 
 ## 기본 검증
 
+처음 환경을 준비하는 방법은 [처음 실행하기](./docs/getting-started.md)를 따른다. 이 과정에서 생성한 `.env`, SQLite, storage와 빌드 산출물은 커밋하지 않는다.
+
+공개 제외 파일과 문서 상대 링크:
+
+```bash
+python3 scripts/check_public_tree.py
+```
+
 FastAPI:
 
 ```powershell
 cd services\api
 .\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe -m ruff check app tests
+.\.venv\Scripts\python.exe -m ruff check app tests ..\..\scripts\bootstrap_local_evaluation.py ..\..\scripts\test_bootstrap_local_evaluation.py ..\..\scripts\check_public_tree.py
 ```
 
 Windows WPF:

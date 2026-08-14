@@ -143,6 +143,7 @@ def test_app_startup_creates_mvp_schema(tmp_path: Path) -> None:
             )
             assert fresh_admin is not None
             assert verify_password("initial-admin-password", fresh_admin.password_hash)
+            assert fresh_admin.must_change_password is True
     finally:
         fresh_server.dispose()
 

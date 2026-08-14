@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-import shutil
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
@@ -29,22 +29,11 @@ from app.main import create_app
 
 
 API_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = API_ROOT.parents[1]
 TEST_DB_PATH = API_ROOT / "data" / "flownote.test.sqlite3"
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 TEST_STORAGE_ROOT = API_ROOT / "storage" / "document-registration-tests"
 TEST_ARTIFACT_ROOT = API_ROOT / "data" / "test-artifacts" / "document-registration-2026-06-24"
-EXCEL_SAMPLE_SOURCE = (
-    REPO_ROOT
-    / "apps"
-    / "windows"
-    / "src"
-    / "FlowNote.Windows.App"
-    / "Data"
-    / "Files"
-    / "Samples"
-    / "문서-설비점검표-프레스A.xlsx"
-)
+EXCEL_SAMPLE_NAME = "문서-설비점검표-프레스A.xlsx"
 
 
 def create_test_client(**setting_overrides: object) -> TestClient:
@@ -142,6 +131,39 @@ def build_sample_image(path: Path) -> None:
     image.save(path, format="PNG")
 
 
+def build_sample_excel(path: Path) -> None:
+    content_types = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>"""
+    root_rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>"""
+    workbook = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="Press A Inspection" sheetId="1" r:id="rId1"/></sheets>
+</workbook>"""
+    workbook_rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>"""
+    worksheet = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1" t="inlineStr"><is><t>Equipment</t></is></c><c r="B1" t="inlineStr"><is><t>Check point</t></is></c></row>
+<row r="2"><c r="A2" t="inlineStr"><is><t>PRESS-A-1200</t></is></c><c r="B2" t="inlineStr"><is><t>Hydraulic pressure</t></is></c></row>
+</sheetData></worksheet>"""
+    with ZipFile(path, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", content_types)
+        archive.writestr("_rels/.rels", root_rels)
+        archive.writestr("xl/workbook.xml", workbook)
+        archive.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        archive.writestr("xl/worksheets/sheet1.xml", worksheet)
+
+
 def prepare_factory_sample_files() -> tuple[Path, Path, Path, Path]:
     run_dir = TEST_ARTIFACT_ROOT / datetime.now().strftime("%Y%m%d-%H%M%S") / uuid4().hex[:8]
     sample_dir = run_dir / "sample-files"
@@ -150,12 +172,12 @@ def prepare_factory_sample_files() -> tuple[Path, Path, Path, Path]:
     pdf_path = sample_dir / "작업표준서-프레스A-금형교환.pdf"
     pdf_v2_path = sample_dir / "작업표준서-프레스A-금형교환-v2.pdf"
     image_path = sample_dir / "사진-포장라인-라벨검사.png"
-    excel_path = sample_dir / EXCEL_SAMPLE_SOURCE.name
+    excel_path = sample_dir / EXCEL_SAMPLE_NAME
 
     build_sample_pdf(pdf_path, title="Press A Mold Change Standard")
     build_sample_pdf(pdf_v2_path, title="Press A Mold Change Standard - Guard Sensor Update")
     build_sample_image(image_path)
-    shutil.copy2(EXCEL_SAMPLE_SOURCE, excel_path)
+    build_sample_excel(excel_path)
     return pdf_path, pdf_v2_path, excel_path, image_path
 
 

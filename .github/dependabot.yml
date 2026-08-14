@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /services/api
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: nuget
+    directory: /apps/windows
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: gradle
+    directory: /apps/android
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
