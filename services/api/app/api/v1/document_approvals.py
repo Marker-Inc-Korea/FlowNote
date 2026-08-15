@@ -54,7 +54,7 @@ router = APIRouter(
 
 
 class ApprovalRequestCreate(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     document_id: str = Field(alias="documentId", min_length=1)
     version_id: str = Field(alias="versionId", min_length=1)
@@ -74,7 +74,7 @@ class ApprovalRequestCreate(BaseModel):
 
 
 class ApprovalDecisionRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     decision: Literal["APPROVE", "REJECT"]
     reason: str = Field(min_length=3)
@@ -82,7 +82,7 @@ class ApprovalDecisionRequest(BaseModel):
 
 
 class ApprovalCancelRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     reason: str = Field(min_length=3)
     mutation_key: str = Field(alias="mutationKey", min_length=1, max_length=160)

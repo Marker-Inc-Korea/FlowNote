@@ -258,12 +258,12 @@ function Assert-StandardToolchain {
 
     $gradleWrapperScript = Join-Path $repoRoot "apps/android/gradlew.bat"
     if (-not (Test-Path $gradleWrapperScript -PathType Leaf) -or
-        (Get-Content -Raw $gradleWrapperScript) -notmatch "GRADLE_VERSION=8\.10\.2") {
-        throw "Android Gradle Wrapper 8.10.2가 필요함."
+        (Get-Content -Raw $gradleWrapperScript) -notmatch "GRADLE_VERSION=9\.5\.1") {
+        throw "Android Gradle Wrapper 9.5.1이 필요함."
     }
     $androidBuildFile = Join-Path $repoRoot "apps/android/build.gradle"
-    if ((Get-Content -Raw $androidBuildFile) -notmatch 'com\.android\.application" version "8\.7\.3"') {
-        throw "Android Gradle Plugin 8.7.3이 필요함."
+    if ((Get-Content -Raw $androidBuildFile) -notmatch 'com\.android\.application" version "9\.3\.1"') {
+        throw "Android Gradle Plugin 9.3.1이 필요함."
     }
 
     $apiPython = Join-Path $repoRoot "services/api/.venv/Scripts/python.exe"
@@ -291,7 +291,8 @@ function Assert-StandardToolchain {
         android_sdk_root = $androidSdkRoot
         android_platform = "35"
         android_build_tools = "35.0.0"
-        gradle_wrapper = "8.10.2"
+        gradle_wrapper = "9.5.1"
+        android_gradle_plugin = "9.3.1"
         python = $pythonVersion
         git = (& git --version).Trim()
     }

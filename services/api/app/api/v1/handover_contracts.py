@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class HandoverCreateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     channel_id: str = Field(alias="channelId", min_length=1)
     title: str = Field(min_length=1)
@@ -28,7 +28,7 @@ class HandoverCreateRequest(BaseModel):
 
 
 class HandoverReceiptUpdateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     receipt_status: str = Field(alias="receiptStatus", min_length=1)
     note: str | None = None

@@ -38,7 +38,7 @@ router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(ge
 
 
 class ReportCorrectionCreateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     correction_reason: str = Field(alias="correctionReason", min_length=1, max_length=1000)
     base_report_revision: int = Field(alias="baseReportRevision", ge=1)

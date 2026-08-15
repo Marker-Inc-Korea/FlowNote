@@ -36,7 +36,7 @@ SyncAdministrator = Annotated[
 
 
 class ReconciliationInventoryItem(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     client_item_id: str = Field(alias="clientItemId", min_length=1, max_length=120)
     entity_type: str = Field(alias="entityType", min_length=1, max_length=40)
@@ -53,7 +53,7 @@ class ReconciliationInventoryItem(BaseModel):
 
 
 class ReconciliationRunCreateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     client_id: str = Field(alias="clientId", min_length=1, max_length=100)
     previous_server_instance_id: str | None = Field(
@@ -66,7 +66,7 @@ class ReconciliationRunCreateRequest(BaseModel):
 
 
 class ReconciliationResolution(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     item_id: str = Field(alias="itemId", min_length=1, max_length=64)
     action: str = Field(min_length=1, max_length=20)
@@ -74,6 +74,8 @@ class ReconciliationResolution(BaseModel):
 
 
 class ReconciliationApplyRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
+
     approval_reason: str = Field(alias="approvalReason", min_length=1, max_length=1000)
     resolutions: list[ReconciliationResolution] = Field(max_length=10000)
 

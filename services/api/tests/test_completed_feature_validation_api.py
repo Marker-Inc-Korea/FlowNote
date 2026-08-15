@@ -184,6 +184,55 @@ def test_completed_feature_requests_reject_blank_required_text() -> None:
         )
         assert key_response.status_code == 422, key_response.text
 
+        handover_response = client.post(
+            "/api/v1/handovers",
+            headers=headers,
+            json={
+                "channelId": "validation-channel",
+                "title": "   ",
+                "body": "검증 본문",
+                "recipientIds": ["user-admin"],
+            },
+        )
+        assert handover_response.status_code == 422, handover_response.text
+
+        correction_response = client.post(
+            "/api/v1/reports/missing/corrections",
+            headers=headers,
+            json={
+                "correctionReason": "   ",
+                "baseReportRevision": 1,
+                "mutationKey": f"blank-correction:{suffix}",
+            },
+        )
+        assert correction_response.status_code == 422, correction_response.text
+
+        approval_response = client.post(
+            "/api/v1/document-approvals",
+            headers=headers,
+            json={
+                "documentId": "missing",
+                "versionId": "missing",
+                "baseDocumentRevision": 1,
+                "sourceFileHashSha256": "0" * 64,
+                "reviewerRole": "admin",
+                "reason": "   ",
+                "mutationKey": f"blank-approval:{suffix}",
+            },
+        )
+        assert approval_response.status_code == 422, approval_response.text
+
+        reconciliation_response = client.post(
+            "/api/v1/sync/reconciliation-runs",
+            headers=headers,
+            json={
+                "clientId": "   ",
+                "triggerReason": "manual",
+                "items": [],
+            },
+        )
+        assert reconciliation_response.status_code == 422, reconciliation_response.text
+
 
 def test_hold_status_requires_auditable_reason_without_advancing_revision() -> None:
     suffix = uuid4().hex

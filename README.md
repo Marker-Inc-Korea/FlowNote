@@ -195,7 +195,7 @@ cd apps/android
 | 독자 | 먼저 읽을 문서 |
 | --- | --- |
 | 처음 실행하는 개발자 | [처음 실행하기](./docs/getting-started.md) |
-| 연구 책임자·검토자 | [연구 결과 정리](./docs/research-summary.md) |
+| 연구 책임자·검토자 | [연구 결과 정리와 개발 경과](./docs/research-summary.md#41-공개-개발-경과) |
 | 제품·설계 검토자 | [제품 개요](./docs/product-overview.md), [시스템 맵](./docs/system-map.md) |
 | 서버 운영자 | [서버 설치·운영 매뉴얼](./docs/manuals/server-operations.md) |
 | Windows 사용자·관리자 | [Windows 사용 매뉴얼](./docs/manuals/windows-user-guide.md) |
