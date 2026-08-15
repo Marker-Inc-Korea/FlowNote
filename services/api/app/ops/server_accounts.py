@@ -11,14 +11,16 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.db.init_db import ALLOWED_USER_ROLES, hash_password
+from app.db.init_db import (
+    ALLOWED_USER_ROLES,
+    MAX_ACCOUNT_PASSWORD_LENGTH,
+    MIN_ACCOUNT_PASSWORD_LENGTH,
+    hash_password,
+)
 from app.db.models import AuthSession, UserAccount
 from app.db.session import Database
 
 ACCOUNT_STATUSES = ("ACTIVE", "LOCKED", "DISABLED")
-MIN_PASSWORD_LENGTH = 8
-
-
 class AccountOperationError(RuntimeError):
     pass
 
@@ -272,9 +274,13 @@ def _read_new_password(password_provider: PasswordProvider) -> str:
     confirm = password_provider("confirm password: ")
     if password != confirm:
         raise AccountOperationError("passwords do not match")
-    if len(password) < MIN_PASSWORD_LENGTH:
+    if len(password) < MIN_ACCOUNT_PASSWORD_LENGTH:
         raise AccountOperationError(
-            f"password must be at least {MIN_PASSWORD_LENGTH} characters"
+            f"password must be at least {MIN_ACCOUNT_PASSWORD_LENGTH} characters"
+        )
+    if len(password) > MAX_ACCOUNT_PASSWORD_LENGTH:
+        raise AccountOperationError(
+            f"password must be at most {MAX_ACCOUNT_PASSWORD_LENGTH} characters"
         )
     return password
 

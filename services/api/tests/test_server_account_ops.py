@@ -4,12 +4,19 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy import select
 
 from app.core.config import Settings
 from app.db.models import AuthSession, UserAccount
 from app.main import create_app
-from app.ops.server_accounts import create_account, reset_password, set_role, set_status
+from app.ops.server_accounts import (
+    AccountOperationError,
+    create_account,
+    reset_password,
+    set_role,
+    set_status,
+)
 
 
 def create_isolated_client(tmp_path: Path) -> tuple[TestClient, str]:
@@ -28,6 +35,17 @@ def create_isolated_client(tmp_path: Path) -> tuple[TestClient, str]:
 def password_provider(password: str) -> Iterator[str]:
     yield password
     yield password
+
+
+def test_console_account_operation_rejects_overlong_password(tmp_path: Path) -> None:
+    provider = password_provider("p" * 201)
+
+    with pytest.raises(AccountOperationError, match="at most 200"):
+        reset_password(
+            f"sqlite:///{(tmp_path / 'unused.sqlite3').as_posix()}",
+            username="admin",
+            password_provider=lambda _: next(provider),
+        )
 
 
 def test_reset_password_revokes_active_sessions_and_rejects_old_admin_password(

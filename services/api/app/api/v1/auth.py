@@ -18,10 +18,15 @@ from app.core.auth import (
     rotate_auth_session_tokens,
 )
 from app.core.config import Settings, get_settings
-from app.db.init_db import hash_password, verify_password
+from app.core.scope import ensure_server_scope
+from app.db.init_db import (
+    MAX_ACCOUNT_PASSWORD_LENGTH,
+    MIN_ACCOUNT_PASSWORD_LENGTH,
+    hash_password,
+    verify_password,
+)
 from app.db.models import ActivityHistory, AuthSession, TerminalDevice, UserAccount
 from app.db.session import get_db_session
-from app.core.scope import ensure_server_scope
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -29,11 +34,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class LoginRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
-    username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
-    device_id: str | None = Field(default=None, alias="deviceId")
-    customer_scope: str | None = Field(default=None, alias="customerScope")
-    site_scope: str | None = Field(default=None, alias="siteScope")
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=MAX_ACCOUNT_PASSWORD_LENGTH)
+    device_id: str | None = Field(default=None, alias="deviceId", max_length=64)
+    customer_scope: str | None = Field(default=None, alias="customerScope", max_length=200)
+    site_scope: str | None = Field(default=None, alias="siteScope", max_length=200)
 
 
 class LoginResponse(BaseModel):
@@ -53,9 +58,9 @@ class LoginResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str = Field(min_length=1)
-    customer_scope: str | None = Field(default=None, alias="customerScope")
-    site_scope: str | None = Field(default=None, alias="siteScope")
+    refresh_token: str = Field(min_length=1, max_length=512)
+    customer_scope: str | None = Field(default=None, alias="customerScope", max_length=200)
+    site_scope: str | None = Field(default=None, alias="siteScope", max_length=200)
 
 
 class LogoutResponse(BaseModel):
@@ -73,8 +78,11 @@ class CurrentUserResponse(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    current_password: str = Field(min_length=1)
-    new_password: str = Field(min_length=8)
+    current_password: str = Field(min_length=1, max_length=MAX_ACCOUNT_PASSWORD_LENGTH)
+    new_password: str = Field(
+        min_length=MIN_ACCOUNT_PASSWORD_LENGTH,
+        max_length=MAX_ACCOUNT_PASSWORD_LENGTH,
+    )
 
 
 class ChangePasswordResponse(BaseModel):

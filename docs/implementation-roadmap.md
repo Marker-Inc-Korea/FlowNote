@@ -70,8 +70,8 @@
 
 아래 항목은 현재 연구개발 기준선의 미완료 목록이 아니다. UX 후속 연구 또는 실제 운영 도입을 결정했을 때 선택해 수행한다.
 
-1. 현재 소스의 수집 대상과 표준 스크립트 guard는 FastAPI 212건·WPF Core 120건·Android 39건으로 일치한다. 2026-08-15 개발 PC 보조 검증에서 FastAPI 누적 DB·새 DB 212/212, WPF Core 120/120과 WPF 빌드가 통과했고, 변경되지 않은 Android의 최신 기준은 39/39와 debug 빌드·lint 통과다. 2026-08-09 운영 HTTPS 스모크에서는 health/DB·Windows 세션·승인 Android 단말·오늘 사진/인수인계·과거 문서 버전 증가·계정/단말 비활성화·DB 무결성을 확인했다. 다음에는 Windows x64에서 FastAPI 수집/JUnit, WPF Core 수집 목록/TRX, Android JUnit, 운영 HTTPS 스모크와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, `PASSED` 실행 ID를 같은 clean 소스 커밋에서 2회 연속 남겨야 한다. 최신 유효 Windows 통합 기준선과 재현 실행은 계속 `대기`다.
-2. 실제 도입을 진행한다면 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다. `PILOT-20260728-1501-FULLPILOT-001`은 승인과 장비가 없는 상태에서 460개 미충족 조건을 기록한 착수 준비 점검이다. 이는 현재 연구 구현의 실패 판정이 아니다.
+1. 현재 표준 스크립트 guard인 FastAPI 215건·WPF Core 120건·Android 39건과 실제 수집·실행 결과를 clean 소스에서 대조한다. Windows x64에서는 운영 HTTPS 스모크와 Git 사후 점검을 생략 없이 실행해 `partial_run=false`, `PASSED`인지 확인한다.
+2. 실제 도입을 진행한다면 [실제 배포 리허설과 제한 현장 파일럿](./pilot-rehearsal.md)의 책임자·시험 범위·중단/rollback·증거 저장소를 승인한다.
 3. 고객 유사 네트워크에서 Windows 신규 설치·업그레이드·제거, 서버 재부팅, HTTPS 인증서 갱신, 방화벽·주소 변경, .NET/WebView2와 서명 MSI를 단일 `run_id`로 검증한다.
 4. Android 운영 서명, APK/AAB, MDM/승인 배포, 단말 발급·교체·분실·비활성화와 outbox 보호 정책을 확정하고 실단말로 검증한다. APK 설치·rollback은 승인 ADB serial, 동일 signer와 더 낮은 이전 versionCode를 확인하고, AAB는 관리형 스토어가 전달한 서명 APK를 별도로 검증한다. `full_pilot`의 전달·무결성·보안·단말 수명주기·패키지 승인 원시 CSV와 같은 `run_id`의 실제 증거가 모두 PASS일 때만 완료한다.
 5. 별도 PC에서 서버 DB+`storage`, WPF DB+`Files`를 복구하고 원천 개수·파일 hash·DB 무결성을 전후 비교한다.

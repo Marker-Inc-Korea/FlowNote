@@ -47,7 +47,7 @@ def test_document_status_success_retry_and_key_reuse_share_common_receipt() -> N
         operation_key = f"status-common:{suffix}"
         payload = {
             "status": "IN_REVIEW",
-            "changeReason": r"검토 전환 password=not-stored C:\Users\operator\secret.txt",
+            "changeReason": r"검토 전환 password=not-stored C:\Users\example\secret.txt",
             "baseRevision": 1,
             "mutationKey": operation_key,
         }

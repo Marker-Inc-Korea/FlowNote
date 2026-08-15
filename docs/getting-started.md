@@ -105,7 +105,7 @@ FastAPI:
 ```powershell
 cd services\api
 .\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe -m ruff check app tests ..\..\scripts\bootstrap_local_evaluation.py ..\..\scripts\test_bootstrap_local_evaluation.py ..\..\scripts\check_public_tree.py
+.\.venv\Scripts\python.exe -m ruff check app tests ..\..\scripts\bootstrap_local_evaluation.py ..\..\scripts\test_bootstrap_local_evaluation.py ..\..\scripts\check_public_tree.py ..\..\scripts\test_check_public_tree.py ..\..\scripts\reset_local_test_data.py ..\..\scripts\test_reset_local_test_data.py ..\..\scripts\seed-ai-ground-truth-48.py
 ```
 
 macOS 또는 Linux에서는 `python.exe` 대신 `.venv/bin/python`을 사용한다.

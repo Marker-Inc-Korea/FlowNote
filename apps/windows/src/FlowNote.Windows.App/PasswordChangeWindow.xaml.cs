@@ -23,7 +23,7 @@ public partial class PasswordChangeWindow : Window
         ErrorTextBlock.Text = string.Empty;
         if (NewPasswordBox.Password.Length < 8)
         {
-            ErrorTextBlock.Text = "새 비밀번호는 8자 이상이어야 합니다.";
+            ErrorTextBlock.Text = "새 비밀번호는 8자 이상 200자 이하여야 합니다.";
             return;
         }
         if (!string.Equals(NewPasswordBox.Password, ConfirmPasswordBox.Password, StringComparison.Ordinal))

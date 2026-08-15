@@ -273,7 +273,7 @@ def test_register_factory_files_and_document_versions_are_preserved() -> None:
         assert tag_update_response.status_code == 200, tag_update_response.text
         assert tag_update_response.json()["tags"] == ["guard-sensor", "line-a", "press-a"]
 
-        tags_response = client.get("/api/v1/tags")
+        tags_response = client.get("/api/v1/tags", headers=auth_headers(client))
         assert tags_response.status_code == 200
         tag_names = {tag["name"] for tag in tags_response.json()}
         assert {"line-a", "press-a", "guard-sensor"} <= tag_names

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import DocumentWriteUser
+from app.core.auth import CurrentUser, DocumentWriteUser
 from app.db.models import TagDefinition
 from app.db.session import get_db_session
 
@@ -73,6 +73,7 @@ def _tag_response(tag: TagDefinition) -> TagResponse:
 
 @router.get("", response_model=list[TagResponse])
 def list_tags(
+    _current_user: CurrentUser,
     session: Annotated[Session, Depends(get_db_session)],
     tag_type: Annotated[str | None, Query(alias="tagType")] = None,
     active_only: Annotated[bool, Query(alias="activeOnly")] = True,

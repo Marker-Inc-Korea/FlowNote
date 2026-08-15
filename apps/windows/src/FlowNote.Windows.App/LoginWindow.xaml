@@ -31,6 +31,7 @@
                 <TextBlock Text="아이디" FontWeight="SemiBold" />
                 <TextBox x:Name="LoginIdTextBox"
                          Height="34"
+                         MaxLength="100"
                          Margin="0,4,0,12"
                          Text="admin"
                          AutomationProperties.Name="로그인 아이디"
@@ -39,6 +40,7 @@
                 <TextBlock Text="비밀번호" FontWeight="SemiBold" />
                 <PasswordBox x:Name="PasswordBox"
                              Height="34"
+                             MaxLength="200"
                              Margin="0,4,0,12"
                              AutomationProperties.Name="비밀번호"
                              VerticalContentAlignment="Center" />

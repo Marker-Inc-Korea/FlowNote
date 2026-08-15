@@ -188,11 +188,11 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 별도 PC 복구 리허설에서는 `scripts/verify-pilot-restore.py`의 `wpf` 대상을 사용해 앱이 종료된 WPF DB와 `Files`의 복구 전후 증거를 수집·비교한다. 도구는 수집 중 DB·파일 불변과 checkpoint되지 않은 WAL 부재도 검사하며 같은 실행 경로의 기존 증거를 덮어쓰지 않는다. server와 wpf 비교를 마친 뒤 `compare-set`으로 두 대상의 `backup-set-id`·`restore-approval-id`가 서로도 같은지 확인한다. 이 도구의 통과는 실제 별도 PC 복구 절차 자체를 대신하지 않는다.
 
-서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
+서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 바로 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-2026-08-15 현재 소스의 수집 대상과 표준 스크립트 guard는 FastAPI 212건·WPF Core 120건·Android 39건으로 일치한다. 보조 실행에서 FastAPI 누적 DB·새 DB 212/212, WPF Core 120/120과 WPF 빌드가 통과했고, 변경되지 않은 Android의 최신 기준은 39/39와 debug 빌드·lint 통과다. 최신 운영 HTTPS 스모크는 2026-08-09에 통과했다. Windows에서 수집 목록·JUnit·원시 TRX와 운영 HTTPS 스모크를 같은 clean 소스 커밋으로 새 run ID에서 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 Windows 통합 기준선 재확립은 `대기`다.
+현재 소스와 표준 스크립트 guard는 FastAPI 215건·WPF Core 120건·Android 39건을 요구한다. 공개 저장소에는 과거 SQLite, 로그, 실행 ID와 원시 결과를 포함하지 않는다. Windows 통합 기준선은 같은 clean 소스 커밋에서 옵션 없는 표준 실행을 고유한 새 run ID로 수행해 `partial_run=false`, `verification-summary.json=PASSED`인지 직접 확인한다.
 
-스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
+스모크 테스트는 공통 SQLite에 기록을 만든다. 공개 작업을 마친 뒤에는 저장소 루트의 `python scripts/reset_local_test_data.py`로 대상을 확인하고 `--apply`로 초기화한다.
 
 파일 유형별 미리보기 샘플과 실패 안내 기준은 [문서 미리보기 안정화 기준](./docs/document-preview-stability.md)을 따른다.
 보존 FAILED 큐의 dry-run, 승인 전환과 무손실 검증 기준은 [보존 동기화 실패 무손실 전환](./docs/legacy-sync-migration.md)을 따른다.

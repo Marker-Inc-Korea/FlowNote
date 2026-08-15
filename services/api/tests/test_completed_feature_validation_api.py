@@ -13,6 +13,16 @@ API_ROOT = Path(__file__).resolve().parents[1]
 TEST_DB_PATH = API_ROOT / "data" / "flownote.test.sqlite3"
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 TEST_STORAGE_ROOT = API_ROOT / "storage" / "work-sequence-tests"
+PUBLIC_API_OPERATIONS = {
+    ("GET", "/"),
+    ("GET", "/api/v1/health"),
+    ("GET", "/api/v1/health/db"),
+    ("GET", "/api/v1/health/sync-manifest"),
+    ("GET", "/api/v1/sync/manifest"),
+    ("POST", "/api/v1/auth/login"),
+    ("POST", "/api/v1/auth/refresh"),
+}
+OPENAPI_HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 
 
 def create_test_client() -> TestClient:
@@ -41,6 +51,21 @@ def test_app_factory_registers_root_with_its_own_settings() -> None:
 
     assert response.status_code == 200, response.text
     assert response.json() == {"service": "FlowNote API", "environment": "test"}
+
+
+def test_openapi_exposes_only_the_explicit_public_operations_without_bearer_auth() -> None:
+    with create_test_client() as client:
+        response = client.get("/openapi.json")
+
+    assert response.status_code == 200, response.text
+    paths = response.json()["paths"]
+    public_operations = {
+        (method.upper(), path)
+        for path, path_item in paths.items()
+        for method, operation in path_item.items()
+        if method in OPENAPI_HTTP_METHODS and not operation.get("security")
+    }
+    assert public_operations == PUBLIC_API_OPERATIONS
 
 
 def test_completed_feature_requests_reject_blank_required_text() -> None:

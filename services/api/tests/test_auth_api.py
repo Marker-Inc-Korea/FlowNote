@@ -360,6 +360,43 @@ def test_refresh_rejects_invalid_refresh_token() -> None:
     assert response.json()["detail"] == "Refresh token is invalid or expired."
 
 
+def test_authentication_inputs_reject_values_over_the_account_contract_limit() -> None:
+    overlong_password = "p" * 201
+    with create_test_client() as client:
+        account = create_login_user(client)
+        login_response = client.post(
+            "/api/v1/auth/login",
+            json={"username": account.username, "password": "correct-password"},
+        )
+        token = login_response.json()["access_token"]
+
+        overlong_username = client.post(
+            "/api/v1/auth/login",
+            json={"username": "u" * 101, "password": "correct-password"},
+        )
+        overlong_login_password = client.post(
+            "/api/v1/auth/login",
+            json={"username": account.username, "password": overlong_password},
+        )
+        overlong_refresh = client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": "r" * 513},
+        )
+        overlong_change = client.post(
+            "/api/v1/auth/change-password",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "current_password": "correct-password",
+                "new_password": overlong_password,
+            },
+        )
+
+    assert overlong_username.status_code == 422
+    assert overlong_login_password.status_code == 422
+    assert overlong_refresh.status_code == 422
+    assert overlong_change.status_code == 422
+
+
 def test_login_rejects_wrong_password() -> None:
     with create_test_client() as client:
         account = create_login_user(client)

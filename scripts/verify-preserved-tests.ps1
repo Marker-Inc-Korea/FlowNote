@@ -30,7 +30,7 @@ if ((Test-Path $runArtifactDir -PathType Container) -and
 New-Item -ItemType Directory -Force -Path $runArtifactDir | Out-Null
 $env:FLOWNOTE_SMOKE_RUN_ID = $RunId
 $env:FLOWNOTE_SMOKE_ARTIFACT_DIR = $runArtifactDir
-$expectedFastApiTestCount = 212
+$expectedFastApiTestCount = 215
 $expectedWpfCoreTestCount = 120
 $expectedAndroidUnitTestCount = 39
 $stepDisplayNames = @{

@@ -126,12 +126,12 @@ flowchart LR
 | FastAPI 업무 API와 SQLite 모델 | 구현됨 |
 | Windows WPF 문서·검토·운영 화면 | 구현됨 |
 | Android 현장 단말 최소 업무 흐름 | 구현됨 |
-| FastAPI 단위·회귀·정적 검사 | 2026-08-15 누적 DB·새 DB 기준 각각 212/212, Ruff 통과 |
-| WPF Core 단위 테스트 | 2026-08-15 기준 120/120 통과 |
-| WPF 앱 macOS 교차 빌드 | 2026-08-15 기준 경고 0, 오류 0 |
-| Android 단위 테스트·개발 빌드·lint | 2026-08-15 강제 재실행 기준 39/39, build·lint 통과 |
+| FastAPI 단위·회귀·정적 검사 | 깨끗한 clone 재현 절차 제공, 현재 guard 215건 |
+| WPF Core 단위 테스트 | 재현 절차 제공, 현재 guard 120건 |
+| WPF 앱 빌드 | Windows 빌드와 비Windows 교차 빌드 절차 제공 |
+| Android 단위 테스트·개발 빌드·lint | 재현 절차 제공, 현재 guard 39건 |
 | GitHub 자동 검증 | 공개 파일·문서, FastAPI, Windows WPF, Android 4개 job 구성 |
-| 운영 HTTPS 서버 연동 스모크 | 2026-08-09 보존 기록 기준 통과 |
+| 운영 HTTPS 서버 연동 스모크 | 실행 방법만 공개, 운영 결과·데이터는 저장소에 포함하지 않음 |
 | Windows x64 무생략 통합 기준선 2회 | 실제 도입 시 선택 검증 |
 | 승인 Android 실단말·MDM·코드 서명 | 실제 도입 시 선택 검증 |
 | 고객 유사망·별도 PC 복구·제한 현장 파일럿 | 실제 도입 시 선택 검증 |
@@ -139,11 +139,18 @@ flowchart LR
 | 실제 외부 AI provider 운영 연동 | 후속 범위 |
 | MES/ERP 어댑터 | 후속 범위 |
 
-검증 수치는 실행 당시의 사실이다. 현재 소스의 새 완료 판정은 [검증 기록](./docs/verification.md)에 정의된 환경과 절차를 모두 충족한 실행만 인정한다.
+저장소에는 과거 테스트 DB·로그·실행 결과를 포함하지 않는다. 현재 소스의 완료 판정은 [테스트와 검증 방법](./docs/verification.md)에 정의된 환경과 절차를 직접 실행한 결과로 판단한다.
 
 ## 빠르게 확인하기
 
 처음 저장소를 받은 경우 [처음 실행하기](./docs/getting-started.md)에서 Git 제외 로컬 설정 생성, API 기동, health 확인과 클라이언트 연결 조건을 순서대로 확인한다. 자동 초기화 도구는 무작위 관리자 비밀번호와 토큰 비밀값을 만들며 기존 `.env`를 덮어쓰지 않는다.
+
+기존 로컬 테스트 데이터와 생성 산출물을 정리할 때는 삭제 대상을 먼저 확인한 뒤 초기화한다.
+
+```bash
+python3 scripts/reset_local_test_data.py
+python3 scripts/reset_local_test_data.py --apply
+```
 
 ### FastAPI 단위·회귀 검증
 
@@ -194,7 +201,7 @@ cd apps/android
 | Windows 사용자·관리자 | [Windows 사용 매뉴얼](./docs/manuals/windows-user-guide.md) |
 | Android 현장 사용자 | [Android 현장 사용 매뉴얼](./docs/manuals/android-field-guide.md) |
 | 장애 대응 담당자 | [공통 장애 대응](./docs/manuals/troubleshooting.md) |
-| 개발·검증 담당자 | [API](./docs/api.md), [데이터 모델](./docs/data-model.md), [검증 기록](./docs/verification.md) |
+| 개발·검증 담당자 | [API](./docs/api.md), [데이터 모델](./docs/data-model.md), [테스트와 검증 방법](./docs/verification.md) |
 
 전체 문서의 역할과 읽는 순서는 [문서 안내](./docs/README.md)에서 확인한다.
 

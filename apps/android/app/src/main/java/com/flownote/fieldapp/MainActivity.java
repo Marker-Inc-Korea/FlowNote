@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.text.InputFilter;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -182,8 +183,11 @@ public final class MainActivity extends Activity implements
 
         serverUrlInput = input("서버 주소 예시: " + ServerConfiguration.DEFAULT_SERVER_EXAMPLE_URL, InputType.TYPE_CLASS_TEXT);
         deviceIdInput = input("승인 단말 ID", InputType.TYPE_CLASS_TEXT);
+        deviceIdInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(64)});
         usernameInput = input("사용자 ID", InputType.TYPE_CLASS_TEXT);
+        usernameInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(100)});
         passwordInput = input("비밀번호", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        passwordInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(200)});
         root.addView(serverUrlInput);
         root.addView(deviceIdInput);
         root.addView(usernameInput);

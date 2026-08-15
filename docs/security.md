@@ -35,7 +35,7 @@ Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현�
 
 ## 계정과 role
 
-공개 서버 코드에는 기본 운영 비밀번호가 없다. 새 서버 DB의 최초 `admin` 계정은 `FLOWNOTE_INITIAL_ADMIN_PASSWORD`가 있어야 생성되며, 8자 미만 값은 `test` 환경이 아니면 거부한다. `1234`는 격리된 자동 테스트와 기존 WPF 로컬 호환 데이터에서만 사용한다.
+공개 서버 코드에는 기본 운영 비밀번호가 없다. 새 서버 DB의 최초 `admin` 계정은 `FLOWNOTE_INITIAL_ADMIN_PASSWORD`가 있어야 생성되며, `test` 환경의 짧은 시험값을 제외하고 8자 이상 200자 이하만 허용한다. `1234`는 격리된 자동 테스트와 기존 WPF 로컬 호환 데이터에서만 사용한다.
 
 `local`, `test`가 아닌 환경에서는 공개 예시 access token secret과 32자 미만 값을 설정 단계에서 거부한다. 실제 secret은 저장소 밖에서 현장별로 발급한다.
 
@@ -43,9 +43,9 @@ Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현�
 
 - 서버 최초 관리자 계정은 빈 서버 DB의 첫 실행 때 `FLOWNOTE_INITIAL_ADMIN_PASSWORD`로 생성되는 `admin` 계정이다.
 - 운영 설치에서는 WPF 첫 서버 로그인 전에 서버 PC에서 `admin`의 비밀번호를 현장 비밀번호로 변경한다.
-- 서버 로그인한 `admin`, `system-admin`은 WPF 서버 계정 화면과 `/api/v1/server-accounts`를 사용한다. 계정 생성과 비밀번호 재설정은 8자 이상 임시 비밀번호와 필수 변경 사유를 받고 `must_change_password = true`로 저장한다.
+- 서버 로그인한 `admin`, `system-admin`은 WPF 서버 계정 화면과 `/api/v1/server-accounts`를 사용한다. 계정 생성과 비밀번호 재설정은 8자 이상 200자 이하 임시 비밀번호와 필수 변경 사유를 받고 `must_change_password = true`로 저장한다.
 - `must_change_password = true`인 사용자는 로그인 직후 WPF 비밀번호 변경 화면으로 이동하며, 서버도 변경 API 이외의 보호 API와 refresh를 거부한다. 변경 성공 시 모든 활성 세션을 폐기하고 새 비밀번호 재로그인을 요구한다.
-- 서버 DB 운영 스크립트는 최초 관리자 변경과 비상 운영 경로로 유지한다. 스크립트는 대화식 비밀번호 입력을 사용하고 8자 미만 비밀번호를 거부하지만 API와 달리 임시 비밀번호 강제 변경 플래그를 설정하지 않으므로 일반 계정 운영은 WPF/API를 우선한다.
+- 서버 DB 운영 스크립트는 최초 관리자 변경과 비상 운영 경로로 유지한다. 스크립트는 대화식 비밀번호 입력을 사용하고 8자 미만 또는 200자 초과 비밀번호를 거부하지만 API와 달리 임시 비밀번호 강제 변경 플래그를 설정하지 않으므로 일반 계정 운영은 WPF/API를 우선한다.
 - WPF 표준 사용자 관리는 운영 HTTPS 서버 계정 화면을 사용한다. 로컬 SQLite 계정 화면은 기존 데이터·단위 테스트 호환 범위이며 서버 계정과 서로의 row를 변경하지 않는다.
 - WPF는 `FLOWNOTE_API_BASE_URL`에 설정한 승인 HTTPS 주소를 사용한다. 401·403뿐 아니라 인증서·주소·방화벽·시간 초과 오류에서도 HTTP나 로컬 계정 로그인으로 자동 우회하지 않는다.
 
@@ -201,7 +201,7 @@ Android 현장 단말과 Windows/Android 채널 화면은 현재 최소 구현�
 
 | 사건 | 처리 상한 | 완료 증거 |
 | --- | --- | --- |
-| 신규·변경 계정 | 첫 근무 시작 전 | 승인된 role, 8자 이상 임시 비밀번호, `must_change_password = true`, 최초 변경 뒤 구 세션 폐기와 새 비밀번호로 재로그인 |
+| 신규·변경 계정 | 첫 근무 시작 전 | 승인된 role, 8자 이상 200자 이하 임시 비밀번호, `must_change_password = true`, 최초 변경 뒤 구 세션 폐기와 새 비밀번호로 재로그인 |
 | 미변경 임시 비밀번호 | 발급 후 24시간 | 미변경 계정 `LOCKED`, 전달 원문 미보존, 재발급 승인과 사유 |
 | 비밀번호 노출 의심·계정 오용 | 접수 후 15분 | `LOCKED`, 전체 세션 `REVOKED`, 사고번호, 새 비밀번호와 재활성화의 별도 승인 |
 | 퇴사·계약 종료 | 효력 시각 전 | 서버 계정 `DISABLED`, 모든 로컬 계정 비활성, 전체 세션 폐기, 승인 단말·채널·인수인계·담당 업무 회수 |
@@ -277,7 +277,7 @@ FastAPI 서버는 HMAC 서명 Bearer access token과 `auth_sessions` 테이블�
 - refresh 후 이전 access token과 이전 refresh token은 거부된다.
 - logout은 세션을 `REVOKED`로 변경한다.
 - 보호 API는 세션 상태, 폐기 시각, access token ID, 만료 시각과 세션에 묶인 단말의 현재 `ACTIVE` 상태를 모두 검증한다. refresh도 계정과 단말 활성 상태를 다시 확인한다.
-- 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 태그 생성과 그 밖의 보호 API는 각 경로에 맞는 인증과 role을 요구한다.
+- 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`다. 설비·라인·공정·오류 유형을 포함할 수 있는 태그 목록은 활성 로그인 계정만 조회하며, 태그 생성과 그 밖의 보호 API는 각 경로에 맞는 role을 요구한다.
 - WPF는 서버가 401 또는 403으로 로그인 실패를 응답하면 로컬 계정 로그인으로 우회하지 않는다.
 - 서버 주소가 없거나 연결에 실패해도 WPF 로컬 계정 로그인을 사용하지 않는다.
 
@@ -408,7 +408,7 @@ provider 응답은 크기 제한 안의 완전한 JSON이어야 하며 claim마�
 
 보존과 커밋 제외는 충돌하지 않는다.
 
-테스트 DB, 테스트 파일, 로그, 스모크 테스트 산출물, 렌더링 결과는 삭제하지 않는다. 이 파일들은 기능 검증 이력이므로 사용자가 명시적으로 삭제를 지시하지 않는 한 로컬에 보존한다.
+테스트 DB, 테스트 파일, 로그, 스모크 테스트 산출물과 렌더링 결과는 Git에서 제외한다. 공개 작업을 마칠 때는 저장소 루트의 `python scripts/reset_local_test_data.py`로 대상을 먼저 확인하고 `--apply`로 초기화한다. 운영 증거를 보존해야 하는 경우에는 저장소 밖의 접근 통제된 위치를 사용한다.
 
 단, 실제 고객 문서, 운영 DB, 운영 파일 저장소, 운영 비밀값, 개인 로컬 경로, 빌드 결과, 배포 산출물은 Git에 올리지 않는다. 테스트 산출물도 PDF, 이미지, Excel, TXT, 로그, 렌더링 결과, `data/local/Files/`, `Data/Files/` 하위 파일을 Git 제외 대상으로 본다. SQLite와 WAL/SHM 보조 파일은 경로와 용도에 관계없이 로컬에 보존하되 Git으로 추적하거나 커밋하지 않는다.
 

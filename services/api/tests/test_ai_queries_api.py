@@ -365,7 +365,7 @@ def test_restricted_source_and_query_never_cross_provider_or_audit_log() -> None
             for restricted_query in (
                 f"{site_term} 관련 내용을 알려주세요",
                 "CUST-SECRET-77 고객 자료를 알려주세요",
-                "/Users/operator/private/secret.txt 파일을 알려주세요",
+                "/Users/example/private/secret.txt 파일을 알려주세요",
             )
         ]
         assert all(response.status_code == 422 for response in blocked_responses)

@@ -318,6 +318,15 @@ def test_tag_creation_requires_document_write_role() -> None:
         lead = create_role_user(client, "team-lead")
         member = create_role_user(client, "team-member")
 
+        anonymous_list_response = client.get("/api/v1/tags")
+        assert anonymous_list_response.status_code == 401, anonymous_list_response.text
+
+        member_list_response = client.get(
+            "/api/v1/tags",
+            headers=auth_headers(client, member),
+        )
+        assert member_list_response.status_code == 200, member_list_response.text
+
         denied_response = client.post(
             "/api/v1/tags",
             headers=auth_headers(client, member),

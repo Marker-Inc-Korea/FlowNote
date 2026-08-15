@@ -147,6 +147,16 @@ def test_app_startup_creates_mvp_schema(tmp_path: Path) -> None:
     finally:
         fresh_server.dispose()
 
+    overlong_password_path = tmp_path / "overlong-initial-password.sqlite3"
+    overlong_password_server = Database(
+        f"sqlite:///{overlong_password_path.as_posix()}"
+    )
+    try:
+        with pytest.raises(RuntimeError, match="no more than 200"):
+            initialize_database(overlong_password_server, "p" * 201)
+    finally:
+        overlong_password_server.dispose()
+
     wpf_database_path = tmp_path / "flownote.local.sqlite"
     with sqlite3.connect(wpf_database_path) as connection:
         connection.executescript(

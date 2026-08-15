@@ -20,6 +20,8 @@ DEFAULT_ADMIN_DISPLAY_NAME = "FlowNote Admin"
 DEFAULT_ADMIN_ROLE = "admin"
 DEFAULT_ADMIN_PASSWORD_SALT = "flownote-dev-admin-v1"
 DEFAULT_ADMIN_PASSWORD_ITERATIONS = 100_000
+MIN_ACCOUNT_PASSWORD_LENGTH = 8
+MAX_ACCOUNT_PASSWORD_LENGTH = 200
 ALLOWED_USER_ROLES = (
     "admin",
     "manager",
@@ -758,9 +760,18 @@ def _seed_default_admin_account(
                 "FLOWNOTE_INITIAL_ADMIN_PASSWORD is required when creating the first "
                 "server administrator account."
             )
-        if len(initial_admin_password) < 8 and not allow_insecure_test_password:
+        if (
+            len(initial_admin_password) < MIN_ACCOUNT_PASSWORD_LENGTH
+            and not allow_insecure_test_password
+        ):
             raise RuntimeError(
-                "FLOWNOTE_INITIAL_ADMIN_PASSWORD must contain at least 8 characters."
+                "FLOWNOTE_INITIAL_ADMIN_PASSWORD must contain at least "
+                f"{MIN_ACCOUNT_PASSWORD_LENGTH} characters."
+            )
+        if len(initial_admin_password) > MAX_ACCOUNT_PASSWORD_LENGTH:
+            raise RuntimeError(
+                "FLOWNOTE_INITIAL_ADMIN_PASSWORD must contain no more than "
+                f"{MAX_ACCOUNT_PASSWORD_LENGTH} characters."
             )
 
         session.add(

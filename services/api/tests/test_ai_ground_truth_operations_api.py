@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from app.core.config import Settings
 from app.db.init_db import hash_password_for_dev
-from app.db.models import AISearchGroundTruthCase, UserAccount
+from app.db.models import AISearchGroundTruthCase, TagDefinition, UserAccount
 from app.main import create_app
 
 
@@ -22,6 +22,29 @@ def _ensure_smoke48_cases() -> None:
     seed_script = API_ROOT.parents[1] / "scripts" / "seed-ai-ground-truth-48.py"
     seed = runpy.run_path(str(seed_script), run_name="flownote_seed_smoke48")["seed"]
     seed(TEST_DATABASE_URL)
+
+
+def _ensure_alternate_smoke_marker() -> str:
+    with _client() as client:
+        with client.app.state.database.session() as session:
+            existing = session.scalar(
+                select(TagDefinition).where(
+                    TagDefinition.tag_type == "custom",
+                    TagDefinition.code == "smoke-regression",
+                )
+            )
+            if existing is not None:
+                return existing.tag_id
+            marker = TagDefinition(
+                tag_id=f"tag-existing-smoke-regression-{uuid4().hex}",
+                tag_type="custom",
+                code="smoke-regression",
+                name="기존 스모크 회귀 태그",
+                is_active=True,
+            )
+            session.add(marker)
+            session.commit()
+            return marker.tag_id
 
 
 def _client() -> TestClient:
@@ -61,6 +84,7 @@ def _add_user(client: TestClient, role: str) -> tuple[str, dict[str, str]]:
 
 
 def test_dataset_48_lifecycle_immutable_evaluation_and_restart_persistence() -> None:
+    existing_marker_id = _ensure_alternate_smoke_marker()
     _ensure_smoke48_cases()
     with _client() as client:
         author_headers = _login(client, "admin")
@@ -70,6 +94,13 @@ def test_dataset_48_lifecycle_immutable_evaluation_and_restart_persistence() -> 
         _, viewer_headers = _add_user(client, "viewer")
 
         with client.app.state.database.session() as session:
+            smoke_markers = session.scalars(
+                select(TagDefinition).where(
+                    TagDefinition.tag_type == "custom",
+                    TagDefinition.code == "smoke-regression",
+                )
+            ).all()
+            assert [marker.tag_id for marker in smoke_markers] == [existing_marker_id]
             case_ids = list(session.scalars(
                 select(AISearchGroundTruthCase.ground_truth_case_id).where(
                     AISearchGroundTruthCase.case_key.like("smoke48-v1-%"),

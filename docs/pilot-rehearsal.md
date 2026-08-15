@@ -34,7 +34,7 @@
 
 Windows/서버 고객 유사망 리허설은 `windows_server_rehearsal` 프로필로 실행한다. Android·AI 실기 게이트는 이 실행의 완료 조건이 아니지만, 두 영역을 포함한 8개 책임 영역은 이번 리허설에서 무엇을 시험하고 무엇을 하지 않는지 담당자와 독립 승인자가 미리 승인해야 한다. 담당자와 승인자의 대소문자·앞뒤 공백을 제외한 식별자가 같으면 자기 승인으로 판정해 시작하지 않는다.
 
-실제 사람 이름, 연락처, 장비명, 고객명, IP와 공유 경로는 Git 문서에 적지 않는다. 접근 통제되고 Git에서 제외된 `<증거 저장소>/<run_id>/pilot-run.json`과 `approvals/` 원시에 실제 값을 기록한다. 저장소 문서에는 익명 역할/장비 식별자와 증거 상대경로만 남긴다. 2026-08-01 현재 실제 책임자·시험 장비·운영 인증서·이전 승인 서버/WPF 버전과 hash/signer·RTO/RPO·rollback 결정권자·비상 연락 흐름은 제공되지 않았다. 임의 값으로 채우지 않으며 해당 값과 서명 원시 증거가 들어오기 전 상태는 `LOCALCHECK FAIL / 리허설 착수 금지`다.
+실제 사람 이름, 연락처, 장비명, 고객명, IP와 공유 경로는 Git 문서에 적지 않는다. 접근 통제되고 Git에서 제외된 `<증거 저장소>/<run_id>/pilot-run.json`과 `approvals/` 원시에 실제 값을 기록한다. 저장소 문서에는 익명 역할/장비 식별자와 증거 상대경로만 남긴다. 실제 책임자·시험 장비·운영 인증서·이전 승인 서버/WPF 버전과 hash/signer·RTO/RPO·rollback 결정권자·비상 연락 흐름을 임의 값으로 채우지 않으며, 해당 값과 서명 원시 증거가 들어오기 전 상태는 `LOCALCHECK FAIL / 리허설 착수 금지`다.
 
 schema version 13의 각 `responsibilities.<area>`에는 `owner`, `approver`, `test_scope`, `stop_criteria`, `evidence_repository`, `approved_at`, `approval_reference`, `approval_evidence`를 모두 기록한다. 담당자와 독립 승인자의 식별자는 달라야 하며 승인 시각에는 시간대를 포함한다. `approvals/responsibility-assignments.csv`의 원시 행과 JSON 요약이 다르면 착수를 승인하지 않는다. 통합 `authorization`에는 다음 값을 기록한다.
 
@@ -334,9 +334,9 @@ py -3 scripts\manage-pilot-run.py resume --run-id $RunId --evidence-root $Eviden
 `verify`는 전체 판정과 별도로 `pilot-verification.json.ux_before_baseline`에 이 단계의 `PASS/FAIL`, 미충족 건수와 사유를 기록한다. 전체 게이트가 남아 있으면 명령 종료 코드는 계속 1이고 최상위 `result`도 `FAIL`일 수 있다. 이 경우에도 `ux_before_baseline.result=PASS`이면 후보 2만 완료한 것으로 해석하며 배포·확대 승인으로 사용하지 않는다.
 
 ```powershell
-py -3 scripts\manage-pilot-run.py prepare --run-id PILOT-20260728-UX-BEFORE-001 --evidence-root D:\FlowNotePilotEvidence --profile full_pilot
-py -3 scripts\manage-pilot-run.py authorize --run-id PILOT-20260728-UX-BEFORE-001 --evidence-root D:\FlowNotePilotEvidence
-py -3 scripts\manage-pilot-run.py verify --run-id PILOT-20260728-UX-BEFORE-001 --evidence-root D:\FlowNotePilotEvidence
+py -3 scripts\manage-pilot-run.py prepare --run-id PILOT-YYYYMMDD-HHMM-SITE-001 --evidence-root D:\FlowNotePilotEvidence --profile full_pilot
+py -3 scripts\manage-pilot-run.py authorize --run-id PILOT-YYYYMMDD-HHMM-SITE-001 --evidence-root D:\FlowNotePilotEvidence
+py -3 scripts\manage-pilot-run.py verify --run-id PILOT-YYYYMMDD-HHMM-SITE-001 --evidence-root D:\FlowNotePilotEvidence
 ```
 
 `prepare` 뒤 `responsibilities` 8개 영역과 통합 `authorization`의 범위, 5개 이상 중단 기준, rollback 권한, 증거 저장소, RPO/RTO, 비상 연락 흐름을 확정하고 `authorize`를 통과해야 한다. 그때 생성되는 `approvals/ux-before-baseline-review.csv`는 서명 원시 표이고 JSON 요약과 값이 같아야 한다. 실명·연락처·장비명 대응표는 접근 통제 저장소에만 두며 Git, 공용 로그, 화면 캡처 파일명에는 넣지 않는다.
@@ -381,7 +381,7 @@ py -3 scripts\manage-pilot-run.py verify --run-id PILOT-YYYYMMDD-HHMM-SITE-001 -
 
 ## 실행 결과표
 
-실행 전 `run_id`, 시험 현장/라인 코드, 시작·종료 시각, 증거 저장소, 보존 만료일을 표 위에 기록한다. `상태`는 `미실행/실행중/완료`, `판정`은 `대기/통과/실패`만 사용한다. 담당자는 개인 이름 대신 먼저 책임 역할을 지정하고 승인된 증거 저장소의 대응표에서 실제 담당자와 연결한다. 아래 초기값은 2026-07-16 저장소 점검 결과이며 실기 완료 증거가 아니므로 모두 `대기`다.
+실행 전 `run_id`, 시험 현장/라인 코드, 시작·종료 시각, 증거 저장소, 보존 만료일을 표 위에 기록한다. `상태`는 `미실행/실행중/완료`, `판정`은 `대기/통과/실패`만 사용한다. 담당자는 개인 이름 대신 먼저 책임 역할을 지정하고 승인된 증거 저장소의 대응표에서 실제 담당자와 연결한다. 공개 저장소의 초기값은 실기 완료 증거가 없는 `대기`다.
 
 | 게이트 | 상태 | 증거 | 담당자 | 후속 기한 | 판정 |
 | --- | --- | --- | --- | --- | --- |
@@ -444,27 +444,6 @@ py -3 scripts\verify-pilot-restore.py compare-set --server D:\FlowNotePilotEvide
 
 현장 관찰은 각 역할에 최소 한 행이 필요하며 `network`는 `CONNECTED/DISCONNECTED`, `gloves`는 `ON/OFF`, 사진 촬영·짧은 메모·신호등식 입력과 boolean 필드는 `TRUE/FALSE`로 기록한다. 전체 실행에는 장갑 착용과 네트워크 단절 관찰이 각각 하나 이상 있어야 한다. 모든 관찰은 `development-items.csv`의 고유 항목 하나와 연결하고 `decision`, `decision_basis`, `owner`, P0~P3, 세 분류 중 하나, 측정 가능한 `acceptance_criteria`, `due_date`, 증거를 모두 채운다.
 
-### 2026-07-16 준비 점검
+## 공개 저장소의 초기 상태
 
-`PILOT-20260716-TOOLTEST-001`은 복구 증거 도구의 동작 확인용 `TOOLTEST`이며 실제 설치·복구 또는 현장 파일럿 run이 아니다. 이 실행을 완료 판정의 분자나 통과 증거로 사용하지 않는다. 증거는 Git 제외 로컬 경로 `data/local/pilot-evidence/PILOT-20260716-TOOLTEST-001/backup-restore/`에 보존했다.
-
-| 점검 대상 | 결과 | 근거 | 후속 개발 항목 |
-| --- | --- | --- | --- |
-| 서버 개발 DB와 `storage` 동일 원천 전후 비교 | 도구 시험 통과 | `server-before.json`, `server-after.json`, `server-comparison.json`; `quick_check=ok`, foreign key 위반 0건, 파일 6,498건 | 실제 별도 PC 복구본으로 새 `PILOT` run 재검증 |
-| WPF 공통 DB와 `Files` 동일 원천 전후 비교 | 도구 시험 실패 | `wpf-before.json`, `wpf-after.json`, `wpf-comparison.json`; `quick_check=ok`, 파일 920건, `foreign key mismatch - "controlled_copy_grants" referencing "document_versions"` | P0 데이터 무결성: 누적 DB를 삭제하지 않고 서버용 `controlled_copy_grants`가 WPF 로컬 `document_versions` schema와 충돌한 유입 경로를 규명하고 보존 migration 후 재검증 |
-
-WPF 실패는 복구 실패를 모의한 결과가 아니라 현재 누적 공통 SQLite의 schema 무결성 차단을 발견한 준비 점검이다. 원천 DB와 파일을 수정하거나 삭제하지 않았으며, 이 항목이 해결되어도 별도 PC 복구와 나머지 실기 게이트는 계속 `대기`다.
-
-### 2026-07-20 P0 후속 조치
-
-위 `PILOT-20260716-TOOLTEST-001` 실패 증거는 당시 발견 기록으로 유지한다. 이후 FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하는 경로를 `Base.metadata.create_all()` 전에 차단했고, `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·FK·row hash를 보존한 뒤 서버 전용 grant 테이블을 격리했다. 공통 DB 복구 run `WPF-P0-20260720-0840`은 `document_versions` 3,384행의 hash를 유지하고 `quick_check=ok`, foreign key 위반 0건으로 끝났다.
-
-따라서 “유입 경로 규명과 보존 migration” P0 개발 조치는 완료됐다. 다만 이 결과는 같은 원천 DB의 보존 복구 증거이며 별도 PC 복구 훈련이나 최신 Windows 무생략 통합 `PASSED`를 대신하지 않는다. WPF DB+`Files` 파일럿 게이트는 새 `PILOT` run에서 별도 PC 복구 전후를 비교할 때까지 계속 `대기`다.
-
-### 2026-07-28 후보 7 단일 실행 결과
-
-`PILOT-20260728-1501-FULLPILOT-001`을 schema version 8의 `full_pilot`으로 준비하고 검증했다. 책임자와 독립 승인자, 시험 범위, 5개 이상 중단 기준, rollback 권한, 증거 저장소, 보존 기한, RPO/RTO, 비상 연락 흐름, 이전 승인 버전·패키지, 익명 장비 ID와 승인 원시 증거가 제공되지 않아 리허설 착수 조건을 충족하지 못했다. 고객 유사망, Windows 설치·장애·별도 PC 복구, 역할별 업무, Android, AI 비활성 또는 준비도, 중단·rollback은 실행하지 않았다.
-
-`pilot-verification.json`의 판정은 `FAIL`이고 미충족 조건은 460건이다. 필수 원시 증거 누락 0, 3자 최종 승인, 0건 지표와 치명적 UX blocker 0을 확인할 근거가 없으므로 완료나 조건부 통과로 기록하지 않는다. 현장 BEFORE 관찰과 수용된 P0/P1이 없으므로 화면 문구·업무 흐름을 추정해 바꾸거나 AFTER 수치를 만들지 않았다. 2026-08-01에는 이 판정표를 수정하지 않고 `readiness` 명령으로 460건 전부를 역할·게이트·선행조건별로 묶은 `pilot-readiness.json`, `.csv`, `.html`을 같은 실행 폴더에 추가했다. 모든 행에는 담당 역할과 다음 행동이 있고 승인 상태는 `DRAFT`, 운영 입력은 `잠김`으로 표시된다. 승인과 장비가 준비되면 이 실패 실행과 원시를 보존한 채 새 `run_id`를 발급하고 schema version 13 승인 계약부터 다시 시작한다.
-
-현재 저장소와 개발 환경만으로는 위 실기 게이트를 통과 처리할 수 없다. 최초 통합 `PASSED` 실행 ID, Windows 배포 준비 PC, 고객 유사 네트워크, 운영 인증서/서명키 정책, 승인 Android 실단말과 현장 책임자가 준비된 뒤 실행한다.
+공개 저장소에는 과거 파일럿 실행 ID, 고객 유사망 결과, 복구 DB 비교값, 화면 캡처와 승인 원시 증거를 포함하지 않는다. 새 실행은 위 템플릿과 도구로 고유한 `run_id`를 만든 뒤 접근 통제된 증거 저장소에서 수행한다. Windows 배포 준비 PC, 고객 유사 네트워크, 운영 인증서·서명키 정책, 승인 Android 실단말과 현장 책임자가 준비되지 않았다면 모든 실기 게이트를 `대기`로 둔다.

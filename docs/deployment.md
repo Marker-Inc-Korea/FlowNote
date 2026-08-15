@@ -272,7 +272,7 @@ FLOWNOTE_STORAGE_ROOT=C:/FlowNote/Server/storage
 FLOWNOTE_FIELD_COMMENT_ATTACHMENT_MAX_BYTES=20971520
 FLOWNOTE_CONTROLLED_COPY_MAX_BYTES=524288000
 FLOWNOTE_CONTROLLED_COPY_TICKET_EXPIRES_SECONDS=60
-FLOWNOTE_INITIAL_ADMIN_PASSWORD=<최초 실행에만 사용할 8자 이상 임시 비밀번호>
+FLOWNOTE_INITIAL_ADMIN_PASSWORD=<최초 실행에만 사용할 8자 이상 200자 이하 임시 비밀번호>
 FLOWNOTE_ACCESS_TOKEN_SECRET=<현장별 긴 비밀값>
 FLOWNOTE_ACCESS_TOKEN_EXPIRES_MINUTES=480
 FLOWNOTE_REFRESH_TOKEN_EXPIRES_DAYS=14
@@ -356,7 +356,7 @@ Invoke-RestMethod https://flownote.example/api/v1/health/db
 
 ### 최초 서버 관리자 계정
 
-1. 빈 서버 DB의 최초 실행 전에 `FLOWNOTE_INITIAL_ADMIN_PASSWORD`에 8자 이상의 임시 비밀번호를 주입한다. 값이 없거나 짧으면 FastAPI는 첫 `admin` 생성을 거부한다.
+1. 빈 서버 DB의 최초 실행 전에 `FLOWNOTE_INITIAL_ADMIN_PASSWORD`에 8자 이상 200자 이하의 임시 비밀번호를 주입한다. 값이 없거나 범위를 벗어나면 FastAPI는 첫 `admin` 생성을 거부한다.
 2. 최초 실행 뒤 환경 설정에서 이 값을 제거한다. 현장 운영자는 서버 PC의 관리자 PowerShell에서 운영 스크립트를 실행해 새 비밀번호를 대화식으로 입력한다. 새 비밀번호를 명령줄 인자, PowerShell 기록, 서버 로그에 남기지 않는다.
 
 ```powershell
@@ -383,7 +383,7 @@ cd C:\FlowNote\Server\api
 
 ### 서버 계정 발급
 
-일반 서버 계정은 서버 로그인한 `admin`, `system-admin`이 WPF 사용자 관리 화면에서 발급한다. 8자 이상 임시 비밀번호와 발급 사유를 입력하며, 서버는 비밀번호를 응답·활동 이력·일반 로그에 다시 노출하지 않는다. 발급 계정은 `must_change_password = true`이므로 첫 로그인 직후 본인이 비밀번호를 바꾸고 새 비밀번호로 다시 로그인해야 한다. `admin`은 일반 계정만 운영하고 `system-admin` 계정은 `system-admin`만 생성·조회·변경할 수 있다.
+일반 서버 계정은 서버 로그인한 `admin`, `system-admin`이 WPF 사용자 관리 화면에서 발급한다. 8자 이상 200자 이하 임시 비밀번호와 발급 사유를 입력하며, 서버는 비밀번호를 응답·활동 이력·일반 로그에 다시 노출하지 않는다. 발급 계정은 `must_change_password = true`이므로 첫 로그인 직후 본인이 비밀번호를 바꾸고 새 비밀번호로 다시 로그인해야 한다. `admin`은 일반 계정만 운영하고 `system-admin` 계정은 `system-admin`만 생성·조회·변경할 수 있다.
 
 서버 PC 운영 스크립트의 `create` 명령은 WPF/API를 사용할 수 없는 초기·비상 경로다. `role` 값은 [데이터 모델 문서의 역할 값](./data-model.md#역할-값) 중 하나만 사용한다. 이 스크립트는 현재 `must_change_password`를 설정하지 않으므로, 일반 운영 계정 발급에는 사용하지 않는다.
 
@@ -392,12 +392,12 @@ cd C:\FlowNote\Server\api
 .\.venv\Scripts\python.exe -m app.ops.server_accounts create --username line-a-admin --display-name "라인 A 관리자" --role line-foreman
 ```
 
-비밀번호는 `new password`와 `confirm password` 프롬프트에 대화식으로 입력한다. 현재 스크립트는 8자 미만 비밀번호를 거부한다. 스크립트 출력에는 `username`, 서버 `user_id`, 폐기된 세션 수만 표시되며 비밀번호는 출력하지 않는다.
+비밀번호는 `new password`와 `confirm password` 프롬프트에 대화식으로 입력한다. 현재 스크립트는 8자 미만 또는 200자 초과 비밀번호를 거부한다. 스크립트 출력에는 `username`, 서버 `user_id`, 폐기된 세션 수만 표시되며 비밀번호는 출력하지 않는다.
 
 ### 비밀번호 재설정
 
 1. 본인 확인과 승인자를 운영 기록에 남긴다.
-2. WPF 서버 계정 화면에서 8자 이상 임시 비밀번호와 재설정 사유를 입력한다.
+2. WPF 서버 계정 화면에서 8자 이상 200자 이하 임시 비밀번호와 재설정 사유를 입력한다.
 3. 서버는 `must_change_password = true`로 바꾸고 해당 계정의 기존 활성 `auth_sessions`를 `REVOKED`, `revoked_reason = password_reset`으로 변경한다.
 4. 임시 비밀번호는 사용자에게 일회성으로 전달한다. 사용자는 로그인 직후 강제 변경 화면에서 새 비밀번호로 바꾸며, 변경 성공으로 현재 세션까지 폐기된 뒤 새 비밀번호로 다시 로그인한다.
 
@@ -820,7 +820,7 @@ dotnet run --project .\apps\windows\src\FlowNote.Windows.App\FlowNote.Windows.Ap
 | 비상 연락 흐름 ID·운영/보안/현장 escalation | 미확정 | `<run_id>/approvals/rehearsal-authorization-*` | 착수 금지 |
 | 복구 PC·복구 경로·복구 승인자 | 미확정 | `<run_id>/backup-restore/*` | 대기 |
 
-2026-08-01 현재 이 저장소에는 실제 승인자, 서로 다른 익명 Windows 장비에서 수집한 server/WPF before·after, 운영 인증서, 승인 장비, 이전 승인 패키지, RPO/RTO 또는 비상 연락 흐름의 승인 원시 증거가 제공되지 않았다. 따라서 이 문서와 자동 테스트 통과는 별도 PC 실기 PASS가 아니다. 기존 `PILOT-20260728-1501-FULLPILOT-001`의 `pilot-verification.json`은 schema version 12 기준 미충족 조건 460건과 `FAIL`을 기록했으며 설치·복구·rollback을 시작해 실패한 실행이 아니라 사전 승인 부재로 착수가 차단된 실행이다. 해당 판정표와 원시 증거는 그대로 보존했고 파생 `pilot-readiness.json`, `.csv`, `.html`에서 460건 전부를 역할·게이트·선행조건별로 묶어 담당 역할과 다음 행동을 표시했다. 실제 승인값이 제공되면 실패 run을 재사용하지 않고 새 schema version 13 `run_id`로 `prepare`와 `authorize`를 수행한다.
+이 저장소의 문서와 자동 테스트 통과는 별도 PC 실기 PASS가 아니다. 실제 승인자, 서로 다른 익명 Windows 장비의 server/WPF before·after, 운영 인증서, 승인 장비, 이전 승인 패키지, RPO/RTO와 비상 연락 흐름의 원시 증거가 준비된 뒤 새 schema version 13 `run_id`로 `prepare`와 `authorize`를 수행한다. 과거 실행 결과와 원시 증거는 공개 저장소에 포함하지 않는다.
 
 제품 공통 설치·시작·런타임·서명 정책은 위와 같이 확정했지만 현장 실행값과 PASS를 추정하지 않는다. 현장 값이 확정되면 예시 명령과 실제 값이 충돌하지 않는지 검토하고 이 표, 설치 전후 점검표, 파일럿 manifest를 함께 갱신한다. 같은 승인 소스·패키지·장비를 한 `run_id`에 묶고 운영·보안·현장 3자 서명까지 받은 뒤에만 배포 승인으로 전환한다. 현장별 선호는 공통 기본값으로 올리지 않고 설정·교육 기록으로 분리한다.
 
@@ -906,11 +906,11 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·운영 HTTPS 통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 현재 소스의 수집 대상과 스크립트 guard는 FastAPI 212건, WPF Core 120건, Android 39건으로 일치한다. 2026-08-15 보조 실행은 FastAPI 누적 DB·새 DB 212/212, WPF Core 120/120과 WPF 앱 빌드를 통과했다. 변경되지 않은 Android의 최신 기준은 39/39와 debug 빌드·lint 통과이며, 최신 운영 HTTPS 스모크는 2026-08-09 결과다. 스크립트는 수집 원본·중복 목록·JUnit과 종료 코드를 보존하고 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터·새 `RunId` 실행 명령을 안내한다. 같은 clean 소스 커밋에서 Windows x64 무생략 실행을 2회 연속 통과해야 유효 Windows 통합 기준선으로 확정한다.
+표준 검증 순서와 사후 Git 산출물 점검은 [테스트와 검증 방법](./verification.md)을 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·운영 HTTPS 통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 현재 스크립트 guard는 FastAPI 215건, WPF Core 120건, Android 39건이다. 같은 clean 소스 커밋에서 실행해 수집 수, JUnit·TRX와 모든 필수 단계가 일치하는지 직접 확인한다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF 클라이언트 SQLite 실행 전후 통계·오늘/과거 문서 식별 증거와 `verification-summary.json`을 보존한다. 운영 서버 DB·storage·로그는 이 로컬 폴더로 복사하지 않는다. WPF smoke는 승인된 운영 HTTPS 서버를 사용하며 개발 PC의 `5184` 포트를 확인·점유·종료하지 않는다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 
-2026-07-20 WPF 공통 DB의 서버형 `controlled_copy_grants` FK 충돌은 `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·row 수·hash를 먼저 보존한 뒤 복구했다. 실제 복구 run `WPF-P0-20260720-0840`은 `quick_check=ok`, FK 위반 0건이며 문서 버전 3,384행의 원천 hash를 유지한다. FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하려는 경우도 `create_all` 전에 거부한다. 2026-07-22 macOS 보조 run `p0-baseline-144-macos-precheck-20260722-002`은 FastAPI 수집 144·고유 144·통과 144, failure/error/skipped 0과 Git 신규 추적/staged 0을 확인했다. 그러나 WPF/Android/공통 DB 스모크는 도구 부재로 `NOT_RUN`이므로 `partial_run=true`, `FAILED_ENVIRONMENT`이며 배포 기준선이 아니다. 새 Windows 무생략 실행이 `partial_run=false`, `verification-summary.json=PASSED`가 되기 전까지 배포 통합 기준선은 `대기`다.
+WPF 공통 DB에 서버형 `controlled_copy_grants`가 잘못 생성된 경우 `scripts/repair-wpf-controlled-copy-schema.py`로 원본 backup·DDL·row 수·hash를 먼저 남긴 뒤 복구한다. FastAPI가 WPF 로컬 schema를 서버 DB로 초기화하려는 경우도 `create_all` 전에 거부한다. 복구 도구와 부분 실행 결과만으로 배포 기준선을 통과한 것으로 판정하지 않는다.
 ## DB 복구·초기화 후 운영 절차
 
 1. 모든 WPF를 종료하거나 자동 전송/polling이 중지됐음을 확인한다.

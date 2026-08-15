@@ -12,7 +12,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.auth import ROLE_SYSTEM_ADMIN, USER_MANAGEMENT_ROLES, AuthenticatedUser, require_roles
-from app.db.init_db import ALLOWED_USER_ROLES, hash_password
+from app.db.init_db import (
+    ALLOWED_USER_ROLES,
+    MAX_ACCOUNT_PASSWORD_LENGTH,
+    MIN_ACCOUNT_PASSWORD_LENGTH,
+    hash_password,
+)
 from app.db.models import ActivityHistory, AuthSession, UserAccount
 from app.db.session import get_db_session
 
@@ -29,7 +34,10 @@ class AccountCreateRequest(BaseModel):
     username: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
     display_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
     role: str
-    temporary_password: str = Field(min_length=8, max_length=200)
+    temporary_password: str = Field(
+        min_length=MIN_ACCOUNT_PASSWORD_LENGTH,
+        max_length=MAX_ACCOUNT_PASSWORD_LENGTH,
+    )
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
@@ -44,7 +52,10 @@ class AccountUpdateRequest(BaseModel):
 
 
 class PasswordResetRequest(BaseModel):
-    temporary_password: str = Field(min_length=8, max_length=200)
+    temporary_password: str = Field(
+        min_length=MIN_ACCOUNT_PASSWORD_LENGTH,
+        max_length=MAX_ACCOUNT_PASSWORD_LENGTH,
+    )
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 

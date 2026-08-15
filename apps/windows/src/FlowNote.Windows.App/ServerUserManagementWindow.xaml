@@ -63,7 +63,7 @@
                         <ComboBoxItem Content="비활성" Tag="DISABLED" />
                     </ComboBox>
                     <TextBlock Text="임시 비밀번호" Margin="0,9,0,4" />
-                    <PasswordBox x:Name="TemporaryPasswordBox" Height="30" />
+                    <PasswordBox x:Name="TemporaryPasswordBox" Height="30" MaxLength="200" />
                     <TextBlock Text="계정 생성 또는 비밀번호 재설정 때만 입력합니다. 서버는 이 값을 응답이나 이력에 다시 표시하지 않습니다."
                                Margin="0,5,0,0" TextWrapping="Wrap" Foreground="{StaticResource SecondaryTextBrush}" />
                     <TextBlock Text="변경 사유" Margin="0,9,0,4" />

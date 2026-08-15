@@ -77,7 +77,7 @@ public partial class ServerUserManagementWindow : Window
             {
                 if (TemporaryPasswordBox.Password.Length < 8)
                 {
-                    StatusTextBlock.Text = "임시 비밀번호는 8자 이상이어야 합니다.";
+                    StatusTextBlock.Text = "임시 비밀번호는 8자 이상 200자 이하여야 합니다.";
                     return;
                 }
                 result = await client.CreateAsync(new ServerAccountCreateRequest(
@@ -120,7 +120,7 @@ public partial class ServerUserManagementWindow : Window
         {
             StatusTextBlock.Text = selected is null
                 ? "비밀번호를 재설정할 서버 계정을 선택하세요."
-                : "8자 이상의 임시 비밀번호와 변경 사유를 입력하세요.";
+                : "8자 이상 200자 이하의 임시 비밀번호와 변경 사유를 입력하세요.";
             return;
         }
         try

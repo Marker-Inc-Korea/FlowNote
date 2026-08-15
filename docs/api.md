@@ -1,6 +1,6 @@
 # FlowNote API
 
-FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
+FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`다. 태그 목록을 포함한 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
 
 필수 텍스트 입력은 앞뒤 공백을 제거한 뒤 길이를 검사한다. 태그·계정·업무 채널·FieldComment·보고서·작업순서·알림 후보 전달에서 공백만 있는 이름, 제목, 원문, 감사 사유 또는 멱등키는 `422`로 거부하며 빈 문자열을 업무 데이터나 감사 이력으로 저장하지 않는다. 비밀번호는 이 공통 정리 대상에서 제외해 사용자가 입력한 문자열 자체를 검증한다.
 
@@ -50,7 +50,7 @@ operation key가 있는 문서 권위 변경, FieldComment 검토, 보고서 상
 
 상태 판정은 저장된 기한·만료·명시 상태·revision/hash·감사 필드만 사용한다. 현장별 목표 시간이 설정되지 않은 상태에서 임의의 시간 임계값을 만들지 않는다. 해결됨은 새로고침한 현재 상태에서 같은 blocker 조건이 더 이상 계산되지 않는 경우다. 문서 공개 포인터/상태/승인 불일치, FieldComment 명시 기한 초과·보고서 미연결·상충·미배정, 보고서 정정 대기·source revision 충돌, 미전달/만료 작업순서 후보, 채널 미확인·인수인계 후속 조치, 비활성 단말의 활성 세션, 미해결 재결합 충돌·재전송 대기, 최근 200개 감사 event의 실패·충돌·필수 필드/receipt 문제를 blocker code로 반환한다. 각 조치의 `actionRoute`와 `actionTargetId`는 WPF가 기존 업무 화면의 대상·필터를 정확히 선택하는 데 사용하며 mutation 권한을 대신하지 않는다. `aiFieldReadiness`는 `ANONYMOUS_FIELD` 계열만 별도 반환하고 `syntheticIncluded=false`를 고정해 합성·테스트 회귀 수치를 운영 합계와 섞지 않는다.
 
-`must_change_password = true`인 계정은 로그인 응답에서 같은 값을 받지만 `change-password` 이외의 보호 API와 refresh를 사용할 수 없다. 비밀번호 변경 성공 시 현재 세션을 포함한 모든 활성 세션을 폐기하므로 새 비밀번호로 다시 로그인해야 한다. 최소 비밀번호 길이는 8자이며 현재 비밀번호와 같은 값은 거부한다. 새 비밀번호와 임시 비밀번호 hash는 계정별 무작위 salt를 사용한 PBKDF2-SHA256으로 저장하고 기존 개발 계정 hash도 같은 검증기가 호환한다.
+`must_change_password = true`인 계정은 로그인 응답에서 같은 값을 받지만 `change-password` 이외의 보호 API와 refresh를 사용할 수 없다. 비밀번호 변경 성공 시 현재 세션을 포함한 모든 활성 세션을 폐기하므로 새 비밀번호로 다시 로그인해야 한다. 계정 비밀번호는 8자 이상 200자 이하이며 현재 비밀번호와 같은 값은 거부한다. 로그인, 본인 변경, 관리자 생성·재설정, 최초 관리자 생성과 서버 콘솔 도구가 같은 상한을 사용한다. 새 비밀번호와 임시 비밀번호 hash는 계정별 무작위 salt를 사용한 PBKDF2-SHA256으로 저장하고 기존 개발 계정 hash도 같은 검증기가 호환한다.
 
 ## 서버 계정 수명주기
 

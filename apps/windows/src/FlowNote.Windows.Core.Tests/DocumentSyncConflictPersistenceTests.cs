@@ -11,9 +11,9 @@ namespace FlowNote.Windows.Core.Tests;
 
 public sealed class DocumentSyncConflictPersistenceTests
 {
-    private static readonly string DatabasePath = Path.Combine(
+    private readonly string databasePath = Path.Combine(
         FlowNoteLocalDatabase.DefaultDataDirectory,
-        "flownote.core-tests.sqlite");
+        $"flownote.core-tests-{Guid.NewGuid():N}.sqlite");
 
     [Fact]
     public void ExistingDatabaseMigrationPreservesLegacyFieldNotesAndAddsConflictColumns()
@@ -36,7 +36,7 @@ public sealed class DocumentSyncConflictPersistenceTests
             command.ExecuteNonQuery();
         }
 
-        new FlowNoteLocalDatabase(DatabasePath).Initialize();
+        new FlowNoteLocalDatabase(databasePath).Initialize();
 
         using var verify = database.OpenConnection();
         Assert.Equal(
@@ -67,7 +67,7 @@ public sealed class DocumentSyncConflictPersistenceTests
         var documentId = $"doc-conflict-{suffix}";
         var queueId = InsertConflict(database, documentId, suffix);
 
-        var restarted = new ServerSyncService(new FlowNoteLocalDatabase(DatabasePath));
+        var restarted = new ServerSyncService(new FlowNoteLocalDatabase(databasePath));
         var conflict = Assert.Single(restarted.ListQueueItems(), item => item.Id == queueId);
         Assert.Equal("CONFLICT", conflict.Status);
         Assert.Equal("STALE_REVISION", conflict.ConflictCode);
@@ -79,7 +79,7 @@ public sealed class DocumentSyncConflictPersistenceTests
             "서버 공개본을 유지하기로 확인",
             "document-admin");
 
-        var afterSecondRestart = new ServerSyncService(new FlowNoteLocalDatabase(DatabasePath));
+        var afterSecondRestart = new ServerSyncService(new FlowNoteLocalDatabase(databasePath));
         var discarded = Assert.Single(afterSecondRestart.ListQueueItems(), item => item.Id == queueId);
         Assert.Equal("DISCARDED", discarded.Status);
         Assert.Equal("KEEP_SERVER", discarded.ResolutionAction);
@@ -187,7 +187,7 @@ public sealed class DocumentSyncConflictPersistenceTests
         {
             BaseAddress = new Uri("https://recovered.example/")
         };
-        var restarted = new ServerSyncService(new FlowNoteLocalDatabase(DatabasePath));
+        var restarted = new ServerSyncService(new FlowNoteLocalDatabase(databasePath));
         await restarted.RetryPendingAsync(
             new FlowNoteServerDocumentClient(recoveredHttp),
             "user-admin");
@@ -612,9 +612,9 @@ public sealed class DocumentSyncConflictPersistenceTests
             ScalarLong(verify, "SELECT COUNT(*) FROM document_tags WHERE document_id = $value;", localDocumentId));
     }
 
-    private static FlowNoteLocalDatabase CreateDatabase()
+    private FlowNoteLocalDatabase CreateDatabase()
     {
-        var database = new FlowNoteLocalDatabase(DatabasePath);
+        var database = new FlowNoteLocalDatabase(databasePath);
         database.Initialize();
         return database;
     }

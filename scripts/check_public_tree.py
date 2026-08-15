@@ -33,9 +33,29 @@ ALLOWED_DATA_FILES = {
     "services/api/data/.gitkeep",
     "services/api/storage/.gitkeep",
 }
+RUNTIME_DATA_PREFIXES = (
+    "data/",
+    "Data/",
+    "storage/",
+    "services/api/data/",
+    "services/api/storage/",
+    "apps/windows/src/FlowNote.Windows.App/Data/",
+)
 MARKDOWN_LINK_PATTERN = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 HTTP_HOST_PATTERN = re.compile(r"https?://([A-Za-z0-9.-]+)", re.IGNORECASE)
 PRIVATE_KEY_PATTERN = re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")
+UNIX_HOME_PATTERN = re.compile(r"/(?:Users|home)/([^/\s]+)/")
+WINDOWS_HOME_PATTERN = re.compile(r"(?i)\b[A-Z]:\\Users\\([^\\\s]+)\\")
+EMAIL_PATTERN = re.compile(
+    r"(?i)(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@(?:[A-Z0-9-]+\.)+[A-Z]{2,})(?![A-Z0-9._%+-])"
+)
+ALLOWED_EXAMPLE_USERS = {"example", "example-user"}
+ALLOWED_EMAIL_DOMAINS = {
+    "example.com",
+    "example.net",
+    "example.org",
+    "users.noreply.github.com",
+}
 
 
 def candidate_files() -> list[Path]:
@@ -57,11 +77,7 @@ def check_tracked_path(path: Path) -> list[str]:
         errors.append(f"tracked build or dependency output: {relative}")
     if path.name == ".env" or (path.name.startswith(".env.") and path.name != ".env.example"):
         errors.append(f"tracked environment file: {relative}")
-    if (
-        relative.startswith("data/local/")
-        or relative.startswith("services/api/data/")
-        or relative.startswith("services/api/storage/")
-    ) and relative not in ALLOWED_DATA_FILES:
+    if relative.startswith(RUNTIME_DATA_PREFIXES) and relative not in ALLOWED_DATA_FILES:
         errors.append(f"tracked runtime/test data: {relative}")
     return errors
 
@@ -73,6 +89,23 @@ def check_text(path: Path, text: str) -> list[str]:
         errors.append(f"private key marker in tracked text: {relative}")
     if "file:" + "//" in text:
         errors.append(f"machine-local file URI in tracked text: {relative}")
+
+    local_user_names = {
+        *UNIX_HOME_PATTERN.findall(text),
+        *WINDOWS_HOME_PATTERN.findall(text),
+    }
+    for user_name in sorted(local_user_names):
+        if user_name.lower() not in ALLOWED_EXAMPLE_USERS:
+            errors.append(
+                f"machine-local user path in tracked text: {relative}: {user_name}"
+            )
+
+    for email_address in sorted(set(EMAIL_PATTERN.findall(text))):
+        domain = email_address.rsplit("@", 1)[1].lower()
+        if domain not in ALLOWED_EMAIL_DOMAINS and not domain.endswith(
+            (".example", ".invalid")
+        ):
+            errors.append(f"non-example email address in tracked text: {relative}")
 
     for host in HTTP_HOST_PATTERN.findall(text):
         normalized = host.rstrip(".").lower()
@@ -125,8 +158,9 @@ def main() -> int:
     print(
         f"[PASS] Checked {len(files)} tracked or unignored files and {markdown_count} "
         "Markdown files; "
-        "no forbidden artifacts, private-key markers, non-reserved FlowNote hosts, "
-        "or broken relative links were found."
+        "no forbidden artifacts, private-key markers, machine-local user paths, "
+        "non-example email addresses, non-reserved FlowNote hosts, or broken relative "
+        "links were found."
     )
     return 0
 

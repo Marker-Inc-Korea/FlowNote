@@ -153,36 +153,74 @@ def _ensure_document(session, *, category: str, variant: int) -> tuple[str, str]
 
 def _ensure_document_domain_tags(session, document_id: str) -> None:
     for tag_type, (code, name) in DOMAIN_TAGS.items():
-        tag_id = f"tag-{DATASET_VERSION}-{tag_type}-{code}"
-        if session.scalar(select(TagDefinition.id).where(TagDefinition.tag_id == tag_id)) is None:
-            session.add(TagDefinition(
-                tag_id=tag_id,
-                tag_type=tag_type,
-                code=code,
-                name=name,
-                is_active=True,
-            ))
-            session.flush()
+        tag_id = _ensure_tag_definition(
+            session,
+            preferred_tag_id=f"tag-{DATASET_VERSION}-{tag_type}-{code}",
+            tag_type=tag_type,
+            code=code,
+            name=name,
+        )
         if session.scalar(select(DocumentTag.id).where(
             DocumentTag.document_id == document_id,
             DocumentTag.tag_id == tag_id,
         )) is None:
             session.add(DocumentTag(document_id=document_id, tag_id=tag_id))
-    marker_id = f"tag-{DATASET_VERSION}-readiness-track"
-    if session.scalar(select(TagDefinition.id).where(TagDefinition.tag_id == marker_id)) is None:
-        session.add(TagDefinition(
-            tag_id=marker_id,
-            tag_type="custom",
-            code="smoke-regression",
-            name="SMOKE_REGRESSION",
-            is_active=True,
-        ))
-        session.flush()
+    marker_id = _ensure_tag_definition(
+        session,
+        preferred_tag_id=f"tag-{DATASET_VERSION}-readiness-track",
+        tag_type="custom",
+        code="smoke-regression",
+        name="SMOKE_REGRESSION",
+        require_active=True,
+    )
     if session.scalar(select(DocumentTag.id).where(
         DocumentTag.document_id == document_id,
         DocumentTag.tag_id == marker_id,
     )) is None:
         session.add(DocumentTag(document_id=document_id, tag_id=marker_id))
+
+
+def _ensure_tag_definition(
+    session,
+    *,
+    preferred_tag_id: str,
+    tag_type: str,
+    code: str,
+    name: str,
+    require_active: bool = False,
+) -> str:
+    existing = session.scalar(
+        select(TagDefinition).where(
+            TagDefinition.tag_type == tag_type,
+            TagDefinition.code == code,
+        )
+    )
+    if existing is not None:
+        if require_active and not existing.is_active:
+            raise RuntimeError(
+                f"Synthetic readiness tag {tag_type}/{code} exists but is inactive."
+            )
+        return existing.tag_id
+
+    conflicting_id = session.scalar(
+        select(TagDefinition).where(TagDefinition.tag_id == preferred_tag_id)
+    )
+    if conflicting_id is not None:
+        raise RuntimeError(
+            f"Synthetic tag ID {preferred_tag_id} is already used by "
+            f"{conflicting_id.tag_type}/{conflicting_id.code}."
+        )
+
+    created = TagDefinition(
+        tag_id=preferred_tag_id,
+        tag_type=tag_type,
+        code=code,
+        name=name,
+        is_active=True,
+    )
+    session.add(created)
+    session.flush()
+    return created.tag_id
 
 
 def _field_comment_source_hash(comment: FieldComment) -> str:

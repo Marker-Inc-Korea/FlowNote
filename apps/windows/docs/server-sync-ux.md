@@ -1,6 +1,6 @@
 # 서버 동기화 실패와 재시도 UX
 
-이 문서는 2026-08-09 현재 `ServerSyncService`, 문서 승인 작업함, 실패 진단 코드와 WPF 이력 화면 기준이다. 아래 누적 건수는 당시 보존 DB의 검증 기록이며 고정 기대값이 아니다.
+이 문서는 현재 `ServerSyncService`, 문서 승인 작업함, 실패 진단 코드와 WPF 이력 화면 기준이다.
 
 ## 화면 기준
 
@@ -112,26 +112,11 @@ FieldComment 첨부는 경로의 서버 comment ID를 multipart `parentCommentId
 | 수동 조치 필요 | 서버 또는 문서 운영 담당자 | 1영업일 안 | 0회 | URL·인증·원본 복구 증거 또는 복구 불가 승인 사유 기록 |
 | reconciliation 충돌 | 승인 관리자 | 7일 안 | 0회 | 양쪽 hash, 관리자 사유, 승인자, `APPROVED_CONFLICT` 또는 승인된 재시도 상태 기록 |
 
-`sync-convergence-20260726-01` 최종 읽기 전용 감사 시점에는 비완료 1,184건이 모두 운영 상태와 다음 조치를 가졌고 사유 없는 `FAILED/PENDING`은 0건이었다. 분포는 보존 구 형식 829건, 선행 조건 대기 301건, 수동 조치 필요 28건, reconciliation 충돌 26건이다. 422 의미 검증 거부와 403 권한 거부는 무의미한 자동 재시도 대신 수동 조치로 분류한다. idempotency key 중복과 mapping 복합키 중복, 지원 대상 orphan mapping/report source는 모두 0건이었다. 별도로 과거 스모크가 서버 ID를 직접 source로 저장한 `legacy-report-source-*` 40건은 현재 지원 source와 합치지 않고 보존 구 형식으로 유지한다. DB 실행 전후 SHA-256은 같았다. 같은 run의 신규 정상 mutation 13건은 모두 `SYNCED`였고 재실행 뒤 서버 문서·버전·mutation receipt·revision 증가는 0건이었다. 이 수치는 누적 DB의 시점 기록이므로 회귀 테스트의 고정 기대값으로 사용하지 않는다.
+## 실패 큐 분류와 구 형식 처리
 
-## 2026-07-10 실패 큐 분류와 잔여 PENDING 정리
+`server_sync_queue`는 `entity_type`, `action`, `status`, `last_error`를 기준으로 서버 설정 오류, 선행 원천 대기, 로컬 파일 누락, 구 형식 큐와 실제 서버 오류를 구분한다. 서버 URL·인증·네트워크 오류는 원인을 조치한 뒤 재시도하고, 선행 문서·버전·FieldComment가 없는 항목은 서버 호출 없이 보류한다. 로컬 파일이 없으면 원본 위치를 복구하기 전까지 재전송하지 않는다.
 
-정리 실행 전 WPF 공통 SQLite 기준은 `SYNCED` 520건, `FAILED` 293건, `PENDING` 300건이다. 기존 실패 293건은 아래 다섯 운영 분류로 나뉜다. 테스트 이력 보존 규칙에 따라 기존 큐와 SQLite 기록은 삭제하지 않는다.
-
-현재 `sqlite3 data/local/flownote.local.sqlite`에서 `server_sync_queue`를 `entity_type`, `action`, `status`, `last_error`로 묶으면 실패 큐는 다음 패턴으로 나뉜다.
-
-- 서버 URL 미설정 9건: 문서, 접근 로그 시작/종료/다운로드 차단, 문서 공개, 문서 상태, 문서 버전, FieldComment, FieldComment 첨부가 각 1건씩 남아 있다. 서버 URL과 로그인 상태를 다시 확인한 뒤 재시도한다.
-- 선행 문서 미동기화 224건: 접근 로그 다운로드 차단 91건, 접근 로그 종료 26건, 접근 로그 시작 26건, FieldComment 21건, 문서 공개 20건, 문서 상태 20건, 문서 버전 20건. 같은 문서의 `document/register_document`가 먼저 서버 ID와 `synced_at`을 받아야 한다.
-- 로컬 파일 누락 20건: `document/register_document`. 서버가 실행되어도 파일이 없으면 재시도할 수 없으므로 운영자가 원본 파일 위치를 복구해야 한다.
-- 선행 FieldComment 미동기화 20건: `field_comment_attachment/register_field_comment_attachment`. 첨부보다 FieldComment 서버 등록이 먼저다.
-- 구 FieldNote 큐 20건: `field_note/register_field_note` 10건, `field_note_attachment/register_field_note_attachment` 10건. 현재 명칭과 API는 FieldComment 기준이므로 자동 재전송 대상이 아니라 관리자 검토 후 전환 또는 별도 마이그레이션으로 정리한다.
-- 실제 서버/설정 오류 9건: 현재는 모두 서버 URL 미설정이며 문서, 접근 로그 시작/종료/다운로드 차단, 문서 공개, 문서 상태, 문서 버전, FieldComment, FieldComment 첨부가 각 1건씩 남아 있다. 인증 만료, 네트워크 실패, 서버 응답 오류도 같은 운영 범주에서 원인을 조치한 뒤 재시도한다.
-
-실행 전 `PENDING` 300건은 예전 로컬 큐 형식의 `create` action이다. `document/create` 60건, `document_version/create` 6건, `document_view_log/create` 72건, `field_comment/create` 144건, `field_comment_attachment/create` 18건이다. 2026-07-10 정리에서는 이 행을 삭제하거나 현재 action으로 임의 변환하지 않고 모두 `FAILED`와 구 형식 보류 사유로 분류했다. 정리 후 큐는 `SYNCED` 520건, `FAILED` 593건, `PENDING` 0건이며, 300건의 `attempt_count`는 모두 0으로 서버 호출이 없었음을 확인했다. 이후 재시도 코드도 `action = create`를 `MarkAttempt` 전에 보류하므로 서버 호출과 시도 횟수 증가 없이 같은 분류를 유지한다.
-
-후속 FastAPI 연동 스모크까지 실행한 2026-07-10 기록은 `SYNCED` 609건, `FAILED` 589건, `PENDING` 0건이다. 구 형식 create 300건은 모두 `attempt_count = 0`을 유지했고, `server_id_mappings` 767건의 중복 그룹은 0건이었다. 이 수치는 당시 공통 SQLite의 누적 기록이며 현재 코드의 고정 기대값이 아니다.
-
-정리 도중의 중간 snapshot에는 `server_id_mappings` 648건이 기록되어 있었다. 이후 누적 실행으로 건수가 증가했으므로 648건을 현재 수치로 사용하지 않는다. 현재 코드 동작은 이미 서버에 존재하는 문서 버전을 `document_versions.version_no`로 찾아 `server_version_id`, `synced_at`, `server_id_mappings`를 복구하고 중복 업로드하지 않는 것이다. 큐 재등록도 `idempotency_key` 유니크 제약과 `ON CONFLICT(idempotency_key)`로 중복 행을 만들지 않는다.
+구 `FieldNote`와 `create` action은 현재 API 계약의 자동 전송 대상이 아니다. 자동 변환하거나 시도 횟수를 올리지 않고 `FAILED`와 명시적 보류 사유로 분류한다. 관리자는 원천과 hash를 확인한 뒤 현재 action으로 별도 전환하거나 보존 종결을 승인한다. 현재 코드가 이미 서버에 존재하는 문서 버전을 복구할 때는 `version_no`와 SHA-256이 모두 일치해야 하며, 큐 재등록은 `idempotency_key` 유일 제약으로 중복 행을 만들지 않는다.
 
 controlled copy는 사용자가 즉시 수행하는 서버 발급·스트리밍 흐름이므로 이 큐의 대상이 아니다. 실패한 티켓을 재사용하거나 동기화 큐에 넣지 않고 새 요청에서 공개 상태와 권한을 다시 검사한다.
 

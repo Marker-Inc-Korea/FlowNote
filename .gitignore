@@ -58,6 +58,7 @@ services/api/data/*
 !/data/local/
 data/local/*
 data/local/Files/**
+/Data/
 # Runtime and test databases are preserved locally but never tracked by Git.
 *.sqlite
 # Accidental/temporary API SQLite name; the maintained server DB uses .sqlite3.
@@ -67,6 +68,8 @@ apps/windows/src/FlowNote.Windows.App/Data/*test*.md
 apps/windows/src/FlowNote.Windows.App/Data/*smoke*.md
 apps/windows/src/FlowNote.Windows.App/Data/Files/**
 apps/windows/src/FlowNote.Windows.App/Data/Files/Uploads/
+# The WPF app creates this tree at runtime. Source fixtures belong in test projects.
+apps/windows/src/FlowNote.Windows.App/Data/
 *.sqlite3
 *.db
 *.db-shm
