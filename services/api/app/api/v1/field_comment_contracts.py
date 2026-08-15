@@ -33,7 +33,7 @@ ATTACHMENT_ALLOWED_EXTENSIONS = {
 
 
 class FieldCommentCreateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     document_id: str | None = Field(default=None, alias="documentId")
     document_version_id: str | None = Field(default=None, alias="documentVersionId")
@@ -66,7 +66,7 @@ class FieldCommentCreateRequest(BaseModel):
 
 
 class FieldCommentReviewRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     status: str | None = None
     normalized_content: str | None = Field(default=None, alias="normalizedContent")
@@ -83,7 +83,7 @@ class FieldCommentReviewRequest(BaseModel):
 
 
 class FieldCommentBulkReviewRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     comment_ids: list[str] = Field(alias="commentIds", min_length=1, max_length=200)
     status: str | None = None
@@ -93,7 +93,7 @@ class FieldCommentBulkReviewRequest(BaseModel):
 
 
 class FieldCommentBulkReviewItemRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     comment_id: str = Field(alias="commentId", min_length=1)
     base_review_revision: int = Field(alias="baseReviewRevision", ge=1)
@@ -101,7 +101,7 @@ class FieldCommentBulkReviewItemRequest(BaseModel):
 
 
 class FieldCommentBulkReviewV2Request(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     items: list[FieldCommentBulkReviewItemRequest] = Field(min_length=1, max_length=200)
     status: str | None = None

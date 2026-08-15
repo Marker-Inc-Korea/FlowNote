@@ -1,5 +1,17 @@
 # 검증 자동화
 
+## 2026-08-15 구현 완료 기능 마무리 점검
+
+AI 목표와 후속 연구 항목은 이번 범위에서 제외하고, 구현 완료로 분류된 FastAPI·WPF 기능의 실행 경로와 입력 계약을 다시 점검했다. 앱 팩터리로 만든 시험·도구용 FastAPI 인스턴스에는 전역 앱과 달리 루트 `GET /`가 등록되지 않던 문제를 수정하고, 응답 환경값도 전역 설정이 아니라 해당 앱 인스턴스의 설정에서 읽도록 바꿨다. 인증 없는 경로는 OpenAPI 기준으로 루트 `/`, 로그인·갱신, 세 health 경로, `GET /api/v1/sync/manifest`와 `GET /api/v1/tags`뿐이며 기존 API·보안 문서와 정확히 일치해 공개 범위를 임의로 변경하지 않았다.
+
+태그, 서버 계정과 감사 사유, 업무 채널, FieldComment 원문, 보고서, 작업순서와 알림 후보 전달의 필수 문자열은 앞뒤 공백을 제거한 뒤 검사하도록 요청 계약을 보강했다. 공백만 있는 이름·제목·원문·감사 사유·멱등키가 빈 업무 데이터로 저장되는 경로를 차단하되, 비밀번호는 공통 정리에서 제외해 입력 문자열 자체를 검증한다. 작업순서 항목을 `HOLD`로 바꿀 때는 공백이 아닌 `holdReason` 또는 `changeReason`을 요구하며, 실패 요청은 보드 revision과 항목 상태를 바꾸지 않는다. WPF 작업순서 관리 화면도 제목과 보류 사유를 서버 요청 전에 한글로 안내하고 입력값을 정리해 보낸다.
+
+추가 회귀 3건을 포함한 FastAPI 수집 수는 212건이며 누적 SQLite와 새 소스·빈 DB에서 각각 212/212가 통과했다. 첫 빈 DB 검증 복사본은 저장소 루트 `scripts/`를 포함하지 않아 기존 AI 시험 2건이 파일 없음으로 실패했고 나머지 210건은 통과했다. 이 실패 폴더는 `/private/tmp/flownote-completed-feature-20260815-H7TzXC`에 보존했다. 루트 구조를 포함한 첫 성공 복사본 `/private/tmp/flownote-completed-feature-full-20260815-TDj104`와 입력 계약 보강 뒤 최종 복사본 `/private/tmp/flownote-completed-feature-final-20260815-YNn9s7`에서는 각각 212/212가 통과했다. Ruff도 통과했다.
+
+WPF Core는 샌드박스의 테스트 러너 소켓 제한으로 첫 실행이 중단됐지만, 같은 명령을 허용된 외부 실행으로 다시 확인해 120/120이 통과했다. WPF 앱 교차 빌드는 경고 0·오류 0이었다. 테스트 단계의 NuGet 취약성 feed 조회는 네트워크 오류 `NU1900`이 남았으나 컴파일과 테스트 결과에는 실패가 없었다. Android 코드는 변경하지 않았으며 최신 기준 39/39, debug 빌드와 lint 통과 기록을 유지한다. 운영 HTTPS, 실제 Windows UI와 승인 Android 실단말은 이번에 실행하지 않았고 최신 운영 연동 기록은 2026-08-09 결과다.
+
+후속 문서 정리에서는 README, 문서 안내, 연구 결과, 구현 로드맵과 Windows 구현 문서의 완료 목록을 비AI 업무 기능 기준으로 통일했다. AI 후보·ground-truth·안전장치 API와 화면은 코드 존재 여부와 별개로 후속 연구·시험 기반에 배치하고 실제 AI 사용자 기능의 완료 판정에서 제외했다. 현재 기준 문서 날짜는 2026-08-15로 맞추고 작업순서 `HOLD` 사유의 서버·WPF·매뉴얼 표현을 통일했다. 공개 tree 검사는 추적 또는 Git 비제외 파일 497개와 Markdown 56개에서 금지 산출물·비밀키 표식·예약 외 FlowNote host·깨진 상대 링크 0건으로 통과했다. OpenAPI와 서버 README는 163개 method/path 조합이 일치했고 ORM 70개 테이블은 데이터 모델 문서에서 누락이 없었다. `git diff --check`도 통과했으며 문서 정리 뒤 코드 테스트는 다시 실행하지 않고 바로 앞의 FastAPI 212/212와 WPF 120/120 결과를 유지했다.
+
 ## 2026-08-15 공개 소스 첫 실행 경로 검증
 
 Git 제외 `.env`를 자동으로 만드는 `scripts/bootstrap_local_evaluation.py`와 순수 변환 단위 시험 3건을 추가했다. 도구는 `services/api/.env.example`의 필수 키가 정확히 하나씩 있는지 확인하고, 무작위 초기 관리자 비밀번호와 32자보다 긴 token secret을 넣으며 외부 AI 호출 비활성 설정을 유지한다. 기존 출력 파일은 덮어쓰지 않고 POSIX 환경에서는 파일 권한을 `0600`으로 제한한다.
@@ -54,7 +66,7 @@ access token 공개 예시값도 `local`, `test` 이외 환경에서 거부하�
 | `run_id` | 없음 | 없음 |
 | 소스 커밋 | 없음 | 없음 |
 | 환경 | 없음 | 없음 |
-| FastAPI | 현재 수집·guard 209건, 보조 실행 209/209 | Windows x64 수집·JUnit 무생략 실행 대기 |
+| FastAPI | 현재 수집·guard 212건, 보조 실행 212/212 | Windows x64 수집·JUnit 무생략 실행 대기 |
 | WPF Core | 현재 수집·guard 120건, macOS 보조 실행 120/120 | Windows 수집·TRX 무생략 실행 대기 |
 | WPF 앱 | macOS 교차 build PASS, compiler warning 0 | 동일 |
 | 운영 HTTPS 스모크 | `production-smoke-20260808-235737Z-db76f834` PASS | Windows 표준 실행 안의 재현 대기 |

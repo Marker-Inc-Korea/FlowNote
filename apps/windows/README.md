@@ -4,11 +4,13 @@
 
 현재 프로젝트는 WPF UI `net10.0-windows`, Core와 스모크 테스트 `net10.0`을 대상으로 한다. 현재 기능 목록은 `FlowNote.Windows.App`, `FlowNote.Windows.Core`, `FlowNote.Windows.SmokeTests` 코드에 실제 연결된 범위만 포함한다.
 
-이 문서는 2026-08-09 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
+이 문서는 2026-08-15 현재 코드 기준이다. 운영 설치나 현장 검증이 남은 내용은 현재 구현과 분리해 후속 제품 방향에만 둔다.
 
 현재 화면의 역할별 사용 순서는 [Windows 사용 매뉴얼](../../docs/manuals/windows-user-guide.md), 설치·연결 장애는 [공통 장애 대응](../../docs/manuals/troubleshooting.md)을 따른다.
 
-## 현재 구현
+## 현재 완료된 비AI 구현
+
+아래 목록은 현재 업무 기능으로 완료 판정한 Windows 범위다. AI 후보·정답셋·운영 안전장치 화면은 이 목록에서 제외하고 다음 절에 연구·시험 기반으로 구분한다.
 
 - 로그인 화면과 메인 탐색기 화면. 로그인 역할에 맞춘 첫 업무 3개와 기존 업무 창 바로 가기, 파일명·제목·태그·사용자·최근 코멘트 검색, 문서 상태 필터, 권한 문의 안내, 동기화 미완료 건수·로컬 보존·다음 조치 표시를 포함한다.
 - 로컬 SQLite 초기화와 기본 계정/그룹/폴더 시드
@@ -33,17 +35,16 @@
 - 채널함: 서버 내 채널, 채널 메시지/알림, 인수인계 조회, 읽음/수신 확인, 원천 링크 복사, 후속 FieldComment 생성. 같은 인수인계·작성자·내용은 안정된 요청 식별값을 재사용하고 채널 알림 실패를 부분 성공으로 구분해 원천 코멘트 중복을 막는다.
 - 채널 관리: 서버 채널 생성, 멤버 추가/제외
 - 인수인계 확인 현황: 운영 단위·채널별 목록, 미확인·후속 조치 인원 집계, 수신자별 receipt 상태 변경, 후속 FieldComment 생성과 원천/수신 확인 보존·다음 행동 안내
-- FastAPI 서버 인증과 승인 단말/문서 검토·공개 승인/controlled copy/FieldComment/첨부/접근 로그/보고서/작업순서/채널·인수인계/AI 검색 근거·회귀 평가/외부 AI 운영 API 클라이언트
-- AI 근거 후보 운영 점검: 서버 후보 재생성, 품질 지표, 제외 사유, 후보 목록, 원천 추적값 복사
-- `AI 정답셋`: 후보 포함 근거와 수동 제외 원천으로 사례 구성, 독립 2인 사례 승인, 불변 dataset version 작성·검토·2단계 승인·대체·폐기, 평가 run 실행·이전 run 비교, 실제 익명 현장 24칸 독립 표본 검토와 불일치 제3 합의, 실제/합성 자료와 외부 호출 차단 사유를 구분한 운영 준비도 확인
-- `system-admin` 전용 `AI 운영` 화면: 전송 승인 생성·철회, 프롬프트 검토·승인·활성화·폐기, 민감정보 정책 작성·분리 검토·승인·활성·대체·철회·폐기, 전역/현재 현장 kill switch와 호출·비용·보존 정책, 정제 감사 조회/CSV 내보내기, 만료 보존 일괄 실행, 고객/현장 질의 상세, 단일 즉시 만료와 legal hold 설정·해제·감사 read-back
+- FastAPI 서버 인증과 승인 단말/문서 검토·공개 승인/controlled copy/FieldComment/첨부/접근 로그/보고서/작업순서/채널·인수인계 API 클라이언트
 - 서버 동기화 큐: 문서 최초 등록, 문서 버전, 문서 상태, 문서 태그, FieldComment, FieldComment 검토, FieldComment 첨부, 문서 접근 로그, 보고서 서버 저장. 태그 delta 병합과 revision별 기준 집합, 상태·태그 mutation receipt와 read-back, FieldComment 검토 base revision·mutation key, 첨부 부모·파일 SHA-256, 보고서 source 집합 hash, 문서 버전·첨부 idempotency key 전달을 포함한다. 현재 UI의 문서 공개는 이 큐에 새 항목을 만들지 않고 서버 승인 작업함에서 승인 ID와 함께 직접 처리한다. 기존 `document_publish/publish_document_version` 큐는 누적 이력과 호환 처리기로만 보존하며 승인 강제 기본값에서는 승인 ID가 없어 자동 공개하지 못한다. 이력 창은 큐 깊이·최장 대기·최근 처리량·실패 분포·row별 운영 상태와 구조화된 충돌의 서버 값·로컬 요청·자동 병합 가능·사용자 선택 항목을 표시한다.
 - 서버 복구 경계 보호: sync manifest의 instance/epoch/API contract와 알림 cursor를 URL별 binding에 저장하고, URL·instance·epoch 변경, cursor 역행 또는 `partial_restore`·`old_database_new_files`·`missing_file`·`wrong_server_epoch` 복구 장애 신호 시 자동 전송과 polling 중지. 복구 장애 manifest의 pilot run·backup set·복구 승인·담당자와 수렴 상태도 binding에 보존
 - 이력 창 `서버 재결합`: 연결 상태와 안전 수렴 상태, 차단 원인, 보존된 원천, 승인 전 금지 행동, 담당자·증거 연결, 다음 단계를 분리해 표시하고 전체 큐 inventory의 `CONFIRMED`/`ABSENT`/`DIVERGED` 판정과 `REBOUND`/`REQUEUE`/`CONFLICT` 제안 검토. 명시적 장애 run은 관리자 승인 뒤에도 `POST_APPROVAL_RESTART_REQUIRED`로 전송·polling 차단을 유지하고, 서버의 `FLOWNOTE_RESTORE_*` 표지 제거와 재시작 뒤 `업무 재개 확인`에서 정상 manifest를 읽어야 cursor 재추적·재전송·polling 재개
 - 보존 동기화 실패 전환 CLI: FAILED 큐를 읽기 전용 dry-run으로 분류하고, plan hash와 row별 운영자 승인을 받은 구 `create`/FieldNote 항목만 현재 action의 별도 큐로 무손실 전환
 - 동기화 backlog 읽기 전용 감사: 큐 운영 상태·담당자·처리 기한·자동 재시도 한도·수동 종결 기준과 DB 전후 SHA-256, 무결성, 중복, 고아 mapping/source를 JSON으로 보존
 
-WPF에는 `/api/v1/ai/queries`를 호출하는 실제 외부 AI 질의 실행 화면이나 운영 provider client가 없다. AI 화면은 외부 호출 없는 근거 후보 운영 점검, `AI 정답셋`, `system-admin` 전용 운영 제어 화면으로 분리되어 있다.
+## AI 연구·시험 화면 — 완료 목록 제외
+
+WPF에는 `/api/v1/ai/queries`를 호출하는 실제 외부 AI 질의 실행 화면이나 운영 provider client가 없다. 아래 화면은 후속 연구를 위한 후보 품질·ground-truth·안전장치 운영 도구이며 실제 AI 사용자 기능의 완료 판정에 포함하지 않는다.
 
 AI 검색 근거 후보는 현재 FastAPI 서버 API, WPF 서버 클라이언트, `AI 근거 후보 운영 점검` 화면에 구현되어 있다. 이 화면은 `/api/v1/ai-search/candidates/rebuild`, `/api/v1/ai-search/quality`, `/api/v1/ai-search/candidates`, `/api/v1/ai-search/readiness`를 호출해 외부 AI 호출 전 데이터 품질, 원천 추적 가능성, 서버 scope별 실제 현장/스모크 준비도를 확인한다. `AI 정답셋`의 `사례·원천 구성` 창은 후보를 포함 근거로 선택하고 실제 source ID·선택적 version ID·제외 사유·설명을 제외 근거로 입력한다. 첫 등록 사례는 비활성으로 남고 다른 사용자가 2차 승인해야 활성화된다. 승인 사례는 dataset version으로 묶어 작성자·검토자·두 승인자를 분리하고, 승인 snapshot에 결합한 평가 run을 실행·비교한다. 합성/시험 회귀와 실제 현장 준비도는 별도 계열로 유지한다.
 
@@ -189,7 +190,7 @@ WPF smoke는 시작·종료 시 주요 로컬 테이블 건수를 읽고 오늘 
 
 서버 전용 `controlled_copy_grants`가 WPF 공통 DB에 잘못 생성되어 `document_versions.version_id` FK mismatch가 나는 경우 DB나 원천 파일을 삭제하지 않는다. 앱과 서버를 멈춘 뒤 `python scripts/repair-wpf-controlled-copy-schema.py --database data/local/flownote.local.sqlite --run-id <새-run-id>`를 저장소 루트에서 실행한다. 도구는 `data/local/wpf-schema-repair/<run-id>/`에 원본 SQLite backup, 전후 row 수·DDL·FK·hash와 요약을 먼저 보존하고 grant row를 보존 테이블로 옮긴 뒤 무결성을 재검사한다. 실제 공통 DB 복구 run `WPF-P0-20260720-0840`은 문서 버전 3,384행 hash를 유지하며 `quick_check=ok`, FK 위반 0건으로 끝났다. FastAPI도 WPF 로컬 schema를 서버 DB URL로 받으면 테이블 생성 전에 거부한다.
 
-2026-08-09 현재 소스의 수집 대상과 표준 스크립트 guard는 FastAPI 209건·WPF Core 120건·Android 39건으로 일치한다. 보조 실행에서 FastAPI 209/209, WPF Core 120/120, Android 39/39와 WPF·Android 빌드가 통과했고 운영 HTTPS 스모크도 통과했다. Windows에서 수집 목록·JUnit·원시 TRX와 운영 HTTPS 스모크를 같은 clean 소스 커밋으로 새 run ID에서 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 Windows 통합 기준선 재확립은 `대기`다.
+2026-08-15 현재 소스의 수집 대상과 표준 스크립트 guard는 FastAPI 212건·WPF Core 120건·Android 39건으로 일치한다. 보조 실행에서 FastAPI 누적 DB·새 DB 212/212, WPF Core 120/120과 WPF 빌드가 통과했고, 변경되지 않은 Android의 최신 기준은 39/39와 debug 빌드·lint 통과다. 최신 운영 HTTPS 스모크는 2026-08-09에 통과했다. Windows에서 수집 목록·JUnit·원시 TRX와 운영 HTTPS 스모크를 같은 clean 소스 커밋으로 새 run ID에서 2회 완료해 각각 `partial_run=false`, `verification-summary.json=PASSED`가 나오기 전까지 Windows 통합 기준선 재확립은 `대기`다.
 
 스모크 테스트는 공통 SQLite에 기록을 누적한다. 테스트 DB와 파일 산출물은 사용자가 명시적으로 삭제를 지시하지 않는 한 보존한다.
 

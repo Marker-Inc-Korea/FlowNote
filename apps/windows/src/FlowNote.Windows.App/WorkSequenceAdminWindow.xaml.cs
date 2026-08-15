@@ -44,12 +44,18 @@ public partial class WorkSequenceAdminWindow : Window
     private async void CreateBoardButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureMutationAllowed()) return;
+        var title = BoardTitleTextBox.Text.Trim();
+        if (string.IsNullOrEmpty(title))
+        {
+            StatusTextBlock.Text = "작업판 제목을 입력하세요.";
+            return;
+        }
         var key = NewMutationKey("board");
         await RunMutationAsync(
             () => serverClient!.CreateWorkSequenceBoardAsync(new ServerWorkSequenceBoardCreateRequest
             {
-                Title = BoardTitleTextBox.Text,
-                LineCode = LineCodeTextBox.Text,
+                Title = title,
+                LineCode = LineCodeTextBox.Text.Trim(),
                 BoardDate = DateOnly.FromDateTime(DateTime.Today),
                 CreatedBy = actorId,
                 IdempotencyKey = key
@@ -75,12 +81,18 @@ public partial class WorkSequenceAdminWindow : Window
             return;
         }
 
+        var title = ItemTitleTextBox.Text.Trim();
+        if (string.IsNullOrEmpty(title))
+        {
+            StatusTextBlock.Text = "작업 항목 제목을 입력하세요.";
+            return;
+        }
         var key = NewMutationKey("item");
         await RunMutationAsync(
             () => serverClient!.AddWorkSequenceItemAsync(board.BoardId, new ServerWorkSequenceItemCreateRequest
             {
-                Title = ItemTitleTextBox.Text,
-                AssignedTo = AssignedToTextBox.Text,
+                Title = title,
+                AssignedTo = AssignedToTextBox.Text.Trim(),
                 CreatedBy = actorId,
                 IdempotencyKey = key,
                 BaseBoardRevision = board.BoardRevision
@@ -105,6 +117,12 @@ public partial class WorkSequenceAdminWindow : Window
         }
 
         var status = (StatusComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "WAITING";
+        var reason = ReasonTextBox.Text.Trim();
+        if (status == "HOLD" && string.IsNullOrEmpty(reason))
+        {
+            StatusTextBlock.Text = "보류 상태로 변경하려면 사유를 입력하세요.";
+            return;
+        }
         var key = NewMutationKey("status");
         await RunMutationAsync(
             () => serverClient!.UpdateWorkSequenceItemStatusAsync(
@@ -114,8 +132,8 @@ public partial class WorkSequenceAdminWindow : Window
                 {
                     Status = status,
                     ActorId = actorId,
-                    ChangeReason = ReasonTextBox.Text,
-                    HoldReason = status == "HOLD" ? ReasonTextBox.Text : null,
+                    ChangeReason = reason,
+                    HoldReason = status == "HOLD" ? reason : null,
                     IdempotencyKey = key,
                     BaseBoardRevision = board.BoardRevision
                 }),
@@ -163,13 +181,14 @@ public partial class WorkSequenceAdminWindow : Window
         var targetIndex = index + direction;
         if (index < 0 || targetIndex < 0 || targetIndex >= ids.Count) return;
         (ids[index], ids[targetIndex]) = (ids[targetIndex], ids[index]);
+        var reason = ReasonTextBox.Text.Trim();
         var key = NewMutationKey("order");
         await RunMutationAsync(
             () => serverClient!.ReorderWorkSequenceItemsAsync(board.BoardId, new ServerWorkSequenceReorderRequest
             {
                 ItemIds = ids,
                 ActorId = actorId,
-                ChangeReason = ReasonTextBox.Text,
+                ChangeReason = reason,
                 IdempotencyKey = key,
                 BaseBoardRevision = board.BoardRevision
             }),

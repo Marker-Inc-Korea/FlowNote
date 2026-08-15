@@ -2,7 +2,7 @@
 
 `apps/android/`는 FlowNote Android 현장 단말 클라이언트이다. 승인된 현장 태블릿 또는 러기드 단말에서 공개 문서 목록·상세와 PDF/이미지/TXT 앱 내부 보안 열람, FieldComment, 사진 기록, 신호등식 기록, 채널 알림 확인, 인수인계 작성·확인·보류와 같은 원천의 후속 FieldComment 작성을 수행한다.
 
-기능 목록은 2026-08-09 현재 `app/src/main` 코드 기준이며 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
+기능 목록은 2026-08-15 현재 `app/src/main` 코드 기준이며 운영 배포나 실단말에서만 확정할 항목은 별도 후속 범위로 표시한다.
 
 현장 작업자의 실제 사용 순서는 [Android 현장 사용 매뉴얼](../../docs/manuals/android-field-guide.md), 단말·전송 장애는 [공통 장애 대응](../../docs/manuals/troubleshooting.md)을 따른다.
 
