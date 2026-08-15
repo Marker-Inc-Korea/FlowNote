@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from app.api.v1.router import api_v1_router
 from app.core.config import Settings, settings
@@ -53,12 +53,15 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     app.state.database = Database(app_settings.database_url, echo=app_settings.database_echo)
     app.state.ai_provider = configured_provider_adapter(app_settings)
     app.include_router(api_v1_router, prefix="/api/v1")
+
+    @app.get("/")
+    def root(request: Request) -> dict[str, str]:
+        return {
+            "service": "FlowNote API",
+            "environment": request.app.state.settings.environment,
+        }
+
     return app
 
 
 app = create_app()
-
-
-@app.get("/")
-def root() -> dict[str, str]:
-    return {"service": "FlowNote API", "environment": settings.environment}

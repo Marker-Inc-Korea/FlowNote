@@ -6,7 +6,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -26,27 +26,30 @@ UserManagementUser = Annotated[
 
 
 class AccountCreateRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=100)
-    display_name: str = Field(min_length=1, max_length=100)
+    username: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    display_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
     role: str
     temporary_password: str = Field(min_length=8, max_length=200)
-    reason: str = Field(min_length=1, max_length=1000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
 class AccountUpdateRequest(BaseModel):
-    display_name: str | None = Field(default=None, min_length=1, max_length=100)
+    display_name: Annotated[
+        str | None,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
+    ] = None
     role: str | None = None
     status: str | None = None
-    reason: str = Field(min_length=1, max_length=1000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
 class PasswordResetRequest(BaseModel):
     temporary_password: str = Field(min_length=8, max_length=200)
-    reason: str = Field(min_length=1, max_length=1000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
 class RevokeSessionsRequest(BaseModel):
-    reason: str = Field(min_length=1, max_length=1000)
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
 class AccountResponse(BaseModel):

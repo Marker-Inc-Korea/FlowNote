@@ -66,7 +66,7 @@ REPORT_SAVE_STATUSES = {"DRAFT", "REVIEWED", "APPROVED", "ARCHIVED"}
 
 
 class ReportSourceRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     source_type: str = Field(alias="sourceType", min_length=1)
     source_id: str = Field(alias="sourceId", min_length=1)
@@ -77,7 +77,7 @@ class ReportSourceRequest(BaseModel):
 
 
 class ReportDraftCreateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     report_type: str = Field(alias="reportType", min_length=1)
     title: str = Field(min_length=1)
@@ -93,7 +93,7 @@ class ReportDraftCreateRequest(BaseModel):
 
 
 class ReportSaveRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     idempotency_key: str | None = Field(default=None, alias="idempotencyKey")
     draft_report_id: str | None = Field(default=None, alias="draftReportId")

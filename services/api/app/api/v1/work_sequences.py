@@ -52,7 +52,7 @@ ITEM_STATUSES = {"WAITING", "IN_PROGRESS", "HOLD", "COMPLETED"}
 
 
 class WorkSequenceBoardCreateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     title: str = Field(min_length=1)
     description: str | None = None
@@ -63,7 +63,7 @@ class WorkSequenceBoardCreateRequest(BaseModel):
 
 
 class WorkSequenceItemCreateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     title: str = Field(min_length=1)
     description: str | None = None
@@ -76,7 +76,7 @@ class WorkSequenceItemCreateRequest(BaseModel):
 
 
 class WorkSequenceItemStatusUpdateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     status: str = Field(min_length=1)
     actor_id: str | None = Field(default=None, alias="actorId")
@@ -87,7 +87,7 @@ class WorkSequenceItemStatusUpdateRequest(BaseModel):
 
 
 class WorkSequenceReorderRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     item_ids: list[str] = Field(alias="itemIds", min_length=1)
     actor_id: str | None = Field(default=None, alias="actorId")
@@ -708,6 +708,11 @@ def _update_item_status_mutation(
     actor_id = _validate_user_id(session, _clean_optional(request.actor_id) or current_user.user_id, "actorId")
     before = item.status
     target_hold_reason = _clean_optional(request.hold_reason or request.change_reason) if target_status == "HOLD" else None
+    if target_status == "HOLD" and target_hold_reason is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="holdReason or changeReason is required when status is HOLD.",
+        )
     hold_reason_before = item.hold_reason
     status_changed = before != target_status
     hold_reason_changed = _clean_optional(hold_reason_before) != target_hold_reason

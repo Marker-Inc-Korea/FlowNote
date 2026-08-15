@@ -2,7 +2,7 @@
 
 FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영 기본 경로는 `/api/v1`이며, 파일은 서버 로컬 `storage/`에 저장한다. 보호 API는 Bearer access token과 `auth_sessions` 상태를 함께 검증한다.
 
-이 목록은 2026-08-09 현재 OpenAPI에 등록된 163개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공한다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
+이 목록은 2026-08-15 현재 OpenAPI에 등록된 163개 method/path 조합 기준이다. 외부 AI API는 provider 중립 adapter와 기본 비활성 안전장치·운영 제어·감사 경계를 제공하지만 실제 AI 사용자 기능의 완료 판정에는 포함하지 않는다. 네트워크 adapter는 `test` 환경의 별도 명시 설정에서만 생성되며 운영 기본값은 비활성이다. controlled copy와 Android secure view는 서버에 저장된 현재 공개 버전만 각 계약에 따라 1회 스트리밍한다.
 
 운영 설치와 점검은 [서버 설치·운영 매뉴얼](../../docs/manuals/server-operations.md), 장애 대응은 [공통 장애 대응](../../docs/manuals/troubleshooting.md)을 따른다.
 
@@ -90,7 +90,7 @@ FlowNote FastAPI 서버는 SQLite 기반 현재 REST API를 제공한다. 운영
 | GET | `/api/v1/work-sequence-boards/{board_id}` | Board snapshot with ordered items and `board_revision` |
 | POST | `/api/v1/work-sequence-boards/{board_id}/items` | Add item with mutation key and base board revision |
 | PUT | `/api/v1/work-sequence-boards/{board_id}/items/order` | Reorder the complete item set with mutation key and base revision |
-| PATCH | `/api/v1/work-sequence-boards/{board_id}/items/{item_id}/status` | Change item status/hold reason with mutation key and base revision |
+| PATCH | `/api/v1/work-sequence-boards/{board_id}/items/{item_id}/status` | Change item status/hold reason with mutation key and base revision; `HOLD` requires a non-blank `holdReason` or `changeReason` |
 | GET | `/api/v1/work-sequence-boards/{board_id}/history` | Change history with mutation key and applied revision |
 | GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | Notification candidates |
 | PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | Change notification candidate status |
@@ -275,7 +275,7 @@ cd services\api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-As of 2026-08-09, the current source and `scripts/verify-preserved-tests.ps1` guards are aligned at 209 FastAPI cases, 120 WPF Core cases, and 39 Android unit tests. Supplementary runs passed FastAPI 209/209, WPF Core 120/120, Android 39/39, and the WPF and Android builds. A production HTTPS smoke run also passed health/database, Windows session, approved Android device, today's photo and handover documents, a past-document version increase, account/device deactivation, and SQLite integrity checks. The script preserves raw collection output, duplicate lists, exit codes, JUnit/TRX totals, current step, expected and actual values, evidence paths, and the new-RunId recovery command. This does not yet establish the Windows x64 integrated baseline because two complete runs from the same clean source commit have not been recorded.
+As of 2026-08-15, the current source and `scripts/verify-preserved-tests.ps1` guards are aligned at 212 FastAPI cases, 120 WPF Core cases, and 39 Android unit tests. Supplementary runs passed FastAPI 212/212 on both the cumulative and a clean database, WPF Core 120/120, and the WPF build; the latest unchanged Android baseline remains 39/39 with debug build and lint passed. The latest production HTTPS smoke run passed health/database, Windows session, approved Android device, today's photo and handover documents, a past-document version increase, account/device deactivation, and SQLite integrity checks on 2026-08-09. The script preserves raw collection output, duplicate lists, exit codes, JUnit/TRX totals, current step, expected and actual values, evidence paths, and the new-RunId recovery command. This does not yet establish the Windows x64 integrated baseline because two complete runs from the same clean source commit have not been recorded.
 
 The `system-admin` sensitive-data-policy API manages immutable customer/site versions through draft, independently reviewed, independently approved, active, superseded, approval-withdrawn, and retired states. List/detail/audit responses expose only sanitized metadata, content hashes, and item counts; raw terms, customer identifiers, endpoint values, and credentials are not returned. Mutations use stable operation keys, state tags, explicit confirmation values, and read-back. The provider boundary rechecks the active policy snapshot immediately before the call and after the response. The generic network adapter is restricted to explicit test scope and remains disabled by default; provider-specific production activation is not configured. The separate `ai_operational_policies` API manages kill switches, limits, retention periods, and audit-export permission. Query and retention audit operations are restricted to the configured customer/site scope. The server lifespan runs expired-query retention on the configured interval, while `system-admin` can run scoped bulk retention, expire one query, or place and release a reasoned legal hold. An active hold blocks all three expiry paths. WPF mutations send a stable `operationKey` and the latest detail `stateTag`; duplicate/lost-response retries return the original result, while stale, already-expired, already-released, and concurrent operations return `409`. Legal-hold rows and linked audit history are never deleted by release or expiry.
 

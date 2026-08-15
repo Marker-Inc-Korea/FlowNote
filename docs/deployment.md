@@ -1,6 +1,6 @@
 # FlowNote 배포
 
-이 문서는 2026-08-13 현재 저장소의 실행 코드와 배포 스크립트를 바탕으로 실제 도입 방법을 기록한 참고 절차다. 운영 배포 수행이나 승인은 FlowNote 연구개발 완료 조건이 아니다. 서명, MDM, 현장 인증서처럼 실제 환경에서만 정할 수 있는 값과 증거는 공개 저장소에 넣지 않고 도입 조직이 별도로 관리한다.
+이 문서는 2026-08-15 현재 저장소의 실행 코드와 배포 스크립트를 바탕으로 실제 도입 방법을 기록한 참고 절차다. 운영 배포 수행이나 승인은 FlowNote 연구개발 완료 조건이 아니다. 서명, MDM, 현장 인증서처럼 실제 환경에서만 정할 수 있는 값과 증거는 공개 저장소에 넣지 않고 도입 조직이 별도로 관리한다.
 
 문서의 호스트명, 경로, 계정과 식별자는 모두 예시다. 특히 `flownote.example`은 예약 도메인이므로 실제 연결 전에 승인된 HTTPS 주소로 반드시 바꾼다.
 
@@ -906,7 +906,7 @@ Git 제외와 로컬 보존은 다른 기준이다. 실제 고객 문서, 운영
 
 ## 검증 자동화
 
-표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·운영 HTTPS 통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 현재 소스의 수집 대상과 스크립트 guard는 FastAPI 209건, WPF Core 120건, Android 39건으로 일치한다. 2026-08-09 보조 실행은 세 테스트 묶음과 앱 빌드, 운영 HTTPS 스모크를 통과했다. 스크립트는 수집 원본·중복 목록·JUnit과 종료 코드를 보존하고 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터·새 `RunId` 실행 명령을 안내한다. 같은 clean 소스 커밋에서 Windows x64 무생략 실행을 2회 연속 통과해야 유효 Windows 통합 기준선으로 확정한다.
+표준 검증 순서와 사후 Git 산출물 점검은 [검증 자동화 문서](./verification.md)를 따른다. 저장소 루트의 `.\scripts\verify-preserved-tests.ps1`은 Windows x64와 PowerShell/.NET/Python/JDK/Android SDK/Git 기준을 먼저 확인한 뒤 FastAPI pytest 수집·중복 0·JUnit 실행, WPF Core 테스트·앱 build·운영 HTTPS 통합 smoke, 스모크 전후 WPF 공통 DB 무결성, Android 단위 테스트·debug build, `.gitignore` 제외 규칙과 실행 전후 `git status`/`git ls-files`/staged 금지 산출물을 함께 확인한다. 현재 소스의 수집 대상과 스크립트 guard는 FastAPI 212건, WPF Core 120건, Android 39건으로 일치한다. 2026-08-15 보조 실행은 FastAPI 누적 DB·새 DB 212/212, WPF Core 120/120과 WPF 앱 빌드를 통과했다. 변경되지 않은 Android의 최신 기준은 39/39와 debug 빌드·lint 통과이며, 최신 운영 HTTPS 스모크는 2026-08-09 결과다. 스크립트는 수집 원본·중복 목록·JUnit과 종료 코드를 보존하고 불일치나 도구 부족 때 현재 단계·기대값·실제값·보존된 데이터·새 `RunId` 실행 명령을 안내한다. 같은 clean 소스 커밋에서 Windows x64 무생략 실행을 2회 연속 통과해야 유효 Windows 통합 기준선으로 확정한다.
 
 각 실행은 새 run ID를 사용하고 `data/local/integrated-smoke/<run-id>/`에 환경 정보, 단계별 로그, JUnit/TRX, WPF 클라이언트 SQLite 실행 전후 통계·오늘/과거 문서 식별 증거와 `verification-summary.json`을 보존한다. 운영 서버 DB·storage·로그는 이 로컬 폴더로 복사하지 않는다. WPF smoke는 승인된 운영 HTTPS 서버를 사용하며 개발 PC의 `5184` 포트를 확인·점유·종료하지 않는다. 생략 옵션이 없는 실행의 요약 상태가 `PASSED`이고 모든 필수 결과와 무결성 값이 통과한 경우에만 배포 통합 기준선으로 인정한다. 테스트 수집 개수 일치, 비 Windows 부분 실행 또는 `PASSED_PARTIAL` 결과만으로는 배포 검증을 통과한 것이 아니다.
 

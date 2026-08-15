@@ -91,14 +91,14 @@
 - WPF 로컬 SQLite와 Android 암호화 outbox는 연결 장애 때 업무 원천과 재시도 상태를 보존한다.
 - 문서 등록은 공개가 아니며 정확한 version·revision·file hash 승인 뒤 공개한다.
 - FieldComment 원천과 관리자 해석, 보고서 원천 snapshot을 분리해 보존한다.
-- 실제 외부 AI provider 호출은 기본 비활성이고 운영 범위가 아니다.
+- AI 후보·ground-truth·안전장치는 후속 연구용 시험 기반이며 현재 완료 기능 목록에 포함하지 않는다. 실제 외부 AI provider 호출은 기본 비활성이다.
 - MES/ERP 연동은 후속 계층이다.
 
 상세 구현 목록은 각 앱 문서와 [연구 결과 정리](./research-summary.md)에서 확인한다.
 
 ## 현재 검증 상태
 
-2026-08-15 개발 PC 검증에서 FastAPI 누적 DB·새 DB 각각 209건, WPF Core 120건, Android 39건과 WPF·Android 개발 빌드·정적 검사가 통과했다. 운영 HTTPS 연동은 다시 실행하지 않았으며, 최신 통과 기록은 2026-08-09 스모크다.
+2026-08-15 개발 PC 검증에서 FastAPI 누적 DB·새 DB 각각 212건과 Ruff, WPF Core 120건과 WPF 개발 빌드가 통과했다. 변경되지 않은 Android의 최신 기준은 단위 테스트 39건, debug 빌드와 lint 통과다. 운영 HTTPS 연동은 다시 실행하지 않았으며, 최신 통과 기록은 2026-08-09 스모크다.
 
 다음 항목은 연구개발 기준선의 미완료 사항이 아니라 실제 운영 도입을 결정할 때 수행하는 별도 검증이다.
 

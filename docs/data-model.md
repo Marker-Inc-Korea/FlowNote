@@ -1,6 +1,6 @@
 # FlowNote 데이터 모델
 
-이 문서는 2026-08-09 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·검토·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
+이 문서는 2026-08-15 현재 WPF `FlowNoteLocalDatabase`와 FastAPI `app/db/models.py` 기준이다. 문서 상태·검토·공개·태그와 FieldComment 검토/첨부, 보고서 aggregate 수렴 필드는 구현되었으며 현재 코드에 없는 나머지 필드는 `목표`로 명시한다.
 
 ## WPF 로컬 SQLite
 
@@ -75,7 +75,7 @@ FastAPI 서버 DB와 WPF 로컬 DB는 이름이 같은 `documents`, `document_ve
 
 ## FastAPI 서버 SQLite
 
-2026-08-09 현재 ORM은 공통 감사 event envelope와 mutation receipt, 문서·FieldComment 검토·보고서·작업순서의 도메인 receipt, 문서 태그 revision snapshot, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 70개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드와 운영 준비도는 새 권위 테이블이나 저장 snapshot을 만들지 않고 현재 도메인 테이블과 감사 anchor를 요청 시점에 집계한다.
+2026-08-15 현재 ORM은 공통 감사 event envelope와 mutation receipt, 문서·FieldComment 검토·보고서·작업순서의 도메인 receipt, 문서 태그 revision snapshot, 서버 복구 reconciliation, AI 질의 legal hold와 민감정보 정책 조작 모델을 포함한 70개 서버 테이블을 생성 기준으로 사용한다. FieldComment 검토 대시보드와 운영 준비도는 새 권위 테이블이나 저장 snapshot을 만들지 않고 현재 도메인 테이블과 감사 anchor를 요청 시점에 집계한다.
 
 서버 기본 DB 경로는 `services/api/data/flownote.sqlite3`이고 테스트 DB 기본 경로는 `services/api/data/flownote.test.sqlite3`이다. 서버 파일은 기본적으로 `services/api/storage/` 아래 저장된다.
 
@@ -358,6 +358,8 @@ FieldComment 상태:
 - `COMPLETED`
 
 FastAPI `ITEM_STATUSES`, 서버 ORM 제약, WPF `WorkSequenceService`, WPF 관리자/TV 화면은 위 네 상태를 정식 상태로 사용한다. 2026-07-09 현재 공통 개발 DB에는 테스트 실행 중 직접 삽입된 `TODO` 상태 작업순서 항목 3건이 남아 있지만, 새 코드와 API의 허용 상태는 아니므로 새 기능과 문서에서는 `WAITING`을 대기 상태로 사용한다. 해당 row는 테스트 기록 보존 원칙에 따라 삭제하지 않고 잔존 데이터로 분류한다.
+
+새 상태가 `HOLD`이면 `work_sequence_items.hold_reason`에 공백이 아닌 사유가 저장되어야 한다. API는 `holdReason`을 우선 사용하고 없으면 같은 요청의 `changeReason`을 보류 사유로 사용하며, 둘 다 비어 있으면 revision을 올리지 않고 요청을 거부한다.
 
 작업순서 알림 후보 상태:
 

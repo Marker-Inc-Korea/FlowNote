@@ -2,7 +2,9 @@
 
 FastAPI 서버는 `/api/v1` 아래 REST API를 제공한다. 루트 `/`는 서비스 이름과 환경을 반환한다. 인증 없이 사용할 수 있는 경로는 루트 `/`, 세 상태 확인 API, `GET /api/v1/sync/manifest`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `GET /api/v1/tags`다. 그 밖의 현재 API는 Bearer token 기반 인증을 요구한다.
 
-이 문서는 2026-08-09 현재 전역 FastAPI 앱에 등록된 163개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency·정정/대체 계약, 작업순서 후보 전달·Android 현장 열람, 통합 변경 이력·운영 준비도 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
+필수 텍스트 입력은 앞뒤 공백을 제거한 뒤 길이를 검사한다. 태그·계정·업무 채널·FieldComment·보고서·작업순서·알림 후보 전달에서 공백만 있는 이름, 제목, 원문, 감사 사유 또는 멱등키는 `422`로 거부하며 빈 문자열을 업무 데이터나 감사 이력으로 저장하지 않는다. 비밀번호는 이 공통 정리 대상에서 제외해 사용자가 입력한 문자열 자체를 검증한다.
+
+이 문서는 2026-08-15 현재 전역 FastAPI 앱에 등록된 163개 method/path 조합과 요청·응답 코드 기준이다. 공통 mutation receipt와 감사 event envelope, 문서 상태·검토·공개·태그 mutation receipt와 WPF read-back, FieldComment 검토/첨부, 보고서 aggregate의 revision/idempotency·정정/대체 계약, 작업순서 후보 전달·Android 현장 열람, 통합 변경 이력·운영 준비도 read model과 서버 복구 경계 reconciliation API가 구현되어 있다.
 
 ## 인증
 
@@ -285,7 +287,7 @@ FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revi
 | GET | `/api/v1/work-sequence-boards/{board_id}` | 작업순서 보드와 정렬된 항목 상세 |
 | POST | `/api/v1/work-sequence-boards/{board_id}/items` | 항목 추가. `idempotencyKey`, `baseBoardRevision` 필수 |
 | PUT | `/api/v1/work-sequence-boards/{board_id}/items/order` | 항목 전체 순서 변경. 전체 item ID와 `idempotencyKey`, `baseBoardRevision` 필수 |
-| PATCH | `/api/v1/work-sequence-boards/{board_id}/items/{item_id}/status` | 항목 상태·보류 사유 변경. `idempotencyKey`, `baseBoardRevision` 필수 |
+| PATCH | `/api/v1/work-sequence-boards/{board_id}/items/{item_id}/status` | 항목 상태·보류 사유 변경. `idempotencyKey`, `baseBoardRevision` 필수. `HOLD`는 공백이 아닌 `holdReason` 또는 `changeReason` 필수 |
 | GET | `/api/v1/work-sequence-boards/{board_id}/history` | mutation key·적용 revision을 포함한 변경 이력 조회 |
 | GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | 알림 후보 조회 |
 | PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | 알림 후보 상태 변경 |
@@ -316,6 +318,8 @@ FieldComment 응답은 원천 `source_hash_sha256`와 서버 권위 `review_revi
 | PATCH | `/api/v1/handovers/{handover_id}/receipts/{receipt_id}` | 수신자별 `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED` 상태와 선택 `deliveryRunId`, `displayedAt` 기록 |
 | GET | `/api/v1/work-sequence-boards/{board_id}/notification-candidates` | 작업순서 변경으로 생성된 알림 후보 조회 |
 | PATCH | `/api/v1/work-sequence-boards/{board_id}/notification-candidates/{candidate_id}` | 후보 검토 상태를 `CANDIDATE` 또는 `DISMISSED`로 변경. `SENT`는 완료 delivery receipt가 있을 때만 서버가 확정 |
+
+작업판·항목 제목과 모든 작업순서 `idempotencyKey`는 공백 문자열을 허용하지 않는다. WPF 관리 화면도 서버 요청 전에 제목과 `HOLD` 사유를 검사하며, 서버는 우회 요청을 같은 기준으로 거부한다.
 
 채널 유형은 `LINE`, `EQUIPMENT`, `PROCESS`, `WORK_GROUP`, `HANDOVER`, `WORK_RECORD`, `CUSTOM`이다. 채널 메시지 유형은 `NOTICE`, `DOCUMENT_EVENT`, `FIELD_COMMENT_EVENT`, `WORK_SEQUENCE_EVENT`, `HANDOVER`, `SYSTEM`이다. 같은 채널의 같은 FieldComment를 원천으로 하는 `FIELD_COMMENT_EVENT` 재요청은 기존 메시지를 반환해 응답 유실 뒤 알림 중복을 막는다. 인수인계 상태는 `DRAFT`, `SENT`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`, `ARCHIVED`이고, 수신 상태는 `UNREAD`, `READ`, `ACKNOWLEDGED`, `FOLLOW_UP_REQUIRED`이다.
 

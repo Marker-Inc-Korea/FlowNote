@@ -92,7 +92,7 @@ class WorkSequenceDeliveryPreviewResponse(BaseModel):
 
 
 class WorkSequenceDeliveryRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     channel_id: str = Field(alias="channelId", min_length=1, max_length=64)
     delivery_mode: str = Field(alias="deliveryMode", min_length=1)
@@ -140,12 +140,16 @@ class WorkSequenceDeliveryResponse(BaseModel):
 
 
 class DeliveryTemplateCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     name: str = Field(min_length=1, max_length=120)
     title: str = Field(min_length=1, max_length=200)
     body: str = Field(min_length=1, max_length=4000)
 
 
 class DeliveryTemplateUpdateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     name: str | None = Field(default=None, min_length=1, max_length=120)
     title: str | None = Field(default=None, min_length=1, max_length=200)
     body: str | None = Field(default=None, min_length=1, max_length=4000)

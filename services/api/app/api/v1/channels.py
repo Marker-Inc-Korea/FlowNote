@@ -66,7 +66,7 @@ CHANNEL_ADMIN_ROLES = {"admin", "system-admin"}
 
 
 class NotificationChannelCreateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     name: str = Field(min_length=1)
     description: str | None = None
@@ -91,14 +91,14 @@ class NotificationChannelResponse(BaseModel):
 
 
 class ChannelMemberUpsertRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     user_id: str = Field(alias="userId", min_length=1)
     member_role: str = Field(default="MEMBER", alias="memberRole")
 
 
 class ChannelMemberUpdateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     member_role: str | None = Field(default=None, alias="memberRole")
     status: str | None = None
@@ -118,7 +118,7 @@ class ChannelMemberResponse(BaseModel):
 
 
 class ChannelMessageCreateRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     message_type: str = Field(alias="messageType", min_length=1)
     source_type: str = Field(alias="sourceType", min_length=1)
@@ -151,7 +151,7 @@ class UserNotificationResponse(ChannelMessageResponse):
 
 
 class NotificationReadRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
     delivery_run_id: str | None = Field(default=None, alias="deliveryRunId", max_length=120)
     displayed_at: datetime | None = Field(default=None, alias="displayedAt")
