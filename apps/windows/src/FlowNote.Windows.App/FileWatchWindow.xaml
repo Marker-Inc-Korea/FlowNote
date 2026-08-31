@@ -79,11 +79,11 @@
                       ColumnHeaderHeight="34"
                       SelectionChanged="CandidateGrid_SelectionChanged">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="감지시간" Binding="{Binding DetectedAt, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="150" />
-                    <DataGridTextColumn Header="파일" Binding="{Binding FileName}" Width="*" />
-                    <DataGridTextColumn Header="연결 문서" Binding="{Binding DocumentTitle}" Width="220" />
-                    <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="100" />
-                    <DataGridTextColumn Header="크기" Binding="{Binding SizeBytes}" Width="90" />
+                    <DataGridTextColumn Header="감지시간" Binding="{Binding DetectedAt, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="145" />
+                    <DataGridTextColumn Header="파일" Binding="{Binding FileName}" Width="300" />
+                    <DataGridTextColumn Header="연결 문서" Binding="{Binding DocumentTitle}" Width="*" MinWidth="200" />
+                    <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="82" />
+                    <DataGridTextColumn Header="크기" Binding="{Binding SizeBytes}" Width="58" />
                 </DataGrid.Columns>
             </DataGrid>
         </Border>

@@ -9,7 +9,7 @@
         Background="{StaticResource WindowBackgroundBrush}">
     <Grid Margin="14">
         <Grid.RowDefinitions>
-            <RowDefinition Height="158" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="180" />
             <RowDefinition Height="30" />
@@ -20,11 +20,10 @@
                 BorderBrush="{StaticResource PanelBorderBrush}"
                 BorderThickness="1"
                 CornerRadius="4"
-                Padding="12">
+                Padding="10">
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="70" />
-                    <RowDefinition Height="32" />
+                    <RowDefinition Height="52" />
                     <RowDefinition Height="32" />
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
@@ -50,12 +49,13 @@
                 </StackPanel>
                 <Button Grid.Column="2"
                         Height="32"
-                        Margin="0,22,8,0"
+                        Margin="0,0,8,0"
+                        VerticalAlignment="Bottom"
                         Content="초안 생성"
                         Click="BuildDraftButton_Click" />
                 <Button Grid.Column="3"
                         Height="32"
-                        Margin="0,22,0,0"
+                        VerticalAlignment="Bottom"
                         Content="보고서 저장"
                         Click="SaveDocumentButton_Click" />
                 <DockPanel Grid.Row="1"
@@ -72,18 +72,25 @@
                                 Content="고정 근거 확인"
                                 Click="ShowVerificationButton_Click" />
                     </StackPanel>
-                    <TextBlock x:Name="SourceSnapshotTextBlock"
-                               Margin="0,5,12,0"
-                               Foreground="{StaticResource SecondaryTextBrush}"
-                               Text="초안을 만들 때 선택 근거의 버전·변경 번호·검증값을 서버에서 고정합니다." />
+                    <Grid Margin="0,0,12,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="WorkflowStateTextBlock"
+                                   Margin="0,5,12,0"
+                                   FontWeight="SemiBold"
+                                   Foreground="#8A4B08"
+                                   Text="작성 단계: 근거 선택 전" />
+                        <TextBlock Grid.Column="1"
+                                   x:Name="SourceSnapshotTextBlock"
+                                   Margin="0,5,0,0"
+                                   Foreground="{StaticResource SecondaryTextBrush}"
+                                   Text="초안을 만들 때 선택 근거의 버전·변경 번호·검증값을 서버에서 고정합니다."
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                    </Grid>
                 </DockPanel>
-                <TextBlock Grid.Row="2"
-                           Grid.ColumnSpan="4"
-                           x:Name="WorkflowStateTextBlock"
-                           Margin="0,8,0,0"
-                           FontWeight="SemiBold"
-                           Foreground="#8A4B08"
-                           Text="작성 단계: 근거 선택 전" />
             </Grid>
         </Border>
 
@@ -185,7 +192,9 @@
                     BorderThickness="1"
                     CornerRadius="4">
                 <DockPanel>
-                    <DockPanel DockPanel.Dock="Top" Margin="10,8">
+                    <DockPanel DockPanel.Dock="Top"
+                               Margin="10,8"
+                               LastChildFill="False">
                         <TextBlock Text="기존 보고서 원천"
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center"

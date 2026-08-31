@@ -11,6 +11,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="176" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="96" />
             <RowDefinition Height="30" />
@@ -87,7 +88,8 @@
                                Text="원천별 후보 수"
                                FontWeight="SemiBold"
                                Foreground="{StaticResource PrimaryTextBrush}" />
-                    <DataGrid ItemsSource="{Binding SourceCounts}"
+                    <DataGrid x:Name="SourceCountsGrid"
+                              ItemsSource="{Binding SourceCounts}"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
                               CanUserAddRows="False"
@@ -104,41 +106,26 @@
                     Background="{StaticResource PanelBackgroundBrush}"
                     BorderBrush="{StaticResource PanelBorderBrush}"
                     BorderThickness="1"
-                    CornerRadius="4"
-                    Padding="12">
-                <StackPanel>
-                    <TextBlock Text="FieldComment 검토 준비도"
+                    CornerRadius="4">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top"
+                               Margin="10,8"
+                               Text="FieldComment 검토 준비도"
                                FontWeight="SemiBold"
                                Foreground="{StaticResource PrimaryTextBrush}" />
-                    <TextBlock x:Name="ReadinessSummaryTextBlock"
-                               Margin="0,8,0,0"
-                               FontSize="15"
-                               Foreground="{StaticResource PrimaryTextBrush}"
-                               TextWrapping="Wrap" />
-                    <TextBlock x:Name="ReadinessWarningTextBlock"
-                               Margin="0,8,0,0"
-                               Foreground="#B45309"
-                               TextWrapping="Wrap" />
-                    <TextBlock x:Name="ScopeReadinessTextBlock"
-                               Margin="0,8,0,0"
-                               Foreground="{StaticResource SecondaryTextBrush}"
-                               TextWrapping="Wrap" />
                     <DataGrid x:Name="ReadinessStatusGrid"
-                              Height="82"
-                              Margin="0,8,0,0"
                               ItemsSource="{Binding StatusCounts}"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
                               CanUserAddRows="False"
-                              BorderThickness="1">
+                              BorderThickness="0">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="상태" Binding="{Binding StatusLabel}" Width="*" />
                             <DataGridTextColumn Header="건수" Binding="{Binding Count}" Width="70" />
                         </DataGrid.Columns>
                     </DataGrid>
-                </StackPanel>
+                </DockPanel>
             </Border>
-
             <Border Grid.Column="4"
                     Background="{StaticResource PanelBackgroundBrush}"
                     BorderBrush="{StaticResource PanelBorderBrush}"
@@ -166,7 +153,39 @@
             </Border>
         </Grid>
 
-        <Border Grid.Row="2"
+        <Border x:Name="ReadinessDetailBorder"
+                Grid.Row="2"
+                Margin="0,10,0,0"
+                Background="{StaticResource PanelMutedBrush}"
+                BorderBrush="{StaticResource PanelBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="10"
+                Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.1*" />
+                    <ColumnDefinition Width="1.1*" />
+                    <ColumnDefinition Width="2*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="ReadinessSummaryTextBlock"
+                           Margin="0,0,12,0"
+                           FontSize="14"
+                           Foreground="{StaticResource PrimaryTextBrush}"
+                           TextWrapping="Wrap" />
+                <TextBlock x:Name="ReadinessWarningTextBlock"
+                           Grid.Column="1"
+                           Margin="0,0,12,0"
+                           Foreground="#B45309"
+                           TextWrapping="Wrap" />
+                <TextBlock x:Name="ScopeReadinessTextBlock"
+                           Grid.Column="2"
+                           Foreground="{StaticResource SecondaryTextBrush}"
+                           TextWrapping="Wrap" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="3"
                 Margin="0,10,0,0"
                 Background="{StaticResource PanelBackgroundBrush}"
                 BorderBrush="{StaticResource PanelBorderBrush}"
@@ -198,7 +217,7 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="3"
+        <Border Grid.Row="4"
                 Margin="0,10,0,0"
                 Background="{StaticResource PanelMutedBrush}"
                 BorderBrush="{StaticResource PanelBorderBrush}"
@@ -225,7 +244,7 @@
             </Grid>
         </Border>
 
-        <TextBlock Grid.Row="4"
+        <TextBlock Grid.Row="5"
                    x:Name="StatusTextBlock"
                    Margin="2,8,0,0"
                    Foreground="{StaticResource SecondaryTextBrush}" />

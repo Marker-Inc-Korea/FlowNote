@@ -152,6 +152,7 @@ public partial class AISearchQualityWindow : Window
             ? $"검토/분석/선정 FieldComment {readiness.ReviewedStatusCount}건으로 {readiness.RequiredReviewedCount}건 기준을 충족했습니다."
             : $"검토/분석/선정 FieldComment {readiness.ReviewedStatusCount}건입니다. {readiness.RequiredReviewedCount}건 기준까지 {readiness.MissingReviewedCount}건 부족합니다.";
         ReadinessWarningTextBlock.Text = BuildReadinessWarning(readiness);
+        ReadinessDetailBorder.Visibility = Visibility.Visible;
     }
 
     private void ApplyScopeReadiness(ServerAISearchReadinessResponse readiness)
