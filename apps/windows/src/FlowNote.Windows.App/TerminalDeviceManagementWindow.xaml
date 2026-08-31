@@ -79,8 +79,13 @@
                 BorderThickness="1"
                 CornerRadius="4"
                 Padding="16">
-            <DockPanel LastChildFill="True">
-                <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="1" Margin="0,14,0,0">
                     <Button x:Name="SaveButton"
                             Height="34"
                             Content="등록"
@@ -101,37 +106,41 @@
                                 Click="PrepareReplacementButton_Click" />
                     </Grid>
                 </StackPanel>
-                <StackPanel>
+
+                <ScrollViewer Grid.Row="0"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="0,0,6,0">
                     <TextBlock x:Name="FormTitleTextBlock"
                                Text="신규 승인 단말"
                                FontSize="15"
                                FontWeight="SemiBold"
                                Foreground="{StaticResource PrimaryTextBrush}" />
                     <TextBlock Text="Android 앱이 보내는 device_id를 정확히 입력하세요. 교체 등록 시 선택한 기존 단말은 폐기 상태가 됩니다."
-                               Margin="0,8,0,0"
+                               Margin="0,6,0,0"
                                TextWrapping="Wrap"
                                Foreground="{StaticResource SecondaryTextBrush}" />
 
-                    <TextBlock Text="device_id" Margin="0,14,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
+                    <TextBlock Text="device_id" Margin="0,10,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
                     <TextBox x:Name="DeviceIdTextBox" Height="30" VerticalContentAlignment="Center" />
-                    <TextBlock Text="단말명" Margin="0,10,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
+                    <TextBlock Text="단말명" Margin="0,6,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
                     <TextBox x:Name="DeviceNameTextBox" Height="30" VerticalContentAlignment="Center" />
-                    <TextBlock Text="위치" Margin="0,10,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
+                    <TextBlock Text="위치" Margin="0,6,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
                     <TextBox x:Name="LocationCodeTextBox" Height="30" VerticalContentAlignment="Center" />
-                    <TextBlock Text="그룹" Margin="0,10,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
+                    <TextBlock Text="그룹" Margin="0,6,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
                     <TextBox x:Name="GroupIdTextBox" Height="30" VerticalContentAlignment="Center" />
-                    <TextBlock Text="단말 용도" Margin="0,10,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
+                    <TextBlock Text="단말 용도" Margin="0,6,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
                     <ComboBox x:Name="DeviceModeComboBox" Height="30" SelectedValuePath="Tag" VerticalContentAlignment="Center">
                         <ComboBoxItem Content="현장 열람" Tag="viewer" />
                         <ComboBoxItem Content="관리 지원" Tag="admin_support" />
                     </ComboBox>
-                    <TextBlock Text="상태" Margin="0,10,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
+                    <TextBlock Text="상태" Margin="0,6,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
                     <ComboBox x:Name="StatusComboBox" Height="30" SelectedValuePath="Tag" VerticalContentAlignment="Center">
                         <ComboBoxItem Content="사용" Tag="ACTIVE" />
                         <ComboBoxItem Content="비활성" Tag="INACTIVE" />
                         <ComboBoxItem Content="폐기" Tag="RETIRED" />
                     </ComboBox>
-                    <TextBlock Text="변경 사유" Margin="0,10,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
+                    <TextBlock Text="변경 사유" Margin="0,6,0,4" Foreground="{StaticResource SecondaryTextBrush}" />
                     <TextBox x:Name="ChangeReasonTextBox"
                              Height="56"
                              AcceptsReturn="True"
@@ -141,8 +150,9 @@
                                Margin="0,12,0,0"
                                TextWrapping="Wrap"
                                Foreground="{StaticResource SecondaryTextBrush}" />
-                </StackPanel>
-            </DockPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
         </Border>
 
         <TextBlock x:Name="StatusTextBlock"

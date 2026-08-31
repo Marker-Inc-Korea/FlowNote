@@ -163,7 +163,7 @@ public partial class MainWindow
     private void UpdateDocumentListHeader(long? folderId, string status)
     {
         var folder = folderId is null ? null : services.Folders.GetFolder(folderId.Value);
-        DocumentListTitleTextBlock.Text = folder is null ? "문서 목록" : $"{folder.Name} 파일 목록";
+        DocumentListTitleTextBlock.Text = folder is null ? "파일 · 문서 목록" : $"{folder.Name} · 파일 목록";
 
         var filtered = workspace.Documents.Count != currentFolderDocuments.Count;
         var countText = filtered

@@ -21,37 +21,64 @@
                 BorderBrush="{StaticResource PanelBorderBrush}"
                 BorderThickness="1"
                 CornerRadius="4"
-                Padding="14">
-            <DockPanel LastChildFill="True">
-                <StackPanel DockPanel.Dock="Right"
-                            Margin="12,0,0,0">
+                Padding="12,10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="TitleTextBlock"
+                           Margin="0,0,14,0"
+                           FontSize="17"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource PrimaryTextBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center" />
+
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
                     <Button x:Name="DownloadCopyButton"
-                            Width="112"
-                            Height="30"
+                            Width="104"
+                            Height="28"
                             Content="복사본 저장"
                             Click="DownloadCopyButton_Click" />
                     <Button x:Name="ApprovalWorkbenchButton"
                             Width="112"
-                            Height="30"
-                            Margin="0,6,0,0"
+                            Height="28"
+                            Margin="6,0,0,0"
                             Content="검토·승인 이력"
                             Click="ApprovalWorkbenchButton_Click"
                             AutomationProperties.Name="문서 검토 및 공개 승인 이력 열기" />
+                </StackPanel>
+
+                <TextBlock x:Name="MetaTextBlock"
+                           Grid.Row="1"
+                           Margin="0,5,14,0"
+                           FontSize="12"
+                           Foreground="{StaticResource SecondaryTextBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center" />
+
+                <Border Grid.Row="1"
+                        Grid.Column="1"
+                        Margin="6,5,0,0"
+                        Padding="7,2"
+                        Background="{StaticResource AccentSoftBrush}"
+                        BorderBrush="{StaticResource PanelBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="9">
                     <TextBlock x:Name="SecurityPolicyTextBlock"
-                               Margin="0,6,0,0"
-                               TextAlignment="Right"
-                               Foreground="{StaticResource SecondaryTextBrush}" />
-                </StackPanel>
-                <StackPanel>
-                    <TextBlock x:Name="TitleTextBlock"
-                               FontSize="18"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource PrimaryTextBrush}" />
-                    <TextBlock x:Name="MetaTextBlock"
-                               Margin="0,6,0,0"
-                               Foreground="{StaticResource SecondaryTextBrush}" />
-                </StackPanel>
-            </DockPanel>
+                               FontSize="11"
+                               Foreground="{StaticResource SecondaryTextBrush}"
+                               TextAlignment="Right" />
+                </Border>
+            </Grid>
         </Border>
 
         <Border Grid.Row="2"

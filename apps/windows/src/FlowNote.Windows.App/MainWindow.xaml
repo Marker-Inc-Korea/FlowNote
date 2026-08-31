@@ -273,15 +273,22 @@
                             BorderBrush="{StaticResource PanelBorderBrush}"
                             BorderThickness="0,0,0,1">
                         <DockPanel>
-                            <TextBlock Text="폴더"
+                            <Border DockPanel.Dock="Right"
+                                    Padding="7,2"
+                                    Background="#FFF7DF"
+                                    BorderBrush="#E8C36A"
+                                    BorderThickness="1"
+                                    CornerRadius="10"
+                                    VerticalAlignment="Center">
+                                <TextBlock Text="폴더"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           Foreground="#9A6700" />
+                            </Border>
+                            <TextBlock Text="폴더 탐색"
                                        FontSize="15"
                                        FontWeight="SemiBold"
                                        Foreground="{StaticResource PrimaryTextBrush}"
-                                       VerticalAlignment="Center" />
-                            <TextBlock DockPanel.Dock="Right"
-                                       Text="문서 구조"
-                                       FontSize="12"
-                                       Foreground="{StaticResource SecondaryTextBrush}"
                                        VerticalAlignment="Center" />
                         </DockPanel>
                     </Border>
@@ -295,21 +302,47 @@
                               ScrollViewer.VerticalScrollBarVisibility="Auto">
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                <Grid Height="24" VerticalAlignment="Center">
+                                <Grid MinHeight="28"
+                                      VerticalAlignment="Center"
+                                      ToolTip="{Binding Path, StringFormat=폴더 위치: {0}}">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="22" />
+                                        <ColumnDefinition Width="26" />
                                         <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0"
-                                               Text="{Binding IconGlyph}"
-                                               FontFamily="Segoe MDL2 Assets"
-                                               FontSize="15"
-                                               Foreground="#D79B22"
-                                               VerticalAlignment="Center" />
+                                    <Viewbox Grid.Column="0"
+                                             Width="18"
+                                             Height="16"
+                                             HorizontalAlignment="Left"
+                                             VerticalAlignment="Center">
+                                        <Canvas Width="20" Height="17">
+                                            <Path Data="M 1,4 L 7.5,4 L 9.5,6 L 19,6 L 19,16 L 1,16 Z"
+                                                  Fill="#F4B740"
+                                                  Stroke="#C98200"
+                                                  StrokeThickness="1" />
+                                            <Path Data="M 1,7 L 19,7"
+                                                  Stroke="#FFD778"
+                                                  StrokeThickness="1" />
+                                        </Canvas>
+                                    </Viewbox>
                                     <TextBlock Text="{Binding Name}"
                                                Grid.Column="1"
+                                               FontWeight="SemiBold"
                                                Foreground="{StaticResource PrimaryTextBrush}"
+                                               TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
+                                    <Border Grid.Column="2"
+                                            Margin="8,0,2,0"
+                                            Padding="6,1"
+                                            Background="#FFF7DF"
+                                            BorderBrush="#F0D89D"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            VerticalAlignment="Center">
+                                        <TextBlock Text="폴더"
+                                                   FontSize="10"
+                                                   Foreground="#9A6700" />
+                                    </Border>
                                 </Grid>
                             </HierarchicalDataTemplate>
                         </TreeView.ItemTemplate>
@@ -404,17 +437,31 @@
                         CornerRadius="4"
                         Padding="14,0">
                     <DockPanel>
-                        <TextBlock x:Name="DocumentListTitleTextBlock"
-                                   Text="문서 목록"
-                                   FontWeight="SemiBold"
-                                   Foreground="{StaticResource PrimaryTextBrush}"
-                                   VerticalAlignment="Center" />
                         <TextBlock x:Name="DocumentListHintTextBlock"
                                    DockPanel.Dock="Right"
-                                   Text="파일명, 태그, 상태, 버전, 사용자, 생성시간"
+                                   Text="유형별 파일 아이콘, 태그, 상태, 버전, 사용자, 생성시간"
                                    FontSize="12"
                                    Foreground="{StaticResource SecondaryTextBrush}"
                                    VerticalAlignment="Center" />
+                        <StackPanel Orientation="Horizontal"
+                                    VerticalAlignment="Center">
+                            <TextBlock x:Name="DocumentListTitleTextBlock"
+                                       Text="파일 · 문서 목록"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource PrimaryTextBrush}"
+                                       VerticalAlignment="Center" />
+                            <Border Margin="8,0,0,0"
+                                    Padding="7,2"
+                                    Background="{StaticResource AccentSoftBrush}"
+                                    BorderBrush="{StaticResource AccentBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="10">
+                                <TextBlock Text="파일"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource AccentBrush}" />
+                            </Border>
+                        </StackPanel>
                     </DockPanel>
                 </Border>
 
@@ -435,17 +482,124 @@
                               HeadersVisibility="Column"
                               GridLinesVisibility="Horizontal"
                               BorderThickness="0"
-                              RowHeight="39"
+                              RowHeight="44"
                               ColumnHeaderHeight="34">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="파일명" Binding="{Binding FileName}" Width="*" />
-                            <DataGridTextColumn Header="태그" Binding="{Binding TagText}" Width="170" />
-                            <DataGridTextColumn Header="유형" Binding="{Binding DocumentType}" Width="80" />
-                            <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="110" />
-                            <DataGridTextColumn Header="버전" Binding="{Binding VersionLabel}" Width="76" />
-                            <DataGridTextColumn Header="공개" Binding="{Binding PublishedVersionLabel}" Width="76" />
-                            <DataGridTextColumn Header="사용자" Binding="{Binding UpdatedBy}" Width="130" />
-                            <DataGridTextColumn Header="생성시간" Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="152" />
+                            <DataGridTemplateColumn Header="파일 이름"
+                                                    Width="2.4*"
+                                                    MinWidth="230"
+                                                    SortMemberPath="FileName"
+                                                    ClipboardContentBinding="{Binding FileName}">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="8,0,4,0"
+                                              ToolTip="{Binding Title, StringFormat=문서 제목: {0}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="36" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid Width="28"
+                                                  Height="30"
+                                                  HorizontalAlignment="Left"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip="{Binding DocumentType, StringFormat=파일 유형: {0}}">
+                                                <Viewbox Stretch="Uniform">
+                                                    <Canvas Width="28" Height="30">
+                                                        <Path x:Name="FileIconBody"
+                                                              Data="M 3,1 L 18,1 L 25,8 L 25,29 L 3,29 Z"
+                                                              Fill="#EFF6FF"
+                                                              Stroke="#2563EB"
+                                                              StrokeThickness="1.2" />
+                                                        <Path x:Name="FileIconFold"
+                                                              Data="M 18,1 L 18,8 L 25,8"
+                                                              Fill="Transparent"
+                                                              Stroke="#2563EB"
+                                                              StrokeThickness="1.2" />
+                                                        <Border x:Name="FileIconBand"
+                                                                Canvas.Left="4"
+                                                                Canvas.Top="15"
+                                                                Width="20"
+                                                                Height="10"
+                                                                Background="#2563EB"
+                                                                CornerRadius="2">
+                                                            <TextBlock x:Name="FileIconLabel"
+                                                                       Text="{Binding DocumentType}"
+                                                                       Padding="1,0"
+                                                                       FontSize="6.5"
+                                                                       FontWeight="Bold"
+                                                                       Foreground="White"
+                                                                       TextAlignment="Center"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       VerticalAlignment="Center" />
+                                                        </Border>
+                                                    </Canvas>
+                                                </Viewbox>
+                                            </Grid>
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding FileName}"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource PrimaryTextBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" />
+                                        </Grid>
+                                        <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding DocumentType}" Value="PDF">
+                                                <Setter TargetName="FileIconBody" Property="Fill" Value="#FEF2F2" />
+                                                <Setter TargetName="FileIconBody" Property="Stroke" Value="#DC2626" />
+                                                <Setter TargetName="FileIconFold" Property="Stroke" Value="#DC2626" />
+                                                <Setter TargetName="FileIconBand" Property="Background" Value="#DC2626" />
+                                                <Setter TargetName="FileIconLabel" Property="Text" Value="PDF" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding DocumentType}" Value="Image">
+                                                <Setter TargetName="FileIconBody" Property="Fill" Value="#F0FDFA" />
+                                                <Setter TargetName="FileIconBody" Property="Stroke" Value="#0F766E" />
+                                                <Setter TargetName="FileIconFold" Property="Stroke" Value="#0F766E" />
+                                                <Setter TargetName="FileIconBand" Property="Background" Value="#0F766E" />
+                                                <Setter TargetName="FileIconLabel" Property="Text" Value="IMG" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding DocumentType}" Value="Spreadsheet">
+                                                <Setter TargetName="FileIconBody" Property="Fill" Value="#F0FDF4" />
+                                                <Setter TargetName="FileIconBody" Property="Stroke" Value="#15803D" />
+                                                <Setter TargetName="FileIconFold" Property="Stroke" Value="#15803D" />
+                                                <Setter TargetName="FileIconBand" Property="Background" Value="#15803D" />
+                                                <Setter TargetName="FileIconLabel" Property="Text" Value="XLS" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding DocumentType}" Value="Text">
+                                                <Setter TargetName="FileIconBody" Property="Fill" Value="#F8FAFC" />
+                                                <Setter TargetName="FileIconBody" Property="Stroke" Value="#475569" />
+                                                <Setter TargetName="FileIconFold" Property="Stroke" Value="#475569" />
+                                                <Setter TargetName="FileIconBand" Property="Background" Value="#475569" />
+                                                <Setter TargetName="FileIconLabel" Property="Text" Value="TXT" />
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="태그"
+                                                Binding="{Binding TagText}"
+                                                Width="*"
+                                                MinWidth="80"
+                                                MaxWidth="140" />
+                            <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="84" />
+                            <DataGridTextColumn Header="버전" Binding="{Binding VersionLabel}" Width="58" />
+                            <DataGridTextColumn Header="공개" Binding="{Binding PublishedVersionLabel}" Width="58" />
+                            <DataGridTextColumn Header="사용자" Binding="{Binding UpdatedBy}" Width="105" />
+                            <DataGridTemplateColumn Header="생성 시간"
+                                                    Width="165"
+                                                    MinWidth="155"
+                                                    SortMemberPath="UpdatedAt"
+                                                    ClipboardContentBinding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}"
+                                                   Margin="8,0,4,0"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource PrimaryTextBrush}"
+                                                   VerticalAlignment="Center" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Border>
