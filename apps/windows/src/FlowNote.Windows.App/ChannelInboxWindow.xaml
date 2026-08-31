@@ -19,23 +19,49 @@
                 BorderBrush="{StaticResource PanelBorderBrush}"
                 BorderThickness="1"
                 CornerRadius="4"
-                Padding="14">
-            <DockPanel>
-                <StackPanel>
-                    <TextBlock Text="채널 수신함"
-                               FontSize="18"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource PrimaryTextBrush}" />
-                    <TextBlock x:Name="StatusTextBlock"
-                               Margin="0,6,0,0"
-                               Foreground="{StaticResource SecondaryTextBrush}" />
-                </StackPanel>
-                <Button DockPanel.Dock="Right"
+                Padding="12,8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Text="채널 수신함"
+                           FontSize="16"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource PrimaryTextBrush}"
+                           VerticalAlignment="Center" />
+                <Button Grid.RowSpan="2"
+                        Grid.Column="1"
                         Width="96"
-                        Height="34"
+                        Height="32"
+                        Margin="12,0,0,0"
+                        VerticalAlignment="Center"
                         Content="새로고침"
                         Click="RefreshButton_Click" />
-            </DockPanel>
+
+                <Border Grid.Row="1"
+                        Margin="0,4,0,0"
+                        Padding="8,3"
+                        Background="{StaticResource PanelMutedBrush}"
+                        BorderBrush="{StaticResource PanelBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="3">
+                    <ScrollViewer MaxHeight="34"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                        <TextBlock x:Name="StatusTextBlock"
+                                   FontSize="11"
+                                   LineHeight="15"
+                                   TextWrapping="Wrap"
+                                   Foreground="{StaticResource SecondaryTextBrush}" />
+                    </ScrollViewer>
+                </Border>
+            </Grid>
         </Border>
 
         <Grid Grid.Row="2">
@@ -82,7 +108,7 @@
 
             <Grid Grid.Column="2">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="2*" />
+                    <RowDefinition Height="*" />
                     <RowDefinition Height="10" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
@@ -128,7 +154,60 @@
                                   GridLinesVisibility="Horizontal"
                                   BorderThickness="0">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="읽음" Binding="{Binding ReadLabel}" Width="80" />
+                                <DataGridTemplateColumn Header="읽음" Width="54">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Grid HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip="{Binding ReadLabel}"
+                                                  AutomationProperties.Name="{Binding ReadLabel}">
+                                                <Border x:Name="ReadStateIcon"
+                                                        Width="20"
+                                                        Height="20"
+                                                        Background="#F1F5F9"
+                                                        BorderBrush="#CBD5E1"
+                                                        BorderThickness="1"
+                                                        CornerRadius="10">
+                                                    <Grid>
+                                                        <Path x:Name="UnknownStateMark"
+                                                              Data="M 6,10 L 14,10"
+                                                              Stroke="#64748B"
+                                                              StrokeThickness="1.5"
+                                                              StrokeStartLineCap="Round"
+                                                              StrokeEndLineCap="Round" />
+                                                        <Ellipse x:Name="UnreadStateMark"
+                                                                 Width="7"
+                                                                 Height="7"
+                                                                 Fill="#2563EB"
+                                                                 Visibility="Collapsed" />
+                                                        <Path x:Name="ReadStateMark"
+                                                              Data="M 5,10 L 8.5,13 L 15,6.5"
+                                                              Stroke="#15803D"
+                                                              StrokeThickness="1.8"
+                                                              StrokeStartLineCap="Round"
+                                                              StrokeEndLineCap="Round"
+                                                              StrokeLineJoin="Round"
+                                                              Visibility="Collapsed" />
+                                                    </Grid>
+                                                </Border>
+                                            </Grid>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding Read}" Value="False">
+                                                    <Setter TargetName="ReadStateIcon" Property="Background" Value="#EFF6FF" />
+                                                    <Setter TargetName="ReadStateIcon" Property="BorderBrush" Value="#93C5FD" />
+                                                    <Setter TargetName="UnknownStateMark" Property="Visibility" Value="Collapsed" />
+                                                    <Setter TargetName="UnreadStateMark" Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Read}" Value="True">
+                                                    <Setter TargetName="ReadStateIcon" Property="Background" Value="#F0FDF4" />
+                                                    <Setter TargetName="ReadStateIcon" Property="BorderBrush" Value="#86EFAC" />
+                                                    <Setter TargetName="UnknownStateMark" Property="Visibility" Value="Collapsed" />
+                                                    <Setter TargetName="ReadStateMark" Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                                 <DataGridTextColumn Header="채널" Binding="{Binding ChannelName}" Width="150" />
                                 <DataGridTextColumn Header="유형" Binding="{Binding MessageTypeLabel}" Width="110" />
                                 <DataGridTextColumn Header="제목" Binding="{Binding Title}" Width="180" />
@@ -152,7 +231,7 @@
                                 Background="{StaticResource PanelMutedBrush}"
                                 BorderBrush="{StaticResource PanelBorderBrush}"
                                 BorderThickness="0,0,0,1">
-                            <DockPanel>
+                            <DockPanel LastChildFill="False">
                                 <TextBlock Text="인수인계"
                                            FontWeight="SemiBold"
                                            VerticalAlignment="Center"

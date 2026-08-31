@@ -4,6 +4,7 @@ using System.IO;
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using FlowNote.Windows.Core.FieldComments;
 using FlowNote.Windows.Core.Reports;
 using FlowNote.Windows.Core.ServerApi;
@@ -29,6 +30,8 @@ public partial class FieldCommentReviewWindow : Window
     private IReadOnlyDictionary<string, FieldCommentReviewRecord>? lastBulkLocalByServerId;
     private IReadOnlySet<string>? serverChannelFilterIds;
     private bool loadingSavedViews;
+    private readonly bool detailMode;
+    private readonly IReadOnlyList<string> initialCommentIds;
 
     public FieldCommentReviewWindow(
         FieldCommentService fieldComments,
@@ -39,7 +42,9 @@ public partial class FieldCommentReviewWindow : Window
         ReportDraftService reports,
         long reportFolderId,
         string? initialWorkbenchFilter = null,
-        string? initialCommentId = null)
+        string? initialCommentId = null,
+        bool detailMode = false,
+        IReadOnlyCollection<string>? initialCommentIds = null)
     {
         InitializeComponent();
         this.fieldComments = fieldComments;
@@ -51,7 +56,10 @@ public partial class FieldCommentReviewWindow : Window
         this.reportFolderId = reportFolderId;
         this.initialWorkbenchFilter = initialWorkbenchFilter;
         this.initialCommentId = initialCommentId;
+        this.detailMode = detailMode;
+        this.initialCommentIds = initialCommentIds?.Distinct(StringComparer.Ordinal).ToArray() ?? [];
         DataContext = workspace;
+        ConfigureWindowMode();
         Loaded += FieldCommentReviewWindow_Loaded;
     }
 
@@ -129,6 +137,7 @@ public partial class FieldCommentReviewWindow : Window
             WorkbenchFilterComboBox.SelectedValue = initialWorkbenchFilter;
         }
         RefreshComments("FieldComment 검토 목록을 조회했습니다.", initialCommentId);
+        RestoreInitialDetailSelection();
     }
 
     private void SaveViewButton_Click(object sender, RoutedEventArgs e)
@@ -175,6 +184,108 @@ public partial class FieldCommentReviewWindow : Window
     private void FieldCommentGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         LoadSelectedComment();
+    }
+
+    private void FieldCommentGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        OpenDetailReviewWindow();
+    }
+
+    private void OpenDetailReviewButton_Click(object sender, RoutedEventArgs e)
+    {
+        OpenDetailReviewWindow();
+    }
+
+    private void OpenDetailReviewWindow()
+    {
+        if (FieldCommentGrid.SelectedItem is not FieldCommentReviewRecord selected)
+        {
+            StatusTextBlock.Text = "상세 검토할 FieldComment를 선택하세요.";
+            return;
+        }
+
+        var selectedIds = new[] { selected.CommentId }
+            .Concat(FieldCommentGrid.SelectedItems
+                .Cast<FieldCommentReviewRecord>()
+                .Where(item => item.CommentId != selected.CommentId)
+                .Select(item => item.CommentId))
+            .ToArray();
+        var detailWindow = new FieldCommentReviewWindow(
+            fieldComments,
+            serverSync,
+            actorName,
+            serverUserId,
+            serverClient,
+            reports,
+            reportFolderId,
+            initialCommentId: selected.CommentId,
+            detailMode: true,
+            initialCommentIds: selectedIds)
+        {
+            Owner = this
+        };
+        detailWindow.ShowDialog();
+        if (detailWindow.ReviewChanged)
+        {
+            ReviewChanged = true;
+            RefreshComments("상세 검토 창에서 변경한 내용을 반영했습니다.", selected.CommentId);
+        }
+    }
+
+    private void ConfigureWindowMode()
+    {
+        if (detailMode)
+        {
+            Title = "FieldComment 상세 검토";
+            Width = 1180;
+            Height = 860;
+            MinWidth = 920;
+            MinHeight = 720;
+            WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            ReviewDashboardPanel.Visibility = Visibility.Collapsed;
+            ReviewFilterPanel.Visibility = Visibility.Collapsed;
+            ReviewListPanel.Visibility = Visibility.Collapsed;
+            Grid.SetColumn(ReviewDetailPanel, 0);
+            Grid.SetColumnSpan(ReviewDetailPanel, 3);
+            OpenDetailReviewButton.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        NormalizedContentSection.Visibility = Visibility.Collapsed;
+        AnalysisContentSection.Visibility = Visibility.Collapsed;
+        ReviewFieldsSection.Visibility = Visibility.Collapsed;
+        ReviewActionPanel.Visibility = Visibility.Collapsed;
+    }
+
+    private void RestoreInitialDetailSelection()
+    {
+        if (!detailMode || initialCommentIds.Count == 0)
+        {
+            return;
+        }
+
+        var selected = initialCommentIds
+            .Select(id => workspace.FieldComments.FirstOrDefault(item => item.CommentId == id))
+            .Where(item => item is not null)
+            .Cast<FieldCommentReviewRecord>()
+            .ToList();
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        FieldCommentGrid.SelectedItems.Clear();
+        foreach (var item in selected)
+        {
+            FieldCommentGrid.SelectedItems.Add(item);
+        }
+        FieldCommentGrid.SelectedItem = selected[0];
+        LoadSelectedComment();
+    }
+
+    private void CloseDetailButton_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
     }
 
     private void SendSelectedToReportButton_Click(object sender, RoutedEventArgs e)

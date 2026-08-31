@@ -140,16 +140,6 @@ public partial class WorkSequenceAdminWindow : Window
             _ => $"상태를 변경했습니다: {item.Title} -> {FormatStatus(status)}");
     }
 
-    private void OpenTvViewButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (CurrentBoard() is not { } board)
-        {
-            StatusTextBlock.Text = "현황판을 열 작업판을 선택하세요.";
-            return;
-        }
-
-        new WorkSequenceTvWindow(localWorkSequences, serverClient, board.BoardId) { Owner = this }.Show();
-    }
 
     private void OpenDeliveryButton_Click(object sender, RoutedEventArgs e)
     {

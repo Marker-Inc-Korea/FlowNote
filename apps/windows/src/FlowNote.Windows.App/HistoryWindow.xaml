@@ -163,14 +163,15 @@
             <TabItem Header="서버 재결합">
                 <Grid>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="8" />
                         <RowDefinition Height="*" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="260" />
                     </Grid.RowDefinitions>
                     <Border Background="{StaticResource PanelBackgroundBrush}"
                             BorderBrush="{StaticResource PanelBorderBrush}"
                             BorderThickness="1" CornerRadius="4" Padding="12">
-                        <ScrollViewer MaxHeight="480" VerticalScrollBarVisibility="Auto">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
                             <StackPanel>
                                 <TextBlock x:Name="ReconciliationSummaryTextBlock"
                                            Foreground="{StaticResource SecondaryTextBrush}"
@@ -362,6 +363,8 @@
                         <DataGrid x:Name="ReconciliationGrid" AutoGenerateColumns="False"
                                   CanUserAddRows="False" CanUserDeleteRows="False" IsReadOnly="True"
                                   HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                   BorderThickness="0" RowHeight="46" ColumnHeaderHeight="34">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="run ID" Binding="{Binding RunId}" Width="180" />
@@ -373,7 +376,7 @@
                                 <DataGridTextColumn Header="서버 SHA-256" Binding="{Binding ServerHashSha256}" Width="220" />
                                 <DataGridTextColumn Header="서버 문서 ID" Binding="{Binding ServerDocumentId}" Width="180" />
                                 <DataGridTextColumn Header="서버 버전 ID" Binding="{Binding ServerVersionId}" Width="180" />
-                                <DataGridTextColumn Header="상세" Binding="{Binding Details}" Width="*" />
+                                <DataGridTextColumn Header="상세" Binding="{Binding Details}" Width="360" />
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>

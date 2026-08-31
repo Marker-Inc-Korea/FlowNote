@@ -15,7 +15,8 @@
             <RowDefinition Height="34" />
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0"
+        <Border x:Name="ReviewDashboardPanel"
+                Grid.Row="0"
                 Margin="0,0,0,10"
                 Background="{StaticResource PanelBackgroundBrush}"
                 BorderBrush="{StaticResource PanelBorderBrush}"
@@ -125,8 +126,7 @@
                                       AutoGenerateColumns="False"
                                       IsReadOnly="True"
                                       CanUserAddRows="False"
-                                      BorderThickness="0"
-                                      RowHeight="Auto">
+                                      BorderThickness="0">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="항목" Binding="{Binding TitleWithCount}" Width="145" />
                                     <DataGridTextColumn Header="담당자" Binding="{Binding Owner}" Width="150">
@@ -153,7 +153,8 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="1"
+        <Border x:Name="ReviewFilterPanel"
+                Grid.Row="1"
                 Background="{StaticResource PanelMutedBrush}"
                 BorderBrush="{StaticResource PanelBorderBrush}"
                 BorderThickness="1"
@@ -331,7 +332,8 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0"
+            <Border x:Name="ReviewListPanel"
+                    Grid.Column="0"
                     Background="{StaticResource PanelBackgroundBrush}"
                     BorderBrush="{StaticResource PanelBorderBrush}"
                     BorderThickness="1"
@@ -355,7 +357,8 @@
                           IsReadOnly="True"
                           CanUserAddRows="False"
                           BorderThickness="0"
-                          SelectionChanged="FieldCommentGrid_SelectionChanged">
+                          SelectionChanged="FieldCommentGrid_SelectionChanged"
+                          MouseDoubleClick="FieldCommentGrid_MouseDoubleClick">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="상태" Binding="{Binding StatusLabel}" Width="94" />
                         <DataGridTextColumn Header="처리 우선 사유" Binding="{Binding PriorityLabel}" Width="142" />
@@ -369,7 +372,7 @@
                 </DockPanel>
             </Border>
 
-            <Grid Grid.Column="2">
+            <Grid x:Name="ReviewDetailPanel" Grid.Column="2">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
                     <RowDefinition Height="10" />
@@ -382,33 +385,47 @@
                         BorderThickness="1"
                         CornerRadius="4"
                         Padding="12">
-                    <Grid>
+                    <ScrollViewer x:Name="ReviewDetailScrollViewer"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  CanContentScroll="False"
+                                  AutomationProperties.Name="선택된 FieldComment 상세 내용">
+                    <Grid Margin="0,0,4,0">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="66" />
-                            <RowDefinition Height="86" />
-                            <RowDefinition Height="86" />
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="154" />
-                            <RowDefinition Height="154" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <StackPanel>
-                            <TextBlock x:Name="SelectedTitleTextBlock"
-                                       Text="선택된 FieldComment 없음"
-                                       FontWeight="SemiBold"
-                                       Foreground="{StaticResource PrimaryTextBrush}" />
-                            <TextBlock x:Name="EvidenceTextBlock"
-                                       Margin="0,3,0,0"
-                                       FontSize="11"
-                                       Foreground="{StaticResource SecondaryTextBrush}"
-                                       Text="원천 hash · 첨부 · 문서 버전 · 채널 권한: 서버 조회 전" />
-                            <TextBlock x:Name="IndependentReviewGuidanceTextBlock"
-                                       Margin="0,3,0,0"
-                                       FontSize="11"
-                                       Foreground="#9C2B1B"
-                                       FontWeight="SemiBold"
-                                       TextWrapping="Wrap" />
-                        </StackPanel>
-                        <StackPanel Grid.Row="1" Margin="0,8,0,0">
+                        <DockPanel>
+                            <Button x:Name="OpenDetailReviewButton"
+                                    DockPanel.Dock="Right"
+                                    Width="142"
+                                    Height="30"
+                                    Margin="12,0,0,0"
+                                    Content="상세 검토 창 열기"
+                                    Click="OpenDetailReviewButton_Click" />
+                            <StackPanel>
+                                <TextBlock x:Name="SelectedTitleTextBlock"
+                                           Text="선택된 FieldComment 없음"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource PrimaryTextBrush}" />
+                                <TextBlock x:Name="EvidenceTextBlock"
+                                           Margin="0,3,0,0"
+                                           FontSize="11"
+                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                           Text="원천 hash · 첨부 · 문서 버전 · 채널 권한: 서버 조회 전" />
+                                <TextBlock x:Name="IndependentReviewGuidanceTextBlock"
+                                           Margin="0,3,0,0"
+                                           FontSize="11"
+                                           Foreground="#9C2B1B"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DockPanel>
+                        <StackPanel x:Name="RawContentSection" Grid.Row="1" Margin="0,8,0,0">
                             <TextBlock Text="원천 기록(불변)" FontWeight="SemiBold" Foreground="#8A4B08" />
                             <TextBox x:Name="RawContentTextBox"
                                      Height="56"
@@ -418,7 +435,7 @@
                                      TextWrapping="Wrap"
                                      VerticalScrollBarVisibility="Auto" />
                         </StackPanel>
-                        <StackPanel Grid.Row="2" Margin="0,8,0,0">
+                        <StackPanel x:Name="NormalizedContentSection" Grid.Row="2" Margin="0,8,0,0">
                             <TextBlock Text="관리자 정리 내용(해석)" FontWeight="SemiBold" Foreground="{StaticResource SecondaryTextBrush}" />
                             <TextBox x:Name="NormalizedContentTextBox"
                                      Height="56"
@@ -427,15 +444,16 @@
                                      TextWrapping="Wrap"
                                      VerticalScrollBarVisibility="Auto" />
                         </StackPanel>
-                        <StackPanel Grid.Row="3" Margin="0,8,0,0">
+                        <StackPanel x:Name="AnalysisContentSection" Grid.Row="3" Margin="0,8,0,0">
                             <TextBlock Text="관리자 분석 내용(해석)" FontWeight="SemiBold" Foreground="{StaticResource SecondaryTextBrush}" />
                             <TextBox x:Name="AnalysisContentTextBox"
+                                     Height="112"
                                      Margin="0,4,0,0"
                                      AcceptsReturn="True"
                                      TextWrapping="Wrap"
                                      VerticalScrollBarVisibility="Auto" />
                         </StackPanel>
-                        <Grid Grid.Row="4" Margin="0,8,0,0">
+                        <Grid x:Name="ReviewFieldsSection" Grid.Row="4" Margin="0,8,0,0">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="58" />
                                 <RowDefinition Height="48" />
@@ -469,60 +487,103 @@
                                      Margin="0,4,0,0"
                                      ToolTip="상충 판단 근거와 선정/제외 사유를 입력하세요." />
                         </Grid>
-                        <UniformGrid Grid.Row="5"
-                                     Columns="2"
-                                     Rows="4"
-                                     Margin="0,8,0,0">
+                        <Grid x:Name="ReviewActionPanel" Grid.Row="5" Margin="0,12,0,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="20" />
+                                <RowDefinition Height="36" />
+                                <RowDefinition Height="36" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       Text="변경 상태"
+                                       Foreground="{StaticResource SecondaryTextBrush}" />
+                            <TextBlock Grid.Column="1"
+                                       Grid.ColumnSpan="3"
+                                       Margin="8,0,0,0"
+                                       Text="단일 항목과 일괄 처리는 동일한 입력 내용을 사용합니다."
+                                       Foreground="{StaticResource SecondaryTextBrush}" />
                             <ComboBox x:Name="ReviewStatusComboBox"
+                                      Grid.Row="1"
+                                      Grid.Column="0"
                                       Height="30"
-                                      Margin="0,0,4,4"
+                                      Margin="0,0,4,6"
                                       DisplayMemberPath="Label"
                                       SelectedValuePath="Value" />
-                            <Button Height="30"
-                                    Margin="4,0,0,4"
+                            <Button x:Name="SaveReviewButton"
+                                    Grid.Row="1"
+                                    Grid.Column="1"
+                                    Height="30"
+                                    Margin="4,0,4,6"
                                     Content="검토 내용 저장"
                                     Click="SaveReviewButton_Click" />
-                            <Button Height="30"
-                                    Margin="0,4,4,0"
+                            <Button x:Name="SendCurrentToReportButton"
+                                    Grid.Row="1"
+                                    Grid.Column="2"
+                                    Height="30"
+                                    Margin="4,0,4,6"
+                                    Content="현재 항목 보고서로"
+                                    Click="SendCurrentToReportButton_Click" />
+                            <Button x:Name="TraceabilityButton"
+                                    Grid.Row="1"
+                                    Grid.Column="3"
+                                    Height="30"
+                                    Margin="4,0,0,6"
+                                    Content="원천·보고서 근거 확인"
+                                    Click="TraceabilityButton_Click" />
+                            <Button x:Name="BulkSaveReviewButton"
+                                    Grid.Row="2"
+                                    Grid.Column="0"
+                                    Height="30"
+                                    Margin="0,0,4,0"
                                     Content="선택 항목 일괄 저장"
                                     Click="BulkSaveReviewButton_Click" />
-                            <Button Height="30"
-                                    Margin="4,4,0,0"
-                                    Content="원천 연결 확인"
-                                    Click="TraceabilityButton_Click" />
                             <Button x:Name="RetryBulkResultButton"
+                                    Grid.Row="2"
+                                    Grid.Column="1"
                                     Height="30"
-                                    Margin="0,4,4,0"
+                                    Margin="4,0"
                                     Content="일괄 결과 다시 확인"
                                     IsEnabled="False"
                                     Click="RetryBulkResultButton_Click" />
-                            <Button Height="30"
-                                    Margin="4,4,0,0"
+                            <Button x:Name="ShowQualityIssuesButton"
+                                    Grid.Row="2"
+                                    Grid.Column="2"
+                                    Height="30"
+                                    Margin="4,0"
                                     Content="품질 이슈 전체"
                                     Click="ShowQualityIssuesButton_Click" />
-                            <Button Height="30"
-                                    Margin="0,4,4,0"
-                                    Content="현재 항목 보고서로"
-                                    Click="SendCurrentToReportButton_Click" />
-                            <Button Height="30"
-                                    Margin="4,4,0,0"
-                                    Content="보고서 근거 확인"
-                                    Click="TraceabilityButton_Click" />
-                        </UniformGrid>
+                            <Button x:Name="CloseDetailButton"
+                                    Grid.Row="2"
+                                    Grid.Column="3"
+                                    Height="30"
+                                    Margin="4,0,0,0"
+                                    Content="닫기"
+                                    Click="CloseDetailButton_Click" />
+                        </Grid>
                     </Grid>
+                    </ScrollViewer>
                 </Border>
 
-                <Border Grid.Row="2"
+                <Border x:Name="AttachmentPanel"
+                        Grid.Row="2"
                         Background="{StaticResource PanelBackgroundBrush}"
                         BorderBrush="{StaticResource PanelBorderBrush}"
                         BorderThickness="1"
                         CornerRadius="4">
                     <DockPanel>
-                        <DockPanel DockPanel.Dock="Top" Margin="10,8">
+                        <DockPanel DockPanel.Dock="Top"
+                                   Margin="10,8"
+                                   LastChildFill="False">
                             <TextBlock Text="첨부 사진/파일"
                                        FontWeight="SemiBold"
                                        Foreground="{StaticResource PrimaryTextBrush}" />
-                            <Button DockPanel.Dock="Right"
+                            <Button x:Name="OpenAttachmentButton"
+                                    DockPanel.Dock="Right"
                                     Width="88"
                                     Height="26"
                                     Content="열기"
@@ -552,6 +613,7 @@
                    Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
                    TextWrapping="Wrap"
                    Focusable="True"
-                   AutomationProperties.Name="처리 결과와 복구 안내" />
+                   AutomationProperties.Name="처리 결과와 복구 안내"
+                   AutomationProperties.HelpText="{Binding Text, RelativeSource={RelativeSource Self}}" />
     </Grid>
 </Window>

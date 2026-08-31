@@ -131,10 +131,11 @@
                                   Style="{StaticResource HeaderSubmenuItemStyle}"
                                   Click="HistoryButton_Click" />
                         <MenuItem x:Name="WorkSequenceAdminButton"
-                                  Header="작업판"
+                                  Header="작업순서 관리"
                                   Style="{StaticResource HeaderSubmenuItemStyle}"
                                   Click="WorkSequenceAdminButton_Click" />
-                        <MenuItem Header="현황판"
+                        <MenuItem x:Name="WorkSequenceDashboardButton"
+                                  Header="작업순서 현황판"
                                   Style="{StaticResource HeaderSubmenuItemStyle}"
                                   Click="WorkSequenceTvButton_Click" />
                         <Separator />

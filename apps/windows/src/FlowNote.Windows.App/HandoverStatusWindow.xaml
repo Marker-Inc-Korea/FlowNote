@@ -12,7 +12,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="10" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="104" />
+            <RowDefinition Height="126" />
             <RowDefinition Height="44" />
         </Grid.RowDefinitions>
 
@@ -63,6 +63,7 @@
                               SelectionChanged="HandoverGrid_SelectionChanged"
                               HeadersVisibility="Column"
                               GridLinesVisibility="Horizontal"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
                               BorderThickness="0">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="운영 단위" Binding="{Binding ChannelTypeLabel}" Width="78" />
@@ -71,7 +72,7 @@
                             <DataGridTextColumn Header="미확인" Binding="{Binding UnconfirmedRecipientCount}" Width="60" />
                             <DataGridTextColumn Header="후속" Binding="{Binding FollowUpRequiredCount}" Width="50" />
                             <DataGridTextColumn Header="제목" Binding="{Binding Title}" Width="145" />
-                            <DataGridTextColumn Header="필수 원천" Binding="{Binding SourceLinkText}" Width="*" />
+                            <DataGridTextColumn Header="필수 원천" Binding="{Binding SourceLinkText}" Width="320" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -101,6 +102,7 @@
                               IsReadOnly="True"
                               HeadersVisibility="Column"
                               GridLinesVisibility="Horizontal"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
                               BorderThickness="0">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="수신자" Binding="{Binding RecipientId}" Width="160" />
@@ -108,7 +110,7 @@
                             <DataGridTextColumn Header="읽음" Binding="{Binding ReadAt, StringFormat=yyyy-MM-dd HH:mm}" Width="140" />
                             <DataGridTextColumn Header="확인" Binding="{Binding AcknowledgedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="140" />
                             <DataGridTextColumn Header="후속 필요" Binding="{Binding FollowUpRequiredAt, StringFormat=yyyy-MM-dd HH:mm}" Width="140" />
-                            <DataGridTextColumn Header="메모" Binding="{Binding Note}" Width="*" />
+                            <DataGridTextColumn Header="메모" Binding="{Binding Note}" Width="280" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -125,49 +127,46 @@
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="92" />
-                    <ColumnDefinition Width="92" />
-                    <ColumnDefinition Width="92" />
-                    <ColumnDefinition Width="104" />
-                    <ColumnDefinition Width="158" />
+                    <ColumnDefinition Width="10" />
+                    <ColumnDefinition Width="520" />
                 </Grid.ColumnDefinitions>
                 <TextBox x:Name="ReceiptNoteTextBox"
-                         Height="78"
-                         Margin="0,0,10,0"
                          AcceptsReturn="True"
                          TextWrapping="Wrap"
                          VerticalScrollBarVisibility="Auto"
                          ToolTip="상태 변경 메모 또는 후속 FieldComment 내용" />
-                <Button Grid.Column="1"
-                        Height="34"
-                        Margin="0,0,8,0"
-                        VerticalAlignment="Top"
-                        Content="읽음"
-                        Click="ReadButton_Click" />
-                <Button Grid.Column="2"
-                        Height="34"
-                        Margin="0,0,8,0"
-                        VerticalAlignment="Top"
-                        Content="확인"
-                        Click="AckButton_Click" />
-                <Button Grid.Column="3"
-                        Height="34"
-                        Margin="0,0,8,0"
-                        VerticalAlignment="Top"
-                        Content="보류"
-                        Click="HoldButton_Click" />
-                <Button Grid.Column="4"
-                        Height="34"
-                        Margin="0,0,8,0"
-                        VerticalAlignment="Top"
-                        Content="후속 필요"
-                        Click="FollowUpRequiredButton_Click" />
-                <Button Grid.Column="5"
-                        Height="34"
-                        VerticalAlignment="Top"
-                        Content="후속 코멘트 저장"
-                        ToolTip="선택한 인수인계를 원천으로 보존하는 현장 코멘트를 저장합니다."
-                        Click="FollowUpFieldCommentButton_Click" />
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button Margin="0,0,6,6"
+                            Content="읽음"
+                            Click="ReadButton_Click" />
+                    <Button Grid.Column="1"
+                            Margin="0,0,6,6"
+                            Content="확인"
+                            Click="AckButton_Click" />
+                    <Button Grid.Column="2"
+                            Margin="0,0,6,6"
+                            Content="보류"
+                            Click="HoldButton_Click" />
+                    <Button Grid.Column="3"
+                            Margin="0,0,0,6"
+                            Content="후속 필요"
+                            Click="FollowUpRequiredButton_Click" />
+                    <Button Grid.Row="1"
+                            Grid.ColumnSpan="4"
+                            Content="후속 코멘트 저장"
+                            ToolTip="선택한 인수인계를 원천으로 보존하는 현장 코멘트를 저장합니다."
+                            Click="FollowUpFieldCommentButton_Click" />
+                </Grid>
             </Grid>
         </Border>
 

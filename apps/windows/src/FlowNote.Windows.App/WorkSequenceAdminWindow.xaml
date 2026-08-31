@@ -63,7 +63,7 @@
                 <RowDefinition Height="44" />
                 <RowDefinition Height="84" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="118" />
+                <RowDefinition Height="142" />
                 <RowDefinition Height="28" />
             </Grid.RowDefinitions>
 
@@ -82,14 +82,9 @@
                                 Click="RefreshButton_Click" />
                         <Button Width="118"
                                 Height="30"
-                                Margin="0,0,8,0"
                                 Content="알림 후보 전달"
                                 AutomationProperties.Name="작업순서 알림 후보 전달 화면 열기"
                                 Click="OpenDeliveryButton_Click" />
-                        <Button Width="118"
-                                Height="30"
-                                Content="현황판 열기"
-                                Click="OpenTvViewButton_Click" />
                     </StackPanel>
                     <TextBlock x:Name="SelectedBoardTextBlock"
                                Text="작업판을 선택하거나 생성하세요"
@@ -107,31 +102,36 @@
                     CornerRadius="4"
                     Padding="12">
                 <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="4" />
+                        <RowDefinition Height="32" />
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="130" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="12" />
                         <ColumnDefinition Width="116" />
                     </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0">
-                        <TextBlock Text="작업 항목"
-                                   Foreground="{StaticResource SecondaryTextBrush}" />
-                        <TextBox x:Name="ItemTitleTextBox"
-                                 Height="30"
-                                 Margin="0,4,8,0"
-                                 VerticalContentAlignment="Center" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="1">
-                        <TextBlock Text="담당자"
-                                   Foreground="{StaticResource SecondaryTextBrush}" />
-                        <TextBox x:Name="AssignedToTextBox"
-                                 Height="30"
-                                 Margin="0,4,8,0"
-                                 VerticalContentAlignment="Center" />
-                    </StackPanel>
+                    <TextBlock Text="작업 항목"
+                               Foreground="{StaticResource SecondaryTextBrush}" />
+                    <TextBlock Grid.Column="2"
+                               Text="담당자"
+                               Foreground="{StaticResource SecondaryTextBrush}" />
+                    <TextBox x:Name="ItemTitleTextBox"
+                             Grid.Row="2"
+                             Height="32"
+                             VerticalContentAlignment="Center" />
+                    <TextBox x:Name="AssignedToTextBox"
+                             Grid.Row="2"
+                             Grid.Column="2"
+                             Height="32"
+                             VerticalContentAlignment="Center" />
                     <Button x:Name="AddItemButton"
-                            Grid.Column="2"
+                            Grid.Row="2"
+                            Grid.Column="4"
                             Height="32"
-                            Margin="0,22,0,0"
                             Content="항목 추가"
                             Click="AddItemButton_Click" />
                 </Grid>
@@ -149,15 +149,17 @@
                           CanUserAddRows="False"
                           CanUserDeleteRows="False"
                           IsReadOnly="True"
+                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
                           RowHeight="38"
                           ColumnHeaderHeight="34">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="#" Binding="{Binding SortOrder}" Width="52" />
-                        <DataGridTextColumn Header="제목" Binding="{Binding Title}" Width="*" />
-                        <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="120" />
-                        <DataGridTextColumn Header="보류 사유" Binding="{Binding HoldReason}" Width="150" />
-                        <DataGridTextColumn Header="담당자" Binding="{Binding AssignedTo}" Width="120" />
-                        <DataGridTextColumn Header="수정시간" Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="150" />
+                        <DataGridTextColumn Header="#" Binding="{Binding SortOrder}" Width="36" />
+                        <DataGridTextColumn Header="제목" Binding="{Binding Title}" Width="260" />
+                        <DataGridTextColumn Header="상태" Binding="{Binding Status}" Width="150" />
+                        <DataGridTextColumn Header="보류 사유" Binding="{Binding HoldReason}" Width="280" />
+                        <DataGridTextColumn Header="담당자" Binding="{Binding AssignedTo}" Width="200" />
+                        <DataGridTextColumn Header="수정시간" Binding="{Binding UpdatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="170" />
                     </DataGrid.Columns>
                 </DataGrid>
             </Border>
@@ -170,49 +172,53 @@
                     CornerRadius="4"
                     Padding="12">
                 <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="86" />
-                        <ColumnDefinition Width="86" />
-                        <ColumnDefinition Width="118" />
-                        <ColumnDefinition Width="104" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="10" />
+                        <RowDefinition Height="34" />
+                    </Grid.RowDefinitions>
+                    <StackPanel>
                         <TextBlock Text="변경 사유"
                                    Foreground="{StaticResource SecondaryTextBrush}" />
                         <TextBox x:Name="ReasonTextBox"
-                                 Height="30"
-                                 Margin="0,4,8,0"
+                                 Height="42"
+                                 Margin="0,4,0,0"
                                  VerticalContentAlignment="Center" />
                     </StackPanel>
-                    <Button x:Name="MoveUpButton"
-                            Grid.Column="1"
-                            Height="32"
-                            Margin="0,22,8,0"
-                            Content="위로"
-                            Click="MoveUpButton_Click" />
-                    <Button x:Name="MoveDownButton"
-                            Grid.Column="2"
-                            Height="32"
-                            Margin="0,22,8,0"
-                            Content="아래로"
-                            Click="MoveDownButton_Click" />
-                    <ComboBox x:Name="StatusComboBox"
-                              Grid.Column="3"
-                              Height="32"
-                              Margin="0,22,8,0"
-                              SelectedIndex="0">
-                        <ComboBoxItem Content="대기" Tag="WAITING" />
-                        <ComboBoxItem Content="진행중" Tag="IN_PROGRESS" />
-                        <ComboBoxItem Content="보류" Tag="HOLD" />
-                        <ComboBoxItem Content="완료" Tag="COMPLETED" />
-                    </ComboBox>
-                    <Button x:Name="SetStatusButton"
-                            Grid.Column="4"
-                            Height="32"
-                            Margin="0,22,0,0"
-                            Content="상태 변경"
-                            Click="SetStatusButton_Click" />
+                    <Grid Grid.Row="2" HorizontalAlignment="Right">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="82" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="82" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="130" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="112" />
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="MoveUpButton"
+                                Height="34"
+                                Content="위로"
+                                Click="MoveUpButton_Click" />
+                        <Button x:Name="MoveDownButton"
+                                Grid.Column="2"
+                                Height="34"
+                                Content="아래로"
+                                Click="MoveDownButton_Click" />
+                        <ComboBox x:Name="StatusComboBox"
+                                  Grid.Column="4"
+                                  Height="34"
+                                  SelectedIndex="0">
+                            <ComboBoxItem Content="대기" Tag="WAITING" />
+                            <ComboBoxItem Content="진행중" Tag="IN_PROGRESS" />
+                            <ComboBoxItem Content="보류" Tag="HOLD" />
+                            <ComboBoxItem Content="완료" Tag="COMPLETED" />
+                        </ComboBox>
+                        <Button x:Name="SetStatusButton"
+                                Grid.Column="6"
+                                Height="34"
+                                Content="상태 변경"
+                                Click="SetStatusButton_Click" />
+                    </Grid>
                 </Grid>
             </Border>
 
